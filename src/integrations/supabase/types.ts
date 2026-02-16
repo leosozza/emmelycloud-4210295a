@@ -223,6 +223,71 @@ export type Database = {
           },
         ]
       }
+      conversations: {
+        Row: {
+          assigned_to: string | null
+          channel: Database["public"]["Enums"]["channel_type"]
+          client_id: string | null
+          contact_avatar_url: string | null
+          contact_email: string | null
+          contact_instagram: string | null
+          contact_name: string
+          contact_phone: string | null
+          created_at: string
+          department: string | null
+          id: string
+          last_message_at: string | null
+          last_message_preview: string | null
+          status: Database["public"]["Enums"]["conversation_status"]
+          unread_count: number
+          updated_at: string
+        }
+        Insert: {
+          assigned_to?: string | null
+          channel: Database["public"]["Enums"]["channel_type"]
+          client_id?: string | null
+          contact_avatar_url?: string | null
+          contact_email?: string | null
+          contact_instagram?: string | null
+          contact_name: string
+          contact_phone?: string | null
+          created_at?: string
+          department?: string | null
+          id?: string
+          last_message_at?: string | null
+          last_message_preview?: string | null
+          status?: Database["public"]["Enums"]["conversation_status"]
+          unread_count?: number
+          updated_at?: string
+        }
+        Update: {
+          assigned_to?: string | null
+          channel?: Database["public"]["Enums"]["channel_type"]
+          client_id?: string | null
+          contact_avatar_url?: string | null
+          contact_email?: string | null
+          contact_instagram?: string | null
+          contact_name?: string
+          contact_phone?: string | null
+          created_at?: string
+          department?: string | null
+          id?: string
+          last_message_at?: string | null
+          last_message_preview?: string | null
+          status?: Database["public"]["Enums"]["conversation_status"]
+          unread_count?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "conversations_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       financial_records: {
         Row: {
           contract_id: string
@@ -373,6 +438,53 @@ export type Database = {
           },
         ]
       }
+      messages: {
+        Row: {
+          content: string
+          conversation_id: string
+          created_at: string
+          direction: Database["public"]["Enums"]["message_direction"]
+          external_id: string | null
+          id: string
+          media_type: string | null
+          media_url: string | null
+          read_at: string | null
+          sender_name: string | null
+        }
+        Insert: {
+          content: string
+          conversation_id: string
+          created_at?: string
+          direction: Database["public"]["Enums"]["message_direction"]
+          external_id?: string | null
+          id?: string
+          media_type?: string | null
+          media_url?: string | null
+          read_at?: string | null
+          sender_name?: string | null
+        }
+        Update: {
+          content?: string
+          conversation_id?: string
+          created_at?: string
+          direction?: Database["public"]["Enums"]["message_direction"]
+          external_id?: string | null
+          id?: string
+          media_type?: string | null
+          media_url?: string | null
+          read_at?: string | null
+          sender_name?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "messages_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: false
+            referencedRelation: "conversations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       profiles: {
         Row: {
           avatar_url: string | null
@@ -458,6 +570,30 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      quick_replies: {
+        Row: {
+          category: string | null
+          content: string
+          created_at: string
+          id: string
+          title: string
+        }
+        Insert: {
+          category?: string | null
+          content: string
+          created_at?: string
+          id?: string
+          title: string
+        }
+        Update: {
+          category?: string | null
+          content?: string
+          created_at?: string
+          id?: string
+          title?: string
+        }
+        Relationships: []
       }
       sef_locations: {
         Row: {
@@ -565,7 +701,13 @@ export type Database = {
         | "pendente_docs"
         | "concluido"
         | "arquivado"
+      channel_type: "whatsapp" | "instagram" | "email" | "webchat"
       contract_status: "pendente" | "assinado" | "cancelado"
+      conversation_status:
+        | "aberta"
+        | "em_atendimento"
+        | "aguardando"
+        | "fechada"
       funnel_stage:
         | "lead"
         | "triagem"
@@ -585,6 +727,7 @@ export type Database = {
         | "empresarial"
         | "tributario"
         | "outro"
+      message_direction: "inbound" | "outbound"
       payment_method: "stripe" | "transferencia" | "parcelado_direto"
       payment_type: "fixo" | "exito" | "hibrido" | "parcelado"
       proposal_status:
@@ -728,7 +871,14 @@ export const Constants = {
         "concluido",
         "arquivado",
       ],
+      channel_type: ["whatsapp", "instagram", "email", "webchat"],
       contract_status: ["pendente", "assinado", "cancelado"],
+      conversation_status: [
+        "aberta",
+        "em_atendimento",
+        "aguardando",
+        "fechada",
+      ],
       funnel_stage: [
         "lead",
         "triagem",
@@ -750,6 +900,7 @@ export const Constants = {
         "tributario",
         "outro",
       ],
+      message_direction: ["inbound", "outbound"],
       payment_method: ["stripe", "transferencia", "parcelado_direto"],
       payment_type: ["fixo", "exito", "hibrido", "parcelado"],
       proposal_status: [
