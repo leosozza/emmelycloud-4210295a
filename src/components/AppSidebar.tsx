@@ -12,7 +12,8 @@ import {
   ChevronRight,
   Scale,
   MapPin,
-  Contact
+  Contact,
+  MessageCircle
 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import {
@@ -37,6 +38,7 @@ const mainNav = [
   { title: "Casos", url: "/casos", icon: Briefcase },
   { title: "Propostas", url: "/propostas", icon: FileText },
   { title: "Contratos", url: "/contratos", icon: FileSignature },
+  { title: "Central de Atendimento", url: "/atendimento", icon: MessageCircle },
 ];
 
 const secondaryNav = [
