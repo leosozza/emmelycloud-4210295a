@@ -10,7 +10,9 @@ import {
   BarChart3,
   ChevronLeft,
   ChevronRight,
-  Scale
+  Scale,
+  MapPin,
+  Contact
 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import {
@@ -41,6 +43,12 @@ const secondaryNav = [
   { title: "Financeiro", url: "/financeiro", icon: DollarSign },
   { title: "Automações", url: "/automacoes", icon: Zap },
   { title: "Relatórios", url: "/relatorios", icon: BarChart3 },
+];
+
+const cadastrosNav = [
+  { title: "Clientes", url: "/clientes", icon: Contact },
+  { title: "Serviços", url: "/servicos", icon: Briefcase },
+  { title: "SEF", url: "/sef", icon: MapPin },
 ];
 
 export function AppSidebar() {
@@ -100,6 +108,30 @@ export function AppSidebar() {
           <SidebarGroupContent>
             <SidebarMenu>
               {secondaryNav.map((item) => (
+                <SidebarMenuItem key={item.title}>
+                  <SidebarMenuButton asChild tooltip={item.title}>
+                    <NavLink
+                      to={item.url}
+                      className="text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-foreground"
+                      activeClassName="bg-sidebar-accent text-sidebar-primary font-medium"
+                    >
+                      <item.icon className="h-4 w-4" />
+                      <span>{item.title}</span>
+                    </NavLink>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              ))}
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
+
+        <SidebarGroup>
+          <SidebarGroupLabel className="text-sidebar-foreground/40 text-xs uppercase tracking-wider">
+            Cadastros
+          </SidebarGroupLabel>
+          <SidebarGroupContent>
+            <SidebarMenu>
+              {cadastrosNav.map((item) => (
                 <SidebarMenuItem key={item.title}>
                   <SidebarMenuButton asChild tooltip={item.title}>
                     <NavLink

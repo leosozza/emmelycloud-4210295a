@@ -71,6 +71,101 @@ export type Database = {
           },
         ]
       }
+      client_contacts: {
+        Row: {
+          client_id: string
+          email: string | null
+          id: string
+          mobile: string | null
+          name: string
+          phone: string | null
+        }
+        Insert: {
+          client_id: string
+          email?: string | null
+          id?: string
+          mobile?: string | null
+          name: string
+          phone?: string | null
+        }
+        Update: {
+          client_id?: string
+          email?: string | null
+          id?: string
+          mobile?: string | null
+          name?: string
+          phone?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "client_contacts_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      clients: {
+        Row: {
+          address: string | null
+          birth_date: string | null
+          concelho: string | null
+          country: string | null
+          created_at: string
+          distrito: string | null
+          document_number: string | null
+          document_type: string | null
+          freguesia: string | null
+          has_active_contract: boolean
+          id: string
+          name: string
+          nationality: string | null
+          nib: string | null
+          notes: string | null
+          postal_code: string | null
+          updated_at: string
+        }
+        Insert: {
+          address?: string | null
+          birth_date?: string | null
+          concelho?: string | null
+          country?: string | null
+          created_at?: string
+          distrito?: string | null
+          document_number?: string | null
+          document_type?: string | null
+          freguesia?: string | null
+          has_active_contract?: boolean
+          id?: string
+          name: string
+          nationality?: string | null
+          nib?: string | null
+          notes?: string | null
+          postal_code?: string | null
+          updated_at?: string
+        }
+        Update: {
+          address?: string | null
+          birth_date?: string | null
+          concelho?: string | null
+          country?: string | null
+          created_at?: string
+          distrito?: string | null
+          document_number?: string | null
+          document_type?: string | null
+          freguesia?: string | null
+          has_active_contract?: boolean
+          id?: string
+          name?: string
+          nationality?: string | null
+          nib?: string | null
+          notes?: string | null
+          postal_code?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
       contracts: {
         Row: {
           case_id: string | null
@@ -196,6 +291,7 @@ export type Database = {
           ai_viability: string | null
           assigned_attorney_id: string | null
           assigned_commercial_id: string | null
+          client_id: string | null
           country: string | null
           created_at: string
           created_by: string | null
@@ -216,6 +312,7 @@ export type Database = {
           ai_viability?: string | null
           assigned_attorney_id?: string | null
           assigned_commercial_id?: string | null
+          client_id?: string | null
           country?: string | null
           created_at?: string
           created_by?: string | null
@@ -236,6 +333,7 @@ export type Database = {
           ai_viability?: string | null
           assigned_attorney_id?: string | null
           assigned_commercial_id?: string | null
+          client_id?: string | null
           country?: string | null
           created_at?: string
           created_by?: string | null
@@ -264,6 +362,13 @@ export type Database = {
             columns: ["assigned_commercial_id"]
             isOneToOne: false
             referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "leads_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
             referencedColumns: ["id"]
           },
         ]
@@ -353,6 +458,69 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      sef_locations: {
+        Row: {
+          created_at: string
+          details: string | null
+          id: string
+          name: string
+          regional_direction: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          details?: string | null
+          id?: string
+          name: string
+          regional_direction: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          details?: string | null
+          id?: string
+          name?: string
+          regional_direction?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      services: {
+        Row: {
+          budget_details: string | null
+          contract_details: string | null
+          contract_intro: string | null
+          created_at: string
+          currency: string
+          id: string
+          name: string
+          updated_at: string
+          value: number
+        }
+        Insert: {
+          budget_details?: string | null
+          contract_details?: string | null
+          contract_intro?: string | null
+          created_at?: string
+          currency?: string
+          id?: string
+          name: string
+          updated_at?: string
+          value?: number
+        }
+        Update: {
+          budget_details?: string | null
+          contract_details?: string | null
+          contract_intro?: string | null
+          created_at?: string
+          currency?: string
+          id?: string
+          name?: string
+          updated_at?: string
+          value?: number
+        }
+        Relationships: []
       }
       user_roles: {
         Row: {
