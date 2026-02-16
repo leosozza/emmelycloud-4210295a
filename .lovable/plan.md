@@ -1,118 +1,135 @@
 
 
-# Plano: Criar Tabelas de Cadastro (sem autenticacao)
+# Plano: Central de Atendimento Omnichannel
 
-## Contexto
+## Resumo
 
-Criar as tabelas `clients`, `client_contacts`, `services` e `sef_locations` baseadas nas telas do Access, com interfaces de gestao. A autenticacao sera desativada por enquanto, pois o sistema podera ser usado como iframe dentro do Bitrix24.
+Criar a interface completa da Central de Atendimento no estilo omnichannel (similar ao ASCSAC), com tabelas no banco de dados para conversas e mensagens. A integracao real com WhatsApp e Instagram sera preparada na estrutura mas implementada quando as APIs estiverem disponiveis.
 
 ---
 
-## 1. Alteracoes no Banco de Dados
+## 1. Novas Tabelas no Banco de Dados
 
-### Migracao SQL
+### Enum `channel_type`
+Valores: `whatsapp`, `instagram`, `email`, `webchat`
 
-Criar 4 novas tabelas com RLS **desativado** (sem autenticacao por enquanto):
+### Enum `conversation_status`
+Valores: `aberta`, `em_atendimento`, `aguardando`, `fechada`
 
-**Tabela `clients`**
+### Enum `message_direction`
+Valores: `inbound`, `outbound`
+
+### Tabela `conversations`
 | Coluna | Tipo | Obrigatorio |
 |--------|------|-------------|
 | id | uuid (PK) | Sim |
-| name | text | Sim |
-| document_type | text | Nao |
-| document_number | text | Nao |
-| nationality | text | Nao |
-| birth_date | date | Nao |
-| nib | text | Nao |
-| address | text | Nao |
-| postal_code | text | Nao |
-| freguesia | text | Nao |
-| concelho | text | Nao |
-| distrito | text | Nao |
-| country | text (default 'PORTUGAL') | Nao |
-| has_active_contract | boolean (default false) | Sim |
-| notes | text | Nao |
+| channel | channel_type | Sim |
+| contact_name | text | Sim |
+| contact_phone | text | Nao |
+| contact_email | text | Nao |
+| contact_instagram | text | Nao |
+| contact_avatar_url | text | Nao |
+| client_id | uuid (FK -> clients) | Nao |
+| status | conversation_status (default 'aberta') | Sim |
+| assigned_to | text | Nao |
+| department | text | Nao |
+| last_message_at | timestamptz | Nao |
+| last_message_preview | text | Nao |
+| unread_count | integer (default 0) | Sim |
 | created_at / updated_at | timestamptz | Sim |
 
-**Tabela `client_contacts`**
+### Tabela `messages`
 | Coluna | Tipo | Obrigatorio |
 |--------|------|-------------|
 | id | uuid (PK) | Sim |
-| client_id | uuid (FK -> clients) | Sim |
-| name | text | Sim |
-| phone | text | Nao |
-| mobile | text | Nao |
-| email | text | Nao |
+| conversation_id | uuid (FK -> conversations) | Sim |
+| direction | message_direction | Sim |
+| content | text | Sim |
+| sender_name | text | Nao |
+| media_url | text | Nao |
+| media_type | text | Nao |
+| external_id | text | Nao |
+| read_at | timestamptz | Nao |
+| created_at | timestamptz | Sim |
 
-**Tabela `services`**
+### Tabela `quick_replies`
 | Coluna | Tipo | Obrigatorio |
 |--------|------|-------------|
 | id | uuid (PK) | Sim |
-| name | text | Sim |
-| currency | text (default 'EUR') | Sim |
-| value | numeric (default 0) | Sim |
-| budget_details | text | Nao |
-| contract_intro | text | Nao |
-| contract_details | text | Nao |
-| created_at / updated_at | timestamptz | Sim |
+| title | text | Sim |
+| content | text | Sim |
+| category | text | Nao |
+| created_at | timestamptz | Sim |
 
-**Tabela `sef_locations`**
-| Coluna | Tipo | Obrigatorio |
-|--------|------|-------------|
-| id | uuid (PK) | Sim |
-| regional_direction | text | Sim |
-| name | text | Sim |
-| details | text | Nao |
-| created_at / updated_at | timestamptz | Sim |
+RLS permissivo (`true`) em todas as tabelas, consistente com as tabelas de cadastro.
 
-Adicionar coluna `client_id` (FK) na tabela `leads` para vincular leads a clientes.
-
-RLS sera habilitado mas com politica permissiva (`true`) para todas as operacoes, permitindo acesso sem autenticacao. Quando decidir ativar auth, basta substituir por politicas baseadas em roles.
+Realtime habilitado nas tabelas `conversations` e `messages` para atualizacao em tempo real.
 
 ---
 
-## 2. Remover Protecao de Rotas
+## 2. Interface da Central de Atendimento
 
-- Alterar `App.tsx` para remover o componente `ProtectedRoutes` e tornar todas as rotas publicas
-- Manter a pagina `/auth` disponivel mas sem redireccionamento forcado
+### Layout (3 paineis)
+
+```text
++------------------+------------------------+------------------+
+|  Lista de        |   Area de Chat         |  Perfil do       |
+|  Conversas       |   (mensagens)          |  Contacto        |
+|                  |                        |                  |
+|  - Pesquisa      |  - Header conversa     |  - Nome/foto     |
+|  - Filtro canal  |  - Mensagens (scroll)  |  - Canal         |
+|  - Cards com     |  - Input de resposta   |  - Dados cliente  |
+|    preview       |  - Respostas rapidas   |  - Historico     |
+|    badge canal   |  - Anexos              |  - Tags          |
++------------------+------------------------+------------------+
+```
+
+### Painel Esquerdo - Lista de Conversas
+- Campo de pesquisa por nome/telefone
+- Filtros por canal (WhatsApp, Instagram, todos)
+- Filtro por status (aberta, em atendimento, fechada)
+- Cards com: avatar, nome, preview da ultima mensagem, hora, badge do canal (icone/cor), contador de nao lidas
+
+### Painel Central - Chat
+- Header com nome do contacto, canal, status e acoes (fechar, transferir)
+- Area de mensagens com scroll, baloes diferenciados (enviada/recebida)
+- Timestamps agrupados por dia
+- Campo de input com botao de enviar, anexar e acesso a respostas rapidas
+
+### Painel Direito - Perfil do Contacto
+- Avatar e nome
+- Canal de origem com icone
+- Telefone, email, Instagram
+- Link para ficha do cliente (se vinculado)
+- Botao para vincular a um cliente existente
+- Tags/departamento
 
 ---
 
-## 3. Novas Paginas
+## 3. Navegacao
 
-### 3.1 Pagina de Clientes (`/clientes`)
-- Tabela com lista de clientes e campo de pesquisa
-- Dialog/modal para criar e editar cliente com todos os campos
-- Seccao de contactos dentro do formulario (adicionar/remover)
-- Badge indicando contrato ativo
-
-### 3.2 Pagina de Servicos (`/servicos`)
-- Lista de servicos com pesquisa
-- Formulario com Nome, Moeda (EUR), Valor
-- 3 abas: Detalhe Orcamento, Introducao Contrato, Detalhe Contrato
-
-### 3.3 Pagina de SEF (`/sef`)
-- Tabela com Direcao Regional e nome
-- Formulario com campos de direcao regional (dropdown), nome e detalhes
+Adicionar "Central de Atendimento" ao sidebar no grupo "Principal" com icone `MessageCircle`, rota `/atendimento`.
 
 ---
 
-## 4. Navegacao
+## 4. Dados Iniciais
 
-Adicionar 3 novos itens ao sidebar (`AppSidebar.tsx`) num grupo "Cadastros":
-- Clientes (icone Users)
-- Servicos (icone Briefcase)
-- SEF (icone MapPin)
-
-Adicionar as rotas correspondentes no `App.tsx`.
+Inserir algumas conversas e mensagens de exemplo para demonstrar o layout funcional.
 
 ---
 
 ## 5. Detalhes Tecnicos
 
-- Migracao SQL unica para criar as 4 tabelas, triggers de `updated_at`, foreign keys e politicas RLS permissivas
-- Componentes React com formularios usando React Hook Form + Zod para validacao
-- TanStack React Query para operacoes CRUD
-- Textarea simples para campos de texto longo (budget_details, contract_intro, contract_details)
-- Arquivos novos: `src/pages/Clientes.tsx`, `src/pages/Servicos.tsx`, `src/pages/SEF.tsx`
+- **Migracao SQL**: enums + 3 tabelas + triggers `updated_at` + realtime
+- **Componentes React**:
+  - `src/pages/Atendimento.tsx` - pagina principal
+  - `src/components/atendimento/ConversationList.tsx` - painel esquerdo
+  - `src/components/atendimento/ChatPanel.tsx` - painel central
+  - `src/components/atendimento/ContactProfile.tsx` - painel direito
+  - `src/components/atendimento/MessageBubble.tsx` - balao de mensagem
+  - `src/components/atendimento/QuickReplies.tsx` - respostas rapidas
+- **TanStack React Query** para CRUD
+- **Supabase Realtime** para receber mensagens novas sem refresh
+- Rota `/atendimento` adicionada ao `App.tsx`
+- Icones de canal: WhatsApp (verde), Instagram (gradiente rosa/roxo), Email (azul)
 
