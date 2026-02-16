@@ -14,16 +14,417 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      cases: {
+        Row: {
+          assigned_attorney_id: string | null
+          created_at: string
+          description: string | null
+          id: string
+          internal_notes: string | null
+          lead_id: string | null
+          legal_area: Database["public"]["Enums"]["legal_area"]
+          status: Database["public"]["Enums"]["case_status"]
+          title: string
+          updated_at: string
+          viability: string | null
+        }
+        Insert: {
+          assigned_attorney_id?: string | null
+          created_at?: string
+          description?: string | null
+          id?: string
+          internal_notes?: string | null
+          lead_id?: string | null
+          legal_area?: Database["public"]["Enums"]["legal_area"]
+          status?: Database["public"]["Enums"]["case_status"]
+          title: string
+          updated_at?: string
+          viability?: string | null
+        }
+        Update: {
+          assigned_attorney_id?: string | null
+          created_at?: string
+          description?: string | null
+          id?: string
+          internal_notes?: string | null
+          lead_id?: string | null
+          legal_area?: Database["public"]["Enums"]["legal_area"]
+          status?: Database["public"]["Enums"]["case_status"]
+          title?: string
+          updated_at?: string
+          viability?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "cases_assigned_attorney_id_fkey"
+            columns: ["assigned_attorney_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cases_lead_id_fkey"
+            columns: ["lead_id"]
+            isOneToOne: false
+            referencedRelation: "leads"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      contracts: {
+        Row: {
+          case_id: string | null
+          created_at: string
+          expires_at: string | null
+          file_url: string | null
+          id: string
+          notes: string | null
+          proposal_id: string
+          signed_at: string | null
+          starts_at: string | null
+          status: Database["public"]["Enums"]["contract_status"]
+          updated_at: string
+        }
+        Insert: {
+          case_id?: string | null
+          created_at?: string
+          expires_at?: string | null
+          file_url?: string | null
+          id?: string
+          notes?: string | null
+          proposal_id: string
+          signed_at?: string | null
+          starts_at?: string | null
+          status?: Database["public"]["Enums"]["contract_status"]
+          updated_at?: string
+        }
+        Update: {
+          case_id?: string | null
+          created_at?: string
+          expires_at?: string | null
+          file_url?: string | null
+          id?: string
+          notes?: string | null
+          proposal_id?: string
+          signed_at?: string | null
+          starts_at?: string | null
+          status?: Database["public"]["Enums"]["contract_status"]
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "contracts_case_id_fkey"
+            columns: ["case_id"]
+            isOneToOne: false
+            referencedRelation: "cases"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contracts_proposal_id_fkey"
+            columns: ["proposal_id"]
+            isOneToOne: false
+            referencedRelation: "proposals"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      financial_records: {
+        Row: {
+          contract_id: string
+          created_at: string
+          description: string
+          due_date: string | null
+          id: string
+          installment_number: number | null
+          installment_value: number | null
+          paid_at: string | null
+          payment_method: Database["public"]["Enums"]["payment_method"]
+          receipt_url: string | null
+          status: Database["public"]["Enums"]["installment_status"]
+          stripe_payment_id: string | null
+          total_installments: number | null
+          total_value: number
+          updated_at: string
+        }
+        Insert: {
+          contract_id: string
+          created_at?: string
+          description?: string
+          due_date?: string | null
+          id?: string
+          installment_number?: number | null
+          installment_value?: number | null
+          paid_at?: string | null
+          payment_method?: Database["public"]["Enums"]["payment_method"]
+          receipt_url?: string | null
+          status?: Database["public"]["Enums"]["installment_status"]
+          stripe_payment_id?: string | null
+          total_installments?: number | null
+          total_value?: number
+          updated_at?: string
+        }
+        Update: {
+          contract_id?: string
+          created_at?: string
+          description?: string
+          due_date?: string | null
+          id?: string
+          installment_number?: number | null
+          installment_value?: number | null
+          paid_at?: string | null
+          payment_method?: Database["public"]["Enums"]["payment_method"]
+          receipt_url?: string | null
+          status?: Database["public"]["Enums"]["installment_status"]
+          stripe_payment_id?: string | null
+          total_installments?: number | null
+          total_value?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "financial_records_contract_id_fkey"
+            columns: ["contract_id"]
+            isOneToOne: false
+            referencedRelation: "contracts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      leads: {
+        Row: {
+          ai_score: number | null
+          ai_viability: string | null
+          assigned_attorney_id: string | null
+          assigned_commercial_id: string | null
+          country: string | null
+          created_at: string
+          created_by: string | null
+          email: string | null
+          funnel_stage: Database["public"]["Enums"]["funnel_stage"]
+          id: string
+          legal_area: Database["public"]["Enums"]["legal_area"] | null
+          name: string
+          notes: string | null
+          origin: Database["public"]["Enums"]["lead_origin"]
+          phone: string | null
+          sla_expires_at: string | null
+          updated_at: string
+          urgency: string | null
+        }
+        Insert: {
+          ai_score?: number | null
+          ai_viability?: string | null
+          assigned_attorney_id?: string | null
+          assigned_commercial_id?: string | null
+          country?: string | null
+          created_at?: string
+          created_by?: string | null
+          email?: string | null
+          funnel_stage?: Database["public"]["Enums"]["funnel_stage"]
+          id?: string
+          legal_area?: Database["public"]["Enums"]["legal_area"] | null
+          name: string
+          notes?: string | null
+          origin?: Database["public"]["Enums"]["lead_origin"]
+          phone?: string | null
+          sla_expires_at?: string | null
+          updated_at?: string
+          urgency?: string | null
+        }
+        Update: {
+          ai_score?: number | null
+          ai_viability?: string | null
+          assigned_attorney_id?: string | null
+          assigned_commercial_id?: string | null
+          country?: string | null
+          created_at?: string
+          created_by?: string | null
+          email?: string | null
+          funnel_stage?: Database["public"]["Enums"]["funnel_stage"]
+          id?: string
+          legal_area?: Database["public"]["Enums"]["legal_area"] | null
+          name?: string
+          notes?: string | null
+          origin?: Database["public"]["Enums"]["lead_origin"]
+          phone?: string | null
+          sla_expires_at?: string | null
+          updated_at?: string
+          urgency?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "leads_assigned_attorney_id_fkey"
+            columns: ["assigned_attorney_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "leads_assigned_commercial_id_fkey"
+            columns: ["assigned_commercial_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      profiles: {
+        Row: {
+          avatar_url: string | null
+          created_at: string
+          email: string
+          full_name: string
+          id: string
+          phone: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          avatar_url?: string | null
+          created_at?: string
+          email?: string
+          full_name?: string
+          id?: string
+          phone?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          avatar_url?: string | null
+          created_at?: string
+          email?: string
+          full_name?: string
+          id?: string
+          phone?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      proposals: {
+        Row: {
+          case_id: string
+          conditions: string | null
+          created_at: string
+          created_by: string | null
+          id: string
+          installments: number | null
+          payment_type: Database["public"]["Enums"]["payment_type"]
+          status: Database["public"]["Enums"]["proposal_status"]
+          title: string
+          updated_at: string
+          valid_until: string | null
+          value: number
+        }
+        Insert: {
+          case_id: string
+          conditions?: string | null
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          installments?: number | null
+          payment_type?: Database["public"]["Enums"]["payment_type"]
+          status?: Database["public"]["Enums"]["proposal_status"]
+          title: string
+          updated_at?: string
+          valid_until?: string | null
+          value?: number
+        }
+        Update: {
+          case_id?: string
+          conditions?: string | null
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          installments?: number | null
+          payment_type?: Database["public"]["Enums"]["payment_type"]
+          status?: Database["public"]["Enums"]["proposal_status"]
+          title?: string
+          updated_at?: string
+          valid_until?: string | null
+          value?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "proposals_case_id_fkey"
+            columns: ["case_id"]
+            isOneToOne: false
+            referencedRelation: "cases"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      user_roles: {
+        Row: {
+          id: string
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Insert: {
+          id?: string
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Update: {
+          id?: string
+          role?: Database["public"]["Enums"]["app_role"]
+          user_id?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      has_role: {
+        Args: {
+          _role: Database["public"]["Enums"]["app_role"]
+          _user_id: string
+        }
+        Returns: boolean
+      }
+      is_admin: { Args: never; Returns: boolean }
+      is_advogado: { Args: never; Returns: boolean }
+      is_comercial: { Args: never; Returns: boolean }
+      is_financeiro: { Args: never; Returns: boolean }
     }
     Enums: {
-      [_ in never]: never
+      app_role: "admin" | "advogado" | "comercial" | "financeiro"
+      case_status:
+        | "aberto"
+        | "em_andamento"
+        | "pendente_docs"
+        | "concluido"
+        | "arquivado"
+      contract_status: "pendente" | "assinado" | "cancelado"
+      funnel_stage:
+        | "lead"
+        | "triagem"
+        | "proposta"
+        | "analise"
+        | "contrato"
+        | "financeiro"
+        | "fechado"
+      installment_status: "pendente" | "paga" | "atrasada" | "vencendo"
+      lead_origin: "whatsapp" | "instagram" | "email" | "landing_page" | "outro"
+      legal_area:
+        | "previdencia"
+        | "cidadania"
+        | "vistos"
+        | "trabalhista"
+        | "familia"
+        | "empresarial"
+        | "tributario"
+        | "outro"
+      payment_method: "stripe" | "transferencia" | "parcelado_direto"
+      payment_type: "fixo" | "exito" | "hibrido" | "parcelado"
+      proposal_status:
+        | "rascunho"
+        | "enviada"
+        | "aceita"
+        | "recusada"
+        | "expirada"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -150,6 +551,46 @@ export type CompositeTypes<
 
 export const Constants = {
   public: {
-    Enums: {},
+    Enums: {
+      app_role: ["admin", "advogado", "comercial", "financeiro"],
+      case_status: [
+        "aberto",
+        "em_andamento",
+        "pendente_docs",
+        "concluido",
+        "arquivado",
+      ],
+      contract_status: ["pendente", "assinado", "cancelado"],
+      funnel_stage: [
+        "lead",
+        "triagem",
+        "proposta",
+        "analise",
+        "contrato",
+        "financeiro",
+        "fechado",
+      ],
+      installment_status: ["pendente", "paga", "atrasada", "vencendo"],
+      lead_origin: ["whatsapp", "instagram", "email", "landing_page", "outro"],
+      legal_area: [
+        "previdencia",
+        "cidadania",
+        "vistos",
+        "trabalhista",
+        "familia",
+        "empresarial",
+        "tributario",
+        "outro",
+      ],
+      payment_method: ["stripe", "transferencia", "parcelado_direto"],
+      payment_type: ["fixo", "exito", "hibrido", "parcelado"],
+      proposal_status: [
+        "rascunho",
+        "enviada",
+        "aceita",
+        "recusada",
+        "expirada",
+      ],
+    },
   },
 } as const
