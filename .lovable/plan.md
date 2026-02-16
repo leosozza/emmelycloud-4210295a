@@ -1,21 +1,25 @@
 
 
-# Plano: Criar Tabelas de Cadastro baseadas no Access
+# Plano: Criar Tabelas de Cadastro (sem autenticacao)
 
-## Resumo
+## Contexto
 
-Replicar as 3 telas do Access (Cadastro de Clientes, Cadastro de Servicos, Cadastro de SEF) no Emmely Cloud, criando as tabelas no banco de dados e as interfaces de gestao correspondentes.
+Criar as tabelas `clients`, `client_contacts`, `services` e `sef_locations` baseadas nas telas do Access, com interfaces de gestao. A autenticacao sera desativada por enquanto, pois o sistema podera ser usado como iframe dentro do Bitrix24.
 
 ---
 
-## 1. Novas Tabelas no Banco de Dados
+## 1. Alteracoes no Banco de Dados
 
-### Tabela `clients` (Cadastro de Cliente)
+### Migracao SQL
+
+Criar 4 novas tabelas com RLS **desativado** (sem autenticacao por enquanto):
+
+**Tabela `clients`**
 | Coluna | Tipo | Obrigatorio |
 |--------|------|-------------|
 | id | uuid (PK) | Sim |
 | name | text | Sim |
-| document_type | text (passaporte/bi/cc) | Nao |
+| document_type | text | Nao |
 | document_number | text | Nao |
 | nationality | text | Nao |
 | birth_date | date | Nao |
@@ -30,7 +34,7 @@ Replicar as 3 telas do Access (Cadastro de Clientes, Cadastro de Servicos, Cadas
 | notes | text | Nao |
 | created_at / updated_at | timestamptz | Sim |
 
-### Tabela `client_contacts` (Sub-tabela de Contactos)
+**Tabela `client_contacts`**
 | Coluna | Tipo | Obrigatorio |
 |--------|------|-------------|
 | id | uuid (PK) | Sim |
@@ -40,7 +44,7 @@ Replicar as 3 telas do Access (Cadastro de Clientes, Cadastro de Servicos, Cadas
 | mobile | text | Nao |
 | email | text | Nao |
 
-### Tabela `services` (Cadastro de Servicos)
+**Tabela `services`**
 | Coluna | Tipo | Obrigatorio |
 |--------|------|-------------|
 | id | uuid (PK) | Sim |
@@ -52,7 +56,7 @@ Replicar as 3 telas do Access (Cadastro de Clientes, Cadastro de Servicos, Cadas
 | contract_details | text | Nao |
 | created_at / updated_at | timestamptz | Sim |
 
-### Tabela `sef_locations` (Cadastro de SEF)
+**Tabela `sef_locations`**
 | Coluna | Tipo | Obrigatorio |
 |--------|------|-------------|
 | id | uuid (PK) | Sim |
@@ -61,47 +65,54 @@ Replicar as 3 telas do Access (Cadastro de Clientes, Cadastro de Servicos, Cadas
 | details | text | Nao |
 | created_at / updated_at | timestamptz | Sim |
 
----
+Adicionar coluna `client_id` (FK) na tabela `leads` para vincular leads a clientes.
 
-## 2. Vincular Clientes aos Leads Existentes
-
-A tabela `leads` existente sera vinculada a `clients` atraves de uma nova coluna `client_id` na tabela `leads`, permitindo que um lead seja associado a um cliente completo quando avanca no funil.
+RLS sera habilitado mas com politica permissiva (`true`) para todas as operacoes, permitindo acesso sem autenticacao. Quando decidir ativar auth, basta substituir por politicas baseadas em roles.
 
 ---
 
-## 3. Interfaces (Paginas)
+## 2. Remover Protecao de Rotas
+
+- Alterar `App.tsx` para remover o componente `ProtectedRoutes` e tornar todas as rotas publicas
+- Manter a pagina `/auth` disponivel mas sem redireccionamento forcado
+
+---
+
+## 3. Novas Paginas
 
 ### 3.1 Pagina de Clientes (`/clientes`)
-- Lista de clientes com pesquisa por nome
-- Formulario de cadastro/edicao com todos os campos da imagem
-- Sub-secao de contactos (adicionar/remover contactos por cliente)
-- Indicador de contrato ativo
+- Tabela com lista de clientes e campo de pesquisa
+- Dialog/modal para criar e editar cliente com todos os campos
+- Seccao de contactos dentro do formulario (adicionar/remover)
+- Badge indicando contrato ativo
 
 ### 3.2 Pagina de Servicos (`/servicos`)
-- Lista lateral de servicos com pesquisa
-- Formulario com Nome, Moeda, Valor
-- 3 abas: Detalhe Orcamento, Introducao Contrato, Detalhe Contrato (campos de texto rico)
+- Lista de servicos com pesquisa
+- Formulario com Nome, Moeda (EUR), Valor
+- 3 abas: Detalhe Orcamento, Introducao Contrato, Detalhe Contrato
 
 ### 3.3 Pagina de SEF (`/sef`)
-- Lista com Direcao Regional e nome do SEF
-- Formulario com nome, direcao regional (dropdown), e campo de detalhes
+- Tabela com Direcao Regional e nome
+- Formulario com campos de direcao regional (dropdown), nome e detalhes
 
 ---
 
-## 4. Seguranca (RLS)
+## 4. Navegacao
 
-- Admin: acesso total a todas as tabelas
-- Advogado: leitura de clientes e servicos
-- Comercial: CRUD em clientes, leitura de servicos e SEF
-- Financeiro: leitura de clientes
+Adicionar 3 novos itens ao sidebar (`AppSidebar.tsx`) num grupo "Cadastros":
+- Clientes (icone Users)
+- Servicos (icone Briefcase)
+- SEF (icone MapPin)
+
+Adicionar as rotas correspondentes no `App.tsx`.
 
 ---
 
 ## 5. Detalhes Tecnicos
 
-- Migracao SQL para criar as 4 tabelas com RLS, triggers de `updated_at`, e foreign keys
-- Novas rotas no `App.tsx`: `/clientes`, `/servicos`, `/sef`
-- Links no sidebar (`AppSidebar.tsx`)
-- Componentes React para cada pagina com formularios usando React Hook Form + Zod
-- Queries com TanStack React Query para CRUD
+- Migracao SQL unica para criar as 4 tabelas, triggers de `updated_at`, foreign keys e politicas RLS permissivas
+- Componentes React com formularios usando React Hook Form + Zod para validacao
+- TanStack React Query para operacoes CRUD
+- Textarea simples para campos de texto longo (budget_details, contract_intro, contract_details)
+- Arquivos novos: `src/pages/Clientes.tsx`, `src/pages/Servicos.tsx`, `src/pages/SEF.tsx`
 
