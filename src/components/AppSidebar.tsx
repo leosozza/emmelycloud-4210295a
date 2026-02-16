@@ -13,7 +13,8 @@ import {
   Scale,
   MapPin,
   Contact,
-  MessageCircle
+  MessageCircle,
+  Map
 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import {
@@ -50,6 +51,7 @@ const secondaryNav = [
   { title: "Financeiro", url: "/financeiro", icon: DollarSign },
   { title: "Automações", url: "/automacoes", icon: Zap },
   { title: "Relatórios", url: "/relatorios", icon: BarChart3 },
+  { title: "Roadmap", url: "/roadmap", icon: Map },
 ];
 
 export function AppSidebar() {

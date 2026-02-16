@@ -18,6 +18,7 @@ import ClientesPage from "./pages/Clientes";
 import ServicosPage from "./pages/Servicos";
 import SEFPage from "./pages/SEF";
 import AtendimentoPage from "./pages/Atendimento";
+import RoadmapPage from "./pages/Roadmap";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -44,6 +45,7 @@ const App = () => (
             <Route path="/servicos" element={<ServicosPage />} />
             <Route path="/sef" element={<SEFPage />} />
             <Route path="/atendimento" element={<AtendimentoPage />} />
+            <Route path="/roadmap" element={<RoadmapPage />} />
           </Route>
           <Route path="*" element={<NotFound />} />
         </Routes>
