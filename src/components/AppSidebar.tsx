@@ -1,7 +1,7 @@
 import { 
   LayoutDashboard, 
   Users, 
-  Brain, 
+   
   Briefcase, 
   FileText, 
   FileSignature, 
@@ -34,23 +34,22 @@ import { Button } from "@/components/ui/button";
 const mainNav = [
   { title: "Dashboard", url: "/", icon: LayoutDashboard },
   { title: "Atendimento", url: "/atendimento", icon: MessageCircle },
-  { title: "Leads & Funil", url: "/leads", icon: Users },
-  { title: "Triagem IA", url: "/triagem", icon: Brain },
+  { title: "Leads", url: "/leads", icon: Users },
   { title: "Propostas", url: "/propostas", icon: FileText },
   { title: "Contratos", url: "/contratos", icon: FileSignature },
   { title: "Casos", url: "/casos", icon: Briefcase },
+];
+
+const carteiraNav = [
+  { title: "Clientes", url: "/clientes", icon: Contact },
+  { title: "Serviços", url: "/servicos", icon: Briefcase },
+  { title: "SEF", url: "/sef", icon: MapPin },
 ];
 
 const secondaryNav = [
   { title: "Financeiro", url: "/financeiro", icon: DollarSign },
   { title: "Automações", url: "/automacoes", icon: Zap },
   { title: "Relatórios", url: "/relatorios", icon: BarChart3 },
-];
-
-const cadastrosNav = [
-  { title: "Clientes", url: "/clientes", icon: Contact },
-  { title: "Serviços", url: "/servicos", icon: Briefcase },
-  { title: "SEF", url: "/sef", icon: MapPin },
 ];
 
 export function AppSidebar() {
@@ -129,11 +128,11 @@ export function AppSidebar() {
 
         <SidebarGroup>
           <SidebarGroupLabel className="text-sidebar-muted-foreground text-[11px] uppercase tracking-widest font-semibold">
-            Cadastros
+            Carteira
           </SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
-              {cadastrosNav.map((item) => (
+              {carteiraNav.map((item) => (
                 <SidebarMenuItem key={item.title}>
                   <SidebarMenuButton asChild tooltip={item.title}>
                     <NavLink
