@@ -1,99 +1,107 @@
 
 
-# Emmely Cloud — CRM Jurídico Premium com IA
+# Plano: Criar Tabelas de Cadastro baseadas no Access
 
-## Visão Geral
-Plataforma de gestão jurídica completa para escritórios de advocacia em Portugal, com design profissional e limpo (azul escuro, cinza, tons sóbrios), focada em produtividade e conversão de leads.
+## Resumo
 
----
-
-## Estrutura do App
-
-### Layout Principal
-- **Sidebar** com navegação por módulos (colapsável)
-- **Header** com busca global, notificações e perfil do usuário
-- **Área de conteúdo** responsiva
-
-### Perfis de Usuário (4 roles)
-- **Admin** — acesso total
-- **Advogado** — casos, leads atribuídos, propostas
-- **Comercial** — leads, funil, métricas de conversão
-- **Financeiro** — pagamentos, parcelas, receitas
+Replicar as 3 telas do Access (Cadastro de Clientes, Cadastro de Servicos, Cadastro de SEF) no Emmely Cloud, criando as tabelas no banco de dados e as interfaces de gestao correspondentes.
 
 ---
 
-## Módulo 1: Dashboard Principal
-- Cards de métricas: leads novos, SLA expirando, receita do mês, taxa de conversão
-- Gráfico de leads por origem (WhatsApp, Instagram, Email, Landing Page)
-- Receita por área jurídica (Previdência, Cidadania, Vistos, etc.)
-- Performance por advogado
-- Previsão de faturamento baseada no funil atual
+## 1. Novas Tabelas no Banco de Dados
 
-## Módulo 2: Gestão de Leads & Funil
-- **Visão Kanban** com colunas: Lead → Triagem → Proposta → Análise → Contrato → Financeiro → Fechado
-- Drag & drop entre etapas
-- Cada card mostra: nome, país, tipo de caso, score, SLA restante
-- Filtros por origem, área jurídica, advogado, urgência
-- **SLA 24h** com indicadores visuais (verde/amarelo/vermelho)
-- Registro de origem (WhatsApp, Instagram, Email, Landing Page)
-- Formulário de cadastro manual de leads
+### Tabela `clients` (Cadastro de Cliente)
+| Coluna | Tipo | Obrigatorio |
+|--------|------|-------------|
+| id | uuid (PK) | Sim |
+| name | text | Sim |
+| document_type | text (passaporte/bi/cc) | Nao |
+| document_number | text | Nao |
+| nationality | text | Nao |
+| birth_date | date | Nao |
+| nib | text | Nao |
+| address | text | Nao |
+| postal_code | text | Nao |
+| freguesia | text | Nao |
+| concelho | text | Nao |
+| distrito | text | Nao |
+| country | text (default 'PORTUGAL') | Nao |
+| has_active_contract | boolean (default false) | Sim |
+| notes | text | Nao |
+| created_at / updated_at | timestamptz | Sim |
 
-## Módulo 3: Triagem com IA
-- Classificação automática da área jurídica com score de confiança
-- Score de viabilidade do caso (alta/média/baixa)
-- Score de valor estimado do lead
-- Resumo automático de conversas e interações
-- Sugestão de próximos passos
-- Detecção de leads "curiosos" vs. "reais"
+### Tabela `client_contacts` (Sub-tabela de Contactos)
+| Coluna | Tipo | Obrigatorio |
+|--------|------|-------------|
+| id | uuid (PK) | Sim |
+| client_id | uuid (FK -> clients) | Sim |
+| name | text | Sim |
+| phone | text | Nao |
+| mobile | text | Nao |
+| email | text | Nao |
 
-## Módulo 4: Gestão de Casos Jurídicos
-- Ficha completa do caso vinculada ao lead
-- Área jurídica, advogado responsável, status
-- Checklist de documentos necessários
-- Parecer interno e viabilidade
-- Timeline de atividades e histórico
+### Tabela `services` (Cadastro de Servicos)
+| Coluna | Tipo | Obrigatorio |
+|--------|------|-------------|
+| id | uuid (PK) | Sim |
+| name | text | Sim |
+| currency | text (default 'EUR') | Sim |
+| value | numeric (default 0) | Sim |
+| budget_details | text | Nao |
+| contract_intro | text | Nao |
+| contract_details | text | Nao |
+| created_at / updated_at | timestamptz | Sim |
 
-## Módulo 5: Propostas
-- Criação de propostas com valores e condições
-- Tipos: Fixo, Êxito, Híbrido, Parcelado
-- IA sugere faixa de honorários baseada no histórico
-- Status: Enviada, Aceita, Recusada, Expirada
-- Geração de PDF da proposta
-
-## Módulo 6: Contratos
-- Upload de contrato
-- Status de assinatura (Pendente, Assinado, Cancelado)
-- Data de início e vigência
-- Vinculação com proposta e caso
-
-## Módulo 7: Financeiro
-- **Stripe** para pagamentos com cartão e links de pagamento
-- Registro de transferências bancárias com upload de comprovante
-- Controle de parcelamento direto com status por parcela (Paga, Atrasada, Vencendo)
-- IA de previsão de inadimplência
-- Visão de receita por área jurídica e por período
-- Conciliação de pagamentos
-
-## Módulo 8: Automações & Cadências
-- Timer de SLA 24h por lead com alertas visuais
-- Regras de follow-up automático (1h, 12h, 24h)
-- Alertas para gestores sobre leads parados
-- Nutrição automática de leads frios com conteúdos
-- Radar de oportunidades (sugestão de upsell)
-
-## Módulo 9: Relatórios & Inteligência
-- Tempo médio de resposta por advogado
-- Taxa de conversão por etapa do funil
-- Receita por área jurídica
-- Benchmark interno (qual advogado converte mais, qual canal é melhor)
-- Previsão de faturamento mensal
+### Tabela `sef_locations` (Cadastro de SEF)
+| Coluna | Tipo | Obrigatorio |
+|--------|------|-------------|
+| id | uuid (PK) | Sim |
+| regional_direction | text | Sim |
+| name | text | Sim |
+| details | text | Nao |
+| created_at / updated_at | timestamptz | Sim |
 
 ---
 
-## Backend (Lovable Cloud + Supabase)
-- Autenticação com controle de roles
-- Base de dados para leads, casos, propostas, financeiro
-- Edge functions para lógica de IA (usando Lovable AI)
-- Integração Stripe para pagamentos
-- Sistema preparado para futura integração com Bitrix24 e canais de mensageria
+## 2. Vincular Clientes aos Leads Existentes
+
+A tabela `leads` existente sera vinculada a `clients` atraves de uma nova coluna `client_id` na tabela `leads`, permitindo que um lead seja associado a um cliente completo quando avanca no funil.
+
+---
+
+## 3. Interfaces (Paginas)
+
+### 3.1 Pagina de Clientes (`/clientes`)
+- Lista de clientes com pesquisa por nome
+- Formulario de cadastro/edicao com todos os campos da imagem
+- Sub-secao de contactos (adicionar/remover contactos por cliente)
+- Indicador de contrato ativo
+
+### 3.2 Pagina de Servicos (`/servicos`)
+- Lista lateral de servicos com pesquisa
+- Formulario com Nome, Moeda, Valor
+- 3 abas: Detalhe Orcamento, Introducao Contrato, Detalhe Contrato (campos de texto rico)
+
+### 3.3 Pagina de SEF (`/sef`)
+- Lista com Direcao Regional e nome do SEF
+- Formulario com nome, direcao regional (dropdown), e campo de detalhes
+
+---
+
+## 4. Seguranca (RLS)
+
+- Admin: acesso total a todas as tabelas
+- Advogado: leitura de clientes e servicos
+- Comercial: CRUD em clientes, leitura de servicos e SEF
+- Financeiro: leitura de clientes
+
+---
+
+## 5. Detalhes Tecnicos
+
+- Migracao SQL para criar as 4 tabelas com RLS, triggers de `updated_at`, e foreign keys
+- Novas rotas no `App.tsx`: `/clientes`, `/servicos`, `/sef`
+- Links no sidebar (`AppSidebar.tsx`)
+- Componentes React para cada pagina com formularios usando React Hook Form + Zod
+- Queries com TanStack React Query para CRUD
 
