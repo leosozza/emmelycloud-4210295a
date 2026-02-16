@@ -30,6 +30,7 @@ const metrics = [
     up: true,
     icon: Users,
     description: "Últimos 30 dias",
+    color: "bg-primary/10 text-primary",
   },
   {
     title: "SLA Expirando",
@@ -38,6 +39,7 @@ const metrics = [
     up: false,
     icon: Clock,
     description: "Nas próximas 4h",
+    color: "bg-warning/10 text-warning",
   },
   {
     title: "Receita do Mês",
@@ -46,6 +48,7 @@ const metrics = [
     up: true,
     icon: DollarSign,
     description: "vs. mês anterior",
+    color: "bg-success/10 text-success",
   },
   {
     title: "Taxa de Conversão",
@@ -54,6 +57,7 @@ const metrics = [
     up: true,
     icon: TrendingUp,
     description: "Lead → Contrato",
+    color: "bg-accent/10 text-accent",
   },
 ];
 
@@ -82,40 +86,42 @@ const monthlyRevenue = [
 ];
 
 const COLORS = [
-  "hsl(217, 71%, 35%)",
-  "hsl(142, 71%, 45%)",
-  "hsl(38, 92%, 50%)",
-  "hsl(199, 89%, 48%)",
-  "hsl(262, 83%, 58%)",
+  "hsl(var(--chart-1))",
+  "hsl(var(--chart-2))",
+  "hsl(var(--chart-3))",
+  "hsl(var(--chart-4))",
+  "hsl(var(--chart-5))",
 ];
 
 const Index = () => {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="font-display text-2xl font-bold">Dashboard</h1>
-        <p className="text-muted-foreground mt-1">Visão geral do escritório</p>
+        <h1 className="text-2xl font-bold">Dashboard</h1>
+        <p className="text-muted-foreground text-sm mt-1">Visão geral do escritório</p>
       </div>
 
       {/* Metric Cards */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         {metrics.map((metric) => (
-          <Card key={metric.title}>
+          <Card key={metric.title} className="shadow-sm hover:shadow-md transition-shadow">
             <CardHeader className="flex flex-row items-center justify-between pb-2">
               <CardTitle className="text-sm font-medium text-muted-foreground">
                 {metric.title}
               </CardTitle>
-              <metric.icon className="h-4 w-4 text-muted-foreground" />
+              <div className={`h-8 w-8 rounded-lg flex items-center justify-center ${metric.color}`}>
+                <metric.icon className="h-4 w-4" />
+              </div>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold font-display">{metric.value}</div>
+              <div className="text-3xl font-bold">{metric.value}</div>
               <div className="flex items-center gap-1 mt-1">
                 {metric.up ? (
                   <ArrowUpRight className="h-3 w-3 text-success" />
                 ) : (
                   <ArrowDownRight className="h-3 w-3 text-destructive" />
                 )}
-                <span className={`text-xs font-medium ${metric.up ? "text-success" : "text-destructive"}`}>
+                <span className={`text-xs font-semibold ${metric.up ? "text-success" : "text-destructive"}`}>
                   {metric.change}
                 </span>
                 <span className="text-xs text-muted-foreground">{metric.description}</span>
@@ -128,9 +134,9 @@ const Index = () => {
       {/* Charts Row */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
         {/* Leads by Origin */}
-        <Card>
+        <Card className="shadow-sm">
           <CardHeader>
-            <CardTitle className="text-base">Leads por Origem</CardTitle>
+            <CardTitle className="text-base font-bold">Leads por Origem</CardTitle>
             <CardDescription>Distribuição dos canais de aquisição</CardDescription>
           </CardHeader>
           <CardContent>
@@ -159,7 +165,7 @@ const Index = () => {
                 <div key={item.name} className="flex items-center gap-2 text-xs">
                   <div className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: COLORS[i] }} />
                   <span className="text-muted-foreground">{item.name}</span>
-                  <span className="ml-auto font-medium">{item.value}</span>
+                  <span className="ml-auto font-semibold">{item.value}</span>
                 </div>
               ))}
             </div>
@@ -167,9 +173,9 @@ const Index = () => {
         </Card>
 
         {/* Revenue by Area */}
-        <Card>
+        <Card className="shadow-sm">
           <CardHeader>
-            <CardTitle className="text-base">Receita por Área</CardTitle>
+            <CardTitle className="text-base font-bold">Receita por Área</CardTitle>
             <CardDescription>Faturamento por área jurídica</CardDescription>
           </CardHeader>
           <CardContent>
@@ -180,7 +186,7 @@ const Index = () => {
                   <XAxis type="number" tickFormatter={(v) => `€${(v / 1000).toFixed(0)}k`} fontSize={12} />
                   <YAxis type="category" dataKey="area" fontSize={12} width={80} />
                   <Tooltip formatter={(v: number) => `€${v.toLocaleString()}`} />
-                  <Bar dataKey="receita" fill="hsl(217, 71%, 35%)" radius={[0, 4, 4, 0]} />
+                  <Bar dataKey="receita" fill="hsl(var(--chart-1))" radius={[0, 6, 6, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             </div>
@@ -188,9 +194,9 @@ const Index = () => {
         </Card>
 
         {/* Monthly Revenue Trend */}
-        <Card>
+        <Card className="shadow-sm">
           <CardHeader>
-            <CardTitle className="text-base">Tendência de Receita</CardTitle>
+            <CardTitle className="text-base font-bold">Tendência de Receita</CardTitle>
             <CardDescription>Evolução mensal do faturamento</CardDescription>
           </CardHeader>
           <CardContent>
@@ -204,9 +210,9 @@ const Index = () => {
                   <Line
                     type="monotone"
                     dataKey="receita"
-                    stroke="hsl(217, 71%, 35%)"
-                    strokeWidth={2}
-                    dot={{ fill: "hsl(217, 71%, 35%)", r: 4 }}
+                    stroke="hsl(var(--chart-1))"
+                    strokeWidth={2.5}
+                    dot={{ fill: "hsl(var(--chart-1))", r: 4 }}
                   />
                 </LineChart>
               </ResponsiveContainer>
