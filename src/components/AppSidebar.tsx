@@ -33,12 +33,12 @@ import { Button } from "@/components/ui/button";
 
 const mainNav = [
   { title: "Dashboard", url: "/", icon: LayoutDashboard },
+  { title: "Atendimento", url: "/atendimento", icon: MessageCircle },
   { title: "Leads & Funil", url: "/leads", icon: Users },
   { title: "Triagem IA", url: "/triagem", icon: Brain },
-  { title: "Casos", url: "/casos", icon: Briefcase },
   { title: "Propostas", url: "/propostas", icon: FileText },
   { title: "Contratos", url: "/contratos", icon: FileSignature },
-  { title: "Atendimento", url: "/atendimento", icon: MessageCircle },
+  { title: "Casos", url: "/casos", icon: Briefcase },
 ];
 
 const secondaryNav = [
