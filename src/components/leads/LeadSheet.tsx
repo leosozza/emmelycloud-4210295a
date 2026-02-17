@@ -243,7 +243,7 @@ function LeadSheetContent({ lead, onOpenChange, onEdit, onDelete, onMoveStage, o
                   variant="link"
                   size="sm"
                   className="p-0 h-auto text-sm"
-                  onClick={() => { onOpenChange(false); navigate("/casos"); }}
+                  onClick={() => { onOpenChange(false); setTimeout(() => navigate("/casos"), 500); }}
                 >
                   {linkedCase.title} <ExternalLink className="ml-1 h-3 w-3" />
                 </Button>

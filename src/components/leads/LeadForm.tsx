@@ -50,7 +50,7 @@ export function LeadForm({ open, onOpenChange, lead, prefill, onSave, saving }: 
   const [legalArea, setLegalArea] = useState<string>(lead?.legal_area || "outro");
   const [urgency, setUrgency] = useState(lead?.urgency || "normal");
   const [notes, setNotes] = useState(lead?.notes || "");
-  const [conversationId] = useState(prefill?.conversation_id || null);
+  const [conversationId, setConversationId] = useState(prefill?.conversation_id || null);
 
   // Reset when source changes
   useEffect(() => {
@@ -63,6 +63,7 @@ export function LeadForm({ open, onOpenChange, lead, prefill, onSave, saving }: 
     setLegalArea(lead?.legal_area || "outro");
     setUrgency(lead?.urgency || "normal");
     setNotes(lead?.notes || "");
+    setConversationId(prefill?.conversation_id || null);
   }, [lead, prefill]);
 
   const resetKey = lead?.id || prefill?.conversation_id || "new";

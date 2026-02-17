@@ -51,13 +51,18 @@ const LeadsPage = () => {
 
   const handleSheetOpenChange = useCallback((open: boolean) => {
     setSheetOpen(open);
-    if (!open && pendingNavigationRef.current) {
-      const target = pendingNavigationRef.current;
-      pendingNavigationRef.current = null;
-      // Wait for Sheet animation to complete before navigating
-      setTimeout(() => {
-        navigate(target);
-      }, 300);
+    if (!open) {
+      setSheetLead(null);
+      if (pendingNavigationRef.current) {
+        const target = pendingNavigationRef.current;
+        pendingNavigationRef.current = null;
+        // Use requestAnimationFrame + generous timeout to ensure Radix portal is fully removed
+        requestAnimationFrame(() => {
+          setTimeout(() => {
+            navigate(target);
+          }, 500);
+        });
+      }
     }
   }, [navigate]);
 
@@ -180,10 +185,9 @@ const LeadsPage = () => {
   const handleCreateProposal = async (lead: Lead) => {
     try {
       const caseId = await ensureCaseForLead(lead);
-      // Close sheet first, then navigate after animation completes
+      // Store target and close sheet — navigation happens in handleSheetOpenChange
+      pendingNavigationRef.current = `/propostas?case_id=${caseId}`;
       setSheetOpen(false);
-      setSheetLead(null);
-      setTimeout(() => navigate(`/propostas?case_id=${caseId}`), 400);
     } catch (e: any) {
       toast({ title: "Erro ao criar caso", description: e.message, variant: "destructive" });
     }
