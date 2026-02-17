@@ -76,7 +76,7 @@ Deno.serve(async (req) => {
     // Determine the recipient identifier and channel UUID for Callbell
     let to: string | null = null;
     let channelUuid: string | null = null;
-    let fromChannel: string = "whatsapp"; // Callbell only supports "whatsapp" in from field
+    let fromChannel: string = conv.channel; // Must match the channel type: "whatsapp", "instagram", etc.
 
     if (conv.channel === "instagram") {
       to = conv.contact_instagram;
