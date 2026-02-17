@@ -1,161 +1,159 @@
 
-# Plano por Fases: Sistema Funcional End-to-End
 
-## Resumo do Teste Realizado
-
-Testei o fluxo completo e identifiquei o que funciona e o que precisa de correcao:
-
-### O que FUNCIONA:
-1. Central de Atendimento mostra conversas correctamente
-2. Botao "Criar Lead a partir desta conversa" pre-preenche o formulario com dados do contacto (nome, email, telefone, origem)
-3. Lead criado aparece no Kanban no estagio correcto
-4. Triagem inline funciona -- seleccao de area juridica, urgencia e avancar para "Proposta"
-5. Caso juridico criado automaticamente ao avancar para estagio avancado
-6. Logica de assinatura de contrato actualiza lead para "fechado" e caso para "em_andamento"
-
-### O que esta PARTIDO:
-1. **Bug critico: Navegacao Leads -> Propostas crasha** -- Ao clicar "Criar Proposta" no LeadSheet, o Radix Sheet portal conflitua com o React Router, causando erro `removeChild` e pagina em branco
-2. **conversation_id nao esta a ser guardado** -- O lead da Maria Silva foi criado sem o `conversation_id` vinculado
-
----
-
-## Fase 1: Corrigir Bugs Criticos (Prioridade Maxima)
-
-### 1.1 Corrigir navegacao Sheet -> React Router
-
-O problema e que o Radix Sheet usa portais DOM que conflituam com o React Router ao desmontar simultaneamente. A solucao e:
-
-- Em `LeadSheet.tsx`: em vez de navegar directamente, emitir um callback `onNavigate` que o componente pai (`Leads.tsx`) executa
-- Em `Leads.tsx`: no `handleCreateProposal`, fechar o sheet e usar `requestAnimationFrame` + `setTimeout` (600ms) para garantir que o portal esta completamente removido antes da navegacao
-- Alternativa mais robusta: usar `onAnimationEnd` event do sheet para saber quando a animacao terminou, ou usar `flushSync` para forcar a remocao sincrona do portal
-
-### 1.2 Corrigir vinculacao do conversation_id
-
-No `LeadForm.tsx`, garantir que o campo `conversation_id` dos dados de prefill e incluido no objecto enviado ao `onSave`.
-
----
-
-## Fase 2: Completar o Fluxo Proposta -> Contrato -> Caso
-
-### 2.1 Pagina de Propostas -- Formulario com caso pre-seleccionado
-
-Verificar que o `PropostaForm` abre correctamente com o caso pre-seleccionado quando navegado via query param `case_id`.
-
-### 2.2 Fluxo de aceitar proposta
-
-- Proposta criada como "rascunho"
-- Enviar proposta (status "enviada")  
-- Aceitar proposta (status "aceita") -> cria contrato automaticamente e actualiza lead para "contrato"
-
-### 2.3 Assinatura do contrato
-
-- Ao assinar: contrato fica "assinado", caso fica "em_andamento", lead fica "fechado"
-- Ja esta implementado em `Contratos.tsx`
-
----
+# Plano de Implementacao: Fases 3, 4 e 5
 
 ## Fase 3: Pagina de Triagem Dedicada
 
-### 3.1 Implementar a pagina `/triagem`
+A pagina de Triagem (`/triagem`) ja esta implementada com funcionalidade completa:
+- KPI cards (pendentes, urgencia alta, SLA expirado)
+- Tabela com leads no estagio "triagem"
+- Sheet lateral com formulario de triagem (area juridica, urgencia, notas)
+- Botao "Concluir Triagem e Avancar para Proposta"
 
-A pagina `Triagem.tsx` esta vazia. Implementar como uma vista filtrada dos leads no estagio "triagem":
-
-- Lista/tabela de leads pendentes de triagem
-- Acesso rapido ao detalhe do lead com triagem inline
-- Indicadores de SLA (tempo restante)
-- Contadores de leads por urgencia
+**Esta fase esta CONCLUIDA.** Nao requer alteracoes adicionais.
 
 ---
 
-## Fase 4: Rastreabilidade e Navegacao
+## Fase 4: Rastreabilidade e Navegacao (Breadcrumbs e Links)
 
-### 4.1 Breadcrumbs de rastreabilidade
+### 4.1 Componente EntityBreadcrumb reutilizavel
 
-Em cada entidade (Lead, Caso, Proposta, Contrato), mostrar o caminho completo:
-- Conversa de origem -> Lead -> Caso -> Proposta -> Contrato
+Criar um componente `EntityBreadcrumb` que mostra o caminho completo de uma entidade:
 
-### 4.2 Links entre entidades
+```text
+Conversa > Lead > Caso > Proposta > Contrato
+```
 
-- No detalhe do Caso: link para o Lead de origem e conversas vinculadas
-- No detalhe do Contrato: link para a Proposta e o Caso
-- No detalhe da Proposta: link para o Caso
+Cada item e um link clicavel que navega para a entidade correspondente. O componente recebe IDs opcionais e faz queries para obter os nomes.
+
+### 4.2 Integrar breadcrumbs nas paginas
+
+- **Caso (`Casos.tsx`)**: ao abrir detalhe de um caso, mostrar breadcrumb com Lead de origem (via `lead_id`) e link para conversa (via `lead.conversation_id`)
+- **Proposta (`Propostas.tsx`)**: mostrar breadcrumb com Caso associado (via `case_id`) e Lead de origem
+- **Contrato (`Contratos.tsx`)**: mostrar breadcrumb com Proposta (via `proposal_id`), Caso (via `case_id`) e Lead de origem
+- **Lead (`LeadSheet.tsx`)**: ja tem link para caso associado; adicionar link para conversa de origem (via `conversation_id`)
+
+### 4.3 Links bidirecionais nas tabelas
+
+- Na tabela de Casos: coluna "Lead" clicavel que abre o LeadSheet ou navega para `/leads`
+- Na tabela de Contratos: coluna "Proposta" e "Caso" clicaveis
+- Na tabela de Propostas: coluna "Caso" clicavel
+
+### Ficheiros a criar/modificar:
+- Criar: `src/components/EntityBreadcrumb.tsx`
+- Modificar: `src/pages/Casos.tsx` (adicionar breadcrumb no detalhe)
+- Modificar: `src/pages/Propostas.tsx` (adicionar breadcrumb no detalhe)
+- Modificar: `src/pages/Contratos.tsx` (adicionar breadcrumb no detalhe)
+- Modificar: `src/components/leads/LeadSheet.tsx` (adicionar link para conversa)
 
 ---
 
 ## Fase 5: Autenticacao e Seguranca
 
-### 5.1 Login e Registo
+### 5.1 O que ja existe
 
-- Implementar pagina de autenticacao com login/signup
-- Integrar com o sistema de roles existente (admin, comercial, advogado, financeiro)
+- Pagina `/auth` com login e registo funcional
+- Hook `useAuth` para verificar sessao
+- Tabela `profiles` com trigger `handle_new_user` (mas o trigger NAO esta registado na BD -- precisa ser criado)
+- Tabela `user_roles` com enum `app_role` (admin, comercial, advogado, financeiro)
+- Funcoes `has_role`, `is_admin`, `is_advogado`, `is_comercial`, `is_financeiro`
+- Politicas RLS baseadas em roles ja definidas nas tabelas
+- Politicas permissivas (`USING (true)`) adicionadas temporariamente para testes
 
-### 5.2 Politicas RLS baseadas em roles
+### 5.2 Migracao de Base de Dados
 
-- Remover as politicas permissivas (anon) adicionadas para testes
-- Activar as politicas baseadas em roles que ja existem na base de dados
-- Proteger rotas no frontend com verificacao de autenticacao
+1. **Criar trigger para auto-criacao de perfil**: O trigger `handle_new_user` existe como funcao mas NAO esta registado. Criar:
 
----
+```text
+CREATE TRIGGER on_auth_user_created
+  AFTER INSERT ON auth.users
+  FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
+```
 
-## Fase 6: Melhorias e Polimento
+2. **Remover politicas permissivas**: Eliminar todas as politicas "Allow all..." das tabelas `leads`, `cases`, `proposals`, `contracts` e `financial_records`. Isto activa as politicas baseadas em roles que ja existem.
 
-### 6.1 Notificacoes em tempo real
+3. **Adicionar politica de leitura para conversations e messages para utilizadores autenticados**: As conversas e mensagens actualmente usam `USING (true)` que permite acesso anonimo. Substituir por politicas para `authenticated`.
 
-- Notificacao quando um novo lead chega
-- Alerta de SLA a expirar
-- Notificacao quando uma proposta e aceita
+### 5.3 Proteccao de Rotas no Frontend
 
-### 6.2 Dashboard actualizado
+Modificar `AppLayout.tsx` para verificar autenticacao:
+- Se o utilizador nao esta autenticado, redirecionar para `/auth`
+- Mostrar loading spinner enquanto verifica sessao
+- Adicionar botao de logout no `AppHeader`
 
-- KPIs do funil (conversao por estagio)
-- Leads por area juridica
-- Tempo medio de conversao
+### 5.4 Contexto de Autenticacao
 
-### 6.3 Integracao com canais reais
+Criar um `AuthProvider` ou integrar no `AppLayout`:
+- Disponibilizar `user`, `session`, `role` via contexto
+- Verificar role do utilizador via query a `user_roles`
+- Condicionar visibilidade de menus/accoes com base no role
 
-- Webhook para WhatsApp Business API
-- Integracao com Instagram API
-- Processamento de emails recebidos
+### 5.5 Atribuicao de Role Inicial
+
+O primeiro utilizador registado deve receber o role `admin` automaticamente. Criar uma funcao de base de dados que:
+- Verifica se existem utilizadores na tabela `user_roles`
+- Se nao existir nenhum, atribui `admin` ao novo utilizador
+- Caso contrario, nao atribui role (admin atribui manualmente)
+
+### Ficheiros a criar/modificar:
+- Criar: migracao SQL (trigger + remover politicas permissivas + politicas autenticadas)
+- Modificar: `src/components/AppLayout.tsx` (proteccao de rotas)
+- Modificar: `src/components/AppHeader.tsx` (botao logout + mostrar nome/role)
+- Criar: `src/contexts/AuthContext.tsx` (contexto de autenticacao com role)
+- Modificar: `src/App.tsx` (envolver com AuthProvider)
 
 ---
 
 ## Detalhes Tecnicos
 
-### Bug removeChild -- Solucao proposta
+### EntityBreadcrumb -- Estrutura
 
 ```text
-// LeadSheet.tsx -- Nao navegar dentro do Sheet
-// Em vez disso, passar a URL de destino via callback
+Props:
+  - conversationId?: string
+  - leadId?: string
+  - caseId?: string
+  - proposalId?: string
+  - contractId?: string
 
-// Leads.tsx -- handleCreateProposal
-const handleCreateProposal = async (lead: Lead) => {
-  const caseId = await ensureCaseForLead(lead);
-  // 1. Fechar sheet
-  setSheetOpen(false);
-  setSheetLead(null);
-  // 2. Esperar que o portal DOM seja completamente removido
-  // Usar um ref para detectar quando onOpenChange(false) completa
-  pendingNavigationRef.current = `/propostas?case_id=${caseId}`;
-};
+O componente faz queries para obter os nomes de cada entidade
+e renderiza um breadcrumb horizontal com links:
 
-// No handleSheetOpenChange, verificar com timeout maior:
-const handleSheetOpenChange = (open) => {
-  setSheetOpen(open);
-  if (!open && pendingNavigationRef.current) {
-    const target = pendingNavigationRef.current;
-    pendingNavigationRef.current = null;
-    requestAnimationFrame(() => {
-      setTimeout(() => navigate(target), 350);
-    });
-  }
-};
+Conversa: Maria Silva > Lead: Maria Silva > Caso: Cidadania > Proposta: Honorarios > Contrato
 ```
 
-### Ordem de execucao recomendada
+### Politicas RLS a remover (10 politicas)
 
-1. Fase 1 (bugs criticos) -- imediato
-2. Fase 2 (fluxo completo) -- validar apos Fase 1
-3. Fase 3 (triagem dedicada) -- 1 sessao
-4. Fase 4 (rastreabilidade) -- 1 sessao
-5. Fase 5 (autenticacao) -- 1-2 sessoes
-6. Fase 6 (melhorias) -- continuo
+```text
+leads: Allow all read/insert/update/delete
+cases: Allow all read/insert/update/delete
+proposals: Allow all read/insert/update/delete
+contracts: Allow all read/insert/update/delete
+financial_records: Allow all read/insert/update/delete
+```
+
+### Politicas RLS a adicionar
+
+```text
+-- Conversations e Messages: acesso para authenticated
+conversations: SELECT/INSERT/UPDATE para authenticated
+messages: SELECT/INSERT para authenticated
+```
+
+### Proteccao de Rotas
+
+```text
+AppLayout verifica useAuth():
+  - loading -> Spinner
+  - !session -> Navigate to /auth
+  - session -> Render Outlet
+```
+
+### Ordem de execucao
+
+1. Fase 4 -- Breadcrumbs (sem dependencias, pode ser feito primeiro)
+2. Fase 5 -- Migracao BD (trigger + remover politicas permissivas)
+3. Fase 5 -- Proteccao de rotas e contexto de autenticacao
+4. Fase 5 -- Logout e UI de roles no header
+5. Teste completo end-to-end com login
+
