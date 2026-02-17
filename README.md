@@ -4,6 +4,14 @@
 
 **URL**: https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID
 
+## Features
+
+This project includes:
+- **Instagram Messaging Integration** with Callbell - See [docs/INSTAGRAM_INTEGRATION.md](docs/INSTAGRAM_INTEGRATION.md) for setup and usage
+- React-based frontend with shadcn-ui components
+- Supabase backend with Edge Functions
+- Real-time messaging capabilities
+
 ## How can I edit this code?
 
 There are several ways of editing your application.
