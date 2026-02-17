@@ -72,30 +72,56 @@ Deno.serve(async (req) => {
       });
     }
 
-    const IG_TOKEN = Deno.env.get("META_PAGE_ACCESS_TOKEN")?.trim().replace(/[\r\n\s]+/g, "");
-    console.log("DEBUG token length:", IG_TOKEN?.length, "starts:", IG_TOKEN?.slice(0, 20));
-    if (!IG_TOKEN) {
+    const TOKEN = Deno.env.get("META_PAGE_ACCESS_TOKEN")?.trim().replace(/[\r\n\s]+/g, "");
+    if (!TOKEN) {
       return new Response(JSON.stringify({ error: "META_PAGE_ACCESS_TOKEN not configured" }), {
         status: 500,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    // Validate token - use Page ID endpoint
-    const meResp = await fetch(`${GRAPH_URL}/me?fields=id,name,instagram_business_account&access_token=${IG_TOKEN}`);
+    // Check if token is a Page Access Token (returns Page node) or User token
+    const meResp = await fetch(`${GRAPH_URL}/me?fields=id,name&access_token=${TOKEN}`);
     const meData = await meResp.json();
-    console.log("DEBUG /me response:", JSON.stringify(meData));
+    console.log("DEBUG /me:", JSON.stringify(meData));
 
-    const igAccountId = Deno.env.get("META_IG_ACCOUNT_ID")?.trim();
-    if (!igAccountId) {
-      return new Response(JSON.stringify({ error: "META_IG_ACCOUNT_ID not configured" }), {
+    let pageId: string;
+    let pageToken: string;
+
+    if (meData.error) {
+      return new Response(JSON.stringify({ error: "Invalid access token", details: meData }), {
         status: 500,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    // Send message via Instagram Messaging API
-    const sendEndpoint = `${GRAPH_URL}/${igAccountId}/messages`;
+    // Try /me/accounts to get Page token (works with User tokens that have pages_show_list)
+    const accountsResp = await fetch(
+      `${GRAPH_URL}/me/accounts?fields=id,name,access_token,instagram_business_account&access_token=${TOKEN}`
+    );
+    const accountsData = await accountsResp.json();
+    console.log("DEBUG /me/accounts count:", accountsData.data?.length ?? 0);
+
+    const igAccountId = Deno.env.get("META_IG_ACCOUNT_ID")?.trim();
+
+    if (accountsData.data && accountsData.data.length > 0) {
+      // User token with pages access - find the right page
+      const page = accountsData.data.find(
+        (p: any) => p.instagram_business_account?.id === igAccountId
+      ) || accountsData.data[0];
+      pageId = page.id;
+      pageToken = page.access_token;
+      console.log("DEBUG using page from /me/accounts:", page.name, pageId);
+    } else {
+      // Assume token IS a Page Access Token - /me returns the Page directly
+      pageId = meData.id;
+      pageToken = TOKEN;
+      console.log("DEBUG using /me as page:", meData.name, pageId);
+    }
+
+    // Send message via Facebook Page Messages API for Instagram
+    const sendEndpoint = `${GRAPH_URL}/${pageId}/messages`;
+    console.log("DEBUG sending to:", sendEndpoint, "recipient:", conv.contact_instagram);
 
     const igResponse = await fetch(sendEndpoint, {
       method: "POST",
@@ -103,7 +129,7 @@ Deno.serve(async (req) => {
       body: JSON.stringify({
         recipient: { id: conv.contact_instagram },
         message: { text: content },
-        access_token: IG_TOKEN,
+        access_token: pageToken,
       }),
     });
 
