@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef, useCallback } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -22,9 +22,22 @@ const LeadsPage = () => {
   const [editingLead, setEditingLead] = useState<Lead | null>(null);
   const [sheetLead, setSheetLead] = useState<Lead | null>(null);
   const [sheetOpen, setSheetOpen] = useState(false);
+  const pendingNavigationRef = useRef<string | null>(null);
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
+
+  const handleSheetOpenChange = useCallback((open: boolean) => {
+    setSheetOpen(open);
+    if (!open && pendingNavigationRef.current) {
+      const target = pendingNavigationRef.current;
+      pendingNavigationRef.current = null;
+      // Wait for Sheet animation to complete before navigating
+      setTimeout(() => {
+        navigate(target);
+      }, 300);
+    }
+  }, [navigate]);
 
   const { data: leads = [], isLoading } = useQuery({
     queryKey: ["leads"],
@@ -145,8 +158,10 @@ const LeadsPage = () => {
   const handleCreateProposal = async (lead: Lead) => {
     try {
       const caseId = await ensureCaseForLead(lead);
+      // Close sheet first, then navigate after animation completes
       setSheetOpen(false);
-      navigate(`/propostas?case_id=${caseId}`);
+      setSheetLead(null);
+      setTimeout(() => navigate(`/propostas?case_id=${caseId}`), 400);
     } catch (e: any) {
       toast({ title: "Erro ao criar caso", description: e.message, variant: "destructive" });
     }
@@ -211,7 +226,7 @@ const LeadsPage = () => {
       <LeadSheet
         lead={sheetLead}
         open={sheetOpen}
-        onOpenChange={setSheetOpen}
+        onOpenChange={handleSheetOpenChange}
         onEdit={openEdit}
         onDelete={(id) => deleteMutation.mutate(id)}
         onMoveStage={(lead, stage) => moveStageMutation.mutate({ id: lead.id, stage })}
