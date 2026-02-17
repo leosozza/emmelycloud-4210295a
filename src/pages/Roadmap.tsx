@@ -45,6 +45,7 @@ const phases: RoadmapPhase[] = [
       { name: "Casos Jurídicos", description: "CRUD de casos com fichas", progress: 100, status: "concluido" },
       { name: "Propostas", description: "Criação, envio e status", progress: 100, status: "concluido" },
       { name: "Contratos", description: "Upload e assinatura", progress: 100, status: "concluido" },
+      { name: "Internacionalização BR/PT", description: "Seletor de idioma e moeda (R$/€)", progress: 100, status: "concluido" },
     ],
   },
   {
