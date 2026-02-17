@@ -1,7 +1,7 @@
+import { useState } from "react";
 import { Tables } from "@/integrations/supabase/types";
 import { Constants } from "@/integrations/supabase/types";
 import { LeadCard } from "./LeadCard";
-import { ScrollArea } from "@/components/ui/scroll-area";
 
 type Lead = Tables<"leads">;
 
@@ -13,15 +13,37 @@ const stageLabels: Record<string, string> = {
 interface LeadKanbanBoardProps {
   leads: Lead[];
   onLeadClick: (lead: Lead) => void;
+  onMoveStage?: (leadId: string, newStage: string) => void;
 }
 
-export function LeadKanbanBoard({ leads, onLeadClick }: LeadKanbanBoardProps) {
+export function LeadKanbanBoard({ leads, onLeadClick, onMoveStage }: LeadKanbanBoardProps) {
   const stages = Constants.public.Enums.funnel_stage;
+  const [dragOverStage, setDragOverStage] = useState<string | null>(null);
+
+  const handleDragOver = (e: React.DragEvent, stage: string) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    setDragOverStage(stage);
+  };
+
+  const handleDragLeave = () => {
+    setDragOverStage(null);
+  };
+
+  const handleDrop = (e: React.DragEvent, stage: string) => {
+    e.preventDefault();
+    setDragOverStage(null);
+    const leadId = e.dataTransfer.getData("text/plain");
+    if (leadId && onMoveStage) {
+      onMoveStage(leadId, stage);
+    }
+  };
 
   return (
     <div className="flex gap-3 overflow-x-auto pb-4">
       {stages.map((stage) => {
         const stageLeads = leads.filter((l) => l.funnel_stage === stage);
+        const isOver = dragOverStage === stage;
         return (
           <div key={stage} className="flex-shrink-0 w-64">
             <div className="flex items-center justify-between mb-2 px-1">
@@ -30,7 +52,14 @@ export function LeadKanbanBoard({ leads, onLeadClick }: LeadKanbanBoardProps) {
                 {stageLeads.length}
               </span>
             </div>
-            <div className="space-y-2 min-h-[200px] rounded-lg bg-muted/50 p-2">
+            <div
+              onDragOver={(e) => handleDragOver(e, stage)}
+              onDragLeave={handleDragLeave}
+              onDrop={(e) => handleDrop(e, stage)}
+              className={`space-y-2 min-h-[200px] rounded-lg p-2 transition-colors ${
+                isOver ? "bg-primary/10 ring-2 ring-primary/40" : "bg-muted/50"
+              }`}
+            >
               {stageLeads.map((lead) => (
                 <LeadCard key={lead.id} lead={lead} onClick={onLeadClick} />
               ))}

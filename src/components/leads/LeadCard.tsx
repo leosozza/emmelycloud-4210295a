@@ -1,6 +1,7 @@
 import { Badge } from "@/components/ui/badge";
 import { Tables } from "@/integrations/supabase/types";
 import { differenceInHours, differenceInMinutes, parseISO } from "date-fns";
+import { useRef } from "react";
 
 type Lead = Tables<"leads">;
 
@@ -42,11 +43,29 @@ interface LeadCardProps {
 
 export function LeadCard({ lead, onClick }: LeadCardProps) {
   const sla = getSlaStatus(lead.sla_expires_at);
+  const isDragging = useRef(false);
+
+  const handleDragStart = (e: React.DragEvent) => {
+    isDragging.current = true;
+    e.dataTransfer.setData("text/plain", lead.id);
+    e.dataTransfer.effectAllowed = "move";
+  };
+
+  const handleDragEnd = () => {
+    setTimeout(() => { isDragging.current = false; }, 0);
+  };
+
+  const handleClick = () => {
+    if (!isDragging.current) onClick(lead);
+  };
 
   return (
     <div
-      onClick={() => onClick(lead)}
-      className="cursor-pointer rounded-lg border bg-card p-3 space-y-2 shadow-sm hover:shadow-md transition-shadow"
+      draggable
+      onDragStart={handleDragStart}
+      onDragEnd={handleDragEnd}
+      onClick={handleClick}
+      className="cursor-grab active:cursor-grabbing rounded-lg border bg-card p-3 space-y-2 shadow-sm hover:shadow-md transition-all opacity-100 [&[draggable=true]]:active:opacity-50"
     >
       <div className="flex items-start justify-between gap-1">
         <span className="text-sm font-semibold text-card-foreground truncate">{lead.name}</span>
