@@ -50,8 +50,9 @@ Deno.serve(async (req) => {
           if (!senderId || !message?.text) continue;
 
           const igSenderId = String(senderId);
-          const timestamp = messaging.timestamp
-            ? new Date(messaging.timestamp * 1000).toISOString()
+          const rawTs = messaging.timestamp;
+          const timestamp = rawTs
+            ? new Date(rawTs > 1e12 ? rawTs : rawTs * 1000).toISOString()
             : new Date().toISOString();
 
           // Find or create conversation
