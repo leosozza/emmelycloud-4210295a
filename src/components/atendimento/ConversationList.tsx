@@ -102,35 +102,46 @@ export function ConversationList({ conversations, selectedId, onSelect }: Conver
             <button
               key={conv.id}
               className={cn(
-                "w-full flex items-start gap-3 p-3 text-left hover:bg-accent/50 transition-colors",
-                selectedId === conv.id && "bg-accent"
+                "w-full flex items-start gap-3 px-3 py-3 text-left hover:bg-accent/50 transition-colors",
+                selectedId === conv.id && "bg-accent",
+                conv.unread_count > 0 && "bg-primary/5"
               )}
               onClick={() => onSelect(conv.id)}
             >
-              <Avatar className="h-10 w-10 shrink-0">
-                <AvatarImage src={conv.contact_avatar_url ?? undefined} />
-                <AvatarFallback className="text-xs">
-                  {conv.contact_name.split(" ").map((n) => n[0]).join("").slice(0, 2).toUpperCase()}
-                </AvatarFallback>
-              </Avatar>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm font-medium truncate">{conv.contact_name}</span>
-                  <div className="flex items-center gap-1 shrink-0">
-                    <ChannelIcon channel={conv.channel} />
-                    {conv.last_message_at && (
-                      <span className="text-[10px] text-muted-foreground">
-                        <FormatTimeWrapper dateStr={conv.last_message_at} />
-                      </span>
-                    )}
-                  </div>
+              <div className="relative shrink-0">
+                <Avatar className="h-10 w-10">
+                  <AvatarImage src={conv.contact_avatar_url ?? undefined} />
+                  <AvatarFallback className="text-xs font-semibold bg-primary/10 text-primary">
+                    {conv.contact_name.split(" ").map((n) => n[0]).join("").slice(0, 2).toUpperCase()}
+                  </AvatarFallback>
+                </Avatar>
+                <div className="absolute -bottom-0.5 -right-0.5">
+                  <ChannelIcon channel={conv.channel} />
                 </div>
-                <div className="flex items-center justify-between mt-0.5">
-                  <p className="text-xs text-muted-foreground truncate pr-2">
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center justify-between gap-2">
+                  <span className={cn("text-sm truncate", conv.unread_count > 0 ? "font-bold" : "font-medium")}>
+                    {conv.contact_name}
+                  </span>
+                  {conv.last_message_at && (
+                    <span className={cn(
+                      "text-[11px] shrink-0 tabular-nums",
+                      conv.unread_count > 0 ? "text-primary font-semibold" : "text-muted-foreground"
+                    )}>
+                      <FormatTimeWrapper dateStr={conv.last_message_at} />
+                    </span>
+                  )}
+                </div>
+                <div className="flex items-center justify-between gap-2 mt-0.5">
+                  <p className={cn(
+                    "text-xs truncate",
+                    conv.unread_count > 0 ? "text-foreground/70 font-medium" : "text-muted-foreground"
+                  )}>
                     {conv.last_message_preview || "Sem mensagens"}
                   </p>
                   {conv.unread_count > 0 && (
-                    <Badge className="h-5 w-5 rounded-full p-0 flex items-center justify-center text-[10px] shrink-0">
+                    <Badge className="h-5 min-w-5 rounded-full px-1.5 py-0 flex items-center justify-center text-[10px] font-bold shrink-0 bg-primary text-primary-foreground">
                       {conv.unread_count}
                     </Badge>
                   )}
