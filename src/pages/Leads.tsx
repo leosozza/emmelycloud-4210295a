@@ -10,6 +10,7 @@ import { LeadKanbanBoard } from "@/components/leads/LeadKanbanBoard";
 import { LeadListView } from "@/components/leads/LeadListView";
 import { LeadForm } from "@/components/leads/LeadForm";
 import { LeadSheet } from "@/components/leads/LeadSheet";
+import { PageHeader } from "@/components/PageHeader";
 
 type Lead = Tables<"leads">;
 
@@ -102,33 +103,33 @@ const LeadsPage = () => {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="font-display text-2xl font-bold">Leads & Funil</h1>
-          <p className="text-muted-foreground text-sm mt-1">Gestão de leads e funil de vendas</p>
-        </div>
+      <PageHeader title="Leads & Funil" description="Gestão de leads e funil de vendas">
         <div className="flex items-center gap-2">
-          <div className="flex rounded-md border">
+          <div className="flex rounded-full border border-white/20 overflow-hidden">
             <Button
-              variant={view === "kanban" ? "default" : "ghost"}
+              variant="ghost"
               size="sm"
+              className={`rounded-none text-white hover:bg-white/15 ${view === "kanban" ? "bg-white/25" : ""}`}
               onClick={() => setView("kanban")}
             >
               <LayoutGrid className="h-4 w-4" />
             </Button>
             <Button
-              variant={view === "list" ? "default" : "ghost"}
+              variant="ghost"
               size="sm"
+              className={`rounded-none text-white hover:bg-white/15 ${view === "list" ? "bg-white/25" : ""}`}
               onClick={() => setView("list")}
             >
               <List className="h-4 w-4" />
             </Button>
           </div>
-          <Button onClick={openNew}>
+          <Button onClick={openNew} className="bg-white/20 hover:bg-white/30 text-white border-0 rounded-full">
             <Plus className="mr-2 h-4 w-4" /> Novo Lead
           </Button>
         </div>
-      </div>
+      </PageHeader>
+
+
 
       <div className="relative max-w-sm">
         <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />

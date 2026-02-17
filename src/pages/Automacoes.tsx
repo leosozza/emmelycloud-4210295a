@@ -1,8 +1,9 @@
+import { PageHeader } from "@/components/PageHeader";
+
 const AutomacoesPage = () => {
   return (
     <div>
-      <h1 className="font-display text-2xl font-bold">Automações & Cadências</h1>
-      <p className="text-muted-foreground mt-1">Regras de follow-up e alertas automáticos</p>
+      <PageHeader title="Automações & Cadências" description="Regras de follow-up e alertas automáticos" />
     </div>
   );
 };

@@ -63,26 +63,26 @@ export function AppHeader() {
     : user?.email?.slice(0, 2).toUpperCase() ?? "U";
 
   return (
-    <header className="sticky top-0 z-30 bg-foreground text-primary-foreground shadow-md">
+    <header className="sticky top-0 z-30 bg-bitrix-gradient text-white shadow-lg">
       {/* Top bar */}
       <div className="flex h-14 items-center gap-4 px-4">
         {/* Logo */}
         <div className="flex items-center gap-2 shrink-0">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary">
-            <Scale className="h-4 w-4 text-primary-foreground" />
+          <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-white/20 backdrop-blur-sm">
+            <Scale className="h-4 w-4 text-white" />
           </div>
           <div className="hidden sm:flex flex-col leading-none">
             <span className="text-sm font-extrabold tracking-tight">Emmely Cloud</span>
-            <span className="text-[10px] font-medium opacity-60">CRM Jurídico</span>
+            <span className="text-[10px] font-medium text-white/60">CRM Jurídico</span>
           </div>
         </div>
 
         {/* Search */}
         <div className="relative flex-1 max-w-md">
-          <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-primary-foreground/50" />
+          <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-white/50" />
           <Input
             placeholder="Pesquisar leads, casos, propostas..."
-            className="pl-9 h-9 bg-white/10 border-0 text-primary-foreground placeholder:text-primary-foreground/40 focus-visible:ring-1 focus-visible:ring-white/30"
+            className="pl-9 h-9 bg-white/15 border-0 text-white placeholder:text-white/40 focus-visible:ring-1 focus-visible:ring-white/30 rounded-full"
           />
         </div>
 
@@ -91,25 +91,25 @@ export function AppHeader() {
           <Button
             variant="ghost"
             size="icon"
-            className="text-lg text-primary-foreground hover:bg-white/10"
+            className="text-lg text-white hover:bg-white/15 rounded-full"
             title={locale === "pt-BR" ? "Português (Brasil) — R$" : "Português (Portugal) — €"}
             onClick={() => setLocale(locale === "pt-BR" ? "pt-PT" : "pt-BR")}
           >
             {locale === "pt-BR" ? "🇧🇷" : "🇵🇹"}
           </Button>
 
-          <Button variant="ghost" size="icon" className="relative text-primary-foreground hover:bg-white/10">
+          <Button variant="ghost" size="icon" className="relative text-white hover:bg-white/15 rounded-full">
             <Bell className="h-4 w-4" />
-            <Badge className="absolute -top-1 -right-1 h-4 w-4 p-0 flex items-center justify-center text-[10px] bg-success text-success-foreground">
+            <Badge className="absolute -top-1 -right-1 h-4 w-4 p-0 flex items-center justify-center text-[10px] bg-white text-primary">
               3
             </Badge>
           </Button>
 
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon" className="rounded-full hover:bg-white/10">
+              <Button variant="ghost" size="icon" className="rounded-full hover:bg-white/15">
                 <Avatar className="h-8 w-8">
-                  <AvatarFallback className="bg-primary text-primary-foreground text-xs font-medium">
+                  <AvatarFallback className="bg-white/20 text-white text-xs font-medium">
                     {initials}
                   </AvatarFallback>
                 </Avatar>
@@ -137,7 +137,7 @@ export function AppHeader() {
           <Button
             variant="ghost"
             size="icon"
-            className="lg:hidden text-primary-foreground hover:bg-white/10"
+            className="lg:hidden text-white hover:bg-white/15 rounded-full"
             onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
           >
             {mobileMenuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
@@ -152,8 +152,8 @@ export function AppHeader() {
             key={item.url}
             to={item.url}
             end={item.url === "/"}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-primary-foreground/70 rounded-md hover:bg-white/10 hover:text-primary-foreground transition-colors whitespace-nowrap"
-            activeClassName="bg-primary text-primary-foreground font-bold shadow-sm"
+            className="flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-medium text-white/70 rounded-full hover:bg-white/15 hover:text-white transition-colors whitespace-nowrap"
+            activeClassName="bg-white/25 text-white font-bold backdrop-blur-sm shadow-sm"
           >
             <item.icon className="h-3.5 w-3.5" />
             {item.title}
@@ -169,8 +169,8 @@ export function AppHeader() {
               key={item.url}
               to={item.url}
               end={item.url === "/"}
-              className="flex flex-col items-center gap-1 px-2 py-2 text-[11px] font-medium text-primary-foreground/70 rounded-md hover:bg-white/10 hover:text-primary-foreground transition-colors"
-              activeClassName="bg-primary text-primary-foreground font-bold"
+              className="flex flex-col items-center gap-1 px-2 py-2 text-[11px] font-medium text-white/70 rounded-xl hover:bg-white/15 hover:text-white transition-colors"
+              activeClassName="bg-white/25 text-white font-bold"
               onClick={() => setMobileMenuOpen(false)}
             >
               <item.icon className="h-4 w-4" />

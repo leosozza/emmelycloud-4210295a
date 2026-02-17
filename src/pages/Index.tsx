@@ -7,10 +7,11 @@ import {
   ArrowDownRight,
 } from "lucide-react";
 import { useLocale } from "@/contexts/LocaleContext";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { DashboardCharts } from "@/components/dashboard/DashboardCharts";
 import { RecentLeads } from "@/components/dashboard/RecentLeads";
 import { DashboardSidebar } from "@/components/dashboard/DashboardSidebar";
+import { PageHeader } from "@/components/PageHeader";
 
 const Index = () => {
   const { formatCurrency } = useLocale();
@@ -23,7 +24,7 @@ const Index = () => {
       up: true,
       icon: Users,
       description: "Últimos 30 dias",
-      bg: "bg-primary",
+      gradient: "from-[hsl(218,72%,50%)] to-[hsl(218,72%,62%)]",
     },
     {
       title: "SLA Expirando",
@@ -32,7 +33,7 @@ const Index = () => {
       up: false,
       icon: Clock,
       description: "Nas próximas 4h",
-      bg: "bg-warning",
+      gradient: "from-[hsl(38,92%,50%)] to-[hsl(38,92%,62%)]",
     },
     {
       title: "Receita do Mês",
@@ -41,7 +42,7 @@ const Index = () => {
       up: true,
       icon: DollarSign,
       description: "vs. mês anterior",
-      bg: "bg-success",
+      gradient: "from-[hsl(152,69%,46%)] to-[hsl(152,69%,58%)]",
     },
     {
       title: "Taxa de Conversão",
@@ -50,21 +51,18 @@ const Index = () => {
       up: true,
       icon: TrendingUp,
       description: "Lead → Contrato",
-      bg: "bg-accent",
+      gradient: "from-[hsl(270,30%,52%)] to-[hsl(270,30%,64%)]",
     },
   ];
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold">Dashboard</h1>
-        <p className="text-muted-foreground text-sm mt-1">Visão geral do escritório</p>
-      </div>
+      <PageHeader title="Dashboard" description="Visão geral do escritório" />
 
-      {/* Colorful Metric Cards */}
+      {/* Metric Cards with gradients */}
       <div className="grid gap-4 grid-cols-2 lg:grid-cols-4">
         {metrics.map((metric) => (
-          <Card key={metric.title} className={`${metric.bg} text-white border-0 shadow-lg hover:shadow-xl transition-shadow`}>
+          <Card key={metric.title} className={`bg-gradient-to-br ${metric.gradient} text-white border-0 shadow-lg hover:shadow-xl transition-shadow`}>
             <CardContent className="p-5">
               <div className="flex items-center justify-between mb-3">
                 <metric.icon className="h-6 w-6 opacity-80" />

@@ -15,6 +15,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Tables, TablesInsert, Constants } from "@/integrations/supabase/types";
 import { CasoForm } from "@/components/casos/CasoForm";
 import { format, parseISO } from "date-fns";
+import { PageHeader } from "@/components/PageHeader";
 
 type Case = Tables<"cases">;
 
@@ -111,15 +112,11 @@ const CasosPage = () => {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="font-display text-2xl font-bold">Casos Jurídicos</h1>
-          <p className="text-muted-foreground text-sm mt-1">Gestão de casos e processos</p>
-        </div>
-        <Button onClick={() => { setEditingCaso(null); setFormOpen(true); }}>
+      <PageHeader title="Casos Jurídicos" description="Gestão de casos e processos">
+        <Button onClick={() => { setEditingCaso(null); setFormOpen(true); }} className="bg-white/20 hover:bg-white/30 text-white border-0 rounded-full">
           <Plus className="mr-2 h-4 w-4" /> Novo Caso
         </Button>
-      </div>
+      </PageHeader>
 
       <div className="flex gap-3 items-center">
         <div className="relative max-w-sm">

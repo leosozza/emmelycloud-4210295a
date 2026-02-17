@@ -16,6 +16,7 @@ import { Tables, Constants } from "@/integrations/supabase/types";
 import { PropostaForm } from "@/components/propostas/PropostaForm";
 import { useLocale } from "@/contexts/LocaleContext";
 import { format, parseISO } from "date-fns";
+import { PageHeader } from "@/components/PageHeader";
 
 type Proposal = Tables<"proposals">;
 
@@ -129,15 +130,11 @@ const PropostasPage = () => {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="font-display text-2xl font-bold">Propostas</h1>
-          <p className="text-muted-foreground text-sm mt-1">Criação e gestão de propostas de honorários</p>
-        </div>
-        <Button onClick={() => { setEditingProposta(null); setFormOpen(true); }}>
+      <PageHeader title="Propostas" description="Criação e gestão de propostas de honorários">
+        <Button onClick={() => { setEditingProposta(null); setFormOpen(true); }} className="bg-white/20 hover:bg-white/30 text-white border-0 rounded-full">
           <Plus className="mr-2 h-4 w-4" /> Nova Proposta
         </Button>
-      </div>
+      </PageHeader>
 
       <div className="flex gap-3 items-center">
         <div className="relative max-w-sm">
