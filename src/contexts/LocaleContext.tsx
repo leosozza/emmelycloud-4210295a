@@ -11,10 +11,14 @@ interface LocaleContextType {
   currencySymbol: string;
   dateFnsLocale: Locale;
   setLocale: (locale: LocaleCode) => void;
-  formatCurrency: (value: number) => string;
+  /** Format a value that is stored in EUR (base currency) — automatically converts to BRL when locale is pt-BR */
+  formatCurrency: (valueInEUR: number) => string;
 }
 
 const STORAGE_KEY = "emmely-locale";
+
+// Average exchange rate EUR → BRL (updated periodically; a real app would fetch live rates)
+const EUR_TO_BRL = 6.10;
 
 const LocaleContext = createContext<LocaleContextType | undefined>(undefined);
 
@@ -40,8 +44,10 @@ export function LocaleProvider({ children }: { children: ReactNode }) {
   const { currency, symbol, dateFnsLocale } = config[locale];
 
   const formatCurrency = useCallback(
-    (value: number) =>
-      new Intl.NumberFormat(locale, { style: "currency", currency }).format(value),
+    (valueInEUR: number) => {
+      const displayValue = locale === "pt-BR" ? valueInEUR * EUR_TO_BRL : valueInEUR;
+      return new Intl.NumberFormat(locale, { style: "currency", currency }).format(displayValue);
+    },
     [locale, currency]
   );
 
