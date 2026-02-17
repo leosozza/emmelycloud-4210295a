@@ -1,97 +1,161 @@
 
-# Fluxo Completo: Central de Atendimento ate Caso Juridico
+# Plano por Fases: Sistema Funcional End-to-End
 
-## Resumo
+## Resumo do Teste Realizado
 
-Implementar o fluxo completo e automatizado onde uma conversa na Central de Atendimento gera um Lead, passa pela triagem (identificando area juridica e motivo), avanca para proposta, o cliente aceita, assina o contrato, e o processo se torna um caso juridico ativo.
+Testei o fluxo completo e identifiquei o que funciona e o que precisa de correcao:
 
-## O que ja existe
+### O que FUNCIONA:
+1. Central de Atendimento mostra conversas correctamente
+2. Botao "Criar Lead a partir desta conversa" pre-preenche o formulario com dados do contacto (nome, email, telefone, origem)
+3. Lead criado aparece no Kanban no estagio correcto
+4. Triagem inline funciona -- seleccao de area juridica, urgencia e avancar para "Proposta"
+5. Caso juridico criado automaticamente ao avancar para estagio avancado
+6. Logica de assinatura de contrato actualiza lead para "fechado" e caso para "em_andamento"
 
-- Central de Atendimento com conversas (WhatsApp, Instagram, Email)
-- Leads com Kanban e funil de estagios
-- Criacao automatica de Caso ao avancar lead para estagios avancados
-- Propostas com criacao de contrato ao aceitar
-- Contratos com assinatura
-- Casos juridicos
+### O que esta PARTIDO:
+1. **Bug critico: Navegacao Leads -> Propostas crasha** -- Ao clicar "Criar Proposta" no LeadSheet, o Radix Sheet portal conflitua com o React Router, causando erro `removeChild` e pagina em branco
+2. **conversation_id nao esta a ser guardado** -- O lead da Maria Silva foi criado sem o `conversation_id` vinculado
 
-## O que falta (lacunas no fluxo)
+---
 
-1. **Conversa nao gera Lead** -- Nao existe botao na Central de Atendimento para converter uma conversa em Lead
-2. **Triagem nao esta implementada** -- A pagina de Triagem esta vazia, sem funcionalidade
-3. **Contrato assinado nao atualiza o Lead** -- Ao assinar um contrato, o lead deveria avancar para "fechado"
-4. **Sem ligacao visual entre entidades** -- Falta rastreabilidade end-to-end
+## Fase 1: Corrigir Bugs Criticos (Prioridade Maxima)
 
-## Plano de Implementacao
+### 1.1 Corrigir navegacao Sheet -> React Router
 
-### 1. Botao "Criar Lead" na Central de Atendimento
+O problema e que o Radix Sheet usa portais DOM que conflituam com o React Router ao desmontar simultaneamente. A solucao e:
 
-No painel de perfil do contacto (`ContactProfile.tsx`), adicionar um botao "Criar Lead a partir desta conversa" que:
-- Pre-preenche o nome, telefone, email e origem (canal da conversa)
-- Abre o formulario de Lead ou cria diretamente
-- Vincula o `client_id` se existir
+- Em `LeadSheet.tsx`: em vez de navegar directamente, emitir um callback `onNavigate` que o componente pai (`Leads.tsx`) executa
+- Em `Leads.tsx`: no `handleCreateProposal`, fechar o sheet e usar `requestAnimationFrame` + `setTimeout` (600ms) para garantir que o portal esta completamente removido antes da navegacao
+- Alternativa mais robusta: usar `onAnimationEnd` event do sheet para saber quando a animacao terminou, ou usar `flushSync` para forcar a remocao sincrona do portal
 
-### 2. Triagem Integrada no LeadSheet
+### 1.2 Corrigir vinculacao do conversation_id
 
-Em vez de uma pagina separada, integrar a triagem diretamente no detalhe do Lead (`LeadSheet.tsx`):
-- Adicionar campos de selecao rapida para area juridica e urgencia
-- Botao "Concluir Triagem" que move o lead de "triagem" para "proposta"
-- Resumo das notas da conversa (se vinculada)
+No `LeadForm.tsx`, garantir que o campo `conversation_id` dos dados de prefill e incluido no objecto enviado ao `onSave`.
 
-### 3. Atualizar Lead ao Assinar Contrato
+---
 
-No `Contratos.tsx`, ao assinar um contrato (`signMutation`):
-- Buscar o caso associado ao contrato
-- Buscar o lead associado ao caso
-- Atualizar o estagio do lead para "fechado"
-- Atualizar o status do caso para "em_andamento"
+## Fase 2: Completar o Fluxo Proposta -> Contrato -> Caso
 
-### 4. Conectar Conversa ao Lead
+### 2.1 Pagina de Propostas -- Formulario com caso pre-seleccionado
 
-Adicionar coluna `conversation_id` na tabela `leads` (migracao) para rastrear a conversa que originou o lead.
+Verificar que o `PropostaForm` abre correctamente com o caso pre-seleccionado quando navegado via query param `case_id`.
+
+### 2.2 Fluxo de aceitar proposta
+
+- Proposta criada como "rascunho"
+- Enviar proposta (status "enviada")  
+- Aceitar proposta (status "aceita") -> cria contrato automaticamente e actualiza lead para "contrato"
+
+### 2.3 Assinatura do contrato
+
+- Ao assinar: contrato fica "assinado", caso fica "em_andamento", lead fica "fechado"
+- Ja esta implementado em `Contratos.tsx`
+
+---
+
+## Fase 3: Pagina de Triagem Dedicada
+
+### 3.1 Implementar a pagina `/triagem`
+
+A pagina `Triagem.tsx` esta vazia. Implementar como uma vista filtrada dos leads no estagio "triagem":
+
+- Lista/tabela de leads pendentes de triagem
+- Acesso rapido ao detalhe do lead com triagem inline
+- Indicadores de SLA (tempo restante)
+- Contadores de leads por urgencia
+
+---
+
+## Fase 4: Rastreabilidade e Navegacao
+
+### 4.1 Breadcrumbs de rastreabilidade
+
+Em cada entidade (Lead, Caso, Proposta, Contrato), mostrar o caminho completo:
+- Conversa de origem -> Lead -> Caso -> Proposta -> Contrato
+
+### 4.2 Links entre entidades
+
+- No detalhe do Caso: link para o Lead de origem e conversas vinculadas
+- No detalhe do Contrato: link para a Proposta e o Caso
+- No detalhe da Proposta: link para o Caso
+
+---
+
+## Fase 5: Autenticacao e Seguranca
+
+### 5.1 Login e Registo
+
+- Implementar pagina de autenticacao com login/signup
+- Integrar com o sistema de roles existente (admin, comercial, advogado, financeiro)
+
+### 5.2 Politicas RLS baseadas em roles
+
+- Remover as politicas permissivas (anon) adicionadas para testes
+- Activar as politicas baseadas em roles que ja existem na base de dados
+- Proteger rotas no frontend com verificacao de autenticacao
+
+---
+
+## Fase 6: Melhorias e Polimento
+
+### 6.1 Notificacoes em tempo real
+
+- Notificacao quando um novo lead chega
+- Alerta de SLA a expirar
+- Notificacao quando uma proposta e aceita
+
+### 6.2 Dashboard actualizado
+
+- KPIs do funil (conversao por estagio)
+- Leads por area juridica
+- Tempo medio de conversao
+
+### 6.3 Integracao com canais reais
+
+- Webhook para WhatsApp Business API
+- Integracao com Instagram API
+- Processamento de emails recebidos
+
+---
 
 ## Detalhes Tecnicos
 
-### Migracao de Base de Dados
+### Bug removeChild -- Solucao proposta
 
 ```text
-ALTER TABLE public.leads ADD COLUMN conversation_id uuid REFERENCES conversations(id);
+// LeadSheet.tsx -- Nao navegar dentro do Sheet
+// Em vez disso, passar a URL de destino via callback
+
+// Leads.tsx -- handleCreateProposal
+const handleCreateProposal = async (lead: Lead) => {
+  const caseId = await ensureCaseForLead(lead);
+  // 1. Fechar sheet
+  setSheetOpen(false);
+  setSheetLead(null);
+  // 2. Esperar que o portal DOM seja completamente removido
+  // Usar um ref para detectar quando onOpenChange(false) completa
+  pendingNavigationRef.current = `/propostas?case_id=${caseId}`;
+};
+
+// No handleSheetOpenChange, verificar com timeout maior:
+const handleSheetOpenChange = (open) => {
+  setSheetOpen(open);
+  if (!open && pendingNavigationRef.current) {
+    const target = pendingNavigationRef.current;
+    pendingNavigationRef.current = null;
+    requestAnimationFrame(() => {
+      setTimeout(() => navigate(target), 350);
+    });
+  }
+};
 ```
 
-### ContactProfile.tsx -- Botao Criar Lead
+### Ordem de execucao recomendada
 
-Adicionar na seccao "Cliente" um botao "Converter em Lead" que:
-1. Navega para `/leads` com query params contendo os dados da conversa
-2. Ou abre um dialog inline que insere o lead diretamente
-
-### LeadSheet.tsx -- Triagem Inline
-
-Adicionar seccao de triagem com:
-- Select para area juridica (se ainda nao preenchida)
-- Select para urgencia
-- Textarea para notas de triagem
-- Botao "Avancar para Proposta" que salva os campos e move o estagio
-
-### Contratos.tsx -- signMutation Melhorado
-
-```text
-// Apos assinar contrato:
-1. Buscar contract.case_id
-2. Buscar case.lead_id
-3. UPDATE leads SET funnel_stage = 'fechado' WHERE id = lead_id
-4. UPDATE cases SET status = 'em_andamento' WHERE id = case_id
-```
-
-### Leads.tsx -- Receber Dados da Conversa
-
-Adicionar `useSearchParams` para receber dados pre-preenchidos:
-- `?from_conversation=ID&name=X&phone=Y&email=Z&origin=whatsapp`
-- Auto-abrir o formulario com os campos pre-preenchidos
-
-## Ordem de Execucao
-
-1. Migracao: adicionar `conversation_id` a tabela leads
-2. ContactProfile: botao "Criar Lead" que navega com dados pre-preenchidos
-3. Leads: receber query params e pre-preencher formulario
-4. LeadSheet: adicionar triagem inline (area juridica, urgencia, notas)
-5. Contratos: atualizar lead e caso ao assinar contrato
-6. Testar fluxo completo end-to-end
+1. Fase 1 (bugs criticos) -- imediato
+2. Fase 2 (fluxo completo) -- validar apos Fase 1
+3. Fase 3 (triagem dedicada) -- 1 sessao
+4. Fase 4 (rastreabilidade) -- 1 sessao
+5. Fase 5 (autenticacao) -- 1-2 sessoes
+6. Fase 6 (melhorias) -- continuo
