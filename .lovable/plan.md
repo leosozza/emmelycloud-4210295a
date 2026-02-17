@@ -1,78 +1,167 @@
 
-# Plano: Pagina de Roadmap com Visual de Estagios
+
+# Jornada Completa: Leads + Casos + Propostas + Contratos
 
 ## Resumo
 
-Criar uma pagina `/roadmap` com visual de progresso por modulo, mostrando claramente o que esta concluido (100%), em progresso, e por iniciar. Interface moderna com cards agrupados por fase, barra de progresso, e indicadores visuais de status.
+Implementar os 4 modulos core que formam a jornada ponta a ponta do cliente: desde a entrada como Lead ate a assinatura do Contrato. A base de dados ja esta pronta com todas as tabelas, enums, e RLS necessarias.
 
 ---
 
-## 1. Nova Pagina e Rota
+## 1. Leads (Formulario + Funil Kanban + Ficha)
 
-- Criar `src/pages/Roadmap.tsx`
-- Adicionar rota `/roadmap` no `App.tsx`
-- Adicionar link "Roadmap" no sidebar (grupo "Gestao") com icone `Map`
+### 1.1 Pagina de Leads com Funil Kanban
 
----
+Substituir o placeholder `src/pages/Leads.tsx` por uma interface completa com duas vistas:
 
-## 2. Estrutura Visual
+- **Vista Kanban** (default): Colunas por `funnel_stage` (lead, triagem, proposta, analise, contrato, financeiro, fechado). Cada card mostra nome, origem, area juridica, SLA com cores (verde/amarelo/vermelho), e ai_score.
+- **Vista Lista**: Tabela com ordenacao e filtros por origem, area juridica, e estagio.
+- **Toggle** entre as duas vistas no header.
 
-O layout sera dividido em 4 secoes (fases), cada uma com um header e cards de modulos:
+### 1.2 Formulario de Leads (Dialog)
 
-```text
-+---------------------------------------------------+
-|  Progresso Geral: =========[72%]=========          |
-+---------------------------------------------------+
-|                                                     |
-|  [Concluido] --------------------------------       |
-|  [====] Design System     [====] Layout             |
-|  [====] Dashboard         [====] Backend            |
-|  [====] Auth              [====] Perfil             |
-|  [====] SLA               [====] Central Atend.     |
-|                                                     |
-|  [Proximas Etapas] --------------------------       |
-|  [==50] Gestao Roles      [====] Funil Kanban       |
-|  [    ] Formulario Leads  [    ] Ficha Lead         |
-|  [    ] Triagem IA        [    ] Casos              |
-|  [    ] Propostas         [    ] Contratos          |
-|                                                     |
-|  [Futuro Proximo] ---------------------------       |
-|  [    ] Financeiro        [    ] Dashboard Real     |
-|  [    ] Automacoes        [    ] Relatorios         |
-|  [    ] Busca Global      [    ] Notificacoes       |
-|                                                     |
-|  [Futuro] ------------------------------------      |
-|  [    ] IA Resumo         [    ] IA Documental      |
-|  [    ] WhatsApp API      [    ] Instagram DM       |
-|  [    ] PDF Propostas     [    ] Assinatura Digital  |
-|  [    ] Multi-escritorios [    ] PWA Mobile          |
-+---------------------------------------------------+
-```
+Dialog modal para criar/editar leads com campos:
+- Nome, Email, Telefone, Pais
+- Origem (select com enum `lead_origin`)
+- Area Juridica (select com enum `legal_area`)
+- Urgencia (normal/alta/critica)
+- Notas
+- O SLA e definido automaticamente pelo trigger existente no backend
+
+### 1.3 Ficha do Lead (Sheet lateral)
+
+Ao clicar num card/linha, abre um Sheet lateral com:
+- Dados completos do lead
+- Indicador visual de SLA (tempo restante)
+- AI Score e viabilidade
+- Historico de alteracoes (updated_at)
+- Botoes para mover de estagio, editar, eliminar
+
+### Ficheiros novos:
+- `src/components/leads/LeadKanbanBoard.tsx` - vista Kanban
+- `src/components/leads/LeadCard.tsx` - card individual
+- `src/components/leads/LeadForm.tsx` - formulario dialog
+- `src/components/leads/LeadSheet.tsx` - ficha lateral
+- `src/components/leads/LeadListView.tsx` - vista tabela
+
+### Ficheiro editado:
+- `src/pages/Leads.tsx` - pagina principal com toggle de vista
 
 ---
 
-## 3. Cada Card de Modulo
+## 2. Casos Juridicos (CRUD com fichas)
 
-Cada card tera:
-- Nome do modulo
-- Barra de progresso (0%, 25%, 50%, 75%, 100%)
-- Badge de status com cor: verde (concluido), azul (em progresso), cinza (por iniciar)
-- Descricao curta do que inclui
+Substituir o placeholder `src/pages/Casos.tsx` por uma interface completa:
+
+### 2.1 Lista de Casos
+- Tabela com colunas: titulo, area juridica, status (badge colorido), advogado atribuido, lead associado, data
+- Filtros por status (`case_status` enum) e area juridica
+- Barra de pesquisa
+
+### 2.2 Formulario de Caso (Dialog)
+- Titulo, Descricao, Area Juridica (select)
+- Status (select com enum `case_status`)
+- Lead associado (select dos leads existentes)
+- Advogado atribuido (select dos profiles)
+- Viabilidade, Notas internas
+
+### 2.3 Ficha do Caso (Sheet)
+- Dados completos
+- Lead associado (link)
+- Propostas vinculadas (lista)
+- Contratos vinculados (lista)
+
+### Ficheiros novos:
+- `src/components/casos/CasoForm.tsx`
+- `src/components/casos/CasoSheet.tsx`
+
+### Ficheiro editado:
+- `src/pages/Casos.tsx`
 
 ---
 
-## 4. Dados do Roadmap
+## 3. Propostas (Criacao + Status)
 
-Todos os dados serao estaticos (hardcoded) na pagina, sem tabela no banco de dados, representando o roadmap que o utilizador forneceu. Os modulos e percentagens podem ser ajustados manualmente conforme o progresso.
+Substituir o placeholder `src/pages/Propostas.tsx`:
+
+### 3.1 Lista de Propostas
+- Tabela: titulo, caso associado, valor formatado (EUR), tipo pagamento, parcelas, status (badge), validade
+- Filtros por status (`proposal_status` enum)
+
+### 3.2 Formulario de Proposta (Dialog)
+- Titulo, Caso associado (select dos casos)
+- Valor, Tipo de pagamento (select `payment_type`)
+- Numero de parcelas
+- Condicoes (textarea)
+- Validade
+- Status
+
+### 3.3 Acoes rapidas
+- Botoes para mudar status: Enviar, Aceitar, Recusar
+- Ao aceitar, opcao de gerar contrato automaticamente
+
+### Ficheiros novos:
+- `src/components/propostas/PropostaForm.tsx`
+
+### Ficheiro editado:
+- `src/pages/Propostas.tsx`
 
 ---
 
-## 5. Detalhes Tecnicos
+## 4. Contratos (Upload + Status)
 
-- **Novo ficheiro**: `src/pages/Roadmap.tsx` - pagina com dados estaticos e componentes Card/Progress/Badge
-- **Editados**:
-  - `src/App.tsx` - adicionar rota `/roadmap`
-  - `src/components/AppSidebar.tsx` - adicionar link no grupo Gestao com icone `Map`
-- **Componentes reutilizados**: Card, Progress, Badge do shadcn/ui
-- Cores de status via classes Tailwind (success, primary, muted)
-- Barra de progresso geral no topo somando todos os modulos
+Substituir o placeholder `src/pages/Contratos.tsx`:
+
+### 4.1 Lista de Contratos
+- Tabela: proposta associada, caso associado, status (badge), data inicio, data expiracao, data assinatura
+- Filtros por status (`contract_status` enum)
+
+### 4.2 Formulario de Contrato (Dialog)
+- Proposta associada (select das propostas aceitas)
+- Caso associado (select)
+- Data inicio, Data expiracao
+- Notas
+- URL do ficheiro (input texto por agora, upload futuro)
+
+### 4.3 Acoes
+- Marcar como assinado (atualiza `signed_at` e status)
+- Cancelar contrato
+
+### Ficheiros novos:
+- `src/components/contratos/ContratoForm.tsx`
+
+### Ficheiro editado:
+- `src/pages/Contratos.tsx`
+
+---
+
+## 5. Atualizacao do Roadmap
+
+Atualizar `src/pages/Roadmap.tsx` para refletir o progresso:
+- Formulario de Leads: 100%
+- Funil Kanban: 100%
+- Ficha do Lead: 100%
+- Casos Juridicos: 100%
+- Propostas: 100%
+- Contratos: 100%
+
+---
+
+## Detalhes Tecnicos
+
+### Backend
+- **Sem alteracoes de schema**: todas as tabelas (`leads`, `cases`, `proposals`, `contracts`) ja existem com os campos necessarios
+- **Enums disponiveis**: `funnel_stage`, `lead_origin`, `legal_area`, `case_status`, `proposal_status`, `contract_status`, `payment_type`
+- **RLS ja configurado**: policies por role (admin, advogado, comercial, financeiro)
+
+### Frontend
+- **React Query** (`@tanstack/react-query`) para fetch, mutations, e cache
+- **Componentes shadcn/ui**: Table, Dialog, Sheet, Select, Badge, Button, Input, Textarea, Tabs
+- **Supabase client** existente para todas as operacoes CRUD
+- **Padroes existentes**: seguir o mesmo padrao de `Clientes.tsx` (query + mutation + dialog form)
+- **SLA visual**: calculo client-side comparando `sla_expires_at` com `now()` para cores verde/amarelo/vermelho
+
+### Ficheiros totais
+- **8 novos**: componentes em `src/components/leads/`, `src/components/casos/`, `src/components/propostas/`, `src/components/contratos/`
+- **5 editados**: `Leads.tsx`, `Casos.tsx`, `Propostas.tsx`, `Contratos.tsx`, `Roadmap.tsx`
+
