@@ -94,8 +94,17 @@ export default function AtendimentoPage() {
       if (!selectedId) return;
       const conv = conversations.find((c) => c.id === selectedId);
 
-      // Route messages through Callbell for supported channels
-      if (conv?.channel === "instagram" || conv?.channel === "whatsapp") {
+      // Route Instagram via Meta Graph API, WhatsApp via Callbell
+      if (conv?.channel === "instagram") {
+        const { data, error } = await supabase.functions.invoke("instagram-send", {
+          body: { conversation_id: selectedId, content },
+        });
+        if (error) throw error;
+        if (data?.error) throw new Error(data.error);
+        return;
+      }
+
+      if (conv?.channel === "whatsapp") {
         const { data, error } = await supabase.functions.invoke("callbell-send", {
           body: { conversation_id: selectedId, content },
         });
