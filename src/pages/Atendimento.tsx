@@ -36,6 +36,7 @@ interface Message {
   media_type: string | null;
   read_at: string | null;
   created_at: string;
+  delivery_status: string | null;
 }
 
 interface QuickReply {
@@ -158,6 +159,34 @@ export default function AtendimentoPage() {
       supabase.removeChannel(channel);
     };
   }, [selectedId, queryClient]);
+
+  // Poll delivery status for outbound messages
+  useEffect(() => {
+    if (!selectedId) return;
+
+    const hasPending = messages.some(
+      (m) => m.direction === "outbound" && m.delivery_status && m.delivery_status !== "read"
+    );
+    if (!hasPending) return;
+
+    const pollStatus = async () => {
+      try {
+        const { data } = await supabase.functions.invoke(
+          `callbell-status?conversation_id=${selectedId}`,
+          { method: "GET" }
+        );
+        if (data?.updated?.length > 0) {
+          queryClient.invalidateQueries({ queryKey: ["messages", selectedId] });
+        }
+      } catch (e) {
+        console.error("Status poll error:", e);
+      }
+    };
+
+    pollStatus(); // Initial poll
+    const interval = setInterval(pollStatus, 15000);
+    return () => clearInterval(interval);
+  }, [selectedId, messages, queryClient]);
 
   const selectedConversation = conversations.find((c) => c.id === selectedId) ?? null;
 

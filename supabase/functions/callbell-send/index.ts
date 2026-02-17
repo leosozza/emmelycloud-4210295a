@@ -140,6 +140,7 @@ Deno.serve(async (req) => {
       content,
       sender_name: "Atendente",
       external_id: externalMessageId,
+      delivery_status: "sent",
     });
 
     // Update conversation preview

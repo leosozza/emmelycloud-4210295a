@@ -1,6 +1,6 @@
 import { cn } from "@/lib/utils";
 import { format } from "date-fns";
-import { Check, CheckCheck } from "lucide-react";
+import { Check, CheckCheck, Clock } from "lucide-react";
 
 interface MessageBubbleProps {
   content: string;
@@ -8,10 +8,28 @@ interface MessageBubbleProps {
   senderName?: string;
   createdAt: string;
   readAt?: string | null;
+  deliveryStatus?: string | null;
 }
 
-export function MessageBubble({ content, direction, senderName, createdAt, readAt }: MessageBubbleProps) {
+export function MessageBubble({ content, direction, senderName, createdAt, readAt, deliveryStatus }: MessageBubbleProps) {
   const isOutbound = direction === "outbound";
+
+  const renderStatusIcon = () => {
+    if (!isOutbound) return null;
+
+    const status = deliveryStatus || (readAt ? "read" : "sent");
+
+    switch (status) {
+      case "read":
+        return <CheckCheck className="h-3 w-3 text-blue-400" />;
+      case "delivered":
+        return <CheckCheck className="h-3 w-3 opacity-60" />;
+      case "sent":
+        return <Check className="h-3 w-3 opacity-60" />;
+      default:
+        return <Clock className="h-3 w-3 opacity-40" />;
+    }
+  };
 
   return (
     <div className={cn("flex mb-2", isOutbound ? "justify-end" : "justify-start")}>
@@ -31,13 +49,7 @@ export function MessageBubble({ content, direction, senderName, createdAt, readA
           <span className="text-[10px] opacity-60">
             {format(new Date(createdAt), "HH:mm")}
           </span>
-          {isOutbound && (
-            readAt ? (
-              <CheckCheck className="h-3 w-3 text-blue-400" />
-            ) : (
-              <Check className="h-3 w-3 opacity-60" />
-            )
-          )}
+          {renderStatusIcon()}
         </div>
       </div>
     </div>
