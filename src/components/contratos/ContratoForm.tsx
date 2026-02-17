@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -24,12 +24,23 @@ interface ContratoFormProps {
 }
 
 export function ContratoForm({ open, onOpenChange, contrato, proposals, cases, onSave, saving }: ContratoFormProps) {
-  const [proposalId, setProposalId] = useState(contrato?.proposal_id || "");
-  const [caseId, setCaseId] = useState(contrato?.case_id || "");
-  const [startsAt, setStartsAt] = useState(contrato?.starts_at?.slice(0, 10) || "");
-  const [expiresAt, setExpiresAt] = useState(contrato?.expires_at?.slice(0, 10) || "");
-  const [notes, setNotes] = useState(contrato?.notes || "");
-  const [fileUrl, setFileUrl] = useState(contrato?.file_url || "");
+  const [proposalId, setProposalId] = useState("");
+  const [caseId, setCaseId] = useState("");
+  const [startsAt, setStartsAt] = useState("");
+  const [expiresAt, setExpiresAt] = useState("");
+  const [notes, setNotes] = useState("");
+  const [fileUrl, setFileUrl] = useState("");
+
+  useEffect(() => {
+    if (open) {
+      setProposalId(contrato?.proposal_id || "");
+      setCaseId(contrato?.case_id || "");
+      setStartsAt(contrato?.starts_at?.slice(0, 10) || "");
+      setExpiresAt(contrato?.expires_at?.slice(0, 10) || "");
+      setNotes(contrato?.notes || "");
+      setFileUrl(contrato?.file_url || "");
+    }
+  }, [contrato, open]);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>

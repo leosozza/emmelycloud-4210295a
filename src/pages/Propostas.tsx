@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useSearchParams } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -39,9 +40,22 @@ const PropostasPage = () => {
   const [statusFilter, setStatusFilter] = useState("all");
   const [formOpen, setFormOpen] = useState(false);
   const [editingProposta, setEditingProposta] = useState<Proposal | null>(null);
+  const [preselectedCaseId, setPreselectedCaseId] = useState<string | null>(null);
   const { toast } = useToast();
   const { formatCurrency } = useLocale();
   const queryClient = useQueryClient();
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  // Auto-open form if case_id query param is present
+  useEffect(() => {
+    const caseIdParam = searchParams.get("case_id");
+    if (caseIdParam) {
+      setPreselectedCaseId(caseIdParam);
+      setEditingProposta(null);
+      setFormOpen(true);
+      setSearchParams({}, { replace: true }); // clean URL
+    }
+  }, [searchParams, setSearchParams]);
 
   const { data: proposals = [], isLoading } = useQuery({
     queryKey: ["proposals"],
@@ -93,11 +107,25 @@ const PropostasPage = () => {
       if (status === "aceita") {
         const proposal = proposals.find((p) => p.id === id);
         if (proposal) {
+          // Create contract
           const { error: contractError } = await supabase.from("contracts").insert({
             proposal_id: id,
             case_id: proposal.case_id,
           });
           if (contractError) throw contractError;
+
+          // Update lead stage to "contrato" if linked via case
+          const { data: caseData } = await supabase
+            .from("cases")
+            .select("lead_id")
+            .eq("id", proposal.case_id)
+            .single();
+          if (caseData?.lead_id) {
+            await supabase
+              .from("leads")
+              .update({ funnel_stage: "contrato" as any })
+              .eq("id", caseData.lead_id);
+          }
         }
       }
     },
@@ -215,11 +243,15 @@ const PropostasPage = () => {
 
       <PropostaForm
         open={formOpen}
-        onOpenChange={setFormOpen}
+        onOpenChange={(open) => {
+          setFormOpen(open);
+          if (!open) setPreselectedCaseId(null);
+        }}
         proposta={editingProposta}
         cases={cases}
         onSave={(data) => saveMutation.mutate(data)}
         saving={saveMutation.isPending}
+        preselectedCaseId={preselectedCaseId}
       />
     </div>
   );

@@ -11,7 +11,10 @@ import { Tables } from "@/integrations/supabase/types";
 import { Constants } from "@/integrations/supabase/types";
 import { differenceInHours, differenceInMinutes, parseISO, format } from "date-fns";
 import { useLocale } from "@/contexts/LocaleContext";
-import { ChevronRight, Pencil, Trash2 } from "lucide-react";
+import { ChevronRight, Pencil, Trash2, FileText, ExternalLink } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
+import { supabase } from "@/integrations/supabase/client";
+import { useNavigate } from "react-router-dom";
 
 type Lead = Tables<"leads">;
 
@@ -47,14 +50,30 @@ interface LeadSheetProps {
   onEdit: (lead: Lead) => void;
   onDelete: (id: string) => void;
   onMoveStage: (lead: Lead, stage: string) => void;
+  onCreateProposal?: (lead: Lead) => void;
 }
 
-export function LeadSheet({ lead, open, onOpenChange, onEdit, onDelete, onMoveStage }: LeadSheetProps) {
+export function LeadSheet({ lead, open, onOpenChange, onEdit, onDelete, onMoveStage, onCreateProposal }: LeadSheetProps) {
   if (!lead) return null;
   const { dateFnsLocale } = useLocale();
+  const navigate = useNavigate();
   const sla = getSlaInfo(lead.sla_expires_at);
   const stages = Constants.public.Enums.funnel_stage;
   const currentIdx = stages.indexOf(lead.funnel_stage);
+
+  // Query associated case for this lead
+  const { data: linkedCase } = useQuery({
+    queryKey: ["lead-case", lead.id],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("cases")
+        .select("id, title")
+        .eq("lead_id", lead.id)
+        .limit(1);
+      return data?.[0] || null;
+    },
+    enabled: open,
+  });
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -113,11 +132,34 @@ export function LeadSheet({ lead, open, onOpenChange, onEdit, onDelete, onMoveSt
             <p>Atualizado: {format(parseISO(lead.updated_at), "dd/MM/yyyy HH:mm", { locale: dateFnsLocale })}</p>
           </div>
 
+          {/* Linked Case */}
+          {linkedCase && (
+            <>
+              <Separator />
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-medium text-muted-foreground">Caso associado:</span>
+                <Button
+                  variant="link"
+                  size="sm"
+                  className="p-0 h-auto text-sm"
+                  onClick={() => { onOpenChange(false); navigate("/casos"); }}
+                >
+                  {linkedCase.title} <ExternalLink className="ml-1 h-3 w-3" />
+                </Button>
+              </div>
+            </>
+          )}
+
           {/* Actions */}
-          <div className="flex gap-2 pt-2">
+          <div className="flex gap-2 pt-2 flex-wrap">
             <Button variant="outline" size="sm" onClick={() => onEdit(lead)}>
               <Pencil className="mr-1 h-3 w-3" /> Editar
             </Button>
+            {onCreateProposal && (
+              <Button variant="outline" size="sm" onClick={() => onCreateProposal(lead)}>
+                <FileText className="mr-1 h-3 w-3" /> Criar Proposta
+              </Button>
+            )}
             <Button variant="destructive" size="sm" onClick={() => onDelete(lead.id)}>
               <Trash2 className="mr-1 h-3 w-3" /> Eliminar
             </Button>
