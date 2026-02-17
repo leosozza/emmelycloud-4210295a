@@ -81,22 +81,23 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Send message via Instagram Messaging API (new Instagram API with Instagram Login)
-    // Uses Bearer token auth and IG account ID endpoint
+    // Send message via Instagram Messaging API
     const igAccountId = Deno.env.get("META_IG_ACCOUNT_ID");
-    const sendEndpoint = igAccountId 
-      ? `${GRAPH_URL}/${igAccountId}/messages`
-      : `${GRAPH_URL}/me/messages`;
+    if (!igAccountId) {
+      return new Response(JSON.stringify({ error: "META_IG_ACCOUNT_ID not configured" }), {
+        status: 500,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    const sendEndpoint = `${GRAPH_URL}/${igAccountId}/messages`;
 
     const igResponse = await fetch(sendEndpoint, {
       method: "POST",
-      headers: { 
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${PAGE_TOKEN}`,
-      },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         recipient: { id: conv.contact_instagram },
         message: { text: content },
+        access_token: PAGE_TOKEN,
       }),
     });
 
