@@ -114,14 +114,22 @@ Deno.serve(async (req) => {
 
       if (existing) {
         conversationId = existing.id;
+        const updateData: Record<string, unknown> = {
+          last_message_at: timestamp,
+          last_message_preview: messageText.slice(0, 100),
+          unread_count: 1,
+          status: "aberta",
+        };
+        // Update contact name and avatar if available from Callbell
+        if (contactName && contactName !== "Desconhecido") {
+          updateData.contact_name = contactName;
+        }
+        if (contactAvatar) {
+          updateData.contact_avatar_url = contactAvatar;
+        }
         await supabase
           .from("conversations")
-          .update({
-            last_message_at: timestamp,
-            last_message_preview: messageText.slice(0, 100),
-            unread_count: 1,
-            status: "aberta",
-          })
+          .update(updateData)
           .eq("id", conversationId);
       }
     }
