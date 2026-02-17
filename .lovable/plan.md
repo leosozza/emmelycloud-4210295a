@@ -1,96 +1,97 @@
 
-# Correcoes e Melhorias no Fluxo Lead -> Proposta -> Contrato -> Caso
+# Fluxo Completo: Central de Atendimento ate Caso Juridico
 
 ## Resumo
 
-O fluxo comercial completo tem lacunas que impedem a jornada natural do cliente. Este plano corrige a conectividade entre os modulos e resolve bugs identificados durante os testes.
+Implementar o fluxo completo e automatizado onde uma conversa na Central de Atendimento gera um Lead, passa pela triagem (identificando area juridica e motivo), avanca para proposta, o cliente aceita, assina o contrato, e o processo se torna um caso juridico ativo.
 
-## Problemas Identificados
+## O que ja existe
 
-1. **Formularios nao resetam estado** -- ContratoForm e PropostaForm usam `useState` com valor inicial fixo, entao ao fechar e reabrir para "Novo", mantem os dados do ultimo registo editado.
-2. **Fluxo Lead para Caso desconectado** -- Quando um lead avanca no funil para "Contrato" ou "Fechado", nao e criado automaticamente um Caso juridico.
-3. **Proposta exige Caso, mas Lead nao cria Caso** -- Para criar uma Proposta, e obrigatorio selecionar um Caso. Mas nao existe forma de criar um Caso a partir de um Lead diretamente.
-4. **Erro de RLS ao testar sem autenticacao** -- As tabelas estao protegidas por politicas de seguranca, o que e correto, mas impede testes sem login.
+- Central de Atendimento com conversas (WhatsApp, Instagram, Email)
+- Leads com Kanban e funil de estagios
+- Criacao automatica de Caso ao avancar lead para estagios avancados
+- Propostas com criacao de contrato ao aceitar
+- Contratos com assinatura
+- Casos juridicos
+
+## O que falta (lacunas no fluxo)
+
+1. **Conversa nao gera Lead** -- Nao existe botao na Central de Atendimento para converter uma conversa em Lead
+2. **Triagem nao esta implementada** -- A pagina de Triagem esta vazia, sem funcionalidade
+3. **Contrato assinado nao atualiza o Lead** -- Ao assinar um contrato, o lead deveria avancar para "fechado"
+4. **Sem ligacao visual entre entidades** -- Falta rastreabilidade end-to-end
 
 ## Plano de Implementacao
 
-### 1. Corrigir reset de estado nos formularios
+### 1. Botao "Criar Lead" na Central de Atendimento
 
-**Ficheiros:** `ContratoForm.tsx`, `PropostaForm.tsx`
+No painel de perfil do contacto (`ContactProfile.tsx`), adicionar um botao "Criar Lead a partir desta conversa" que:
+- Pre-preenche o nome, telefone, email e origem (canal da conversa)
+- Abre o formulario de Lead ou cria diretamente
+- Vincula o `client_id` se existir
 
-Adicionar `useEffect` que reseta os campos quando o dialog abre/fecha ou quando o registo de edicao muda. Atualmente os `useState` so inicializam uma vez, entao reabrir o formulario mantem dados antigos.
+### 2. Triagem Integrada no LeadSheet
 
-### 2. Criar Caso automaticamente ao avancar Lead no funil
+Em vez de uma pagina separada, integrar a triagem diretamente no detalhe do Lead (`LeadSheet.tsx`):
+- Adicionar campos de selecao rapida para area juridica e urgencia
+- Botao "Concluir Triagem" que move o lead de "triagem" para "proposta"
+- Resumo das notas da conversa (se vinculada)
 
-**Ficheiro:** `src/pages/Leads.tsx`
+### 3. Atualizar Lead ao Assinar Contrato
 
-Quando o utilizador move um lead para o estagio "contrato" (ou outro estagio avancado como "proposta"), o sistema:
-- Verifica se ja existe um Caso associado ao lead
-- Se nao existir, cria automaticamente um Caso com:
-  - Titulo baseado no nome do lead
-  - Area juridica do lead
-  - `lead_id` apontando para o lead
-  - Status "aberto"
-- Exibe uma notificacao: "Caso criado automaticamente"
+No `Contratos.tsx`, ao assinar um contrato (`signMutation`):
+- Buscar o caso associado ao contrato
+- Buscar o lead associado ao caso
+- Atualizar o estagio do lead para "fechado"
+- Atualizar o status do caso para "em_andamento"
 
-### 3. Adicionar botao "Criar Proposta" no detalhe do Lead
+### 4. Conectar Conversa ao Lead
 
-**Ficheiro:** `src/components/leads/LeadSheet.tsx`
-
-Quando o lead esta nos estagios "proposta" ou adiante:
-- Mostrar botao "Criar Proposta" que:
-  - Primeiro verifica/cria o Caso associado ao lead
-  - Navega para `/propostas` com o caso pre-selecionado (via query param ou state)
-  
-Alternativa mais simples: adicionar um botao que abre o formulario de proposta diretamente no LeadSheet, com o caso ja associado.
-
-### 4. Melhorar a ligacao Proposta aceita -> Contrato
-
-**Ficheiro:** `src/pages/Propostas.tsx`
-
-Ja existe a logica (linhas 93-101) mas falta:
-- Atualizar o estagio do lead associado ao caso para "contrato" automaticamente
-- Mostrar link para o contrato criado na notificacao
-
-### 5. Adicionar link de navegacao entre entidades
-
-**Ficheiros:** `LeadSheet.tsx`, `Propostas.tsx`, `Contratos.tsx`, `Casos.tsx`
-
-Adicionar links clicaveis entre entidades relacionadas:
-- No Lead: link para o Caso associado (se existir)
-- No Caso: link para o Lead de origem
-- Na Proposta: link para o Caso
-- No Contrato: link para a Proposta e para o Caso
+Adicionar coluna `conversation_id` na tabela `leads` (migracao) para rastrear a conversa que originou o lead.
 
 ## Detalhes Tecnicos
 
-### Reset de formularios (ContratoForm e PropostaForm)
-
-Substituir `useState(contrato?.field)` por um `useEffect` que atualiza os estados quando a prop `contrato`/`proposta` muda:
+### Migracao de Base de Dados
 
 ```text
-useEffect(() => {
-  setProposalId(contrato?.proposal_id || "");
-  setCaseId(contrato?.case_id || "");
-  // ... demais campos
-}, [contrato, open]);
+ALTER TABLE public.leads ADD COLUMN conversation_id uuid REFERENCES conversations(id);
 ```
 
-### Criacao automatica de Caso
+### ContactProfile.tsx -- Botao Criar Lead
 
-Na mutacao `moveStageMutation` em `Leads.tsx`, antes de atualizar o estagio:
+Adicionar na seccao "Cliente" um botao "Converter em Lead" que:
+1. Navega para `/leads` com query params contendo os dados da conversa
+2. Ou abre um dialog inline que insere o lead diretamente
 
-1. Buscar se existe caso com `lead_id` = lead.id
-2. Se nao existir e o estagio for >= "proposta", criar caso via `supabase.from("cases").insert({...})`
-3. Invalidar queries de casos
+### LeadSheet.tsx -- Triagem Inline
 
-### Nenhuma alteracao de base de dados necessaria
+Adicionar seccao de triagem com:
+- Select para area juridica (se ainda nao preenchida)
+- Select para urgencia
+- Textarea para notas de triagem
+- Botao "Avancar para Proposta" que salva os campos e move o estagio
 
-A tabela `cases` ja possui o campo `lead_id` que permite a ligacao.
+### Contratos.tsx -- signMutation Melhorado
+
+```text
+// Apos assinar contrato:
+1. Buscar contract.case_id
+2. Buscar case.lead_id
+3. UPDATE leads SET funnel_stage = 'fechado' WHERE id = lead_id
+4. UPDATE cases SET status = 'em_andamento' WHERE id = case_id
+```
+
+### Leads.tsx -- Receber Dados da Conversa
+
+Adicionar `useSearchParams` para receber dados pre-preenchidos:
+- `?from_conversation=ID&name=X&phone=Y&email=Z&origin=whatsapp`
+- Auto-abrir o formulario com os campos pre-preenchidos
 
 ## Ordem de Execucao
 
-1. Corrigir reset dos formularios (ContratoForm, PropostaForm)
-2. Implementar criacao automatica de Caso ao avancar Lead
-3. Adicionar botao "Criar Proposta" no LeadSheet
-4. Melhorar feedback e links de navegacao entre entidades
+1. Migracao: adicionar `conversation_id` a tabela leads
+2. ContactProfile: botao "Criar Lead" que navega com dados pre-preenchidos
+3. Leads: receber query params e pre-preencher formulario
+4. LeadSheet: adicionar triagem inline (area juridica, urgencia, notas)
+5. Contratos: atualizar lead e caso ao assinar contrato
+6. Testar fluxo completo end-to-end
