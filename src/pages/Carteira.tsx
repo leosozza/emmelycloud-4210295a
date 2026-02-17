@@ -3,6 +3,7 @@ import { Contact, Briefcase, MapPin } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Badge } from "@/components/ui/badge";
+import { PageHeader } from "@/components/PageHeader";
 import ClientesPage from "./Clientes";
 import ServicosPage from "./Servicos";
 import SEFPage from "./SEF";
@@ -34,7 +35,7 @@ export default function CarteiraPage() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-bold text-foreground">Carteira</h1>
+      <PageHeader title="Carteira" description="Clientes, serviços e localizações SEF" />
 
       <Tabs defaultValue="clientes" className="w-full">
         <TabsList className="w-full max-w-md">

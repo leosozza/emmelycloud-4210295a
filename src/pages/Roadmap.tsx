@@ -2,6 +2,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import { CheckCircle2, Clock, Calendar, Rocket } from "lucide-react";
+import { PageHeader } from "@/components/PageHeader";
 
 type ModuleStatus = "concluido" | "em_progresso" | "por_iniciar";
 
@@ -102,12 +103,7 @@ const statusConfig: Record<ModuleStatus, { label: string; variant: "default" | "
 export default function RoadmapPage() {
   return (
     <div className="space-y-8">
-      <div>
-        <h1 className="text-2xl font-bold text-foreground">Roadmap</h1>
-        <p className="text-muted-foreground text-sm mt-1">
-          Progresso de desenvolvimento do Emmely Cloud
-        </p>
-      </div>
+      <PageHeader title="Roadmap" description="Progresso de desenvolvimento do Emmely Cloud" />
 
       {/* Overall progress */}
       <Card>

@@ -1,8 +1,9 @@
+import { PageHeader } from "@/components/PageHeader";
+
 const RelatoriosPage = () => {
   return (
     <div>
-      <h1 className="font-display text-2xl font-bold">Relatórios & Inteligência</h1>
-      <p className="text-muted-foreground mt-1">Métricas, benchmarks e previsões</p>
+      <PageHeader title="Relatórios & Inteligência" description="Métricas, benchmarks e previsões" />
     </div>
   );
 };

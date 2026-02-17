@@ -15,6 +15,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Tables, Constants } from "@/integrations/supabase/types";
 import { ContratoForm } from "@/components/contratos/ContratoForm";
 import { format, parseISO } from "date-fns";
+import { PageHeader } from "@/components/PageHeader";
 
 type Contract = Tables<"contracts">;
 
@@ -127,15 +128,11 @@ const ContratosPage = () => {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="font-display text-2xl font-bold">Contratos</h1>
-          <p className="text-muted-foreground text-sm mt-1">Gestão de contratos e assinaturas</p>
-        </div>
-        <Button onClick={() => { setEditingContrato(null); setFormOpen(true); }}>
+      <PageHeader title="Contratos" description="Gestão de contratos e assinaturas">
+        <Button onClick={() => { setEditingContrato(null); setFormOpen(true); }} className="bg-white/20 hover:bg-white/30 text-white border-0 rounded-full">
           <Plus className="mr-2 h-4 w-4" /> Novo Contrato
         </Button>
-      </div>
+      </PageHeader>
 
       <Select value={statusFilter} onValueChange={setStatusFilter}>
         <SelectTrigger className="w-[180px]"><SelectValue placeholder="Status" /></SelectTrigger>
