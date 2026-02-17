@@ -97,7 +97,7 @@ Deno.serve(async (req) => {
 
       const cbBody: Record<string, unknown> = {
         to,
-        from: "instagram",
+        from: "whatsapp",
         channel_uuid: channelUuid,
       };
 
@@ -114,12 +114,12 @@ Deno.serve(async (req) => {
       }
 
       // Check if this is first contact - if conversation is new, include optin_contact
-      const { data: msgCount } = await serviceSupabase
+      const { count: msgCountNum } = await serviceSupabase
         .from("messages")
         .select("id", { count: "exact", head: true })
         .eq("conversation_id", conversation_id);
       
-      const isFirstContact = (msgCount === null || msgCount === 0);
+      const isFirstContact = (msgCountNum === null || msgCountNum === 0);
       if (isFirstContact) {
         cbBody.optin_contact = true;
         console.log("DEBUG first contact, including optin_contact");
