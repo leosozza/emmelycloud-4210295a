@@ -98,7 +98,7 @@ Deno.serve(async (req) => {
 
       const cbBody = {
         to,
-        from: conv.channel === "whatsapp" ? "whatsapp" : "instagram",
+        from: "whatsapp",
         type: "text",
         content: { text: content },
         channel_uuid: channelUuid,
