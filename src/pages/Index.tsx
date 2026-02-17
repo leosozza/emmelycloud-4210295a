@@ -6,6 +6,7 @@ import {
   ArrowUpRight,
   ArrowDownRight,
 } from "lucide-react";
+import { useLocale } from "@/contexts/LocaleContext";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   BarChart,
@@ -94,6 +95,8 @@ const COLORS = [
 ];
 
 const Index = () => {
+  const { formatCurrency, currencySymbol } = useLocale();
+
   return (
     <div className="space-y-6">
       <div>
@@ -183,9 +186,9 @@ const Index = () => {
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={revenueByArea} layout="vertical" margin={{ left: 20 }}>
                   <CartesianGrid strokeDasharray="3 3" horizontal={false} />
-                  <XAxis type="number" tickFormatter={(v) => `€${(v / 1000).toFixed(0)}k`} fontSize={12} />
+                  <XAxis type="number" tickFormatter={(v) => `${currencySymbol}${(v / 1000).toFixed(0)}k`} fontSize={12} />
                   <YAxis type="category" dataKey="area" fontSize={12} width={80} />
-                  <Tooltip formatter={(v: number) => `€${v.toLocaleString()}`} />
+                  <Tooltip formatter={(v: number) => formatCurrency(v)} />
                   <Bar dataKey="receita" fill="hsl(var(--chart-1))" radius={[0, 6, 6, 0]} />
                 </BarChart>
               </ResponsiveContainer>
@@ -205,8 +208,8 @@ const Index = () => {
                 <LineChart data={monthlyRevenue}>
                   <CartesianGrid strokeDasharray="3 3" />
                   <XAxis dataKey="month" fontSize={12} />
-                  <YAxis tickFormatter={(v) => `€${(v / 1000).toFixed(0)}k`} fontSize={12} />
-                  <Tooltip formatter={(v: number) => `€${v.toLocaleString()}`} />
+                  <YAxis tickFormatter={(v) => `${currencySymbol}${(v / 1000).toFixed(0)}k`} fontSize={12} />
+                  <Tooltip formatter={(v: number) => formatCurrency(v)} />
                   <Line
                     type="monotone"
                     dataKey="receita"
