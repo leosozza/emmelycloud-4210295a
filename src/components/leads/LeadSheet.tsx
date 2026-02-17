@@ -54,10 +54,14 @@ interface LeadSheetProps {
 }
 
 export function LeadSheet({ lead, open, onOpenChange, onEdit, onDelete, onMoveStage, onCreateProposal }: LeadSheetProps) {
-  if (!lead) return null;
+  if (!lead || !open) return null;
+  return <LeadSheetContent lead={lead} onOpenChange={onOpenChange} onEdit={onEdit} onDelete={onDelete} onMoveStage={onMoveStage} onCreateProposal={onCreateProposal} />;
+}
+
+function LeadSheetContent({ lead, onOpenChange, onEdit, onDelete, onMoveStage, onCreateProposal }: Omit<LeadSheetProps, 'open'> & { lead: Lead }) {
   const { dateFnsLocale } = useLocale();
   const navigate = useNavigate();
-  const sla = getSlaInfo(lead.sla_expires_at);
+  const sla = getSlaInfo(lead!.sla_expires_at);
   const stages = Constants.public.Enums.funnel_stage;
   const currentIdx = stages.indexOf(lead.funnel_stage);
 
@@ -72,11 +76,10 @@ export function LeadSheet({ lead, open, onOpenChange, onEdit, onDelete, onMoveSt
         .limit(1);
       return data?.[0] || null;
     },
-    enabled: open,
   });
 
   return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
+    <Sheet open={true} onOpenChange={onOpenChange}>
       <SheetContent className="w-[400px] sm:w-[480px] overflow-y-auto">
         <SheetHeader>
           <SheetTitle className="text-lg">{lead.name}</SheetTitle>
@@ -144,7 +147,7 @@ export function LeadSheet({ lead, open, onOpenChange, onEdit, onDelete, onMoveSt
                   className="p-0 h-auto text-sm"
                   onClick={() => { onOpenChange(false); navigate("/casos"); }}
                 >
-                  {linkedCase.title} <ExternalLink className="ml-1 h-3 w-3" />
+                  {(linkedCase as any)?.title} <ExternalLink className="ml-1 h-3 w-3" />
                 </Button>
               </div>
             </>
