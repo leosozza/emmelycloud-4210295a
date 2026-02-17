@@ -11,11 +11,13 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { Plus, Search, Pencil, Trash2 } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 import { useToast } from "@/hooks/use-toast";
 import { Tables, TablesInsert, Constants } from "@/integrations/supabase/types";
 import { CasoForm } from "@/components/casos/CasoForm";
 import { format, parseISO } from "date-fns";
 import { PageHeader } from "@/components/PageHeader";
+import { EntityBreadcrumb } from "@/components/EntityBreadcrumb";
 
 type Case = Tables<"cases">;
 
@@ -42,6 +44,7 @@ const CasosPage = () => {
   const [formOpen, setFormOpen] = useState(false);
   const [editingCaso, setEditingCaso] = useState<Case | null>(null);
   const { toast } = useToast();
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
 
   const { data: cases = [], isLoading } = useQuery({
@@ -159,7 +162,13 @@ const CasosPage = () => {
                 <TableCell>
                   <Badge className={`text-xs ${statusColors[c.status]}`}>{statusLabels[c.status]}</Badge>
                 </TableCell>
-                <TableCell className="text-sm">{c.lead_id ? (leadsMap[c.lead_id] || "—") : "—"}</TableCell>
+                <TableCell className="text-sm">
+                  {c.lead_id ? (
+                    <Button variant="link" size="sm" className="p-0 h-auto text-sm" onClick={() => navigate("/leads")}>
+                      {leadsMap[c.lead_id] || "—"}
+                    </Button>
+                  ) : "—"}
+                </TableCell>
                 <TableCell className="text-sm">{c.assigned_attorney_id ? (profilesMap[c.assigned_attorney_id] || "—") : "—"}</TableCell>
                 <TableCell className="text-xs text-muted-foreground">{format(parseISO(c.created_at), "dd/MM/yyyy")}</TableCell>
                 <TableCell>
