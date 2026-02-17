@@ -114,7 +114,7 @@ Deno.serve(async (req) => {
       cbBody.from = "whatsapp";
     }
 
-    console.log("DEBUG callbell-send request:", JSON.stringify({ to, from: fromChannel, channel: conv.channel, channelUuid, content }));
+    console.log("DEBUG callbell-send request body:", JSON.stringify(cbBody));
 
     const cbResponse = await fetch(`${CALLBELL_API}/messages/send`, {
       method: "POST",
