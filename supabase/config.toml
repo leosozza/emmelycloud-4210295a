@@ -8,3 +8,9 @@ verify_jwt = false
 
 [functions.instagram-publish]
 verify_jwt = false
+
+[functions.callbell-webhook]
+verify_jwt = false
+
+[functions.callbell-send]
+verify_jwt = false
