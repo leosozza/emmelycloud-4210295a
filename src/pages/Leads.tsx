@@ -143,7 +143,7 @@ const LeadsPage = () => {
       {isLoading ? (
         <p className="text-muted-foreground text-center py-8">A carregar...</p>
       ) : view === "kanban" ? (
-        <LeadKanbanBoard leads={filtered} onLeadClick={openLeadSheet} />
+        <LeadKanbanBoard leads={filtered} onLeadClick={openLeadSheet} onMoveStage={(leadId, stage) => moveStageMutation.mutate({ id: leadId, stage })} />
       ) : (
         <LeadListView leads={filtered} onLeadClick={openLeadSheet} />
       )}
