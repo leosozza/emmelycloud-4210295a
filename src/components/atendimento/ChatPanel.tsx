@@ -22,6 +22,7 @@ interface Message {
   sender_name?: string | null;
   created_at: string;
   read_at?: string | null;
+  delivery_status?: string | null;
 }
 
 interface QuickReply {
@@ -155,6 +156,7 @@ export function ChatPanel({ conversation, messages, quickReplies, onSendMessage,
                 senderName={msg.sender_name ?? undefined}
                 createdAt={msg.created_at}
                 readAt={msg.read_at}
+                deliveryStatus={msg.delivery_status}
               />
             ))}
           </div>

@@ -453,6 +453,7 @@ export type Database = {
           content: string
           conversation_id: string
           created_at: string
+          delivery_status: string | null
           direction: Database["public"]["Enums"]["message_direction"]
           external_id: string | null
           id: string
@@ -465,6 +466,7 @@ export type Database = {
           content: string
           conversation_id: string
           created_at?: string
+          delivery_status?: string | null
           direction: Database["public"]["Enums"]["message_direction"]
           external_id?: string | null
           id?: string
@@ -477,6 +479,7 @@ export type Database = {
           content?: string
           conversation_id?: string
           created_at?: string
+          delivery_status?: string | null
           direction?: Database["public"]["Enums"]["message_direction"]
           external_id?: string | null
           id?: string
