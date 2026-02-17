@@ -93,9 +93,9 @@ export default function AtendimentoPage() {
       if (!selectedId) return;
       const conv = conversations.find((c) => c.id === selectedId);
 
-      // Route Instagram messages through the edge function
-      if (conv?.channel === "instagram") {
-        const { data, error } = await supabase.functions.invoke("instagram-send", {
+      // Route messages through Callbell for supported channels
+      if (conv?.channel === "instagram" || conv?.channel === "whatsapp") {
+        const { data, error } = await supabase.functions.invoke("callbell-send", {
           body: { conversation_id: selectedId, content },
         });
         if (error) throw error;
