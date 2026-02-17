@@ -68,8 +68,58 @@ Deno.serve(async (req) => {
 
     let externalMessageId: string | null = null;
 
-    if (conv.channel === "instagram" || conv.channel === "whatsapp") {
-      // ── Send via Callbell API ──
+    if (conv.channel === "instagram") {
+      // ── Instagram: send via Meta Graph API ──
+      const IG_ACCESS_TOKEN = Deno.env.get("META_PAGE_ACCESS_TOKEN");
+      const IG_ACCOUNT_ID = Deno.env.get("META_IG_ACCOUNT_ID");
+
+      if (!IG_ACCESS_TOKEN || !IG_ACCOUNT_ID) {
+        return new Response(JSON.stringify({ error: "Instagram API credentials not configured" }), {
+          status: 500,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      const recipientId = conv.contact_instagram;
+      if (!recipientId) {
+        return new Response(JSON.stringify({ error: "No Instagram contact identifier" }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      console.log("DEBUG instagram-send to:", recipientId, "account:", IG_ACCOUNT_ID);
+
+      const igResponse = await fetch(
+        `${INSTAGRAM_GRAPH_API}/${IG_ACCOUNT_ID}/messages`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${IG_ACCESS_TOKEN}`,
+          },
+          body: JSON.stringify({
+            recipient: { id: recipientId },
+            message: { text: content },
+          }),
+        }
+      );
+
+      const igResult = await igResponse.json();
+      console.log("DEBUG instagram-send response:", igResponse.status, JSON.stringify(igResult));
+
+      if (!igResponse.ok) {
+        console.error("Instagram API error:", JSON.stringify(igResult));
+        return new Response(JSON.stringify({ error: "Failed to send Instagram message", details: igResult }), {
+          status: 502,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      externalMessageId = igResult.message_id ?? null;
+
+    } else if (conv.channel === "whatsapp") {
+      // ── WhatsApp: send via Callbell API ──
       const CALLBELL_TOKEN = Deno.env.get("CALLBELL_API_TOKEN");
       if (!CALLBELL_TOKEN) {
         return new Response(JSON.stringify({ error: "CALLBELL_API_TOKEN not configured" }), {
@@ -78,20 +128,17 @@ Deno.serve(async (req) => {
         });
       }
 
-      const channelUuid = conv.channel === "whatsapp"
-        ? Deno.env.get("CALLBELL_WA_CHANNEL_UUID")
-        : Deno.env.get("CALLBELL_IG_CHANNEL_UUID");
-
+      const channelUuid = Deno.env.get("CALLBELL_WA_CHANNEL_UUID");
       if (!channelUuid) {
-        return new Response(JSON.stringify({ error: `CALLBELL_${conv.channel.toUpperCase()}_CHANNEL_UUID not configured` }), {
+        return new Response(JSON.stringify({ error: "CALLBELL_WA_CHANNEL_UUID not configured" }), {
           status: 500,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
 
-      const to = conv.channel === "whatsapp" ? conv.contact_phone : conv.contact_instagram;
+      const to = conv.contact_phone;
       if (!to) {
-        return new Response(JSON.stringify({ error: `No contact identifier for ${conv.channel}` }), {
+        return new Response(JSON.stringify({ error: "No phone number for WhatsApp contact" }), {
           status: 400,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
@@ -99,11 +146,10 @@ Deno.serve(async (req) => {
 
       const cbBody = {
         to,
-        from: conv.channel === "whatsapp" ? "whatsapp" : "instagram",
+        from: "whatsapp",
         type: "text",
         content: { text: content },
         channel_uuid: channelUuid,
-        optin_contact: true,
       };
 
       console.log("DEBUG callbell-send request body:", JSON.stringify(cbBody));
@@ -122,7 +168,7 @@ Deno.serve(async (req) => {
 
       if (!cbResponse.ok) {
         console.error("Callbell API error:", JSON.stringify(cbResult));
-        return new Response(JSON.stringify({ error: `Failed to send message via Callbell (${conv.channel})`, details: cbResult }), {
+        return new Response(JSON.stringify({ error: "Failed to send message via Callbell", details: cbResult }), {
           status: 502,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
