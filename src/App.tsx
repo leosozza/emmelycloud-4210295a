@@ -14,9 +14,7 @@ import ContratosPage from "./pages/Contratos";
 import FinanceiroPage from "./pages/Financeiro";
 import AutomacoesPage from "./pages/Automacoes";
 import RelatoriosPage from "./pages/Relatorios";
-import ClientesPage from "./pages/Clientes";
-import ServicosPage from "./pages/Servicos";
-import SEFPage from "./pages/SEF";
+import CarteiraPage from "./pages/Carteira";
 import AtendimentoPage from "./pages/Atendimento";
 import RoadmapPage from "./pages/Roadmap";
 import NotFound from "./pages/NotFound";
@@ -41,9 +39,7 @@ const App = () => (
             <Route path="/financeiro" element={<FinanceiroPage />} />
             <Route path="/automacoes" element={<AutomacoesPage />} />
             <Route path="/relatorios" element={<RelatoriosPage />} />
-            <Route path="/clientes" element={<ClientesPage />} />
-            <Route path="/servicos" element={<ServicosPage />} />
-            <Route path="/sef" element={<SEFPage />} />
+            <Route path="/carteira" element={<CarteiraPage />} />
             <Route path="/atendimento" element={<AtendimentoPage />} />
             <Route path="/roadmap" element={<RoadmapPage />} />
           </Route>

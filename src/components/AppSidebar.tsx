@@ -2,7 +2,7 @@ import {
   LayoutDashboard, 
   Users, 
    
-  Briefcase, 
+  Briefcase,
   FileText, 
   FileSignature, 
   DollarSign, 
@@ -11,7 +11,6 @@ import {
   ChevronLeft,
   ChevronRight,
   Scale,
-  MapPin,
   Contact,
   MessageCircle,
   Map
@@ -42,9 +41,7 @@ const mainNav = [
 ];
 
 const carteiraNav = [
-  { title: "Clientes", url: "/clientes", icon: Contact },
-  { title: "Serviços", url: "/servicos", icon: Briefcase },
-  { title: "SEF", url: "/sef", icon: MapPin },
+  { title: "Carteira", url: "/carteira", icon: Contact },
 ];
 
 const secondaryNav = [
