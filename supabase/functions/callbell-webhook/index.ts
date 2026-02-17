@@ -43,8 +43,9 @@ Deno.serve(async (req) => {
     const message = payload.message || payload;
     const contact = payload.contact || {};
 
-    // Skip outbound messages (sent by agent)
-    if (message.direction === "out" || message.direction === "outbound") {
+    // Skip outbound messages (sent by agent) - Callbell uses "sent"/"delivered"/"read" for outbound
+    const msgDirection = message.direction || message.status;
+    if (msgDirection === "out" || msgDirection === "outbound" || msgDirection === "sent" || msgDirection === "delivered" || msgDirection === "read") {
       return new Response(JSON.stringify({ success: true, skipped: "outbound" }), {
         status: 200,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -60,12 +61,14 @@ Deno.serve(async (req) => {
     }
 
     // Determine channel and contact identifier
-    const channel = (message.channel || contact.channel || "webchat").toLowerCase();
-    const contactPhone = contact.phone || contact.phone_number || null;
-    const contactIg = contact.instagram_id || contact.identifier || null;
+    const channel = (message.channel || contact.channel?.type || contact.source || "webchat").toLowerCase();
+    // For inbound messages, "from" is the sender (contact) ID
+    const msgFrom = message.from || null;
+    const contactPhone = contact.phone || contact.phone_number || contact.phoneNumber || null;
+    const contactIg = (channel.includes("instagram") ? msgFrom : null) || contact.instagram_id || contact.identifier || null;
     const contactEmail = contact.email || null;
-    const contactName = contact.name || contact.phone || contact.identifier || "Desconhecido";
-    const contactAvatar = contact.profile_picture || contact.avatar_url || null;
+    const contactName = contact.name || contactIg || contactPhone || "Desconhecido";
+    const contactAvatar = contact.profile_picture || contact.avatar_url || contact.avatarUrl || null;
     const externalId = message.uuid || message.id || null;
     const mediaUrl = message.attachments?.[0]?.url || null;
     const mediaType = message.attachments?.[0]?.type || null;
