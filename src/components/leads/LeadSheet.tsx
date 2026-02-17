@@ -233,20 +233,37 @@ function LeadSheetContent({ lead, onOpenChange, onEdit, onDelete, onMoveStage, o
             <p>Atualizado: {format(parseISO(lead.updated_at), "dd/MM/yyyy HH:mm", { locale: dateFnsLocale })}</p>
           </div>
 
-          {/* Linked Case */}
-          {linkedCase && (
+          {/* Linked entities */}
+          {(lead.conversation_id || linkedCase) && (
             <>
               <Separator />
-              <div className="flex items-center gap-2">
-                <span className="text-sm font-medium text-muted-foreground">Caso associado:</span>
-                <Button
-                  variant="link"
-                  size="sm"
-                  className="p-0 h-auto text-sm"
-                  onClick={() => { onOpenChange(false); setTimeout(() => navigate("/casos"), 500); }}
-                >
-                  {linkedCase.title} <ExternalLink className="ml-1 h-3 w-3" />
-                </Button>
+              <div className="space-y-2">
+                {lead.conversation_id && (
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-medium text-muted-foreground">Conversa:</span>
+                    <Button
+                      variant="link"
+                      size="sm"
+                      className="p-0 h-auto text-sm"
+                      onClick={() => { onOpenChange(false); setTimeout(() => navigate("/atendimento"), 500); }}
+                    >
+                      Ver conversa <ExternalLink className="ml-1 h-3 w-3" />
+                    </Button>
+                  </div>
+                )}
+                {linkedCase && (
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-medium text-muted-foreground">Caso:</span>
+                    <Button
+                      variant="link"
+                      size="sm"
+                      className="p-0 h-auto text-sm"
+                      onClick={() => { onOpenChange(false); setTimeout(() => navigate("/casos"), 500); }}
+                    >
+                      {linkedCase.title} <ExternalLink className="ml-1 h-3 w-3" />
+                    </Button>
+                  </div>
+                )}
               </div>
             </>
           )}

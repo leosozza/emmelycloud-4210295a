@@ -12,12 +12,14 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { Plus, Search, Pencil, Trash2, Send, Check, X } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 import { useToast } from "@/hooks/use-toast";
 import { Tables, Constants } from "@/integrations/supabase/types";
 import { PropostaForm } from "@/components/propostas/PropostaForm";
 import { useLocale } from "@/contexts/LocaleContext";
 import { format, parseISO } from "date-fns";
 import { PageHeader } from "@/components/PageHeader";
+import { EntityBreadcrumb } from "@/components/EntityBreadcrumb";
 
 type Proposal = Tables<"proposals">;
 
@@ -43,6 +45,7 @@ const PropostasPage = () => {
   const [preselectedCaseId, setPreselectedCaseId] = useState<string | null>(null);
   const { toast } = useToast();
   const { formatCurrency } = useLocale();
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
 
@@ -201,7 +204,11 @@ const PropostasPage = () => {
             ) : filtered.map((p) => (
               <TableRow key={p.id}>
                 <TableCell className="font-medium">{p.title}</TableCell>
-                <TableCell className="text-sm">{casesMap[p.case_id] || "—"}</TableCell>
+                <TableCell className="text-sm">
+                  <Button variant="link" size="sm" className="p-0 h-auto text-sm" onClick={() => navigate("/casos")}>
+                    {casesMap[p.case_id] || "—"}
+                  </Button>
+                </TableCell>
                 <TableCell className="text-sm font-medium">{formatCurrency(p.value)}</TableCell>
                 <TableCell className="text-sm">{paymentTypeLabels[p.payment_type]}{p.installments && p.installments > 1 ? ` (${p.installments}x)` : ""}</TableCell>
                 <TableCell>

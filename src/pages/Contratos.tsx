@@ -16,6 +16,8 @@ import { Tables, Constants } from "@/integrations/supabase/types";
 import { ContratoForm } from "@/components/contratos/ContratoForm";
 import { format, parseISO } from "date-fns";
 import { PageHeader } from "@/components/PageHeader";
+import { EntityBreadcrumb } from "@/components/EntityBreadcrumb";
+import { useNavigate } from "react-router-dom";
 
 type Contract = Tables<"contracts">;
 
@@ -33,6 +35,7 @@ const ContratosPage = () => {
   const [formOpen, setFormOpen] = useState(false);
   const [editingContrato, setEditingContrato] = useState<Contract | null>(null);
   const { toast } = useToast();
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
 
   const { data: contracts = [], isLoading } = useQuery({
@@ -180,8 +183,18 @@ const ContratosPage = () => {
               <TableRow><TableCell colSpan={7} className="text-center text-muted-foreground">Nenhum contrato encontrado</TableCell></TableRow>
             ) : filtered.map((c) => (
               <TableRow key={c.id}>
-                <TableCell className="font-medium text-sm">{proposalsMap[c.proposal_id] || "—"}</TableCell>
-                <TableCell className="text-sm">{c.case_id ? (casesMap[c.case_id] || "—") : "—"}</TableCell>
+                <TableCell className="font-medium text-sm">
+                  <Button variant="link" size="sm" className="p-0 h-auto text-sm" onClick={() => navigate("/propostas")}>
+                    {proposalsMap[c.proposal_id] || "—"}
+                  </Button>
+                </TableCell>
+                <TableCell className="text-sm">
+                  {c.case_id ? (
+                    <Button variant="link" size="sm" className="p-0 h-auto text-sm" onClick={() => navigate("/casos")}>
+                      {casesMap[c.case_id] || "—"}
+                    </Button>
+                  ) : "—"}
+                </TableCell>
                 <TableCell>
                   <Badge className={`text-xs ${statusColors[c.status]}`}>{statusLabels[c.status]}</Badge>
                 </TableCell>
