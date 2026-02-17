@@ -6,7 +6,7 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
-const GRAPH_URL = "https://graph.instagram.com/v21.0";
+const GRAPH_URL = "https://graph.instagram.com/v24.0";
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -72,7 +72,7 @@ Deno.serve(async (req) => {
       });
     }
 
-    const PAGE_TOKEN = Deno.env.get("META_PAGE_ACCESS_TOKEN");
+    const PAGE_TOKEN = Deno.env.get("META_PAGE_ACCESS_TOKEN")?.trim();
     if (!PAGE_TOKEN) {
       return new Response(JSON.stringify({ error: "META_PAGE_ACCESS_TOKEN not configured" }), {
         status: 500,
@@ -80,10 +80,19 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Send message via Instagram Messaging API
-    const igResponse = await fetch(`${GRAPH_URL}/me/messages?access_token=${PAGE_TOKEN}`, {
+    // Send message via Instagram Messaging API (new Instagram API with Instagram Login)
+    // Uses Bearer token auth and IG account ID endpoint
+    const igAccountId = Deno.env.get("META_IG_ACCOUNT_ID");
+    const sendEndpoint = igAccountId 
+      ? `${GRAPH_URL}/${igAccountId}/messages`
+      : `${GRAPH_URL}/me/messages`;
+
+    const igResponse = await fetch(sendEndpoint, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { 
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${PAGE_TOKEN}`,
+      },
       body: JSON.stringify({
         recipient: { id: conv.contact_instagram },
         message: { text: content },
