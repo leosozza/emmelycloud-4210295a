@@ -1,40 +1,61 @@
 
 
-# Atualizar Roadmap: Integração Bitrix24 Detalhada
+# Internacionalização: Seletor de Idioma/Moeda (PT-BR / PT-PT)
 
 ## Resumo
 
-Substituir a entrada genérica "Integração Bitrix24" no Roadmap por um bloco completo e detalhado que reflita todos os componentes da integração bidirecional, baseado nos guias fornecidos. A Emmely Cloud mantém banco de dados independente -- o Bitrix24 funciona como camada opcional de CRM/automação.
+Criar um sistema de localização com seletor de bandeira (Brasil / Portugal) que altera o idioma e a moeda em toda a aplicação. Ambas as variantes usam Portugues, mas com diferenças de vocabulário e moeda (BRL vs EUR).
 
-## Alterações
+## Como funciona
 
-### Ficheiro editado: `src/pages/Roadmap.tsx`
+- Seletor de bandeira no header (ao lado do avatar)
+- Brasil: idioma pt-BR, moeda R$ (BRL), formato de data dd/MM/yyyy
+- Portugal: idioma pt-PT, moeda EUR, formato de data dd/MM/yyyy
+- A preferência fica guardada no localStorage e persiste entre sessões
 
-Remover os itens individuais que agora fazem parte da integração Bitrix24 ("Integração Bitrix24", "WhatsApp Cloud API", "Instagram DM") e substituí-los por uma nova fase/secção dedicada com os seguintes módulos:
+## Ficheiros novos
 
-**Nova secção: "Integração Bitrix24" (dentro de "Futuro")**
+### 1. `src/contexts/LocaleContext.tsx`
+- Context React com `locale` ("pt-BR" | "pt-PT"), `currency` ("BRL" | "EUR"), e `setLocale`
+- Provider que lê/grava a preferência no localStorage
+- Hook `useLocale()` para consumir em qualquer componente
+- Função utilitária `formatCurrency(value)` que formata automaticamente com `Intl.NumberFormat` conforme a locale ativa
 
-| Módulo | Descrição | Status |
-|--------|-----------|--------|
-| App Vendors Bitrix24 | Aplicativo publicado no marketplace Bitrix24 | Por iniciar |
-| OAuth & Token Refresh | Instalação OAuth, refresh automático de tokens | Por iniciar |
-| Conector WhatsApp Oficial | WhatsApp Cloud API via Open Lines do Bitrix24 | Por iniciar |
-| Conector Instagram DM | Mensagens diretas Instagram via Open Lines | Por iniciar |
-| Mapeamento de Canais | Binding canais WhatsApp/IG para Open Lines | Por iniciar |
-| Fluxo Bidirecional Mensagens | Envio/receção de mensagens Emmely <-> Bitrix24 | Por iniciar |
-| Prevenção Loops/Duplicações | Sistema anti-loop e deduplicação de mensagens | Por iniciar |
-| Auto-Reparo Conector | Reconexão automática e health checks | Por iniciar |
-| Robots BizProc | Robots de automação para workflows Bitrix24 | Por iniciar |
-| Sync CRM Bidirecional | Leads, Deals, Contactos sincronizados | Por iniciar |
-| Conector Stripe/Pagamentos | Pagamentos Stripe integrados com Faturas Bitrix24 | Por iniciar |
-| Multi-Binding CRM | Suporte a múltiplos portais Bitrix24 | Por iniciar |
+### 2. `src/lib/translations.ts`
+- Dicionário de traduções para as diferenças entre pt-BR e pt-PT
+- Exemplos de diferenças: "Utilizador" (PT) vs "Usuário" (BR), "Telemóvel" vs "Celular", "Proposta" (igual), etc.
+- Função `t(key)` que retorna o texto correto para a locale ativa
 
-Os itens "WhatsApp Cloud API" e "Instagram DM" que existiam separados na secção "Futuro" serão removidos, pois ficam englobados na integração Bitrix24.
+## Ficheiros editados
 
-## Detalhes Técnicos
+### 3. `src/App.tsx`
+- Envolver a app com `<LocaleProvider>`
 
-- Apenas o ficheiro `src/pages/Roadmap.tsx` sera editado
-- Os novos módulos são adicionados à secção "Futuro" existente, substituindo os 3 itens anteriores (Integração Bitrix24, WhatsApp Cloud API, Instagram DM) por 12 módulos detalhados
-- Todos os novos módulos começam com status "por_iniciar" e progress 0%
-- A nota de independência do banco de dados fica implícita na arquitectura -- sem alterações de schema necessárias nesta fase
+### 4. `src/components/AppHeader.tsx`
+- Adicionar seletor de bandeira (botão com emoji de bandeira ou imagem SVG)
+- Clique alterna entre Brasil e Portugal
+- Mostra a bandeira ativa
+
+### 5. `src/pages/Index.tsx` (Dashboard)
+- Substituir "€32.450" e formatadores hardcoded por `formatCurrency()` do contexto
+- Substituir `€` nos tickFormatters dos gráficos pela moeda dinâmica
+
+### 6. `src/pages/Propostas.tsx`
+- Substituir `formatCurrency` hardcoded (pt-PT/EUR) pela função do contexto
+
+### 7. `src/pages/Servicos.tsx`
+- Substituir `€` hardcoded por símbolo dinâmico
+- Default da moeda no formulário passa a vir do contexto
+
+### 8. `src/components/leads/LeadSheet.tsx` e `src/components/atendimento/ConversationList.tsx`
+- Substituir `{ locale: pt }` do date-fns pela locale dinâmica (pt-BR ou pt)
+
+## Detalhes Tecnicos
+
+- Zero dependências novas: usa `Intl.NumberFormat` nativo e date-fns (já instalado)
+- O contexto expõe: `locale`, `currency`, `currencySymbol`, `formatCurrency(value)`, `setLocale(locale)`, `dateFnsLocale`
+- A locale do date-fns usa `pt-BR` ou `pt` conforme seleção (ambas já disponíveis no date-fns)
+- localStorage key: `emmely-locale`
+- Default: `pt-PT` (mantém comportamento atual)
+- O Roadmap recebe um novo item "Internacionalização BR/PT" na secção "Próximas Etapas"
 
