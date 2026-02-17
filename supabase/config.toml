@@ -1,1 +1,10 @@
 project_id = "qohnsluvhyziovfynzlu"
+
+[functions.instagram-webhook]
+verify_jwt = false
+
+[functions.instagram-send]
+verify_jwt = false
+
+[functions.instagram-publish]
+verify_jwt = false

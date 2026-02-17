@@ -91,6 +91,19 @@ export default function AtendimentoPage() {
   const sendMessage = useMutation({
     mutationFn: async (content: string) => {
       if (!selectedId) return;
+      const conv = conversations.find((c) => c.id === selectedId);
+
+      // Route Instagram messages through the edge function
+      if (conv?.channel === "instagram") {
+        const { data, error } = await supabase.functions.invoke("instagram-send", {
+          body: { conversation_id: selectedId, content },
+        });
+        if (error) throw error;
+        if (data?.error) throw new Error(data.error);
+        return;
+      }
+
+      // Default: direct DB insert for other channels
       const { error } = await supabase.from("messages").insert({
         conversation_id: selectedId,
         direction: "outbound" as Direction,
@@ -98,7 +111,6 @@ export default function AtendimentoPage() {
         sender_name: "Atendente",
       } as any);
       if (error) throw error;
-      // Update conversation preview
       await supabase
         .from("conversations")
         .update({
