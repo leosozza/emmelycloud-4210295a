@@ -130,8 +130,7 @@ export default function ServicosPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-foreground">Serviços</h1>
+      <div className="flex items-center justify-end">
         <Button onClick={openNew}>
           <Plus className="mr-2 h-4 w-4" /> Novo Serviço
         </Button>
