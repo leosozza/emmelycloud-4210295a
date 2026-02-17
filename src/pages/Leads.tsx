@@ -11,6 +11,7 @@ import { LeadListView } from "@/components/leads/LeadListView";
 import { LeadForm } from "@/components/leads/LeadForm";
 import { LeadSheet } from "@/components/leads/LeadSheet";
 import { PageHeader } from "@/components/PageHeader";
+import { useNavigate } from "react-router-dom";
 
 type Lead = Tables<"leads">;
 
@@ -23,6 +24,7 @@ const LeadsPage = () => {
   const [sheetOpen, setSheetOpen] = useState(false);
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
 
   const { data: leads = [], isLoading } = useQuery({
     queryKey: ["leads"],
@@ -70,8 +72,47 @@ const LeadsPage = () => {
     },
   });
 
+  // Helper: ensure a case exists for a lead, return the case id
+  const ensureCaseForLead = async (lead: Lead): Promise<string> => {
+    const { data: existingCases } = await supabase
+      .from("cases")
+      .select("id")
+      .eq("lead_id", lead.id)
+      .limit(1);
+
+    if (existingCases && existingCases.length > 0) {
+      return existingCases[0].id;
+    }
+
+    const { data: newCase, error } = await supabase
+      .from("cases")
+      .insert({
+        title: `Caso — ${lead.name}`,
+        lead_id: lead.id,
+        legal_area: lead.legal_area || "outro",
+        status: "aberto",
+      })
+      .select("id")
+      .single();
+
+    if (error) throw error;
+    toast({ title: "Caso criado automaticamente" });
+    queryClient.invalidateQueries({ queryKey: ["cases"] });
+    queryClient.invalidateQueries({ queryKey: ["cases-select"] });
+    return newCase.id;
+  };
+
+  const advancedStages = ["proposta", "analise", "contrato", "financeiro", "fechado"];
+
   const moveStageMutation = useMutation({
     mutationFn: async ({ id, stage }: { id: string; stage: string }) => {
+      // Auto-create case if moving to an advanced stage
+      if (advancedStages.includes(stage)) {
+        const lead = leads.find((l) => l.id === id);
+        if (lead) {
+          await ensureCaseForLead(lead);
+        }
+      }
       const { error } = await supabase.from("leads").update({ funnel_stage: stage as any }).eq("id", id);
       if (error) throw error;
     },
@@ -99,6 +140,16 @@ const LeadsPage = () => {
   const openNew = () => {
     setEditingLead(null);
     setFormOpen(true);
+  };
+
+  const handleCreateProposal = async (lead: Lead) => {
+    try {
+      const caseId = await ensureCaseForLead(lead);
+      setSheetOpen(false);
+      navigate(`/propostas?case_id=${caseId}`);
+    } catch (e: any) {
+      toast({ title: "Erro ao criar caso", description: e.message, variant: "destructive" });
+    }
   };
 
   return (
@@ -164,6 +215,7 @@ const LeadsPage = () => {
         onEdit={openEdit}
         onDelete={(id) => deleteMutation.mutate(id)}
         onMoveStage={(lead, stage) => moveStageMutation.mutate({ id: lead.id, stage })}
+        onCreateProposal={handleCreateProposal}
       />
     </div>
   );

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -27,17 +27,31 @@ interface PropostaFormProps {
   cases: { id: string; title: string }[];
   onSave: (data: TablesInsert<"proposals">) => void;
   saving?: boolean;
+  preselectedCaseId?: string | null;
 }
 
-export function PropostaForm({ open, onOpenChange, proposta, cases, onSave, saving }: PropostaFormProps) {
-  const [title, setTitle] = useState(proposta?.title || "");
-  const [caseId, setCaseId] = useState(proposta?.case_id || "");
-  const [value, setValue] = useState(proposta?.value?.toString() || "0");
-  const [paymentType, setPaymentType] = useState<string>(proposta?.payment_type || "fixo");
-  const [installments, setInstallments] = useState(proposta?.installments?.toString() || "1");
-  const [conditions, setConditions] = useState(proposta?.conditions || "");
-  const [validUntil, setValidUntil] = useState(proposta?.valid_until?.slice(0, 10) || "");
-  const [status, setStatus] = useState<string>(proposta?.status || "rascunho");
+export function PropostaForm({ open, onOpenChange, proposta, cases, onSave, saving, preselectedCaseId }: PropostaFormProps) {
+  const [title, setTitle] = useState("");
+  const [caseId, setCaseId] = useState("");
+  const [value, setValue] = useState("0");
+  const [paymentType, setPaymentType] = useState<string>("fixo");
+  const [installments, setInstallments] = useState("1");
+  const [conditions, setConditions] = useState("");
+  const [validUntil, setValidUntil] = useState("");
+  const [status, setStatus] = useState<string>("rascunho");
+
+  useEffect(() => {
+    if (open) {
+      setTitle(proposta?.title || "");
+      setCaseId(proposta?.case_id || preselectedCaseId || "");
+      setValue(proposta?.value?.toString() || "0");
+      setPaymentType(proposta?.payment_type || "fixo");
+      setInstallments(proposta?.installments?.toString() || "1");
+      setConditions(proposta?.conditions || "");
+      setValidUntil(proposta?.valid_until?.slice(0, 10) || "");
+      setStatus(proposta?.status || "rascunho");
+    }
+  }, [proposta, open]);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
