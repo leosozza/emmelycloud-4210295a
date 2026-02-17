@@ -6,7 +6,7 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
-const GRAPH_URL = "https://graph.facebook.com/v24.0";
+const GRAPH_URL = "https://graph.instagram.com/v24.0";
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -72,36 +72,30 @@ Deno.serve(async (req) => {
       });
     }
 
-    const USER_TOKEN = Deno.env.get("META_PAGE_ACCESS_TOKEN")?.trim();
-    if (!USER_TOKEN) {
+    const IG_TOKEN = Deno.env.get("META_PAGE_ACCESS_TOKEN")?.trim().replace(/[\r\n\s]+/g, "");
+    console.log("DEBUG token length:", IG_TOKEN?.length, "starts:", IG_TOKEN?.slice(0, 20));
+    if (!IG_TOKEN) {
       return new Response(JSON.stringify({ error: "META_PAGE_ACCESS_TOKEN not configured" }), {
         status: 500,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    // Get the Facebook Page connected to Instagram and its Page Access Token
-    const accountsResp = await fetch(
-      `${GRAPH_URL}/me/accounts?fields=id,name,access_token,instagram_business_account&access_token=${USER_TOKEN}`
-    );
-    const accountsData = await accountsResp.json();
-    console.log("DEBUG /me/accounts:", JSON.stringify(accountsData));
+    // Validate token first
+    const meResp = await fetch(`${GRAPH_URL}/me?access_token=${IG_TOKEN}`);
+    const meData = await meResp.json();
+    console.log("DEBUG /me response:", JSON.stringify(meData));
 
-    if (!accountsData.data || accountsData.data.length === 0) {
-      return new Response(JSON.stringify({ error: "No Facebook Pages found for this user token" }), {
+    const igAccountId = Deno.env.get("META_IG_ACCOUNT_ID")?.trim();
+    if (!igAccountId) {
+      return new Response(JSON.stringify({ error: "META_IG_ACCOUNT_ID not configured" }), {
         status: 500,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    // Find the page that has the Instagram business account linked
-    const page = accountsData.data.find((p: any) => p.instagram_business_account) || accountsData.data[0];
-    const pageAccessToken = page.access_token;
-    const pageId = page.id;
-    console.log("DEBUG using page:", page.name, "id:", pageId);
-
-    // Send message via Facebook Pages API for Instagram DMs
-    const sendEndpoint = `${GRAPH_URL}/${pageId}/messages`;
+    // Send message via Instagram Messaging API
+    const sendEndpoint = `${GRAPH_URL}/${igAccountId}/messages`;
 
     const igResponse = await fetch(sendEndpoint, {
       method: "POST",
@@ -109,7 +103,7 @@ Deno.serve(async (req) => {
       body: JSON.stringify({
         recipient: { id: conv.contact_instagram },
         message: { text: content },
-        access_token: pageAccessToken,
+        access_token: IG_TOKEN,
       }),
     });
 
