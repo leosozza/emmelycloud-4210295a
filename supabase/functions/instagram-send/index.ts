@@ -6,7 +6,7 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
-const GRAPH_URL = "https://graph.instagram.com/v24.0";
+const GRAPH_URL = "https://graph.facebook.com/v24.0";
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -81,8 +81,8 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Validate token first
-    const meResp = await fetch(`${GRAPH_URL}/me?access_token=${IG_TOKEN}`);
+    // Validate token - use Page ID endpoint
+    const meResp = await fetch(`${GRAPH_URL}/me?fields=id,name,instagram_business_account&access_token=${IG_TOKEN}`);
     const meData = await meResp.json();
     console.log("DEBUG /me response:", JSON.stringify(meData));
 
