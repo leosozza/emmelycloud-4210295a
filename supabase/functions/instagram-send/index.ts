@@ -6,7 +6,7 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
-const GRAPH_URL = "https://graph.instagram.com/v24.0";
+const GRAPH_URL = "https://graph.facebook.com/v24.0";
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -81,15 +81,9 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Send message via Instagram Messaging API
-    const igAccountId = Deno.env.get("META_IG_ACCOUNT_ID");
-    if (!igAccountId) {
-      return new Response(JSON.stringify({ error: "META_IG_ACCOUNT_ID not configured" }), {
-        status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-    const sendEndpoint = `${GRAPH_URL}/${igAccountId}/messages`;
+    // Send message via Facebook Pages API for Instagram DMs
+    const pageId = Deno.env.get("META_PAGE_ID") || "1422675219592387";
+    const sendEndpoint = `${GRAPH_URL}/${pageId}/messages`;
 
     const igResponse = await fetch(sendEndpoint, {
       method: "POST",
