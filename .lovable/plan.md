@@ -1,61 +1,68 @@
 
 
-# Internacionalização: Seletor de Idioma/Moeda (PT-BR / PT-PT)
+# Redesign Visual: Estilo Bitrix24 UI
 
 ## Resumo
 
-Criar um sistema de localização com seletor de bandeira (Brasil / Portugal) que altera o idioma e a moeda em toda a aplicação. Ambas as variantes usam Portugues, mas com diferenças de vocabulário e moeda (BRL vs EUR).
+Aplicar o design system visual do Bitrix24 UI ao Emmely Cloud, adaptando cores, gradientes, tipografia e estilos de componentes para seguir a linguagem visual do Bitrix24 -- sem instalar o pacote Vue deles (incompativel com React), apenas replicando o estilo visual via CSS/Tailwind.
 
-## Como funciona
+## Elementos visuais do Bitrix24 a replicar
 
-- Seletor de bandeira no header (ao lado do avatar)
-- Brasil: idioma pt-BR, moeda R$ (BRL), formato de data dd/MM/yyyy
-- Portugal: idioma pt-PT, moeda EUR, formato de data dd/MM/yyyy
-- A preferência fica guardada no localStorage e persiste entre sessões
+- **Header com gradiente azul-roxo-rosa**: Fundo com gradient linear suave, nao cor solida
+- **Nav pills arredondadas**: Items de navegacao com fundo semi-transparente arredondado
+- **Page headers com banner gradiente**: Titulo de cada pagina dentro de um banner azul gradiente com texto branco (como as paginas de componentes do Bitrix24)
+- **Cards brancos limpos**: Bordas muito subtis, cantos arredondados, sombras minimas
+- **Paleta de cores**: Azul primario mais vibrante (~#2583d8), acentos roxo/rosa
+- **Tipografia**: Manter Figtree mas ajustar pesos
 
-## Ficheiros novos
+## Ficheiros a alterar
 
-### 1. `src/contexts/LocaleContext.tsx`
-- Context React com `locale` ("pt-BR" | "pt-PT"), `currency` ("BRL" | "EUR"), e `setLocale`
-- Provider que lê/grava a preferência no localStorage
-- Hook `useLocale()` para consumir em qualquer componente
-- Função utilitária `formatCurrency(value)` que formata automaticamente com `Intl.NumberFormat` conforme a locale ativa
+### 1. `src/index.css` -- Paleta de cores CSS
+- Atualizar variaveis CSS `:root` para cores mais proximas do Bitrix24
+- Azul primario mais vibrante (218 80% 55%)
+- Adicionar variaveis para gradientes do header
+- Background mais claro e neutro
+- Cards com bordas mais subtis
 
-### 2. `src/lib/translations.ts`
-- Dicionário de traduções para as diferenças entre pt-BR e pt-PT
-- Exemplos de diferenças: "Utilizador" (PT) vs "Usuário" (BR), "Telemóvel" vs "Celular", "Proposta" (igual), etc.
-- Função `t(key)` que retorna o texto correto para a locale ativa
+### 2. `tailwind.config.ts` -- Tokens Tailwind
+- Adicionar utilitarios de gradiente customizados para o header
+- Ajustar border-radius default (mais arredondado, ~0.75rem)
 
-## Ficheiros editados
+### 3. `src/components/AppHeader.tsx` -- Header principal
+- Trocar `bg-foreground` por gradiente azul-roxo-rosa (`bg-gradient-to-r from-blue-600 via-purple-500 to-pink-400`)
+- Nav items com estilo pill mais arredondado (rounded-full)
+- Item ativo com fundo branco semi-transparente em vez de bg-primary solido
+- Logo area com melhor contraste no gradiente
 
-### 3. `src/App.tsx`
-- Envolver a app com `<LocaleProvider>`
+### 4. `src/components/AppLayout.tsx` -- Layout wrapper
+- Adicionar background sutil ao body/main area
 
-### 4. `src/components/AppHeader.tsx`
-- Adicionar seletor de bandeira (botão com emoji de bandeira ou imagem SVG)
-- Clique alterna entre Brasil e Portugal
-- Mostra a bandeira ativa
+### 5. `src/pages/Index.tsx` -- Dashboard
+- Metric cards: trocar cores solidas por gradientes suaves ao estilo Bitrix24
+- Adicionar banner de titulo com gradiente (como page headers do Bitrix24)
 
-### 5. `src/pages/Index.tsx` (Dashboard)
-- Substituir "€32.450" e formatadores hardcoded por `formatCurrency()` do contexto
-- Substituir `€` nos tickFormatters dos gráficos pela moeda dinâmica
-
-### 6. `src/pages/Propostas.tsx`
-- Substituir `formatCurrency` hardcoded (pt-PT/EUR) pela função do contexto
-
-### 7. `src/pages/Servicos.tsx`
-- Substituir `€` hardcoded por símbolo dinâmico
-- Default da moeda no formulário passa a vir do contexto
-
-### 8. `src/components/leads/LeadSheet.tsx` e `src/components/atendimento/ConversationList.tsx`
-- Substituir `{ locale: pt }` do date-fns pela locale dinâmica (pt-BR ou pt)
+### 6. Todas as paginas principais -- Page header banner
+- Criar componente `PageHeader` reutilizavel com banner gradiente azul e titulo branco
+- Aplicar em: Leads, Propostas, Contratos, Casos, Carteira, Financeiro, Automacoes, Relatorios, Roadmap, Atendimento
 
 ## Detalhes Tecnicos
 
-- Zero dependências novas: usa `Intl.NumberFormat` nativo e date-fns (já instalado)
-- O contexto expõe: `locale`, `currency`, `currencySymbol`, `formatCurrency(value)`, `setLocale(locale)`, `dateFnsLocale`
-- A locale do date-fns usa `pt-BR` ou `pt` conforme seleção (ambas já disponíveis no date-fns)
-- localStorage key: `emmely-locale`
-- Default: `pt-PT` (mantém comportamento atual)
-- O Roadmap recebe um novo item "Internacionalização BR/PT" na secção "Próximas Etapas"
+### Paleta Bitrix24 (aproximada)
+```text
+Gradiente header: #2583d8 -> #7b5ea7 -> #d4728b
+Primario:         #2583d8 (218 72% 50%)
+Accent:           #7b5ea7 (270 30% 52%)
+Background:       #f5f7fa (220 20% 97%)
+Card:             #ffffff
+Border:           #e8ecf1 (215 20% 92%)
+```
+
+### Componente PageHeader
+- Props: title, description
+- Banner com gradiente azul->roxo, height ~80px
+- Texto branco, cantos arredondados inferiores
+
+### Sem dependencias novas
+- Tudo feito com Tailwind CSS classes e variaveis CSS existentes
+- Nao instala @bitrix24/b24ui (e um pacote Vue/Nuxt, incompativel)
 
