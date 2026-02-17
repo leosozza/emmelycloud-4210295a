@@ -22,6 +22,7 @@ import {
 } from "@/components/ui/table";
 import { Plus, Search, Pencil, Trash2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { useLocale } from "@/contexts/LocaleContext";
 
 interface ServiceForm {
   name: string;
@@ -34,7 +35,7 @@ interface ServiceForm {
 
 const emptyForm: ServiceForm = {
   name: "",
-  currency: "EUR",
+  currency: "",
   value: "0",
   budget_details: "",
   contract_intro: "",
@@ -47,6 +48,7 @@ export default function ServicosPage() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<ServiceForm>(emptyForm);
   const { toast } = useToast();
+  const { formatCurrency, currency } = useLocale();
   const queryClient = useQueryClient();
 
   const { data: services = [], isLoading } = useQuery({
@@ -120,7 +122,7 @@ export default function ServicosPage() {
 
   const openNew = () => {
     setEditingId(null);
-    setForm(emptyForm);
+    setForm({ ...emptyForm, currency });
     setDialogOpen(true);
   };
 
@@ -174,7 +176,7 @@ export default function ServicosPage() {
                 <TableRow key={s.id}>
                   <TableCell className="font-medium">{s.name}</TableCell>
                   <TableCell>{s.currency}</TableCell>
-                  <TableCell>{Number(s.value).toFixed(2)} €</TableCell>
+                  <TableCell>{formatCurrency(Number(s.value))}</TableCell>
                   <TableCell>
                     <div className="flex gap-1">
                       <Button variant="ghost" size="icon" onClick={() => openEdit(s)}>

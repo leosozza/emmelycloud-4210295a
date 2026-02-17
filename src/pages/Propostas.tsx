@@ -14,6 +14,7 @@ import { Plus, Search, Pencil, Trash2, Send, Check, X } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Tables, Constants } from "@/integrations/supabase/types";
 import { PropostaForm } from "@/components/propostas/PropostaForm";
+import { useLocale } from "@/contexts/LocaleContext";
 import { format, parseISO } from "date-fns";
 
 type Proposal = Tables<"proposals">;
@@ -38,6 +39,7 @@ const PropostasPage = () => {
   const [formOpen, setFormOpen] = useState(false);
   const [editingProposta, setEditingProposta] = useState<Proposal | null>(null);
   const { toast } = useToast();
+  const { formatCurrency } = useLocale();
   const queryClient = useQueryClient();
 
   const { data: proposals = [], isLoading } = useQuery({
@@ -123,8 +125,7 @@ const PropostasPage = () => {
     .filter((p) => statusFilter === "all" || p.status === statusFilter)
     .filter((p) => p.title.toLowerCase().includes(search.toLowerCase()));
 
-  const formatCurrency = (v: number) =>
-    new Intl.NumberFormat("pt-PT", { style: "currency", currency: "EUR" }).format(v);
+  // formatCurrency now comes from useLocale()
 
   return (
     <div className="space-y-4">

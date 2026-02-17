@@ -7,7 +7,7 @@ import { ChannelIcon } from "./ChannelIcon";
 import { Search } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { format, isToday, isYesterday } from "date-fns";
-import { pt } from "date-fns/locale";
+import { useLocale } from "@/contexts/LocaleContext";
 import { useState } from "react";
 
 type Channel = "whatsapp" | "instagram" | "email" | "webchat";
@@ -37,11 +37,12 @@ const statusLabels: Record<Status, string> = {
   fechada: "Fechadas",
 };
 
-function formatTime(dateStr: string) {
+function FormatTimeWrapper({ dateStr }: { dateStr: string }) {
+  const { dateFnsLocale } = useLocale();
   const date = new Date(dateStr);
-  if (isToday(date)) return format(date, "HH:mm");
-  if (isYesterday(date)) return "Ontem";
-  return format(date, "dd/MM", { locale: pt });
+  if (isToday(date)) return <>{format(date, "HH:mm")}</>;
+  if (isYesterday(date)) return <>Ontem</>;
+  return <>{format(date, "dd/MM", { locale: dateFnsLocale })}</>;
 }
 
 export function ConversationList({ conversations, selectedId, onSelect }: ConversationListProps) {
@@ -119,7 +120,7 @@ export function ConversationList({ conversations, selectedId, onSelect }: Conver
                     <ChannelIcon channel={conv.channel} />
                     {conv.last_message_at && (
                       <span className="text-[10px] text-muted-foreground">
-                        {formatTime(conv.last_message_at)}
+                        <FormatTimeWrapper dateStr={conv.last_message_at} />
                       </span>
                     )}
                   </div>

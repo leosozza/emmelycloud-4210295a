@@ -10,7 +10,7 @@ import { Separator } from "@/components/ui/separator";
 import { Tables } from "@/integrations/supabase/types";
 import { Constants } from "@/integrations/supabase/types";
 import { differenceInHours, differenceInMinutes, parseISO, format } from "date-fns";
-import { pt } from "date-fns/locale";
+import { useLocale } from "@/contexts/LocaleContext";
 import { ChevronRight, Pencil, Trash2 } from "lucide-react";
 
 type Lead = Tables<"leads">;
@@ -51,6 +51,7 @@ interface LeadSheetProps {
 
 export function LeadSheet({ lead, open, onOpenChange, onEdit, onDelete, onMoveStage }: LeadSheetProps) {
   if (!lead) return null;
+  const { dateFnsLocale } = useLocale();
   const sla = getSlaInfo(lead.sla_expires_at);
   const stages = Constants.public.Enums.funnel_stage;
   const currentIdx = stages.indexOf(lead.funnel_stage);
@@ -108,8 +109,8 @@ export function LeadSheet({ lead, open, onOpenChange, onEdit, onDelete, onMoveSt
           <Separator />
 
           <div className="text-xs text-muted-foreground space-y-1">
-            <p>Criado: {format(parseISO(lead.created_at), "dd/MM/yyyy HH:mm", { locale: pt })}</p>
-            <p>Atualizado: {format(parseISO(lead.updated_at), "dd/MM/yyyy HH:mm", { locale: pt })}</p>
+            <p>Criado: {format(parseISO(lead.created_at), "dd/MM/yyyy HH:mm", { locale: dateFnsLocale })}</p>
+            <p>Atualizado: {format(parseISO(lead.updated_at), "dd/MM/yyyy HH:mm", { locale: dateFnsLocale })}</p>
           </div>
 
           {/* Actions */}
