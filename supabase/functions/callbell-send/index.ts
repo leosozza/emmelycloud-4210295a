@@ -7,6 +7,7 @@ const corsHeaders = {
 };
 
 const CALLBELL_API = "https://api.callbell.eu/v1";
+const INSTAGRAM_GRAPH_API = "https://graph.instagram.com/v22.0";
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -46,14 +47,6 @@ Deno.serve(async (req) => {
       });
     }
 
-    const CALLBELL_TOKEN = Deno.env.get("CALLBELL_API_TOKEN");
-    if (!CALLBELL_TOKEN) {
-      return new Response(JSON.stringify({ error: "CALLBELL_API_TOKEN not configured" }), {
-        status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-
     // Get conversation details
     const serviceSupabase = createClient(
       Deno.env.get("SUPABASE_URL")!,
@@ -73,66 +66,118 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Determine the recipient identifier and channel UUID for Callbell
-    let to: string | null = null;
-    let channelUuid: string | null = null;
-    let fromChannel: string = conv.channel; // Must match the channel type: "whatsapp", "instagram", etc.
+    let externalMessageId: string | null = null;
 
     if (conv.channel === "instagram") {
-      to = conv.contact_instagram;
-      channelUuid = Deno.env.get("CALLBELL_IG_CHANNEL_UUID") ?? null;
+      // ── Instagram: send via Meta Graph API directly ──
+      const IG_ACCESS_TOKEN = Deno.env.get("META_PAGE_ACCESS_TOKEN");
+      const IG_ACCOUNT_ID = Deno.env.get("META_IG_ACCOUNT_ID");
+
+      if (!IG_ACCESS_TOKEN || !IG_ACCOUNT_ID) {
+        return new Response(JSON.stringify({ error: "Instagram API credentials not configured" }), {
+          status: 500,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      const recipientId = conv.contact_instagram;
+      if (!recipientId) {
+        return new Response(JSON.stringify({ error: "No Instagram contact identifier" }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      const igBody = {
+        recipient: { id: recipientId },
+        message: { text: content },
+      };
+
+      console.log("DEBUG instagram-send request:", JSON.stringify(igBody));
+
+      const igResponse = await fetch(
+        `${INSTAGRAM_GRAPH_API}/${IG_ACCOUNT_ID}/messages?access_token=${IG_ACCESS_TOKEN}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(igBody),
+        }
+      );
+
+      const igResult = await igResponse.json();
+      console.log("DEBUG instagram-send response:", igResponse.status, JSON.stringify(igResult));
+
+      if (!igResponse.ok) {
+        console.error("Instagram API error:", JSON.stringify(igResult));
+        return new Response(JSON.stringify({ error: "Failed to send message via Instagram", details: igResult }), {
+          status: 502,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      externalMessageId = igResult.message_id ?? null;
+
     } else if (conv.channel === "whatsapp") {
-      to = conv.contact_phone;
-      channelUuid = Deno.env.get("CALLBELL_WA_CHANNEL_UUID") ?? null;
-    } else if (conv.channel === "email") {
-      to = conv.contact_email;
-    }
+      // ── WhatsApp: send via Callbell API ──
+      const CALLBELL_TOKEN = Deno.env.get("CALLBELL_API_TOKEN");
+      if (!CALLBELL_TOKEN) {
+        return new Response(JSON.stringify({ error: "CALLBELL_API_TOKEN not configured" }), {
+          status: 500,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
 
-    if (!to) {
-      return new Response(JSON.stringify({ error: `No contact identifier for channel ${conv.channel}` }), {
-        status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      const channelUuid = Deno.env.get("CALLBELL_WA_CHANNEL_UUID");
+      if (!channelUuid) {
+        return new Response(JSON.stringify({ error: "CALLBELL_WA_CHANNEL_UUID not configured" }), {
+          status: 500,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      const to = conv.contact_phone;
+      if (!to) {
+        return new Response(JSON.stringify({ error: "No phone number for WhatsApp contact" }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      const cbBody = {
+        to,
+        from: "whatsapp",
+        type: "text",
+        content: { text: content },
+        channel_uuid: channelUuid,
+      };
+
+      console.log("DEBUG callbell-send request body:", JSON.stringify(cbBody));
+
+      const cbResponse = await fetch(`${CALLBELL_API}/messages/send`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${CALLBELL_TOKEN}`,
+        },
+        body: JSON.stringify(cbBody),
       });
-    }
 
-    if (!channelUuid) {
-      return new Response(JSON.stringify({ error: `Channel UUID not configured for ${conv.channel}` }), {
-        status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
+      const cbResult = await cbResponse.json();
+      console.log("DEBUG callbell-send response:", cbResponse.status, JSON.stringify(cbResult));
 
-    // Send via Callbell API
-    // The "from" field is required and only accepts "whatsapp" regardless of channel.
-    // The actual channel is determined by channel_uuid.
-    const cbBody: Record<string, unknown> = {
-      to,
-      from: "whatsapp",
-      type: "text",
-      content: { text: content },
-      channel_uuid: channelUuid,
-    };
+      if (!cbResponse.ok) {
+        console.error("Callbell API error:", JSON.stringify(cbResult));
+        return new Response(JSON.stringify({ error: "Failed to send message via Callbell", details: cbResult }), {
+          status: 502,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
 
-    console.log("DEBUG callbell-send request body:", JSON.stringify(cbBody));
+      externalMessageId = cbResult.message?.uuid ?? null;
 
-    const cbResponse = await fetch(`${CALLBELL_API}/messages/send`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${CALLBELL_TOKEN}`,
-      },
-      body: JSON.stringify(cbBody),
-    });
-
-    const cbResult = await cbResponse.json();
-    console.log("DEBUG callbell-send response:", cbResponse.status, JSON.stringify(cbResult));
-
-    if (!cbResponse.ok) {
-      console.error("Callbell API error:", JSON.stringify(cbResult));
-      return new Response(JSON.stringify({ error: "Failed to send message via Callbell", details: cbResult }), {
-        status: 502,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+    } else {
+      // ── Other channels: direct DB insert ──
+      // No external API call needed
     }
 
     // Store outbound message
@@ -141,7 +186,7 @@ Deno.serve(async (req) => {
       direction: "outbound",
       content,
       sender_name: "Atendente",
-      external_id: cbResult.message?.uuid ?? null,
+      external_id: externalMessageId,
     });
 
     // Update conversation preview
@@ -153,7 +198,7 @@ Deno.serve(async (req) => {
       })
       .eq("id", conversation_id);
 
-    return new Response(JSON.stringify({ success: true, message_id: cbResult.message?.uuid }), {
+    return new Response(JSON.stringify({ success: true, message_id: externalMessageId }), {
       status: 200,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
