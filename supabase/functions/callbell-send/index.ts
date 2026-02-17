@@ -7,7 +7,6 @@ const corsHeaders = {
 };
 
 const CALLBELL_API = "https://api.callbell.eu/v1";
-const INSTAGRAM_GRAPH_API = "https://graph.instagram.com/v22.0";
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -39,9 +38,9 @@ Deno.serve(async (req) => {
       });
     }
 
-    const { conversation_id, content } = await req.json();
-    if (!conversation_id || !content) {
-      return new Response(JSON.stringify({ error: "conversation_id and content required" }), {
+    const { conversation_id, content, template_uuid, template_values } = await req.json();
+    if (!conversation_id || (!content && !template_uuid)) {
+      return new Response(JSON.stringify({ error: "conversation_id and either content or template_uuid required" }), {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
@@ -69,54 +68,86 @@ Deno.serve(async (req) => {
     let externalMessageId: string | null = null;
 
     if (conv.channel === "instagram") {
-      // ── Instagram: send via Meta Graph API ──
-      const IG_ACCESS_TOKEN = Deno.env.get("META_PAGE_ACCESS_TOKEN");
-      const IG_ACCOUNT_ID = Deno.env.get("META_IG_ACCOUNT_ID");
-
-      if (!IG_ACCESS_TOKEN || !IG_ACCOUNT_ID) {
-        return new Response(JSON.stringify({ error: "Instagram API credentials not configured" }), {
+      // ── Instagram: send via Callbell API ──
+      const CALLBELL_TOKEN = Deno.env.get("CALLBELL_API_TOKEN");
+      if (!CALLBELL_TOKEN) {
+        return new Response(JSON.stringify({ error: "CALLBELL_API_TOKEN not configured" }), {
           status: 500,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
 
-      const recipientId = conv.contact_instagram;
-      if (!recipientId) {
+      const channelUuid = Deno.env.get("CALLBELL_IG_CHANNEL_UUID");
+      if (!channelUuid) {
+        return new Response(JSON.stringify({ error: "CALLBELL_IG_CHANNEL_UUID not configured" }), {
+          status: 500,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      const to = conv.contact_instagram;
+      if (!to) {
         return new Response(JSON.stringify({ error: "No Instagram contact identifier" }), {
           status: 400,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
 
-      console.log("DEBUG instagram-send to:", recipientId, "account:", IG_ACCOUNT_ID);
+      console.log("DEBUG callbell-send instagram to:", to, "channel:", channelUuid);
 
-      const igResponse = await fetch(
-        `${INSTAGRAM_GRAPH_API}/${IG_ACCOUNT_ID}/messages`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "Authorization": `Bearer ${IG_ACCESS_TOKEN}`,
-          },
-          body: JSON.stringify({
-            recipient: { id: recipientId },
-            message: { text: content },
-          }),
-        }
-      );
+      const cbBody: Record<string, unknown> = {
+        to,
+        from: "instagram",
+        channel_uuid: channelUuid,
+      };
 
-      const igResult = await igResponse.json();
-      console.log("DEBUG instagram-send response:", igResponse.status, JSON.stringify(igResult));
+      // Support template-based messages
+      if (template_uuid) {
+        cbBody.type = "template";
+        cbBody.content = {
+          uuid: template_uuid,
+          ...(template_values ? { values: template_values } : {}),
+        };
+      } else {
+        cbBody.type = "text";
+        cbBody.content = { text: content };
+      }
 
-      if (!igResponse.ok) {
-        console.error("Instagram API error:", JSON.stringify(igResult));
-        return new Response(JSON.stringify({ error: "Failed to send Instagram message", details: igResult }), {
+      // Check if this is first contact - if conversation is new, include optin_contact
+      const { data: msgCount } = await serviceSupabase
+        .from("messages")
+        .select("id", { count: "exact", head: true })
+        .eq("conversation_id", conversation_id);
+      
+      const isFirstContact = (msgCount === null || msgCount === 0);
+      if (isFirstContact) {
+        cbBody.optin_contact = true;
+        console.log("DEBUG first contact, including optin_contact");
+      }
+
+      console.log("DEBUG callbell-send request body:", JSON.stringify(cbBody));
+
+      const cbResponse = await fetch(`${CALLBELL_API}/messages/send`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${CALLBELL_TOKEN}`,
+        },
+        body: JSON.stringify(cbBody),
+      });
+
+      const cbResult = await cbResponse.json();
+      console.log("DEBUG callbell-send instagram response:", cbResponse.status, JSON.stringify(cbResult));
+
+      if (!cbResponse.ok) {
+        console.error("Callbell API error:", JSON.stringify(cbResult));
+        return new Response(JSON.stringify({ error: "Failed to send Instagram message via Callbell", details: cbResult }), {
           status: 502,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
 
-      externalMessageId = igResult.message_id ?? null;
+      externalMessageId = cbResult.message?.uuid ?? null;
 
     } else if (conv.channel === "whatsapp") {
       // ── WhatsApp: send via Callbell API ──
@@ -181,10 +212,14 @@ Deno.serve(async (req) => {
     }
 
     // Store outbound message
+    const messageContent = template_uuid 
+      ? `[Template: ${template_uuid}]`
+      : content;
+    
     await serviceSupabase.from("messages").insert({
       conversation_id,
       direction: "outbound",
-      content,
+      content: messageContent,
       sender_name: "Atendente",
       external_id: externalMessageId,
       delivery_status: "sent",
@@ -195,7 +230,7 @@ Deno.serve(async (req) => {
       .from("conversations")
       .update({
         last_message_at: new Date().toISOString(),
-        last_message_preview: content.slice(0, 100),
+        last_message_preview: messageContent.slice(0, 100),
       })
       .eq("id", conversation_id);
 
