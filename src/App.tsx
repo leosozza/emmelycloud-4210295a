@@ -19,6 +19,8 @@ import RelatoriosPage from "./pages/Relatorios";
 import CarteiraPage from "./pages/Carteira";
 import AtendimentoPage from "./pages/Atendimento";
 import RoadmapPage from "./pages/Roadmap";
+import Privacy from "./pages/Privacy";
+import Terms from "./pages/Terms";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -33,6 +35,8 @@ const App = () => (
       <BrowserRouter>
         <Routes>
           <Route path="/auth" element={<Auth />} />
+          <Route path="/privacy" element={<Privacy />} />
+          <Route path="/terms" element={<Terms />} />
           <Route element={<AppLayout />}>
             <Route path="/" element={<Index />} />
             <Route path="/leads" element={<LeadsPage />} />
