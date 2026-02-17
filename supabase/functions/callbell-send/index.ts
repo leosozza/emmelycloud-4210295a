@@ -73,14 +73,16 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Determine the recipient identifier and channel for Callbell
+    // Determine the recipient identifier and channel UUID for Callbell
     let to: string | null = null;
-    let from: string = conv.channel;
+    let channelUuid: string | null = null;
 
     if (conv.channel === "instagram") {
       to = conv.contact_instagram;
+      channelUuid = Deno.env.get("CALLBELL_IG_CHANNEL_UUID") ?? null;
     } else if (conv.channel === "whatsapp") {
       to = conv.contact_phone;
+      channelUuid = Deno.env.get("CALLBELL_WA_CHANNEL_UUID") ?? null;
     } else if (conv.channel === "email") {
       to = conv.contact_email;
     }
@@ -88,6 +90,13 @@ Deno.serve(async (req) => {
     if (!to) {
       return new Response(JSON.stringify({ error: `No contact identifier for channel ${conv.channel}` }), {
         status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    if (!channelUuid) {
+      return new Response(JSON.stringify({ error: `Channel UUID not configured for ${conv.channel}` }), {
+        status: 500,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
@@ -101,7 +110,7 @@ Deno.serve(async (req) => {
       },
       body: JSON.stringify({
         to,
-        from,
+        from: channelUuid,
         type: "text",
         content: { text: content },
       }),
