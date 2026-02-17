@@ -175,7 +175,7 @@ export function AppHeader() {
           <Button
             variant="ghost"
             size="icon"
-            className="lg:hidden text-white hover:bg-white/15 rounded-full"
+            className="md:hidden text-white hover:bg-white/15 rounded-full"
             onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
           >
             {mobileMenuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
@@ -184,7 +184,7 @@ export function AppHeader() {
       </div>
 
       {/* Desktop navigation */}
-      <nav className="hidden lg:flex items-center gap-1 px-4 py-1.5 overflow-x-auto">
+      <nav className="hidden md:flex items-center gap-1 px-4 py-1.5 overflow-x-auto">
         {navItems.map((item) =>
           item.type === "link" ? (
             <NavLink
@@ -227,7 +227,7 @@ export function AppHeader() {
 
       {/* Mobile navigation - flat grid */}
       {mobileMenuOpen && (
-        <nav className="lg:hidden border-t border-white/10 px-4 py-2 grid grid-cols-3 gap-1">
+        <nav className="md:hidden border-t border-white/10 px-4 py-2 grid grid-cols-3 gap-1">
           {allLinks.map((item) => (
             <NavLink
               key={item.url}
