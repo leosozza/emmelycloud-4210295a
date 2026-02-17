@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Navigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -7,18 +7,23 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Scale } from "lucide-react";
 import { toast } from "sonner";
+import { useAuthContext } from "@/contexts/AuthContext";
 
 const Auth = () => {
+  const { session, loading } = useAuthContext();
   const [isLogin, setIsLogin] = useState(true);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [fullName, setFullName] = useState("");
-  const [loading, setLoading] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
   const navigate = useNavigate();
+
+  if (loading) return null;
+  if (session) return <Navigate to="/" replace />;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setLoading(true);
+    setSubmitting(true);
 
     try {
       if (isLogin) {
@@ -41,7 +46,7 @@ const Auth = () => {
     } catch (error: any) {
       toast.error(error.message || "Ocorreu um erro");
     } finally {
-      setLoading(false);
+      setSubmitting(false);
     }
   };
 
@@ -96,8 +101,8 @@ const Auth = () => {
             </div>
           </CardContent>
           <CardFooter className="flex flex-col gap-3">
-            <Button type="submit" className="w-full" disabled={loading}>
-              {loading ? "A processar..." : isLogin ? "Entrar" : "Criar conta"}
+            <Button type="submit" className="w-full" disabled={submitting}>
+              {submitting ? "A processar..." : isLogin ? "Entrar" : "Criar conta"}
             </Button>
             <button
               type="button"
