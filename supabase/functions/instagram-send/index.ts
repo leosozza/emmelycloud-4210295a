@@ -73,6 +73,7 @@ Deno.serve(async (req) => {
     }
 
     const PAGE_TOKEN = Deno.env.get("META_PAGE_ACCESS_TOKEN")?.trim();
+    console.log("DEBUG token length:", PAGE_TOKEN?.length, "start:", PAGE_TOKEN?.slice(0, 10), "end:", PAGE_TOKEN?.slice(-10));
     if (!PAGE_TOKEN) {
       return new Response(JSON.stringify({ error: "META_PAGE_ACCESS_TOKEN not configured" }), {
         status: 500,
