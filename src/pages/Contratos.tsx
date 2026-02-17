@@ -88,15 +88,31 @@ const ContratosPage = () => {
 
   const signMutation = useMutation({
     mutationFn: async (id: string) => {
+      // 1. Sign the contract
       const { error } = await supabase.from("contracts").update({
         status: "assinado" as any,
         signed_at: new Date().toISOString(),
       }).eq("id", id);
       if (error) throw error;
+
+      // 2. Find the contract to get case_id
+      const contract = contracts.find((c) => c.id === id);
+      if (contract?.case_id) {
+        // 3. Update case status to em_andamento
+        await supabase.from("cases").update({ status: "em_andamento" as any }).eq("id", contract.case_id);
+
+        // 4. Find lead linked to the case and update to fechado
+        const { data: linkedCase } = await supabase.from("cases").select("lead_id").eq("id", contract.case_id).single();
+        if (linkedCase?.lead_id) {
+          await supabase.from("leads").update({ funnel_stage: "fechado" as any }).eq("id", linkedCase.lead_id);
+        }
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["contracts"] });
-      toast({ title: "Contrato assinado" });
+      queryClient.invalidateQueries({ queryKey: ["cases"] });
+      queryClient.invalidateQueries({ queryKey: ["leads"] });
+      toast({ title: "Contrato assinado — caso ativado e lead fechado" });
     },
   });
 
