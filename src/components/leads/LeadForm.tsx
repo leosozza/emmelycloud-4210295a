@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -35,22 +35,37 @@ interface LeadFormProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   lead?: Lead | null;
+  prefill?: Partial<TablesInsert<"leads">> | null;
   onSave: (data: TablesInsert<"leads">) => void;
   saving?: boolean;
 }
 
-export function LeadForm({ open, onOpenChange, lead, onSave, saving }: LeadFormProps) {
-  const [name, setName] = useState(lead?.name || "");
-  const [email, setEmail] = useState(lead?.email || "");
-  const [phone, setPhone] = useState(lead?.phone || "");
+export function LeadForm({ open, onOpenChange, lead, prefill, onSave, saving }: LeadFormProps) {
+  const src = lead || prefill;
+  const [name, setName] = useState(src?.name || "");
+  const [email, setEmail] = useState(src?.email || "");
+  const [phone, setPhone] = useState(src?.phone || "");
   const [country, setCountry] = useState(lead?.country || "Portugal");
-  const [origin, setOrigin] = useState<string>(lead?.origin || "outro");
+  const [origin, setOrigin] = useState<string>(src?.origin || "outro");
   const [legalArea, setLegalArea] = useState<string>(lead?.legal_area || "outro");
   const [urgency, setUrgency] = useState(lead?.urgency || "normal");
   const [notes, setNotes] = useState(lead?.notes || "");
+  const [conversationId] = useState(prefill?.conversation_id || null);
 
-  // Reset form when lead changes
-  const resetKey = lead?.id || "new";
+  // Reset when source changes
+  useEffect(() => {
+    const s = lead || prefill;
+    setName(s?.name || "");
+    setEmail(s?.email || "");
+    setPhone(s?.phone || "");
+    setCountry(lead?.country || "Portugal");
+    setOrigin(s?.origin || "outro");
+    setLegalArea(lead?.legal_area || "outro");
+    setUrgency(lead?.urgency || "normal");
+    setNotes(lead?.notes || "");
+  }, [lead, prefill]);
+
+  const resetKey = lead?.id || prefill?.conversation_id || "new";
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange} key={resetKey}>
@@ -70,7 +85,8 @@ export function LeadForm({ open, onOpenChange, lead, onSave, saving }: LeadFormP
               legal_area: legalArea as any,
               urgency,
               notes: notes || null,
-            });
+              ...(conversationId ? { conversation_id: conversationId } : {}),
+            } as any);
           }}
           className="space-y-4"
         >

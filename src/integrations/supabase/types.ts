@@ -357,6 +357,7 @@ export type Database = {
           assigned_attorney_id: string | null
           assigned_commercial_id: string | null
           client_id: string | null
+          conversation_id: string | null
           country: string | null
           created_at: string
           created_by: string | null
@@ -378,6 +379,7 @@ export type Database = {
           assigned_attorney_id?: string | null
           assigned_commercial_id?: string | null
           client_id?: string | null
+          conversation_id?: string | null
           country?: string | null
           created_at?: string
           created_by?: string | null
@@ -399,6 +401,7 @@ export type Database = {
           assigned_attorney_id?: string | null
           assigned_commercial_id?: string | null
           client_id?: string | null
+          conversation_id?: string | null
           country?: string | null
           created_at?: string
           created_by?: string | null
@@ -434,6 +437,13 @@ export type Database = {
             columns: ["client_id"]
             isOneToOne: false
             referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "leads_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: false
+            referencedRelation: "conversations"
             referencedColumns: ["id"]
           },
         ]

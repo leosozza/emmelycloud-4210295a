@@ -4,12 +4,14 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { ChannelIcon } from "./ChannelIcon";
-import { Phone, Mail, Instagram, Link2, User } from "lucide-react";
+import { Phone, Mail, Instagram, Link2, User, UserPlus } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 
 type Channel = "whatsapp" | "instagram" | "email" | "webchat";
 
 interface ContactProfileProps {
   conversation: {
+    id: string;
     contact_name: string;
     contact_avatar_url?: string | null;
     contact_phone?: string | null;
@@ -23,6 +25,8 @@ interface ContactProfileProps {
 }
 
 export function ContactProfile({ conversation }: ContactProfileProps) {
+  const navigate = useNavigate();
+
   if (!conversation) {
     return (
       <div className="w-72 border-l bg-card hidden lg:flex items-center justify-center">
@@ -30,6 +34,24 @@ export function ContactProfile({ conversation }: ContactProfileProps) {
       </div>
     );
   }
+
+  const channelToOrigin: Record<Channel, string> = {
+    whatsapp: "whatsapp",
+    instagram: "instagram",
+    email: "email",
+    webchat: "outro",
+  };
+
+  const handleCreateLead = () => {
+    const params = new URLSearchParams();
+    params.set("from_conversation", conversation.id);
+    params.set("name", conversation.contact_name);
+    if (conversation.contact_phone) params.set("phone", conversation.contact_phone);
+    if (conversation.contact_email) params.set("email", conversation.contact_email);
+    params.set("origin", channelToOrigin[conversation.channel]);
+    if (conversation.client_id) params.set("client_id", conversation.client_id);
+    navigate(`/leads?${params.toString()}`);
+  };
 
   const initials = conversation.contact_name
     .split(" ")
@@ -108,6 +130,20 @@ export function ContactProfile({ conversation }: ContactProfileProps) {
               <Link2 className="h-3 w-3 mr-1" /> Vincular a cliente
             </Button>
           )}
+        </div>
+
+        <Separator />
+
+        <div>
+          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-2">Comercial</p>
+          <Button
+            variant="default"
+            size="sm"
+            className="w-full text-xs"
+            onClick={handleCreateLead}
+          >
+            <UserPlus className="h-3 w-3 mr-1" /> Criar Lead a partir desta conversa
+          </Button>
         </div>
       </div>
     </div>

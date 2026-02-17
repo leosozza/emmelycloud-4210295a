@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -11,7 +11,7 @@ import { LeadListView } from "@/components/leads/LeadListView";
 import { LeadForm } from "@/components/leads/LeadForm";
 import { LeadSheet } from "@/components/leads/LeadSheet";
 import { PageHeader } from "@/components/PageHeader";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 
 type Lead = Tables<"leads">;
 
@@ -22,10 +22,32 @@ const LeadsPage = () => {
   const [editingLead, setEditingLead] = useState<Lead | null>(null);
   const [sheetLead, setSheetLead] = useState<Lead | null>(null);
   const [sheetOpen, setSheetOpen] = useState(false);
+  const [prefillData, setPrefillData] = useState<Partial<TablesInsert<"leads">> | null>(null);
   const pendingNavigationRef = useRef<string | null>(null);
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  // Handle pre-fill from conversation
+  useEffect(() => {
+    const fromConversation = searchParams.get("from_conversation");
+    if (fromConversation) {
+      const data: Partial<TablesInsert<"leads">> = {
+        name: searchParams.get("name") || "",
+        phone: searchParams.get("phone") || "",
+        email: searchParams.get("email") || "",
+        origin: (searchParams.get("origin") as any) || "outro",
+        conversation_id: fromConversation,
+        client_id: searchParams.get("client_id") || undefined,
+      };
+      setPrefillData(data);
+      setEditingLead(null);
+      setFormOpen(true);
+      // Clear search params
+      setSearchParams({}, { replace: true });
+    }
+  }, [searchParams, setSearchParams]);
 
   const handleSheetOpenChange = useCallback((open: boolean) => {
     setSheetOpen(open);
@@ -217,8 +239,12 @@ const LeadsPage = () => {
 
       <LeadForm
         open={formOpen}
-        onOpenChange={setFormOpen}
+        onOpenChange={(open) => {
+          setFormOpen(open);
+          if (!open) setPrefillData(null);
+        }}
         lead={editingLead}
+        prefill={prefillData}
         onSave={(data) => saveMutation.mutate(data)}
         saving={saveMutation.isPending}
       />
