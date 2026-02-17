@@ -76,6 +76,7 @@ Deno.serve(async (req) => {
     // Determine the recipient identifier and channel UUID for Callbell
     let to: string | null = null;
     let channelUuid: string | null = null;
+    let fromChannel: string = "whatsapp"; // Callbell only supports "whatsapp" in from field
 
     if (conv.channel === "instagram") {
       to = conv.contact_instagram;
@@ -101,19 +102,22 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Send via Callbell API
+    // Send via Callbell API - channel_uuid is a separate field from "from"
+    const cbBody: Record<string, unknown> = {
+      to,
+      from: fromChannel,
+      type: "text",
+      content: { text: content },
+      channel_uuid: channelUuid,
+    };
+
     const cbResponse = await fetch(`${CALLBELL_API}/messages/send`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         "Authorization": `Bearer ${CALLBELL_TOKEN}`,
       },
-      body: JSON.stringify({
-        to,
-        from: channelUuid,
-        type: "text",
-        content: { text: content },
-      }),
+      body: JSON.stringify(cbBody),
     });
 
     const cbResult = await cbResponse.json();
