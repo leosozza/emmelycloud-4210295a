@@ -42,7 +42,9 @@ Deno.serve(async (req) => {
 
       // Process each entry from Meta
       for (const entry of body.entry ?? []) {
-        for (const messaging of entry.messaging ?? []) {
+        // Process both messaging and standby events
+        const messagingEvents = [...(entry.messaging ?? []), ...(entry.standby ?? [])];
+        for (const messaging of messagingEvents) {
           const senderId = messaging.sender?.id;
           const message = messaging.message;
           if (!senderId || !message?.text) continue;
