@@ -98,11 +98,13 @@ Deno.serve(async (req) => {
 
     const igResponse = await fetch(sendEndpoint, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${IG_TOKEN}`,
+      },
       body: JSON.stringify({
         recipient: { id: conv.contact_instagram },
         message: { text: content },
-        access_token: IG_TOKEN,
       }),
     });
 
