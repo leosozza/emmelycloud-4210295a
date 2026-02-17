@@ -103,16 +103,15 @@ Deno.serve(async (req) => {
     }
 
     // Send via Callbell API
-    // The "from" field only supports "whatsapp". For other channels, omit it and use channel_uuid only.
+    // The "from" field is required and only accepts "whatsapp" regardless of channel.
+    // The actual channel is determined by channel_uuid.
     const cbBody: Record<string, unknown> = {
       to,
+      from: "whatsapp",
       type: "text",
       content: { text: content },
       channel_uuid: channelUuid,
     };
-    if (conv.channel === "whatsapp") {
-      cbBody.from = "whatsapp";
-    }
 
     console.log("DEBUG callbell-send request body:", JSON.stringify(cbBody));
 
