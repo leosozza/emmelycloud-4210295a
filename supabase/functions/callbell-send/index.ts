@@ -111,6 +111,8 @@ Deno.serve(async (req) => {
       channel_uuid: channelUuid,
     };
 
+    console.log("DEBUG callbell-send request:", JSON.stringify({ to, from: fromChannel, channel: conv.channel, channelUuid, content }));
+
     const cbResponse = await fetch(`${CALLBELL_API}/messages/send`, {
       method: "POST",
       headers: {
@@ -121,6 +123,8 @@ Deno.serve(async (req) => {
     });
 
     const cbResult = await cbResponse.json();
+    console.log("DEBUG callbell-send response:", cbResponse.status, JSON.stringify(cbResult));
+
     if (!cbResponse.ok) {
       console.error("Callbell API error:", JSON.stringify(cbResult));
       return new Response(JSON.stringify({ error: "Failed to send message via Callbell", details: cbResult }), {
