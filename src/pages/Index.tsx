@@ -1,96 +1,157 @@
-import { 
-  Users, 
-  Clock, 
-  DollarSign, 
-  TrendingUp,
-  ArrowUpRight,
-  ArrowDownRight,
-} from "lucide-react";
-import { useLocale } from "@/contexts/LocaleContext";
-import { Card, CardContent } from "@/components/ui/card";
-import { DashboardCharts } from "@/components/dashboard/DashboardCharts";
+import { useState } from "react";
+import { PageHeader } from "@/components/PageHeader";
+import { DashboardKPIs } from "@/components/dashboard/DashboardKPIs";
+import { LeadsByOriginChart, RevenueByAreaChart, MonthlyRevenueChart, FunnelChartWidget } from "@/components/dashboard/DashboardChartsLive";
 import { RecentLeads } from "@/components/dashboard/RecentLeads";
 import { DashboardSidebar } from "@/components/dashboard/DashboardSidebar";
-import { PageHeader } from "@/components/PageHeader";
+import { DashboardCustomizer } from "@/components/dashboard/DashboardCustomizer";
+import { PeriodFilter } from "@/components/dashboard/PeriodFilter";
+import { useDashboardLayout, type WidgetId } from "@/hooks/useDashboardLayout";
+import {
+  DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, type DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  SortableContext, verticalListSortingStrategy, useSortable, arrayMove,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
+import { GripVertical } from "lucide-react";
+
+function SortableWidget({ id, children }: { id: string; children: React.ReactNode }) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  };
+
+  return (
+    <div ref={setNodeRef} style={style} className="relative group">
+      <button
+        {...attributes}
+        {...listeners}
+        className="absolute -left-2 top-3 z-10 opacity-0 group-hover:opacity-60 hover:!opacity-100 transition-opacity cursor-grab active:cursor-grabbing p-1 rounded bg-muted"
+        aria-label="Reordenar"
+      >
+        <GripVertical className="h-4 w-4 text-muted-foreground" />
+      </button>
+      {children}
+    </div>
+  );
+}
+
+const WIDGET_COMPONENTS: Record<WidgetId, React.FC> = {
+  kpis: DashboardKPIs,
+  funnel: FunnelChartWidget,
+  leadsByOrigin: LeadsByOriginChart,
+  revenueByArea: RevenueByAreaChart,
+  monthlyRevenue: MonthlyRevenueChart,
+  recentLeads: RecentLeads,
+  sidebar: DashboardSidebar,
+};
+
+// Widgets that should go in the chart grid (medium-sized)
+const CHART_WIDGETS: WidgetId[] = ["funnel", "leadsByOrigin", "revenueByArea", "monthlyRevenue"];
+// Full-width widgets
+const FULL_WIDGETS: WidgetId[] = ["kpis"];
+// Bottom section widgets
+const BOTTOM_LEFT: WidgetId[] = ["recentLeads"];
+const BOTTOM_RIGHT: WidgetId[] = ["sidebar"];
 
 const Index = () => {
-  const { formatCurrency } = useLocale();
+  const { widgets, visibleWidgets, hiddenWidgets, toggleWidget, reorderWidgets, resetLayout } = useDashboardLayout();
+  const [period, setPeriod] = useState("30d");
 
-  const metrics = [
-    {
-      title: "Leads Novos",
-      value: "47",
-      change: "+12%",
-      up: true,
-      icon: Users,
-      description: "Últimos 30 dias",
-      gradient: "from-[hsl(218,72%,50%)] to-[hsl(218,72%,62%)]",
-    },
-    {
-      title: "SLA Expirando",
-      value: "5",
-      change: "-2",
-      up: false,
-      icon: Clock,
-      description: "Nas próximas 4h",
-      gradient: "from-[hsl(38,92%,50%)] to-[hsl(38,92%,62%)]",
-    },
-    {
-      title: "Receita do Mês",
-      value: formatCurrency(32450),
-      change: "+8%",
-      up: true,
-      icon: DollarSign,
-      description: "vs. mês anterior",
-      gradient: "from-[hsl(152,69%,46%)] to-[hsl(152,69%,58%)]",
-    },
-    {
-      title: "Taxa de Conversão",
-      value: "34%",
-      change: "+3pp",
-      up: true,
-      icon: TrendingUp,
-      description: "Lead → Contrato",
-      gradient: "from-[hsl(270,30%,52%)] to-[hsl(270,30%,64%)]",
-    },
-  ];
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(KeyboardSensor),
+  );
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (over && active.id !== over.id) {
+      const oldIndex = widgets.indexOf(active.id as WidgetId);
+      const newIndex = widgets.indexOf(over.id as WidgetId);
+      reorderWidgets(arrayMove(widgets, oldIndex, newIndex));
+    }
+  };
+
+  const fullWidgets = visibleWidgets.filter((w) => FULL_WIDGETS.includes(w));
+  const chartWidgets = visibleWidgets.filter((w) => CHART_WIDGETS.includes(w));
+  const bottomLeft = visibleWidgets.filter((w) => BOTTOM_LEFT.includes(w));
+  const bottomRight = visibleWidgets.filter((w) => BOTTOM_RIGHT.includes(w));
 
   return (
     <div className="space-y-6">
-      <PageHeader title="Dashboard" description="Visão geral do escritório" />
-
-      {/* Metric Cards with gradients */}
-      <div className="grid gap-4 grid-cols-2 lg:grid-cols-4">
-        {metrics.map((metric) => (
-          <Card key={metric.title} className={`bg-gradient-to-br ${metric.gradient} text-white border-0 shadow-lg hover:shadow-xl transition-shadow`}>
-            <CardContent className="p-5">
-              <div className="flex items-center justify-between mb-3">
-                <metric.icon className="h-6 w-6 opacity-80" />
-                <div className="flex items-center gap-0.5">
-                  {metric.up ? (
-                    <ArrowUpRight className="h-3 w-3 opacity-80" />
-                  ) : (
-                    <ArrowDownRight className="h-3 w-3 opacity-80" />
-                  )}
-                  <span className="text-xs font-bold opacity-90">{metric.change}</span>
-                </div>
-              </div>
-              <div className="text-3xl font-extrabold">{metric.value}</div>
-              <div className="text-xs font-medium opacity-75 mt-1">{metric.title}</div>
-              <div className="text-[11px] opacity-60 mt-0.5">{metric.description}</div>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
-
-      {/* Main content + Sidebar */}
-      <div className="grid gap-6 lg:grid-cols-[1fr_300px]">
-        <div className="space-y-6">
-          <DashboardCharts />
-          <RecentLeads />
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <PageHeader title="Dashboard" description="Visão geral do escritório" />
+        <div className="flex items-center gap-2">
+          <PeriodFilter value={period} onChange={setPeriod} />
+          <DashboardCustomizer
+            widgets={widgets}
+            hiddenWidgets={hiddenWidgets}
+            toggleWidget={toggleWidget}
+            resetLayout={resetLayout}
+          />
         </div>
-        <DashboardSidebar />
       </div>
+
+      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+        <SortableContext items={visibleWidgets} strategy={verticalListSortingStrategy}>
+          <div className="space-y-6">
+            {/* Full-width widgets (KPIs) */}
+            {fullWidgets.map((id) => {
+              const Component = WIDGET_COMPONENTS[id];
+              return (
+                <SortableWidget key={id} id={id}>
+                  <Component />
+                </SortableWidget>
+              );
+            })}
+
+            {/* Chart grid */}
+            {chartWidgets.length > 0 && (
+              <div className="grid gap-4 md:grid-cols-2">
+                {chartWidgets.map((id) => {
+                  const Component = WIDGET_COMPONENTS[id];
+                  return (
+                    <SortableWidget key={id} id={id}>
+                      <Component />
+                    </SortableWidget>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* Bottom section */}
+            {(bottomLeft.length > 0 || bottomRight.length > 0) && (
+              <div className="grid gap-6 lg:grid-cols-[1fr_300px]">
+                <div className="space-y-6">
+                  {bottomLeft.map((id) => {
+                    const Component = WIDGET_COMPONENTS[id];
+                    return (
+                      <SortableWidget key={id} id={id}>
+                        <Component />
+                      </SortableWidget>
+                    );
+                  })}
+                </div>
+                {bottomRight.length > 0 && (
+                  <div className="space-y-4">
+                    {bottomRight.map((id) => {
+                      const Component = WIDGET_COMPONENTS[id];
+                      return (
+                        <SortableWidget key={id} id={id}>
+                          <Component />
+                        </SortableWidget>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </SortableContext>
+      </DndContext>
     </div>
   );
 };
