@@ -26,8 +26,9 @@ import {
 import "@xyflow/react/dist/style.css";
 import {
   Plus, Workflow, Play, Save, Trash2, MessageSquare, Zap, ArrowLeft,
-  Loader2, Clock, Bot, GitBranch, Globe, Phone, Split,
+  Loader2, Clock, Bot, GitBranch, Globe, Phone, Split, Upload,
 } from "lucide-react";
+import { previewPowerBotFlow, convertPowerBotFlow, type PowerBotImportPreview } from "@/lib/powerbotImporter";
 
 interface Flow {
   id: string;
@@ -81,6 +82,10 @@ export default function FlowsPage() {
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [newFlow, setNewFlow] = useState({ name: "", description: "", trigger_type: "keyword", trigger_value: "" });
+  const [importPreview, setImportPreview] = useState<PowerBotImportPreview | null>(null);
+  const [importJson, setImportJson] = useState<any>(null);
+  const [importDialogOpen, setImportDialogOpen] = useState(false);
+  const [importing, setImporting] = useState(false);
 
   const [nodes, setNodes, onNodesChange] = useNodesState([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
@@ -185,6 +190,47 @@ export default function FlowsPage() {
     loadFlows();
   };
 
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const json = JSON.parse(ev.target?.result as string);
+        const preview = previewPowerBotFlow(json);
+        if (!preview) { toast.error("JSON inválido: deve conter 'nodes' e 'edges'"); return; }
+        setImportJson(json);
+        setImportPreview(preview);
+        setImportDialogOpen(true);
+      } catch { toast.error("Erro ao ler ficheiro JSON"); }
+    };
+    reader.readAsText(file);
+    e.target.value = "";
+  };
+
+  const handleImportConfirm = async () => {
+    if (!importJson) return;
+    setImporting(true);
+    try {
+      const { name, nodes: convertedNodes, edges: convertedEdges } = convertPowerBotFlow(importJson);
+      const { data, error } = await supabase.from("flows").insert({
+        name,
+        description: `Importado do PowerBot (${convertedNodes.length} nós)`,
+        trigger_type: "manual",
+        nodes: convertedNodes as any,
+        edges: convertedEdges as any,
+      } as any).select().single();
+      if (error) throw error;
+      toast.success(`Importado: ${convertedNodes.length} nós, ${convertedEdges.length} conexões`);
+      setImportDialogOpen(false);
+      setImportJson(null);
+      setImportPreview(null);
+      await loadFlows();
+      if (data) openFlow(data as unknown as Flow);
+    } catch (e: any) { toast.error(e.message); }
+    finally { setImporting(false); }
+  };
+
   // Editor View
   if (selectedFlow) {
     return (
@@ -248,7 +294,13 @@ export default function FlowsPage() {
         description="Crie fluxos de conversa com editor visual drag-and-drop"
       />
 
-      <div className="flex justify-end mb-4">
+      <div className="flex justify-end gap-2 mb-4">
+        <label>
+          <input type="file" accept=".json" className="hidden" onChange={handleFileSelect} />
+          <Button variant="outline" asChild>
+            <span><Upload className="h-4 w-4 mr-2" /> Importar PowerBot</span>
+          </Button>
+        </label>
         <Button onClick={() => setDialogOpen(true)}>
           <Plus className="h-4 w-4 mr-2" /> Novo Fluxo
         </Button>
@@ -356,6 +408,43 @@ export default function FlowsPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Import Preview Dialog */}
+      <Dialog open={importDialogOpen} onOpenChange={setImportDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Importar Fluxo do PowerBot</DialogTitle>
+            <DialogDescription>Pré-visualização do fluxo a importar.</DialogDescription>
+          </DialogHeader>
+          {importPreview && (
+            <div className="space-y-3">
+              <div className="flex items-center gap-2">
+                <Workflow className="h-5 w-5 text-primary" />
+                <span className="font-semibold">{importPreview.botName}</span>
+              </div>
+              <div className="grid grid-cols-2 gap-2 text-sm">
+                <div className="p-2 rounded bg-muted"><span className="font-medium">{importPreview.nodeCount}</span> nós</div>
+                <div className="p-2 rounded bg-muted"><span className="font-medium">{importPreview.edgeCount}</span> conexões</div>
+              </div>
+              <div className="space-y-1">
+                <p className="text-xs font-medium text-muted-foreground">Tipos de nó:</p>
+                <div className="flex flex-wrap gap-1">
+                  {Object.entries(importPreview.nodeTypeSummary).map(([type, count]) => (
+                    <Badge key={type} variant="outline" className="text-[10px]">{type}: {count}</Badge>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setImportDialogOpen(false)}>Cancelar</Button>
+            <Button onClick={handleImportConfirm} disabled={importing}>
+              {importing && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              Confirmar Importação
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
