@@ -19,6 +19,7 @@ import RelatoriosPage from "./pages/Relatorios";
 import CarteiraPage from "./pages/Carteira";
 import AtendimentoPage from "./pages/Atendimento";
 import RoadmapPage from "./pages/Roadmap";
+import IntegracoesPage from "./pages/Integracoes";
 import Privacy from "./pages/Privacy";
 import Terms from "./pages/Terms";
 import DataDeletion from "./pages/DataDeletion";
@@ -54,6 +55,7 @@ const App = () => (
             <Route path="/carteira" element={<CarteiraPage />} />
             <Route path="/atendimento" element={<AtendimentoPage />} />
             <Route path="/roadmap" element={<RoadmapPage />} />
+            <Route path="/integracoes" element={<IntegracoesPage />} />
           </Route>
           <Route path="*" element={<NotFound />} />
         </Routes>

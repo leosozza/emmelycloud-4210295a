@@ -12,6 +12,7 @@ import {
   Contact,
   MessageCircle,
   Map,
+  Plug,
 } from "lucide-react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
@@ -69,6 +70,7 @@ const navItems: NavItem[] = [
       { title: "Financeiro", url: "/financeiro", icon: DollarSign },
       { title: "Automações", url: "/automacoes", icon: Zap },
       { title: "Relatórios", url: "/relatorios", icon: BarChart3 },
+      { title: "Integrações", url: "/integracoes", icon: Plug },
     ],
   },
   { type: "link", title: "Roadmap", url: "/roadmap", icon: Map },
