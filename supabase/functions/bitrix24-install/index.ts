@@ -308,25 +308,25 @@ Deno.serve(async (req) => {
       await debugLog(supabase, integrationId, "connector_setup_error", "outbound", null, String(connectorError));
     }
 
-    // Return HTML directly (Bitrix24 iframe blocks external redirects)
+    // If called via JSON (from frontend fetch), return JSON
+    if (contentType.includes("application/json")) {
+      return new Response(
+        JSON.stringify({ success: true, integrationId, domain }),
+        { headers: jsonHeaders }
+      );
+    }
+
+    // If called via form POST (legacy Bitrix24 direct), return HTML
     const html = `<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <script src="https://api.bitrix24.com/api/v1/"></script>
-</head>
+<html><head><meta charset="utf-8"><script src="https://api.bitrix24.com/api/v1/"></script></head>
 <body style="font-family:-apple-system,sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;background:#f5f5f5">
-  <div style="text-align:center;padding:40px;background:white;border-radius:12px;box-shadow:0 2px 12px rgba(0,0,0,0.1);max-width:400px">
-    <div style="font-size:48px;margin-bottom:16px">✅</div>
-    <h2 style="color:#333;margin-bottom:8px">Emmely Cloud Instalado!</h2>
-    <p style="color:#666;font-size:14px">Conector WhatsApp & Instagram configurado.</p>
-    <p style="color:#666;font-size:14px">Acesse o Contact Center para ativar os canais.</p>
-  </div>
-  <script>
-    try { BX24.init(function() { BX24.installFinish(); }); } catch(e) { console.log('BX24 init:', e); }
-  </script>
-</body>
-</html>`;
+<div style="text-align:center;padding:40px;background:white;border-radius:12px;box-shadow:0 2px 12px rgba(0,0,0,0.1);max-width:400px">
+<div style="font-size:48px;margin-bottom:16px">✅</div>
+<h2 style="color:#333;margin-bottom:8px">Emmely Cloud Instalado!</h2>
+<p style="color:#666;font-size:14px">Conector configurado com sucesso.</p>
+</div>
+<script>try{BX24.init(function(){BX24.installFinish()});}catch(e){}</script>
+</body></html>`;
     return new Response(html, { headers: htmlHeaders });
   } catch (error) {
     console.error("[INSTALL] Fatal error:", error);
