@@ -11,6 +11,7 @@ function CustomFlowNode({ data, selected }: NodeProps) {
   const hasButtons = nd.nodeType === "message_buttons" && nd.buttons && nd.buttons.length > 0;
   const isCondition = nd.nodeType === "condition";
   const isLoop = nd.nodeType === "loop";
+  const isRouter = nd.nodeType === "ai_router" && nd.aiRouter;
 
   return (
     <div
@@ -20,7 +21,6 @@ function CustomFlowNode({ data, selected }: NodeProps) {
         boxShadow: selected ? `0 0 0 2px ${meta.color}40` : undefined,
       }}
     >
-      {/* Target handle */}
       <Handle type="target" position={Position.Top} className="!w-3 !h-3 !bg-muted-foreground !border-2 !border-background" />
 
       {/* Header */}
@@ -79,6 +79,44 @@ function CustomFlowNode({ data, selected }: NodeProps) {
           <p className="text-[10px] text-muted-foreground">📎 {nd.mediaType}</p>
         )}
 
+        {/* AI Intention preview */}
+        {nd.nodeType === "ai_intention" && nd.aiIntention && (
+          <div className="space-y-0.5">
+            <p className="text-[10px] text-muted-foreground font-medium">🧠 {nd.aiIntention.intentions.length} campo(s) a coletar</p>
+            {nd.aiIntention.intentions.slice(0, 3).map((int, i) => (
+              <p key={i} className="text-[9px] text-muted-foreground">• {int.fieldName || "..."} ({int.validation})</p>
+            ))}
+            {nd.aiIntention.intentions.length > 3 && (
+              <p className="text-[9px] text-muted-foreground">+{nd.aiIntention.intentions.length - 3} mais</p>
+            )}
+            <p className="text-[9px] text-muted-foreground">Máx {nd.aiIntention.maxTurns} turnos</p>
+          </div>
+        )}
+
+        {/* AI Action preview */}
+        {nd.nodeType === "ai_action" && nd.aiAction && (
+          <div className="space-y-0.5">
+            <p className="text-[10px] text-muted-foreground font-medium">⚙️ {nd.aiAction.actionType}</p>
+            {nd.aiAction.actionDescription && (
+              <p className="text-[9px] text-muted-foreground line-clamp-2">{nd.aiAction.actionDescription.slice(0, 60)}</p>
+            )}
+            {nd.aiAction.resultVar && (
+              <p className="text-[9px] text-muted-foreground">→ {`{{${nd.aiAction.resultVar}}}`}</p>
+            )}
+          </div>
+        )}
+
+        {/* AI Router preview */}
+        {isRouter && (
+          <div className="space-y-0.5">
+            <p className="text-[10px] text-muted-foreground font-medium">🔀 {nd.aiRouter!.routes.length} rota(s)</p>
+            {nd.aiRouter!.routes.map((r, i) => (
+              <p key={i} className="text-[9px] text-muted-foreground">• {r.label}</p>
+            ))}
+          </div>
+        )}
+
+        {/* Bitrix preview */}
         {nd.nodeType.startsWith("bitrix_") && nd.bitrixCrm && (
           <div className="space-y-0.5">
             {nd.bitrixCrm.entityId && (
@@ -104,6 +142,20 @@ function CustomFlowNode({ data, selected }: NodeProps) {
         <>
           <Handle type="source" position={Position.Bottom} id="loop" style={{ left: "30%" }} className="!w-3 !h-3 !bg-purple-500 !border-2 !border-background" />
           <Handle type="source" position={Position.Bottom} id="exit" style={{ left: "70%" }} className="!w-3 !h-3 !bg-gray-500 !border-2 !border-background" />
+        </>
+      ) : isRouter && nd.aiRouter ? (
+        <>
+          {nd.aiRouter.routes.map((r, i) => (
+            <Handle
+              key={r.handleId}
+              type="source"
+              position={Position.Bottom}
+              id={r.handleId}
+              style={{ left: `${((i + 1) / (nd.aiRouter!.routes.length + 1)) * 100}%` }}
+              className="!w-3 !h-3 !border-2 !border-background"
+              title={r.label}
+            />
+          ))}
         </>
       ) : hasButtons ? (
         <>

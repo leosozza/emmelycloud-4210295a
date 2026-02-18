@@ -107,8 +107,11 @@ export type Database = {
           is_active: boolean
           is_default: boolean
           name: string
+          routing_rules: Json | null
+          sub_agent_ids: string[] | null
           system_prompt: string
           temperature: number
+          training_collection_ids: string[] | null
           updated_at: string
           welcome_message: string | null
         }
@@ -127,8 +130,11 @@ export type Database = {
           is_active?: boolean
           is_default?: boolean
           name: string
+          routing_rules?: Json | null
+          sub_agent_ids?: string[] | null
           system_prompt?: string
           temperature?: number
+          training_collection_ids?: string[] | null
           updated_at?: string
           welcome_message?: string | null
         }
@@ -147,8 +153,11 @@ export type Database = {
           is_active?: boolean
           is_default?: boolean
           name?: string
+          routing_rules?: Json | null
+          sub_agent_ids?: string[] | null
           system_prompt?: string
           temperature?: number
+          training_collection_ids?: string[] | null
           updated_at?: string
           welcome_message?: string | null
         }
@@ -713,12 +722,14 @@ export type Database = {
           created_at: string
           description: string | null
           edges: Json
+          flow_type: string
           id: string
           is_active: boolean
           keywords: string[] | null
           name: string
           nodes: Json
           priority: number | null
+          trigger_config: Json | null
           trigger_type: string
           trigger_value: string | null
           updated_at: string
@@ -728,12 +739,14 @@ export type Database = {
           created_at?: string
           description?: string | null
           edges?: Json
+          flow_type?: string
           id?: string
           is_active?: boolean
           keywords?: string[] | null
           name: string
           nodes?: Json
           priority?: number | null
+          trigger_config?: Json | null
           trigger_type?: string
           trigger_value?: string | null
           updated_at?: string
@@ -743,12 +756,14 @@ export type Database = {
           created_at?: string
           description?: string | null
           edges?: Json
+          flow_type?: string
           id?: string
           is_active?: boolean
           keywords?: string[] | null
           name?: string
           nodes?: Json
           priority?: number | null
+          trigger_config?: Json | null
           trigger_type?: string
           trigger_value?: string | null
           updated_at?: string

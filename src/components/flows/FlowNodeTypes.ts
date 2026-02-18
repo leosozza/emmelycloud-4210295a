@@ -4,6 +4,7 @@ import {
   Globe, Zap,
   Bot, UserCog, Phone, ArrowLeftToLine, XCircle,
   Building2, Handshake, Boxes, Plus, Pencil, Search, Trash2,
+  BrainCircuit, Cog, GitFork,
   type LucideIcon,
 } from "lucide-react";
 
@@ -31,6 +32,10 @@ export type FlowNodeType =
   | "transfer"
   | "back_to_ai"
   | "end_flow"
+  // IA Inteligente
+  | "ai_intention"
+  | "ai_action"
+  | "ai_router"
   // Bitrix24 CRM
   | "bitrix_create_lead"
   | "bitrix_update_lead"
@@ -73,6 +78,11 @@ export const NODE_CATEGORIES: FlowNodeCategory[] = [
     types: ["ai_response", "switch_persona", "transfer", "back_to_ai", "end_flow"],
   },
   {
+    id: "ai_smart",
+    label: "IA Inteligente",
+    types: ["ai_intention", "ai_action", "ai_router"],
+  },
+  {
     id: "bitrix24",
     label: "Bitrix24",
     types: [
@@ -88,7 +98,6 @@ export interface NodeTypeMeta {
   icon: LucideIcon;
   color: string;
   description: string;
-  /** How many default source handles (besides dynamic ones) */
   defaultHandles?: number;
 }
 
@@ -115,6 +124,10 @@ export const NODE_TYPE_META: Record<FlowNodeType, NodeTypeMeta> = {
   transfer:        { label: "Transferir Humano",  icon: Phone,             color: "#10b981", description: "Transferir para atendente" },
   back_to_ai:      { label: "Voltar para IA",     icon: ArrowLeftToLine,   color: "#059669", description: "Retomar atendimento IA" },
   end_flow:        { label: "Encerrar Fluxo",     icon: XCircle,           color: "#dc2626", description: "Terminar execução do fluxo" },
+  // IA Inteligente
+  ai_intention:    { label: "IA - Intenção",      icon: BrainCircuit,      color: "#ec4899", description: "IA conversa e coleta dados estruturados" },
+  ai_action:       { label: "IA - Ação",          icon: Cog,               color: "#f97316", description: "IA executa ações inteligentes (CRM, agenda...)" },
+  ai_router:       { label: "IA - Roteador",      icon: GitFork,           color: "#14b8a6", description: "IA decide qual caminho seguir" },
   // Bitrix24 – Lead
   bitrix_create_lead: { label: "Criar Lead",        icon: Building2,  color: "#22c55e", description: "Criar lead no Bitrix24" },
   bitrix_update_lead: { label: "Atualizar Lead",    icon: Building2,  color: "#16a34a", description: "Atualizar lead existente" },
@@ -132,7 +145,8 @@ export const NODE_TYPE_META: Record<FlowNodeType, NodeTypeMeta> = {
   bitrix_delete_spa:  { label: "Excluir SPA",       icon: Boxes,      color: "#6b21a8", description: "Excluir item SPA do Bitrix24" },
 };
 
-// ── Data stored inside each node ──
+// ── Data interfaces ──
+
 export interface FlowButtonItem {
   id: string;
   label: string;
@@ -181,6 +195,39 @@ export interface FlowBitrixCRM {
   stageId: string;
 }
 
+// IA Inteligente
+export interface FlowAIIntentionField {
+  fieldName: string;
+  description: string;
+  validation: "text" | "phone" | "email" | "cpf" | "city" | "number";
+  required: boolean;
+}
+
+export interface FlowAIIntention {
+  intentions: FlowAIIntentionField[];
+  maxTurns: number;
+  successMessage: string;
+  failureMessage: string;
+}
+
+export interface FlowAIAction {
+  actionType: "schedule" | "query_crm" | "update_crm" | "custom";
+  actionDescription: string;
+  toolConfig: Record<string, any>;
+  resultVar: string;
+}
+
+export interface FlowAIRouterRoute {
+  label: string;
+  description: string;
+  handleId: string;
+}
+
+export interface FlowAIRouter {
+  routes: FlowAIRouterRoute[];
+  analysisPrompt: string;
+}
+
 export interface FlowNodeData {
   nodeType: FlowNodeType;
   label?: string;
@@ -199,12 +246,16 @@ export interface FlowNodeData {
   variable?: FlowVariable;
   // Bitrix24 CRM
   bitrixCrm?: FlowBitrixCRM;
+  // IA Inteligente
+  aiIntention?: FlowAIIntention;
+  aiAction?: FlowAIAction;
+  aiRouter?: FlowAIRouter;
   // Controle
   personaId?: string;
   prompt?: string;
   department?: string;
   transferMessage?: string;
-  // Extra – raw config from PowerBot imports
+  // Extra
   config?: Record<string, any>;
   originalType?: string;
 }
@@ -245,6 +296,31 @@ export function getDefaultData(nodeType: FlowNodeType): FlowNodeData {
     case "transfer":
       base.department = "";
       base.transferMessage = "";
+      break;
+    case "ai_intention":
+      base.aiIntention = {
+        intentions: [{ fieldName: "", description: "", validation: "text", required: true }],
+        maxTurns: 5,
+        successMessage: "Obrigado! Coletei todas as informações.",
+        failureMessage: "Não consegui coletar as informações necessárias.",
+      };
+      break;
+    case "ai_action":
+      base.aiAction = {
+        actionType: "custom",
+        actionDescription: "",
+        toolConfig: {},
+        resultVar: "",
+      };
+      break;
+    case "ai_router":
+      base.aiRouter = {
+        routes: [
+          { label: "Rota 1", description: "", handleId: "route_0" },
+          { label: "Rota 2", description: "", handleId: "route_1" },
+        ],
+        analysisPrompt: "",
+      };
       break;
     default:
       if (nodeType.startsWith("bitrix_")) {

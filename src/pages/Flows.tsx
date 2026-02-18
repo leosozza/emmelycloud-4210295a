@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
@@ -27,6 +28,7 @@ import "@xyflow/react/dist/style.css";
 import {
   Plus, Workflow, Save, Trash2, ArrowLeft,
   Loader2, GitBranch, Upload, Undo2, Redo2, Download, Copy,
+  Bot, Zap, Shuffle, Calendar, Clock, Tag, ArrowRightLeft, Bell,
 } from "lucide-react";
 import { previewPowerBotFlow, convertPowerBotFlow, type PowerBotImportPreview } from "@/lib/powerbotImporter";
 import CustomFlowNode from "@/components/flows/CustomFlowNode";
@@ -34,6 +36,7 @@ import FlowNodePalette from "@/components/flows/FlowNodePalette";
 import NodeConfigPanel from "@/components/flows/NodeConfigPanel";
 import { type FlowNodeType, type FlowNodeData, getDefaultData, NODE_TYPE_META } from "@/components/flows/FlowNodeTypes";
 import { useFlowHistory } from "@/hooks/useFlowHistory";
+import { FLOW_TEMPLATES, type FlowTemplate } from "@/lib/flowTemplates";
 
 interface Flow {
   id: string;
@@ -47,9 +50,29 @@ interface Flow {
   is_active: boolean;
   priority: number;
   created_at: string;
+  flow_type?: string;
+  trigger_config?: any;
 }
 
 const customNodeTypes = { custom: CustomFlowNode };
+
+const FLOW_TYPE_LABELS: Record<string, { label: string; color: string }> = {
+  flow: { label: "Fluxo", color: "bg-blue-500/10 text-blue-700" },
+  ai: { label: "IA", color: "bg-purple-500/10 text-purple-700" },
+  hybrid: { label: "Híbrido", color: "bg-amber-500/10 text-amber-700" },
+};
+
+const TRIGGER_LABELS: Record<string, string> = {
+  keyword: "Palavra-chave",
+  first_message: "Primeira mensagem",
+  manual: "Manual",
+  webhook: "Webhook",
+  bitrix_event: "Evento Bitrix24",
+  schedule: "Agendamento",
+  inactivity: "Inatividade",
+  tag: "Tag",
+  department_transfer: "Transferência",
+};
 
 export default function FlowsPage() {
   const [flows, setFlows] = useState<Flow[]>([]);
@@ -58,7 +81,8 @@ export default function FlowsPage() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-  const [newFlow, setNewFlow] = useState({ name: "", description: "", trigger_type: "keyword", trigger_value: "" });
+  const [newFlow, setNewFlow] = useState({ name: "", description: "", trigger_type: "keyword", trigger_value: "", flow_type: "hybrid", trigger_config: {} as any });
+  const [createTab, setCreateTab] = useState<"template" | "scratch">("template");
   const [importPreview, setImportPreview] = useState<PowerBotImportPreview | null>(null);
   const [importJson, setImportJson] = useState<any>(null);
   const [importDialogOpen, setImportDialogOpen] = useState(false);
@@ -96,12 +120,7 @@ export default function FlowsPage() {
     const id = `node_${Date.now()}`;
     const pos = position || { x: 250, y: (nodes.length + 1) * 120 };
     const data = getDefaultData(type);
-    const newNode: Node = {
-      id,
-      type: "custom",
-      position: pos,
-      data: data as any,
-    };
+    const newNode: Node = { id, type: "custom", position: pos, data: data as any };
     setNodes((nds) => [...nds, newNode]);
     setTimeout(pushState, 0);
   }, [nodes.length, setNodes, pushState]);
@@ -112,10 +131,7 @@ export default function FlowsPage() {
     if (!type) return;
     const reactFlowBounds = (event.target as HTMLElement).closest(".react-flow")?.getBoundingClientRect();
     if (!reactFlowBounds) return;
-    const position = {
-      x: event.clientX - reactFlowBounds.left,
-      y: event.clientY - reactFlowBounds.top,
-    };
+    const position = { x: event.clientX - reactFlowBounds.left, y: event.clientY - reactFlowBounds.top };
     addNode(type, position);
   }, [addNode]);
 
@@ -124,13 +140,8 @@ export default function FlowsPage() {
     event.dataTransfer.dropEffect = "move";
   }, []);
 
-  const onNodeClick = useCallback((_: any, node: Node) => {
-    setSelectedNodeId(node.id);
-  }, []);
-
-  const onPaneClick = useCallback(() => {
-    setSelectedNodeId(null);
-  }, []);
+  const onNodeClick = useCallback((_: any, node: Node) => { setSelectedNodeId(node.id); }, []);
+  const onPaneClick = useCallback(() => { setSelectedNodeId(null); }, []);
 
   const handleNodeDataChange = useCallback((newData: FlowNodeData) => {
     if (!selectedNodeId) return;
@@ -150,20 +161,13 @@ export default function FlowsPage() {
     if (!selectedNodeId) return;
     const node = nodes.find((n) => n.id === selectedNodeId);
     if (!node) return;
-    const newId = `node_${Date.now()}`;
-    const newNode: Node = {
-      ...node,
-      id: newId,
-      position: { x: node.position.x + 40, y: node.position.y + 40 },
-      selected: false,
-    };
+    const newNode: Node = { ...node, id: `node_${Date.now()}`, position: { x: node.position.x + 40, y: node.position.y + 40 }, selected: false };
     setNodes((nds) => [...nds, newNode]);
     setTimeout(pushState, 0);
   }, [selectedNodeId, nodes, setNodes, pushState]);
 
   const openFlow = (flow: Flow) => {
     setSelectedFlow(flow);
-    // Convert old-format nodes to custom type
     const convertedNodes = (flow.nodes || []).map((n: any) => ({
       ...n,
       type: n.type === "default" ? "custom" : (n.type || "custom"),
@@ -175,45 +179,62 @@ export default function FlowsPage() {
     setTimeout(pushState, 50);
   };
 
+  const handleCreateFromTemplate = async (template: FlowTemplate) => {
+    setSaving(true);
+    try {
+      const { data, error } = await supabase.from("flows").insert({
+        name: template.name,
+        description: template.description,
+        trigger_type: template.triggerType,
+        flow_type: template.flowType,
+        nodes: template.nodes as any,
+        edges: template.edges as any,
+      } as any).select().single();
+      if (error) throw error;
+      toast.success(`Fluxo "${template.name}" criado a partir do template`);
+      setDialogOpen(false);
+      await loadFlows();
+      if (data) openFlow(data as unknown as Flow);
+    } catch (e: any) { toast.error(e.message); }
+    finally { setSaving(false); }
+  };
+
   const handleCreateFlow = async () => {
     if (!newFlow.name.trim()) { toast.error("Nome é obrigatório"); return; }
     setSaving(true);
     try {
-      const { error } = await supabase.from("flows").insert({
+      const insertData: any = {
         name: newFlow.name,
         description: newFlow.description || null,
         trigger_type: newFlow.trigger_type,
         trigger_value: newFlow.trigger_value || null,
+        flow_type: newFlow.flow_type,
         nodes: [],
         edges: [],
-      } as any);
+      };
+      // Add trigger_config for advanced triggers
+      if (["bitrix_event", "schedule", "inactivity", "tag", "department_transfer"].includes(newFlow.trigger_type)) {
+        insertData.trigger_config = newFlow.trigger_config;
+      }
+      const { error } = await supabase.from("flows").insert(insertData);
       if (error) throw error;
       toast.success("Fluxo criado");
       setDialogOpen(false);
-      setNewFlow({ name: "", description: "", trigger_type: "keyword", trigger_value: "" });
+      setNewFlow({ name: "", description: "", trigger_type: "keyword", trigger_value: "", flow_type: "hybrid", trigger_config: {} });
       loadFlows();
-    } catch (e: any) {
-      toast.error(e.message);
-    } finally {
-      setSaving(false);
-    }
+    } catch (e: any) { toast.error(e.message); }
+    finally { setSaving(false); }
   };
 
   const handleSaveFlow = async () => {
     if (!selectedFlow) return;
     setSaving(true);
     try {
-      const { error } = await supabase.from("flows").update({
-        nodes: nodes as any,
-        edges: edges as any,
-      } as any).eq("id", selectedFlow.id);
+      const { error } = await supabase.from("flows").update({ nodes: nodes as any, edges: edges as any } as any).eq("id", selectedFlow.id);
       if (error) throw error;
       toast.success("Fluxo guardado");
-    } catch (e: any) {
-      toast.error(e.message);
-    } finally {
-      setSaving(false);
-    }
+    } catch (e: any) { toast.error(e.message); }
+    finally { setSaving(false); }
   };
 
   const handleDelete = async () => {
@@ -235,6 +256,7 @@ export default function FlowsPage() {
       description: flow.description,
       trigger_type: flow.trigger_type,
       trigger_value: flow.trigger_value,
+      flow_type: (flow as any).flow_type || "hybrid",
       nodes: flow.nodes as any,
       edges: flow.edges as any,
     } as any);
@@ -295,18 +317,87 @@ export default function FlowsPage() {
     finally { setImporting(false); }
   };
 
+  // Render trigger-specific config
+  const renderTriggerConfig = () => {
+    switch (newFlow.trigger_type) {
+      case "keyword":
+        return (
+          <div>
+            <Label>Palavra-chave</Label>
+            <Input value={newFlow.trigger_value} onChange={(e) => setNewFlow((prev) => ({ ...prev, trigger_value: e.target.value }))} placeholder="Ex: ajuda, suporte" />
+          </div>
+        );
+      case "bitrix_event":
+        return (
+          <div className="space-y-2">
+            <div>
+              <Label className="text-xs">Tipo de evento</Label>
+              <Select value={newFlow.trigger_config?.eventType || ""} onValueChange={(v) => setNewFlow(p => ({ ...p, trigger_config: { ...p.trigger_config, eventType: v } }))}>
+                <SelectTrigger><SelectValue placeholder="Selecione..." /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ONCRMLEADADD">Lead criado</SelectItem>
+                  <SelectItem value="ONCRMLEADUPDATE">Lead atualizado</SelectItem>
+                  <SelectItem value="ONCRMDEALADD">Deal criado</SelectItem>
+                  <SelectItem value="ONCRMDEALUPDATE">Deal atualizado</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+        );
+      case "schedule":
+        return (
+          <div className="space-y-2">
+            <div>
+              <Label className="text-xs">Expressão CRON</Label>
+              <Input value={newFlow.trigger_config?.cron || ""} onChange={(e) => setNewFlow(p => ({ ...p, trigger_config: { ...p.trigger_config, cron: e.target.value } }))} placeholder="0 9 * * 1-5" />
+              <p className="text-[10px] text-muted-foreground mt-1">Ex: 0 9 * * 1-5 = Seg-Sex às 9h</p>
+            </div>
+          </div>
+        );
+      case "inactivity":
+        return (
+          <div>
+            <Label className="text-xs">Minutos sem resposta</Label>
+            <Input type="number" min={1} value={newFlow.trigger_config?.minutes || 30} onChange={(e) => setNewFlow(p => ({ ...p, trigger_config: { ...p.trigger_config, minutes: parseInt(e.target.value) || 30 } }))} />
+          </div>
+        );
+      case "tag":
+        return (
+          <div>
+            <Label className="text-xs">Nome da tag</Label>
+            <Input value={newFlow.trigger_config?.tagName || ""} onChange={(e) => setNewFlow(p => ({ ...p, trigger_config: { ...p.trigger_config, tagName: e.target.value } }))} placeholder="Ex: vip, urgente" />
+          </div>
+        );
+      case "department_transfer":
+        return (
+          <div>
+            <Label className="text-xs">Departamento</Label>
+            <Input value={newFlow.trigger_config?.departmentName || ""} onChange={(e) => setNewFlow(p => ({ ...p, trigger_config: { ...p.trigger_config, departmentName: e.target.value } }))} placeholder="Ex: suporte, vendas" />
+          </div>
+        );
+      default:
+        return null;
+    }
+  };
+
   // ── Editor View ──
   if (selectedFlow) {
     return (
       <div className="-m-6 flex flex-col" style={{ height: "calc(100vh - 3.5rem)" }}>
-        {/* Editor Header */}
         <div className="flex items-center justify-between px-4 py-2 border-b bg-card shrink-0">
           <div className="flex items-center gap-3">
             <Button variant="ghost" size="icon" onClick={() => { setSelectedFlow(null); setSelectedNodeId(null); loadFlows(); }}>
               <ArrowLeft className="h-4 w-4" />
             </Button>
             <div>
-              <h3 className="text-sm font-semibold">{selectedFlow.name}</h3>
+              <h3 className="text-sm font-semibold flex items-center gap-2">
+                {selectedFlow.name}
+                {(selectedFlow as any).flow_type && (
+                  <Badge className={`text-[9px] ${FLOW_TYPE_LABELS[(selectedFlow as any).flow_type]?.color || ""}`}>
+                    {FLOW_TYPE_LABELS[(selectedFlow as any).flow_type]?.label || (selectedFlow as any).flow_type}
+                  </Badge>
+                )}
+              </h3>
               <p className="text-[11px] text-muted-foreground">{selectedFlow.description || "Sem descrição"}</p>
             </div>
           </div>
@@ -326,23 +417,15 @@ export default function FlowsPage() {
           </div>
         </div>
 
-        {/* Editor body */}
         <div className="flex flex-1 min-h-0">
-          {/* Palette */}
           <FlowNodePalette onAddNode={addNode} collapsed={paletteCollapsed} onToggleCollapse={() => setPaletteCollapsed(!paletteCollapsed)} />
 
-          {/* Canvas */}
           <div className="flex-1" onDrop={onDrop} onDragOver={onDragOver}>
             <ReactFlow
-              nodes={nodes}
-              edges={edges}
-              onNodesChange={onNodesChange}
-              onEdgesChange={onEdgesChange}
-              onConnect={onConnect}
-              onNodeClick={onNodeClick}
-              onPaneClick={onPaneClick}
-              nodeTypes={customNodeTypes}
-              fitView
+              nodes={nodes} edges={edges}
+              onNodesChange={onNodesChange} onEdgesChange={onEdgesChange}
+              onConnect={onConnect} onNodeClick={onNodeClick} onPaneClick={onPaneClick}
+              nodeTypes={customNodeTypes} fitView
               deleteKeyCode="Delete"
               onNodesDelete={() => setTimeout(pushState, 0)}
               onEdgesDelete={() => setTimeout(pushState, 0)}
@@ -350,8 +433,6 @@ export default function FlowsPage() {
               <Controls />
               <MiniMap />
               <Background />
-
-              {/* Selected node actions */}
               {selectedNodeId && (
                 <Panel position="top-right">
                   <div className="flex gap-1 bg-card border rounded-md p-1 shadow-sm">
@@ -364,8 +445,6 @@ export default function FlowsPage() {
                   </div>
                 </Panel>
               )}
-
-              {/* Instructions */}
               <Panel position="bottom-center">
                 <div className="bg-card/80 backdrop-blur border rounded-md px-3 py-1.5 text-[10px] text-muted-foreground">
                   Arraste blocos da paleta • Clique num nó para configurar • Delete para remover • Ctrl+Z desfazer
@@ -374,14 +453,8 @@ export default function FlowsPage() {
             </ReactFlow>
           </div>
 
-          {/* Config Panel */}
           {selectedNodeData && (
-            <NodeConfigPanel
-              data={selectedNodeData}
-              onChange={handleNodeDataChange}
-              onDelete={handleDeleteNode}
-              onClose={() => setSelectedNodeId(null)}
-            />
+            <NodeConfigPanel data={selectedNodeData} onChange={handleNodeDataChange} onDelete={handleDeleteNode} onClose={() => setSelectedNodeId(null)} />
           )}
         </div>
       </div>
@@ -419,84 +492,136 @@ export default function FlowsPage() {
         </Card>
       ) : (
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {flows.map((flow) => (
-            <Card key={flow.id} className={`cursor-pointer hover:shadow-md transition-shadow ${!flow.is_active ? "opacity-60" : ""}`} onClick={() => openFlow(flow)}>
-              <CardHeader className="pb-2">
-                <div className="flex items-start justify-between">
-                  <div>
-                    <CardTitle className="text-base flex items-center gap-2">
-                      <GitBranch className="h-4 w-4 text-primary" />
-                      {flow.name}
-                    </CardTitle>
-                    <CardDescription className="text-xs mt-1">{flow.description || "Sem descrição"}</CardDescription>
+          {flows.map((flow) => {
+            const flowType = (flow as any).flow_type || "hybrid";
+            const ftLabel = FLOW_TYPE_LABELS[flowType];
+            return (
+              <Card key={flow.id} className={`cursor-pointer hover:shadow-md transition-shadow ${!flow.is_active ? "opacity-60" : ""}`} onClick={() => openFlow(flow)}>
+                <CardHeader className="pb-2">
+                  <div className="flex items-start justify-between">
+                    <div>
+                      <CardTitle className="text-base flex items-center gap-2">
+                        <GitBranch className="h-4 w-4 text-primary" />
+                        {flow.name}
+                      </CardTitle>
+                      <CardDescription className="text-xs mt-1">{flow.description || "Sem descrição"}</CardDescription>
+                    </div>
+                    <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+                      <Switch checked={flow.is_active} onCheckedChange={() => toggleActive(flow)} />
+                      <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => duplicateFlow(flow)} title="Duplicar">
+                        <Copy className="h-3 w-3" />
+                      </Button>
+                      <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => exportFlow(flow)} title="Exportar">
+                        <Download className="h-3 w-3" />
+                      </Button>
+                      <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => setDeleteId(flow.id)}>
+                        <Trash2 className="h-3 w-3" />
+                      </Button>
+                    </div>
                   </div>
-                  <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
-                    <Switch checked={flow.is_active} onCheckedChange={() => toggleActive(flow)} />
-                    <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => duplicateFlow(flow)} title="Duplicar">
-                      <Copy className="h-3 w-3" />
-                    </Button>
-                    <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => exportFlow(flow)} title="Exportar">
-                      <Download className="h-3 w-3" />
-                    </Button>
-                    <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => setDeleteId(flow.id)}>
-                      <Trash2 className="h-3 w-3" />
-                    </Button>
+                </CardHeader>
+                <CardContent className="pt-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    {ftLabel && <Badge className={`text-[10px] ${ftLabel.color}`}>{ftLabel.label}</Badge>}
+                    <Badge variant="outline" className="text-[10px]">{TRIGGER_LABELS[flow.trigger_type] || flow.trigger_type}</Badge>
+                    <span className="text-[10px] text-muted-foreground">{(flow.nodes || []).length} nós • {(flow.edges || []).length} conexões</span>
                   </div>
-                </div>
-              </CardHeader>
-              <CardContent className="pt-0">
-                <div className="flex items-center gap-2">
-                  <Badge variant="outline" className="text-[10px]">{flow.trigger_type}</Badge>
-                  <span className="text-[10px] text-muted-foreground">{(flow.nodes || []).length} nós • {(flow.edges || []).length} conexões</span>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
+                </CardContent>
+              </Card>
+            );
+          })}
         </div>
       )}
 
-      {/* Create Dialog */}
+      {/* Create Dialog with Templates */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent>
+        <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Novo Fluxo</DialogTitle>
-            <DialogDescription>Crie um novo fluxo de automação.</DialogDescription>
+            <DialogDescription>Escolha um template pronto ou crie do zero.</DialogDescription>
           </DialogHeader>
-          <div className="space-y-3">
-            <div>
-              <Label>Nome *</Label>
-              <Input value={newFlow.name} onChange={(e) => setNewFlow((prev) => ({ ...prev, name: e.target.value }))} placeholder="Ex: Boas-vindas WhatsApp" />
-            </div>
-            <div>
-              <Label>Descrição</Label>
-              <Input value={newFlow.description} onChange={(e) => setNewFlow((prev) => ({ ...prev, description: e.target.value }))} placeholder="Breve descrição" />
-            </div>
-            <div>
-              <Label>Tipo de Trigger</Label>
-              <Select value={newFlow.trigger_type} onValueChange={(v) => setNewFlow((prev) => ({ ...prev, trigger_type: v }))}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="keyword">Palavra-chave</SelectItem>
-                  <SelectItem value="first_message">Primeira mensagem</SelectItem>
-                  <SelectItem value="manual">Manual</SelectItem>
-                  <SelectItem value="webhook">Webhook</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            {newFlow.trigger_type === "keyword" && (
-              <div>
-                <Label>Palavra-chave</Label>
-                <Input value={newFlow.trigger_value} onChange={(e) => setNewFlow((prev) => ({ ...prev, trigger_value: e.target.value }))} placeholder="Ex: ajuda, suporte" />
+
+          <Tabs value={createTab} onValueChange={(v) => setCreateTab(v as any)}>
+            <TabsList className="w-full">
+              <TabsTrigger value="template" className="flex-1">📦 Templates</TabsTrigger>
+              <TabsTrigger value="scratch" className="flex-1">✏️ Criar do Zero</TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="template" className="mt-4">
+              <div className="grid gap-3 sm:grid-cols-2">
+                {FLOW_TEMPLATES.map((tpl) => (
+                  <Card key={tpl.id} className="cursor-pointer hover:shadow-md transition-shadow hover:border-primary/50" onClick={() => handleCreateFromTemplate(tpl)}>
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-sm flex items-center gap-2">
+                        <span className="text-lg">{tpl.icon}</span>
+                        {tpl.name}
+                      </CardTitle>
+                      <CardDescription className="text-[11px]">{tpl.description}</CardDescription>
+                    </CardHeader>
+                    <CardContent className="pt-0">
+                      <div className="flex gap-1">
+                        <Badge className={`text-[9px] ${FLOW_TYPE_LABELS[tpl.flowType]?.color}`}>{FLOW_TYPE_LABELS[tpl.flowType]?.label}</Badge>
+                        <Badge variant="outline" className="text-[9px]">{tpl.category}</Badge>
+                        <Badge variant="outline" className="text-[9px]">{tpl.nodes.length} nós</Badge>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
               </div>
-            )}
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancelar</Button>
-            <Button onClick={handleCreateFlow} disabled={saving}>
-              {saving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-              Criar
-            </Button>
-          </DialogFooter>
+              {saving && <div className="flex justify-center py-4"><Loader2 className="h-6 w-6 animate-spin" /></div>}
+            </TabsContent>
+
+            <TabsContent value="scratch" className="mt-4">
+              <div className="space-y-3">
+                <div>
+                  <Label>Nome *</Label>
+                  <Input value={newFlow.name} onChange={(e) => setNewFlow((prev) => ({ ...prev, name: e.target.value }))} placeholder="Ex: Boas-vindas WhatsApp" />
+                </div>
+                <div>
+                  <Label>Descrição</Label>
+                  <Input value={newFlow.description} onChange={(e) => setNewFlow((prev) => ({ ...prev, description: e.target.value }))} placeholder="Breve descrição" />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <Label>Tipo de Fluxo</Label>
+                    <Select value={newFlow.flow_type} onValueChange={(v) => setNewFlow((prev) => ({ ...prev, flow_type: v }))}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="flow">🔀 Apenas Fluxo</SelectItem>
+                        <SelectItem value="ai">🤖 Fluxo de IA</SelectItem>
+                        <SelectItem value="hybrid">⚡ Híbrido</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <Label>Gatilho (Trigger)</Label>
+                    <Select value={newFlow.trigger_type} onValueChange={(v) => setNewFlow((prev) => ({ ...prev, trigger_type: v, trigger_value: "", trigger_config: {} }))}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="keyword">🔑 Palavra-chave</SelectItem>
+                        <SelectItem value="first_message">💬 Primeira mensagem</SelectItem>
+                        <SelectItem value="manual">👆 Manual</SelectItem>
+                        <SelectItem value="webhook">🌐 Webhook</SelectItem>
+                        <SelectItem value="bitrix_event">📊 Evento Bitrix24</SelectItem>
+                        <SelectItem value="schedule">📅 Agendamento</SelectItem>
+                        <SelectItem value="inactivity">⏰ Inatividade</SelectItem>
+                        <SelectItem value="tag">🏷️ Tag</SelectItem>
+                        <SelectItem value="department_transfer">↔️ Transferência</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+                {renderTriggerConfig()}
+              </div>
+              <DialogFooter className="mt-4">
+                <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancelar</Button>
+                <Button onClick={handleCreateFlow} disabled={saving}>
+                  {saving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                  Criar
+                </Button>
+              </DialogFooter>
+            </TabsContent>
+          </Tabs>
         </DialogContent>
       </Dialog>
 
