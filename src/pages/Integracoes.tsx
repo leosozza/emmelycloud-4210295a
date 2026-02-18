@@ -72,6 +72,8 @@ function CRMTab() {
   const [channels, setChannels] = useState<ChannelMapping[]>([]);
   const [logs, setLogs] = useState<DebugLog[]>([]);
   const [loading, setLoading] = useState(true);
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState<{ ok: boolean; message?: string; error?: string } | null>(null);
 
   useEffect(() => {
     async function load() {
@@ -88,6 +90,22 @@ function CRMTab() {
     }
     load();
   }, []);
+
+  const handleTestConnection = async () => {
+    setTesting(true);
+    setTestResult(null);
+    try {
+      const { data, error } = await supabase.functions.invoke("bitrix24-test-connection");
+      if (error) {
+        setTestResult({ ok: false, error: "Erro ao contactar o servidor." });
+      } else {
+        setTestResult(data as { ok: boolean; message?: string; error?: string });
+      }
+    } catch {
+      setTestResult({ ok: false, error: "Erro de rede." });
+    }
+    setTesting(false);
+  };
 
   const bitrixStatus = integration ? (integration.connector_active ? "active" : integration.connector_registered ? "pending" : "inactive") : "inactive";
   const activeChannels = channels.filter((c) => c.is_active);
@@ -109,12 +127,22 @@ function CRMTab() {
           </div>
           <StatusBadge status={bitrixStatus} />
         </CardHeader>
-        <CardContent className="space-y-2 text-sm">
+        <CardContent className="space-y-3 text-sm">
           {integration ? (
             <>
               <div className="flex justify-between"><span className="text-muted-foreground">Domínio</span><span className="font-medium">{integration.domain || "—"}</span></div>
               <div className="flex justify-between"><span className="text-muted-foreground">Conector registado</span><span>{integration.connector_registered ? "Sim" : "Não"}</span></div>
               <div className="flex justify-between"><span className="text-muted-foreground">Última atualização</span><span>{new Date(integration.updated_at).toLocaleDateString("pt-PT")}</span></div>
+              <Button size="sm" variant="outline" className="w-full mt-1" onClick={handleTestConnection} disabled={testing}>
+                {testing ? <RefreshCw className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <Activity className="h-3.5 w-3.5 mr-1.5" />}
+                {testing ? "A testar…" : "Testar Conexão"}
+              </Button>
+              {testResult && (
+                <div className={`flex items-center gap-2 rounded-md px-3 py-2 ${testResult.ok ? "bg-green-50 text-green-800" : "bg-red-50 text-red-800"}`}>
+                  {testResult.ok ? <CheckCircle2 className="h-4 w-4 shrink-0" /> : <AlertCircle className="h-4 w-4 shrink-0" />}
+                  <span className="text-xs">{testResult.ok ? testResult.message : testResult.error}</span>
+                </div>
+              )}
             </>
           ) : (
             <p className="text-muted-foreground">Nenhuma integração configurada.</p>
