@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from "react";
 
-type AppStatus = "loading" | "installing" | "installed" | "ready" | "error";
+type AppStatus = "loading" | "ready" | "error";
 type TabId = "connector" | "conversas" | "pagamentos" | "automacoes";
 
 interface IntegrationData {
@@ -44,7 +44,15 @@ const Bitrix24App = () => {
         // @ts-ignore
         if (window.BX24) {
           // @ts-ignore
-          window.BX24.init(() => handleBX24Ready());
+          window.BX24.init(() => {
+            // @ts-ignore
+            const auth = window.BX24.getAuth();
+            if (auth?.member_id) {
+              setMemberId(auth.member_id);
+              fetchIntegrationData(auth.member_id);
+            }
+            setStatus("ready");
+          });
         } else {
           setStatus("ready");
         }
@@ -56,53 +64,6 @@ const Bitrix24App = () => {
     document.head.appendChild(script);
     return () => { try { document.head.removeChild(script); } catch {} };
   }, []);
-
-  async function handleBX24Ready() {
-    try {
-      // @ts-ignore
-      const auth = window.BX24.getAuth();
-      if (!auth || !auth.access_token) {
-        setStatus("ready");
-        return;
-      }
-
-      setMemberId(auth.member_id);
-      setStatus("installing");
-
-      const response = await fetch(`${SUPABASE_URL}/functions/v1/bitrix24-install`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          auth: {
-            access_token: auth.access_token,
-            refresh_token: auth.refresh_token,
-            member_id: auth.member_id,
-            domain: auth.domain,
-            expires_in: String(auth.expires || 3600),
-          },
-          member_id: auth.member_id,
-        }),
-      });
-
-      if (!response.ok) {
-        console.error("[BITRIX24] Install error:", await response.text());
-      }
-
-      // Call installFinish to notify Bitrix24
-      try {
-        // @ts-ignore
-        window.BX24.installFinish();
-      } catch {}
-
-      setStatus("ready");
-      // Fetch integration data
-      fetchIntegrationData(auth.member_id);
-    } catch (err) {
-      console.error("[BITRIX24] Error:", err);
-      setErrorMsg(String(err));
-      setStatus("error");
-    }
-  }
 
   const fetchIntegrationData = useCallback(async (mid: string) => {
     setLoadingData(true);
@@ -152,14 +113,12 @@ const Bitrix24App = () => {
   };
 
   // --- Loading / Error states ---
-  if (status === "loading" || status === "installing") {
+  if (status === "loading") {
     return (
       <div style={containerStyle}>
         <div style={cardStyle}>
           <div style={{ fontSize: 48, marginBottom: 16 }}>⏳</div>
-          <h2 style={titleStyle}>
-            {status === "installing" ? "Configurando Emmely Cloud..." : "Carregando..."}
-          </h2>
+          <h2 style={titleStyle}>Carregando...</h2>
           <p style={subtitleStyle}>Aguarde um momento...</p>
         </div>
       </div>
