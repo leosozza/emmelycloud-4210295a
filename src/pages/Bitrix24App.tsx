@@ -192,7 +192,7 @@ const Bitrix24App = () => {
           />
         )}
         {activeTab === "conversas" && <PlaceholderTab title="Conversas" description="Lista de conversas recentes do Emmely Cloud." icon="💬" />}
-        {activeTab === "pagamentos" && <PlaceholderTab title="Pagamentos" description="Resumo de pagamentos pendentes e pagos via Stripe." icon="💳" />}
+        {activeTab === "pagamentos" && <PagamentosTab />}
         {activeTab === "automacoes" && <PlaceholderTab title="Automações" description="Regras de follow-up e alertas automáticos." icon="⚡" />}
       </div>
     </div>
@@ -297,6 +297,168 @@ function ConnectorTab({ integration, channels, logs, loading, onResync }: {
   );
 }
 
+// --- Pagamentos Tab ---
+function PagamentosTab() {
+  const [transactions, setTransactions] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [creating, setCreating] = useState(false);
+  const [showForm, setShowForm] = useState(false);
+  const [form, setForm] = useState({ amount: "", currency: "EUR", payment_method: "card", customer_name: "", customer_email: "", description: "" });
+
+  useEffect(() => {
+    fetchTransactions();
+  }, []);
+
+  const fetchTransactions = async () => {
+    setLoading(true);
+    try {
+      const res = await fetch(`${SUPABASE_URL}/functions/v1/payment-status?list=true`, {
+        headers: { "Content-Type": "application/json" },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setTransactions(data.transactions || []);
+      }
+    } catch (e) {
+      console.error("[PAY] Fetch error:", e);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleCreate = async () => {
+    if (!form.amount || Number(form.amount) <= 0) return;
+    setCreating(true);
+    try {
+      const res = await fetch(`${SUPABASE_URL}/functions/v1/payment-create`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          amount: Number(form.amount),
+          currency: form.currency,
+          payment_method: form.payment_method,
+          description: form.description || "Cobrança Emmely Cloud",
+          customer_data: { name: form.customer_name, email: form.customer_email, country: form.currency === "BRL" ? "Brasil" : "Portugal" },
+        }),
+      });
+      const data = await res.json();
+      if (data.ok) {
+        setShowForm(false);
+        setForm({ amount: "", currency: "EUR", payment_method: "card", customer_name: "", customer_email: "", description: "" });
+        fetchTransactions();
+      } else {
+        alert("Erro: " + (data.error || "Falha ao criar cobrança"));
+      }
+    } catch (e: any) {
+      alert("Erro: " + e.message);
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  const statusMap: Record<string, { label: string; color: string }> = {
+    pending: { label: "⏳ Pendente", color: "#f39c12" },
+    confirmed: { label: "✅ Confirmado", color: "#27ae60" },
+    received: { label: "✅ Recebido", color: "#27ae60" },
+    failed: { label: "❌ Falhou", color: "#e74c3c" },
+    canceled: { label: "🚫 Cancelado", color: "#999" },
+    refunded: { label: "↩️ Reembolsado", color: "#8e44ad" },
+    overdue: { label: "⚠️ Vencido", color: "#e74c3c" },
+  };
+
+  return (
+    <div>
+      {/* Create button */}
+      <button onClick={() => setShowForm(!showForm)} style={{ ...btnStyle, marginBottom: 16, background: showForm ? "#999" : "#25D366" }}>
+        {showForm ? "✕ Cancelar" : "➕ Nova Cobrança"}
+      </button>
+
+      {/* Create Form */}
+      {showForm && (
+        <div style={sectionStyle}>
+          <h3 style={sectionTitleStyle}>Nova Cobrança</h3>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+            <div>
+              <label style={formLabelStyle}>Nome do Cliente</label>
+              <input style={inputStyle} value={form.customer_name} onChange={(e) => setForm({ ...form, customer_name: e.target.value })} placeholder="Nome" />
+            </div>
+            <div>
+              <label style={formLabelStyle}>Email</label>
+              <input style={inputStyle} value={form.customer_email} onChange={(e) => setForm({ ...form, customer_email: e.target.value })} placeholder="email@exemplo.com" />
+            </div>
+            <div>
+              <label style={formLabelStyle}>Valor</label>
+              <input style={inputStyle} type="number" step="0.01" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} placeholder="100.00" />
+            </div>
+            <div>
+              <label style={formLabelStyle}>Moeda</label>
+              <select style={inputStyle} value={form.currency} onChange={(e) => setForm({ ...form, currency: e.target.value, payment_method: e.target.value === "BRL" ? "pix" : "card" })}>
+                <option value="EUR">🇪🇺 EUR (Stripe)</option>
+                <option value="BRL">🇧🇷 BRL (Asaas)</option>
+              </select>
+            </div>
+            <div>
+              <label style={formLabelStyle}>Método</label>
+              <select style={inputStyle} value={form.payment_method} onChange={(e) => setForm({ ...form, payment_method: e.target.value })}>
+                {form.currency === "BRL" ? (
+                  <>
+                    <option value="pix">PIX</option>
+                    <option value="boleto">Boleto</option>
+                    <option value="card">Cartão</option>
+                  </>
+                ) : (
+                  <option value="card">Cartão</option>
+                )}
+              </select>
+            </div>
+            <div>
+              <label style={formLabelStyle}>Descrição</label>
+              <input style={inputStyle} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} placeholder="Descrição (opcional)" />
+            </div>
+          </div>
+          <button onClick={handleCreate} disabled={creating} style={{ ...btnStyle, marginTop: 12 }}>
+            {creating ? "⏳ Criando..." : "💳 Criar Cobrança"}
+          </button>
+        </div>
+      )}
+
+      {/* Transactions List */}
+      <div style={sectionStyle}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+          <h3 style={{ ...sectionTitleStyle, margin: 0 }}>Transações Recentes</h3>
+          <button onClick={fetchTransactions} disabled={loading} style={{ border: "none", background: "transparent", cursor: "pointer", fontSize: 16 }}>🔄</button>
+        </div>
+        {loading ? (
+          <p style={{ textAlign: "center", color: "#999", fontSize: 13 }}>Carregando...</p>
+        ) : transactions.length === 0 ? (
+          <p style={{ textAlign: "center", color: "#999", fontSize: 13 }}>Nenhuma transação encontrada.</p>
+        ) : (
+          <div style={{ maxHeight: 300, overflowY: "auto" }}>
+            {transactions.map((tx: any) => {
+              const st = statusMap[tx.status] || { label: tx.status, color: "#666" };
+              return (
+                <div key={tx.id} style={{ padding: "10px 0", borderBottom: "1px solid #eee", fontSize: 13 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <div>
+                      <strong>{tx.currency} {Number(tx.amount).toFixed(2)}</strong>
+                      <span style={{ marginLeft: 8, padding: "2px 8px", borderRadius: 12, fontSize: 11, background: st.color + "22", color: st.color }}>{st.label}</span>
+                    </div>
+                    <span style={{ fontSize: 11, color: "#999", textTransform: "uppercase" }}>{tx.gateway === "stripe" ? "🟣 Stripe" : "🟢 Asaas"}</span>
+                  </div>
+                  <div style={{ color: "#888", fontSize: 11, marginTop: 4 }}>
+                    {tx.payment_method} · {new Date(tx.created_at).toLocaleString()}
+                    {tx.payment_url && <a href={tx.payment_url} target="_blank" rel="noopener noreferrer" style={{ marginLeft: 8, color: "#2980b9" }}>🔗 Link</a>}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // --- Placeholder Tab ---
 function PlaceholderTab({ title, description, icon }: { title: string; description: string; icon: string }) {
   return (
@@ -373,6 +535,13 @@ const btnStyle: React.CSSProperties = {
 const infoBoxStyle: React.CSSProperties = {
   background: "#f0f7ff", border: "1px solid #cce0ff", borderRadius: 8,
   padding: "12px 16px", fontSize: 13, color: "#1a5276", marginTop: 16,
+};
+const inputStyle: React.CSSProperties = {
+  width: "100%", padding: "8px 10px", border: "1px solid #ddd", borderRadius: 6,
+  fontSize: 13, outline: "none", boxSizing: "border-box",
+};
+const formLabelStyle: React.CSSProperties = {
+  display: "block", fontSize: 11, color: "#888", marginBottom: 4, fontWeight: 500,
 };
 
 export default Bitrix24App;
