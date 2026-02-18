@@ -192,7 +192,7 @@ export default function AtendimentoPage() {
   return (
     <div className="-m-6 flex bg-background" style={{ height: 'calc(100vh - 5.5rem)' }}>
       {/* Left panel - conversation list */}
-      <div className="w-96 xl:w-[440px] shrink-0 border-r flex flex-col overflow-hidden">
+      <div className="w-[360px] shrink-0 border-r flex flex-col overflow-hidden">
         <ConversationList
           conversations={conversations}
           selectedId={selectedId}
