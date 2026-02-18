@@ -1,96 +1,88 @@
 
-# Aplicacao Bitrix24 Multi-Funcoes - Conector WhatsApp/Instagram
+# Corrigir Arquitetura Bitrix24 - Baseado no Projeto Thothai
 
-## Situacao Atual
+## Problema Identificado
 
-**Backend esta a funcionar** - O conector esta registado e ativo no Bitrix24 (connector_registered: true, connector_active: true). Os eventos estao vinculados. O problema e apenas visual: o iframe nao finaliza a instalacao porque o Bitrix24 bloqueia o dominio do backend no iframe (X-Frame-Options).
+A arquitetura atual esta errada. Comparando com o projeto thothai (que funciona), os erros sao:
 
-## Problema da Instalacao
+1. **Install URL aponta para o frontend** - Errado! O Bitrix24 envia um POST com tokens OAuth durante a instalacao. O frontend nao consegue receber isso. Deve apontar para a edge function `bitrix24-install`
+2. **Connector Settings sem headers de iframe** - Falta `X-Frame-Options: ALLOWALL` e `frame-ancestors *`. O Supabase adiciona `X-Frame-Options: SAMEORIGIN` por defeito, que bloqueia o iframe do Bitrix24
+3. **Frontend tentando gerir a instalacao** - O `Bitrix24App.tsx` tenta carregar o BX24 SDK e fazer fetch - desnecessario. A instalacao deve ser 100% na edge function
 
-O Bitrix24 carrega o "Install URL" dentro de um iframe. Se esse URL aponta para o backend, o browser bloqueia porque o backend adiciona `X-Frame-Options: SAMEORIGIN` automaticamente. A solucao definitiva e servir TUDO pelo frontend (`emmelycloud.lovable.app/bitrix24`).
+## Como funciona no Thothai (correto)
 
-## Plano de Implementacao
+```text
+Bitrix24 Marketplace URLs:
+  - Install URL      -> edge function /bitrix24-install (POST com tokens)
+  - Application URL  -> edge function /bitrix24-connector-settings (iframe UI) OU frontend
+  - Settings Handler -> edge function /bitrix24-connector-settings (PLACEMENT_HANDLER)
 
-### Passo 1 - Corrigir o fluxo de instalacao
+Fluxo de instalacao:
+  1. Bitrix24 envia POST para /bitrix24-install com auth[access_token], auth[member_id], etc.
+  2. Edge function guarda tokens, regista conector, ativa em Open Lines, vincula eventos
+  3. Edge function retorna HTML com BX24.installFinish() e headers de iframe corretos
+  4. Bitrix24 marca app como instalado
 
-Atualizar `src/pages/Bitrix24App.tsx` para:
-- Detetar automaticamente se e a primeira vez (instalacao) via `BX24.getAuth()`
-- Enviar os tokens ao backend via `fetch()` em background (sem iframe do backend)
-- Chamar `BX24.installFinish()` diretamente do frontend apos o fetch ter sucesso
-- Nunca carregar o dominio do backend dentro do iframe
+Fluxo de configuracao (Contact Center > Settings):
+  1. Bitrix24 abre /bitrix24-connector-settings em iframe slider
+  2. Edge function retorna HTML com X-Frame-Options: ALLOWALL
+  3. HTML mostra status do conector, canais mapeados, etc.
+  4. Retorna "successfully" quando conector esta pronto
+```
 
-**URLs no Bitrix24 (ambas apontam para o frontend):**
-- Application URL: `https://emmelycloud.lovable.app/bitrix24`
-- Install URL: `https://emmelycloud.lovable.app/bitrix24`
+## Plano de Alteracoes
 
-### Passo 2 - Interface com tabs multi-funcoes
+### 1. Atualizar `bitrix24-install` (edge function)
 
-Transformar o `Bitrix24App.tsx` numa aplicacao com tabs dentro do iframe:
+- Adicionar headers de iframe: `X-Frame-Options: ALLOWALL`, `frame-ancestors *`
+- Manter logica atual de guardar tokens e registar conector
+- Melhorar o HTML de retorno com UI mais profissional (como no thothai)
+- Garantir que `BX24.installFinish()` e chamado no HTML retornado
 
-| Tab | Funcao |
-|-----|--------|
-| Conector | Status do WhatsApp e Instagram, canais mapeados, botao de re-sincronizar |
-| Conversas | Lista de conversas recentes do Emmely Cloud |
-| Pagamentos | Resumo de pagamentos pendentes/pagos |
-| Automacoes | Regras ativas e historico de execucao |
+### 2. Atualizar `bitrix24-connector-settings` (edge function)
 
-### Passo 3 - Tab "Conector" (prioridade)
+Mudancas criticas:
+- Adicionar `X-Frame-Options: ALLOWALL` nos headers (resolve o bloqueio do iframe)
+- Mudar `frame-ancestors` de lista especifica para `*` (wildcard)
+- Manter suporte a GET com JSON para o frontend
+- Melhorar o HTML de configuracao com status do conector, canais e acoes
+- Retornar `"successfully"` (texto plano) quando conector esta totalmente configurado
 
-Mostrar dentro do Bitrix24:
-- Status da integracao (conectado/desconectado)
-- Canais ativos (WhatsApp, Instagram) com nome da Open Line
-- Botao "Re-sincronizar" que chama o backend para re-registar o conector
-- Ultimas mensagens enviadas/recebidas (dos debug logs)
+### 3. Atualizar `Bitrix24App.tsx` (frontend)
 
-### Passo 4 - Atualizar config.toml
+O frontend serve para quando o Application URL aponta para o frontend (para utilizadores acederem via menu do Bitrix24). Manter a logica de tabs mas:
+- Remover a tentativa de instalacao via frontend (nao e necessario)
+- Manter apenas a UI de gestao (status, canais, pagamentos, automacoes)
+- Continuar a usar fetch para obter dados do backend via `bitrix24-connector-settings?format=json`
 
-Adicionar `verify_jwt = false` para as funcoes bitrix24:
-- `bitrix24-install`
-- `bitrix24-events`
-- `bitrix24-send`
-- `bitrix24-connector-settings`
+### 4. URLs corretas no Bitrix24 Marketplace
 
-(O Bitrix24 envia form POST sem JWT, entao a verificacao deve estar desativada)
-
----
+```text
+Install URL:      https://qohnsluvhyziovfynzlu.supabase.co/functions/v1/bitrix24-install
+Application URL:  https://emmelycloud.lovable.app/bitrix24  (frontend com tabs)
+Settings Handler: Registado automaticamente via PLACEMENT_HANDLER na instalacao
+```
 
 ## Detalhes Tecnicos
 
-### Bitrix24App.tsx - Estrutura
+### Headers criticos para iframe (faltam atualmente)
 
-```text
-Bitrix24App
-  +-- BX24 SDK init
-  +-- Auto-install flow (fetch ao backend)
-  +-- Tabs (inline CSS para funcionar no iframe sem Tailwind)
-      +-- ConnectorTab (status, canais, logs)
-      +-- ConversasTab (placeholder para futuro)
-      +-- PagamentosTab (placeholder para futuro)
-      +-- AutomacoesTab (placeholder para futuro)
+```typescript
+const htmlHeaders = {
+  "Content-Type": "text/html; charset=utf-8",
+  "Content-Security-Policy": "... frame-ancestors *",
+  "X-Frame-Options": "ALLOWALL",  // CRITICO - sem isto o iframe e bloqueado
+};
 ```
 
-### Comunicacao Frontend-Backend
+### Ficheiros a modificar
 
-O frontend faz `fetch()` ao backend para todas as operacoes:
-- `POST /functions/v1/bitrix24-install` - enviar tokens de instalacao
-- `GET /functions/v1/bitrix24-connector-settings?member_id=xxx` - obter status (novo endpoint JSON)
-
-O backend nunca e carregado diretamente no iframe.
-
-### Edge Function bitrix24-connector-settings
-
-Adicionar suporte a pedidos GET com resposta JSON (alem do HTML existente):
-- Se `Accept: application/json` ou query param `format=json`, retorna JSON com status da integracao
-- O frontend usa este endpoint para popular a tab "Conector"
-
-### Ficheiros a Modificar
-
-1. `src/pages/Bitrix24App.tsx` - Reescrever com tabs e fluxo de instalacao correto
-2. `supabase/functions/bitrix24-connector-settings/index.ts` - Adicionar endpoint JSON
-3. `supabase/config.toml` - Adicionar verify_jwt = false para funcoes bitrix24
+1. `supabase/functions/bitrix24-install/index.ts` - Adicionar headers iframe, melhorar HTML
+2. `supabase/functions/bitrix24-connector-settings/index.ts` - Adicionar `X-Frame-Options: ALLOWALL`, `frame-ancestors *`, logica de retorno `"successfully"`
+3. `src/pages/Bitrix24App.tsx` - Remover logica de instalacao, manter apenas UI de gestao
 
 ### Ficheiros que NAO mudam
 
-- `supabase/functions/bitrix24-install/index.ts` - Ja aceita JSON, so precisa do config.toml
-- `supabase/functions/bitrix24-events/index.ts` - Sem alteracoes
-- `supabase/functions/bitrix24-send/index.ts` - Sem alteracoes
+- `supabase/functions/bitrix24-events/index.ts` - Ja funciona
+- `supabase/functions/bitrix24-send/index.ts` - Ja funciona
+- `supabase/config.toml` - Ja tem verify_jwt = false
