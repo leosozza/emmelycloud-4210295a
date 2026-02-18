@@ -3,6 +3,7 @@ import {
   Split, MessageCircle, Clock, TextCursorInput, Repeat,
   Globe, Zap,
   Bot, UserCog, Phone, ArrowLeftToLine, XCircle,
+  Building2, Handshake, Boxes, Plus, Pencil, Search, Trash2,
   type LucideIcon,
 } from "lucide-react";
 
@@ -29,7 +30,20 @@ export type FlowNodeType =
   | "switch_persona"
   | "transfer"
   | "back_to_ai"
-  | "end_flow";
+  | "end_flow"
+  // Bitrix24 CRM
+  | "bitrix_create_lead"
+  | "bitrix_update_lead"
+  | "bitrix_get_lead"
+  | "bitrix_delete_lead"
+  | "bitrix_create_deal"
+  | "bitrix_update_deal"
+  | "bitrix_get_deal"
+  | "bitrix_delete_deal"
+  | "bitrix_create_spa"
+  | "bitrix_update_spa"
+  | "bitrix_get_spa"
+  | "bitrix_delete_spa";
 
 export interface FlowNodeCategory {
   id: string;
@@ -57,6 +71,15 @@ export const NODE_CATEGORIES: FlowNodeCategory[] = [
     id: "control",
     label: "Controle",
     types: ["ai_response", "switch_persona", "transfer", "back_to_ai", "end_flow"],
+  },
+  {
+    id: "bitrix24",
+    label: "Bitrix24",
+    types: [
+      "bitrix_create_lead", "bitrix_update_lead", "bitrix_get_lead", "bitrix_delete_lead",
+      "bitrix_create_deal", "bitrix_update_deal", "bitrix_get_deal", "bitrix_delete_deal",
+      "bitrix_create_spa", "bitrix_update_spa", "bitrix_get_spa", "bitrix_delete_spa",
+    ],
   },
 ];
 
@@ -92,6 +115,21 @@ export const NODE_TYPE_META: Record<FlowNodeType, NodeTypeMeta> = {
   transfer:        { label: "Transferir Humano",  icon: Phone,             color: "#10b981", description: "Transferir para atendente" },
   back_to_ai:      { label: "Voltar para IA",     icon: ArrowLeftToLine,   color: "#059669", description: "Retomar atendimento IA" },
   end_flow:        { label: "Encerrar Fluxo",     icon: XCircle,           color: "#dc2626", description: "Terminar execução do fluxo" },
+  // Bitrix24 – Lead
+  bitrix_create_lead: { label: "Criar Lead",        icon: Building2,  color: "#22c55e", description: "Criar lead no Bitrix24" },
+  bitrix_update_lead: { label: "Atualizar Lead",    icon: Building2,  color: "#16a34a", description: "Atualizar lead existente" },
+  bitrix_get_lead:    { label: "Buscar Lead",       icon: Building2,  color: "#15803d", description: "Obter lead por ID" },
+  bitrix_delete_lead: { label: "Excluir Lead",      icon: Building2,  color: "#166534", description: "Excluir lead do Bitrix24" },
+  // Bitrix24 – Deal
+  bitrix_create_deal: { label: "Criar Deal",        icon: Handshake,  color: "#3b82f6", description: "Criar deal no Bitrix24" },
+  bitrix_update_deal: { label: "Atualizar Deal",    icon: Handshake,  color: "#2563eb", description: "Atualizar deal existente" },
+  bitrix_get_deal:    { label: "Buscar Deal",       icon: Handshake,  color: "#1d4ed8", description: "Obter deal por ID" },
+  bitrix_delete_deal: { label: "Excluir Deal",      icon: Handshake,  color: "#1e40af", description: "Excluir deal do Bitrix24" },
+  // Bitrix24 – SPA
+  bitrix_create_spa:  { label: "Criar SPA",         icon: Boxes,      color: "#a855f7", description: "Criar item SPA no Bitrix24" },
+  bitrix_update_spa:  { label: "Atualizar SPA",     icon: Boxes,      color: "#9333ea", description: "Atualizar item SPA existente" },
+  bitrix_get_spa:     { label: "Buscar SPA",        icon: Boxes,      color: "#7e22ce", description: "Obter item SPA por ID" },
+  bitrix_delete_spa:  { label: "Excluir SPA",       icon: Boxes,      color: "#6b21a8", description: "Excluir item SPA do Bitrix24" },
 };
 
 // ── Data stored inside each node ──
@@ -127,6 +165,22 @@ export interface FlowVariable {
   scope: "conversation" | "contact";
 }
 
+export interface FlowBitrixField {
+  key: string;
+  value: string;
+}
+
+export interface FlowBitrixCRM {
+  entity: "lead" | "deal" | "spa";
+  operation: "create" | "update" | "get" | "delete";
+  entityId: string;
+  spaEntityTypeId: string;
+  fields: FlowBitrixField[];
+  resultVar: string;
+  pipeline: string;
+  stageId: string;
+}
+
 export interface FlowNodeData {
   nodeType: FlowNodeType;
   label?: string;
@@ -143,6 +197,8 @@ export interface FlowNodeData {
   // Integrações
   webhook?: FlowWebhook;
   variable?: FlowVariable;
+  // Bitrix24 CRM
+  bitrixCrm?: FlowBitrixCRM;
   // Controle
   personaId?: string;
   prompt?: string;
@@ -191,6 +247,21 @@ export function getDefaultData(nodeType: FlowNodeType): FlowNodeData {
       base.transferMessage = "";
       break;
     default:
+      if (nodeType.startsWith("bitrix_")) {
+        const parts = nodeType.replace("bitrix_", "").split("_");
+        const operation = parts[0] as FlowBitrixCRM["operation"];
+        const entity = parts.slice(1).join("_") as FlowBitrixCRM["entity"];
+        base.bitrixCrm = {
+          entity,
+          operation,
+          entityId: "",
+          spaEntityTypeId: "",
+          fields: [],
+          resultVar: "",
+          pipeline: "",
+          stageId: "",
+        };
+      }
       break;
   }
   return base;

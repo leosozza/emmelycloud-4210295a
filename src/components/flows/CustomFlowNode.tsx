@@ -78,6 +78,20 @@ function CustomFlowNode({ data, selected }: NodeProps) {
         {nd.nodeType === "media" && nd.mediaType && (
           <p className="text-[10px] text-muted-foreground">📎 {nd.mediaType}</p>
         )}
+
+        {nd.nodeType.startsWith("bitrix_") && nd.bitrixCrm && (
+          <div className="space-y-0.5">
+            {nd.bitrixCrm.entityId && (
+              <p className="text-[10px] text-muted-foreground">ID: {nd.bitrixCrm.entityId}</p>
+            )}
+            {nd.bitrixCrm.fields && nd.bitrixCrm.fields.length > 0 && (
+              <p className="text-[10px] text-muted-foreground">{nd.bitrixCrm.fields.length} campo(s)</p>
+            )}
+            {nd.bitrixCrm.resultVar && (
+              <p className="text-[10px] text-muted-foreground">→ {`{{${nd.bitrixCrm.resultVar}}}`}</p>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Source handles */}
