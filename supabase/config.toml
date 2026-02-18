@@ -47,3 +47,6 @@ verify_jwt = false
 
 [functions.bitrix24-robot-handler]
 verify_jwt = false
+
+[functions.ai-playground]
+verify_jwt = false
