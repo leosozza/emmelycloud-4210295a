@@ -26,3 +26,6 @@ verify_jwt = false
 
 [functions.bitrix24-connector-settings]
 verify_jwt = false
+
+[functions.bitrix24-test-connection]
+verify_jwt = false
