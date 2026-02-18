@@ -5,6 +5,13 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   Plug,
   MessageCircle,
   CreditCard,
@@ -20,6 +27,11 @@ import {
   XCircle,
   RefreshCw,
 } from "lucide-react";
+import {
+  getProviderForChannel,
+  setProviderForChannel,
+  type MessagingProvider,
+} from "@/lib/messagingProvider";
 import { supabase } from "@/integrations/supabase/client";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -231,6 +243,14 @@ function OmniChannelTab() {
   const [conversations, setConversations] = useState<{ channel: string; count: number }[]>([]);
   const [igTesting, setIgTesting] = useState(false);
   const [igResult, setIgResult] = useState<any>(null);
+  const [igProvider, setIgProvider] = useState<MessagingProvider>(() => getProviderForChannel("instagram"));
+  const [waProvider, setWaProvider] = useState<MessagingProvider>(() => getProviderForChannel("whatsapp"));
+
+  const handleProviderChange = (channel: "instagram" | "whatsapp", value: MessagingProvider) => {
+    setProviderForChannel(channel, value);
+    if (channel === "instagram") setIgProvider(value);
+    else setWaProvider(value);
+  };
 
   useEffect(() => {
     async function load() {
@@ -271,15 +291,24 @@ function OmniChannelTab() {
             </div>
             <div>
               <CardTitle className="text-base">WhatsApp</CardTitle>
-              <CardDescription>Via Callbell API</CardDescription>
+              <CardDescription>Envio de mensagens</CardDescription>
             </div>
           </div>
           <StatusBadge status="active" />
         </CardHeader>
-        <CardContent className="space-y-2 text-sm">
-          <div className="flex justify-between"><span className="text-muted-foreground">CALLBELL_API_TOKEN</span><span className="font-medium text-green-600">✓ Configurado</span></div>
-          <div className="flex justify-between"><span className="text-muted-foreground">CALLBELL_WA_CHANNEL_UUID</span><span className="font-medium text-green-600">✓ Configurado</span></div>
-          <p className="text-muted-foreground">Canal operacional via Callbell.</p>
+        <CardContent className="space-y-3 text-sm">
+          <div className="space-y-1.5">
+            <p className="font-medium text-xs uppercase text-muted-foreground tracking-wide">Provedor de envio</p>
+            <Select value={waProvider} onValueChange={(v) => handleProviderChange("whatsapp", v as MessagingProvider)}>
+              <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="callbell">Callbell API</SelectItem>
+                <SelectItem value="direct">WhatsApp Business API (direto)</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="flex justify-between"><span className="text-muted-foreground">CALLBELL_API_TOKEN</span><span className="font-medium text-green-600">✓</span></div>
+          <div className="flex justify-between"><span className="text-muted-foreground">CALLBELL_WA_CHANNEL_UUID</span><span className="font-medium text-green-600">✓</span></div>
         </CardContent>
       </Card>
 
@@ -292,12 +321,22 @@ function OmniChannelTab() {
             </div>
             <div>
               <CardTitle className="text-base">Instagram</CardTitle>
-              <CardDescription>Callbell + Meta Graph API</CardDescription>
+              <CardDescription>Mensagens via DM</CardDescription>
             </div>
           </div>
           <StatusBadge status={igResult ? (igResult.ok ? "active" : "inactive") : "pending"} />
         </CardHeader>
         <CardContent className="space-y-3 text-sm">
+          <div className="space-y-1.5">
+            <p className="font-medium text-xs uppercase text-muted-foreground tracking-wide">Provedor de envio</p>
+            <Select value={igProvider} onValueChange={(v) => handleProviderChange("instagram", v as MessagingProvider)}>
+              <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="callbell">Callbell API</SelectItem>
+                <SelectItem value="direct">Meta Graph API (direto)</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
           <div className="space-y-1.5">
             <p className="font-medium text-xs uppercase text-muted-foreground tracking-wide">Credenciais Callbell</p>
             <div className="flex justify-between"><span className="text-muted-foreground">CALLBELL_API_TOKEN</span><span className="font-medium text-green-600">✓</span></div>

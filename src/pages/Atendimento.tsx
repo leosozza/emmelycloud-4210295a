@@ -4,6 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { ConversationList } from "@/components/atendimento/ConversationList";
 import { ChatPanel } from "@/components/atendimento/ChatPanel";
 import { ContactProfile } from "@/components/atendimento/ContactProfile";
+import { getSendFunctionName } from "@/lib/messagingProvider";
 
 type Channel = "whatsapp" | "instagram" | "email" | "webchat";
 type Status = "aberta" | "em_atendimento" | "aguardando" | "fechada";
@@ -94,9 +95,10 @@ export default function AtendimentoPage() {
       if (!selectedId) return;
       const conv = conversations.find((c) => c.id === selectedId);
 
-      // Route messages through Callbell for supported channels
+      // Route messages through configured provider for supported channels
       if (conv?.channel === "instagram" || conv?.channel === "whatsapp") {
-        const { data, error } = await supabase.functions.invoke("callbell-send", {
+        const fnName = getSendFunctionName(conv.channel as "instagram" | "whatsapp");
+        const { data, error } = await supabase.functions.invoke(fnName, {
           body: { conversation_id: selectedId, content },
         });
         if (error) throw error;
