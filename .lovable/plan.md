@@ -1,66 +1,123 @@
 
 
-# Importar Fluxos do PowerBot para o Editor de Flows
+# Reconstruir o Editor de Fluxos - Replicar ThothAI
 
-## Objetivo
-Criar um sistema de importacao que leia ficheiros JSON exportados do PowerBot e os converta automaticamente para o formato interno do nosso editor de fluxos (ReactFlow).
+## Problema Atual
+O editor de flows atual e extremamente basico:
+- Nos genericos sem componente visual customizado (usa o "default" do ReactFlow)
+- Sem painel de configuracao ao clicar num no
+- Sem drag-and-drop da paleta para o canvas
+- Sem categorias organizadas de nos
+- Sem preview de conteudo nos nos (mensagem, botoes, etc.)
+- Sem undo/redo
+- Sem simulador de teste
+- Sem duplicar no/fluxo
+- Sem exportar/importar fluxos nativos
+- Sem handles multiplos (botoes, condicoes)
 
-## Mapeamento de Tipos de No (PowerBot -> Emmely)
+## O que sera implementado
 
-| PowerBot (`type`)    | Emmely (`nodeType`) | Descricao                        |
-|----------------------|---------------------|----------------------------------|
-| `initialNode`        | (trigger/start)     | No inicial do fluxo              |
-| `messageNode`        | `message`           | Envio de mensagem                |
-| `conditionalNode`    | `condition`         | Condicao/ramificacao             |
-| `openAINode`         | `ai_response`       | Resposta IA (prompt/mission)     |
-| `transferNode`       | `transfer`          | Transferir para atendente        |
-| `updateCrmNode`      | `set_variable`      | Atualizar CRM (mapeado como var) |
-| `createCrmNode`      | `webhook`           | Criar entidade CRM (webhook)     |
+### 1. FlowNodeTypes.ts - Tipos e Categorias de Nos
+Ficheiro com toda a definicao dos tipos de nos organizados por categoria:
 
-## O que sera importado de cada no
+**Categorias:**
+- Mensagens: Mensagem Simples, Mensagem com Botoes, Media, Localizacao, Contato vCard, Sticker
+- Logica: Condicao, Aguardar Resposta, Delay, Capturar Resposta, Loop
+- Integracoes: Webhook, Definir Variavel
+- Controle: Resposta IA, Alternar Persona, Transferir Humano, Voltar para IA, Encerrar Fluxo
 
-- **position**: Mantida do JSON original (ReactFlow compativel)
-- **messageNode**: Extrai `messageData`, `sendAsWhisper`
-- **conditionalNode**: Extrai `conditions` (array de comparacoes)
-- **openAINode**: Extrai `prompt`, `type` (mission/prompt), `missionVariables`, `sendAsWhisper`, `AIId`
-- **transferNode**: Extrai `transferType`
-- **updateCrmNode / createCrmNode**: Extrai `fields`, `entity`, `pipeline`
-- **edges**: Convertidas diretamente (source, target, sourceHandle ja sao ReactFlow)
+**Interface FlowNodeData** com todas as propriedades:
+- message, buttons, mediaUrl, mediaType
+- condition (type, field, value, timeout)
+- variable (name, value, scope)
+- webhook (url, method, headers, body)
+- personaId, prompt, delay, department
+- pollOptions, listSections, inputCapture
 
-## Implementacao
+### 2. CustomFlowNode.tsx - Componente Visual dos Nos
+Componente React que renderiza cada no com:
+- Icone colorido e label do tipo
+- Preview da mensagem (primeiros 60 caracteres)
+- Preview dos botoes de resposta rapida
+- Handle de entrada (topo) e saida (fundo)
+- Handles multiplos para condicoes e botoes (um por opcao)
+- Handles de loop (loop + sair)
+- Borda colorida por tipo + ring de selecao
 
-### 1. Funcao `importPowerBotFlow(json)` em `Flows.tsx`
+### 3. FlowNodePalette.tsx - Paleta Lateral com Drag-and-Drop
+Painel lateral esquerdo com:
+- Pesquisa de blocos por nome
+- Accordion por categoria (Mensagens, Logica, Integracoes, Controle)
+- Cada bloco arrastavel (draggable) OU clicavel
+- Icone + label + badge de contagem por categoria
+- Botao para colapsar/expandir a paleta
+- Referencia de variaveis disponiveis no rodape
 
-Logica principal:
-```text
-1. Parse do JSON
-2. Extrair botName -> nome do fluxo
-3. Para cada node:
-   - Mapear type do PowerBot para nodeType interno
-   - Preservar position
-   - Converter data para config estruturada
-   - Aplicar estilo visual (cor, borda) baseado no tipo mapeado
-4. Para cada edge:
-   - Manter source, target, sourceHandle
-   - Converter markerEnd para MarkerType.ArrowClosed
-5. Criar fluxo no Supabase com nodes e edges convertidos
-6. Abrir no editor automaticamente
-```
+### 4. NodeConfigPanel.tsx - Painel de Configuracao
+Painel lateral direito que abre ao clicar num no:
+- Campo "Nome do bloco" (label editavel)
+- Configuracao especifica por tipo:
+  - **Mensagem**: Textarea para texto, dica de variaveis
+  - **Mensagem com Botoes**: Textarea + lista de botoes (max 3) com add/remove/reorder
+  - **Media**: Tipo (imagem/video/audio/doc) + URL
+  - **Condicao**: Tipo de condicao + campo + valor
+  - **Delay**: Segundos de espera
+  - **Resposta IA**: Selector de persona + prompt personalizado
+  - **Webhook**: URL + metodo (GET/POST/PUT) + headers + body + variavel de resposta
+  - **Variavel**: Nome + valor + escopo (conversa/contato)
+  - **Transferir**: Departamento + mensagem de transferencia
+  - **Capturar Resposta**: Pergunta + nome variavel + tipo validacao + timeout
+- Botao "Excluir bloco" e "Fechar"
+- Minimizavel
 
-### 2. UI - Botao "Importar" na lista de fluxos
+### 5. Flows.tsx - Refactoring Completo do Editor
 
-- Botao ao lado do "Novo Fluxo" com icone Upload
-- Abre file picker nativo (accept=".json")
-- Le o ficheiro, valida a estrutura (deve ter `nodes` e `edges`)
-- Mostra preview com: nome do bot, numero de nos, numero de conexoes
-- Botao "Confirmar Importacao"
+**Editor Header:**
+- Botoes Undo/Redo com atalhos (Ctrl+Z / Ctrl+Shift+Z)
+- Botao Salvar
+- Botao Testar (abre simulador)
+- Botao Exportar JSON
 
-### 3. Validacao e tratamento de erros
+**Canvas:**
+- Paleta lateral esquerda (FlowNodePalette)
+- ReactFlow com customNodeTypes registados
+- Drop zone com feedback visual ao arrastar
+- Click em no abre NodeConfigPanel a direita
+- Click em edge permite excluir
+- Panel inferior com instrucoes de uso
+- Panel contextual com Duplicar/Excluir no selecionado
 
-- Verificar se o JSON tem a estrutura esperada (`nodes`, `edges`)
-- Tipos de no desconhecidos: importar como `set_variable` generico com aviso
-- Mostrar toast com resultado: "Importado: X nos, Y conexoes"
+**Lista de Fluxos:**
+- Manter cards existentes
+- Adicionar botao Duplicar e Exportar por fluxo
+- Manter importacao PowerBot
 
-### Ficheiros a modificar
-- `src/pages/Flows.tsx` - Adicionar botao de importacao, funcao de conversao, dialog de preview
+### 6. useFlowHistory.ts - Hook de Undo/Redo
+- Pilha de estados (nodes + edges)
+- pushState(), undo(), redo()
+- canUndo, canRedo flags
+- Atalhos de teclado Ctrl+Z e Ctrl+Shift+Z
+
+## Detalhes Tecnicos
+
+### Ficheiros a criar:
+- `src/components/flows/FlowNodeTypes.ts` - Tipos, categorias, interfaces
+- `src/components/flows/CustomFlowNode.tsx` - Componente visual de no
+- `src/components/flows/FlowNodePalette.tsx` - Paleta lateral com drag-and-drop
+- `src/components/flows/NodeConfigPanel.tsx` - Painel de configuracao de no
+- `src/hooks/useFlowHistory.ts` - Hook undo/redo
+
+### Ficheiros a modificar:
+- `src/pages/Flows.tsx` - Refactoring completo do editor
+
+### Funcionalidades incluidas:
+- Custom node rendering com icones, cores, previews
+- Drag-and-drop da paleta para o canvas
+- Painel de configuracao contextual por tipo de no
+- Undo/Redo com atalhos de teclado
+- Duplicar nos e fluxos
+- Exportar fluxo para JSON
+- Handles multiplos para botoes e condicoes
+- Feedback visual ao arrastar, selecionar edges
+- Manter compatibilidade com importacao PowerBot
 
