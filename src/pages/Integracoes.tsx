@@ -1,9 +1,10 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { PageHeader } from "@/components/PageHeader";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
   Select,
   SelectContent,
@@ -26,6 +27,9 @@ import {
   Clock,
   XCircle,
   RefreshCw,
+  Save,
+  Eye,
+  EyeOff,
 } from "lucide-react";
 import {
   getProviderForChannel,
@@ -33,6 +37,7 @@ import {
   type MessagingProvider,
 } from "@/lib/messagingProvider";
 import { supabase } from "@/integrations/supabase/client";
+import { toast } from "sonner";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -239,13 +244,64 @@ function CRMTab() {
 
 // ─── Credential Row ──────────────────────────────────────────────────────────
 
-function CredentialRow({ label, configured }: { label: string; configured: boolean }) {
+function CredentialInput({
+  provider,
+  credentialKey,
+  label,
+  credentials,
+  drafts,
+  setDrafts,
+  onSave,
+  saving,
+}: {
+  provider: string;
+  credentialKey: string;
+  label: string;
+  credentials: Record<string, { has_value: boolean; masked: string }>;
+  drafts: Record<string, string>;
+  setDrafts: React.Dispatch<React.SetStateAction<Record<string, string>>>;
+  onSave: (provider: string, key: string, value: string) => Promise<void>;
+  saving: string | null;
+}) {
+  const fullKey = `${provider}::${credentialKey}`;
+  const existing = credentials[fullKey];
+  const draftValue = drafts[fullKey] ?? "";
+  const [showValue, setShowValue] = useState(false);
+  const isSaving = saving === fullKey;
+
   return (
-    <div className="flex justify-between items-center">
-      <span className="text-muted-foreground text-xs">{label}</span>
-      <span className={`font-medium text-xs ${configured ? "text-green-600" : "text-red-500"}`}>
-        {configured ? "✓ Configurado" : "✗ Não configurado"}
-      </span>
+    <div className="space-y-1">
+      <label className="text-xs text-muted-foreground">{label}</label>
+      <div className="flex gap-1.5">
+        <div className="relative flex-1">
+          <Input
+            type={showValue ? "text" : "password"}
+            placeholder={existing?.has_value ? existing.masked : "Não configurado"}
+            value={draftValue}
+            onChange={(e) => setDrafts((prev) => ({ ...prev, [fullKey]: e.target.value }))}
+            className="h-8 text-xs pr-8"
+          />
+          <button
+            type="button"
+            onClick={() => setShowValue(!showValue)}
+            className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+          >
+            {showValue ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+          </button>
+        </div>
+        <Button
+          size="sm"
+          variant="outline"
+          className="h-8 px-2"
+          disabled={!draftValue || isSaving}
+          onClick={() => onSave(provider, credentialKey, draftValue)}
+        >
+          {isSaving ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
+        </Button>
+      </div>
+      {existing?.has_value && !draftValue && (
+        <span className="text-xs text-green-600">✓ Configurado</span>
+      )}
     </div>
   );
 }
@@ -258,11 +314,51 @@ function OmniChannelTab() {
   const [igResult, setIgResult] = useState<any>(null);
   const [igProvider, setIgProvider] = useState<MessagingProvider>(() => getProviderForChannel("instagram"));
   const [waProvider, setWaProvider] = useState<MessagingProvider>(() => getProviderForChannel("whatsapp"));
+  const [credentials, setCredentials] = useState<Record<string, { has_value: boolean; masked: string }>>({});
+  const [drafts, setDrafts] = useState<Record<string, string>>({});
+  const [saving, setSaving] = useState<string | null>(null);
 
   const handleProviderChange = (channel: "instagram" | "whatsapp", value: MessagingProvider) => {
     setProviderForChannel(channel, value);
     if (channel === "instagram") setIgProvider(value);
     else setWaProvider(value);
+  };
+
+  const loadCredentials = useCallback(async () => {
+    try {
+      const { data, error } = await supabase.functions.invoke("manage-credentials", { method: "GET" });
+      if (!error && data?.credentials) {
+        const map: Record<string, { has_value: boolean; masked: string }> = {};
+        for (const c of data.credentials) {
+          map[`${c.provider}::${c.credential_key}`] = {
+            has_value: c.has_value,
+            masked: c.credential_value_masked || "",
+          };
+        }
+        setCredentials(map);
+      }
+    } catch {}
+  }, []);
+
+  const handleSaveCredential = async (provider: string, key: string, value: string) => {
+    const fullKey = `${provider}::${key}`;
+    setSaving(fullKey);
+    try {
+      const { error } = await supabase.functions.invoke("manage-credentials", {
+        method: "POST",
+        body: { provider, credential_key: key, credential_value: value },
+      });
+      if (error) {
+        toast.error("Erro ao guardar credencial");
+      } else {
+        toast.success(`${key} guardado com sucesso`);
+        setDrafts((prev) => ({ ...prev, [fullKey]: "" }));
+        await loadCredentials();
+      }
+    } catch {
+      toast.error("Erro de rede");
+    }
+    setSaving(null);
   };
 
   useEffect(() => {
@@ -275,7 +371,8 @@ function OmniChannelTab() {
       }
     }
     load();
-  }, []);
+    loadCredentials();
+  }, [loadCredentials]);
 
   const handleTestInstagram = async () => {
     setIgTesting(true);
@@ -292,6 +389,8 @@ function OmniChannelTab() {
     }
     setIgTesting(false);
   };
+
+  const credProps = { credentials, drafts, setDrafts, onSave: handleSaveCredential, saving };
 
   return (
     <div className="grid gap-4 md:grid-cols-2">
@@ -322,18 +421,18 @@ function OmniChannelTab() {
           </div>
 
           {waProvider === "callbell" && (
-            <div className="space-y-1.5">
+            <div className="space-y-2">
               <p className="font-medium text-xs uppercase text-muted-foreground tracking-wide">Credenciais Callbell</p>
-              <CredentialRow label="CALLBELL_API_TOKEN" configured />
-              <CredentialRow label="CALLBELL_WA_CHANNEL_UUID" configured />
+              <CredentialInput provider="callbell" credentialKey="CALLBELL_API_TOKEN" label="API Token" {...credProps} />
+              <CredentialInput provider="callbell" credentialKey="CALLBELL_WA_CHANNEL_UUID" label="WhatsApp Channel UUID" {...credProps} />
             </div>
           )}
 
           {waProvider === "direct" && (
-            <div className="space-y-1.5">
+            <div className="space-y-2">
               <p className="font-medium text-xs uppercase text-muted-foreground tracking-wide">Credenciais WhatsApp Business</p>
-              <CredentialRow label="META_PAGE_ACCESS_TOKEN" configured />
-              <CredentialRow label="META_WA_PHONE_NUMBER_ID" configured={false} />
+              <CredentialInput provider="meta" credentialKey="META_PAGE_ACCESS_TOKEN" label="Page Access Token" {...credProps} />
+              <CredentialInput provider="meta" credentialKey="META_WA_PHONE_NUMBER_ID" label="Phone Number ID" {...credProps} />
               <p className="text-xs text-muted-foreground mt-1">⚠️ Envio direto WhatsApp ainda não implementado. Será usado Callbell.</p>
             </div>
           )}
@@ -367,20 +466,20 @@ function OmniChannelTab() {
           </div>
 
           {igProvider === "callbell" && (
-            <div className="space-y-1.5">
+            <div className="space-y-2">
               <p className="font-medium text-xs uppercase text-muted-foreground tracking-wide">Credenciais Callbell</p>
-              <CredentialRow label="CALLBELL_API_TOKEN" configured />
-              <CredentialRow label="CALLBELL_IG_CHANNEL_UUID" configured />
+              <CredentialInput provider="callbell" credentialKey="CALLBELL_API_TOKEN" label="API Token" {...credProps} />
+              <CredentialInput provider="callbell" credentialKey="CALLBELL_IG_CHANNEL_UUID" label="Instagram Channel UUID" {...credProps} />
             </div>
           )}
 
           {igProvider === "direct" && (
-            <div className="space-y-1.5">
+            <div className="space-y-2">
               <p className="font-medium text-xs uppercase text-muted-foreground tracking-wide">Credenciais Meta / Instagram</p>
-              <CredentialRow label="META_PAGE_ACCESS_TOKEN" configured />
-              <CredentialRow label="META_IG_ACCOUNT_ID" configured />
-              <CredentialRow label="META_APP_ID" configured />
-              <CredentialRow label="META_APP_SECRET" configured />
+              <CredentialInput provider="meta" credentialKey="META_PAGE_ACCESS_TOKEN" label="Page Access Token" {...credProps} />
+              <CredentialInput provider="meta" credentialKey="META_IG_ACCOUNT_ID" label="Instagram Account ID" {...credProps} />
+              <CredentialInput provider="meta" credentialKey="META_APP_ID" label="App ID" {...credProps} />
+              <CredentialInput provider="meta" credentialKey="META_APP_SECRET" label="App Secret" {...credProps} />
             </div>
           )}
 
