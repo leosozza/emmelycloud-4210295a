@@ -192,7 +192,7 @@ export default function AtendimentoPage() {
   return (
     <div className="fixed inset-0 top-[3.5rem] flex bg-background">
       {/* Left panel - conversation list (fixed width like Callbell) */}
-      <div className="w-80 xl:w-96 shrink-0 border-r flex flex-col">
+      <div className="w-96 xl:w-[440px] shrink-0 border-r flex flex-col">
         <ConversationList
           conversations={conversations}
           selectedId={selectedId}
