@@ -69,15 +69,15 @@ function extractDomain(data: any, req: Request): string | null {
   // 3. DOMAIN / domain
   if (data.DOMAIN) return cleanDomain(data.DOMAIN);
   if (data.domain) return cleanDomain(data.domain);
-  // 4. Referer
+  // 4. Referer (broader match - any domain)
   const referer = req.headers.get("referer");
   if (referer) {
-    const match = referer.match(/https?:\/\/([^\/]+\.bitrix24\.[^\/]+)/);
-    if (match) return match[1];
+    const match = referer.match(/https?:\/\/([^\/]+)/);
+    if (match && !match[1].includes("supabase")) return match[1];
   }
   // 5. Origin
   const origin = req.headers.get("origin");
-  if (origin && origin.includes("bitrix24")) return cleanDomain(origin);
+  if (origin && !origin.includes("supabase")) return cleanDomain(origin);
   return null;
 }
 
@@ -141,7 +141,7 @@ Deno.serve(async (req) => {
     const data = parseBody(bodyText, contentType);
 
     console.log("[INSTALL] Received payload:", JSON.stringify(data).substring(0, 500));
-
+    console.log("[INSTALL] Referer:", req.headers.get("referer"), "Origin:", req.headers.get("origin"));
     const auth = data.auth || {};
     // Bitrix24 sends flat uppercase keys (AUTH_ID, REFRESH_ID) or nested auth object
     const memberId = auth.member_id || data.member_id;
@@ -163,11 +163,9 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Build client_endpoint - priority: auth.client_endpoint > SERVER_ENDPOINT > domain-based
+    // Build client_endpoint - priority: auth.client_endpoint > domain-based
+    // NOTE: SERVER_ENDPOINT (oauth.bitrix.info) is the OAuth server, NOT the portal REST API
     let clientEndpoint = auth.client_endpoint;
-    if (!clientEndpoint && serverEndpoint) {
-      clientEndpoint = serverEndpoint;
-    }
     if (!clientEndpoint && domain) {
       clientEndpoint = `https://${domain}/rest/`;
     }
