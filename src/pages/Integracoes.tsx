@@ -568,41 +568,254 @@ function OmniChannelTab() {
 
 // ─── Pagamentos Tab ──────────────────────────────────────────────────────────
 
+interface PaymentTransaction {
+  id: string;
+  gateway: string;
+  amount: number;
+  currency: string;
+  status: string;
+  payment_method: string;
+  created_at: string;
+}
+
 function PagamentosTab() {
-  const paymentCards = [
-    { name: "Stripe", icon: CreditCard, color: "bg-indigo-100", iconColor: "text-indigo-600", status: "pending" as const, desc: "Processamento de pagamentos online" },
-    { name: "Asaas", icon: DollarSign, color: "bg-teal-100", iconColor: "text-teal-600", status: "inactive" as const, desc: "Boletos e PIX (Brasil)" },
-    { name: "Outros", icon: RefreshCw, color: "bg-gray-100", iconColor: "text-gray-600", status: "inactive" as const, desc: "Futuras integrações de pagamento" },
-  ];
+  const [credentials, setCredentials] = useState<Record<string, { has_value: boolean; masked: string }>>({});
+  const [drafts, setDrafts] = useState<Record<string, string>>({});
+  const [saving, setSaving] = useState<string | null>(null);
+  const [transactions, setTransactions] = useState<PaymentTransaction[]>([]);
+  const [testingStripe, setTestingStripe] = useState(false);
+  const [testingAsaas, setTestingAsaas] = useState(false);
+  const [stripeResult, setStripeResult] = useState<{ ok: boolean; message?: string; error?: string } | null>(null);
+  const [asaasResult, setAsaasResult] = useState<{ ok: boolean; message?: string; error?: string } | null>(null);
+
+  const loadCredentials = useCallback(async () => {
+    try {
+      const { data, error } = await supabase.functions.invoke("manage-credentials", { method: "GET" });
+      if (!error && data?.credentials) {
+        const map: Record<string, { has_value: boolean; masked: string }> = {};
+        for (const c of data.credentials) {
+          map[`${c.provider}::${c.credential_key}`] = {
+            has_value: c.has_value,
+            masked: c.credential_value_masked || "",
+          };
+        }
+        setCredentials(map);
+      }
+    } catch {}
+  }, []);
+
+  const handleSaveCredential = async (provider: string, key: string, value: string) => {
+    const fullKey = `${provider}::${key}`;
+    setSaving(fullKey);
+    try {
+      const { error } = await supabase.functions.invoke("manage-credentials", {
+        method: "POST",
+        body: { provider, credential_key: key, credential_value: value },
+      });
+      if (error) {
+        toast.error("Erro ao guardar credencial");
+      } else {
+        toast.success(`${key} guardado com sucesso`);
+        setDrafts((prev) => ({ ...prev, [fullKey]: "" }));
+        await loadCredentials();
+      }
+    } catch {
+      toast.error("Erro de rede");
+    }
+    setSaving(null);
+  };
+
+  useEffect(() => {
+    loadCredentials();
+    // Load recent transactions
+    supabase
+      .from("payment_transactions")
+      .select("id, gateway, amount, currency, status, payment_method, created_at")
+      .order("created_at", { ascending: false })
+      .limit(10)
+      .then(({ data }) => {
+        if (data) setTransactions(data);
+      });
+  }, [loadCredentials]);
+
+  const credProps = { credentials, drafts, setDrafts, onSave: handleSaveCredential, saving };
+
+  const stripeConfigured = credentials["stripe::STRIPE_SECRET_KEY"]?.has_value;
+  const asaasConfigured = credentials["asaas::ASAAS_API_KEY"]?.has_value;
+
+  const handleTestStripe = async () => {
+    setTestingStripe(true);
+    setStripeResult(null);
+    try {
+      // Test Stripe by fetching account info
+      const { data, error } = await supabase.functions.invoke("payment-create", {
+        body: { amount: 0.01, currency: "EUR", payment_method: "card", customer_data: { country: "Portugal", email: "test@test.com" }, description: "Teste de conexão" },
+      });
+      if (error || data?.error) {
+        setStripeResult({ ok: false, error: data?.error || "Erro ao contactar Stripe" });
+      } else {
+        setStripeResult({ ok: true, message: "Conexão Stripe válida! Transação de teste criada." });
+      }
+    } catch {
+      setStripeResult({ ok: false, error: "Erro de rede" });
+    }
+    setTestingStripe(false);
+  };
+
+  const handleTestAsaas = async () => {
+    setTestingAsaas(true);
+    setAsaasResult(null);
+    try {
+      const { data, error } = await supabase.functions.invoke("payment-create", {
+        body: { amount: 0.01, currency: "BRL", payment_method: "pix", customer_data: { country: "Brasil", name: "Teste", cpf_cnpj: "00000000000" }, description: "Teste de conexão" },
+      });
+      if (error || data?.error) {
+        setAsaasResult({ ok: false, error: data?.error || "Erro ao contactar Asaas" });
+      } else {
+        setAsaasResult({ ok: true, message: "Conexão Asaas válida! Transação de teste criada." });
+      }
+    } catch {
+      setAsaasResult({ ok: false, error: "Erro de rede" });
+    }
+    setTestingAsaas(false);
+  };
+
+  const totalStripe = transactions.filter(t => t.gateway === "stripe" && (t.status === "confirmed" || t.status === "received")).reduce((s, t) => s + Number(t.amount), 0);
+  const totalAsaas = transactions.filter(t => t.gateway === "asaas" && (t.status === "confirmed" || t.status === "received")).reduce((s, t) => s + Number(t.amount), 0);
+
+  const statusLabels: Record<string, string> = {
+    pending: "Pendente",
+    confirmed: "Confirmado",
+    received: "Recebido",
+    overdue: "Vencido",
+    refunded: "Reembolsado",
+    canceled: "Cancelado",
+    failed: "Falhou",
+  };
+
+  const statusColors: Record<string, string> = {
+    pending: "bg-yellow-100 text-yellow-800",
+    confirmed: "bg-green-100 text-green-800",
+    received: "bg-green-100 text-green-800",
+    overdue: "bg-red-100 text-red-800",
+    refunded: "bg-blue-100 text-blue-800",
+    canceled: "bg-gray-100 text-gray-800",
+    failed: "bg-red-100 text-red-800",
+  };
 
   return (
-    <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-      {paymentCards.map((p) => (
-        <Card key={p.name}>
-          <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-2">
-            <div className="flex items-center gap-3">
-              <div className={`flex h-10 w-10 items-center justify-center rounded-lg ${p.color}`}>
-                <p.icon className={`h-5 w-5 ${p.iconColor}`} />
-              </div>
-              <div>
-                <CardTitle className="text-base">{p.name}</CardTitle>
-                <CardDescription>{p.desc}</CardDescription>
-              </div>
+    <div className="grid gap-4 md:grid-cols-2">
+      {/* Stripe Card */}
+      <Card>
+        <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-2">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-indigo-100">
+              <CreditCard className="h-5 w-5 text-indigo-600" />
             </div>
-            <StatusBadge status={p.status} />
-          </CardHeader>
-          <CardContent className="text-sm">
-            {p.status === "inactive" ? (
-              <p className="text-muted-foreground">Integração ainda não disponível.</p>
-            ) : (
-              <div className="space-y-2">
-                <p className="text-muted-foreground">Configuração pendente. Ative o Stripe para começar a receber pagamentos.</p>
-                <Button size="sm" variant="outline" className="w-full">Configurar</Button>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      ))}
+            <div>
+              <CardTitle className="text-base">Stripe</CardTitle>
+              <CardDescription>Portugal / Europa (EUR)</CardDescription>
+            </div>
+          </div>
+          <StatusBadge status={stripeConfigured ? "active" : "inactive"} />
+        </CardHeader>
+        <CardContent className="space-y-3 text-sm">
+          <CredentialInput provider="stripe" credentialKey="STRIPE_SECRET_KEY" label="Secret Key (sk_...)" {...credProps} />
+          <CredentialInput provider="stripe" credentialKey="STRIPE_WEBHOOK_SECRET" label="Webhook Secret (whsec_...)" {...credProps} />
+
+          <div className="flex justify-between text-xs text-muted-foreground">
+            <span>Total processado</span>
+            <span className="font-medium text-foreground">€{totalStripe.toFixed(2)}</span>
+          </div>
+
+          <Button size="sm" variant="outline" className="w-full" onClick={handleTestStripe} disabled={testingStripe || !stripeConfigured}>
+            {testingStripe ? <RefreshCw className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <Activity className="h-3.5 w-3.5 mr-1.5" />}
+            {testingStripe ? "A testar…" : "Testar Conexão"}
+          </Button>
+          {stripeResult && (
+            <div className={`flex items-center gap-2 rounded-md px-3 py-2 ${stripeResult.ok ? "bg-green-50 text-green-800" : "bg-red-50 text-red-800"}`}>
+              {stripeResult.ok ? <CheckCircle2 className="h-4 w-4 shrink-0" /> : <AlertCircle className="h-4 w-4 shrink-0" />}
+              <span className="text-xs">{stripeResult.ok ? stripeResult.message : stripeResult.error}</span>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Asaas Card */}
+      <Card>
+        <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-2">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-teal-100">
+              <DollarSign className="h-5 w-5 text-teal-600" />
+            </div>
+            <div>
+              <CardTitle className="text-base">Asaas</CardTitle>
+              <CardDescription>Brasil (BRL) — PIX, Boleto, Cartão</CardDescription>
+            </div>
+          </div>
+          <StatusBadge status={asaasConfigured ? "active" : "inactive"} />
+        </CardHeader>
+        <CardContent className="space-y-3 text-sm">
+          <CredentialInput provider="asaas" credentialKey="ASAAS_API_KEY" label="API Key" {...credProps} />
+          <CredentialInput provider="asaas" credentialKey="ASAAS_WEBHOOK_TOKEN" label="Webhook Token" {...credProps} />
+
+          <div className="flex justify-between text-xs text-muted-foreground">
+            <span>Total processado</span>
+            <span className="font-medium text-foreground">R${totalAsaas.toFixed(2)}</span>
+          </div>
+
+          <Button size="sm" variant="outline" className="w-full" onClick={handleTestAsaas} disabled={testingAsaas || !asaasConfigured}>
+            {testingAsaas ? <RefreshCw className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <Activity className="h-3.5 w-3.5 mr-1.5" />}
+            {testingAsaas ? "A testar…" : "Testar Conexão"}
+          </Button>
+          {asaasResult && (
+            <div className={`flex items-center gap-2 rounded-md px-3 py-2 ${asaasResult.ok ? "bg-green-50 text-green-800" : "bg-red-50 text-red-800"}`}>
+              {asaasResult.ok ? <CheckCircle2 className="h-4 w-4 shrink-0" /> : <AlertCircle className="h-4 w-4 shrink-0" />}
+              <span className="text-xs">{asaasResult.ok ? asaasResult.message : asaasResult.error}</span>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Emmely Pay Summary */}
+      <Card className="md:col-span-2">
+        <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-2">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-emerald-100">
+              <CreditCard className="h-5 w-5 text-emerald-600" />
+            </div>
+            <div>
+              <CardTitle className="text-base">Emmely Pay — Transações Recentes</CardTitle>
+              <CardDescription>Últimas 10 transações processadas</CardDescription>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className="text-sm">
+          {transactions.length === 0 ? (
+            <p className="text-muted-foreground">Nenhuma transação registada.</p>
+          ) : (
+            <div className="space-y-1.5 max-h-64 overflow-y-auto">
+              {transactions.map((tx) => (
+                <div key={tx.id} className="flex items-center justify-between rounded-md bg-muted/50 px-3 py-2">
+                  <div className="flex items-center gap-2">
+                    <Badge variant="outline" className="text-xs capitalize">{tx.gateway}</Badge>
+                    <span className="capitalize text-xs text-muted-foreground">{tx.payment_method}</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="font-medium">{tx.currency === "BRL" ? "R$" : "€"}{Number(tx.amount).toFixed(2)}</span>
+                    <Badge variant="outline" className={`text-xs ${statusColors[tx.status] || ""}`}>
+                      {statusLabels[tx.status] || tx.status}
+                    </Badge>
+                    <span className="text-xs text-muted-foreground">
+                      {new Date(tx.created_at).toLocaleDateString("pt-PT", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }
