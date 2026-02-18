@@ -195,7 +195,7 @@ export default function AtendimentoPage() {
   return (
     <div className="flex h-[calc(100vh-5rem)] -m-6 rounded-lg overflow-hidden border">
       {/* Left panel - conversation list */}
-      <div className="w-96 shrink-0">
+      <div className="w-[460px] shrink-0">
         <ConversationList
           conversations={conversations}
           selectedId={selectedId}
