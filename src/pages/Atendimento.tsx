@@ -190,9 +190,9 @@ export default function AtendimentoPage() {
   const selectedConversation = conversations.find((c) => c.id === selectedId) ?? null;
 
   return (
-    <div className="fixed inset-0 top-[3.5rem] flex bg-background">
-      {/* Left panel - conversation list (fixed width like Callbell) */}
-      <div className="w-96 xl:w-[440px] shrink-0 border-r flex flex-col">
+    <div className="-m-6 flex bg-background" style={{ height: 'calc(100vh - 5.5rem)' }}>
+      {/* Left panel - conversation list */}
+      <div className="w-96 xl:w-[440px] shrink-0 border-r flex flex-col overflow-hidden">
         <ConversationList
           conversations={conversations}
           selectedId={selectedId}
