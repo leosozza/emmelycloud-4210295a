@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Slider } from "@/components/ui/slider";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Separator } from "@/components/ui/separator";
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
@@ -21,7 +22,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
-import { Plus, Bot, Edit, Trash2, Star, Loader2, Sparkles, Brain, GitBranch } from "lucide-react";
+import { Plus, Bot, Edit, Trash2, Star, Loader2, Sparkles, Brain, GitBranch, BookOpen, Users } from "lucide-react";
 
 interface AIProvider {
   id: string;
@@ -50,8 +51,14 @@ interface AIAgent {
   is_active: boolean;
   is_default: boolean;
   default_flow_id: string | null;
+  training_collection_ids: string[];
+  sub_agent_ids: string[];
+  routing_rules: any;
   created_at: string;
 }
+
+interface FlowOption { id: string; name: string; }
+interface DocOption { id: string; title: string; }
 
 const defaultAgent: Partial<AIAgent> = {
   name: "",
@@ -65,29 +72,37 @@ const defaultAgent: Partial<AIAgent> = {
   agent_type: "text",
   is_active: true,
   is_default: false,
+  default_flow_id: null,
+  training_collection_ids: [],
+  sub_agent_ids: [],
+  routing_rules: {},
 };
 
 export default function AgentesPage() {
   const [agents, setAgents] = useState<AIAgent[]>([]);
   const [providers, setProviders] = useState<AIProvider[]>([]);
+  const [flows, setFlows] = useState<FlowOption[]>([]);
+  const [docs, setDocs] = useState<DocOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [editingAgent, setEditingAgent] = useState<Partial<AIAgent>>(defaultAgent);
   const [saving, setSaving] = useState(false);
 
-  useEffect(() => {
-    loadData();
-  }, []);
+  useEffect(() => { loadData(); }, []);
 
   const loadData = async () => {
     setLoading(true);
-    const [agentsRes, providersRes] = await Promise.all([
+    const [agentsRes, providersRes, flowsRes, docsRes] = await Promise.all([
       supabase.from("ai_agents").select("*").order("created_at", { ascending: false }),
       supabase.from("ai_providers").select("*").order("name"),
+      supabase.from("flows").select("id, name").order("name"),
+      supabase.from("knowledge_documents").select("id, title").order("title"),
     ]);
     if (agentsRes.data) setAgents(agentsRes.data as unknown as AIAgent[]);
     if (providersRes.data) setProviders(providersRes.data as unknown as AIProvider[]);
+    if (flowsRes.data) setFlows(flowsRes.data as FlowOption[]);
+    if (docsRes.data) setDocs(docsRes.data as DocOption[]);
     setLoading(false);
   };
 
@@ -95,33 +110,22 @@ export default function AgentesPage() {
   const availableModels = (selectedProvider?.available_models as any[]) || [];
 
   const handleSave = async () => {
-    if (!editingAgent.name?.trim()) {
-      toast.error("Nome é obrigatório");
-      return;
-    }
+    if (!editingAgent.name?.trim()) { toast.error("Nome é obrigatório"); return; }
     setSaving(true);
     try {
       if (editingAgent.id) {
-        const { error } = await supabase
-          .from("ai_agents")
-          .update(editingAgent as any)
-          .eq("id", editingAgent.id);
+        const { error } = await supabase.from("ai_agents").update(editingAgent as any).eq("id", editingAgent.id);
         if (error) throw error;
         toast.success("Agente atualizado");
       } else {
-        const { error } = await supabase
-          .from("ai_agents")
-          .insert(editingAgent as any);
+        const { error } = await supabase.from("ai_agents").insert(editingAgent as any);
         if (error) throw error;
         toast.success("Agente criado");
       }
       setDialogOpen(false);
       loadData();
-    } catch (e: any) {
-      toast.error(e.message);
-    } finally {
-      setSaving(false);
-    }
+    } catch (e: any) { toast.error(e.message); }
+    finally { setSaving(false); }
   };
 
   const handleDelete = async () => {
@@ -140,27 +144,27 @@ export default function AgentesPage() {
     loadData();
   };
 
-  const openEdit = (agent: AIAgent) => {
-    setEditingAgent({ ...agent });
-    setDialogOpen(true);
+  const openEdit = (agent: AIAgent) => { setEditingAgent({ ...agent }); setDialogOpen(true); };
+  const openCreate = () => { setEditingAgent({ ...defaultAgent }); setDialogOpen(true); };
+
+  const toggleTrainingDoc = (docId: string) => {
+    const current = editingAgent.training_collection_ids || [];
+    const next = current.includes(docId) ? current.filter(id => id !== docId) : [...current, docId];
+    setEditingAgent(prev => ({ ...prev, training_collection_ids: next }));
   };
 
-  const openCreate = () => {
-    setEditingAgent({ ...defaultAgent });
-    setDialogOpen(true);
+  const toggleSubAgent = (agentId: string) => {
+    const current = editingAgent.sub_agent_ids || [];
+    const next = current.includes(agentId) ? current.filter(id => id !== agentId) : [...current, agentId];
+    setEditingAgent(prev => ({ ...prev, sub_agent_ids: next }));
   };
 
   return (
     <div>
-      <PageHeader
-        title="Agentes IA"
-        description="Configure agentes inteligentes com diferentes personalidades e modelos de IA"
-      />
+      <PageHeader title="Agentes IA" description="Configure agentes inteligentes com diferentes personalidades e modelos de IA" />
 
       <div className="flex justify-end mb-4">
-        <Button onClick={openCreate}>
-          <Plus className="h-4 w-4 mr-2" /> Novo Agente
-        </Button>
+        <Button onClick={openCreate}><Plus className="h-4 w-4 mr-2" /> Novo Agente</Button>
       </div>
 
       {loading ? (
@@ -181,9 +185,7 @@ export default function AgentesPage() {
                 <div className="flex items-start justify-between">
                   <div className="flex items-center gap-3">
                     <Avatar className="h-10 w-10">
-                      <AvatarFallback className="bg-primary/10 text-primary">
-                        <Bot className="h-5 w-5" />
-                      </AvatarFallback>
+                      <AvatarFallback className="bg-primary/10 text-primary"><Bot className="h-5 w-5" /></AvatarFallback>
                     </Avatar>
                     <div>
                       <CardTitle className="text-base flex items-center gap-2">
@@ -194,12 +196,8 @@ export default function AgentesPage() {
                     </div>
                   </div>
                   <div className="flex gap-1">
-                    <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEdit(agent)}>
-                      <Edit className="h-3 w-3" />
-                    </Button>
-                    <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => setDeleteId(agent.id)}>
-                      <Trash2 className="h-3 w-3" />
-                    </Button>
+                    <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEdit(agent)}><Edit className="h-3 w-3" /></Button>
+                    <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => setDeleteId(agent.id)}><Trash2 className="h-3 w-3" /></Button>
                   </div>
                 </div>
               </CardHeader>
@@ -208,15 +206,15 @@ export default function AgentesPage() {
                   <Badge variant="outline" className="text-[10px]">{agent.ai_provider}</Badge>
                   <Badge variant="secondary" className="text-[10px]">{agent.ai_model.split('/').pop()}</Badge>
                   <Badge variant="outline" className="text-[10px]">T: {agent.temperature}</Badge>
-                  {agent.default_flow_id && <Badge variant="outline" className="text-[10px]"><GitBranch className="h-2 w-2 mr-1" />Flow</Badge>}
+                  {agent.default_flow_id && <Badge variant="outline" className="text-[10px]"><GitBranch className="h-2 w-2 mr-1" />Fluxo</Badge>}
+                  {agent.training_collection_ids?.length > 0 && <Badge variant="outline" className="text-[10px]"><BookOpen className="h-2 w-2 mr-1" />{agent.training_collection_ids.length} doc(s)</Badge>}
+                  {agent.sub_agent_ids?.length > 0 && <Badge variant="outline" className="text-[10px]"><Users className="h-2 w-2 mr-1" />{agent.sub_agent_ids.length} sub</Badge>}
                 </div>
                 <div className="flex items-center justify-between">
                   <span className="text-xs text-muted-foreground">{agent.is_active ? "Ativo" : "Inativo"}</span>
-                  <div className="flex items-center gap-2">
-                    <Button variant="ghost" size="sm" className="h-6 text-[10px]" onClick={() => toggleDefault(agent)}>
-                      {agent.is_default ? "Padrão ★" : "Definir padrão"}
-                    </Button>
-                  </div>
+                  <Button variant="ghost" size="sm" className="h-6 text-[10px]" onClick={() => toggleDefault(agent)}>
+                    {agent.is_default ? "Padrão ★" : "Definir padrão"}
+                  </Button>
                 </div>
               </CardContent>
             </Card>
@@ -295,29 +293,19 @@ export default function AgentesPage() {
                 </div>
                 <div>
                   <Label>Chave API (credential_key)</Label>
-                  <Input value={editingAgent.ai_api_key_credential || ""} onChange={(e) => setEditingAgent(prev => ({ ...prev, ai_api_key_credential: e.target.value }))} placeholder="Nome da credencial na tabela integration_credentials" />
+                  <Input value={editingAgent.ai_api_key_credential || ""} onChange={(e) => setEditingAgent(prev => ({ ...prev, ai_api_key_credential: e.target.value }))} placeholder="Nome da credencial" />
                 </div>
               </div>
             )}
 
             <div>
               <Label>System Prompt</Label>
-              <Textarea
-                value={editingAgent.system_prompt || ""}
-                onChange={(e) => setEditingAgent(prev => ({ ...prev, system_prompt: e.target.value }))}
-                rows={6}
-                placeholder="Instruções de comportamento do agente..."
-              />
+              <Textarea value={editingAgent.system_prompt || ""} onChange={(e) => setEditingAgent(prev => ({ ...prev, system_prompt: e.target.value }))} rows={6} placeholder="Instruções de comportamento do agente..." />
             </div>
 
             <div>
               <Label>Temperatura: {editingAgent.temperature}</Label>
-              <Slider
-                value={[editingAgent.temperature || 0.7]}
-                onValueChange={([v]) => setEditingAgent(prev => ({ ...prev, temperature: v }))}
-                min={0} max={2} step={0.1}
-                className="mt-2"
-              />
+              <Slider value={[editingAgent.temperature || 0.7]} onValueChange={([v]) => setEditingAgent(prev => ({ ...prev, temperature: v }))} min={0} max={2} step={0.1} className="mt-2" />
             </div>
 
             <div className="grid grid-cols-2 gap-4">
@@ -335,6 +323,62 @@ export default function AgentesPage() {
               <div className="flex items-center gap-2">
                 <Switch checked={editingAgent.is_active ?? true} onCheckedChange={(v) => setEditingAgent(prev => ({ ...prev, is_active: v }))} />
                 <Label>Ativo</Label>
+              </div>
+            </div>
+
+            {/* ═══ Vinculações ═══ */}
+            <Separator />
+            <div>
+              <h4 className="text-sm font-semibold mb-3 flex items-center gap-2"><GitBranch className="h-4 w-4" /> Vinculações</h4>
+
+              {/* Fluxo padrão */}
+              <div className="space-y-1 mb-4">
+                <Label className="text-xs">Fluxo padrão</Label>
+                <Select value={editingAgent.default_flow_id || "none"} onValueChange={(v) => setEditingAgent(prev => ({ ...prev, default_flow_id: v === "none" ? null : v }))}>
+                  <SelectTrigger><SelectValue placeholder="Nenhum" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">Nenhum</SelectItem>
+                    {flows.map(f => <SelectItem key={f.id} value={f.id}>{f.name}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Documentos de treinamento */}
+              <div className="space-y-1 mb-4">
+                <Label className="text-xs flex items-center gap-1"><BookOpen className="h-3 w-3" /> Base de conhecimento</Label>
+                {docs.length === 0 ? (
+                  <p className="text-[10px] text-muted-foreground">Nenhum documento disponível. Adicione em Treinamento.</p>
+                ) : (
+                  <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto">
+                    {docs.map(d => {
+                      const selected = (editingAgent.training_collection_ids || []).includes(d.id);
+                      return (
+                        <Badge key={d.id} variant={selected ? "default" : "outline"} className="text-[10px] cursor-pointer" onClick={() => toggleTrainingDoc(d.id)}>
+                          {selected ? "✓ " : ""}{d.title}
+                        </Badge>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {/* Sub-agentes */}
+              <div className="space-y-1">
+                <Label className="text-xs flex items-center gap-1"><Users className="h-3 w-3" /> Sub-agentes</Label>
+                {agents.filter(a => a.id !== editingAgent.id).length === 0 ? (
+                  <p className="text-[10px] text-muted-foreground">Crie mais agentes para delegar tarefas.</p>
+                ) : (
+                  <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto">
+                    {agents.filter(a => a.id !== editingAgent.id).map(a => {
+                      const selected = (editingAgent.sub_agent_ids || []).includes(a.id);
+                      return (
+                        <Badge key={a.id} variant={selected ? "default" : "outline"} className="text-[10px] cursor-pointer" onClick={() => toggleSubAgent(a.id)}>
+                          {selected ? "✓ " : ""}{a.name}
+                        </Badge>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             </div>
           </div>

@@ -4,8 +4,14 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Switch } from "@/components/ui/switch";
 import { X, Trash2, Plus } from "lucide-react";
-import { NODE_TYPE_META, type FlowNodeData, type FlowNodeType, type FlowButtonItem, type FlowBitrixCRM, type FlowBitrixField } from "./FlowNodeTypes";
+import {
+  NODE_TYPE_META, type FlowNodeData, type FlowNodeType,
+  type FlowButtonItem, type FlowBitrixCRM, type FlowBitrixField,
+  type FlowAIIntention, type FlowAIIntentionField,
+  type FlowAIAction, type FlowAIRouter, type FlowAIRouterRoute,
+} from "./FlowNodeTypes";
 
 interface NodeConfigPanelProps {
   data: FlowNodeData;
@@ -19,7 +25,6 @@ export default function NodeConfigPanel({ data, onChange, onDelete, onClose }: N
   if (!meta) return null;
 
   const Icon = meta.icon;
-
   const update = (patch: Partial<FlowNodeData>) => onChange({ ...data, ...patch });
 
   const addButton = () => {
@@ -275,6 +280,166 @@ export default function NodeConfigPanel({ data, onChange, onDelete, onClose }: N
               <Input className="h-8 text-xs" value={data.personaId || ""} onChange={(e) => update({ personaId: e.target.value })} placeholder="UUID do agente" />
             </div>
           )}
+
+          {/* ═══ AI Intention ═══ */}
+          {data.nodeType === "ai_intention" && (() => {
+            const intention = data.aiIntention || { intentions: [], maxTurns: 5, successMessage: "", failureMessage: "" };
+            const updateIntention = (patch: Partial<FlowAIIntention>) => update({ aiIntention: { ...intention, ...patch } });
+
+            const addField = () => updateIntention({
+              intentions: [...intention.intentions, { fieldName: "", description: "", validation: "text", required: true }]
+            });
+            const removeField = (i: number) => {
+              const arr = [...intention.intentions];
+              arr.splice(i, 1);
+              updateIntention({ intentions: arr });
+            };
+            const updateField = (i: number, patch: Partial<FlowAIIntentionField>) => {
+              const arr = [...intention.intentions];
+              arr[i] = { ...arr[i], ...patch };
+              updateIntention({ intentions: arr });
+            };
+
+            return (
+              <>
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-[11px] font-semibold">Campos a coletar</Label>
+                    <Button variant="outline" size="sm" className="h-6 text-[10px]" onClick={addField}>
+                      <Plus className="h-3 w-3 mr-1" /> Campo
+                    </Button>
+                  </div>
+                  {intention.intentions.map((field, i) => (
+                    <div key={i} className="space-y-1 p-2 rounded border bg-muted/30">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-medium text-muted-foreground">Campo {i + 1}</span>
+                        <Button variant="ghost" size="icon" className="h-5 w-5 text-destructive" onClick={() => removeField(i)}>
+                          <Trash2 className="h-3 w-3" />
+                        </Button>
+                      </div>
+                      <Input className="h-7 text-xs" value={field.fieldName} onChange={(e) => updateField(i, { fieldName: e.target.value })} placeholder="nome_variavel" />
+                      <Input className="h-7 text-xs" value={field.description} onChange={(e) => updateField(i, { description: e.target.value })} placeholder="O que a IA deve perguntar..." />
+                      <div className="flex gap-1">
+                        <Select value={field.validation} onValueChange={(v) => updateField(i, { validation: v as any })}>
+                          <SelectTrigger className="h-7 text-[10px] flex-1"><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="text">Texto</SelectItem>
+                            <SelectItem value="phone">Telefone</SelectItem>
+                            <SelectItem value="email">Email</SelectItem>
+                            <SelectItem value="cpf">CPF</SelectItem>
+                            <SelectItem value="city">Cidade</SelectItem>
+                            <SelectItem value="number">Número</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <div className="flex items-center gap-1">
+                          <Switch checked={field.required} onCheckedChange={(v) => updateField(i, { required: v })} className="scale-75" />
+                          <span className="text-[9px]">Obrig.</span>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-[11px]">Máx. turnos de conversa</Label>
+                  <Input className="h-8 text-xs" type="number" min={1} max={20} value={intention.maxTurns} onChange={(e) => updateIntention({ maxTurns: parseInt(e.target.value) || 5 })} />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-[11px]">Mensagem de sucesso</Label>
+                  <Textarea className="text-xs min-h-[40px]" value={intention.successMessage} onChange={(e) => updateIntention({ successMessage: e.target.value })} placeholder="Obrigado! Coletei tudo." />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-[11px]">Mensagem de falha</Label>
+                  <Textarea className="text-xs min-h-[40px]" value={intention.failureMessage} onChange={(e) => updateIntention({ failureMessage: e.target.value })} placeholder="Não consegui coletar..." />
+                </div>
+              </>
+            );
+          })()}
+
+          {/* ═══ AI Action ═══ */}
+          {data.nodeType === "ai_action" && (() => {
+            const action = data.aiAction || { actionType: "custom", actionDescription: "", toolConfig: {}, resultVar: "" };
+            const updateAction = (patch: Partial<FlowAIAction>) => update({ aiAction: { ...action, ...patch } });
+
+            return (
+              <>
+                <div className="space-y-1">
+                  <Label className="text-[11px]">Tipo de ação</Label>
+                  <Select value={action.actionType} onValueChange={(v) => updateAction({ actionType: v as any })}>
+                    <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="schedule">Agendamento</SelectItem>
+                      <SelectItem value="query_crm">Consultar CRM</SelectItem>
+                      <SelectItem value="update_crm">Atualizar CRM</SelectItem>
+                      <SelectItem value="custom">Personalizada</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-[11px]">Descrição da ação</Label>
+                  <Textarea className="text-xs min-h-[60px]" value={action.actionDescription} onChange={(e) => updateAction({ actionDescription: e.target.value })} placeholder="Descreva o que a IA deve fazer em linguagem natural..." />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-[11px]">Variável de resultado</Label>
+                  <Input className="h-8 text-xs" value={action.resultVar} onChange={(e) => updateAction({ resultVar: e.target.value })} placeholder="action_result" />
+                </div>
+                <div className="rounded bg-muted/50 p-2">
+                  <p className="text-[9px] text-muted-foreground">💡 A IA usará tool calling para executar esta ação. Descreva com clareza o que deve ser feito.</p>
+                </div>
+              </>
+            );
+          })()}
+
+          {/* ═══ AI Router ═══ */}
+          {data.nodeType === "ai_router" && (() => {
+            const router = data.aiRouter || { routes: [], analysisPrompt: "" };
+            const updateRouter = (patch: Partial<FlowAIRouter>) => update({ aiRouter: { ...router, ...patch } });
+
+            const addRoute = () => {
+              const idx = router.routes.length;
+              updateRouter({
+                routes: [...router.routes, { label: `Rota ${idx + 1}`, description: "", handleId: `route_${idx}` }]
+              });
+            };
+            const removeRoute = (i: number) => {
+              const arr = [...router.routes];
+              arr.splice(i, 1);
+              updateRouter({ routes: arr });
+            };
+            const updateRoute = (i: number, patch: Partial<FlowAIRouterRoute>) => {
+              const arr = [...router.routes];
+              arr[i] = { ...arr[i], ...patch };
+              updateRouter({ routes: arr });
+            };
+
+            return (
+              <>
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-[11px] font-semibold">Rotas</Label>
+                    <Button variant="outline" size="sm" className="h-6 text-[10px]" onClick={addRoute}>
+                      <Plus className="h-3 w-3 mr-1" /> Rota
+                    </Button>
+                  </div>
+                  {router.routes.map((route, i) => (
+                    <div key={i} className="space-y-1 p-2 rounded border bg-muted/30">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-medium text-muted-foreground">Rota {i + 1}</span>
+                        <Button variant="ghost" size="icon" className="h-5 w-5 text-destructive" onClick={() => removeRoute(i)}>
+                          <Trash2 className="h-3 w-3" />
+                        </Button>
+                      </div>
+                      <Input className="h-7 text-xs" value={route.label} onChange={(e) => updateRoute(i, { label: e.target.value })} placeholder="Nome da rota" />
+                      <Textarea className="text-xs min-h-[30px]" value={route.description} onChange={(e) => updateRoute(i, { description: e.target.value })} placeholder="Quando seguir esta rota..." />
+                    </div>
+                  ))}
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-[11px]">Prompt de análise</Label>
+                  <Textarea className="text-xs min-h-[60px]" value={router.analysisPrompt} onChange={(e) => updateRouter({ analysisPrompt: e.target.value })} placeholder="Instrução adicional para a IA decidir qual rota seguir..." />
+                </div>
+              </>
+            );
+          })()}
 
           {/* Bitrix24 CRM */}
           {data.nodeType.startsWith("bitrix_") && (() => {
