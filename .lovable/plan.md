@@ -1,88 +1,74 @@
 
-# Corrigir Arquitetura Bitrix24 - Baseado no Projeto Thothai
 
-## Problema Identificado
+# Central de Integracoes
 
-A arquitetura atual esta errada. Comparando com o projeto thothai (que funciona), os erros sao:
+## Objetivo
 
-1. **Install URL aponta para o frontend** - Errado! O Bitrix24 envia um POST com tokens OAuth durante a instalacao. O frontend nao consegue receber isso. Deve apontar para a edge function `bitrix24-install`
-2. **Connector Settings sem headers de iframe** - Falta `X-Frame-Options: ALLOWALL` e `frame-ancestors *`. O Supabase adiciona `X-Frame-Options: SAMEORIGIN` por defeito, que bloqueia o iframe do Bitrix24
-3. **Frontend tentando gerir a instalacao** - O `Bitrix24App.tsx` tenta carregar o BX24 SDK e fazer fetch - desnecessario. A instalacao deve ser 100% na edge function
+Criar uma nova pagina `/integracoes` que centraliza todas as configuracoes de integracao do sistema em 3 abas organizadas.
 
-## Como funciona no Thothai (correto)
+## Estrutura da Pagina
 
 ```text
-Bitrix24 Marketplace URLs:
-  - Install URL      -> edge function /bitrix24-install (POST com tokens)
-  - Application URL  -> edge function /bitrix24-connector-settings (iframe UI) OU frontend
-  - Settings Handler -> edge function /bitrix24-connector-settings (PLACEMENT_HANDLER)
+Central de Integracoes
++-------------------------------------------------------+
+| [CRM]        [Omni Channel]       [Pagamentos]        |
++-------------------------------------------------------+
 
-Fluxo de instalacao:
-  1. Bitrix24 envia POST para /bitrix24-install com auth[access_token], auth[member_id], etc.
-  2. Edge function guarda tokens, regista conector, ativa em Open Lines, vincula eventos
-  3. Edge function retorna HTML com BX24.installFinish() e headers de iframe corretos
-  4. Bitrix24 marca app como instalado
+Aba CRM:
+  - Card "Bitrix24" com status da integracao (conectado/desconectado)
+  - Card "Emmely Messages" - conector de mensagens (status, canais ativos)
+  - Card "Emmely Pay" - conector de pagamento (status)
+  - Card "Saude do Sistema" - logs recentes, erros, uptime
 
-Fluxo de configuracao (Contact Center > Settings):
-  1. Bitrix24 abre /bitrix24-connector-settings em iframe slider
-  2. Edge function retorna HTML com X-Frame-Options: ALLOWALL
-  3. HTML mostra status do conector, canais mapeados, etc.
-  4. Retorna "successfully" quando conector esta pronto
-```
+Aba Omni Channel:
+  - Card "WhatsApp" - configuracao Callbell, status, canal UUID
+  - Card "Instagram" - configuracao Callbell, status, canal UUID
+  - Card "E-mail" - configuracao SMTP/provider
+  - Card "Canais Conectados" - resumo de canais ativos na central de atendimento
 
-## Plano de Alteracoes
-
-### 1. Atualizar `bitrix24-install` (edge function)
-
-- Adicionar headers de iframe: `X-Frame-Options: ALLOWALL`, `frame-ancestors *`
-- Manter logica atual de guardar tokens e registar conector
-- Melhorar o HTML de retorno com UI mais profissional (como no thothai)
-- Garantir que `BX24.installFinish()` e chamado no HTML retornado
-
-### 2. Atualizar `bitrix24-connector-settings` (edge function)
-
-Mudancas criticas:
-- Adicionar `X-Frame-Options: ALLOWALL` nos headers (resolve o bloqueio do iframe)
-- Mudar `frame-ancestors` de lista especifica para `*` (wildcard)
-- Manter suporte a GET com JSON para o frontend
-- Melhorar o HTML de configuracao com status do conector, canais e acoes
-- Retornar `"successfully"` (texto plano) quando conector esta totalmente configurado
-
-### 3. Atualizar `Bitrix24App.tsx` (frontend)
-
-O frontend serve para quando o Application URL aponta para o frontend (para utilizadores acederem via menu do Bitrix24). Manter a logica de tabs mas:
-- Remover a tentativa de instalacao via frontend (nao e necessario)
-- Manter apenas a UI de gestao (status, canais, pagamentos, automacoes)
-- Continuar a usar fetch para obter dados do backend via `bitrix24-connector-settings?format=json`
-
-### 4. URLs corretas no Bitrix24 Marketplace
-
-```text
-Install URL:      https://qohnsluvhyziovfynzlu.supabase.co/functions/v1/bitrix24-install
-Application URL:  https://emmelycloud.lovable.app/bitrix24  (frontend com tabs)
-Settings Handler: Registado automaticamente via PLACEMENT_HANDLER na instalacao
+Aba Pagamentos:
+  - Card "Stripe" - status, chave configurada, modo (test/live)
+  - Card "Asaas" - status, placeholder para futura integracao
+  - Card "Outros" - placeholder para futuras integracoes
 ```
 
 ## Detalhes Tecnicos
 
-### Headers criticos para iframe (faltam atualmente)
+### Ficheiros a criar
 
-```typescript
-const htmlHeaders = {
-  "Content-Type": "text/html; charset=utf-8",
-  "Content-Security-Policy": "... frame-ancestors *",
-  "X-Frame-Options": "ALLOWALL",  // CRITICO - sem isto o iframe e bloqueado
-};
-```
+1. **`src/pages/Integracoes.tsx`** - Pagina principal com 3 abas usando Tabs do shadcn/ui
+   - Usa componentes Card, Badge, Tabs do shadcn
+   - Busca dados do backend via `bitrix24-connector-settings?format=json` para status do Bitrix24
+   - Busca secrets configurados para mostrar status de cada integracao
+   - Cards com indicadores visuais (verde = ativo, vermelho = inativo, amarelo = pendente)
 
 ### Ficheiros a modificar
 
-1. `supabase/functions/bitrix24-install/index.ts` - Adicionar headers iframe, melhorar HTML
-2. `supabase/functions/bitrix24-connector-settings/index.ts` - Adicionar `X-Frame-Options: ALLOWALL`, `frame-ancestors *`, logica de retorno `"successfully"`
-3. `src/pages/Bitrix24App.tsx` - Remover logica de instalacao, manter apenas UI de gestao
+2. **`src/App.tsx`** - Adicionar rota `/integracoes` com o novo componente
+3. **`src/components/AppHeader.tsx`** - Adicionar link "Integracoes" no grupo "Gestao" da navegacao (com icone `Plug` do lucide-react)
 
-### Ficheiros que NAO mudam
+### Componentes internos da pagina
 
-- `supabase/functions/bitrix24-events/index.ts` - Ja funciona
-- `supabase/functions/bitrix24-send/index.ts` - Ja funciona
-- `supabase/config.toml` - Ja tem verify_jwt = false
+Cada aba sera uma funcao/componente dentro do ficheiro `Integracoes.tsx`:
+
+- **`CRMTab`** - Mostra status do Bitrix24, Emmely Messages, Emmely Pay e saude
+- **`OmniChannelTab`** - Cards para WhatsApp, Instagram, Email com campos de configuracao
+- **`PagamentosTab`** - Cards para Stripe, Asaas com status e acoes
+
+### Dados
+
+A pagina usa dados existentes:
+- Tabela `bitrix24_integrations` para status do CRM
+- Tabela `bitrix24_channel_mappings` para canais ativos
+- Tabela `bitrix24_debug_logs` para saude do sistema
+- Secrets existentes (CALLBELL_API_TOKEN, META_PAGE_ACCESS_TOKEN, etc.) para indicar o que esta configurado
+
+Nao necessita de novas tabelas - apenas leitura dos dados existentes.
+
+### Design
+
+- Segue o padrao visual das outras paginas (PageHeader com gradiente, cards brancos)
+- Icones do lucide-react para cada integracao
+- Badges coloridos para status (verde/vermelho/amarelo)
+- Cards com accoes como "Configurar", "Testar conexao", "Desconectar"
+
