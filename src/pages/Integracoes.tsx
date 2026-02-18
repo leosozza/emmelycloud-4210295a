@@ -1,0 +1,346 @@
+import { useEffect, useState } from "react";
+import { PageHeader } from "@/components/PageHeader";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  Plug,
+  MessageCircle,
+  CreditCard,
+  Activity,
+  Phone,
+  Instagram,
+  Mail,
+  Radio,
+  DollarSign,
+  AlertCircle,
+  CheckCircle2,
+  Clock,
+  XCircle,
+  RefreshCw,
+} from "lucide-react";
+import { supabase } from "@/integrations/supabase/client";
+
+// ─── Types ───────────────────────────────────────────────────────────────────
+
+interface IntegrationStatus {
+  id: string;
+  domain: string | null;
+  connector_registered: boolean;
+  connector_active: boolean;
+  updated_at: string;
+}
+
+interface ChannelMapping {
+  id: string;
+  channel: string;
+  line_name: string | null;
+  is_active: boolean;
+}
+
+interface DebugLog {
+  id: string;
+  event_type: string;
+  error: string | null;
+  created_at: string;
+  direction: string | null;
+}
+
+// ─── Status Badge ────────────────────────────────────────────────────────────
+
+function StatusBadge({ status }: { status: "active" | "inactive" | "pending" }) {
+  const config = {
+    active: { label: "Ativo", className: "bg-green-100 text-green-800 border-green-200" },
+    inactive: { label: "Inativo", className: "bg-red-100 text-red-800 border-red-200" },
+    pending: { label: "Pendente", className: "bg-yellow-100 text-yellow-800 border-yellow-200" },
+  };
+  const c = config[status];
+  return <Badge variant="outline" className={c.className}>{c.label}</Badge>;
+}
+
+function StatusIcon({ status }: { status: "active" | "inactive" | "pending" }) {
+  if (status === "active") return <CheckCircle2 className="h-5 w-5 text-green-500" />;
+  if (status === "pending") return <Clock className="h-5 w-5 text-yellow-500" />;
+  return <XCircle className="h-5 w-5 text-red-500" />;
+}
+
+// ─── CRM Tab ─────────────────────────────────────────────────────────────────
+
+function CRMTab() {
+  const [integration, setIntegration] = useState<IntegrationStatus | null>(null);
+  const [channels, setChannels] = useState<ChannelMapping[]>([]);
+  const [logs, setLogs] = useState<DebugLog[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function load() {
+      setLoading(true);
+      const [intRes, chRes, logRes] = await Promise.all([
+        supabase.from("bitrix24_integrations").select("id, domain, connector_registered, connector_active, updated_at").limit(1).single(),
+        supabase.from("bitrix24_channel_mappings").select("id, channel, line_name, is_active"),
+        supabase.from("bitrix24_debug_logs").select("id, event_type, error, created_at, direction").order("created_at", { ascending: false }).limit(10),
+      ]);
+      if (intRes.data) setIntegration(intRes.data);
+      if (chRes.data) setChannels(chRes.data);
+      if (logRes.data) setLogs(logRes.data);
+      setLoading(false);
+    }
+    load();
+  }, []);
+
+  const bitrixStatus = integration ? (integration.connector_active ? "active" : integration.connector_registered ? "pending" : "inactive") : "inactive";
+  const activeChannels = channels.filter((c) => c.is_active);
+  const errorLogs = logs.filter((l) => l.error);
+
+  return (
+    <div className="grid gap-4 md:grid-cols-2">
+      {/* Bitrix24 */}
+      <Card>
+        <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-2">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-blue-100">
+              <Plug className="h-5 w-5 text-blue-600" />
+            </div>
+            <div>
+              <CardTitle className="text-base">Bitrix24</CardTitle>
+              <CardDescription>CRM Principal</CardDescription>
+            </div>
+          </div>
+          <StatusBadge status={bitrixStatus} />
+        </CardHeader>
+        <CardContent className="space-y-2 text-sm">
+          {integration ? (
+            <>
+              <div className="flex justify-between"><span className="text-muted-foreground">Domínio</span><span className="font-medium">{integration.domain || "—"}</span></div>
+              <div className="flex justify-between"><span className="text-muted-foreground">Conector registado</span><span>{integration.connector_registered ? "Sim" : "Não"}</span></div>
+              <div className="flex justify-between"><span className="text-muted-foreground">Última atualização</span><span>{new Date(integration.updated_at).toLocaleDateString("pt-PT")}</span></div>
+            </>
+          ) : (
+            <p className="text-muted-foreground">Nenhuma integração configurada.</p>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Emmely Messages */}
+      <Card>
+        <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-2">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-lg" style={{ backgroundColor: "#722F3722" }}>
+              <MessageCircle className="h-5 w-5" style={{ color: "#722F37" }} />
+            </div>
+            <div>
+              <CardTitle className="text-base">Emmely Messages</CardTitle>
+              <CardDescription>Conector de Mensagens</CardDescription>
+            </div>
+          </div>
+          <StatusBadge status={activeChannels.length > 0 ? "active" : "inactive"} />
+        </CardHeader>
+        <CardContent className="space-y-2 text-sm">
+          <div className="flex justify-between"><span className="text-muted-foreground">Canais ativos</span><span className="font-medium">{activeChannels.length}</span></div>
+          {activeChannels.map((ch) => (
+            <div key={ch.id} className="flex items-center justify-between rounded-md bg-muted/50 px-3 py-1.5">
+              <span className="capitalize">{ch.channel}</span>
+              <span className="text-xs text-muted-foreground">{ch.line_name || "—"}</span>
+            </div>
+          ))}
+          {activeChannels.length === 0 && <p className="text-muted-foreground">Nenhum canal ativo no Contact Center.</p>}
+        </CardContent>
+      </Card>
+
+      {/* Emmely Pay */}
+      <Card>
+        <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-2">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-emerald-100">
+              <CreditCard className="h-5 w-5 text-emerald-600" />
+            </div>
+            <div>
+              <CardTitle className="text-base">Emmely Pay</CardTitle>
+              <CardDescription>Conector de Pagamento</CardDescription>
+            </div>
+          </div>
+          <StatusBadge status="pending" />
+        </CardHeader>
+        <CardContent className="text-sm text-muted-foreground">
+          <p>Integração de pagamentos unificada. Configure na aba Pagamentos.</p>
+        </CardContent>
+      </Card>
+
+      {/* Saúde do Sistema */}
+      <Card>
+        <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-2">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-orange-100">
+              <Activity className="h-5 w-5 text-orange-600" />
+            </div>
+            <div>
+              <CardTitle className="text-base">Saúde do Sistema</CardTitle>
+              <CardDescription>Últimos 10 eventos</CardDescription>
+            </div>
+          </div>
+          <StatusBadge status={errorLogs.length === 0 ? "active" : "pending"} />
+        </CardHeader>
+        <CardContent className="space-y-1.5 text-sm max-h-48 overflow-y-auto">
+          {loading && <p className="text-muted-foreground">A carregar…</p>}
+          {!loading && logs.length === 0 && <p className="text-muted-foreground">Sem eventos recentes.</p>}
+          {logs.map((log) => (
+            <div key={log.id} className="flex items-center gap-2 rounded-md bg-muted/50 px-3 py-1.5">
+              {log.error ? <AlertCircle className="h-3.5 w-3.5 shrink-0 text-red-500" /> : <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-green-500" />}
+              <span className="truncate flex-1">{log.event_type}</span>
+              <span className="text-xs text-muted-foreground whitespace-nowrap">{new Date(log.created_at).toLocaleString("pt-PT", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}</span>
+            </div>
+          ))}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+// ─── Omni Channel Tab ────────────────────────────────────────────────────────
+
+function OmniChannelTab() {
+  const [conversations, setConversations] = useState<{ channel: string; count: number }[]>([]);
+
+  useEffect(() => {
+    async function load() {
+      const { data } = await supabase.from("conversations").select("channel");
+      if (data) {
+        const counts: Record<string, number> = {};
+        data.forEach((c) => { counts[c.channel] = (counts[c.channel] || 0) + 1; });
+        setConversations(Object.entries(counts).map(([channel, count]) => ({ channel, count })));
+      }
+    }
+    load();
+  }, []);
+
+  const channelCards = [
+    { name: "WhatsApp", icon: Phone, color: "bg-green-100", iconColor: "text-green-600", desc: "Via Callbell API", secret: "CALLBELL_WA_CHANNEL_UUID" },
+    { name: "Instagram", icon: Instagram, color: "bg-pink-100", iconColor: "text-pink-600", desc: "Via Callbell / Meta API", secret: "META_PAGE_ACCESS_TOKEN" },
+    { name: "E-mail", icon: Mail, color: "bg-blue-100", iconColor: "text-blue-600", desc: "SMTP / Provider", secret: null },
+  ];
+
+  return (
+    <div className="grid gap-4 md:grid-cols-2">
+      {channelCards.map((ch) => (
+        <Card key={ch.name}>
+          <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-2">
+            <div className="flex items-center gap-3">
+              <div className={`flex h-10 w-10 items-center justify-center rounded-lg ${ch.color}`}>
+                <ch.icon className={`h-5 w-5 ${ch.iconColor}`} />
+              </div>
+              <div>
+                <CardTitle className="text-base">{ch.name}</CardTitle>
+                <CardDescription>{ch.desc}</CardDescription>
+              </div>
+            </div>
+            <StatusBadge status={ch.secret ? "active" : "inactive"} />
+          </CardHeader>
+          <CardContent className="text-sm">
+            {ch.secret ? (
+              <p className="text-muted-foreground">Credenciais configuradas. Canal operacional.</p>
+            ) : (
+              <p className="text-muted-foreground">Ainda não configurado.</p>
+            )}
+          </CardContent>
+        </Card>
+      ))}
+
+      {/* Canais Conectados */}
+      <Card>
+        <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-2">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-purple-100">
+              <Radio className="h-5 w-5 text-purple-600" />
+            </div>
+            <div>
+              <CardTitle className="text-base">Canais Conectados</CardTitle>
+              <CardDescription>Resumo da Central de Atendimento</CardDescription>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-2 text-sm">
+          {conversations.length === 0 && <p className="text-muted-foreground">Nenhuma conversa registada.</p>}
+          {conversations.map((c) => (
+            <div key={c.channel} className="flex items-center justify-between rounded-md bg-muted/50 px-3 py-1.5">
+              <span className="capitalize">{c.channel}</span>
+              <Badge variant="secondary">{c.count} conversas</Badge>
+            </div>
+          ))}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+// ─── Pagamentos Tab ──────────────────────────────────────────────────────────
+
+function PagamentosTab() {
+  const paymentCards = [
+    { name: "Stripe", icon: CreditCard, color: "bg-indigo-100", iconColor: "text-indigo-600", status: "pending" as const, desc: "Processamento de pagamentos online" },
+    { name: "Asaas", icon: DollarSign, color: "bg-teal-100", iconColor: "text-teal-600", status: "inactive" as const, desc: "Boletos e PIX (Brasil)" },
+    { name: "Outros", icon: RefreshCw, color: "bg-gray-100", iconColor: "text-gray-600", status: "inactive" as const, desc: "Futuras integrações de pagamento" },
+  ];
+
+  return (
+    <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+      {paymentCards.map((p) => (
+        <Card key={p.name}>
+          <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-2">
+            <div className="flex items-center gap-3">
+              <div className={`flex h-10 w-10 items-center justify-center rounded-lg ${p.color}`}>
+                <p.icon className={`h-5 w-5 ${p.iconColor}`} />
+              </div>
+              <div>
+                <CardTitle className="text-base">{p.name}</CardTitle>
+                <CardDescription>{p.desc}</CardDescription>
+              </div>
+            </div>
+            <StatusBadge status={p.status} />
+          </CardHeader>
+          <CardContent className="text-sm">
+            {p.status === "inactive" ? (
+              <p className="text-muted-foreground">Integração ainda não disponível.</p>
+            ) : (
+              <div className="space-y-2">
+                <p className="text-muted-foreground">Configuração pendente. Ative o Stripe para começar a receber pagamentos.</p>
+                <Button size="sm" variant="outline" className="w-full">Configurar</Button>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      ))}
+    </div>
+  );
+}
+
+// ─── Main Page ───────────────────────────────────────────────────────────────
+
+export default function IntegracoesPage() {
+  return (
+    <div className="space-y-6">
+      <PageHeader title="Central de Integrações" description="Gerencie todas as integrações e conectores do sistema" />
+
+      <Tabs defaultValue="crm" className="w-full">
+        <TabsList className="grid w-full grid-cols-3">
+          <TabsTrigger value="crm" className="flex items-center gap-2">
+            <Plug className="h-4 w-4" />
+            CRM
+          </TabsTrigger>
+          <TabsTrigger value="omnichannel" className="flex items-center gap-2">
+            <MessageCircle className="h-4 w-4" />
+            Omni Channel
+          </TabsTrigger>
+          <TabsTrigger value="pagamentos" className="flex items-center gap-2">
+            <CreditCard className="h-4 w-4" />
+            Pagamentos
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="crm"><CRMTab /></TabsContent>
+        <TabsContent value="omnichannel"><OmniChannelTab /></TabsContent>
+        <TabsContent value="pagamentos"><PagamentosTab /></TabsContent>
+      </Tabs>
+    </div>
+  );
+}
