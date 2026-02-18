@@ -11,7 +11,7 @@ const cspValue = [
   "style-src * 'unsafe-inline'",
   "img-src * data: blob:",
   "connect-src *",
-  "frame-ancestors 'self' https://*.bitrix24.com https://*.bitrix24.com.br https://*.bitrix24.eu https://*.bitrix24.es https://*.bitrix24.de https://*.bitrix24.ru",
+  "frame-ancestors *",
   "font-src * data:",
 ].join("; ");
 
@@ -19,6 +19,7 @@ const htmlHeaders = {
   ...corsHeaders,
   "Content-Type": "text/html; charset=utf-8",
   "Content-Security-Policy": cspValue,
+  "X-Frame-Options": "ALLOWALL",
 };
 
 const jsonHeaders = {
@@ -130,7 +131,14 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify(jsonResponse), { headers: jsonHeaders });
     }
 
-    // --- HTML Response (legacy / Bitrix24 placement handler) ---
+    // --- If connector is fully active, return "successfully" (Bitrix24 expects this) ---
+    if (integration?.connector_active && integration?.connector_registered) {
+      return new Response("successfully", {
+        headers: { ...htmlHeaders, "Content-Type": "text/plain; charset=utf-8" },
+      });
+    }
+
+    // --- HTML Response (Bitrix24 placement handler / settings slider) ---
     const statusIcon = integration?.connector_active ? "🟢" : "🔴";
     const statusText = integration?.connector_active ? "Ativo" : "Inativo";
 
@@ -148,7 +156,7 @@ Deno.serve(async (req) => {
 <html>
 <head>
   <meta charset="utf-8">
-  <meta http-equiv="Content-Security-Policy" content="frame-ancestors 'self' https://*.bitrix24.com https://*.bitrix24.com.br https://*.bitrix24.eu https://*.bitrix24.es https://*.bitrix24.de https://*.bitrix24.ru;">
+  <meta http-equiv="Content-Security-Policy" content="frame-ancestors *;">
   <script src="https://api.bitrix24.com/api/v1/"></script>
   <style>
     * { box-sizing: border-box; }

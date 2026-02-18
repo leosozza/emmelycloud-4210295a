@@ -11,7 +11,7 @@ const cspValue = [
   "style-src * 'unsafe-inline'",
   "img-src * data: blob:",
   "connect-src *",
-  "frame-ancestors 'self' https://*.bitrix24.com https://*.bitrix24.com.br https://*.bitrix24.eu https://*.bitrix24.es https://*.bitrix24.de https://*.bitrix24.ru",
+  "frame-ancestors *",
   "font-src * data:",
 ].join("; ");
 
@@ -19,6 +19,7 @@ const htmlHeaders = {
   ...corsHeaders,
   "Content-Type": "text/html; charset=utf-8",
   "Content-Security-Policy": cspValue,
+  "X-Frame-Options": "ALLOWALL",
 };
 
 const jsonHeaders = {
