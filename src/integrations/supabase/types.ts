@@ -14,6 +14,199 @@ export type Database = {
   }
   public: {
     Tables: {
+      agent_knowledge_documents: {
+        Row: {
+          agent_id: string
+          created_at: string | null
+          document_id: string
+          id: string
+        }
+        Insert: {
+          agent_id: string
+          created_at?: string | null
+          document_id: string
+          id?: string
+        }
+        Update: {
+          agent_id?: string
+          created_at?: string | null
+          document_id?: string
+          id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "agent_knowledge_documents_agent_id_fkey"
+            columns: ["agent_id"]
+            isOneToOne: false
+            referencedRelation: "ai_agents"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "agent_knowledge_documents_document_id_fkey"
+            columns: ["document_id"]
+            isOneToOne: false
+            referencedRelation: "knowledge_documents"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      agent_training_history: {
+        Row: {
+          agent_id: string
+          applied_at: string | null
+          generated_rule: string
+          id: string
+          instruction: string
+          previous_prompt: string | null
+          reverted_at: string | null
+          trained_by: string | null
+        }
+        Insert: {
+          agent_id: string
+          applied_at?: string | null
+          generated_rule: string
+          id?: string
+          instruction: string
+          previous_prompt?: string | null
+          reverted_at?: string | null
+          trained_by?: string | null
+        }
+        Update: {
+          agent_id?: string
+          applied_at?: string | null
+          generated_rule?: string
+          id?: string
+          instruction?: string
+          previous_prompt?: string | null
+          reverted_at?: string | null
+          trained_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "agent_training_history_agent_id_fkey"
+            columns: ["agent_id"]
+            isOneToOne: false
+            referencedRelation: "ai_agents"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      ai_agents: {
+        Row: {
+          agent_type: string
+          ai_api_key_credential: string | null
+          ai_base_url: string | null
+          ai_model: string
+          ai_provider: string
+          avatar_url: string | null
+          created_at: string
+          default_flow_id: string | null
+          description: string | null
+          fallback_message: string | null
+          id: string
+          is_active: boolean
+          is_default: boolean
+          name: string
+          system_prompt: string
+          temperature: number
+          updated_at: string
+          welcome_message: string | null
+        }
+        Insert: {
+          agent_type?: string
+          ai_api_key_credential?: string | null
+          ai_base_url?: string | null
+          ai_model?: string
+          ai_provider?: string
+          avatar_url?: string | null
+          created_at?: string
+          default_flow_id?: string | null
+          description?: string | null
+          fallback_message?: string | null
+          id?: string
+          is_active?: boolean
+          is_default?: boolean
+          name: string
+          system_prompt?: string
+          temperature?: number
+          updated_at?: string
+          welcome_message?: string | null
+        }
+        Update: {
+          agent_type?: string
+          ai_api_key_credential?: string | null
+          ai_base_url?: string | null
+          ai_model?: string
+          ai_provider?: string
+          avatar_url?: string | null
+          created_at?: string
+          default_flow_id?: string | null
+          description?: string | null
+          fallback_message?: string | null
+          id?: string
+          is_active?: boolean
+          is_default?: boolean
+          name?: string
+          system_prompt?: string
+          temperature?: number
+          updated_at?: string
+          welcome_message?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ai_agents_default_flow_id_fkey"
+            columns: ["default_flow_id"]
+            isOneToOne: false
+            referencedRelation: "flows"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      ai_providers: {
+        Row: {
+          auth_header: string | null
+          auth_prefix: string | null
+          available_models: Json | null
+          base_url: string
+          created_at: string
+          credential_key: string | null
+          id: string
+          is_active: boolean
+          is_native: boolean
+          name: string
+          slug: string
+          updated_at: string
+        }
+        Insert: {
+          auth_header?: string | null
+          auth_prefix?: string | null
+          available_models?: Json | null
+          base_url: string
+          created_at?: string
+          credential_key?: string | null
+          id?: string
+          is_active?: boolean
+          is_native?: boolean
+          name: string
+          slug: string
+          updated_at?: string
+        }
+        Update: {
+          auth_header?: string | null
+          auth_prefix?: string | null
+          available_models?: Json | null
+          base_url?: string
+          created_at?: string
+          credential_key?: string | null
+          id?: string
+          is_active?: boolean
+          is_native?: boolean
+          name?: string
+          slug?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       bitrix24_channel_mappings: {
         Row: {
           channel: string
@@ -477,6 +670,92 @@ export type Database = {
           },
         ]
       }
+      flow_history: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          description: string | null
+          edges: Json
+          flow_id: string
+          id: string
+          nodes: Json
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          edges?: Json
+          flow_id: string
+          id?: string
+          nodes?: Json
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          edges?: Json
+          flow_id?: string
+          id?: string
+          nodes?: Json
+        }
+        Relationships: [
+          {
+            foreignKeyName: "flow_history_flow_id_fkey"
+            columns: ["flow_id"]
+            isOneToOne: false
+            referencedRelation: "flows"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      flows: {
+        Row: {
+          created_at: string
+          description: string | null
+          edges: Json
+          id: string
+          is_active: boolean
+          keywords: string[] | null
+          name: string
+          nodes: Json
+          priority: number | null
+          trigger_type: string
+          trigger_value: string | null
+          updated_at: string
+          variables: Json | null
+        }
+        Insert: {
+          created_at?: string
+          description?: string | null
+          edges?: Json
+          id?: string
+          is_active?: boolean
+          keywords?: string[] | null
+          name: string
+          nodes?: Json
+          priority?: number | null
+          trigger_type?: string
+          trigger_value?: string | null
+          updated_at?: string
+          variables?: Json | null
+        }
+        Update: {
+          created_at?: string
+          description?: string | null
+          edges?: Json
+          id?: string
+          is_active?: boolean
+          keywords?: string[] | null
+          name?: string
+          nodes?: Json
+          priority?: number | null
+          trigger_type?: string
+          trigger_value?: string | null
+          updated_at?: string
+          variables?: Json | null
+        }
+        Relationships: []
+      }
       integration_credentials: {
         Row: {
           created_at: string
@@ -500,6 +779,89 @@ export type Database = {
           credential_value?: string
           id?: string
           provider?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      knowledge_chunks: {
+        Row: {
+          chunk_index: number
+          content: string
+          created_at: string
+          document_id: string
+          id: string
+          metadata: Json | null
+          tokens_count: number | null
+        }
+        Insert: {
+          chunk_index?: number
+          content: string
+          created_at?: string
+          document_id: string
+          id?: string
+          metadata?: Json | null
+          tokens_count?: number | null
+        }
+        Update: {
+          chunk_index?: number
+          content?: string
+          created_at?: string
+          document_id?: string
+          id?: string
+          metadata?: Json | null
+          tokens_count?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "knowledge_chunks_document_id_fkey"
+            columns: ["document_id"]
+            isOneToOne: false
+            referencedRelation: "knowledge_documents"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      knowledge_documents: {
+        Row: {
+          chunks_count: number | null
+          content: string | null
+          created_at: string
+          file_path: string | null
+          file_type: string | null
+          id: string
+          metadata: Json | null
+          source_type: string
+          source_url: string | null
+          status: string
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          chunks_count?: number | null
+          content?: string | null
+          created_at?: string
+          file_path?: string | null
+          file_type?: string | null
+          id?: string
+          metadata?: Json | null
+          source_type?: string
+          source_url?: string | null
+          status?: string
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          chunks_count?: number | null
+          content?: string | null
+          created_at?: string
+          file_path?: string | null
+          file_type?: string | null
+          id?: string
+          metadata?: Json | null
+          source_type?: string
+          source_url?: string | null
+          status?: string
+          title?: string
           updated_at?: string
         }
         Relationships: []

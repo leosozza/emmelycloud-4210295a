@@ -20,6 +20,10 @@ import CarteiraPage from "./pages/Carteira";
 import AtendimentoPage from "./pages/Atendimento";
 import RoadmapPage from "./pages/Roadmap";
 import IntegracoesPage from "./pages/Integracoes";
+import AgentesPage from "./pages/Agentes";
+import TrainingPage from "./pages/Training";
+import FlowsPage from "./pages/Flows";
+import PlaygroundIAPage from "./pages/PlaygroundIA";
 import Privacy from "./pages/Privacy";
 import Terms from "./pages/Terms";
 import DataDeletion from "./pages/DataDeletion";
@@ -56,6 +60,10 @@ const App = () => (
             <Route path="/atendimento" element={<AtendimentoPage />} />
             <Route path="/roadmap" element={<RoadmapPage />} />
             <Route path="/integracoes" element={<IntegracoesPage />} />
+            <Route path="/agentes" element={<AgentesPage />} />
+            <Route path="/training" element={<TrainingPage />} />
+            <Route path="/flows" element={<FlowsPage />} />
+            <Route path="/playground" element={<PlaygroundIAPage />} />
           </Route>
           <Route path="*" element={<NotFound />} />
         </Routes>
