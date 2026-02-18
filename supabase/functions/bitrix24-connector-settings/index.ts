@@ -21,6 +21,11 @@ const htmlHeaders = {
   "Content-Security-Policy": cspValue,
 };
 
+const jsonHeaders = {
+  ...corsHeaders,
+  "Content-Type": "application/json",
+};
+
 function parseBody(bodyText: string, contentType: string): Record<string, any> {
   if (!bodyText) return {};
   if (contentType.includes("application/json")) return JSON.parse(bodyText);
@@ -53,16 +58,28 @@ Deno.serve(async (req) => {
   );
 
   try {
-    const contentType = req.headers.get("content-type") || "";
-    const bodyText = await req.text();
-    const data = parseBody(bodyText, contentType);
+    const url = new URL(req.url);
+    const formatParam = url.searchParams.get("format");
+    const memberIdParam = url.searchParams.get("member_id");
+    const acceptHeader = req.headers.get("accept") || "";
 
-    console.log("[SETTINGS] Payload:", JSON.stringify(data).substring(0, 300));
+    // JSON mode: GET with format=json or Accept: application/json
+    const wantsJson = formatParam === "json" || acceptHeader.includes("application/json") || req.method === "GET";
 
-    const memberId = extractMemberId(data);
+    let memberId: string | null = memberIdParam;
+
+    // For POST requests, parse the body
+    if (req.method === "POST") {
+      const contentType = req.headers.get("content-type") || "";
+      const bodyText = await req.text();
+      const data = parseBody(bodyText, contentType);
+      console.log("[SETTINGS] Payload:", JSON.stringify(data).substring(0, 300));
+      if (!memberId) memberId = extractMemberId(data);
+    }
 
     let integration = null;
     let mappings: any[] = [];
+    let recentLogs: any[] = [];
 
     if (memberId) {
       const { data: intData } = await supabase
@@ -79,9 +96,41 @@ Deno.serve(async (req) => {
           .eq("integration_id", integration.id)
           .eq("is_active", true);
         mappings = mapData || [];
+
+        // Fetch recent debug logs
+        const { data: logData } = await supabase
+          .from("bitrix24_debug_logs")
+          .select("event_type, direction, created_at, error")
+          .eq("integration_id", integration.id)
+          .order("created_at", { ascending: false })
+          .limit(20);
+        recentLogs = logData || [];
       }
     }
 
+    // --- JSON Response ---
+    if (wantsJson && req.method === "GET") {
+      const jsonResponse = {
+        integration: integration ? {
+          id: integration.id,
+          member_id: integration.member_id,
+          domain: integration.domain,
+          connector_registered: integration.connector_registered,
+          connector_active: integration.connector_active,
+          updated_at: integration.updated_at,
+        } : null,
+        channels: mappings.map((m: any) => ({
+          channel: m.channel,
+          line_id: m.line_id,
+          line_name: m.line_name,
+          is_active: m.is_active,
+        })),
+        recent_logs: recentLogs,
+      };
+      return new Response(JSON.stringify(jsonResponse), { headers: jsonHeaders });
+    }
+
+    // --- HTML Response (legacy / Bitrix24 placement handler) ---
     const statusIcon = integration?.connector_active ? "🟢" : "🔴";
     const statusText = integration?.connector_active ? "Ativo" : "Inativo";
 

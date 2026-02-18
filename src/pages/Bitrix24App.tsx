@@ -1,12 +1,40 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 
 type AppStatus = "loading" | "installing" | "installed" | "ready" | "error";
+type TabId = "connector" | "conversas" | "pagamentos" | "automacoes";
+
+interface IntegrationData {
+  integration: {
+    id: string;
+    member_id: string;
+    domain: string;
+    connector_registered: boolean;
+    connector_active: boolean;
+    updated_at: string;
+  } | null;
+  channels: Array<{
+    channel: string;
+    line_id: number;
+    line_name: string;
+    is_active: boolean;
+  }>;
+  recent_logs: Array<{
+    event_type: string;
+    direction: string;
+    created_at: string;
+    error: string | null;
+  }>;
+}
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 
 const Bitrix24App = () => {
   const [status, setStatus] = useState<AppStatus>("loading");
   const [errorMsg, setErrorMsg] = useState("");
+  const [activeTab, setActiveTab] = useState<TabId>("connector");
+  const [memberId, setMemberId] = useState<string | null>(null);
+  const [integrationData, setIntegrationData] = useState<IntegrationData | null>(null);
+  const [loadingData, setLoadingData] = useState(false);
 
   useEffect(() => {
     const script = document.createElement("script");
@@ -16,9 +44,7 @@ const Bitrix24App = () => {
         // @ts-ignore
         if (window.BX24) {
           // @ts-ignore
-          window.BX24.init(() => {
-            handleBX24Ready();
-          });
+          window.BX24.init(() => handleBX24Ready());
         } else {
           setStatus("ready");
         }
@@ -35,16 +61,12 @@ const Bitrix24App = () => {
     try {
       // @ts-ignore
       const auth = window.BX24.getAuth();
-      
       if (!auth || !auth.access_token) {
-        console.log("[BITRIX24] No auth available, showing ready state");
         setStatus("ready");
         return;
       }
 
-      console.log("[BITRIX24] Auth received, member_id:", auth.member_id);
-
-      // Check if already installed by calling the edge function
+      setMemberId(auth.member_id);
       setStatus("installing");
 
       const response = await fetch(`${SUPABASE_URL}/functions/v1/bitrix24-install`, {
@@ -63,14 +85,8 @@ const Bitrix24App = () => {
       });
 
       if (!response.ok) {
-        const text = await response.text();
-        console.error("[BITRIX24] Install error:", text);
-        // Don't block UI on error - still show as connected
-        setStatus("ready");
-        return;
+        console.error("[BITRIX24] Install error:", await response.text());
       }
-
-      console.log("[BITRIX24] Install/sync completed successfully");
 
       // Call installFinish to notify Bitrix24
       try {
@@ -78,10 +94,9 @@ const Bitrix24App = () => {
         window.BX24.installFinish();
       } catch {}
 
-      setStatus("installed");
-
-      // After 2 seconds, switch to ready state
-      setTimeout(() => setStatus("ready"), 2000);
+      setStatus("ready");
+      // Fetch integration data
+      fetchIntegrationData(auth.member_id);
     } catch (err) {
       console.error("[BITRIX24] Error:", err);
       setErrorMsg(String(err));
@@ -89,6 +104,54 @@ const Bitrix24App = () => {
     }
   }
 
+  const fetchIntegrationData = useCallback(async (mid: string) => {
+    setLoadingData(true);
+    try {
+      const res = await fetch(
+        `${SUPABASE_URL}/functions/v1/bitrix24-connector-settings?member_id=${mid}&format=json`
+      );
+      if (res.ok) {
+        const data = await res.json();
+        setIntegrationData(data);
+      }
+    } catch (e) {
+      console.error("[BITRIX24] Fetch status error:", e);
+    } finally {
+      setLoadingData(false);
+    }
+  }, []);
+
+  const handleResync = async () => {
+    if (!memberId) return;
+    // @ts-ignore
+    const auth = window.BX24?.getAuth?.();
+    if (!auth) return;
+
+    setLoadingData(true);
+    try {
+      await fetch(`${SUPABASE_URL}/functions/v1/bitrix24-install`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          auth: {
+            access_token: auth.access_token,
+            refresh_token: auth.refresh_token,
+            member_id: auth.member_id,
+            domain: auth.domain,
+            expires_in: String(auth.expires || 3600),
+          },
+          member_id: auth.member_id,
+        }),
+      });
+      await fetchIntegrationData(memberId);
+    } catch (e) {
+      console.error("[BITRIX24] Resync error:", e);
+    } finally {
+      setLoadingData(false);
+    }
+  };
+
+  // --- Loading / Error states ---
   if (status === "loading" || status === "installing") {
     return (
       <div style={containerStyle}>
@@ -98,19 +161,6 @@ const Bitrix24App = () => {
             {status === "installing" ? "Configurando Emmely Cloud..." : "Carregando..."}
           </h2>
           <p style={subtitleStyle}>Aguarde um momento...</p>
-        </div>
-      </div>
-    );
-  }
-
-  if (status === "installed") {
-    return (
-      <div style={containerStyle}>
-        <div style={cardStyle}>
-          <div style={{ fontSize: 48, marginBottom: 16 }}>✅</div>
-          <h2 style={titleStyle}>Emmely Cloud Instalado!</h2>
-          <p style={subtitleStyle}>Conector WhatsApp & Instagram configurado com sucesso.</p>
-          <p style={subtitleStyle}>Acesse o Contact Center para ativar os canais.</p>
         </div>
       </div>
     );
@@ -128,21 +178,157 @@ const Bitrix24App = () => {
     );
   }
 
-  // Ready state - main app view
+  const tabs: { id: TabId; label: string; icon: string }[] = [
+    { id: "connector", label: "Conector", icon: "🔗" },
+    { id: "conversas", label: "Conversas", icon: "💬" },
+    { id: "pagamentos", label: "Pagamentos", icon: "💳" },
+    { id: "automacoes", label: "Automações", icon: "⚡" },
+  ];
+
+  const integration = integrationData?.integration;
+  const channels = integrationData?.channels || [];
+  const logs = integrationData?.recent_logs || [];
+
   return (
     <div style={pageStyle}>
+      {/* Header */}
       <div style={headerStyle}>
         <div style={logoStyle}>E</div>
-        <div>
+        <div style={{ flex: 1 }}>
           <h2 style={{ margin: 0, fontSize: 18 }}>Emmely Cloud</h2>
-          <span style={badgeStyle}>🟢 Conectado</span>
+          <span style={{
+            ...badgeStyle,
+            background: integration?.connector_active ? "#e8f5e9" : "#ffeaea",
+          }}>
+            {integration?.connector_active ? "🟢 Ativo" : "🔴 Inativo"}
+          </span>
         </div>
       </div>
 
-      <p style={{ fontSize: 14, color: "#666", marginBottom: 20 }}>
-        A integração Emmely Cloud está ativa. As mensagens de WhatsApp e Instagram
-        são encaminhadas automaticamente para o Contact Center do Bitrix24.
-      </p>
+      {/* Tabs */}
+      <div style={tabBarStyle}>
+        {tabs.map((tab) => (
+          <button
+            key={tab.id}
+            onClick={() => setActiveTab(tab.id)}
+            style={{
+              ...tabStyle,
+              ...(activeTab === tab.id ? tabActiveStyle : {}),
+            }}
+          >
+            {tab.icon} {tab.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Tab Content */}
+      <div style={{ marginTop: 20 }}>
+        {activeTab === "connector" && (
+          <ConnectorTab
+            integration={integration}
+            channels={channels}
+            logs={logs}
+            loading={loadingData}
+            onResync={handleResync}
+          />
+        )}
+        {activeTab === "conversas" && <PlaceholderTab title="Conversas" description="Lista de conversas recentes do Emmely Cloud." icon="💬" />}
+        {activeTab === "pagamentos" && <PlaceholderTab title="Pagamentos" description="Resumo de pagamentos pendentes e pagos via Stripe." icon="💳" />}
+        {activeTab === "automacoes" && <PlaceholderTab title="Automações" description="Regras de follow-up e alertas automáticos." icon="⚡" />}
+      </div>
+    </div>
+  );
+};
+
+// --- Connector Tab ---
+function ConnectorTab({ integration, channels, logs, loading, onResync }: {
+  integration: IntegrationData["integration"];
+  channels: IntegrationData["channels"];
+  logs: IntegrationData["recent_logs"];
+  loading: boolean;
+  onResync: () => void;
+}) {
+  return (
+    <div>
+      {/* Status Card */}
+      <div style={sectionStyle}>
+        <h3 style={sectionTitleStyle}>Status da Integração</h3>
+        {integration ? (
+          <div>
+            <div style={rowStyle}>
+              <span style={labelStyle}>Portal:</span>
+              <span>{integration.domain || integration.member_id}</span>
+            </div>
+            <div style={rowStyle}>
+              <span style={labelStyle}>Conector:</span>
+              <span>{integration.connector_registered ? "✅ Registado" : "❌ Não registado"}</span>
+            </div>
+            <div style={rowStyle}>
+              <span style={labelStyle}>Status:</span>
+              <span>{integration.connector_active ? "🟢 Ativo" : "🔴 Inativo"}</span>
+            </div>
+            <div style={rowStyle}>
+              <span style={labelStyle}>Última atualização:</span>
+              <span>{new Date(integration.updated_at).toLocaleString()}</span>
+            </div>
+          </div>
+        ) : (
+          <p style={{ color: "#999", fontSize: 14 }}>Integração não encontrada. Reinstale o aplicativo.</p>
+        )}
+      </div>
+
+      {/* Channels */}
+      <div style={sectionStyle}>
+        <h3 style={sectionTitleStyle}>Canais Configurados</h3>
+        {channels.length > 0 ? (
+          <table style={tableStyle}>
+            <thead>
+              <tr>
+                <th style={thStyle}>Canal</th>
+                <th style={thStyle}>Open Line</th>
+                <th style={thStyle}>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {channels.map((ch, i) => (
+                <tr key={i}>
+                  <td style={tdStyle}>{ch.channel === "whatsapp" ? "📱 WhatsApp" : "📸 Instagram"}</td>
+                  <td style={tdStyle}>{ch.line_name || `Line ${ch.line_id}`}</td>
+                  <td style={tdStyle}>{ch.is_active ? "✅" : "❌"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        ) : (
+          <p style={{ color: "#999", fontSize: 14 }}>Nenhum canal mapeado ainda.</p>
+        )}
+      </div>
+
+      {/* Re-sync Button */}
+      <button onClick={onResync} disabled={loading} style={btnStyle}>
+        {loading ? "⏳ Sincronizando..." : "🔄 Re-sincronizar Conector"}
+      </button>
+
+      {/* Recent Logs */}
+      {logs.length > 0 && (
+        <div style={{ ...sectionStyle, marginTop: 16 }}>
+          <h3 style={sectionTitleStyle}>Últimos Eventos</h3>
+          <div style={{ maxHeight: 200, overflowY: "auto" }}>
+            {logs.map((log, i) => (
+              <div key={i} style={{
+                padding: "6px 10px", fontSize: 12, borderBottom: "1px solid #f0f0f0",
+                display: "flex", justifyContent: "space-between", alignItems: "center",
+              }}>
+                <span>
+                  {log.direction === "inbound" ? "📥" : "📤"} {log.event_type}
+                  {log.error && <span style={{ color: "#e74c3c", marginLeft: 6 }}>⚠️ {log.error}</span>}
+                </span>
+                <span style={{ color: "#999" }}>{new Date(log.created_at).toLocaleTimeString()}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div style={infoBoxStyle}>
         ℹ️ Para gerenciar conversas, acesse o <strong>Contact Center</strong> do Bitrix24
@@ -150,8 +336,21 @@ const Bitrix24App = () => {
       </div>
     </div>
   );
-};
+}
 
+// --- Placeholder Tab ---
+function PlaceholderTab({ title, description, icon }: { title: string; description: string; icon: string }) {
+  return (
+    <div style={{ textAlign: "center", padding: 40 }}>
+      <div style={{ fontSize: 48, marginBottom: 16 }}>{icon}</div>
+      <h3 style={{ color: "#333", marginBottom: 8 }}>{title}</h3>
+      <p style={{ color: "#999", fontSize: 14 }}>{description}</p>
+      <p style={{ color: "#bbb", fontSize: 13, marginTop: 12 }}>Em breve...</p>
+    </div>
+  );
+}
+
+// --- Inline Styles (no Tailwind in Bitrix24 iframe) ---
 const containerStyle: React.CSSProperties = {
   fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
   display: "flex", alignItems: "center", justifyContent: "center",
@@ -165,11 +364,11 @@ const titleStyle: React.CSSProperties = { color: "#333", marginBottom: 8, fontSi
 const subtitleStyle: React.CSSProperties = { color: "#666", fontSize: 14 };
 const pageStyle: React.CSSProperties = {
   fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
-  margin: 0, padding: 24, background: "#fff", color: "#333", minHeight: "100vh",
+  margin: 0, padding: 20, background: "#fff", color: "#333", minHeight: "100vh",
 };
 const headerStyle: React.CSSProperties = {
   display: "flex", alignItems: "center", gap: 12,
-  marginBottom: 24, paddingBottom: 16, borderBottom: "1px solid #e5e5e5",
+  marginBottom: 16, paddingBottom: 12, borderBottom: "1px solid #e5e5e5",
 };
 const logoStyle: React.CSSProperties = {
   width: 40, height: 40, background: "#25D366", borderRadius: 10,
@@ -178,11 +377,43 @@ const logoStyle: React.CSSProperties = {
 };
 const badgeStyle: React.CSSProperties = {
   display: "inline-flex", alignItems: "center", gap: 6,
-  padding: "4px 12px", borderRadius: 20, fontSize: 13, background: "#e8f5e9",
+  padding: "2px 10px", borderRadius: 20, fontSize: 12, marginTop: 2,
+};
+const tabBarStyle: React.CSSProperties = {
+  display: "flex", gap: 4, borderBottom: "2px solid #e5e5e5", paddingBottom: 0,
+};
+const tabStyle: React.CSSProperties = {
+  padding: "8px 16px", border: "none", background: "transparent", cursor: "pointer",
+  fontSize: 13, color: "#666", borderBottom: "2px solid transparent",
+  marginBottom: -2, transition: "all 0.2s",
+};
+const tabActiveStyle: React.CSSProperties = {
+  color: "#25D366", borderBottomColor: "#25D366", fontWeight: 600,
+};
+const sectionStyle: React.CSSProperties = {
+  background: "#fafafa", borderRadius: 8, padding: 16, marginBottom: 12,
+  border: "1px solid #eee",
+};
+const sectionTitleStyle: React.CSSProperties = {
+  fontSize: 14, fontWeight: 600, marginTop: 0, marginBottom: 12, color: "#333",
+};
+const rowStyle: React.CSSProperties = {
+  display: "flex", justifyContent: "space-between", padding: "4px 0", fontSize: 13,
+};
+const labelStyle: React.CSSProperties = { color: "#888", fontWeight: 500 };
+const tableStyle: React.CSSProperties = { width: "100%", borderCollapse: "collapse", fontSize: 13 };
+const thStyle: React.CSSProperties = {
+  textAlign: "left", padding: 8, borderBottom: "2px solid #e5e5e5",
+  fontSize: 12, color: "#666", textTransform: "uppercase",
+};
+const tdStyle: React.CSSProperties = { padding: 8, borderBottom: "1px solid #eee" };
+const btnStyle: React.CSSProperties = {
+  width: "100%", padding: "10px 16px", background: "#25D366", color: "white",
+  border: "none", borderRadius: 8, cursor: "pointer", fontSize: 14, fontWeight: 600,
 };
 const infoBoxStyle: React.CSSProperties = {
   background: "#f0f7ff", border: "1px solid #cce0ff", borderRadius: 8,
-  padding: "12px 16px", fontSize: 13, color: "#1a5276",
+  padding: "12px 16px", fontSize: 13, color: "#1a5276", marginTop: 16,
 };
 
 export default Bitrix24App;
