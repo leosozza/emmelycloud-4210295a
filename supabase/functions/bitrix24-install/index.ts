@@ -143,12 +143,17 @@ Deno.serve(async (req) => {
     console.log("[INSTALL] Received payload:", JSON.stringify(data).substring(0, 500));
 
     const auth = data.auth || {};
+    // Bitrix24 sends flat uppercase keys (AUTH_ID, REFRESH_ID) or nested auth object
     const memberId = auth.member_id || data.member_id;
-    const accessToken = auth.access_token;
-    const refreshToken = auth.refresh_token;
+    const accessToken = auth.access_token || data.AUTH_ID;
+    const refreshToken = auth.refresh_token || data.REFRESH_ID;
     const applicationToken = auth.application_token || data.application_token || data.APP_TOKEN;
     const domain = extractDomain(data, req);
-    const expiresIn = parseInt(auth.expires_in || "3600");
+    const expiresIn = parseInt(auth.expires_in || data.AUTH_EXPIRES || "3600");
+
+    // For flat keys, build client_endpoint from SERVER_ENDPOINT or domain
+    // Bitrix24 local apps use SERVER_ENDPOINT for REST calls
+    const serverEndpoint = data.SERVER_ENDPOINT;
 
     if (!memberId || !accessToken) {
       await debugLog(supabase, null, "install_error", "inbound", data, "Missing member_id or access_token");
@@ -158,8 +163,11 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Build client_endpoint
+    // Build client_endpoint - priority: auth.client_endpoint > SERVER_ENDPOINT > domain-based
     let clientEndpoint = auth.client_endpoint;
+    if (!clientEndpoint && serverEndpoint) {
+      clientEndpoint = serverEndpoint;
+    }
     if (!clientEndpoint && domain) {
       clientEndpoint = `https://${domain}/rest/`;
     }
