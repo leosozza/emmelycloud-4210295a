@@ -241,33 +241,8 @@ Deno.serve(async (req) => {
 
       const connectorRegistered = !regResult.error || regResult.error === "CONNECTOR_ALREADY_EXISTS";
 
-      // 2. Activate on all Open Lines
-      let connectorActive = false;
-      const linesResult = await callBitrix(clientEndpoint, accessToken, "imopenlines.config.list.get", {});
-      const lines = linesResult.result || [];
-
-      for (const line of lines) {
-        const lineId = line.ID || line.id;
-        await callBitrix(clientEndpoint, accessToken, "imconnector.activate", {
-          CONNECTOR: CONNECTOR_ID,
-          LINE: lineId,
-          ACTIVE: 1,
-        });
-
-        // Save channel mapping
-        await supabase.from("bitrix24_channel_mappings").upsert(
-          {
-            integration_id: integrationId,
-            channel: "whatsapp",
-            line_id: lineId,
-            line_name: line.LINE_NAME || line.TITLE || `Line ${lineId}`,
-            is_active: true,
-          },
-          { onConflict: "integration_id,channel,line_id", ignoreDuplicates: false }
-        );
-
-        connectorActive = true;
-      }
+      // 2. Do NOT auto-activate on lines — user must manually enable in Contact Center
+      const connectorActive = false;
 
       // 3. Bind events
       const eventsUrl = `${supabaseUrl}/functions/v1/bitrix24-events`;
@@ -304,7 +279,6 @@ Deno.serve(async (req) => {
       await debugLog(supabase, integrationId, "connector_setup", "outbound", {
         registered: connectorRegistered,
         active: connectorActive,
-        linesCount: lines.length,
         eventsBound: events.length,
       });
     } catch (connectorError) {
