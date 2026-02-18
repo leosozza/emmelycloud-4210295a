@@ -1,181 +1,96 @@
 
+# Aplicacao Bitrix24 Multi-Funcoes - Conector WhatsApp/Instagram
 
-# Plano: Integração Bitrix24 - Criar Aplicação
+## Situacao Atual
 
-## Objetivo
-Criar uma aplicação Bitrix24 completa que funcione como conector, permitindo:
-- Instalação via OAuth no Bitrix24 (local ou Marketplace)
-- Registro automático de conector de mensagens (WhatsApp/Instagram via Callbell)
-- Fluxo bidirecional de mensagens entre Emmely Cloud e Bitrix24
-- Token refresh automático
-- Robots de automação BizProc (futuro)
+**Backend esta a funcionar** - O conector esta registado e ativo no Bitrix24 (connector_registered: true, connector_active: true). Os eventos estao vinculados. O problema e apenas visual: o iframe nao finaliza a instalacao porque o Bitrix24 bloqueia o dominio do backend no iframe (X-Frame-Options).
 
-## Fase 1 - Fundação (o que vamos implementar agora)
+## Problema da Instalacao
 
-### 1.1 Tabela `bitrix24_integrations`
-Armazenar credenciais OAuth, config do portal e estado do conector.
+O Bitrix24 carrega o "Install URL" dentro de um iframe. Se esse URL aponta para o backend, o browser bloqueia porque o backend adiciona `X-Frame-Options: SAMEORIGIN` automaticamente. A solucao definitiva e servir TUDO pelo frontend (`emmelycloud.lovable.app/bitrix24`).
 
-```text
-bitrix24_integrations
-+--------------------+-------------------+
-| Campo              | Tipo              |
-+--------------------+-------------------+
-| id                 | UUID PK           |
-| member_id          | TEXT UNIQUE       | -- ID unico do portal
-| domain             | TEXT              |
-| client_endpoint    | TEXT              |
-| access_token       | TEXT              |
-| refresh_token      | TEXT              |
-| expires_at         | TIMESTAMPTZ       |
-| application_token  | TEXT              | -- para validar webhooks
-| connector_registered | BOOLEAN         |
-| connector_active   | BOOLEAN           |
-| config             | JSONB             | -- dados extras
-| created_at         | TIMESTAMPTZ       |
-| updated_at         | TIMESTAMPTZ       |
-+--------------------+-------------------+
-```
+## Plano de Implementacao
 
-### 1.2 Tabela `bitrix24_channel_mappings`
-Mapear canais (WhatsApp/IG) para Open Lines do Bitrix24.
+### Passo 1 - Corrigir o fluxo de instalacao
 
-```text
-bitrix24_channel_mappings
-+--------------------+-------------------+
-| Campo              | Tipo              |
-+--------------------+-------------------+
-| id                 | UUID PK           |
-| integration_id     | UUID FK           |
-| channel            | TEXT              | -- whatsapp, instagram
-| line_id            | INTEGER           |
-| line_name          | TEXT              |
-| is_active          | BOOLEAN           |
-| created_at         | TIMESTAMPTZ       |
-| updated_at         | TIMESTAMPTZ       |
-+--------------------+-------------------+
-```
+Atualizar `src/pages/Bitrix24App.tsx` para:
+- Detetar automaticamente se e a primeira vez (instalacao) via `BX24.getAuth()`
+- Enviar os tokens ao backend via `fetch()` em background (sem iframe do backend)
+- Chamar `BX24.installFinish()` diretamente do frontend apos o fetch ter sucesso
+- Nunca carregar o dominio do backend dentro do iframe
 
-### 1.3 Tabela `bitrix24_debug_logs`
-Logs para diagnostico de problemas.
+**URLs no Bitrix24 (ambas apontam para o frontend):**
+- Application URL: `https://emmelycloud.lovable.app/bitrix24`
+- Install URL: `https://emmelycloud.lovable.app/bitrix24`
 
-### 1.4 Secrets necessarios
-- `BITRIX24_CLIENT_ID` - Client ID da aplicacao
-- `BITRIX24_CLIENT_SECRET` - Client Secret da aplicacao
+### Passo 2 - Interface com tabs multi-funcoes
 
-## Fase 2 - Edge Functions
+Transformar o `Bitrix24App.tsx` numa aplicacao com tabs dentro do iframe:
 
-### 2.1 `bitrix24-install` (handler de instalacao OAuth)
-- Recebe POST do Bitrix24 quando usuario instala o app
-- Parse de form data (formato PHP: `auth[access_token]`, `auth[domain]`, etc.)
-- Salva credenciais na tabela `bitrix24_integrations` (upsert por `member_id`)
-- Registra conector `emmely_connector` via `imconnector.register`
-- Ativa conector em todas as Open Lines
-- Vincula eventos (`OnImConnectorMessageAdd`, `OnImConnectorDialogStart`, etc.)
-- Retorna HTML com `BX24.installFinish()` e headers CSP corretos para iframe
+| Tab | Funcao |
+|-----|--------|
+| Conector | Status do WhatsApp e Instagram, canais mapeados, botao de re-sincronizar |
+| Conversas | Lista de conversas recentes do Emmely Cloud |
+| Pagamentos | Resumo de pagamentos pendentes/pagos |
+| Automacoes | Regras ativas e historico de execucao |
 
-### 2.2 `bitrix24-connector-settings` (UI no Contact Center)
-- Retorna HTML renderizado dentro do iframe do Bitrix24
-- Mostra estado do conector (ativo/inativo)
-- Permite selecionar canal (WhatsApp/Instagram) para mapear
-- Headers CSP com frame-ancestors para todos os dominios bitrix24
+### Passo 3 - Tab "Conector" (prioridade)
 
-### 2.3 `bitrix24-events` (webhook de eventos)
-- Recebe eventos do Bitrix24 (OnImConnectorMessageAdd, etc.)
-- Quando operador envia mensagem no Bitrix24:
-  - Identifica a conversa no Emmely
-  - Roteia para Callbell (WhatsApp) ou outro canal
-- Detecta mensagens do bot para evitar loops
-- Envia status de entrega de volta (`imconnector.send.status.delivery`)
+Mostrar dentro do Bitrix24:
+- Status da integracao (conectado/desconectado)
+- Canais ativos (WhatsApp, Instagram) com nome da Open Line
+- Botao "Re-sincronizar" que chama o backend para re-registar o conector
+- Ultimas mensagens enviadas/recebidas (dos debug logs)
 
-### 2.4 `bitrix24-send` (Emmely para Bitrix24)
-- Quando mensagem chega no Emmely (via Callbell webhook):
-  - Busca mapeamento de canal
-  - Envia para Bitrix24 via `imconnector.send.messages`
-  - Fallbacks: timeline comment, activity, notificacao
-  - Auto-reparo se linha inativa
+### Passo 4 - Atualizar config.toml
 
-### 2.5 `bitrix24-token-refresh` (helper)
-- Logica reutilizavel de refresh de token OAuth
-- Verifica expiracao com buffer de 5 minutos
-- Atualiza tokens no banco automaticamente
+Adicionar `verify_jwt = false` para as funcoes bitrix24:
+- `bitrix24-install`
+- `bitrix24-events`
+- `bitrix24-send`
+- `bitrix24-connector-settings`
 
-## Fase 3 - Integracao Frontend
+(O Bitrix24 envia form POST sem JWT, entao a verificacao deve estar desativada)
 
-### 3.1 Pagina de configuracao Bitrix24
-- Nova secao em Automacoes ou pagina dedicada
-- Mostra estado da integracao (conectado/desconectado)
-- Instrucoes para criar app local ou instalar do Marketplace
-- Mostra mapeamentos de canais ativos
-- Logs de diagnostico recentes
-
-### 3.2 Atualizacao do webhook Callbell
-- Modificar `callbell-webhook` para tambem chamar `bitrix24-send`
-- Quando mensagem inbound chega via Callbell, replicar para Bitrix24
+---
 
 ## Detalhes Tecnicos
 
-### Config.toml - Novas funcoes
+### Bitrix24App.tsx - Estrutura
+
 ```text
-[functions.bitrix24-install]
-verify_jwt = false
-
-[functions.bitrix24-connector-settings]
-verify_jwt = false
-
-[functions.bitrix24-events]
-verify_jwt = false
-
-[functions.bitrix24-send]
-verify_jwt = false
+Bitrix24App
+  +-- BX24 SDK init
+  +-- Auto-install flow (fetch ao backend)
+  +-- Tabs (inline CSS para funcionar no iframe sem Tailwind)
+      +-- ConnectorTab (status, canais, logs)
+      +-- ConversasTab (placeholder para futuro)
+      +-- PagamentosTab (placeholder para futuro)
+      +-- AutomacoesTab (placeholder para futuro)
 ```
 
-Todas as funcoes Bitrix24 precisam `verify_jwt = false` porque o Bitrix24 nao envia JWT do Supabase.
+### Comunicacao Frontend-Backend
 
-### Headers CSP obrigatorios (para funcoes que retornam HTML)
-```text
-frame-ancestors 'self' 
-  https://*.bitrix24.com 
-  https://*.bitrix24.com.br 
-  https://*.bitrix24.eu 
-  https://*.bitrix24.es 
-  https://*.bitrix24.de
-```
+O frontend faz `fetch()` ao backend para todas as operacoes:
+- `POST /functions/v1/bitrix24-install` - enviar tokens de instalacao
+- `GET /functions/v1/bitrix24-connector-settings?member_id=xxx` - obter status (novo endpoint JSON)
 
-### Extracao de dominio
-Funcao robusta que tenta multiplas fontes em cascata:
-1. `client_endpoint` 
-2. `auth.domain`
-3. `DOMAIN` / `domain`
-4. Header `Referer`
-5. Header `Origin`
+O backend nunca e carregado diretamente no iframe.
 
-### Prevencao de loops
-- Detectar mensagens do bot por padroes de texto
-- Lock de processamento por conversa (30s timeout)
-- Deduplicacao por `external_id`
+### Edge Function bitrix24-connector-settings
 
-### Token refresh automatico
-- Antes de cada chamada a API Bitrix24, verificar validade
-- Refresh via `https://oauth.bitrix.info/oauth/token/`
-- Buffer de 5 minutos antes da expiracao
+Adicionar suporte a pedidos GET com resposta JSON (alem do HTML existente):
+- Se `Accept: application/json` ou query param `format=json`, retorna JSON com status da integracao
+- O frontend usa este endpoint para popular a tab "Conector"
 
-## Ordem de Implementacao
+### Ficheiros a Modificar
 
-1. Criar tabelas (`bitrix24_integrations`, `bitrix24_channel_mappings`, `bitrix24_debug_logs`)
-2. Solicitar secrets (`BITRIX24_CLIENT_ID`, `BITRIX24_CLIENT_SECRET`)
-3. Criar `bitrix24-install` (handler OAuth + registro conector)
-4. Criar `bitrix24-connector-settings` (UI iframe)
-5. Criar `bitrix24-events` (webhook Bitrix24 -> Emmely)
-6. Criar `bitrix24-send` (Emmely -> Bitrix24 via imconnector)
-7. Atualizar `callbell-webhook` para chamar `bitrix24-send`
-8. Criar pagina de configuracao no frontend
+1. `src/pages/Bitrix24App.tsx` - Reescrever com tabs e fluxo de instalacao correto
+2. `supabase/functions/bitrix24-connector-settings/index.ts` - Adicionar endpoint JSON
+3. `supabase/config.toml` - Adicionar verify_jwt = false para funcoes bitrix24
 
-## Notas Importantes (dos guias fornecidos)
+### Ficheiros que NAO mudam
 
-- Usar `member_id` como identificador unico do portal (nunca muda)
-- Tratar "Handler already binded" como sucesso
-- Sempre usar `client_endpoint` do payload de instalacao (nao endpoint OAuth generico)
-- Auto-reparo de Open Lines: verificar fila de operadores, TIMEMAN=N, CHECK_AVAILABLE=N
-- Deteccao de modo CRM (Classico vs Simples) para criar Lead ou Deal
-- Parse flexivel do body (JSON e form-urlencoded com notacao PHP)
-
+- `supabase/functions/bitrix24-install/index.ts` - Ja aceita JSON, so precisa do config.toml
+- `supabase/functions/bitrix24-events/index.ts` - Sem alteracoes
+- `supabase/functions/bitrix24-send/index.ts` - Sem alteracoes
