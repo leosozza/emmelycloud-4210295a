@@ -282,9 +282,12 @@ Deno.serve(async (req) => {
           event,
           handler: eventsUrl,
         });
-        // "Handler already binded" is NOT an error
-        if (bindResult.error && !String(bindResult.error).includes("already")) {
-          console.error(`[INSTALL] Bind ${event} failed:`, bindResult.error);
+        // "Handler already binded" is NOT an error - check both error and error_description
+        const errStr = String(bindResult.error || "") + " " + String(bindResult.error_description || "");
+        if (bindResult.error && !errStr.toLowerCase().includes("already")) {
+          console.error(`[INSTALL] Bind ${event} failed:`, bindResult.error, bindResult.error_description);
+        } else {
+          console.log(`[INSTALL] Bind ${event}: OK (or already bound)`);
         }
       }
 
