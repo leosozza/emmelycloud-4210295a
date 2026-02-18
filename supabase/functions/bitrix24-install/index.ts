@@ -308,41 +308,15 @@ Deno.serve(async (req) => {
       await debugLog(supabase, integrationId, "connector_setup_error", "outbound", null, String(connectorError));
     }
 
-    // Return HTML with BX24.installFinish()
-    const html = `<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <meta http-equiv="Content-Security-Policy" content="frame-ancestors 'self' https://*.bitrix24.com https://*.bitrix24.com.br https://*.bitrix24.eu https://*.bitrix24.es https://*.bitrix24.de https://*.bitrix24.ru;">
-  <script src="https://api.bitrix24.com/api/v1/"></script>
-  <style>
-    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; background: #f5f5f5; }
-    .container { text-align: center; padding: 40px; background: white; border-radius: 12px; box-shadow: 0 2px 12px rgba(0,0,0,0.1); max-width: 400px; }
-    .icon { font-size: 48px; margin-bottom: 16px; }
-    h2 { color: #333; margin-bottom: 8px; }
-    p { color: #666; font-size: 14px; }
-  </style>
-</head>
-<body>
-  <div class="container">
-    <div class="icon">✅</div>
-    <h2>Emmely Cloud Instalado!</h2>
-    <p>O conector WhatsApp & Instagram foi configurado com sucesso.</p>
-    <p>Acesse o Contact Center para ativar os canais.</p>
-  </div>
-  <script>
-    try {
-      BX24.init(function() {
-        BX24.installFinish();
-      });
-    } catch(e) {
-      console.log('BX24 init error (expected outside iframe):', e);
-    }
-  </script>
-</body>
-</html>`;
-
-    return new Response(html, { headers: htmlHeaders });
+    // Redirect to frontend page (avoids Supabase domain being blocked in Bitrix24 iframe)
+    const appUrl = "https://emmelycloud.lovable.app/bitrix24?installed=true";
+    return new Response(null, {
+      status: 302,
+      headers: {
+        ...corsHeaders,
+        "Location": appUrl,
+      },
+    });
   } catch (error) {
     console.error("[INSTALL] Fatal error:", error);
     await debugLog(supabase, null, "install_fatal", "inbound", null, String(error));
