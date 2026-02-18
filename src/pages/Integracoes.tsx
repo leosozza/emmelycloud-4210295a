@@ -229,6 +229,8 @@ function CRMTab() {
 
 function OmniChannelTab() {
   const [conversations, setConversations] = useState<{ channel: string; count: number }[]>([]);
+  const [igTesting, setIgTesting] = useState(false);
+  const [igResult, setIgResult] = useState<any>(null);
 
   useEffect(() => {
     async function load() {
@@ -242,37 +244,128 @@ function OmniChannelTab() {
     load();
   }, []);
 
-  const channelCards = [
-    { name: "WhatsApp", icon: Phone, color: "bg-green-100", iconColor: "text-green-600", desc: "Via Callbell API", secret: "CALLBELL_WA_CHANNEL_UUID" },
-    { name: "Instagram", icon: Instagram, color: "bg-pink-100", iconColor: "text-pink-600", desc: "Via Callbell / Meta API", secret: "META_PAGE_ACCESS_TOKEN" },
-    { name: "E-mail", icon: Mail, color: "bg-blue-100", iconColor: "text-blue-600", desc: "SMTP / Provider", secret: null },
-  ];
+  const handleTestInstagram = async () => {
+    setIgTesting(true);
+    setIgResult(null);
+    try {
+      const { data, error } = await supabase.functions.invoke("instagram-test-connection");
+      if (error) {
+        setIgResult({ ok: false, error: "Erro ao contactar o servidor." });
+      } else {
+        setIgResult(data);
+      }
+    } catch {
+      setIgResult({ ok: false, error: "Erro de rede." });
+    }
+    setIgTesting(false);
+  };
 
   return (
     <div className="grid gap-4 md:grid-cols-2">
-      {channelCards.map((ch) => (
-        <Card key={ch.name}>
-          <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-2">
-            <div className="flex items-center gap-3">
-              <div className={`flex h-10 w-10 items-center justify-center rounded-lg ${ch.color}`}>
-                <ch.icon className={`h-5 w-5 ${ch.iconColor}`} />
-              </div>
-              <div>
-                <CardTitle className="text-base">{ch.name}</CardTitle>
-                <CardDescription>{ch.desc}</CardDescription>
-              </div>
+      {/* WhatsApp */}
+      <Card>
+        <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-2">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-green-100">
+              <Phone className="h-5 w-5 text-green-600" />
             </div>
-            <StatusBadge status={ch.secret ? "active" : "inactive"} />
-          </CardHeader>
-          <CardContent className="text-sm">
-            {ch.secret ? (
-              <p className="text-muted-foreground">Credenciais configuradas. Canal operacional.</p>
-            ) : (
-              <p className="text-muted-foreground">Ainda não configurado.</p>
-            )}
-          </CardContent>
-        </Card>
-      ))}
+            <div>
+              <CardTitle className="text-base">WhatsApp</CardTitle>
+              <CardDescription>Via Callbell API</CardDescription>
+            </div>
+          </div>
+          <StatusBadge status="active" />
+        </CardHeader>
+        <CardContent className="space-y-2 text-sm">
+          <div className="flex justify-between"><span className="text-muted-foreground">CALLBELL_API_TOKEN</span><span className="font-medium text-green-600">✓ Configurado</span></div>
+          <div className="flex justify-between"><span className="text-muted-foreground">CALLBELL_WA_CHANNEL_UUID</span><span className="font-medium text-green-600">✓ Configurado</span></div>
+          <p className="text-muted-foreground">Canal operacional via Callbell.</p>
+        </CardContent>
+      </Card>
+
+      {/* Instagram — Detailed */}
+      <Card>
+        <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-2">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-pink-100">
+              <Instagram className="h-5 w-5 text-pink-600" />
+            </div>
+            <div>
+              <CardTitle className="text-base">Instagram</CardTitle>
+              <CardDescription>Callbell + Meta Graph API</CardDescription>
+            </div>
+          </div>
+          <StatusBadge status={igResult ? (igResult.ok ? "active" : "inactive") : "pending"} />
+        </CardHeader>
+        <CardContent className="space-y-3 text-sm">
+          <div className="space-y-1.5">
+            <p className="font-medium text-xs uppercase text-muted-foreground tracking-wide">Credenciais Callbell</p>
+            <div className="flex justify-between"><span className="text-muted-foreground">CALLBELL_API_TOKEN</span><span className="font-medium text-green-600">✓</span></div>
+            <div className="flex justify-between"><span className="text-muted-foreground">CALLBELL_IG_CHANNEL_UUID</span><span className="font-medium text-green-600">✓</span></div>
+          </div>
+          <div className="space-y-1.5">
+            <p className="font-medium text-xs uppercase text-muted-foreground tracking-wide">Credenciais Meta / Instagram</p>
+            <div className="flex justify-between"><span className="text-muted-foreground">META_PAGE_ACCESS_TOKEN</span><span className="font-medium text-green-600">✓</span></div>
+            <div className="flex justify-between"><span className="text-muted-foreground">META_IG_ACCOUNT_ID</span><span className="font-medium text-green-600">✓</span></div>
+            <div className="flex justify-between"><span className="text-muted-foreground">META_APP_ID</span><span className="font-medium text-green-600">✓</span></div>
+            <div className="flex justify-between"><span className="text-muted-foreground">META_APP_SECRET</span><span className="font-medium text-green-600">✓</span></div>
+          </div>
+
+          <Button size="sm" variant="outline" className="w-full" onClick={handleTestInstagram} disabled={igTesting}>
+            {igTesting ? <RefreshCw className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <Activity className="h-3.5 w-3.5 mr-1.5" />}
+            {igTesting ? "A testar…" : "Testar Conexão Instagram"}
+          </Button>
+
+          {igResult && (
+            <div className="space-y-2">
+              {igResult.callbell && (
+                <div className={`flex items-start gap-2 rounded-md px-3 py-2 ${igResult.callbell.ok ? "bg-green-50 text-green-800" : "bg-red-50 text-red-800"}`}>
+                  {igResult.callbell.ok ? <CheckCircle2 className="h-4 w-4 shrink-0 mt-0.5" /> : <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />}
+                  <div className="text-xs">
+                    <p className="font-medium">Callbell: {igResult.callbell.ok ? igResult.callbell.message : "Erro"}</p>
+                    {igResult.callbell.ok && (
+                      <>
+                        <p>Canal IG encontrado: {igResult.callbell.ig_channel_found ? "Sim" : "Não"}</p>
+                        <p>Total canais: {igResult.callbell.total_channels}</p>
+                      </>
+                    )}
+                    {!igResult.callbell.ok && <p>{igResult.callbell.error}</p>}
+                  </div>
+                </div>
+              )}
+              {igResult.meta && (
+                <div className={`flex items-start gap-2 rounded-md px-3 py-2 ${igResult.meta.ok ? "bg-green-50 text-green-800" : "bg-red-50 text-red-800"}`}>
+                  {igResult.meta.ok ? <CheckCircle2 className="h-4 w-4 shrink-0 mt-0.5" /> : <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />}
+                  <div className="text-xs">
+                    <p className="font-medium">Meta API: {igResult.meta.ok ? igResult.meta.message : "Erro"}</p>
+                    {igResult.meta.ok && igResult.meta.username && <p>Username: @{igResult.meta.username}</p>}
+                    {!igResult.meta.ok && <p>{igResult.meta.error}</p>}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* E-mail */}
+      <Card>
+        <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-2">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-blue-100">
+              <Mail className="h-5 w-5 text-blue-600" />
+            </div>
+            <div>
+              <CardTitle className="text-base">E-mail</CardTitle>
+              <CardDescription>SMTP / Provider</CardDescription>
+            </div>
+          </div>
+          <StatusBadge status="inactive" />
+        </CardHeader>
+        <CardContent className="text-sm">
+          <p className="text-muted-foreground">Ainda não configurado.</p>
+        </CardContent>
+      </Card>
 
       {/* Canais Conectados */}
       <Card>
