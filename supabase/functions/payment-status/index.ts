@@ -22,14 +22,6 @@ Deno.serve(async (req) => {
   }
 
   try {
-    // Validate auth
-    const authHeader = req.headers.get("Authorization");
-    if (!authHeader?.startsWith("Bearer ")) {
-      return new Response(JSON.stringify({ error: "Unauthorized" }), {
-        status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-
     const supabase = createClient(
       Deno.env.get("SUPABASE_URL")!,
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
@@ -37,7 +29,21 @@ Deno.serve(async (req) => {
 
     const url = new URL(req.url);
     const transactionId = url.searchParams.get("transaction_id");
+    const listMode = url.searchParams.get("list");
 
+    // List mode: return recent transactions (no auth required for Bitrix24 iframe)
+    if (listMode === "true") {
+      const { data: txs } = await supabase
+        .from("payment_transactions")
+        .select("*")
+        .order("created_at", { ascending: false })
+        .limit(20);
+      return new Response(JSON.stringify({ transactions: txs || [] }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // Single transaction mode
     if (!transactionId) {
       return new Response(JSON.stringify({ error: "transaction_id is required" }), {
         status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
