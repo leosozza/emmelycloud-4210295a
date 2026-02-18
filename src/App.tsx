@@ -22,6 +22,7 @@ import RoadmapPage from "./pages/Roadmap";
 import Privacy from "./pages/Privacy";
 import Terms from "./pages/Terms";
 import DataDeletion from "./pages/DataDeletion";
+import Bitrix24App from "./pages/Bitrix24App";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -39,6 +40,7 @@ const App = () => (
           <Route path="/privacy" element={<Privacy />} />
           <Route path="/terms" element={<Terms />} />
           <Route path="/data-deletion" element={<DataDeletion />} />
+          <Route path="/bitrix24" element={<Bitrix24App />} />
           <Route element={<AppLayout />}>
             <Route path="/" element={<Index />} />
             <Route path="/leads" element={<LeadsPage />} />
