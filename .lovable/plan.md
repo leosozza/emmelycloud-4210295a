@@ -1,85 +1,66 @@
 
 
-# Criar BizProc Robots para Mensagens e Pagamentos no Bitrix24
+# Importar Fluxos do PowerBot para o Editor de Flows
 
-## Problema
-O fluxo de instalacao (`bitrix24-install`) atualmente regista apenas o **imconnector** e os **eventos**, mas nao regista nenhum **robot BizProc**. Isso significa que os utilizadores do Bitrix24 nao conseguem usar automacoes de mensagens ou pagamentos nos workflows de CRM (leads/deals).
+## Objetivo
+Criar um sistema de importacao que leia ficheiros JSON exportados do PowerBot e os converta automaticamente para o formato interno do nosso editor de fluxos (ReactFlow).
 
-## O que sao BizProc Robots
-Robots sao acoes automatizadas que os utilizadores do Bitrix24 podem arrastar para os workflows de CRM. Quando um lead/deal atinge determinada fase, o robot e acionado e envia um POST HTTP para o nosso backend, que processa a logica e devolve o resultado ao workflow.
+## Mapeamento de Tipos de No (PowerBot -> Emmely)
 
-## Robots a criar
+| PowerBot (`type`)    | Emmely (`nodeType`) | Descricao                        |
+|----------------------|---------------------|----------------------------------|
+| `initialNode`        | (trigger/start)     | No inicial do fluxo              |
+| `messageNode`        | `message`           | Envio de mensagem                |
+| `conditionalNode`    | `condition`         | Condicao/ramificacao             |
+| `openAINode`         | `ai_response`       | Resposta IA (prompt/mission)     |
+| `transferNode`       | `transfer`          | Transferir para atendente        |
+| `updateCrmNode`      | `set_variable`      | Atualizar CRM (mapeado como var) |
+| `createCrmNode`      | `webhook`           | Criar entidade CRM (webhook)     |
 
-### Mensagens (baseado no thothai)
-1. **emmely_send_whatsapp** - "Emmely: Enviar WhatsApp"
-   - Propriedades: phone (telefone), message (texto da mensagem)
-   - Retorno: message_id, status, error
-   - Acao: Envia mensagem via Callbell/Direct API
+## O que sera importado de cada no
 
-2. **emmely_send_instagram** - "Emmely: Enviar Instagram"
-   - Propriedades: instagram_user (utilizador IG), message (texto)
-   - Retorno: message_id, status, error
-   - Acao: Envia mensagem via Instagram Direct
+- **position**: Mantida do JSON original (ReactFlow compativel)
+- **messageNode**: Extrai `messageData`, `sendAsWhisper`
+- **conditionalNode**: Extrai `conditions` (array de comparacoes)
+- **openAINode**: Extrai `prompt`, `type` (mission/prompt), `missionVariables`, `sendAsWhisper`, `AIId`
+- **transferNode**: Extrai `transferType`
+- **updateCrmNode / createCrmNode**: Extrai `fields`, `entity`, `pipeline`
+- **edges**: Convertidas diretamente (source, target, sourceHandle ja sao ReactFlow)
 
-### Pagamentos (baseado no bitrix24-asaas-link)
-3. **emmely_create_charge** - "Emmely: Criar Cobranca"
-   - Propriedades: amount, currency (EUR/BRL), payment_method (card/pix/boleto), customer_name, customer_email, description
-   - Retorno: charge_id, charge_status, payment_url, pix_code, error
-   - Acao: Cria cobranca via Stripe (EUR) ou Asaas (BRL) usando o `payment-create` existente
+## Implementacao
 
-4. **emmely_check_payment** - "Emmely: Verificar Pagamento"
-   - Propriedades: charge_id
-   - Retorno: status, paid_at, paid_value, error
-   - Acao: Verifica status via `payment-status` existente
+### 1. Funcao `importPowerBotFlow(json)` em `Flows.tsx`
 
-## Implementacao tecnica
-
-### 1. Nova Edge Function: `bitrix24-robot-handler`
-Recebe os eventos dos robots quando sao acionados no workflow do Bitrix24:
-- Parse do payload (form-urlencoded ou JSON)
-- Identifica o robot pelo `code`
-- Executa a logica correspondente
-- Responde ao Bitrix24 via `bizproc.event.send` com `EVENT_TOKEN` e `RETURN_VALUES`
-
-Para mensagens, utiliza as funcoes existentes (`callbell-send` ou `instagram-send`).
-Para pagamentos, chama internamente o `payment-create` e `payment-status` ja existentes.
-
-### 2. Atualizar `bitrix24-install` 
-Adicionar funcao `registerRobots()` que e chamada durante a instalacao:
-- Deleta robots existentes (em caso de reinstalacao)
-- Regista os 4 robots via `bizproc.robot.add`
-- Cada robot aponta o HANDLER para `/functions/v1/bitrix24-robot-handler`
-- Usa `USE_SUBSCRIPTION: "Y"` para que o workflow aguarde a resposta
-
-### 3. Atualizar `supabase/config.toml`
-Registar a nova funcao `bitrix24-robot-handler` com `verify_jwt = false`.
-
-### Ficheiros a criar
-- `supabase/functions/bitrix24-robot-handler/index.ts`
-
-### Ficheiros a modificar
-- `supabase/functions/bitrix24-install/index.ts` (adicionar `registerRobots()`)
-- `supabase/config.toml` (registar nova funcao)
-
-### Fluxo de execucao
-
+Logica principal:
 ```text
-Bitrix24 Workflow (Lead/Deal avanca fase)
-  |
-  v
-Robot "Emmely: Enviar WhatsApp" acionado
-  |
-  v
-POST -> /functions/v1/bitrix24-robot-handler
-  |
-  +-- Parse: code=emmely_send_whatsapp, properties={phone, message}
-  +-- Acao: POST -> /functions/v1/callbell-send
-  +-- Resposta: bizproc.event.send(EVENT_TOKEN, {message_id, status})
-  |
-  v
-Workflow continua com os valores retornados
+1. Parse do JSON
+2. Extrair botName -> nome do fluxo
+3. Para cada node:
+   - Mapear type do PowerBot para nodeType interno
+   - Preservar position
+   - Converter data para config estruturada
+   - Aplicar estilo visual (cor, borda) baseado no tipo mapeado
+4. Para cada edge:
+   - Manter source, target, sourceHandle
+   - Converter markerEnd para MarkerType.ArrowClosed
+5. Criar fluxo no Supabase com nodes e edges convertidos
+6. Abrir no editor automaticamente
 ```
 
-### Escopo `bizproc`
-O aplicativo no Bitrix24 precisa ter o escopo `bizproc` nas permissoes. Se nao tiver, o registo dos robots falhara com `insufficient_scope`. O utilizador precisara verificar isto nas configuracoes do aplicativo no Bitrix24.
+### 2. UI - Botao "Importar" na lista de fluxos
+
+- Botao ao lado do "Novo Fluxo" com icone Upload
+- Abre file picker nativo (accept=".json")
+- Le o ficheiro, valida a estrutura (deve ter `nodes` e `edges`)
+- Mostra preview com: nome do bot, numero de nos, numero de conexoes
+- Botao "Confirmar Importacao"
+
+### 3. Validacao e tratamento de erros
+
+- Verificar se o JSON tem a estrutura esperada (`nodes`, `edges`)
+- Tipos de no desconhecidos: importar como `set_variable` generico com aviso
+- Mostrar toast com resultado: "Importado: X nos, Y conexoes"
+
+### Ficheiros a modificar
+- `src/pages/Flows.tsx` - Adicionar botao de importacao, funcao de conversao, dialog de preview
 
