@@ -13,6 +13,10 @@ import {
   MessageCircle,
   Map,
   Plug,
+  Bot,
+  Workflow,
+  GraduationCap,
+  FlaskConical,
 } from "lucide-react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
@@ -71,6 +75,17 @@ const navItems: NavItem[] = [
       { title: "Automações", url: "/automacoes", icon: Zap },
       { title: "Relatórios", url: "/relatorios", icon: BarChart3 },
       { title: "Integrações", url: "/integracoes", icon: Plug },
+    ],
+  },
+  {
+    type: "group",
+    title: "IA",
+    icon: Bot,
+    children: [
+      { title: "Agentes", url: "/agentes", icon: Bot },
+      { title: "Fluxos", url: "/flows", icon: Workflow },
+      { title: "Treinamento", url: "/training", icon: GraduationCap },
+      { title: "Playground", url: "/playground-ia", icon: FlaskConical },
     ],
   },
   { type: "link", title: "Roadmap", url: "/roadmap", icon: Map },
