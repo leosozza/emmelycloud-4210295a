@@ -25,10 +25,15 @@ import {
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import {
-  Plus, Workflow, Play, Save, Trash2, MessageSquare, Zap, ArrowLeft,
-  Loader2, Clock, Bot, GitBranch, Globe, Phone, Split, Upload,
+  Plus, Workflow, Save, Trash2, ArrowLeft,
+  Loader2, GitBranch, Upload, Undo2, Redo2, Download, Copy,
 } from "lucide-react";
 import { previewPowerBotFlow, convertPowerBotFlow, type PowerBotImportPreview } from "@/lib/powerbotImporter";
+import CustomFlowNode from "@/components/flows/CustomFlowNode";
+import FlowNodePalette from "@/components/flows/FlowNodePalette";
+import NodeConfigPanel from "@/components/flows/NodeConfigPanel";
+import { type FlowNodeType, type FlowNodeData, getDefaultData, NODE_TYPE_META } from "@/components/flows/FlowNodeTypes";
+import { useFlowHistory } from "@/hooks/useFlowHistory";
 
 interface Flow {
   id: string;
@@ -44,35 +49,7 @@ interface Flow {
   created_at: string;
 }
 
-const nodeTypes = {
-  message: "Mensagem",
-  condition: "Condição",
-  ai_response: "Resposta IA",
-  delay: "Delay",
-  transfer: "Transferir",
-  webhook: "Webhook",
-  set_variable: "Variável",
-};
-
-const nodeIcons: Record<string, any> = {
-  message: MessageSquare,
-  condition: Split,
-  ai_response: Bot,
-  delay: Clock,
-  transfer: Phone,
-  webhook: Globe,
-  set_variable: Zap,
-};
-
-const nodeColors: Record<string, string> = {
-  message: "#3b82f6",
-  condition: "#f59e0b",
-  ai_response: "#8b5cf6",
-  delay: "#6b7280",
-  transfer: "#10b981",
-  webhook: "#ef4444",
-  set_variable: "#06b6d4",
-};
+const customNodeTypes = { custom: CustomFlowNode };
 
 export default function FlowsPage() {
   const [flows, setFlows] = useState<Flow[]>([]);
@@ -87,8 +64,19 @@ export default function FlowsPage() {
   const [importDialogOpen, setImportDialogOpen] = useState(false);
   const [importing, setImporting] = useState(false);
 
+  // Editor state
   const [nodes, setNodes, onNodesChange] = useNodesState([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  const [paletteCollapsed, setPaletteCollapsed] = useState(false);
+
+  const { pushState, undo, redo, canUndo, canRedo } = useFlowHistory(nodes, edges, setNodes as any, setEdges as any);
+
+  const selectedNodeData = useMemo(() => {
+    if (!selectedNodeId) return null;
+    const node = nodes.find((n) => n.id === selectedNodeId);
+    return node ? (node.data as unknown as FlowNodeData) : null;
+  }, [nodes, selectedNodeId]);
 
   useEffect(() => { loadFlows(); }, []);
 
@@ -101,39 +89,90 @@ export default function FlowsPage() {
 
   const onConnect = useCallback((params: Connection) => {
     setEdges((eds) => addEdge({ ...params, markerEnd: { type: MarkerType.ArrowClosed } }, eds));
-  }, [setEdges]);
+    setTimeout(pushState, 0);
+  }, [setEdges, pushState]);
 
-  const addNode = (type: string) => {
+  const addNode = useCallback((type: FlowNodeType, position?: { x: number; y: number }) => {
     const id = `node_${Date.now()}`;
+    const pos = position || { x: 250, y: (nodes.length + 1) * 120 };
+    const data = getDefaultData(type);
     const newNode: Node = {
       id,
-      type: "default",
-      position: { x: 250, y: (nodes.length + 1) * 100 },
-      data: {
-        label: (
-          <div className="flex items-center gap-2 text-xs">
-            <div className="w-2 h-2 rounded-full" style={{ backgroundColor: nodeColors[type] }} />
-            {nodeTypes[type as keyof typeof nodeTypes] || type}
-          </div>
-        ),
-        nodeType: type,
-        config: {},
-      },
-      style: {
-        border: `2px solid ${nodeColors[type] || "#666"}`,
-        borderRadius: "8px",
-        padding: "8px 12px",
-        fontSize: "12px",
-        background: "white",
-      },
+      type: "custom",
+      position: pos,
+      data: data as any,
     };
     setNodes((nds) => [...nds, newNode]);
-  };
+    setTimeout(pushState, 0);
+  }, [nodes.length, setNodes, pushState]);
+
+  const onDrop = useCallback((event: React.DragEvent) => {
+    event.preventDefault();
+    const type = event.dataTransfer.getData("application/reactflow-type") as FlowNodeType;
+    if (!type) return;
+    const reactFlowBounds = (event.target as HTMLElement).closest(".react-flow")?.getBoundingClientRect();
+    if (!reactFlowBounds) return;
+    const position = {
+      x: event.clientX - reactFlowBounds.left,
+      y: event.clientY - reactFlowBounds.top,
+    };
+    addNode(type, position);
+  }, [addNode]);
+
+  const onDragOver = useCallback((event: React.DragEvent) => {
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "move";
+  }, []);
+
+  const onNodeClick = useCallback((_: any, node: Node) => {
+    setSelectedNodeId(node.id);
+  }, []);
+
+  const onPaneClick = useCallback(() => {
+    setSelectedNodeId(null);
+  }, []);
+
+  const handleNodeDataChange = useCallback((newData: FlowNodeData) => {
+    if (!selectedNodeId) return;
+    setNodes((nds) => nds.map((n) => n.id === selectedNodeId ? { ...n, data: newData as any } : n));
+    setTimeout(pushState, 100);
+  }, [selectedNodeId, setNodes, pushState]);
+
+  const handleDeleteNode = useCallback(() => {
+    if (!selectedNodeId) return;
+    setNodes((nds) => nds.filter((n) => n.id !== selectedNodeId));
+    setEdges((eds) => eds.filter((e) => e.source !== selectedNodeId && e.target !== selectedNodeId));
+    setSelectedNodeId(null);
+    setTimeout(pushState, 0);
+  }, [selectedNodeId, setNodes, setEdges, pushState]);
+
+  const duplicateNode = useCallback(() => {
+    if (!selectedNodeId) return;
+    const node = nodes.find((n) => n.id === selectedNodeId);
+    if (!node) return;
+    const newId = `node_${Date.now()}`;
+    const newNode: Node = {
+      ...node,
+      id: newId,
+      position: { x: node.position.x + 40, y: node.position.y + 40 },
+      selected: false,
+    };
+    setNodes((nds) => [...nds, newNode]);
+    setTimeout(pushState, 0);
+  }, [selectedNodeId, nodes, setNodes, pushState]);
 
   const openFlow = (flow: Flow) => {
     setSelectedFlow(flow);
-    setNodes(flow.nodes || []);
+    // Convert old-format nodes to custom type
+    const convertedNodes = (flow.nodes || []).map((n: any) => ({
+      ...n,
+      type: n.type === "default" ? "custom" : (n.type || "custom"),
+      data: n.data?.nodeType ? n.data : { nodeType: n.data?.nodeType || "message", ...n.data },
+    }));
+    setNodes(convertedNodes);
     setEdges(flow.edges || []);
+    setSelectedNodeId(null);
+    setTimeout(pushState, 50);
   };
 
   const handleCreateFlow = async () => {
@@ -190,6 +229,31 @@ export default function FlowsPage() {
     loadFlows();
   };
 
+  const duplicateFlow = async (flow: Flow) => {
+    const { error } = await supabase.from("flows").insert({
+      name: `${flow.name} (cópia)`,
+      description: flow.description,
+      trigger_type: flow.trigger_type,
+      trigger_value: flow.trigger_value,
+      nodes: flow.nodes as any,
+      edges: flow.edges as any,
+    } as any);
+    if (error) toast.error(error.message);
+    else { toast.success("Fluxo duplicado"); loadFlows(); }
+  };
+
+  const exportFlow = (flow: Flow) => {
+    const json = JSON.stringify({ name: flow.name, nodes: flow.nodes, edges: flow.edges }, null, 2);
+    const blob = new Blob([json], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${flow.name.replace(/\s+/g, "_")}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast.success("Exportado");
+  };
+
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -231,14 +295,14 @@ export default function FlowsPage() {
     finally { setImporting(false); }
   };
 
-  // Editor View
+  // ── Editor View ──
   if (selectedFlow) {
     return (
       <div className="-m-6 flex flex-col" style={{ height: "calc(100vh - 3.5rem)" }}>
         {/* Editor Header */}
         <div className="flex items-center justify-between px-4 py-2 border-b bg-card shrink-0">
           <div className="flex items-center gap-3">
-            <Button variant="ghost" size="icon" onClick={() => { setSelectedFlow(null); loadFlows(); }}>
+            <Button variant="ghost" size="icon" onClick={() => { setSelectedFlow(null); setSelectedNodeId(null); loadFlows(); }}>
               <ArrowLeft className="h-4 w-4" />
             </Button>
             <div>
@@ -246,53 +310,88 @@ export default function FlowsPage() {
               <p className="text-[11px] text-muted-foreground">{selectedFlow.description || "Sem descrição"}</p>
             </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1">
+            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={undo} disabled={!canUndo} title="Desfazer (Ctrl+Z)">
+              <Undo2 className="h-3.5 w-3.5" />
+            </Button>
+            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={redo} disabled={!canRedo} title="Refazer (Ctrl+Shift+Z)">
+              <Redo2 className="h-3.5 w-3.5" />
+            </Button>
+            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => exportFlow({ ...selectedFlow, nodes, edges })} title="Exportar JSON">
+              <Download className="h-3.5 w-3.5" />
+            </Button>
             <Button variant="outline" size="sm" onClick={handleSaveFlow} disabled={saving}>
               <Save className="h-3 w-3 mr-1" /> {saving ? "Guardando..." : "Guardar"}
             </Button>
           </div>
         </div>
 
-        {/* Node Palette */}
-        <div className="flex items-center gap-1 px-4 py-2 border-b bg-muted/30 overflow-x-auto shrink-0">
-          {Object.entries(nodeTypes).map(([type, label]) => {
-            const Icon = nodeIcons[type] || Zap;
-            return (
-              <Button key={type} variant="outline" size="sm" className="text-[11px] shrink-0" onClick={() => addNode(type)}>
-                <Icon className="h-3 w-3 mr-1" style={{ color: nodeColors[type] }} />
-                {label}
-              </Button>
-            );
-          })}
-        </div>
+        {/* Editor body */}
+        <div className="flex flex-1 min-h-0">
+          {/* Palette */}
+          <FlowNodePalette onAddNode={addNode} collapsed={paletteCollapsed} onToggleCollapse={() => setPaletteCollapsed(!paletteCollapsed)} />
 
-        {/* ReactFlow Canvas */}
-        <div className="flex-1">
-          <ReactFlow
-            nodes={nodes}
-            edges={edges}
-            onNodesChange={onNodesChange}
-            onEdgesChange={onEdgesChange}
-            onConnect={onConnect}
-            fitView
-            deleteKeyCode="Delete"
-          >
-            <Controls />
-            <MiniMap />
-            <Background />
-          </ReactFlow>
+          {/* Canvas */}
+          <div className="flex-1" onDrop={onDrop} onDragOver={onDragOver}>
+            <ReactFlow
+              nodes={nodes}
+              edges={edges}
+              onNodesChange={onNodesChange}
+              onEdgesChange={onEdgesChange}
+              onConnect={onConnect}
+              onNodeClick={onNodeClick}
+              onPaneClick={onPaneClick}
+              nodeTypes={customNodeTypes}
+              fitView
+              deleteKeyCode="Delete"
+              onNodesDelete={() => setTimeout(pushState, 0)}
+              onEdgesDelete={() => setTimeout(pushState, 0)}
+            >
+              <Controls />
+              <MiniMap />
+              <Background />
+
+              {/* Selected node actions */}
+              {selectedNodeId && (
+                <Panel position="top-right">
+                  <div className="flex gap-1 bg-card border rounded-md p-1 shadow-sm">
+                    <Button variant="ghost" size="sm" className="h-7 text-[11px]" onClick={duplicateNode}>
+                      <Copy className="h-3 w-3 mr-1" /> Duplicar
+                    </Button>
+                    <Button variant="ghost" size="sm" className="h-7 text-[11px] text-destructive" onClick={handleDeleteNode}>
+                      <Trash2 className="h-3 w-3 mr-1" /> Excluir
+                    </Button>
+                  </div>
+                </Panel>
+              )}
+
+              {/* Instructions */}
+              <Panel position="bottom-center">
+                <div className="bg-card/80 backdrop-blur border rounded-md px-3 py-1.5 text-[10px] text-muted-foreground">
+                  Arraste blocos da paleta • Clique num nó para configurar • Delete para remover • Ctrl+Z desfazer
+                </div>
+              </Panel>
+            </ReactFlow>
+          </div>
+
+          {/* Config Panel */}
+          {selectedNodeData && (
+            <NodeConfigPanel
+              data={selectedNodeData}
+              onChange={handleNodeDataChange}
+              onDelete={handleDeleteNode}
+              onClose={() => setSelectedNodeId(null)}
+            />
+          )}
         </div>
       </div>
     );
   }
 
-  // List View
+  // ── List View ──
   return (
     <div>
-      <PageHeader
-        title="Fluxos de Automação"
-        description="Crie fluxos de conversa com editor visual drag-and-drop"
-      />
+      <PageHeader title="Fluxos de Automação" description="Crie fluxos de conversa com editor visual drag-and-drop" />
 
       <div className="flex justify-end gap-2 mb-4">
         <label>
@@ -321,7 +420,7 @@ export default function FlowsPage() {
       ) : (
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           {flows.map((flow) => (
-            <Card key={flow.id} className={`cursor-pointer hover:shadow-md transition-shadow ${!flow.is_active ? 'opacity-60' : ''}`} onClick={() => openFlow(flow)}>
+            <Card key={flow.id} className={`cursor-pointer hover:shadow-md transition-shadow ${!flow.is_active ? "opacity-60" : ""}`} onClick={() => openFlow(flow)}>
               <CardHeader className="pb-2">
                 <div className="flex items-start justify-between">
                   <div>
@@ -333,6 +432,12 @@ export default function FlowsPage() {
                   </div>
                   <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
                     <Switch checked={flow.is_active} onCheckedChange={() => toggleActive(flow)} />
+                    <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => duplicateFlow(flow)} title="Duplicar">
+                      <Copy className="h-3 w-3" />
+                    </Button>
+                    <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => exportFlow(flow)} title="Exportar">
+                      <Download className="h-3 w-3" />
+                    </Button>
                     <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => setDeleteId(flow.id)}>
                       <Trash2 className="h-3 w-3" />
                     </Button>
@@ -360,15 +465,15 @@ export default function FlowsPage() {
           <div className="space-y-3">
             <div>
               <Label>Nome *</Label>
-              <Input value={newFlow.name} onChange={(e) => setNewFlow(prev => ({ ...prev, name: e.target.value }))} placeholder="Ex: Boas-vindas WhatsApp" />
+              <Input value={newFlow.name} onChange={(e) => setNewFlow((prev) => ({ ...prev, name: e.target.value }))} placeholder="Ex: Boas-vindas WhatsApp" />
             </div>
             <div>
               <Label>Descrição</Label>
-              <Input value={newFlow.description} onChange={(e) => setNewFlow(prev => ({ ...prev, description: e.target.value }))} placeholder="Breve descrição" />
+              <Input value={newFlow.description} onChange={(e) => setNewFlow((prev) => ({ ...prev, description: e.target.value }))} placeholder="Breve descrição" />
             </div>
             <div>
               <Label>Tipo de Trigger</Label>
-              <Select value={newFlow.trigger_type} onValueChange={(v) => setNewFlow(prev => ({ ...prev, trigger_type: v }))}>
+              <Select value={newFlow.trigger_type} onValueChange={(v) => setNewFlow((prev) => ({ ...prev, trigger_type: v }))}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="keyword">Palavra-chave</SelectItem>
@@ -381,7 +486,7 @@ export default function FlowsPage() {
             {newFlow.trigger_type === "keyword" && (
               <div>
                 <Label>Palavra-chave</Label>
-                <Input value={newFlow.trigger_value} onChange={(e) => setNewFlow(prev => ({ ...prev, trigger_value: e.target.value }))} placeholder="Ex: ajuda, suporte" />
+                <Input value={newFlow.trigger_value} onChange={(e) => setNewFlow((prev) => ({ ...prev, trigger_value: e.target.value }))} placeholder="Ex: ajuda, suporte" />
               </div>
             )}
           </div>
