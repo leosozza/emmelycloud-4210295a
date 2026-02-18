@@ -180,6 +180,28 @@ Deno.serve(async (req) => {
       media_type: mediaType,
     });
 
+    // Forward to Bitrix24 (fire and forget)
+    try {
+      const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+      const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+      fetch(`${supabaseUrl}/functions/v1/bitrix24-send`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${serviceRoleKey}`,
+        },
+        body: JSON.stringify({
+          message: messageText,
+          contactName: contactName,
+          contactId: contactPhone || contactIg || contactEmail || externalId,
+          channel: dbChannel,
+          conversationId: conversationId,
+        }),
+      }).catch((e) => console.error("[CALLBELL-WH] Bitrix24 forward error:", e));
+    } catch (e) {
+      console.error("[CALLBELL-WH] Bitrix24 forward setup error:", e);
+    }
+
     return new Response(JSON.stringify({ success: true }), {
       status: 200,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
