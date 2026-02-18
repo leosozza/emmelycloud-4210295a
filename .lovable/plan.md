@@ -1,123 +1,74 @@
 
 
-# Reconstruir o Editor de Fluxos - Replicar ThothAI
+# Adicionar Blocos Bitrix24 CRM ao Editor de Fluxos
 
-## Problema Atual
-O editor de flows atual e extremamente basico:
-- Nos genericos sem componente visual customizado (usa o "default" do ReactFlow)
-- Sem painel de configuracao ao clicar num no
-- Sem drag-and-drop da paleta para o canvas
-- Sem categorias organizadas de nos
-- Sem preview de conteudo nos nos (mensagem, botoes, etc.)
-- Sem undo/redo
-- Sem simulador de teste
-- Sem duplicar no/fluxo
-- Sem exportar/importar fluxos nativos
-- Sem handles multiplos (botoes, condicoes)
+## Objetivo
+Adicionar uma nova categoria **"Bitrix24"** na paleta do editor de fluxos com blocos para operacoes CRUD em **Lead**, **Deal** e **SPA** (Smart Process Automation) do Bitrix24.
 
-## O que sera implementado
+## Novos Tipos de No
 
-### 1. FlowNodeTypes.ts - Tipos e Categorias de Nos
-Ficheiro com toda a definicao dos tipos de nos organizados por categoria:
+| Tipo | Label | Descricao |
+|------|-------|-----------|
+| `bitrix_create_lead` | Criar Lead | Criar um novo lead no Bitrix24 |
+| `bitrix_update_lead` | Atualizar Lead | Atualizar campos de um lead existente |
+| `bitrix_get_lead` | Buscar Lead | Obter dados de um lead por ID |
+| `bitrix_delete_lead` | Excluir Lead | Excluir um lead do Bitrix24 |
+| `bitrix_create_deal` | Criar Deal | Criar um novo negocio no Bitrix24 |
+| `bitrix_update_deal` | Atualizar Deal | Atualizar campos de um deal existente |
+| `bitrix_get_deal` | Buscar Deal | Obter dados de um deal por ID |
+| `bitrix_delete_deal` | Excluir Deal | Excluir um deal do Bitrix24 |
+| `bitrix_create_spa` | Criar SPA | Criar item em Smart Process Automation |
+| `bitrix_update_spa` | Atualizar SPA | Atualizar item SPA existente |
+| `bitrix_get_spa` | Buscar SPA | Obter dados de um item SPA |
+| `bitrix_delete_spa` | Excluir SPA | Excluir item SPA do Bitrix24 |
 
-**Categorias:**
-- Mensagens: Mensagem Simples, Mensagem com Botoes, Media, Localizacao, Contato vCard, Sticker
-- Logica: Condicao, Aguardar Resposta, Delay, Capturar Resposta, Loop
-- Integracoes: Webhook, Definir Variavel
-- Controle: Resposta IA, Alternar Persona, Transferir Humano, Voltar para IA, Encerrar Fluxo
+## Interface de Dados (FlowBitrixCRM)
 
-**Interface FlowNodeData** com todas as propriedades:
-- message, buttons, mediaUrl, mediaType
-- condition (type, field, value, timeout)
-- variable (name, value, scope)
-- webhook (url, method, headers, body)
-- personaId, prompt, delay, department
-- pollOptions, listSections, inputCapture
+Cada no Bitrix tera a seguinte configuracao:
 
-### 2. CustomFlowNode.tsx - Componente Visual dos Nos
-Componente React que renderiza cada no com:
-- Icone colorido e label do tipo
-- Preview da mensagem (primeiros 60 caracteres)
-- Preview dos botoes de resposta rapida
-- Handle de entrada (topo) e saida (fundo)
-- Handles multiplos para condicoes e botoes (um por opcao)
-- Handles de loop (loop + sair)
-- Borda colorida por tipo + ring de selecao
+```text
+entity: "lead" | "deal" | "spa"
+operation: "create" | "update" | "get" | "delete"
+entityId: string          -- ID da entidade (para get/update/delete), suporta {{variavel}}
+spaEntityTypeId: string   -- ID do tipo SPA (apenas para SPA)
+fields: array de { key, value }  -- Campos para create/update
+resultVar: string         -- Nome da variavel para guardar o resultado
+pipeline: string          -- Pipeline/categoria (opcional)
+stageId: string           -- Estagio/status (opcional)
+```
 
-### 3. FlowNodePalette.tsx - Paleta Lateral com Drag-and-Drop
-Painel lateral esquerdo com:
-- Pesquisa de blocos por nome
-- Accordion por categoria (Mensagens, Logica, Integracoes, Controle)
-- Cada bloco arrastavel (draggable) OU clicavel
-- Icone + label + badge de contagem por categoria
-- Botao para colapsar/expandir a paleta
-- Referencia de variaveis disponiveis no rodape
+## Alteracoes por Ficheiro
 
-### 4. NodeConfigPanel.tsx - Painel de Configuracao
-Painel lateral direito que abre ao clicar num no:
-- Campo "Nome do bloco" (label editavel)
-- Configuracao especifica por tipo:
-  - **Mensagem**: Textarea para texto, dica de variaveis
-  - **Mensagem com Botoes**: Textarea + lista de botoes (max 3) com add/remove/reorder
-  - **Media**: Tipo (imagem/video/audio/doc) + URL
-  - **Condicao**: Tipo de condicao + campo + valor
-  - **Delay**: Segundos de espera
-  - **Resposta IA**: Selector de persona + prompt personalizado
-  - **Webhook**: URL + metodo (GET/POST/PUT) + headers + body + variavel de resposta
-  - **Variavel**: Nome + valor + escopo (conversa/contato)
-  - **Transferir**: Departamento + mensagem de transferencia
-  - **Capturar Resposta**: Pergunta + nome variavel + tipo validacao + timeout
-- Botao "Excluir bloco" e "Fechar"
-- Minimizavel
+### 1. `src/components/flows/FlowNodeTypes.ts`
+- Adicionar 12 novos tipos ao union `FlowNodeType`
+- Adicionar categoria "Bitrix24" ao `NODE_CATEGORIES`
+- Adicionar metadata (icone, cor, descricao) para cada tipo no `NODE_TYPE_META`
+  - Cor base: `#22c55e` (verde Bitrix) com variacoes por entidade
+  - Icones: `Building2` (lead), `Handshake` (deal), `Boxes` (SPA), combinados com `Plus`, `Pencil`, `Search`, `Trash2`
+- Adicionar interface `FlowBitrixCRM` com os campos acima
+- Adicionar `bitrixCrm?: FlowBitrixCRM` ao `FlowNodeData`
+- Adicionar defaults no `getDefaultData()` para cada tipo Bitrix
 
-### 5. Flows.tsx - Refactoring Completo do Editor
+### 2. `src/components/flows/NodeConfigPanel.tsx`
+- Adicionar secao de configuracao para nos Bitrix (quando `nodeType` comeca com `bitrix_`)
+- Campos do painel:
+  - **ID da Entidade** (para get/update/delete): Input com placeholder `{{lead_id}}`
+  - **ID do Tipo SPA** (apenas para SPA): Input numerico
+  - **Pipeline / Categoria**: Input opcional
+  - **Estagio**: Input opcional
+  - **Campos (fields)**: Lista dinamica de pares chave/valor com add/remove
+    - Chave: Input (ex: `TITLE`, `NAME`, `PHONE`)
+    - Valor: Input (ex: `{{nome_cliente}}`, texto fixo)
+  - **Variavel de resultado**: Input para guardar resposta da API
+- Dica com campos comuns do Bitrix24 (TITLE, NAME, PHONE, EMAIL, COMPANY_TITLE, OPPORTUNITY, STAGE_ID)
 
-**Editor Header:**
-- Botoes Undo/Redo com atalhos (Ctrl+Z / Ctrl+Shift+Z)
-- Botao Salvar
-- Botao Testar (abre simulador)
-- Botao Exportar JSON
+### 3. `src/components/flows/CustomFlowNode.tsx`
+- Adicionar preview para nos Bitrix:
+  - Mostrar operacao + entidade (ex: "Criar Lead")
+  - Mostrar numero de campos configurados
+  - Mostrar ID da entidade se definido
+  - Mostrar variavel de resultado se definida
 
-**Canvas:**
-- Paleta lateral esquerda (FlowNodePalette)
-- ReactFlow com customNodeTypes registados
-- Drop zone com feedback visual ao arrastar
-- Click em no abre NodeConfigPanel a direita
-- Click em edge permite excluir
-- Panel inferior com instrucoes de uso
-- Panel contextual com Duplicar/Excluir no selecionado
-
-**Lista de Fluxos:**
-- Manter cards existentes
-- Adicionar botao Duplicar e Exportar por fluxo
-- Manter importacao PowerBot
-
-### 6. useFlowHistory.ts - Hook de Undo/Redo
-- Pilha de estados (nodes + edges)
-- pushState(), undo(), redo()
-- canUndo, canRedo flags
-- Atalhos de teclado Ctrl+Z e Ctrl+Shift+Z
-
-## Detalhes Tecnicos
-
-### Ficheiros a criar:
-- `src/components/flows/FlowNodeTypes.ts` - Tipos, categorias, interfaces
-- `src/components/flows/CustomFlowNode.tsx` - Componente visual de no
-- `src/components/flows/FlowNodePalette.tsx` - Paleta lateral com drag-and-drop
-- `src/components/flows/NodeConfigPanel.tsx` - Painel de configuracao de no
-- `src/hooks/useFlowHistory.ts` - Hook undo/redo
-
-### Ficheiros a modificar:
-- `src/pages/Flows.tsx` - Refactoring completo do editor
-
-### Funcionalidades incluidas:
-- Custom node rendering com icones, cores, previews
-- Drag-and-drop da paleta para o canvas
-- Painel de configuracao contextual por tipo de no
-- Undo/Redo com atalhos de teclado
-- Duplicar nos e fluxos
-- Exportar fluxo para JSON
-- Handles multiplos para botoes e condicoes
-- Feedback visual ao arrastar, selecionar edges
-- Manter compatibilidade com importacao PowerBot
+### 4. `src/components/flows/FlowNodePalette.tsx`
+- Nenhuma alteracao necessaria (ja renderiza automaticamente baseado em `NODE_CATEGORIES`)
 
