@@ -95,7 +95,6 @@ export default function AtendimentoPage() {
       if (!selectedId) return;
       const conv = conversations.find((c) => c.id === selectedId);
 
-      // Route messages through configured provider for supported channels
       if (conv?.channel === "instagram" || conv?.channel === "whatsapp") {
         const fnName = getSendFunctionName(conv.channel as "instagram" | "whatsapp");
         const { data, error } = await supabase.functions.invoke(fnName, {
@@ -106,7 +105,6 @@ export default function AtendimentoPage() {
         return;
       }
 
-      // Default: direct DB insert for other channels
       const { error } = await supabase.from("messages").insert({
         conversation_id: selectedId,
         direction: "outbound" as Direction,
@@ -162,10 +160,9 @@ export default function AtendimentoPage() {
     };
   }, [selectedId, queryClient]);
 
-  // Poll delivery status for outbound messages
+  // Poll delivery status
   useEffect(() => {
     if (!selectedId) return;
-
     const hasPending = messages.some(
       (m) => m.direction === "outbound" && m.delivery_status && m.delivery_status !== "read"
     );
@@ -185,7 +182,7 @@ export default function AtendimentoPage() {
       }
     };
 
-    pollStatus(); // Initial poll
+    pollStatus();
     const interval = setInterval(pollStatus, 15000);
     return () => clearInterval(interval);
   }, [selectedId, messages, queryClient]);
@@ -193,9 +190,9 @@ export default function AtendimentoPage() {
   const selectedConversation = conversations.find((c) => c.id === selectedId) ?? null;
 
   return (
-    <div className="flex h-[calc(100vh-5rem)] -m-6 rounded-lg overflow-hidden border">
-      {/* Left panel - conversation list */}
-      <div className="w-[460px] shrink-0">
+    <div className="fixed inset-0 top-[3.5rem] flex bg-background">
+      {/* Left panel - conversation list (fixed width like Callbell) */}
+      <div className="w-80 xl:w-96 shrink-0 border-r flex flex-col">
         <ConversationList
           conversations={conversations}
           selectedId={selectedId}
@@ -203,16 +200,18 @@ export default function AtendimentoPage() {
         />
       </div>
 
-      {/* Center panel - chat */}
-      <ChatPanel
-        conversation={selectedConversation}
-        messages={messages}
-        quickReplies={quickReplies}
-        onSendMessage={(content) => sendMessage.mutate(content)}
-        onCloseConversation={() => closeConversation.mutate()}
-      />
+      {/* Center panel - chat (flexible) */}
+      <div className="flex-1 min-w-0 flex flex-col">
+        <ChatPanel
+          conversation={selectedConversation}
+          messages={messages}
+          quickReplies={quickReplies}
+          onSendMessage={(content) => sendMessage.mutate(content)}
+          onCloseConversation={() => closeConversation.mutate()}
+        />
+      </div>
 
-      {/* Right panel - contact profile */}
+      {/* Right panel - contact profile (fixed width like Callbell) */}
       <ContactProfile conversation={selectedConversation} />
     </div>
   );
