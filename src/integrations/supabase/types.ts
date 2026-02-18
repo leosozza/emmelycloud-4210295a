@@ -652,6 +652,118 @@ export type Database = {
           },
         ]
       }
+      payment_gateway_config: {
+        Row: {
+          config: Json | null
+          created_at: string
+          environment: string
+          gateway: string
+          id: string
+          is_active: boolean
+          updated_at: string
+        }
+        Insert: {
+          config?: Json | null
+          created_at?: string
+          environment?: string
+          gateway: string
+          id?: string
+          is_active?: boolean
+          updated_at?: string
+        }
+        Update: {
+          config?: Json | null
+          created_at?: string
+          environment?: string
+          gateway?: string
+          id?: string
+          is_active?: boolean
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      payment_transactions: {
+        Row: {
+          amount: number
+          client_id: string | null
+          contract_id: string | null
+          created_at: string
+          currency: string
+          financial_record_id: string | null
+          gateway: string
+          gateway_customer_id: string | null
+          gateway_payment_id: string | null
+          id: string
+          metadata: Json | null
+          payment_method: string
+          payment_url: string | null
+          pix_code: string | null
+          pix_qr_code: string | null
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          amount?: number
+          client_id?: string | null
+          contract_id?: string | null
+          created_at?: string
+          currency?: string
+          financial_record_id?: string | null
+          gateway: string
+          gateway_customer_id?: string | null
+          gateway_payment_id?: string | null
+          id?: string
+          metadata?: Json | null
+          payment_method?: string
+          payment_url?: string | null
+          pix_code?: string | null
+          pix_qr_code?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          amount?: number
+          client_id?: string | null
+          contract_id?: string | null
+          created_at?: string
+          currency?: string
+          financial_record_id?: string | null
+          gateway?: string
+          gateway_customer_id?: string | null
+          gateway_payment_id?: string | null
+          id?: string
+          metadata?: Json | null
+          payment_method?: string
+          payment_url?: string | null
+          pix_code?: string | null
+          pix_qr_code?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "payment_transactions_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "payment_transactions_contract_id_fkey"
+            columns: ["contract_id"]
+            isOneToOne: false
+            referencedRelation: "contracts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "payment_transactions_financial_record_id_fkey"
+            columns: ["financial_record_id"]
+            isOneToOne: false
+            referencedRelation: "financial_records"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       profiles: {
         Row: {
           avatar_url: string | null

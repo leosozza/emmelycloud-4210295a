@@ -32,3 +32,15 @@ verify_jwt = false
 
 [functions.manage-credentials]
 verify_jwt = false
+
+[functions.payment-create]
+verify_jwt = false
+
+[functions.payment-webhook-stripe]
+verify_jwt = false
+
+[functions.payment-webhook-asaas]
+verify_jwt = false
+
+[functions.payment-status]
+verify_jwt = false
