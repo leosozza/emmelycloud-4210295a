@@ -221,15 +221,15 @@ Deno.serve(async (req) => {
       // 1. Register connector
       const regResult = await callBitrix(clientEndpoint, accessToken, "imconnector.register", {
         ID: CONNECTOR_ID,
-        NAME: "Emmely Cloud - WhatsApp & Instagram",
+        NAME: "Emmely Messages",
         ICON: {
-          DATA_IMAGE: "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDgiIGhlaWdodD0iNDgiIHZpZXdCb3g9IjAgMCA0OCA0OCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iNDgiIGhlaWdodD0iNDgiIHJ4PSIxMiIgZmlsbD0iIzI1RDM2NiIvPjx0ZXh0IHg9IjI0IiB5PSIzMCIgZm9udC1zaXplPSIyMCIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZmlsbD0id2hpdGUiPkU8L3RleHQ+PC9zdmc+",
-          COLOR: { BACKGROUND: "#25D366", BORDER: "#128C7E" },
+          DATA_IMAGE: "data:image/svg+xml;base64," + btoa('<svg width="48" height="48" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg"><rect width="48" height="48" rx="12" fill="#722F37"/><text x="24" y="31" font-size="22" font-weight="bold" text-anchor="middle" fill="white" font-family="Arial">E</text></svg>'),
+          COLOR: { BACKGROUND: "#722F37", BORDER: "#5A252C" },
           SIZE: { WIDTH: 48, HEIGHT: 48 },
           POSITION: { TOP: 0, LEFT: 0 },
         },
         ICON_DISABLED: {
-          DATA_IMAGE: "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDgiIGhlaWdodD0iNDgiIHZpZXdCb3g9IjAgMCA0OCA0OCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iNDgiIGhlaWdodD0iNDgiIHJ4PSIxMiIgZmlsbD0iIzk5OSIvPjx0ZXh0IHg9IjI0IiB5PSIzMCIgZm9udC1zaXplPSIyMCIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZmlsbD0id2hpdGUiPkU8L3RleHQ+PC9zdmc+",
+          DATA_IMAGE: "data:image/svg+xml;base64," + btoa('<svg width="48" height="48" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg"><rect width="48" height="48" rx="12" fill="#999"/><text x="24" y="31" font-size="22" font-weight="bold" text-anchor="middle" fill="white" font-family="Arial">E</text></svg>'),
           COLOR: { BACKGROUND: "#999", BORDER: "#666" },
           SIZE: { WIDTH: 48, HEIGHT: 48 },
           POSITION: { TOP: 0, LEFT: 0 },
