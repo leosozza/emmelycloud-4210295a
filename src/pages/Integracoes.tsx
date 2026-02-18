@@ -237,6 +237,19 @@ function CRMTab() {
   );
 }
 
+// ─── Credential Row ──────────────────────────────────────────────────────────
+
+function CredentialRow({ label, configured }: { label: string; configured: boolean }) {
+  return (
+    <div className="flex justify-between items-center">
+      <span className="text-muted-foreground text-xs">{label}</span>
+      <span className={`font-medium text-xs ${configured ? "text-green-600" : "text-red-500"}`}>
+        {configured ? "✓ Configurado" : "✗ Não configurado"}
+      </span>
+    </div>
+  );
+}
+
 // ─── Omni Channel Tab ────────────────────────────────────────────────────────
 
 function OmniChannelTab() {
@@ -307,8 +320,23 @@ function OmniChannelTab() {
               </SelectContent>
             </Select>
           </div>
-          <div className="flex justify-between"><span className="text-muted-foreground">CALLBELL_API_TOKEN</span><span className="font-medium text-green-600">✓</span></div>
-          <div className="flex justify-between"><span className="text-muted-foreground">CALLBELL_WA_CHANNEL_UUID</span><span className="font-medium text-green-600">✓</span></div>
+
+          {waProvider === "callbell" && (
+            <div className="space-y-1.5">
+              <p className="font-medium text-xs uppercase text-muted-foreground tracking-wide">Credenciais Callbell</p>
+              <CredentialRow label="CALLBELL_API_TOKEN" configured />
+              <CredentialRow label="CALLBELL_WA_CHANNEL_UUID" configured />
+            </div>
+          )}
+
+          {waProvider === "direct" && (
+            <div className="space-y-1.5">
+              <p className="font-medium text-xs uppercase text-muted-foreground tracking-wide">Credenciais WhatsApp Business</p>
+              <CredentialRow label="META_PAGE_ACCESS_TOKEN" configured />
+              <CredentialRow label="META_WA_PHONE_NUMBER_ID" configured={false} />
+              <p className="text-xs text-muted-foreground mt-1">⚠️ Envio direto WhatsApp ainda não implementado. Será usado Callbell.</p>
+            </div>
+          )}
         </CardContent>
       </Card>
 
@@ -337,18 +365,24 @@ function OmniChannelTab() {
               </SelectContent>
             </Select>
           </div>
-          <div className="space-y-1.5">
-            <p className="font-medium text-xs uppercase text-muted-foreground tracking-wide">Credenciais Callbell</p>
-            <div className="flex justify-between"><span className="text-muted-foreground">CALLBELL_API_TOKEN</span><span className="font-medium text-green-600">✓</span></div>
-            <div className="flex justify-between"><span className="text-muted-foreground">CALLBELL_IG_CHANNEL_UUID</span><span className="font-medium text-green-600">✓</span></div>
-          </div>
-          <div className="space-y-1.5">
-            <p className="font-medium text-xs uppercase text-muted-foreground tracking-wide">Credenciais Meta / Instagram</p>
-            <div className="flex justify-between"><span className="text-muted-foreground">META_PAGE_ACCESS_TOKEN</span><span className="font-medium text-green-600">✓</span></div>
-            <div className="flex justify-between"><span className="text-muted-foreground">META_IG_ACCOUNT_ID</span><span className="font-medium text-green-600">✓</span></div>
-            <div className="flex justify-between"><span className="text-muted-foreground">META_APP_ID</span><span className="font-medium text-green-600">✓</span></div>
-            <div className="flex justify-between"><span className="text-muted-foreground">META_APP_SECRET</span><span className="font-medium text-green-600">✓</span></div>
-          </div>
+
+          {igProvider === "callbell" && (
+            <div className="space-y-1.5">
+              <p className="font-medium text-xs uppercase text-muted-foreground tracking-wide">Credenciais Callbell</p>
+              <CredentialRow label="CALLBELL_API_TOKEN" configured />
+              <CredentialRow label="CALLBELL_IG_CHANNEL_UUID" configured />
+            </div>
+          )}
+
+          {igProvider === "direct" && (
+            <div className="space-y-1.5">
+              <p className="font-medium text-xs uppercase text-muted-foreground tracking-wide">Credenciais Meta / Instagram</p>
+              <CredentialRow label="META_PAGE_ACCESS_TOKEN" configured />
+              <CredentialRow label="META_IG_ACCOUNT_ID" configured />
+              <CredentialRow label="META_APP_ID" configured />
+              <CredentialRow label="META_APP_SECRET" configured />
+            </div>
+          )}
 
           <Button size="sm" variant="outline" className="w-full" onClick={handleTestInstagram} disabled={igTesting}>
             {igTesting ? <RefreshCw className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <Activity className="h-3.5 w-3.5 mr-1.5" />}
@@ -357,7 +391,7 @@ function OmniChannelTab() {
 
           {igResult && (
             <div className="space-y-2">
-              {igResult.callbell && (
+              {igProvider === "callbell" && igResult.callbell && (
                 <div className={`flex items-start gap-2 rounded-md px-3 py-2 ${igResult.callbell.ok ? "bg-green-50 text-green-800" : "bg-red-50 text-red-800"}`}>
                   {igResult.callbell.ok ? <CheckCircle2 className="h-4 w-4 shrink-0 mt-0.5" /> : <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />}
                   <div className="text-xs">
@@ -372,7 +406,7 @@ function OmniChannelTab() {
                   </div>
                 </div>
               )}
-              {igResult.meta && (
+              {igProvider === "direct" && igResult.meta && (
                 <div className={`flex items-start gap-2 rounded-md px-3 py-2 ${igResult.meta.ok ? "bg-green-50 text-green-800" : "bg-red-50 text-red-800"}`}>
                   {igResult.meta.ok ? <CheckCircle2 className="h-4 w-4 shrink-0 mt-0.5" /> : <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />}
                   <div className="text-xs">
