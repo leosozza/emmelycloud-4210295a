@@ -44,3 +44,6 @@ verify_jwt = false
 
 [functions.payment-status]
 verify_jwt = false
+
+[functions.bitrix24-robot-handler]
+verify_jwt = false
