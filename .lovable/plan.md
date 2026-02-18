@@ -1,159 +1,181 @@
 
 
-# Plano de Implementacao: Fases 3, 4 e 5
+# Plano: Integração Bitrix24 - Criar Aplicação
 
-## Fase 3: Pagina de Triagem Dedicada
+## Objetivo
+Criar uma aplicação Bitrix24 completa que funcione como conector, permitindo:
+- Instalação via OAuth no Bitrix24 (local ou Marketplace)
+- Registro automático de conector de mensagens (WhatsApp/Instagram via Callbell)
+- Fluxo bidirecional de mensagens entre Emmely Cloud e Bitrix24
+- Token refresh automático
+- Robots de automação BizProc (futuro)
 
-A pagina de Triagem (`/triagem`) ja esta implementada com funcionalidade completa:
-- KPI cards (pendentes, urgencia alta, SLA expirado)
-- Tabela com leads no estagio "triagem"
-- Sheet lateral com formulario de triagem (area juridica, urgencia, notas)
-- Botao "Concluir Triagem e Avancar para Proposta"
+## Fase 1 - Fundação (o que vamos implementar agora)
 
-**Esta fase esta CONCLUIDA.** Nao requer alteracoes adicionais.
-
----
-
-## Fase 4: Rastreabilidade e Navegacao (Breadcrumbs e Links)
-
-### 4.1 Componente EntityBreadcrumb reutilizavel
-
-Criar um componente `EntityBreadcrumb` que mostra o caminho completo de uma entidade:
+### 1.1 Tabela `bitrix24_integrations`
+Armazenar credenciais OAuth, config do portal e estado do conector.
 
 ```text
-Conversa > Lead > Caso > Proposta > Contrato
+bitrix24_integrations
++--------------------+-------------------+
+| Campo              | Tipo              |
++--------------------+-------------------+
+| id                 | UUID PK           |
+| member_id          | TEXT UNIQUE       | -- ID unico do portal
+| domain             | TEXT              |
+| client_endpoint    | TEXT              |
+| access_token       | TEXT              |
+| refresh_token      | TEXT              |
+| expires_at         | TIMESTAMPTZ       |
+| application_token  | TEXT              | -- para validar webhooks
+| connector_registered | BOOLEAN         |
+| connector_active   | BOOLEAN           |
+| config             | JSONB             | -- dados extras
+| created_at         | TIMESTAMPTZ       |
+| updated_at         | TIMESTAMPTZ       |
++--------------------+-------------------+
 ```
 
-Cada item e um link clicavel que navega para a entidade correspondente. O componente recebe IDs opcionais e faz queries para obter os nomes.
-
-### 4.2 Integrar breadcrumbs nas paginas
-
-- **Caso (`Casos.tsx`)**: ao abrir detalhe de um caso, mostrar breadcrumb com Lead de origem (via `lead_id`) e link para conversa (via `lead.conversation_id`)
-- **Proposta (`Propostas.tsx`)**: mostrar breadcrumb com Caso associado (via `case_id`) e Lead de origem
-- **Contrato (`Contratos.tsx`)**: mostrar breadcrumb com Proposta (via `proposal_id`), Caso (via `case_id`) e Lead de origem
-- **Lead (`LeadSheet.tsx`)**: ja tem link para caso associado; adicionar link para conversa de origem (via `conversation_id`)
-
-### 4.3 Links bidirecionais nas tabelas
-
-- Na tabela de Casos: coluna "Lead" clicavel que abre o LeadSheet ou navega para `/leads`
-- Na tabela de Contratos: coluna "Proposta" e "Caso" clicaveis
-- Na tabela de Propostas: coluna "Caso" clicavel
-
-### Ficheiros a criar/modificar:
-- Criar: `src/components/EntityBreadcrumb.tsx`
-- Modificar: `src/pages/Casos.tsx` (adicionar breadcrumb no detalhe)
-- Modificar: `src/pages/Propostas.tsx` (adicionar breadcrumb no detalhe)
-- Modificar: `src/pages/Contratos.tsx` (adicionar breadcrumb no detalhe)
-- Modificar: `src/components/leads/LeadSheet.tsx` (adicionar link para conversa)
-
----
-
-## Fase 5: Autenticacao e Seguranca
-
-### 5.1 O que ja existe
-
-- Pagina `/auth` com login e registo funcional
-- Hook `useAuth` para verificar sessao
-- Tabela `profiles` com trigger `handle_new_user` (mas o trigger NAO esta registado na BD -- precisa ser criado)
-- Tabela `user_roles` com enum `app_role` (admin, comercial, advogado, financeiro)
-- Funcoes `has_role`, `is_admin`, `is_advogado`, `is_comercial`, `is_financeiro`
-- Politicas RLS baseadas em roles ja definidas nas tabelas
-- Politicas permissivas (`USING (true)`) adicionadas temporariamente para testes
-
-### 5.2 Migracao de Base de Dados
-
-1. **Criar trigger para auto-criacao de perfil**: O trigger `handle_new_user` existe como funcao mas NAO esta registado. Criar:
+### 1.2 Tabela `bitrix24_channel_mappings`
+Mapear canais (WhatsApp/IG) para Open Lines do Bitrix24.
 
 ```text
-CREATE TRIGGER on_auth_user_created
-  AFTER INSERT ON auth.users
-  FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
+bitrix24_channel_mappings
++--------------------+-------------------+
+| Campo              | Tipo              |
++--------------------+-------------------+
+| id                 | UUID PK           |
+| integration_id     | UUID FK           |
+| channel            | TEXT              | -- whatsapp, instagram
+| line_id            | INTEGER           |
+| line_name          | TEXT              |
+| is_active          | BOOLEAN           |
+| created_at         | TIMESTAMPTZ       |
+| updated_at         | TIMESTAMPTZ       |
++--------------------+-------------------+
 ```
 
-2. **Remover politicas permissivas**: Eliminar todas as politicas "Allow all..." das tabelas `leads`, `cases`, `proposals`, `contracts` e `financial_records`. Isto activa as politicas baseadas em roles que ja existem.
+### 1.3 Tabela `bitrix24_debug_logs`
+Logs para diagnostico de problemas.
 
-3. **Adicionar politica de leitura para conversations e messages para utilizadores autenticados**: As conversas e mensagens actualmente usam `USING (true)` que permite acesso anonimo. Substituir por politicas para `authenticated`.
+### 1.4 Secrets necessarios
+- `BITRIX24_CLIENT_ID` - Client ID da aplicacao
+- `BITRIX24_CLIENT_SECRET` - Client Secret da aplicacao
 
-### 5.3 Proteccao de Rotas no Frontend
+## Fase 2 - Edge Functions
 
-Modificar `AppLayout.tsx` para verificar autenticacao:
-- Se o utilizador nao esta autenticado, redirecionar para `/auth`
-- Mostrar loading spinner enquanto verifica sessao
-- Adicionar botao de logout no `AppHeader`
+### 2.1 `bitrix24-install` (handler de instalacao OAuth)
+- Recebe POST do Bitrix24 quando usuario instala o app
+- Parse de form data (formato PHP: `auth[access_token]`, `auth[domain]`, etc.)
+- Salva credenciais na tabela `bitrix24_integrations` (upsert por `member_id`)
+- Registra conector `emmely_connector` via `imconnector.register`
+- Ativa conector em todas as Open Lines
+- Vincula eventos (`OnImConnectorMessageAdd`, `OnImConnectorDialogStart`, etc.)
+- Retorna HTML com `BX24.installFinish()` e headers CSP corretos para iframe
 
-### 5.4 Contexto de Autenticacao
+### 2.2 `bitrix24-connector-settings` (UI no Contact Center)
+- Retorna HTML renderizado dentro do iframe do Bitrix24
+- Mostra estado do conector (ativo/inativo)
+- Permite selecionar canal (WhatsApp/Instagram) para mapear
+- Headers CSP com frame-ancestors para todos os dominios bitrix24
 
-Criar um `AuthProvider` ou integrar no `AppLayout`:
-- Disponibilizar `user`, `session`, `role` via contexto
-- Verificar role do utilizador via query a `user_roles`
-- Condicionar visibilidade de menus/accoes com base no role
+### 2.3 `bitrix24-events` (webhook de eventos)
+- Recebe eventos do Bitrix24 (OnImConnectorMessageAdd, etc.)
+- Quando operador envia mensagem no Bitrix24:
+  - Identifica a conversa no Emmely
+  - Roteia para Callbell (WhatsApp) ou outro canal
+- Detecta mensagens do bot para evitar loops
+- Envia status de entrega de volta (`imconnector.send.status.delivery`)
 
-### 5.5 Atribuicao de Role Inicial
+### 2.4 `bitrix24-send` (Emmely para Bitrix24)
+- Quando mensagem chega no Emmely (via Callbell webhook):
+  - Busca mapeamento de canal
+  - Envia para Bitrix24 via `imconnector.send.messages`
+  - Fallbacks: timeline comment, activity, notificacao
+  - Auto-reparo se linha inativa
 
-O primeiro utilizador registado deve receber o role `admin` automaticamente. Criar uma funcao de base de dados que:
-- Verifica se existem utilizadores na tabela `user_roles`
-- Se nao existir nenhum, atribui `admin` ao novo utilizador
-- Caso contrario, nao atribui role (admin atribui manualmente)
+### 2.5 `bitrix24-token-refresh` (helper)
+- Logica reutilizavel de refresh de token OAuth
+- Verifica expiracao com buffer de 5 minutos
+- Atualiza tokens no banco automaticamente
 
-### Ficheiros a criar/modificar:
-- Criar: migracao SQL (trigger + remover politicas permissivas + politicas autenticadas)
-- Modificar: `src/components/AppLayout.tsx` (proteccao de rotas)
-- Modificar: `src/components/AppHeader.tsx` (botao logout + mostrar nome/role)
-- Criar: `src/contexts/AuthContext.tsx` (contexto de autenticacao com role)
-- Modificar: `src/App.tsx` (envolver com AuthProvider)
+## Fase 3 - Integracao Frontend
 
----
+### 3.1 Pagina de configuracao Bitrix24
+- Nova secao em Automacoes ou pagina dedicada
+- Mostra estado da integracao (conectado/desconectado)
+- Instrucoes para criar app local ou instalar do Marketplace
+- Mostra mapeamentos de canais ativos
+- Logs de diagnostico recentes
+
+### 3.2 Atualizacao do webhook Callbell
+- Modificar `callbell-webhook` para tambem chamar `bitrix24-send`
+- Quando mensagem inbound chega via Callbell, replicar para Bitrix24
 
 ## Detalhes Tecnicos
 
-### EntityBreadcrumb -- Estrutura
-
+### Config.toml - Novas funcoes
 ```text
-Props:
-  - conversationId?: string
-  - leadId?: string
-  - caseId?: string
-  - proposalId?: string
-  - contractId?: string
+[functions.bitrix24-install]
+verify_jwt = false
 
-O componente faz queries para obter os nomes de cada entidade
-e renderiza um breadcrumb horizontal com links:
+[functions.bitrix24-connector-settings]
+verify_jwt = false
 
-Conversa: Maria Silva > Lead: Maria Silva > Caso: Cidadania > Proposta: Honorarios > Contrato
+[functions.bitrix24-events]
+verify_jwt = false
+
+[functions.bitrix24-send]
+verify_jwt = false
 ```
 
-### Politicas RLS a remover (10 politicas)
+Todas as funcoes Bitrix24 precisam `verify_jwt = false` porque o Bitrix24 nao envia JWT do Supabase.
 
+### Headers CSP obrigatorios (para funcoes que retornam HTML)
 ```text
-leads: Allow all read/insert/update/delete
-cases: Allow all read/insert/update/delete
-proposals: Allow all read/insert/update/delete
-contracts: Allow all read/insert/update/delete
-financial_records: Allow all read/insert/update/delete
+frame-ancestors 'self' 
+  https://*.bitrix24.com 
+  https://*.bitrix24.com.br 
+  https://*.bitrix24.eu 
+  https://*.bitrix24.es 
+  https://*.bitrix24.de
 ```
 
-### Politicas RLS a adicionar
+### Extracao de dominio
+Funcao robusta que tenta multiplas fontes em cascata:
+1. `client_endpoint` 
+2. `auth.domain`
+3. `DOMAIN` / `domain`
+4. Header `Referer`
+5. Header `Origin`
 
-```text
--- Conversations e Messages: acesso para authenticated
-conversations: SELECT/INSERT/UPDATE para authenticated
-messages: SELECT/INSERT para authenticated
-```
+### Prevencao de loops
+- Detectar mensagens do bot por padroes de texto
+- Lock de processamento por conversa (30s timeout)
+- Deduplicacao por `external_id`
 
-### Proteccao de Rotas
+### Token refresh automatico
+- Antes de cada chamada a API Bitrix24, verificar validade
+- Refresh via `https://oauth.bitrix.info/oauth/token/`
+- Buffer de 5 minutos antes da expiracao
 
-```text
-AppLayout verifica useAuth():
-  - loading -> Spinner
-  - !session -> Navigate to /auth
-  - session -> Render Outlet
-```
+## Ordem de Implementacao
 
-### Ordem de execucao
+1. Criar tabelas (`bitrix24_integrations`, `bitrix24_channel_mappings`, `bitrix24_debug_logs`)
+2. Solicitar secrets (`BITRIX24_CLIENT_ID`, `BITRIX24_CLIENT_SECRET`)
+3. Criar `bitrix24-install` (handler OAuth + registro conector)
+4. Criar `bitrix24-connector-settings` (UI iframe)
+5. Criar `bitrix24-events` (webhook Bitrix24 -> Emmely)
+6. Criar `bitrix24-send` (Emmely -> Bitrix24 via imconnector)
+7. Atualizar `callbell-webhook` para chamar `bitrix24-send`
+8. Criar pagina de configuracao no frontend
 
-1. Fase 4 -- Breadcrumbs (sem dependencias, pode ser feito primeiro)
-2. Fase 5 -- Migracao BD (trigger + remover politicas permissivas)
-3. Fase 5 -- Proteccao de rotas e contexto de autenticacao
-4. Fase 5 -- Logout e UI de roles no header
-5. Teste completo end-to-end com login
+## Notas Importantes (dos guias fornecidos)
+
+- Usar `member_id` como identificador unico do portal (nunca muda)
+- Tratar "Handler already binded" como sucesso
+- Sempre usar `client_endpoint` do payload de instalacao (nao endpoint OAuth generico)
+- Auto-reparo de Open Lines: verificar fila de operadores, TIMEMAN=N, CHECK_AVAILABLE=N
+- Deteccao de modo CRM (Classico vs Simples) para criar Lead ou Deal
+- Parse flexivel do body (JSON e form-urlencoded com notacao PHP)
 
