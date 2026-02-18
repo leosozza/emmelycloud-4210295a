@@ -29,7 +29,7 @@ export function ContactProfile({ conversation }: ContactProfileProps) {
 
   if (!conversation) {
     return (
-      <div className="w-72 border-l bg-card hidden lg:flex items-center justify-center">
+      <div className="w-72 xl:w-80 border-l bg-card hidden lg:flex items-center justify-center shrink-0">
         <p className="text-sm text-muted-foreground">Selecione uma conversa</p>
       </div>
     );
@@ -61,7 +61,7 @@ export function ContactProfile({ conversation }: ContactProfileProps) {
     .toUpperCase();
 
   return (
-    <div className="w-72 border-l bg-card hidden lg:flex flex-col">
+    <div className="w-72 xl:w-80 border-l bg-card hidden lg:flex flex-col shrink-0">
       <div className="p-4 flex flex-col items-center text-center border-b">
         <Avatar className="h-16 w-16 mb-3">
           <AvatarImage src={conversation.contact_avatar_url ?? undefined} />

@@ -58,8 +58,9 @@ export function ConversationList({ conversations, selectedId, onSelect }: Conver
   });
 
   return (
-    <div className="flex flex-col h-full border-r bg-card">
-      <div className="p-3 border-b space-y-2">
+    <div className="flex flex-col h-full bg-card">
+      {/* Header with filters */}
+      <div className="p-3 border-b space-y-2 shrink-0">
         <div className="relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
@@ -96,6 +97,8 @@ export function ConversationList({ conversations, selectedId, onSelect }: Conver
           ))}
         </div>
       </div>
+
+      {/* Conversation items */}
       <ScrollArea className="flex-1">
         <div className="divide-y">
           {filtered.map((conv) => (
