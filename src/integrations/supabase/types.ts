@@ -14,6 +14,133 @@ export type Database = {
   }
   public: {
     Tables: {
+      bitrix24_channel_mappings: {
+        Row: {
+          channel: string
+          created_at: string
+          id: string
+          integration_id: string
+          is_active: boolean
+          line_id: number | null
+          line_name: string | null
+          updated_at: string
+        }
+        Insert: {
+          channel: string
+          created_at?: string
+          id?: string
+          integration_id: string
+          is_active?: boolean
+          line_id?: number | null
+          line_name?: string | null
+          updated_at?: string
+        }
+        Update: {
+          channel?: string
+          created_at?: string
+          id?: string
+          integration_id?: string
+          is_active?: boolean
+          line_id?: number | null
+          line_name?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "bitrix24_channel_mappings_integration_id_fkey"
+            columns: ["integration_id"]
+            isOneToOne: false
+            referencedRelation: "bitrix24_integrations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      bitrix24_debug_logs: {
+        Row: {
+          created_at: string
+          direction: string | null
+          error: string | null
+          event_type: string
+          id: string
+          integration_id: string | null
+          payload: Json | null
+        }
+        Insert: {
+          created_at?: string
+          direction?: string | null
+          error?: string | null
+          event_type: string
+          id?: string
+          integration_id?: string | null
+          payload?: Json | null
+        }
+        Update: {
+          created_at?: string
+          direction?: string | null
+          error?: string | null
+          event_type?: string
+          id?: string
+          integration_id?: string | null
+          payload?: Json | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "bitrix24_debug_logs_integration_id_fkey"
+            columns: ["integration_id"]
+            isOneToOne: false
+            referencedRelation: "bitrix24_integrations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      bitrix24_integrations: {
+        Row: {
+          access_token: string | null
+          application_token: string | null
+          client_endpoint: string | null
+          config: Json | null
+          connector_active: boolean
+          connector_registered: boolean
+          created_at: string
+          domain: string | null
+          expires_at: string | null
+          id: string
+          member_id: string
+          refresh_token: string | null
+          updated_at: string
+        }
+        Insert: {
+          access_token?: string | null
+          application_token?: string | null
+          client_endpoint?: string | null
+          config?: Json | null
+          connector_active?: boolean
+          connector_registered?: boolean
+          created_at?: string
+          domain?: string | null
+          expires_at?: string | null
+          id?: string
+          member_id: string
+          refresh_token?: string | null
+          updated_at?: string
+        }
+        Update: {
+          access_token?: string | null
+          application_token?: string | null
+          client_endpoint?: string | null
+          config?: Json | null
+          connector_active?: boolean
+          connector_registered?: boolean
+          created_at?: string
+          domain?: string | null
+          expires_at?: string | null
+          id?: string
+          member_id?: string
+          refresh_token?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
       cases: {
         Row: {
           assigned_attorney_id: string | null
