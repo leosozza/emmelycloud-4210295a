@@ -286,6 +286,102 @@ Deno.serve(async (req) => {
       await debugLog(supabase, integrationId, "connector_setup_error", "outbound", null, String(connectorError));
     }
 
+    // --- Register BizProc Robots ---
+    try {
+      const robotHandlerUrl = `${supabaseUrl}/functions/v1/bitrix24-robot-handler`;
+
+      const robots = [
+        {
+          CODE: "emmely_send_whatsapp",
+          NAME: "Emmely: Enviar WhatsApp",
+          PROPERTIES: {
+            phone: { Name: "Telefone", Type: "string", Required: "Y", Description: "Número de telefone com código do país" },
+            message: { Name: "Mensagem", Type: "text", Required: "Y", Description: "Texto da mensagem" },
+          },
+          RETURN_PROPERTIES: {
+            message_id: { Name: "ID da Mensagem", Type: "string" },
+            status: { Name: "Status", Type: "string" },
+            error: { Name: "Erro", Type: "string" },
+          },
+        },
+        {
+          CODE: "emmely_send_instagram",
+          NAME: "Emmely: Enviar Instagram",
+          PROPERTIES: {
+            instagram_user: { Name: "Utilizador Instagram", Type: "string", Required: "Y", Description: "Username ou ID do Instagram" },
+            message: { Name: "Mensagem", Type: "text", Required: "Y", Description: "Texto da mensagem" },
+          },
+          RETURN_PROPERTIES: {
+            message_id: { Name: "ID da Mensagem", Type: "string" },
+            status: { Name: "Status", Type: "string" },
+            error: { Name: "Erro", Type: "string" },
+          },
+        },
+        {
+          CODE: "emmely_create_charge",
+          NAME: "Emmely: Criar Cobrança",
+          PROPERTIES: {
+            amount: { Name: "Valor", Type: "double", Required: "Y", Description: "Valor da cobrança" },
+            currency: { Name: "Moeda", Type: "select", Required: "Y", Options: { EUR: "EUR", BRL: "BRL" }, Default: "EUR" },
+            payment_method: { Name: "Método de Pagamento", Type: "select", Options: { card: "Cartão", pix: "PIX", boleto: "Boleto" }, Default: "card" },
+            customer_name: { Name: "Nome do Cliente", Type: "string" },
+            customer_email: { Name: "Email do Cliente", Type: "string" },
+            description: { Name: "Descrição", Type: "string" },
+          },
+          RETURN_PROPERTIES: {
+            charge_id: { Name: "ID da Cobrança", Type: "string" },
+            charge_status: { Name: "Status", Type: "string" },
+            payment_url: { Name: "URL de Pagamento", Type: "string" },
+            pix_code: { Name: "Código PIX", Type: "string" },
+            error: { Name: "Erro", Type: "string" },
+          },
+        },
+        {
+          CODE: "emmely_check_payment",
+          NAME: "Emmely: Verificar Pagamento",
+          PROPERTIES: {
+            charge_id: { Name: "ID da Cobrança", Type: "string", Required: "Y", Description: "ID retornado ao criar a cobrança" },
+          },
+          RETURN_PROPERTIES: {
+            status: { Name: "Status", Type: "string" },
+            paid_at: { Name: "Data de Pagamento", Type: "string" },
+            paid_value: { Name: "Valor Pago", Type: "string" },
+            error: { Name: "Erro", Type: "string" },
+          },
+        },
+      ];
+
+      for (const robot of robots) {
+        // Delete existing robot first (safe for reinstall)
+        await callBitrix(clientEndpoint, accessToken, "bizproc.robot.delete", { CODE: robot.CODE });
+
+        // Register robot
+        const addResult = await callBitrix(clientEndpoint, accessToken, "bizproc.robot.add", {
+          CODE: robot.CODE,
+          HANDLER: robotHandlerUrl,
+          AUTH_USER_ID: 1,
+          NAME: robot.NAME,
+          USE_SUBSCRIPTION: "Y",
+          PROPERTIES: robot.PROPERTIES,
+          RETURN_PROPERTIES: robot.RETURN_PROPERTIES,
+        });
+
+        const errStr = String(addResult.error || "");
+        if (addResult.error && !errStr.includes("ALREADY")) {
+          console.error(`[INSTALL] Robot ${robot.CODE} registration failed:`, addResult.error, addResult.error_description);
+        } else {
+          console.log(`[INSTALL] Robot ${robot.CODE}: registered OK`);
+        }
+      }
+
+      await debugLog(supabase, integrationId, "robots_setup", "outbound", {
+        robotsRegistered: robots.map(r => r.CODE),
+      });
+    } catch (robotError) {
+      console.error("[INSTALL] Robot setup error:", robotError);
+      await debugLog(supabase, integrationId, "robots_setup_error", "outbound", null, String(robotError));
+    }
+
     // If called via JSON (from frontend fetch), return JSON
     if (contentType.includes("application/json")) {
       return new Response(
