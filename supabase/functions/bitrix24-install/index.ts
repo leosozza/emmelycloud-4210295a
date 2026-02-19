@@ -290,17 +290,22 @@ Deno.serve(async (req) => {
         const eventsUrl = `${supabaseUrl}/functions/v1/bitrix24-events`;
 
         // 1. List existing bots and unregister old ones
-        // NOTE: imbot.bot.list is the correct method (imbot.list does not exist)
+        // NOTE: imbot.bot.list returns an OBJECT with numeric keys, NOT an array
         const botListResult = await callBitrix(clientEndpoint, accessToken, "imbot.bot.list", {});
-        if (botListResult.result && Array.isArray(botListResult.result)) {
-          for (const bot of botListResult.result) {
-            if (bot.CODE === "emmely_ai_bot" || (bot.NAME && bot.NAME.includes("Emmely AI"))) {
-              console.log(`[INSTALL] Unregistering existing bot ID ${bot.ID} (${bot.NAME})`);
-              await callBitrix(clientEndpoint, accessToken, "imbot.unregister", { BOT_ID: bot.ID });
-            }
+        console.log("[INSTALL] imbot.bot.list result:", JSON.stringify(botListResult).substring(0, 500));
+
+        // Convert object ({"3": {...}, "10265": {...}}) or array to array of bots
+        const botsRaw = botListResult.result || {};
+        const botsArray: any[] = Array.isArray(botsRaw)
+          ? botsRaw
+          : Object.values(botsRaw);
+
+        for (const bot of botsArray) {
+          if (bot.CODE === "emmely_ai_bot" || (bot.NAME && bot.NAME.toLowerCase().includes("emmely"))) {
+            console.log(`[INSTALL] Unregistering existing bot ID ${bot.ID} (${bot.NAME})`);
+            const unregRes = await callBitrix(clientEndpoint, accessToken, "imbot.unregister", { BOT_ID: bot.ID });
+            console.log(`[INSTALL] Unregister bot ${bot.ID} result:`, JSON.stringify(unregRes).substring(0, 200));
           }
-        } else {
-          console.log("[INSTALL] imbot.bot.list result:", JSON.stringify(botListResult).substring(0, 200));
         }
 
         // 2. Register fresh bot
@@ -328,11 +333,12 @@ Deno.serve(async (req) => {
           console.log("[INSTALL] Bot Emmely AI registered OK, ID:", finalBotId);
         } else if (botErr.includes("ALREADY")) {
           // Already registered — try to get its ID from list
+          // NOTE: imbot.bot.list returns an OBJECT with numeric keys, NOT an array
           const listAgain = await callBitrix(clientEndpoint, accessToken, "imbot.bot.list", {});
-          if (listAgain.result && Array.isArray(listAgain.result)) {
-            const existing = listAgain.result.find((b: any) => b.CODE === "emmely_ai_bot");
-            if (existing) finalBotId = String(existing.ID);
-          }
+          const listRaw = listAgain.result || {};
+          const listArray: any[] = Array.isArray(listRaw) ? listRaw : Object.values(listRaw);
+          const existing = listArray.find((b: any) => b.CODE === "emmely_ai_bot");
+          if (existing) finalBotId = String(existing.ID);
           console.log("[INSTALL] Bot already exists, ID:", finalBotId);
         } else {
           console.error("[INSTALL] Bot registration failed:", botResult.error, botResult.error_description);
