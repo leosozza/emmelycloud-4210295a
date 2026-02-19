@@ -17,6 +17,7 @@ import {
   Brain,
   GitBranch,
   Sparkles,
+  Phone,
 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import {
@@ -49,6 +50,7 @@ const carteiraNav = [
 
 const aiNav = [
   { title: "Agentes IA", url: "/agentes", icon: Bot },
+  { title: "Voz", url: "/voice-agents", icon: Phone },
   { title: "Treino", url: "/training", icon: Brain },
   { title: "Fluxos", url: "/flows", icon: GitBranch },
   { title: "Playground", url: "/playground", icon: Sparkles },
