@@ -1,107 +1,104 @@
 
 
-# Atualizar o Importador PowerBot para Mapear aos Novos Tipos de No
+# Adicionar Provedores de IA e Voz ao Sistema Multi-Provedor
 
-## Problema Atual
+## Situacao Atual
 
-O importador (`src/lib/powerbotImporter.ts`) foi criado antes dos novos tipos de IA e Bitrix24. Resultado: dados ricos do PowerBot sao perdidos na conversao.
+A tabela `ai_providers` existe e o sistema ja suporta multi-provedor (a edge function `ai-playground` ja resolve credenciais dinamicamente). Porem, apenas o **Lovable AI** esta cadastrado. Precisamos popular os provedores e ajustar a UI.
 
-| No PowerBot | Mapeamento Atual | Mapeamento Correto |
-|---|---|---|
-| `openAINode` (type=mission + missionVariables) | `ai_response` | `ai_intention` (com campos mapeados) |
-| `openAINode` (type=prompt) | `ai_response` | `ai_response` (preservar prompt e whisper) |
-| `updateCrmNode` | `set_variable` | `bitrix_update_lead` / `bitrix_update_deal` / `bitrix_update_spa` |
-| `createCrmNode` | `webhook` | `bitrix_create_deal` / `bitrix_create_lead` / `bitrix_create_spa` |
-| `messageNode` (sendAsWhisper) | `message` (perde whisper) | `message` (preservar whisper no config) |
-| `conditionalNode` | `condition` (perde detalhes) | `condition` (preservar conditions completas) |
+## Provedores a Adicionar
 
-## Alteracoes no Ficheiro `src/lib/powerbotImporter.ts`
+### Provedores de Texto/Chat
 
-### 1. Novo typeMap inteligente (funcao em vez de mapa estatico)
+| Provider | Slug | Base URL | Modelos |
+|----------|------|----------|---------|
+| OpenAI | openai | https://api.openai.com/v1/chat/completions | gpt-4o, gpt-4o-mini, gpt-4-turbo, o1, o1-mini |
+| DeepSeek | deepseek | https://api.deepseek.com/v1/chat/completions | deepseek-chat, deepseek-reasoner |
+| Groq | groq | https://api.groq.com/openai/v1/chat/completions | llama-3.3-70b, mixtral-8x7b, gemma2-9b |
+| Google Gemini | gemini | https://generativelanguage.googleapis.com/v1beta/openai/chat/completions | gemini-2.5-pro, gemini-2.5-flash, gemini-2.0-flash |
+| Qwen Local | qwen-local | http://localhost:11434/v1/chat/completions | qwen2.5:7b, qwen2.5:14b, qwen2.5:32b |
 
-Substituir o `typeMap` estatico por uma funcao `resolveNodeType(pbType, data)` que analisa o conteudo:
+### Provedores de Voz
+
+| Provider | Slug | Base URL | Tipo |
+|----------|------|----------|------|
+| ElevenLabs | elevenlabs | https://api.elevenlabs.io/v1 | TTS + STT + Conversational |
+| OpenAI TTS | openai-tts | https://api.openai.com/v1/audio | TTS + STT |
+
+## Alteracoes
+
+### 1. Migracao SQL - Inserir Provedores
+
+Inserir os 7 provedores na tabela `ai_providers` com os modelos disponiveis em `available_models` (formato JSON array com `name` e `display`), `base_url`, `credential_key` (nome da chave na tabela `integration_credentials`), e `is_native: false`.
+
+Para os de voz, adicionar um campo `provider_type` na tabela `ai_providers`:
+- `text` (default) - Provedores de chat/completions
+- `voice` - Provedores de voz (TTS/STT)
+- `multimodal` - Ambos
+
+### 2. Tabela `ai_providers` - Nova Coluna
 
 ```text
-openAINode + data.type === "mission" + data.missionVariables.length > 0
-  -> "ai_intention"
-
-openAINode + data.type === "prompt"
-  -> "ai_response"
-
-updateCrmNode + data.bitrixCrmFields com entity "lead"
-  -> "bitrix_update_lead"
-
-updateCrmNode + data.bitrixCrmFields com entity "deal"
-  -> "bitrix_update_deal"
-
-updateCrmNode + data.bitrixCrmFields com entity "contact"
-  -> "bitrix_update_lead" (contact mapeia para lead)
-
-createCrmNode + data.entity === "deal"
-  -> "bitrix_create_deal"
-
-createCrmNode + data.entity === "lead"
-  -> "bitrix_create_lead"
-
-createCrmNode + data.entity === "spa"
-  -> "bitrix_create_spa"
+provider_type text NOT NULL DEFAULT 'text'
 ```
 
-### 2. Novo extractConfig inteligente
+Valores: `text`, `voice`, `multimodal`
 
-Converter dados do PowerBot para o formato `FlowNodeData`:
+### 3. Pagina Agentes (`src/pages/Agentes.tsx`)
 
-**openAINode mission -> ai_intention:**
-- `missionVariables` -> `aiIntention.intentions[]` com:
-  - `fieldName` = variable.name
-  - `description` = variable.description
-  - `validation` = inferir de nome (Email->email, Telefone->phone, etc.)
-  - `required` = true
-- `prompt` -> `aiIntention.successMessage` / `prompt`
-- `maxTurns` = `interactionsLimit` ou 10
+- Separar provedores de texto e voz no selector
+- Quando `agent_type` = "voice" ou "hybrid", mostrar selector adicional de **Provider de Voz** com os provedores tipo `voice`
+- Adicionar campos:
+  - `voice_provider`: slug do provedor de voz (nova coluna em `ai_agents`)
+  - `voice_model`: modelo de voz (ex: `eleven_multilingual_v2`)
+  - `voice_id`: ID da voz (ex: ID do ElevenLabs)
+- Mostrar campos de credenciais quando provedor nao e nativo
 
-**openAINode prompt -> ai_response:**
-- `prompt` preservado
-- `sendAsWhisper` preservado no config
+### 4. Tabela `ai_agents` - Novas Colunas
 
-**updateCrmNode -> bitrix_update_*:**
-- `bitrixCrmFields[]` -> `bitrixCrm.fields[]` com key=crmField.id, value=value
-- `entity` detectada dos campos
+```text
+voice_provider text DEFAULT NULL
+voice_model text DEFAULT NULL
+voice_id text DEFAULT NULL
+```
 
-**createCrmNode -> bitrix_create_*:**
-- `fields[]` -> `bitrixCrm.fields[]` com key=id, value=value
-- `pipeline` -> `bitrixCrm.pipeline`
-- `status` -> `bitrixCrm.stageId`
+### 5. Pagina de Integracoes - Credenciais
 
-**messageNode:**
-- `messageData` -> `message`
-- `sendAsWhisper` preservado
+O sistema ja tem `integration_credentials` e `manage-credentials`. Cada provedor usara:
+- OpenAI: `provider=openai, credential_key=api_key`
+- DeepSeek: `provider=deepseek, credential_key=api_key`
+- Groq: `provider=groq, credential_key=api_key`
+- Gemini: `provider=gemini, credential_key=api_key`
+- ElevenLabs: `provider=elevenlabs, credential_key=api_key`
+- Qwen Local: sem credencial (local)
 
-**conditionalNode:**
-- `conditions[]` preservadas com tipo, valores e variaveis
+As chaves sao configuradas na Central de Integracoes existente.
 
-### 3. Usar CustomFlowNode em vez de "default"
+### 6. Edge Function `ai-playground` - Ajustes Menores
 
-Alterar `type: "default"` para `type: "custom"` nos nos convertidos, para que usem o componente `CustomFlowNode` com os previews visuais dos novos tipos (Bitrix, IA Intencao, etc.).
+- Para Google Gemini direto: o header de auth e `x-goog-api-key` (sem Bearer), ja suportado pelo campo `auth_header` e `auth_prefix` na tabela
+- Para Qwen Local: sem auth, ja funciona pois `apiKey` sera vazio e o endpoint local nao exige
 
-### 4. Atualizar cores e labels
+### 7. Preview na UI
 
-Adicionar ao `nodeColors` e `nodeLabels` as novas entradas para `ai_intention`, `bitrix_update_lead`, `bitrix_create_deal`, etc., usando as cores do `NODE_TYPE_META`.
-
-### 5. Preview melhorado
-
-Atualizar `previewPowerBotFlow` para mostrar os tipos corretos no resumo (ex: "IA - Intencao: 1, Bitrix Criar Deal: 1" em vez de "Webhook: 1, Variavel: 1").
+No card do agente, mostrar badges distintas para provider de texto e voz:
+- Badge texto: "OpenAI / gpt-4o"
+- Badge voz: "ElevenLabs / Sarah"
 
 ---
 
-## Resultado Esperado
+## Resumo Tecnico
 
-Ao importar o JSON `Emmely_Fernandes_Advocacia-2.json`:
+### Migracoes SQL:
+1. Adicionar `provider_type text DEFAULT 'text'` a `ai_providers`
+2. Adicionar `voice_provider text`, `voice_model text`, `voice_id text` a `ai_agents`
+3. Inserir 7 provedores com modelos e configuracoes
 
-- No 24 (openAINode mission) -> **IA - Intencao** com 16 campos (Nome, Email, Telefone, Area_Juridica, etc.)
-- No 32 (updateCrmNode) -> **Atualizar Lead** com campos UF_CRM mapeados
-- No 44 (createCrmNode deal) -> **Criar Deal** com pipeline 33, campos TITLE e UF_CRM
-- No 45, 47 (openAINode prompt) -> **Resposta IA** com prompt preservado e whisper ativo
-- Nos de mensagem preservam `sendAsWhisper`
-- Todos os nos usam `CustomFlowNode` para preview visual correto
+### Ficheiros a modificar:
+- `src/pages/Agentes.tsx` - Selectores de voz, campos novos, badges
+- Migracao SQL (via ferramenta)
+
+### Ficheiros que NAO precisam de alteracao:
+- `supabase/functions/ai-playground/index.ts` - Ja suporta multi-provedor dinamicamente
+- `src/pages/Integracoes.tsx` - Ja permite configurar credenciais por provedor
 
