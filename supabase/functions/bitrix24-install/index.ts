@@ -311,19 +311,39 @@ Deno.serve(async (req) => {
             OPENLINE: "Y",
           },
         });
-        const botErr = String(botResult.error || "");
-        if (botResult.error && !botErr.includes("ALREADY")) {
+        const botErr = String(botResult.error || "") + " " + String(botResult.error_description || "");
+        if (botResult.error && !botErr.includes("ALREADY") && !botErr.includes("EVENT_WELCOME_MESSAGE_ERROR")) {
           console.error("[INSTALL] Bot registration failed:", botResult.error, botResult.error_description);
+          // Fallback: tentar sem EVENT_WELCOME_MESSAGE (alguns portais têm problemas com este evento)
+          const botResult2 = await callBitrix(clientEndpoint, accessToken, "imbot.register", {
+            CODE: "emmely_ai_bot",
+            TYPE: "B",
+            EVENT_MESSAGE_ADD: eventsUrl,
+            EVENT_BOT_DELETE: eventsUrl,
+            PROPERTIES: {
+              NAME: "Emmely AI",
+              WORK_POSITION: "Assistente Virtual IA",
+              COLOR: "#25D366",
+              OPENLINE: "Y",
+            },
+          });
+          const botId2 = botResult2.result;
+          if (botId2) {
+            console.log("[INSTALL] Bot registered (fallback, no welcome event), ID:", botId2);
+            await supabase.from("bitrix24_integrations").update({
+              config: { installed_at: new Date().toISOString(), bot_id: String(botId2) },
+            }).eq("id", integrationId);
+          }
         } else {
           const botId = botResult.result;
           console.log("[INSTALL] Bot Emmely AI registered OK, ID:", botId);
-          // Store bot ID in integration config for debugging
+          // Guardar bot_id na config para o worker usar
           await supabase
             .from("bitrix24_integrations")
             .update({
               config: {
                 installed_at: new Date().toISOString(),
-                bot_id: botId,
+                bot_id: String(botId),
               },
             })
             .eq("id", integrationId);
