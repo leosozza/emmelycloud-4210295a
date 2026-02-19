@@ -35,12 +35,28 @@ function parseBody(bodyText: string, contentType: string): Record<string, any> {
   return parsePhpStyleBody(bodyText);
 }
 
+// Extrair member_id de múltiplas localizações possíveis no payload do Bitrix24
+function extractMemberId(data: Record<string, any>): string | null {
+  // Ordem de prioridade baseada no thothai
+  return (
+    data.auth?.member_id ||
+    data.auth?.MEMBER_ID ||
+    data.member_id ||
+    data.MEMBER_ID ||
+    data.data?.auth?.member_id ||
+    data.data?.PARAMS?.member_id ||
+    null
+  );
+}
+
 const SUPPORTED_EVENTS = [
   "ONIMCONNECTORMESSAGEADD",
+  "ONIMCONNECTORDIALOGSTART",
+  "ONIMCONNECTORDIALOGFINISH",
+  "ONIMCONNECTORSTATUSDELETE",
   "ONIMBOTMESSAGEADD",
   "ONIMBOTJOINOPEN",
   "ONIMBOTWELCOMEMESSAGE",
-  "ONIMCONNECTORSTATUSDELETE",
 ];
 
 Deno.serve(async (req) => {
@@ -57,24 +73,31 @@ Deno.serve(async (req) => {
     const bodyText = await req.text();
     const data = parseBody(bodyText, contentType);
 
-    const event = (data.event || "").toUpperCase();
-    const memberId = data.auth?.member_id || data.member_id || null;
+    const event = (data.event || data.EVENT || "").toUpperCase();
+    const memberId = extractMemberId(data);
 
-    console.log("[EVENTS] Received event:", event, "member:", memberId);
+    // Log completo para debugging
+    console.log("[EVENTS] Event:", event, "| member_id:", memberId);
+    console.log("[EVENTS] Full payload:", JSON.stringify(data).substring(0, 1000));
 
-    // Quick validation
-    if (!event || !memberId) {
+    // Sempre responder "successfully" imediatamente (< 200ms)
+    if (!event) {
+      console.log("[EVENTS] No event in payload, ignoring");
       return new Response("successfully", {
         headers: { ...corsHeaders, "Content-Type": "text/plain; charset=utf-8" },
       });
     }
 
-    // Only enqueue supported events
+    if (!memberId) {
+      console.error("[EVENTS] No member_id found! payload keys:", Object.keys(data).join(", "));
+      // Mesmo sem member_id, enfileirar — o worker irá tentar encontrar a integração pelo payload
+    }
+
+    // Enfileirar eventos suportados
     if (SUPPORTED_EVENTS.includes(event)) {
-      // Insert into queue - fire and forget style (don't await errors)
       const { error: insertError } = await supabase.from("bitrix_event_queue").insert({
         event_type: event,
-        member_id: memberId,
+        member_id: memberId,  // pode ser null — o worker também tenta pelo domain/payload
         payload: data,
         status: "pending",
       });
@@ -82,9 +105,9 @@ Deno.serve(async (req) => {
       if (insertError) {
         console.error("[EVENTS] Queue insert error:", insertError);
       } else {
-        console.log("[EVENTS] Event queued:", event);
+        console.log("[EVENTS] Queued:", event, "member:", memberId);
 
-        // Fire-and-forget: trigger the worker
+        // Fire-and-forget: trigger worker
         fetch(`${supabaseUrl}/functions/v1/bitrix24-worker`, {
           method: "POST",
           headers: {
@@ -98,7 +121,6 @@ Deno.serve(async (req) => {
       console.log("[EVENTS] Unsupported event, ignoring:", event);
     }
 
-    // Always return "successfully" fast (< 200ms)
     return new Response("successfully", {
       headers: { ...corsHeaders, "Content-Type": "text/plain; charset=utf-8" },
     });
