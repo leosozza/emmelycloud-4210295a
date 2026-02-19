@@ -270,11 +270,12 @@ Deno.serve(async (req) => {
     if (event === "ONIMBOTMESSAGEADD" || event === "OnImBotMessageAdd") {
       const msgData = data.data || {};
       const messageText = msgData.PARAMS?.MESSAGE || msgData.message || "";
+      const dialogId = msgData.PARAMS?.DIALOG_ID || msgData.dialog_id || "";
       const chatId = msgData.PARAMS?.CHAT_ID || msgData.chat_id || "";
       const fromUserId = msgData.PARAMS?.FROM_USER_ID || "";
 
-      if (!messageText || !chatId) {
-        return new Response(JSON.stringify({ ok: true, skipped: "no message or chat" }), { headers: jsonHeaders });
+      if (!messageText) {
+        return new Response(JSON.stringify({ ok: true, skipped: "no message" }), { headers: jsonHeaders });
       }
 
       // Skip bot's own messages
@@ -282,34 +283,62 @@ Deno.serve(async (req) => {
         return new Response(JSON.stringify({ ok: true, skipped: "bot_self" }), { headers: jsonHeaders });
       }
 
-      console.log("[EVENTS] Bot message received:", messageText.substring(0, 100));
+      console.log("[EVENTS] Bot message received:", messageText.substring(0, 100), "dialogId:", dialogId);
 
-      // Look for recent conversations to match
-      const { data: recentConv } = await supabase
-        .from("conversations")
+      // Find default active agent
+      const { data: agent } = await supabase
+        .from("ai_agents")
         .select("id")
-        .eq("status", "aberta")
-        .order("last_message_at", { ascending: false })
-        .limit(1)
+        .eq("is_default", true)
+        .eq("is_active", true)
         .maybeSingle();
 
-      if (recentConv) {
-        fetch(`${supabaseUrl}/functions/v1/chatbot-reply`, {
+      if (!agent) {
+        console.log("[EVENTS] No default active agent found, skipping bot reply");
+        await debugLog(supabase, integration.id, "bot_no_agent", "inbound", { messageText: messageText.substring(0, 100) });
+        return new Response(JSON.stringify({ ok: true, skipped: "no_agent" }), { headers: jsonHeaders });
+      }
+
+      // Call ai-playground to generate response
+      try {
+        const aiRes = await fetch(`${supabaseUrl}/functions/v1/ai-playground`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
             "Authorization": `Bearer ${serviceKey}`,
           },
           body: JSON.stringify({
-            conversation_id: recentConv.id,
-            message_text: messageText,
+            agent_id: agent.id,
+            messages: [{ role: "user", content: messageText }],
           }),
-        }).catch((e) => console.error("[EVENTS] Chatbot reply error:", e));
-      }
+        });
 
-      await debugLog(supabase, integration.id, "bot_message_received", "inbound", {
-        chatId, fromUserId, messageText: messageText.substring(0, 100),
-      });
+        const aiResult = await aiRes.json();
+        const replyText = aiResult.content || "Desculpe, não consegui processar a sua mensagem.";
+
+        console.log("[EVENTS] AI reply generated:", replyText.substring(0, 100));
+
+        // Send reply back to Bitrix24 chat via im.message.add
+        const accessToken = await ensureValidToken(supabase, integration);
+        const sendResult = await callBitrix(integration.client_endpoint, accessToken, "im.message.add", {
+          DIALOG_ID: dialogId || chatId,
+          MESSAGE: replyText,
+        });
+
+        console.log("[EVENTS] im.message.add result:", JSON.stringify(sendResult));
+
+        await debugLog(supabase, integration.id, "bot_reply_sent", "outbound", {
+          dialogId, chatId, fromUserId,
+          messageText: messageText.substring(0, 100),
+          replyText: replyText.substring(0, 100),
+          agentId: agent.id,
+        });
+      } catch (aiError) {
+        console.error("[EVENTS] Bot AI reply error:", aiError);
+        await debugLog(supabase, integration.id, "bot_reply_error", "outbound", {
+          dialogId, chatId, messageText: messageText.substring(0, 100),
+        }, String(aiError));
+      }
 
       return new Response(JSON.stringify({ ok: true }), { headers: jsonHeaders });
     }
