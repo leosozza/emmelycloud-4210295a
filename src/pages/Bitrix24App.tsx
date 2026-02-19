@@ -1,7 +1,38 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Separator } from "@/components/ui/separator";
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from "@/components/ui/select";
+import {
+  ReactFlow, Controls, Background, MiniMap,
+  useNodesState, useEdgesState, addEdge,
+  type Connection, type Node, MarkerType, Panel,
+} from "@xyflow/react";
+import "@xyflow/react/dist/style.css";
+import CustomFlowNode from "@/components/flows/CustomFlowNode";
+import FlowNodePalette from "@/components/flows/FlowNodePalette";
+import NodeConfigPanel from "@/components/flows/NodeConfigPanel";
+import { type FlowNodeType, type FlowNodeData, getDefaultData } from "@/components/flows/FlowNodeTypes";
+import { useFlowHistory } from "@/hooks/useFlowHistory";
+import {
+  Loader2, Bot, Send, RotateCcw, Sparkles, RefreshCw,
+  Zap, FileText, Globe, Upload, Brain, Trash2, Eye, Plus,
+  ArrowLeft, Save, Undo2, Redo2, Download, Copy,
+} from "lucide-react";
+import { cn } from "@/lib/utils";
 
-type AppStatus = "loading" | "ready" | "error";
-type TabId = "connector" | "agentes" | "training" | "flows" | "playground" | "pagamentos";
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
+const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+
+const customNodeTypes = { custom: CustomFlowNode };
 
 interface IntegrationData {
   integration: {
@@ -26,46 +57,10 @@ interface IntegrationData {
   }>;
 }
 
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
-const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
-
-// ==================== DESIGN TOKENS ====================
-const colors = {
-  gradient: "linear-gradient(135deg, #2583d8 0%, #7b5ea7 50%, #d4728b 100%)",
-  gradientBtn: "linear-gradient(135deg, #2583d8 0%, #7b5ea7 100%)",
-  primary: "#2583d8",
-  primaryDark: "#1d6bb5",
-  accent: "#7b5ea7",
-  surface: "#f5f7fa",
-  surfaceCard: "#ffffff",
-  border: "#e2e8f0",
-  borderLight: "#f1f5f9",
-  text: "#1e293b",
-  textSecondary: "#64748b",
-  textMuted: "#94a3b8",
-  success: "#10b981",
-  successBg: "#ecfdf5",
-  successBorder: "#a7f3d0",
-  error: "#ef4444",
-  errorBg: "#fef2f2",
-  errorBorder: "#fecaca",
-  warning: "#f59e0b",
-  warningBg: "#fffbeb",
-  infoBg: "#eff6ff",
-  infoBorder: "#bfdbfe",
-  infoText: "#1e40af",
-  chatUser: "linear-gradient(135deg, #2583d8, #7b5ea7)",
-  chatBot: "#f1f5f9",
-  shadow: "0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.04)",
-  shadowMd: "0 4px 6px -1px rgba(0,0,0,0.07), 0 2px 4px -2px rgba(0,0,0,0.05)",
-};
-
-const font = "'Figtree', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
+// ==================== MAIN COMPONENT ====================
 
 const Bitrix24App = () => {
-  const [status, setStatus] = useState<AppStatus>("loading");
-  const [errorMsg, setErrorMsg] = useState("");
-  const [activeTab, setActiveTab] = useState<TabId>("connector");
+  const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
   const [memberId, setMemberId] = useState<string | null>(null);
   const [integrationData, setIntegrationData] = useState<IntegrationData | null>(null);
   const [loadingData, setLoadingData] = useState(false);
@@ -102,15 +97,10 @@ const Bitrix24App = () => {
   const fetchIntegrationData = useCallback(async (mid: string) => {
     setLoadingData(true);
     try {
-      const res = await fetch(
-        `${SUPABASE_URL}/functions/v1/bitrix24-connector-settings?member_id=${mid}&format=json`
-      );
-      if (res.ok) {
-        const data = await res.json();
-        setIntegrationData(data);
-      }
+      const res = await fetch(`${SUPABASE_URL}/functions/v1/bitrix24-connector-settings?member_id=${mid}&format=json`);
+      if (res.ok) setIntegrationData(await res.json());
     } catch (e) {
-      console.error("[BITRIX24] Fetch status error:", e);
+      console.error("[BITRIX24] Fetch error:", e);
     } finally {
       setLoadingData(false);
     }
@@ -147,94 +137,55 @@ const Bitrix24App = () => {
 
   if (status === "loading") {
     return (
-      <div style={s.page}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "60vh" }}>
-          <div style={{ textAlign: "center" }}>
-            <div style={{ ...s.loadingDot, margin: "0 auto 16px" }} />
-            <p style={{ color: colors.textSecondary, fontSize: 14 }}>Carregando...</p>
-          </div>
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="text-center">
+          <Loader2 className="h-8 w-8 animate-spin text-primary mx-auto mb-3" />
+          <p className="text-sm text-muted-foreground">Carregando...</p>
         </div>
       </div>
     );
   }
-
-  if (status === "error") {
-    return (
-      <div style={s.page}>
-        <div style={{ ...s.card, maxWidth: 400, margin: "40px auto", textAlign: "center", padding: 32 }}>
-          <div style={{ width: 48, height: 48, borderRadius: 12, background: colors.errorBg, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 16px", fontSize: 24 }}>⚠️</div>
-          <h2 style={{ margin: "0 0 8px", fontSize: 18, color: colors.text }}>Erro na configuração</h2>
-          <p style={{ color: colors.textSecondary, fontSize: 14, margin: 0 }}>{errorMsg || "Tente reinstalar o aplicativo."}</p>
-        </div>
-      </div>
-    );
-  }
-
-  const tabs: { id: TabId; label: string; icon: string }[] = [
-    { id: "connector", label: "Conector", icon: "⚡" },
-    { id: "agentes", label: "Agentes", icon: "🤖" },
-    { id: "training", label: "Training", icon: "📚" },
-    { id: "flows", label: "Flows", icon: "🔀" },
-    { id: "playground", label: "Playground", icon: "💬" },
-    { id: "pagamentos", label: "Pagamentos", icon: "💳" },
-  ];
 
   const integration = integrationData?.integration;
-  const channels = integrationData?.channels || [];
-  const logs = integrationData?.recent_logs || [];
 
   return (
-    <div style={s.page}>
-      {/* Header with gradient */}
-      <div style={s.header}>
-        <div style={s.headerInner}>
-          <div style={s.logo}>E</div>
-          <div style={{ flex: 1 }}>
-            <h2 style={{ margin: 0, fontSize: 17, fontWeight: 700, color: "#fff" }}>Emmely Cloud</h2>
-            <div style={{ marginTop: 4 }}>
-              <span style={{
-                display: "inline-flex", alignItems: "center", gap: 4,
-                padding: "2px 10px", borderRadius: 20, fontSize: 11, fontWeight: 600,
-                background: integration?.connector_active ? "rgba(16,185,129,0.2)" : "rgba(239,68,68,0.2)",
-                color: "#fff",
-                backdropFilter: "blur(4px)",
-              }}>
-                <span style={{ width: 6, height: 6, borderRadius: "50%", background: integration?.connector_active ? "#34d399" : "#fca5a5" }} />
-                {integration?.connector_active ? "Ativo" : "Inativo"}
-              </span>
-            </div>
+    <div className="min-h-screen bg-background">
+      {/* Header */}
+      <div className="bg-gradient-to-r from-[hsl(var(--primary))] via-[hsl(var(--accent))] to-[hsl(var(--primary))] p-4 rounded-b-2xl">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 bg-white/20 backdrop-blur-sm rounded-xl flex items-center justify-center text-white font-extrabold text-lg">
+            E
+          </div>
+          <div className="flex-1">
+            <h2 className="text-white font-bold text-base">Emmely Cloud</h2>
+            <Badge variant={integration?.connector_active ? "default" : "destructive"} className="text-[10px] mt-1">
+              <span className={cn("w-1.5 h-1.5 rounded-full mr-1.5", integration?.connector_active ? "bg-green-300" : "bg-red-300")} />
+              {integration?.connector_active ? "Ativo" : "Inativo"}
+            </Badge>
           </div>
         </div>
       </div>
 
-      {/* Tab bar */}
-      <div style={s.tabBar}>
-        {tabs.map((tab) => (
-          <button
-            key={tab.id}
-            onClick={() => setActiveTab(tab.id)}
-            style={{
-              ...s.tab,
-              ...(activeTab === tab.id ? s.tabActive : {}),
-            }}
-          >
-            <span style={{ fontSize: 13 }}>{tab.icon}</span>
-            <span>{tab.label}</span>
-          </button>
-        ))}
-      </div>
+      {/* Tabs */}
+      <Tabs defaultValue="connector" className="p-3">
+        <TabsList className="w-full grid grid-cols-6 h-auto">
+          <TabsTrigger value="connector" className="text-[11px] py-1.5">⚡ Conector</TabsTrigger>
+          <TabsTrigger value="agentes" className="text-[11px] py-1.5">🤖 Agentes</TabsTrigger>
+          <TabsTrigger value="training" className="text-[11px] py-1.5">📚 Training</TabsTrigger>
+          <TabsTrigger value="flows" className="text-[11px] py-1.5">🔀 Flows</TabsTrigger>
+          <TabsTrigger value="playground" className="text-[11px] py-1.5">💬 Playground</TabsTrigger>
+          <TabsTrigger value="pagamentos" className="text-[11px] py-1.5">💳 Pagamentos</TabsTrigger>
+        </TabsList>
 
-      {/* Content */}
-      <div style={{ marginTop: 20 }}>
-        {activeTab === "connector" && (
-          <ConnectorTab integration={integration} channels={channels} logs={logs} loading={loadingData} onResync={handleResync} />
-        )}
-        {activeTab === "agentes" && <AgentesTab />}
-        {activeTab === "training" && <TrainingTab />}
-        {activeTab === "flows" && <FlowsTab />}
-        {activeTab === "playground" && <PlaygroundTab />}
-        {activeTab === "pagamentos" && <PagamentosTab />}
-      </div>
+        <TabsContent value="connector">
+          <ConnectorTab integration={integration} channels={integrationData?.channels || []} logs={integrationData?.recent_logs || []} loading={loadingData} onResync={handleResync} />
+        </TabsContent>
+        <TabsContent value="agentes"><AgentesTab /></TabsContent>
+        <TabsContent value="training"><TrainingTab /></TabsContent>
+        <TabsContent value="flows"><FlowsTab /></TabsContent>
+        <TabsContent value="playground"><PlaygroundTab /></TabsContent>
+        <TabsContent value="pagamentos"><PagamentosTab /></TabsContent>
+      </Tabs>
     </div>
   );
 };
@@ -248,70 +199,91 @@ function ConnectorTab({ integration, channels, logs, loading, onResync }: {
   onResync: () => void;
 }) {
   return (
-    <div>
-      <div style={s.card}>
-        <h3 style={s.cardTitle}>Status da Integração</h3>
-        {integration ? (
-          <div style={{ display: "grid", gap: 8 }}>
-            <InfoRow label="Portal" value={integration.domain || integration.member_id} />
-            <InfoRow label="Conector" value={integration.connector_registered ? "✅ Registado" : "❌ Não registado"} />
-            <InfoRow label="Status" value={integration.connector_active ? "🟢 Ativo" : "🔴 Inativo"} />
-            <InfoRow label="Última atualização" value={new Date(integration.updated_at).toLocaleString()} />
-          </div>
-        ) : (
-          <p style={{ color: colors.textMuted, fontSize: 13, margin: 0 }}>Integração não encontrada. Reinstale o aplicativo.</p>
-        )}
-      </div>
+    <div className="space-y-3">
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-sm">Status da Integração</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-2">
+          {integration ? (
+            <>
+              <InfoRow label="Portal" value={integration.domain || integration.member_id} />
+              <InfoRow label="Conector" value={integration.connector_registered ? "✅ Registado" : "❌ Não registado"} />
+              <InfoRow label="Status" value={integration.connector_active ? "🟢 Ativo" : "🔴 Inativo"} />
+              <InfoRow label="Última atualização" value={new Date(integration.updated_at).toLocaleString()} />
+            </>
+          ) : (
+            <p className="text-xs text-muted-foreground">Integração não encontrada. Reinstale o aplicativo.</p>
+          )}
+        </CardContent>
+      </Card>
 
-      <div style={s.card}>
-        <h3 style={s.cardTitle}>Canais Configurados</h3>
-        {channels.length > 0 ? (
-          <div style={{ display: "grid", gap: 6 }}>
-            {channels.map((ch, i) => (
-              <div key={i} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 12px", background: colors.surface, borderRadius: 8, fontSize: 13 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <span style={{ fontSize: 16 }}>{ch.channel === "whatsapp" ? "📱" : "📸"}</span>
-                  <span style={{ fontWeight: 500, color: colors.text }}>{ch.channel === "whatsapp" ? "WhatsApp" : "Instagram"}</span>
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-sm">Canais Configurados</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {channels.length > 0 ? (
+            <div className="space-y-1.5">
+              {channels.map((ch, i) => (
+                <div key={i} className="flex items-center justify-between p-2 bg-muted rounded-lg text-xs">
+                  <div className="flex items-center gap-2">
+                    <span>{ch.channel === "whatsapp" ? "📱" : "📸"}</span>
+                    <span className="font-medium">{ch.channel === "whatsapp" ? "WhatsApp" : "Instagram"}</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-muted-foreground">{ch.line_name || `Line ${ch.line_id}`}</span>
+                    <span className={cn("w-2 h-2 rounded-full", ch.is_active ? "bg-green-500" : "bg-red-500")} />
+                  </div>
                 </div>
-                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <span style={{ fontSize: 12, color: colors.textSecondary }}>{ch.line_name || `Line ${ch.line_id}`}</span>
-                  <StatusDot active={ch.is_active} />
-                </div>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <p style={{ color: colors.textMuted, fontSize: 13, margin: 0 }}>Nenhum canal mapeado ainda.</p>
-        )}
-      </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-xs text-muted-foreground">Nenhum canal mapeado.</p>
+          )}
+        </CardContent>
+      </Card>
 
-      <button onClick={onResync} disabled={loading} style={s.btnPrimary}>
-        {loading ? "⏳ Sincronizando..." : "🔄 Re-sincronizar Conector"}
-      </button>
+      <Button onClick={onResync} disabled={loading} className="w-full">
+        {loading ? <><Loader2 className="h-3.5 w-3.5 mr-2 animate-spin" /> Sincronizando...</> : <><RefreshCw className="h-3.5 w-3.5 mr-2" /> Re-sincronizar Conector</>}
+      </Button>
 
       {logs.length > 0 && (
-        <div style={{ ...s.card, marginTop: 12 }}>
-          <h3 style={s.cardTitle}>Últimos Eventos</h3>
-          <div style={{ maxHeight: 200, overflowY: "auto" }}>
-            {logs.map((log, i) => (
-              <div key={i} style={{ padding: "6px 0", fontSize: 12, borderBottom: i < logs.length - 1 ? `1px solid ${colors.borderLight}` : "none", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                  <span style={{ width: 20, height: 20, borderRadius: 6, background: log.direction === "inbound" ? colors.infoBg : colors.surface, display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 10 }}>
-                    {log.direction === "inbound" ? "📥" : "📤"}
-                  </span>
-                  <span style={{ color: colors.text }}>{log.event_type}</span>
-                  {log.error && <span style={{ color: colors.error, fontSize: 10 }}>⚠️</span>}
-                </span>
-                <span style={{ color: colors.textMuted, fontSize: 11 }}>{new Date(log.created_at).toLocaleTimeString()}</span>
-              </div>
-            ))}
-          </div>
-        </div>
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-sm">Últimos Eventos</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <ScrollArea className="max-h-48">
+              {logs.map((log, i) => (
+                <div key={i} className="flex items-center justify-between py-1.5 border-b border-border/50 last:border-0 text-xs">
+                  <div className="flex items-center gap-1.5">
+                    <span className="w-5 h-5 rounded bg-muted flex items-center justify-center text-[10px]">
+                      {log.direction === "inbound" ? "📥" : "📤"}
+                    </span>
+                    <span>{log.event_type}</span>
+                    {log.error && <span className="text-destructive text-[10px]">⚠️</span>}
+                  </div>
+                  <span className="text-muted-foreground text-[10px]">{new Date(log.created_at).toLocaleTimeString()}</span>
+                </div>
+              ))}
+            </ScrollArea>
+          </CardContent>
+        </Card>
       )}
 
-      <div style={s.infoBox}>
+      <div className="bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded-xl p-3 text-xs text-blue-800 dark:text-blue-200">
         ℹ️ Para gerenciar conversas, acesse o <strong>Contact Center</strong> do Bitrix24 e selecione o conector <strong>Emmely Messages</strong>.
       </div>
+    </div>
+  );
+}
+
+function InfoRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex justify-between py-1.5 border-b border-border/50 text-xs">
+      <span className="text-muted-foreground font-medium">{label}</span>
+      <span>{value}</span>
     </div>
   );
 }
@@ -321,14 +293,14 @@ function AgentesTab() {
   const [agents, setAgents] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState<any | null>(null);
-  const [form, setForm] = useState({ name: "", system_prompt: "", ai_model: "google/gemini-3-flash-preview", temperature: "0.7", welcome_message: "", fallback_message: "Desculpe, não consegui processar a sua mensagem." });
+  const [form, setForm] = useState({ name: "", system_prompt: "", ai_model: "google/gemini-3-flash-preview", temperature: 0.7, welcome_message: "", fallback_message: "Desculpe, não consegui processar a sua mensagem." });
   const [saving, setSaving] = useState(false);
 
   const fetchAgents = async () => {
     setLoading(true);
     try {
       const res = await fetch(`${SUPABASE_URL}/rest/v1/ai_agents?select=*&order=created_at.desc`, {
-        headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${SUPABASE_KEY}` },
+        headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` },
       });
       if (res.ok) setAgents(await res.json());
     } catch (e) { console.error(e); }
@@ -340,34 +312,14 @@ function AgentesTab() {
   const handleSave = async () => {
     setSaving(true);
     try {
-      const body = {
-        name: form.name,
-        system_prompt: form.system_prompt,
-        ai_model: form.ai_model,
-        temperature: parseFloat(form.temperature) || 0.7,
-        welcome_message: form.welcome_message,
-        fallback_message: form.fallback_message,
-        ai_provider: "lovable",
-        agent_type: "text",
-      };
-
-      const url = editing?.id
-        ? `${SUPABASE_URL}/rest/v1/ai_agents?id=eq.${editing.id}`
-        : `${SUPABASE_URL}/rest/v1/ai_agents`;
-
+      const body = { name: form.name, system_prompt: form.system_prompt, ai_model: form.ai_model, temperature: form.temperature, welcome_message: form.welcome_message, fallback_message: form.fallback_message, ai_provider: "lovable", agent_type: "text" };
+      const url = editing?.id ? `${SUPABASE_URL}/rest/v1/ai_agents?id=eq.${editing.id}` : `${SUPABASE_URL}/rest/v1/ai_agents`;
       await fetch(url, {
         method: editing?.id ? "PATCH" : "POST",
-        headers: {
-          "apikey": SUPABASE_KEY,
-          "Authorization": `Bearer ${SUPABASE_KEY}`,
-          "Content-Type": "application/json",
-          "Prefer": "return=minimal",
-        },
+        headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}`, "Content-Type": "application/json", Prefer: "return=minimal" },
         body: JSON.stringify(body),
       });
-
       setEditing(null);
-      setForm({ name: "", system_prompt: "", ai_model: "google/gemini-3-flash-preview", temperature: "0.7", welcome_message: "", fallback_message: "Desculpe, não consegui processar a sua mensagem." });
       fetchAgents();
     } catch (e) { console.error(e); }
     setSaving(false);
@@ -376,12 +328,12 @@ function AgentesTab() {
   const handleSetDefault = async (id: string) => {
     await fetch(`${SUPABASE_URL}/rest/v1/ai_agents?is_default=eq.true`, {
       method: "PATCH",
-      headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${SUPABASE_KEY}`, "Content-Type": "application/json", "Prefer": "return=minimal" },
+      headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}`, "Content-Type": "application/json", Prefer: "return=minimal" },
       body: JSON.stringify({ is_default: false }),
     });
     await fetch(`${SUPABASE_URL}/rest/v1/ai_agents?id=eq.${id}`, {
       method: "PATCH",
-      headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${SUPABASE_KEY}`, "Content-Type": "application/json", "Prefer": "return=minimal" },
+      headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}`, "Content-Type": "application/json", Prefer: "return=minimal" },
       body: JSON.stringify({ is_default: true }),
     });
     fetchAgents();
@@ -389,89 +341,89 @@ function AgentesTab() {
 
   const startEdit = (agent: any) => {
     setEditing(agent);
-    setForm({
-      name: agent.name || "",
-      system_prompt: agent.system_prompt || "",
-      ai_model: agent.ai_model || "google/gemini-3-flash-preview",
-      temperature: String(agent.temperature || 0.7),
-      welcome_message: agent.welcome_message || "",
-      fallback_message: agent.fallback_message || "",
-    });
+    setForm({ name: agent.name || "", system_prompt: agent.system_prompt || "", ai_model: agent.ai_model || "google/gemini-3-flash-preview", temperature: agent.temperature || 0.7, welcome_message: agent.welcome_message || "", fallback_message: agent.fallback_message || "" });
   };
 
   return (
-    <div>
-      <button onClick={() => { setEditing({}); setForm({ name: "", system_prompt: "", ai_model: "google/gemini-3-flash-preview", temperature: "0.7", welcome_message: "", fallback_message: "Desculpe, não consegui processar a sua mensagem." }); }} style={{ ...s.btnPrimary, marginBottom: 16 }}>
-        ➕ Novo Agente
-      </button>
+    <div className="space-y-3">
+      <Button onClick={() => { setEditing({}); setForm({ name: "", system_prompt: "", ai_model: "google/gemini-3-flash-preview", temperature: 0.7, welcome_message: "", fallback_message: "Desculpe, não consegui processar a sua mensagem." }); }} className="w-full">
+        <Plus className="h-3.5 w-3.5 mr-2" /> Novo Agente
+      </Button>
 
       {editing && (
-        <div style={s.card}>
-          <h3 style={s.cardTitle}>{editing.id ? "✏️ Editar Agente" : "✨ Novo Agente"}</h3>
-          <div style={{ display: "grid", gap: 12 }}>
-            <FormField label="Nome">
-              <input style={s.input} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Nome do agente" />
-            </FormField>
-            <FormField label="Modelo IA">
-              <select style={s.input} value={form.ai_model} onChange={(e) => setForm({ ...form, ai_model: e.target.value })}>
-                <option value="google/gemini-3-flash-preview">Gemini 3 Flash</option>
-                <option value="google/gemini-2.5-flash">Gemini 2.5 Flash</option>
-                <option value="google/gemini-2.5-pro">Gemini 2.5 Pro</option>
-                <option value="openai/gpt-5-mini">GPT-5 Mini</option>
-                <option value="openai/gpt-5">GPT-5</option>
-              </select>
-            </FormField>
-            <FormField label={`Temperatura (${form.temperature})`}>
-              <input style={{ ...s.input, padding: "4px 8px" }} type="range" min="0" max="1" step="0.1" value={form.temperature} onChange={(e) => setForm({ ...form, temperature: e.target.value })} />
-            </FormField>
-            <FormField label="System Prompt">
-              <textarea style={{ ...s.input, minHeight: 120, resize: "vertical" }} value={form.system_prompt} onChange={(e) => setForm({ ...form, system_prompt: e.target.value })} placeholder="Instruções para o agente..." />
-            </FormField>
-            <FormField label="Mensagem de Boas-Vindas">
-              <input style={s.input} value={form.welcome_message} onChange={(e) => setForm({ ...form, welcome_message: e.target.value })} />
-            </FormField>
-            <FormField label="Mensagem de Fallback">
-              <input style={s.input} value={form.fallback_message} onChange={(e) => setForm({ ...form, fallback_message: e.target.value })} />
-            </FormField>
-          </div>
-          <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
-            <button onClick={handleSave} disabled={saving || !form.name} style={{ ...s.btnPrimary, flex: 1 }}>{saving ? "⏳ Salvando..." : "💾 Salvar"}</button>
-            <button onClick={() => setEditing(null)} style={{ ...s.btnSecondary, flex: 1 }}>Cancelar</button>
-          </div>
-        </div>
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-sm">{editing.id ? "✏️ Editar Agente" : "✨ Novo Agente"}</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div><Label className="text-xs">Nome</Label><Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Nome do agente" /></div>
+            <div>
+              <Label className="text-xs">Modelo IA</Label>
+              <Select value={form.ai_model} onValueChange={(v) => setForm({ ...form, ai_model: v })}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="google/gemini-3-flash-preview">Gemini 3 Flash</SelectItem>
+                  <SelectItem value="google/gemini-2.5-flash">Gemini 2.5 Flash</SelectItem>
+                  <SelectItem value="google/gemini-2.5-pro">Gemini 2.5 Pro</SelectItem>
+                  <SelectItem value="openai/gpt-5-mini">GPT-5 Mini</SelectItem>
+                  <SelectItem value="openai/gpt-5">GPT-5</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label className="text-xs">Temperatura ({form.temperature})</Label>
+              <input type="range" min="0" max="1" step="0.1" value={form.temperature} onChange={(e) => setForm({ ...form, temperature: parseFloat(e.target.value) })} className="w-full mt-1" />
+            </div>
+            <div><Label className="text-xs">System Prompt</Label><Textarea value={form.system_prompt} onChange={(e) => setForm({ ...form, system_prompt: e.target.value })} rows={5} placeholder="Instruções para o agente..." /></div>
+            <div><Label className="text-xs">Mensagem de Boas-Vindas</Label><Input value={form.welcome_message} onChange={(e) => setForm({ ...form, welcome_message: e.target.value })} /></div>
+            <div><Label className="text-xs">Mensagem de Fallback</Label><Input value={form.fallback_message} onChange={(e) => setForm({ ...form, fallback_message: e.target.value })} /></div>
+            <div className="flex gap-2">
+              <Button onClick={handleSave} disabled={saving || !form.name} className="flex-1">{saving ? "Salvando..." : "💾 Salvar"}</Button>
+              <Button variant="outline" onClick={() => setEditing(null)} className="flex-1">Cancelar</Button>
+            </div>
+          </CardContent>
+        </Card>
       )}
 
-      <div style={s.card}>
-        <h3 style={s.cardTitle}>Agentes Configurados</h3>
-        {loading ? <LoadingText /> : agents.length === 0 ? (
-          <EmptyText text="Nenhum agente criado." />
-        ) : (
-          <div style={{ display: "grid", gap: 8 }}>
-            {agents.map((a) => (
-              <div key={a.id} style={s.agentCard}>
-                <div style={{ display: "flex", alignItems: "center", gap: 10, flex: 1 }}>
-                  <div style={s.avatar}>{a.name?.charAt(0)?.toUpperCase() || "A"}</div>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-                      <strong style={{ fontSize: 14, color: colors.text }}>{a.name}</strong>
-                      {a.is_default && <span style={s.badgeSuccess}>⭐ Default</span>}
-                      {!a.is_active && <span style={s.badgeError}>Inativo</span>}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-sm">Agentes Configurados</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {loading ? (
+            <div className="flex justify-center py-6"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>
+          ) : agents.length === 0 ? (
+            <p className="text-xs text-muted-foreground text-center py-4">Nenhum agente criado.</p>
+          ) : (
+            <div className="space-y-2">
+              {agents.map((a) => (
+                <div key={a.id} className="flex items-center justify-between p-3 bg-muted rounded-xl">
+                  <div className="flex items-center gap-3 flex-1 min-w-0">
+                    <div className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center text-primary font-bold text-sm shrink-0">
+                      {a.name?.charAt(0)?.toUpperCase() || "A"}
                     </div>
-                    <div style={{ display: "flex", gap: 6, marginTop: 4, flexWrap: "wrap" }}>
-                      <span style={s.badgeOutline}>{a.ai_model?.split("/").pop()}</span>
-                      <span style={s.badgeOutline}>T={a.temperature}</span>
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className="font-semibold text-sm truncate">{a.name}</span>
+                        {a.is_default && <Badge variant="secondary" className="text-[9px]">⭐ Default</Badge>}
+                        {!a.is_active && <Badge variant="destructive" className="text-[9px]">Inativo</Badge>}
+                      </div>
+                      <div className="flex gap-1 mt-1">
+                        <Badge variant="outline" className="text-[9px]">{a.ai_model?.split("/").pop()}</Badge>
+                        <Badge variant="outline" className="text-[9px]">T={a.temperature}</Badge>
+                      </div>
                     </div>
                   </div>
+                  <div className="flex gap-1">
+                    {!a.is_default && <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => handleSetDefault(a.id)} title="Definir default">⭐</Button>}
+                    <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => startEdit(a)} title="Editar">✏️</Button>
+                  </div>
                 </div>
-                <div style={{ display: "flex", gap: 4 }}>
-                  {!a.is_default && <button onClick={() => handleSetDefault(a.id)} style={s.iconBtn} title="Definir como default">⭐</button>}
-                  <button onClick={() => startEdit(a)} style={s.iconBtn} title="Editar">✏️</button>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }
@@ -488,7 +440,7 @@ function TrainingTab() {
     setLoading(true);
     try {
       const res = await fetch(`${SUPABASE_URL}/rest/v1/knowledge_documents?select=*&order=created_at.desc&limit=50`, {
-        headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${SUPABASE_KEY}` },
+        headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` },
       });
       if (res.ok) setDocs(await res.json());
     } catch (e) { console.error(e); }
@@ -501,29 +453,25 @@ function TrainingTab() {
     if (!form.title) return;
     setSaving(true);
     try {
-      const body: any = {
-        title: form.title,
-        source_type: form.source_type,
-        status: "ready",
-      };
+      const body: any = { title: form.title, source_type: form.source_type, status: "ready" };
       if (form.source_type === "text") body.content = form.content;
       if (form.source_type === "url") body.source_url = form.source_url;
 
       await fetch(`${SUPABASE_URL}/rest/v1/knowledge_documents`, {
         method: "POST",
-        headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${SUPABASE_KEY}`, "Content-Type": "application/json", "Prefer": "return=minimal" },
+        headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}`, "Content-Type": "application/json", Prefer: "return=minimal" },
         body: JSON.stringify(body),
       });
 
       if (form.source_type === "text" && form.content) {
         const docRes = await fetch(`${SUPABASE_URL}/rest/v1/knowledge_documents?select=id&order=created_at.desc&limit=1`, {
-          headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${SUPABASE_KEY}` },
+          headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` },
         });
         const newDocs = await docRes.json();
         if (newDocs[0]) {
           await fetch(`${SUPABASE_URL}/rest/v1/knowledge_chunks`, {
             method: "POST",
-            headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${SUPABASE_KEY}`, "Content-Type": "application/json", "Prefer": "return=minimal" },
+            headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}`, "Content-Type": "application/json", Prefer: "return=minimal" },
             body: JSON.stringify({ document_id: newDocs[0].id, content: form.content, chunk_index: 0, tokens_count: Math.ceil(form.content.length / 4) }),
           });
         }
@@ -537,78 +485,87 @@ function TrainingTab() {
   };
 
   return (
-    <div>
-      <button onClick={() => setShowForm(!showForm)} style={{ ...s.btnPrimary, marginBottom: 16, ...(showForm ? { background: colors.textMuted } : {}) }}>
-        {showForm ? "✕ Cancelar" : "➕ Novo Documento"}
-      </button>
+    <div className="space-y-3">
+      <Button onClick={() => setShowForm(!showForm)} variant={showForm ? "secondary" : "default"} className="w-full">
+        {showForm ? "✕ Cancelar" : <><Plus className="h-3.5 w-3.5 mr-2" /> Novo Documento</>}
+      </Button>
 
       {showForm && (
-        <div style={s.card}>
-          <h3 style={s.cardTitle}>📝 Adicionar Conhecimento</h3>
-          <div style={{ display: "grid", gap: 12 }}>
-            <FormField label="Título">
-              <input style={s.input} value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} placeholder="Título do documento" />
-            </FormField>
-            <FormField label="Tipo">
-              <select style={s.input} value={form.source_type} onChange={(e) => setForm({ ...form, source_type: e.target.value })}>
-                <option value="text">Texto</option>
-                <option value="url">URL</option>
-              </select>
-            </FormField>
+        <Card>
+          <CardHeader className="pb-3"><CardTitle className="text-sm">📝 Adicionar Conhecimento</CardTitle></CardHeader>
+          <CardContent className="space-y-3">
+            <div><Label className="text-xs">Título</Label><Input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} placeholder="Título do documento" /></div>
+            <div>
+              <Label className="text-xs">Tipo</Label>
+              <Select value={form.source_type} onValueChange={(v) => setForm({ ...form, source_type: v })}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="text">Texto</SelectItem>
+                  <SelectItem value="url">URL</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
             {form.source_type === "text" && (
-              <FormField label="Conteúdo">
-                <textarea style={{ ...s.input, minHeight: 150, resize: "vertical" }} value={form.content} onChange={(e) => setForm({ ...form, content: e.target.value })} placeholder="Cole aqui o conteúdo de treino..." />
-              </FormField>
+              <div><Label className="text-xs">Conteúdo</Label><Textarea value={form.content} onChange={(e) => setForm({ ...form, content: e.target.value })} rows={6} placeholder="Cole aqui o conteúdo de treino..." /></div>
             )}
             {form.source_type === "url" && (
-              <FormField label="URL">
-                <input style={s.input} value={form.source_url} onChange={(e) => setForm({ ...form, source_url: e.target.value })} placeholder="https://..." />
-              </FormField>
+              <div><Label className="text-xs">URL</Label><Input value={form.source_url} onChange={(e) => setForm({ ...form, source_url: e.target.value })} placeholder="https://..." /></div>
             )}
-          </div>
-          <button onClick={handleSave} disabled={saving || !form.title} style={{ ...s.btnPrimary, marginTop: 12 }}>
-            {saving ? "⏳ Salvando..." : "💾 Salvar Documento"}
-          </button>
-        </div>
+            <Button onClick={handleSave} disabled={saving || !form.title} className="w-full">{saving ? "Salvando..." : "💾 Salvar Documento"}</Button>
+          </CardContent>
+        </Card>
       )}
 
-      <div style={s.card}>
-        <h3 style={s.cardTitle}>📚 Documentos de Conhecimento</h3>
-        {loading ? <LoadingText /> : docs.length === 0 ? (
-          <EmptyText text="Nenhum documento adicionado." />
-        ) : (
-          <div style={{ display: "grid", gap: 6 }}>
-            {docs.map((d) => (
-              <div key={d.id} style={{ padding: "10px 12px", background: colors.surface, borderRadius: 8, fontSize: 13 }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                  <strong style={{ color: colors.text }}>{d.title}</strong>
-                  <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                    <span style={s.badgeOutline}>{d.source_type === "url" ? "🔗 URL" : "📝 Texto"}</span>
-                    <span style={{ ...s.badgeOutline, ...(d.status === "ready" ? { background: colors.successBg, color: colors.success, borderColor: colors.successBorder } : {}) }}>
-                      {d.status}
-                    </span>
+      <Card>
+        <CardHeader className="pb-3"><CardTitle className="text-sm">📚 Documentos de Conhecimento</CardTitle></CardHeader>
+        <CardContent>
+          {loading ? (
+            <div className="flex justify-center py-6"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>
+          ) : docs.length === 0 ? (
+            <p className="text-xs text-muted-foreground text-center py-4">Nenhum documento adicionado.</p>
+          ) : (
+            <div className="space-y-1.5">
+              {docs.map((d) => (
+                <div key={d.id} className="p-2.5 bg-muted rounded-lg text-xs">
+                  <div className="flex justify-between items-center">
+                    <span className="font-medium truncate">{d.title}</span>
+                    <div className="flex gap-1 items-center">
+                      <Badge variant="outline" className="text-[9px]">{d.source_type === "url" ? "🔗 URL" : "📝 Texto"}</Badge>
+                      <Badge variant={d.status === "ready" ? "default" : "secondary"} className="text-[9px]">{d.status}</Badge>
+                    </div>
                   </div>
+                  {d.chunks_count > 0 && <p className="text-muted-foreground text-[10px] mt-1">{d.chunks_count} chunks</p>}
                 </div>
-                {d.chunks_count > 0 && <div style={{ fontSize: 11, color: colors.textMuted, marginTop: 4 }}>{d.chunks_count} chunks</div>}
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }
 
-// ==================== FLOWS TAB ====================
+// ==================== FLOWS TAB (with ReactFlow editor) ====================
 function FlowsTab() {
   const [flows, setFlows] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [selectedFlow, setSelectedFlow] = useState<any | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  // Editor state
+  const [nodes, setNodes, onNodesChange] = useNodesState([]);
+  const [edges, setEdges, onEdgesChange] = useEdgesState([]);
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+
+  const { pushState, undo, redo, canUndo, canRedo } = useFlowHistory(nodes, edges, setNodes as any, setEdges as any);
+
+  const selectedNodeData = selectedNodeId ? (nodes.find(n => n.id === selectedNodeId)?.data as unknown as FlowNodeData | null) : null;
 
   const fetchFlows = async () => {
     setLoading(true);
     try {
-      const res = await fetch(`${SUPABASE_URL}/rest/v1/flows?select=id,name,is_active,trigger_type,trigger_value,keywords,flow_type,created_at&order=created_at.desc`, {
-        headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${SUPABASE_KEY}` },
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/flows?select=*&order=created_at.desc`, {
+        headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` },
       });
       if (res.ok) setFlows(await res.json());
     } catch (e) { console.error(e); }
@@ -620,48 +577,173 @@ function FlowsTab() {
   const toggleActive = async (id: string, current: boolean) => {
     await fetch(`${SUPABASE_URL}/rest/v1/flows?id=eq.${id}`, {
       method: "PATCH",
-      headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${SUPABASE_KEY}`, "Content-Type": "application/json", "Prefer": "return=minimal" },
+      headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}`, "Content-Type": "application/json", Prefer: "return=minimal" },
       body: JSON.stringify({ is_active: !current }),
     });
     fetchFlows();
   };
 
-  return (
-    <div>
-      <div style={s.infoBox}>
-        ℹ️ Para criar e editar fluxos completos, utilize o <strong>editor visual</strong> na aplicação principal Emmely Cloud.
-      </div>
+  const openFlow = (flow: any) => {
+    setSelectedFlow(flow);
+    const convertedNodes = (flow.nodes || []).map((n: any) => ({
+      ...n,
+      type: n.type === "default" ? "custom" : (n.type || "custom"),
+      data: n.data?.nodeType ? n.data : { nodeType: n.data?.nodeType || "message", ...n.data },
+    }));
+    setNodes(convertedNodes);
+    setEdges(flow.edges || []);
+    setSelectedNodeId(null);
+    setTimeout(pushState, 50);
+  };
 
-      <div style={{ ...s.card, marginTop: 12 }}>
-        <h3 style={s.cardTitle}>🔀 Fluxos de Automação</h3>
-        {loading ? <LoadingText /> : flows.length === 0 ? (
-          <EmptyText text="Nenhum fluxo criado." />
-        ) : (
-          <div style={{ display: "grid", gap: 6 }}>
-            {flows.map((f) => (
-              <div key={f.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 12px", background: colors.surface, borderRadius: 8 }}>
-                <div>
-                  <strong style={{ fontSize: 14, color: colors.text }}>{f.name}</strong>
-                  <div style={{ fontSize: 12, color: colors.textSecondary, marginTop: 2, display: "flex", gap: 6 }}>
-                    <span style={s.badgeOutline}>{f.trigger_type}</span>
-                    <span style={s.badgeOutline}>{f.flow_type}</span>
-                    {f.keywords?.length > 0 && <span style={{ ...s.badgeOutline, fontSize: 10 }}>🏷️ {f.keywords.join(", ")}</span>}
-                  </div>
-                </div>
-                <button onClick={() => toggleActive(f.id, f.is_active)} style={{
-                  ...s.iconBtn,
-                  background: f.is_active ? colors.successBg : colors.errorBg,
-                  color: f.is_active ? colors.success : colors.error,
-                  border: `1px solid ${f.is_active ? colors.successBorder : colors.errorBorder}`,
-                  fontSize: 11, padding: "4px 10px", fontWeight: 600,
-                }}>
-                  {f.is_active ? "✅ Ativo" : "❌ Inativo"}
-                </button>
-              </div>
-            ))}
+  const onConnect = useCallback((params: Connection) => {
+    setEdges((eds) => addEdge({ ...params, markerEnd: { type: MarkerType.ArrowClosed } }, eds));
+    setTimeout(pushState, 0);
+  }, [setEdges, pushState]);
+
+  const addNode = useCallback((type: FlowNodeType, position?: { x: number; y: number }) => {
+    const id = `node_${Date.now()}`;
+    const pos = position || { x: 250, y: (nodes.length + 1) * 120 };
+    const data = getDefaultData(type);
+    const newNode: Node = { id, type: "custom", position: pos, data: data as any };
+    setNodes((nds) => [...nds, newNode]);
+    setTimeout(pushState, 0);
+  }, [nodes.length, setNodes, pushState]);
+
+  const onDrop = useCallback((event: React.DragEvent) => {
+    event.preventDefault();
+    const type = event.dataTransfer.getData("application/reactflow-type") as FlowNodeType;
+    if (!type) return;
+    const bounds = (event.target as HTMLElement).closest(".react-flow")?.getBoundingClientRect();
+    if (!bounds) return;
+    addNode(type, { x: event.clientX - bounds.left, y: event.clientY - bounds.top });
+  }, [addNode]);
+
+  const onDragOver = useCallback((event: React.DragEvent) => {
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "move";
+  }, []);
+
+  const onNodeClick = useCallback((_: any, node: Node) => setSelectedNodeId(node.id), []);
+  const onPaneClick = useCallback(() => setSelectedNodeId(null), []);
+
+  const handleNodeDataChange = useCallback((newData: FlowNodeData) => {
+    if (!selectedNodeId) return;
+    setNodes((nds) => nds.map((n) => n.id === selectedNodeId ? { ...n, data: newData as any } : n));
+    setTimeout(pushState, 100);
+  }, [selectedNodeId, setNodes, pushState]);
+
+  const handleDeleteNode = useCallback(() => {
+    if (!selectedNodeId) return;
+    setNodes((nds) => nds.filter((n) => n.id !== selectedNodeId));
+    setEdges((eds) => eds.filter((e) => e.source !== selectedNodeId && e.target !== selectedNodeId));
+    setSelectedNodeId(null);
+    setTimeout(pushState, 0);
+  }, [selectedNodeId, setNodes, setEdges, pushState]);
+
+  const handleSaveFlow = async () => {
+    if (!selectedFlow) return;
+    setSaving(true);
+    try {
+      await fetch(`${SUPABASE_URL}/rest/v1/flows?id=eq.${selectedFlow.id}`, {
+        method: "PATCH",
+        headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}`, "Content-Type": "application/json", Prefer: "return=minimal" },
+        body: JSON.stringify({ nodes, edges }),
+      });
+    } catch (e) { console.error(e); }
+    setSaving(false);
+  };
+
+  // Editor view
+  if (selectedFlow) {
+    return (
+      <div className="flex flex-col" style={{ height: "calc(100vh - 160px)" }}>
+        <div className="flex items-center justify-between p-2 border-b bg-card shrink-0">
+          <div className="flex items-center gap-2">
+            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => { setSelectedFlow(null); setSelectedNodeId(null); fetchFlows(); }}>
+              <ArrowLeft className="h-3.5 w-3.5" />
+            </Button>
+            <div>
+              <h3 className="text-xs font-semibold">{selectedFlow.name}</h3>
+              <p className="text-[10px] text-muted-foreground">{selectedFlow.description || "Sem descrição"}</p>
+            </div>
           </div>
-        )}
+          <div className="flex items-center gap-1">
+            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={undo} disabled={!canUndo}><Undo2 className="h-3 w-3" /></Button>
+            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={redo} disabled={!canRedo}><Redo2 className="h-3 w-3" /></Button>
+            <Button variant="outline" size="sm" className="h-7 text-xs" onClick={handleSaveFlow} disabled={saving}>
+              <Save className="h-3 w-3 mr-1" /> {saving ? "..." : "Guardar"}
+            </Button>
+          </div>
+        </div>
+
+        <div className="flex-1 flex relative">
+          <FlowNodePalette collapsed={false} onToggleCollapse={() => {}} onAddNode={(type) => addNode(type)} />
+
+          <div className="flex-1">
+            <ReactFlow
+              nodes={nodes}
+              edges={edges}
+              onNodesChange={onNodesChange}
+              onEdgesChange={onEdgesChange}
+              onConnect={onConnect}
+              onDrop={onDrop}
+              onDragOver={onDragOver}
+              onNodeClick={onNodeClick}
+              onPaneClick={onPaneClick}
+              nodeTypes={customNodeTypes}
+              fitView
+            >
+              <Controls />
+              <Background />
+              <MiniMap className="!bottom-2 !right-2" style={{ height: 80, width: 120 }} />
+            </ReactFlow>
+          </div>
+
+          {selectedNodeData && (
+            <NodeConfigPanel
+              data={selectedNodeData}
+              onChange={handleNodeDataChange}
+              onDelete={handleDeleteNode}
+              onClose={() => setSelectedNodeId(null)}
+            />
+          )}
+        </div>
       </div>
+    );
+  }
+
+  // Flow list view
+  return (
+    <div className="space-y-3">
+      <Card>
+        <CardHeader className="pb-3"><CardTitle className="text-sm">🔀 Fluxos de Automação</CardTitle></CardHeader>
+        <CardContent>
+          {loading ? (
+            <div className="flex justify-center py-6"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>
+          ) : flows.length === 0 ? (
+            <p className="text-xs text-muted-foreground text-center py-4">Nenhum fluxo criado.</p>
+          ) : (
+            <div className="space-y-1.5">
+              {flows.map((f) => (
+                <div key={f.id} className="flex items-center justify-between p-2.5 bg-muted rounded-lg cursor-pointer hover:bg-muted/80 transition-colors" onClick={() => openFlow(f)}>
+                  <div>
+                    <span className="font-semibold text-sm">{f.name}</span>
+                    <div className="flex gap-1 mt-1">
+                      <Badge variant="outline" className="text-[9px]">{f.trigger_type}</Badge>
+                      <Badge variant="outline" className="text-[9px]">{f.flow_type}</Badge>
+                      {f.keywords?.length > 0 && <Badge variant="outline" className="text-[9px]">🏷️ {f.keywords.join(", ")}</Badge>}
+                    </div>
+                  </div>
+                  <Button variant={f.is_active ? "default" : "secondary"} size="sm" className="text-[10px] h-6" onClick={(e) => { e.stopPropagation(); toggleActive(f.id, f.is_active); }}>
+                    {f.is_active ? "✅ Ativo" : "❌ Inativo"}
+                  </Button>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }
@@ -673,18 +755,20 @@ function PlaygroundTab() {
   const [messages, setMessages] = useState<Array<{ role: string; content: string }>>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
+  const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     fetch(`${SUPABASE_URL}/rest/v1/ai_agents?select=id,name,is_default,is_active&is_active=eq.true&order=is_default.desc`, {
-      headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${SUPABASE_KEY}` },
-    })
-      .then((r) => r.json())
-      .then((data) => {
-        setAgents(data || []);
-        if (data?.length > 0) setSelectedAgent(data[0].id);
-      })
-      .catch(console.error);
+      headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` },
+    }).then(r => r.json()).then(data => {
+      setAgents(data || []);
+      if (data?.length > 0) setSelectedAgent(data[0].id);
+    }).catch(console.error);
   }, []);
+
+  useEffect(() => {
+    if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+  }, [messages]);
 
   const sendMessage = async () => {
     if (!input.trim() || !selectedAgent || loading) return;
@@ -693,103 +777,85 @@ function PlaygroundTab() {
     setMessages(newMessages);
     setInput("");
     setLoading(true);
-
     try {
       const res = await fetch(`${SUPABASE_URL}/functions/v1/ai-playground`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${SUPABASE_KEY}` },
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${SUPABASE_KEY}` },
         body: JSON.stringify({ agent_id: selectedAgent, messages: newMessages }),
       });
       const data = await res.json();
-      if (data.content) {
-        setMessages([...newMessages, { role: "assistant", content: data.content }]);
-      } else {
-        setMessages([...newMessages, { role: "assistant", content: data.error || "Erro ao processar." }]);
-      }
-    } catch (e) {
+      setMessages([...newMessages, { role: "assistant", content: data.content || data.error || "Erro ao processar." }]);
+    } catch {
       setMessages([...newMessages, { role: "assistant", content: "Erro de conexão." }]);
     }
     setLoading(false);
   };
 
   return (
-    <div>
-      <div style={{ marginBottom: 12 }}>
-        <FormField label="Agente">
-          <select style={s.input} value={selectedAgent} onChange={(e) => { setSelectedAgent(e.target.value); setMessages([]); }}>
-            {agents.map((a) => <option key={a.id} value={a.id}>{a.name} {a.is_default ? "⭐" : ""}</option>)}
-          </select>
-        </FormField>
+    <div className="space-y-3">
+      <div>
+        <Label className="text-xs">Agente</Label>
+        <Select value={selectedAgent} onValueChange={(v) => { setSelectedAgent(v); setMessages([]); }}>
+          <SelectTrigger className="mt-1"><SelectValue placeholder="Selecionar agente" /></SelectTrigger>
+          <SelectContent>
+            {agents.map(a => <SelectItem key={a.id} value={a.id}>{a.name} {a.is_default ? "⭐" : ""}</SelectItem>)}
+          </SelectContent>
+        </Select>
       </div>
 
-      <div style={s.chatContainer}>
-        {messages.length === 0 && (
-          <div style={{ textAlign: "center", padding: "60px 20px" }}>
-            <div style={{ fontSize: 40, marginBottom: 12, opacity: 0.3 }}>💬</div>
-            <p style={{ color: colors.textMuted, fontSize: 13, margin: 0 }}>Envie uma mensagem para testar o agente...</p>
-          </div>
-        )}
-        {messages.map((m, i) => (
-          <div key={i} style={{
-            display: "flex",
-            justifyContent: m.role === "user" ? "flex-end" : "flex-start",
-            marginBottom: 8,
-          }}>
-            <div style={{
-              background: m.role === "user" ? colors.chatUser : colors.chatBot,
-              color: m.role === "user" ? "#fff" : colors.text,
-              padding: "10px 14px",
-              borderRadius: m.role === "user" ? "18px 18px 4px 18px" : "18px 18px 18px 4px",
-              maxWidth: "80%",
-              fontSize: 13,
-              lineHeight: 1.5,
-              whiteSpace: "pre-wrap",
-              boxShadow: m.role === "user" ? "none" : colors.shadow,
-            }}>
-              {m.content}
-            </div>
-          </div>
-        ))}
-        {loading && (
-          <div style={{ display: "flex", justifyContent: "flex-start", marginBottom: 8 }}>
-            <div style={{ background: colors.chatBot, padding: "10px 18px", borderRadius: "18px 18px 18px 4px", boxShadow: colors.shadow }}>
-              <div style={s.typingDots}>
-                <span style={{ ...s.dot, animationDelay: "0s" }} />
-                <span style={{ ...s.dot, animationDelay: "0.2s" }} />
-                <span style={{ ...s.dot, animationDelay: "0.4s" }} />
+      <Card className="flex flex-col" style={{ height: "calc(100vh - 320px)" }}>
+        <div ref={scrollRef} className="flex-1 overflow-y-auto p-3 space-y-2">
+          {messages.length === 0 && (
+            <div className="flex items-center justify-center h-full">
+              <div className="text-center text-muted-foreground">
+                <Sparkles className="h-10 w-10 mx-auto mb-2 opacity-30" />
+                <p className="text-xs">Envie uma mensagem para testar o agente...</p>
               </div>
             </div>
-          </div>
-        )}
-      </div>
+          )}
+          {messages.map((m, i) => (
+            <div key={i} className={cn("flex", m.role === "user" ? "justify-end" : "justify-start")}>
+              <div className={cn(
+                "max-w-[80%] rounded-2xl px-3.5 py-2 text-sm",
+                m.role === "user"
+                  ? "bg-primary text-primary-foreground rounded-br-md"
+                  : "bg-muted text-foreground rounded-bl-md"
+              )}>
+                <p className="whitespace-pre-wrap text-xs">{m.content}</p>
+              </div>
+            </div>
+          ))}
+          {loading && (
+            <div className="flex justify-start">
+              <div className="bg-muted rounded-2xl rounded-bl-md px-4 py-3">
+                <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+              </div>
+            </div>
+          )}
+        </div>
 
-      <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
-        <input
-          style={{ ...s.input, flex: 1 }}
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && sendMessage()}
-          placeholder="Digite uma mensagem..."
-          disabled={loading}
-        />
-        <button onClick={sendMessage} disabled={loading || !input.trim()} style={{ ...s.btnPrimary, width: "auto", padding: "8px 20px" }}>
-          ➤
-        </button>
-      </div>
+        <div className="border-t p-2.5">
+          <div className="flex gap-2">
+            <Input
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && sendMessage()}
+              placeholder="Digite uma mensagem..."
+              disabled={loading}
+              className="flex-1 text-xs"
+            />
+            <Button size="icon" onClick={sendMessage} disabled={!input.trim() || loading}>
+              <Send className="h-3.5 w-3.5" />
+            </Button>
+          </div>
+        </div>
+      </Card>
 
       {messages.length > 0 && (
-        <button onClick={() => setMessages([])} style={{ ...s.btnSecondary, marginTop: 8, fontSize: 12 }}>
-          🗑️ Limpar conversa
-        </button>
+        <Button variant="outline" size="sm" className="w-full text-xs" onClick={() => setMessages([])}>
+          <RotateCcw className="h-3 w-3 mr-1.5" /> Limpar conversa
+        </Button>
       )}
-
-      {/* CSS animation for typing dots */}
-      <style>{`
-        @keyframes emmelyDotPulse {
-          0%, 60%, 100% { opacity: 0.3; transform: scale(0.8); }
-          30% { opacity: 1; transform: scale(1); }
-        }
-      `}</style>
     </div>
   );
 }
@@ -807,13 +873,8 @@ function PagamentosTab() {
   const fetchTransactions = async () => {
     setLoading(true);
     try {
-      const res = await fetch(`${SUPABASE_URL}/functions/v1/payment-status?list=true`, {
-        headers: { "Content-Type": "application/json" },
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setTransactions(data.transactions || []);
-      }
+      const res = await fetch(`${SUPABASE_URL}/functions/v1/payment-status?list=true`, { headers: { "Content-Type": "application/json" } });
+      if (res.ok) { const data = await res.json(); setTransactions(data.transactions || []); }
     } catch (e) { console.error(e); }
     setLoading(false);
   };
@@ -832,361 +893,99 @@ function PagamentosTab() {
         }),
       });
       const data = await res.json();
-      if (data.ok) {
-        setShowForm(false);
-        setForm({ amount: "", currency: "EUR", payment_method: "card", customer_name: "", customer_email: "", description: "" });
-        fetchTransactions();
-      } else { alert("Erro: " + (data.error || "Falha")); }
-    } catch (e: any) { alert("Erro: " + e.message); }
+      if (data.ok) { setShowForm(false); setForm({ amount: "", currency: "EUR", payment_method: "card", customer_name: "", customer_email: "", description: "" }); fetchTransactions(); }
+    } catch (e: any) { console.error(e); }
     setCreating(false);
   };
 
-  const statusMap: Record<string, { label: string; bg: string; color: string }> = {
-    pending: { label: "Pendente", bg: colors.warningBg, color: colors.warning },
-    confirmed: { label: "Confirmado", bg: colors.successBg, color: colors.success },
-    received: { label: "Recebido", bg: colors.successBg, color: colors.success },
-    failed: { label: "Falhou", bg: colors.errorBg, color: colors.error },
-    canceled: { label: "Cancelado", bg: colors.surface, color: colors.textMuted },
-    refunded: { label: "Reembolsado", bg: "#f5f3ff", color: "#7c3aed" },
-    overdue: { label: "Vencido", bg: colors.errorBg, color: colors.error },
+  const statusStyles: Record<string, string> = {
+    pending: "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400",
+    confirmed: "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400",
+    received: "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400",
+    failed: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400",
+    canceled: "bg-muted text-muted-foreground",
   };
 
   return (
-    <div>
-      <button onClick={() => setShowForm(!showForm)} style={{ ...s.btnPrimary, marginBottom: 16, ...(showForm ? { background: colors.textMuted } : {}) }}>
-        {showForm ? "✕ Cancelar" : "➕ Nova Cobrança"}
-      </button>
+    <div className="space-y-3">
+      <Button onClick={() => setShowForm(!showForm)} variant={showForm ? "secondary" : "default"} className="w-full">
+        {showForm ? "✕ Cancelar" : <><Plus className="h-3.5 w-3.5 mr-2" /> Nova Cobrança</>}
+      </Button>
 
       {showForm && (
-        <div style={s.card}>
-          <h3 style={s.cardTitle}>💳 Nova Cobrança</h3>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-            <FormField label="Nome"><input style={s.input} value={form.customer_name} onChange={(e) => setForm({ ...form, customer_name: e.target.value })} /></FormField>
-            <FormField label="Email"><input style={s.input} value={form.customer_email} onChange={(e) => setForm({ ...form, customer_email: e.target.value })} /></FormField>
-            <FormField label="Valor"><input style={s.input} type="number" step="0.01" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} /></FormField>
-            <FormField label="Moeda">
-              <select style={s.input} value={form.currency} onChange={(e) => setForm({ ...form, currency: e.target.value, payment_method: e.target.value === "BRL" ? "pix" : "card" })}>
-                <option value="EUR">🇪🇺 EUR</option><option value="BRL">🇧🇷 BRL</option>
-              </select>
-            </FormField>
-            <FormField label="Método">
-              <select style={s.input} value={form.payment_method} onChange={(e) => setForm({ ...form, payment_method: e.target.value })}>
-                {form.currency === "BRL" ? <><option value="pix">PIX</option><option value="boleto">Boleto</option><option value="card">Cartão</option></> : <option value="card">Cartão</option>}
-              </select>
-            </FormField>
-            <FormField label="Descrição"><input style={s.input} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} /></FormField>
-          </div>
-          <button onClick={handleCreate} disabled={creating} style={{ ...s.btnPrimary, marginTop: 12 }}>{creating ? "⏳ Criando..." : "💳 Criar Cobrança"}</button>
-        </div>
+        <Card>
+          <CardHeader className="pb-3"><CardTitle className="text-sm">💳 Nova Cobrança</CardTitle></CardHeader>
+          <CardContent className="space-y-3">
+            <div className="grid grid-cols-2 gap-3">
+              <div><Label className="text-xs">Nome</Label><Input value={form.customer_name} onChange={(e) => setForm({ ...form, customer_name: e.target.value })} /></div>
+              <div><Label className="text-xs">Email</Label><Input value={form.customer_email} onChange={(e) => setForm({ ...form, customer_email: e.target.value })} /></div>
+              <div><Label className="text-xs">Valor</Label><Input type="number" step="0.01" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} /></div>
+              <div>
+                <Label className="text-xs">Moeda</Label>
+                <Select value={form.currency} onValueChange={(v) => setForm({ ...form, currency: v, payment_method: v === "BRL" ? "pix" : "card" })}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="EUR">🇪🇺 EUR</SelectItem>
+                    <SelectItem value="BRL">🇧🇷 BRL</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label className="text-xs">Método</Label>
+                <Select value={form.payment_method} onValueChange={(v) => setForm({ ...form, payment_method: v })}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {form.currency === "BRL" ? (
+                      <><SelectItem value="pix">PIX</SelectItem><SelectItem value="boleto">Boleto</SelectItem><SelectItem value="card">Cartão</SelectItem></>
+                    ) : (
+                      <SelectItem value="card">Cartão</SelectItem>
+                    )}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div><Label className="text-xs">Descrição</Label><Input value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} /></div>
+            </div>
+            <Button onClick={handleCreate} disabled={creating} className="w-full">{creating ? "Criando..." : "💳 Criar Cobrança"}</Button>
+          </CardContent>
+        </Card>
       )}
 
-      <div style={s.card}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-          <h3 style={{ ...s.cardTitle, margin: 0 }}>💰 Transações Recentes</h3>
-          <button onClick={fetchTransactions} disabled={loading} style={s.iconBtn}>🔄</button>
-        </div>
-        {loading ? <LoadingText /> : transactions.length === 0 ? (
-          <EmptyText text="Nenhuma transação." />
-        ) : (
-          <div style={{ maxHeight: 300, overflowY: "auto", display: "grid", gap: 6 }}>
-            {transactions.map((tx: any) => {
-              const st = statusMap[tx.status] || { label: tx.status, bg: colors.surface, color: colors.textMuted };
-              return (
-                <div key={tx.id} style={{ padding: "10px 12px", background: colors.surface, borderRadius: 8, fontSize: 13 }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                      <strong style={{ color: colors.text }}>{tx.currency} {Number(tx.amount).toFixed(2)}</strong>
-                      <span style={{ padding: "2px 8px", borderRadius: 20, fontSize: 11, fontWeight: 600, background: st.bg, color: st.color }}>{st.label}</span>
+      <Card>
+        <CardHeader className="pb-3 flex flex-row items-center justify-between">
+          <CardTitle className="text-sm">💰 Transações Recentes</CardTitle>
+          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={fetchTransactions} disabled={loading}><RefreshCw className="h-3 w-3" /></Button>
+        </CardHeader>
+        <CardContent>
+          {loading ? (
+            <div className="flex justify-center py-6"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>
+          ) : transactions.length === 0 ? (
+            <p className="text-xs text-muted-foreground text-center py-4">Nenhuma transação.</p>
+          ) : (
+            <ScrollArea className="max-h-72">
+              <div className="space-y-1.5">
+                {transactions.map((tx: any) => (
+                  <div key={tx.id} className="p-2.5 bg-muted rounded-lg text-xs">
+                    <div className="flex justify-between items-center">
+                      <div className="flex items-center gap-2">
+                        <span className="font-semibold">{tx.currency} {Number(tx.amount).toFixed(2)}</span>
+                        <span className={cn("px-2 py-0.5 rounded-full text-[10px] font-semibold", statusStyles[tx.status] || "bg-muted text-muted-foreground")}>{tx.status}</span>
+                      </div>
+                      <span className="text-muted-foreground text-[10px]">{tx.gateway === "stripe" ? "🟣 Stripe" : "🟢 Asaas"}</span>
                     </div>
-                    <span style={{ fontSize: 11, color: colors.textSecondary }}>{tx.gateway === "stripe" ? "🟣 Stripe" : "🟢 Asaas"}</span>
+                    <div className="text-muted-foreground text-[10px] mt-1 flex gap-2">
+                      <span>{tx.payment_method}</span>
+                      <span>{new Date(tx.created_at).toLocaleString()}</span>
+                      {tx.payment_url && <a href={tx.payment_url} target="_blank" rel="noopener noreferrer" className="text-primary">🔗 Link</a>}
+                    </div>
                   </div>
-                  <div style={{ color: colors.textMuted, fontSize: 11, marginTop: 4, display: "flex", gap: 8 }}>
-                    <span>{tx.payment_method}</span>
-                    <span>{new Date(tx.created_at).toLocaleString()}</span>
-                    {tx.payment_url && <a href={tx.payment_url} target="_blank" rel="noopener noreferrer" style={{ color: colors.primary, textDecoration: "none" }}>🔗 Link</a>}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
+                ))}
+              </div>
+            </ScrollArea>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }
-
-// ==================== HELPER COMPONENTS ====================
-function InfoRow({ label, value }: { label: string; value: string }) {
-  return (
-    <div style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", fontSize: 13, borderBottom: `1px solid ${colors.borderLight}` }}>
-      <span style={{ color: colors.textSecondary, fontWeight: 500 }}>{label}</span>
-      <span style={{ color: colors.text }}>{value}</span>
-    </div>
-  );
-}
-
-function StatusDot({ active }: { active: boolean }) {
-  return <span style={{ width: 8, height: 8, borderRadius: "50%", background: active ? colors.success : colors.error, display: "inline-block" }} />;
-}
-
-function FormField({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div>
-      <label style={s.formLabel}>{label}</label>
-      {children}
-    </div>
-  );
-}
-
-function LoadingText() {
-  return <p style={{ color: colors.textMuted, fontSize: 13, margin: 0, textAlign: "center", padding: "12px 0" }}>Carregando...</p>;
-}
-
-function EmptyText({ text }: { text: string }) {
-  return <p style={{ color: colors.textMuted, fontSize: 13, margin: 0, textAlign: "center", padding: "12px 0" }}>{text}</p>;
-}
-
-// ==================== INLINE STYLES ====================
-const s: Record<string, React.CSSProperties> = {
-  page: {
-    fontFamily: font,
-    margin: 0,
-    padding: 0,
-    background: colors.surface,
-    color: colors.text,
-    minHeight: "100vh",
-  },
-  header: {
-    background: colors.gradient,
-    padding: "16px 20px",
-    borderRadius: "0 0 16px 16px",
-    marginBottom: 0,
-  },
-  headerInner: {
-    display: "flex",
-    alignItems: "center",
-    gap: 12,
-  },
-  logo: {
-    width: 40,
-    height: 40,
-    background: "rgba(255,255,255,0.2)",
-    backdropFilter: "blur(8px)",
-    borderRadius: 12,
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    color: "white",
-    fontWeight: 800,
-    fontSize: 20,
-    letterSpacing: "-0.5px",
-  },
-  tabBar: {
-    display: "flex",
-    gap: 4,
-    padding: "8px 12px",
-    overflowX: "auto",
-    background: colors.surfaceCard,
-    borderBottom: `1px solid ${colors.border}`,
-    position: "sticky" as const,
-    top: 0,
-    zIndex: 10,
-  },
-  tab: {
-    padding: "6px 12px",
-    border: "none",
-    background: "transparent",
-    cursor: "pointer",
-    fontSize: 12,
-    color: colors.textSecondary,
-    borderRadius: 20,
-    transition: "all 0.2s",
-    whiteSpace: "nowrap" as const,
-    fontFamily: font,
-    fontWeight: 500,
-    display: "flex",
-    alignItems: "center",
-    gap: 4,
-  },
-  tabActive: {
-    background: colors.primary,
-    color: "#fff",
-    fontWeight: 600,
-  },
-  card: {
-    background: colors.surfaceCard,
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 12,
-    border: `1px solid ${colors.border}`,
-    boxShadow: colors.shadow,
-  },
-  cardTitle: {
-    fontSize: 14,
-    fontWeight: 700,
-    marginTop: 0,
-    marginBottom: 12,
-    color: colors.text,
-    letterSpacing: "-0.2px",
-  },
-  btnPrimary: {
-    width: "100%",
-    padding: "10px 16px",
-    background: colors.gradientBtn,
-    color: "white",
-    border: "none",
-    borderRadius: 10,
-    cursor: "pointer",
-    fontSize: 13,
-    fontWeight: 600,
-    fontFamily: font,
-    transition: "opacity 0.2s",
-    letterSpacing: "-0.1px",
-  },
-  btnSecondary: {
-    width: "100%",
-    padding: "10px 16px",
-    background: "transparent",
-    color: colors.textSecondary,
-    border: `1px solid ${colors.border}`,
-    borderRadius: 10,
-    cursor: "pointer",
-    fontSize: 13,
-    fontWeight: 500,
-    fontFamily: font,
-    transition: "all 0.2s",
-  },
-  iconBtn: {
-    padding: "6px 10px",
-    border: `1px solid ${colors.border}`,
-    background: colors.surfaceCard,
-    borderRadius: 8,
-    cursor: "pointer",
-    fontSize: 14,
-    transition: "all 0.15s",
-    fontFamily: font,
-  },
-  input: {
-    width: "100%",
-    padding: "9px 12px",
-    border: `1px solid ${colors.border}`,
-    borderRadius: 8,
-    fontSize: 13,
-    outline: "none",
-    boxSizing: "border-box" as const,
-    fontFamily: font,
-    color: colors.text,
-    background: colors.surfaceCard,
-    transition: "border-color 0.2s",
-  },
-  formLabel: {
-    display: "block",
-    fontSize: 11,
-    color: colors.textSecondary,
-    marginBottom: 4,
-    fontWeight: 600,
-    textTransform: "uppercase" as const,
-    letterSpacing: "0.5px",
-  },
-  infoBox: {
-    background: colors.infoBg,
-    border: `1px solid ${colors.infoBorder}`,
-    borderRadius: 10,
-    padding: "12px 16px",
-    fontSize: 13,
-    color: colors.infoText,
-    marginTop: 16,
-    lineHeight: 1.5,
-  },
-  agentCard: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    padding: "12px",
-    background: colors.surface,
-    borderRadius: 10,
-    border: `1px solid ${colors.borderLight}`,
-    transition: "border-color 0.2s",
-  },
-  avatar: {
-    width: 36,
-    height: 36,
-    borderRadius: 10,
-    background: colors.gradientBtn,
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    color: "#fff",
-    fontWeight: 700,
-    fontSize: 15,
-    flexShrink: 0,
-  },
-  badgeSuccess: {
-    display: "inline-flex",
-    alignItems: "center",
-    gap: 4,
-    padding: "1px 8px",
-    borderRadius: 20,
-    fontSize: 11,
-    fontWeight: 600,
-    background: colors.successBg,
-    color: colors.success,
-    border: `1px solid ${colors.successBorder}`,
-  },
-  badgeError: {
-    display: "inline-flex",
-    alignItems: "center",
-    padding: "1px 8px",
-    borderRadius: 20,
-    fontSize: 11,
-    fontWeight: 600,
-    background: colors.errorBg,
-    color: colors.error,
-    border: `1px solid ${colors.errorBorder}`,
-  },
-  badgeOutline: {
-    display: "inline-flex",
-    alignItems: "center",
-    padding: "1px 8px",
-    borderRadius: 20,
-    fontSize: 10,
-    fontWeight: 500,
-    background: "transparent",
-    color: colors.textSecondary,
-    border: `1px solid ${colors.border}`,
-  },
-  chatContainer: {
-    background: colors.surfaceCard,
-    borderRadius: 12,
-    border: `1px solid ${colors.border}`,
-    padding: 16,
-    minHeight: 300,
-    maxHeight: 400,
-    overflowY: "auto" as const,
-    boxShadow: "inset 0 1px 3px rgba(0,0,0,0.03)",
-  },
-  loadingDot: {
-    width: 32,
-    height: 32,
-    borderRadius: "50%",
-    border: `3px solid ${colors.border}`,
-    borderTopColor: colors.primary,
-    animation: "spin 0.8s linear infinite",
-  },
-  typingDots: {
-    display: "flex",
-    gap: 4,
-    alignItems: "center",
-    height: 20,
-  },
-  dot: {
-    width: 6,
-    height: 6,
-    borderRadius: "50%",
-    background: colors.textMuted,
-    animation: "emmelyDotPulse 1.2s ease-in-out infinite",
-    display: "inline-block",
-  },
-};
 
 export default Bitrix24App;
