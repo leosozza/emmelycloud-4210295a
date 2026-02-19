@@ -65,3 +65,6 @@ verify_jwt = false
 
 [functions.ai-process-message]
 verify_jwt = false
+
+[functions.bitrix24-fields]
+verify_jwt = false

@@ -12,6 +12,7 @@ import {
   type FlowAIIntention, type FlowAIIntentionField,
   type FlowAIAction, type FlowAIRouter, type FlowAIRouterRoute,
 } from "./FlowNodeTypes";
+import BitrixFieldSelector from "./BitrixFieldSelector";
 
 interface NodeConfigPanelProps {
   data: FlowNodeData;
@@ -492,12 +493,20 @@ export default function NodeConfigPanel({ data, onChange, onDelete, onClose }: N
                       </Button>
                     </div>
                     {crm.fields.map((f, i) => (
-                      <div key={i} className="flex gap-1">
-                        <Input className="h-7 text-xs w-1/3" value={f.key} onChange={(e) => updateField(i, { key: e.target.value })} placeholder="TITLE" />
-                        <Input className="h-7 text-xs flex-1" value={f.value} onChange={(e) => updateField(i, { value: e.target.value })} placeholder="{{valor}}" />
-                        <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive shrink-0" onClick={() => removeField(i)}>
-                          <Trash2 className="h-3 w-3" />
-                        </Button>
+                      <div key={i} className="space-y-1 p-1.5 rounded border bg-muted/20">
+                        <div className="flex items-center justify-between">
+                          <BitrixFieldSelector
+                            entity={crm.entity}
+                            spaEntityTypeId={isSpa ? crm.spaEntityTypeId : undefined}
+                            value={f.key}
+                            onChange={(key) => updateField(i, { key })}
+                            placeholder="Selecionar campo..."
+                          />
+                          <Button variant="ghost" size="icon" className="h-6 w-6 text-destructive shrink-0 ml-1" onClick={() => removeField(i)}>
+                            <Trash2 className="h-3 w-3" />
+                          </Button>
+                        </div>
+                        <Input className="h-7 text-xs" value={f.value} onChange={(e) => updateField(i, { value: e.target.value })} placeholder="{{valor}} ou texto fixo" />
                       </div>
                     ))}
                   </div>
@@ -509,8 +518,7 @@ export default function NodeConfigPanel({ data, onChange, onDelete, onClose }: N
                 </div>
 
                 <div className="rounded bg-muted/50 p-2">
-                  <p className="text-[9px] text-muted-foreground font-medium mb-1">Campos comuns Bitrix24:</p>
-                  <p className="text-[9px] text-muted-foreground">TITLE, NAME, LAST_NAME, PHONE, EMAIL, COMPANY_TITLE, OPPORTUNITY, STAGE_ID, CATEGORY_ID, ASSIGNED_BY_ID</p>
+                  <p className="text-[9px] text-muted-foreground">💡 Os campos são carregados em tempo real da API do Bitrix24. Pode também digitar manualmente.</p>
                 </div>
               </>
             );
