@@ -1,0 +1,70 @@
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Bot, Edit, Trash2, Star, GitBranch, BookOpen, Users, Volume2 } from "lucide-react";
+import type { AIAgent, AIProvider } from "@/pages/Agentes";
+
+interface AgentCardProps {
+  agent: AIAgent;
+  providers: AIProvider[];
+  onEdit: (agent: AIAgent) => void;
+  onDelete: (id: string) => void;
+  onToggleDefault: (agent: AIAgent) => void;
+}
+
+export function AgentCard({ agent, providers, onEdit, onDelete, onToggleDefault }: AgentCardProps) {
+  const textProvider = providers.find(p => p.slug === agent.ai_provider);
+  const voiceProvider = agent.voice_provider ? providers.find(p => p.slug === agent.voice_provider) : null;
+
+  return (
+    <Card className={`relative ${!agent.is_active ? 'opacity-60' : ''}`}>
+      <CardHeader className="pb-3">
+        <div className="flex items-start justify-between">
+          <div className="flex items-center gap-3">
+            <Avatar className="h-10 w-10">
+              <AvatarFallback className="bg-primary/10 text-primary"><Bot className="h-5 w-5" /></AvatarFallback>
+            </Avatar>
+            <div>
+              <CardTitle className="text-base flex items-center gap-2">
+                {agent.name}
+                {agent.is_default && <Star className="h-3 w-3 text-yellow-500 fill-yellow-500" />}
+              </CardTitle>
+              <CardDescription className="text-xs">{agent.description || "Sem descrição"}</CardDescription>
+            </div>
+          </div>
+          <div className="flex gap-1">
+            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => onEdit(agent)}><Edit className="h-3 w-3" /></Button>
+            <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => onDelete(agent.id)}><Trash2 className="h-3 w-3" /></Button>
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent className="pt-0">
+        <div className="flex flex-wrap gap-1.5 mb-3">
+          <Badge variant="outline" className="text-[10px]">
+            {textProvider?.name || agent.ai_provider}
+          </Badge>
+          <Badge variant="secondary" className="text-[10px]">
+            {agent.ai_model.split('/').pop()}
+          </Badge>
+          <Badge variant="outline" className="text-[10px]">T: {agent.temperature}</Badge>
+          {voiceProvider && (
+            <Badge variant="outline" className="text-[10px] border-accent text-accent-foreground">
+              <Volume2 className="h-2 w-2 mr-1" />
+              {voiceProvider.name}{agent.voice_model ? ` / ${agent.voice_model}` : ''}
+            </Badge>
+          )}
+          {agent.default_flow_id && <Badge variant="outline" className="text-[10px]"><GitBranch className="h-2 w-2 mr-1" />Fluxo</Badge>}
+          {agent.training_collection_ids?.length > 0 && <Badge variant="outline" className="text-[10px]"><BookOpen className="h-2 w-2 mr-1" />{agent.training_collection_ids.length} doc(s)</Badge>}
+          {agent.sub_agent_ids?.length > 0 && <Badge variant="outline" className="text-[10px]"><Users className="h-2 w-2 mr-1" />{agent.sub_agent_ids.length} sub</Badge>}
+        </div>
+        <div className="flex items-center justify-between">
+          <span className="text-xs text-muted-foreground">{agent.is_active ? "Ativo" : "Inativo"}</span>
+          <Button variant="ghost" size="sm" className="h-6 text-[10px]" onClick={() => onToggleDefault(agent)}>
+            {agent.is_default ? "Padrão ★" : "Definir padrão"}
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}

@@ -113,6 +113,9 @@ export type Database = {
           temperature: number
           training_collection_ids: string[] | null
           updated_at: string
+          voice_id: string | null
+          voice_model: string | null
+          voice_provider: string | null
           welcome_message: string | null
         }
         Insert: {
@@ -136,6 +139,9 @@ export type Database = {
           temperature?: number
           training_collection_ids?: string[] | null
           updated_at?: string
+          voice_id?: string | null
+          voice_model?: string | null
+          voice_provider?: string | null
           welcome_message?: string | null
         }
         Update: {
@@ -159,6 +165,9 @@ export type Database = {
           temperature?: number
           training_collection_ids?: string[] | null
           updated_at?: string
+          voice_id?: string | null
+          voice_model?: string | null
+          voice_provider?: string | null
           welcome_message?: string | null
         }
         Relationships: [
@@ -183,6 +192,7 @@ export type Database = {
           is_active: boolean
           is_native: boolean
           name: string
+          provider_type: string
           slug: string
           updated_at: string
         }
@@ -197,6 +207,7 @@ export type Database = {
           is_active?: boolean
           is_native?: boolean
           name: string
+          provider_type?: string
           slug: string
           updated_at?: string
         }
@@ -211,6 +222,7 @@ export type Database = {
           is_active?: boolean
           is_native?: boolean
           name?: string
+          provider_type?: string
           slug?: string
           updated_at?: string
         }

@@ -22,9 +22,11 @@ import {
 } from "@/components/ui/alert-dialog";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
-import { Plus, Bot, Edit, Trash2, Star, Loader2, Sparkles, Brain, GitBranch, BookOpen, Users } from "lucide-react";
+import { Plus, Bot, Edit, Trash2, Star, Loader2, GitBranch, BookOpen, Users, Volume2 } from "lucide-react";
+import { AgentFormDialog } from "@/components/agentes/AgentFormDialog";
+import { AgentCard } from "@/components/agentes/AgentCard";
 
-interface AIProvider {
+export interface AIProvider {
   id: string;
   name: string;
   slug: string;
@@ -32,9 +34,10 @@ interface AIProvider {
   is_native: boolean;
   available_models: any[];
   credential_key: string | null;
+  provider_type: string;
 }
 
-interface AIAgent {
+export interface AIAgent {
   id: string;
   name: string;
   description: string | null;
@@ -54,13 +57,16 @@ interface AIAgent {
   training_collection_ids: string[];
   sub_agent_ids: string[];
   routing_rules: any;
+  voice_provider: string | null;
+  voice_model: string | null;
+  voice_id: string | null;
   created_at: string;
 }
 
-interface FlowOption { id: string; name: string; }
-interface DocOption { id: string; title: string; }
+export interface FlowOption { id: string; name: string; }
+export interface DocOption { id: string; title: string; }
 
-const defaultAgent: Partial<AIAgent> = {
+export const defaultAgent: Partial<AIAgent> = {
   name: "",
   description: "",
   system_prompt: "Você é um assistente jurídico profissional. Responda de forma clara, precisa e empática.",
@@ -76,6 +82,9 @@ const defaultAgent: Partial<AIAgent> = {
   training_collection_ids: [],
   sub_agent_ids: [],
   routing_rules: {},
+  voice_provider: null,
+  voice_model: null,
+  voice_id: null,
 };
 
 export default function AgentesPage() {
@@ -105,9 +114,6 @@ export default function AgentesPage() {
     if (docsRes.data) setDocs(docsRes.data as DocOption[]);
     setLoading(false);
   };
-
-  const selectedProvider = providers.find(p => p.slug === editingAgent.ai_provider);
-  const availableModels = (selectedProvider?.available_models as any[]) || [];
 
   const handleSave = async () => {
     if (!editingAgent.name?.trim()) { toast.error("Nome é obrigatório"); return; }
@@ -147,18 +153,6 @@ export default function AgentesPage() {
   const openEdit = (agent: AIAgent) => { setEditingAgent({ ...agent }); setDialogOpen(true); };
   const openCreate = () => { setEditingAgent({ ...defaultAgent }); setDialogOpen(true); };
 
-  const toggleTrainingDoc = (docId: string) => {
-    const current = editingAgent.training_collection_ids || [];
-    const next = current.includes(docId) ? current.filter(id => id !== docId) : [...current, docId];
-    setEditingAgent(prev => ({ ...prev, training_collection_ids: next }));
-  };
-
-  const toggleSubAgent = (agentId: string) => {
-    const current = editingAgent.sub_agent_ids || [];
-    const next = current.includes(agentId) ? current.filter(id => id !== agentId) : [...current, agentId];
-    setEditingAgent(prev => ({ ...prev, sub_agent_ids: next }));
-  };
-
   return (
     <div>
       <PageHeader title="Agentes IA" description="Configure agentes inteligentes com diferentes personalidades e modelos de IA" />
@@ -180,218 +174,30 @@ export default function AgentesPage() {
       ) : (
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           {agents.map((agent) => (
-            <Card key={agent.id} className={`relative ${!agent.is_active ? 'opacity-60' : ''}`}>
-              <CardHeader className="pb-3">
-                <div className="flex items-start justify-between">
-                  <div className="flex items-center gap-3">
-                    <Avatar className="h-10 w-10">
-                      <AvatarFallback className="bg-primary/10 text-primary"><Bot className="h-5 w-5" /></AvatarFallback>
-                    </Avatar>
-                    <div>
-                      <CardTitle className="text-base flex items-center gap-2">
-                        {agent.name}
-                        {agent.is_default && <Star className="h-3 w-3 text-yellow-500 fill-yellow-500" />}
-                      </CardTitle>
-                      <CardDescription className="text-xs">{agent.description || "Sem descrição"}</CardDescription>
-                    </div>
-                  </div>
-                  <div className="flex gap-1">
-                    <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEdit(agent)}><Edit className="h-3 w-3" /></Button>
-                    <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => setDeleteId(agent.id)}><Trash2 className="h-3 w-3" /></Button>
-                  </div>
-                </div>
-              </CardHeader>
-              <CardContent className="pt-0">
-                <div className="flex flex-wrap gap-1.5 mb-3">
-                  <Badge variant="outline" className="text-[10px]">{agent.ai_provider}</Badge>
-                  <Badge variant="secondary" className="text-[10px]">{agent.ai_model.split('/').pop()}</Badge>
-                  <Badge variant="outline" className="text-[10px]">T: {agent.temperature}</Badge>
-                  {agent.default_flow_id && <Badge variant="outline" className="text-[10px]"><GitBranch className="h-2 w-2 mr-1" />Fluxo</Badge>}
-                  {agent.training_collection_ids?.length > 0 && <Badge variant="outline" className="text-[10px]"><BookOpen className="h-2 w-2 mr-1" />{agent.training_collection_ids.length} doc(s)</Badge>}
-                  {agent.sub_agent_ids?.length > 0 && <Badge variant="outline" className="text-[10px]"><Users className="h-2 w-2 mr-1" />{agent.sub_agent_ids.length} sub</Badge>}
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-xs text-muted-foreground">{agent.is_active ? "Ativo" : "Inativo"}</span>
-                  <Button variant="ghost" size="sm" className="h-6 text-[10px]" onClick={() => toggleDefault(agent)}>
-                    {agent.is_default ? "Padrão ★" : "Definir padrão"}
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
+            <AgentCard
+              key={agent.id}
+              agent={agent}
+              providers={providers}
+              onEdit={openEdit}
+              onDelete={(id) => setDeleteId(id)}
+              onToggleDefault={toggleDefault}
+            />
           ))}
         </div>
       )}
 
-      {/* Create/Edit Dialog */}
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>{editingAgent.id ? "Editar Agente" : "Novo Agente"}</DialogTitle>
-            <DialogDescription>Configure a personalidade, modelo de IA e comportamento do agente.</DialogDescription>
-          </DialogHeader>
-
-          <div className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <Label>Nome *</Label>
-                <Input value={editingAgent.name || ""} onChange={(e) => setEditingAgent(prev => ({ ...prev, name: e.target.value }))} placeholder="Ex: Assistente Jurídico" />
-              </div>
-              <div>
-                <Label>Tipo</Label>
-                <Select value={editingAgent.agent_type || "text"} onValueChange={(v) => setEditingAgent(prev => ({ ...prev, agent_type: v }))}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="text">Texto</SelectItem>
-                    <SelectItem value="voice">Voz</SelectItem>
-                    <SelectItem value="hybrid">Híbrido</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-
-            <div>
-              <Label>Descrição</Label>
-              <Input value={editingAgent.description || ""} onChange={(e) => setEditingAgent(prev => ({ ...prev, description: e.target.value }))} placeholder="Breve descrição do agente" />
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <Label>Provider de IA</Label>
-                <Select value={editingAgent.ai_provider || "lovable"} onValueChange={(v) => {
-                  const prov = providers.find(p => p.slug === v);
-                  const firstModel = (prov?.available_models as any[])?.[0]?.name || "";
-                  setEditingAgent(prev => ({ ...prev, ai_provider: v, ai_model: firstModel, ai_base_url: prov?.base_url || "" }));
-                }}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    {providers.map(p => (
-                      <SelectItem key={p.slug} value={p.slug}>
-                        {p.name} {p.is_native && <Badge className="ml-1 text-[8px]">nativo</Badge>}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <Label>Modelo</Label>
-                <Select value={editingAgent.ai_model || ""} onValueChange={(v) => setEditingAgent(prev => ({ ...prev, ai_model: v }))}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    {availableModels.map((m: any) => (
-                      <SelectItem key={m.name} value={m.name}>{m.display || m.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-
-            {!selectedProvider?.is_native && (
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <Label>URL Base da API</Label>
-                  <Input value={editingAgent.ai_base_url || ""} onChange={(e) => setEditingAgent(prev => ({ ...prev, ai_base_url: e.target.value }))} placeholder="https://api.example.com/v1/chat/completions" />
-                </div>
-                <div>
-                  <Label>Chave API (credential_key)</Label>
-                  <Input value={editingAgent.ai_api_key_credential || ""} onChange={(e) => setEditingAgent(prev => ({ ...prev, ai_api_key_credential: e.target.value }))} placeholder="Nome da credencial" />
-                </div>
-              </div>
-            )}
-
-            <div>
-              <Label>System Prompt</Label>
-              <Textarea value={editingAgent.system_prompt || ""} onChange={(e) => setEditingAgent(prev => ({ ...prev, system_prompt: e.target.value }))} rows={6} placeholder="Instruções de comportamento do agente..." />
-            </div>
-
-            <div>
-              <Label>Temperatura: {editingAgent.temperature}</Label>
-              <Slider value={[editingAgent.temperature || 0.7]} onValueChange={([v]) => setEditingAgent(prev => ({ ...prev, temperature: v }))} min={0} max={2} step={0.1} className="mt-2" />
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <Label>Mensagem de Boas-vindas</Label>
-                <Textarea value={editingAgent.welcome_message || ""} onChange={(e) => setEditingAgent(prev => ({ ...prev, welcome_message: e.target.value }))} rows={2} />
-              </div>
-              <div>
-                <Label>Mensagem de Fallback</Label>
-                <Textarea value={editingAgent.fallback_message || ""} onChange={(e) => setEditingAgent(prev => ({ ...prev, fallback_message: e.target.value }))} rows={2} />
-              </div>
-            </div>
-
-            <div className="flex items-center gap-4">
-              <div className="flex items-center gap-2">
-                <Switch checked={editingAgent.is_active ?? true} onCheckedChange={(v) => setEditingAgent(prev => ({ ...prev, is_active: v }))} />
-                <Label>Ativo</Label>
-              </div>
-            </div>
-
-            {/* ═══ Vinculações ═══ */}
-            <Separator />
-            <div>
-              <h4 className="text-sm font-semibold mb-3 flex items-center gap-2"><GitBranch className="h-4 w-4" /> Vinculações</h4>
-
-              {/* Fluxo padrão */}
-              <div className="space-y-1 mb-4">
-                <Label className="text-xs">Fluxo padrão</Label>
-                <Select value={editingAgent.default_flow_id || "none"} onValueChange={(v) => setEditingAgent(prev => ({ ...prev, default_flow_id: v === "none" ? null : v }))}>
-                  <SelectTrigger><SelectValue placeholder="Nenhum" /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">Nenhum</SelectItem>
-                    {flows.map(f => <SelectItem key={f.id} value={f.id}>{f.name}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {/* Documentos de treinamento */}
-              <div className="space-y-1 mb-4">
-                <Label className="text-xs flex items-center gap-1"><BookOpen className="h-3 w-3" /> Base de conhecimento</Label>
-                {docs.length === 0 ? (
-                  <p className="text-[10px] text-muted-foreground">Nenhum documento disponível. Adicione em Treinamento.</p>
-                ) : (
-                  <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto">
-                    {docs.map(d => {
-                      const selected = (editingAgent.training_collection_ids || []).includes(d.id);
-                      return (
-                        <Badge key={d.id} variant={selected ? "default" : "outline"} className="text-[10px] cursor-pointer" onClick={() => toggleTrainingDoc(d.id)}>
-                          {selected ? "✓ " : ""}{d.title}
-                        </Badge>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-
-              {/* Sub-agentes */}
-              <div className="space-y-1">
-                <Label className="text-xs flex items-center gap-1"><Users className="h-3 w-3" /> Sub-agentes</Label>
-                {agents.filter(a => a.id !== editingAgent.id).length === 0 ? (
-                  <p className="text-[10px] text-muted-foreground">Crie mais agentes para delegar tarefas.</p>
-                ) : (
-                  <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto">
-                    {agents.filter(a => a.id !== editingAgent.id).map(a => {
-                      const selected = (editingAgent.sub_agent_ids || []).includes(a.id);
-                      return (
-                        <Badge key={a.id} variant={selected ? "default" : "outline"} className="text-[10px] cursor-pointer" onClick={() => toggleSubAgent(a.id)}>
-                          {selected ? "✓ " : ""}{a.name}
-                        </Badge>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancelar</Button>
-            <Button onClick={handleSave} disabled={saving}>
-              {saving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-              {editingAgent.id ? "Guardar" : "Criar"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <AgentFormDialog
+        open={dialogOpen}
+        onOpenChange={setDialogOpen}
+        editingAgent={editingAgent}
+        setEditingAgent={setEditingAgent}
+        providers={providers}
+        flows={flows}
+        docs={docs}
+        agents={agents}
+        saving={saving}
+        onSave={handleSave}
+      />
 
       {/* Delete confirmation */}
       <AlertDialog open={!!deleteId} onOpenChange={() => setDeleteId(null)}>
