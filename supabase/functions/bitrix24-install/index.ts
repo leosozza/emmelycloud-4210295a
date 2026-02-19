@@ -281,6 +281,32 @@ Deno.serve(async (req) => {
         active: connectorActive,
         eventsBound: events.length,
       });
+
+      // Register IM Bot for Contact Center chatbot
+      try {
+        const eventsUrl = `${supabaseUrl}/functions/v1/bitrix24-events`;
+        const botResult = await callBitrix(clientEndpoint, accessToken, "imbot.register", {
+          CODE: "emmely_ai_bot",
+          TYPE: "B",
+          EVENT_MESSAGE_ADD: eventsUrl,
+          PROPERTIES: {
+            NAME: "Emmely AI",
+            WORK_POSITION: "Assistente Virtual IA",
+            COLOR: "#25D366",
+            OPENLINE: "Y",
+          },
+        });
+        const botErr = String(botResult.error || "");
+        if (botResult.error && !botErr.includes("ALREADY")) {
+          console.error("[INSTALL] Bot registration failed:", botResult.error, botResult.error_description);
+        } else {
+          console.log("[INSTALL] Bot Emmely AI registered OK");
+        }
+        await debugLog(supabase, integrationId, "bot_registered", "outbound", { botResult });
+      } catch (botError) {
+        console.error("[INSTALL] Bot registration error:", botError);
+        await debugLog(supabase, integrationId, "bot_register_error", "outbound", null, String(botError));
+      }
     } catch (connectorError) {
       console.error("[INSTALL] Connector setup error:", connectorError);
       await debugLog(supabase, integrationId, "connector_setup_error", "outbound", null, String(connectorError));
