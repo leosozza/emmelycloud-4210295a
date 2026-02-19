@@ -1,99 +1,170 @@
 
-# Plano: Replicar a Logica do Thothai para o Conector Bitrix24
+# Problema Diagnosticado: IM Bot vs Conector - Dois Sistemas Distintos
 
-## Problema Identificado
+## O que o utilizador tem razão em apontar
 
-Apos analise detalhada do codigo do thothai (referencia funcional) vs. o codigo atual do Emmely Cloud, foram encontrados 3 problemas criticos:
+O Bitrix24 tem **duas funcionalidades completamente independentes**:
 
-1. **O conector nunca e ativado**: O `bitrix24-connector-settings` nao chama `imconnector.activate` quando o Bitrix24 abre o slider de configuracao. No thothai, o `connector-settings` detecta o `PLACEMENT_OPTIONS` com `LINE` e `ACTIVE_STATUS`, e executa `imconnector.activate` + `imconnector.connector.data.set` para activar o conector na Open Line. Sem isso, o conector aparece como "registado" mas nunca fica "ativo" no Contact Center.
+### Sistema 1: IM Bot (Chatbot nativo)
+- Registado via `imbot.register` com `TYPE: "B"`
+- Aparece nos **Contactos do utilizador no Bitrix24** (secção de Mensagens/Chat)
+- Responde a eventos `ONIMBOTMESSAGEADD` e `ONIMBOTWELCOMEMESSAGE`
+- Para responder, usa `imbot.message.add` com o parâmetro **`BOT_ID`** obrigatório
+- É **completamente independente** do WhatsApp/Instagram
+- Problema actual: o worker tenta `im.message.add` em vez de `imbot.message.add`
 
-2. **Eventos processados de forma sincrona**: O `bitrix24-events` atual processa tudo inline (busca agente, chama IA, responde), o que pode causar timeouts no Bitrix24 (limite < 200ms). No thothai, o `events` apenas faz ACK rapido (`return "successfully"`) e enfileira na tabela `bitrix_event_queue`, delegando o processamento ao `bitrix24-worker`.
+### Sistema 2: Conector (Canal externo no Contact Center)
+- Registado via `imconnector.register`
+- Aparece no **Contact Center** para receber mensagens de WhatsApp/Instagram
+- Requer activação manual em cada Open Line
+- Usa `ONIMCONNECTORMESSAGEADD` para eventos
 
-3. **Nao existe `bitrix24-worker`**: A funcao que processa a fila de eventos assincronamente nao existe. E ela que no thothai lida com mensagens do operador, bot messages, connector status changes, etc.
+## Problemas Encontrados na Análise
 
-## Solucao
+### Problema 1: Worker usa método errado para responder ao bot
+O `handleBotMessage` no worker chama:
+```
+im.message.add { DIALOG_ID: dialogId, MESSAGE: text }
+```
+Devia chamar:
+```
+imbot.message.add { BOT_ID: 10245, DIALOG_ID: dialogId, MESSAGE: text }
+```
+Sem `BOT_ID`, a mensagem não é associada ao bot e **não aparece** no chat.
 
-### Fase A: Corrigir `bitrix24-connector-settings` (Activacao do Conector)
+### Problema 2: Bot ID não está no integration correctamente
+O `bitrix_agent_id` é `null` na base de dados. O `bot_id` está guardado dentro do campo `config` como JSON (config->>'bot_id' = '10245'), mas o worker procura em `integration.bitrix_agent_id` (campo da tabela) em vez de `integration.config->>'bot_id'`.
 
-Reescrever a funcao para seguir a logica do thothai:
-- Parsear `PLACEMENT_OPTIONS` (contem `LINE`, `ACTIVE_STATUS`, `CONNECTOR`)
-- Quando `SETTING_CONNECTOR` placement ou `ACTIVE_STATUS === 1`:
-  - Chamar `imconnector.activate` com `CONNECTOR`, `LINE`, `ACTIVE: 1`
-  - Chamar `imconnector.connector.data.set` para definir o URL do handler
-  - Verificar activacao via `imopenlines.config.list.get`
-  - Atualizar `connector_active` na tabela `bitrix24_integrations`
-- Se ja estiver totalmente configurado, retornar `"successfully"` (texto plano - o Bitrix24 exige isto)
+### Problema 3: EVENT_WELCOME_MESSAGE_ERROR no registo
+Os logs mostram que numa instalação anterior houve `EVENT_WELCOME_MESSAGE_ERROR`. O URL do handler precisa de ser acessível publicamente e aceitar o POST do Bitrix24.
 
-### Fase B: Converter `bitrix24-events` para ACK Rapido + Fila
+### Problema 4: bitrix_agent_id em vez de usar config.bot_id
+O worker procura:
+```typescript
+if (integration.bitrix_agent_id) { ... }
+```
+Mas o bot_id está em `integration.config.bot_id`, não em `integration.bitrix_agent_id`.
 
-Reescrever para seguir o padrao do thothai:
-- Parsear payload (suporte a PHP-style form data com arrays aninhados)
-- Identificar tipo de evento
-- Inserir na tabela `bitrix_event_queue` com status "pending"
-- Disparar `bitrix24-worker` via fire-and-forget (usando `EdgeRuntime.waitUntil`)
-- Retornar `"successfully"` em menos de 200ms
-- Eventos suportados: `ONIMCONNECTORMESSAGEADD`, `ONIMBOTMESSAGEADD`, `ONIMBOTJOINOPEN`, `ONIMBOTWELCOMEMESSAGE`, `ONIMCONNECTORSTATUSDELETE`, `PLACEMENT`
+### Problema 5: Payload ONIMBOTMESSAGEADD mal estruturado
+O Bitrix24 envia o evento com esta estrutura:
+```json
+{
+  "event": "ONIMBOTMESSAGEADD",
+  "data": {
+    "PARAMS": {
+      "BOT_ID": "10245",
+      "DIALOG_ID": "chat123",
+      "MESSAGE": "Olá",
+      "FROM_USER_ID": "5"
+    }
+  }
+}
+```
+O worker actual acede como `msgData.PARAMS` mas o payload guardado na queue é a estrutura completa incluindo o campo `data` como subchave.
 
-### Fase C: Criar `bitrix24-worker` (Processamento Assincrono)
+## Solução: 3 Ficheiros a Corrigir
 
-Nova edge function que:
-- Busca eventos pendentes da `bitrix_event_queue`
-- Processa cada evento conforme o tipo:
-  - **ONIMCONNECTORMESSAGEADD**: Operador envia mensagem -> encaminhar para WhatsApp/Instagram via `message-send`
-  - **ONIMBOTMESSAGEADD**: Mensagem recebida pelo bot IM -> chamar `ai-process-message` -> responder via `im.message.add`
-  - **ONIMBOTWELCOMEMESSAGE / ONIMBOTJOINOPEN**: Enviar mensagem de boas-vindas do agente
-  - **ONIMCONNECTORSTATUSDELETE**: Desactivar canal
-- Retry com max 3 tentativas
-- Atualiza status para "done" ou "failed"
-- Limpeza de BBCode para WhatsApp
+### Correcção 1: `bitrix24-worker/index.ts` - Função `handleBotMessage`
 
-### Fase D: Atualizar Configuracao
+Mudar de `im.message.add` para `imbot.message.add` com `BOT_ID`:
 
-- Adicionar `bitrix24-worker` ao `config.toml` com `verify_jwt = false`
-- Fazer deploy de todas as 3 funcoes
+```typescript
+// ERRADO (actual):
+await callBitrix(integration.client_endpoint, accessToken, "im.message.add", {
+  DIALOG_ID: dialogId || chatId,
+  MESSAGE: replyText,
+});
 
-## Detalhes Tecnicos
-
-### Tabela `bitrix_event_queue` (ja existe)
-
-Campos utilizados: `id`, `event_type`, `payload`, `status` (pending/processing/done/failed), `attempts`, `max_attempts`, `last_error`, `processed_at`
-
-### Fluxo Completo Apos Implementacao
-
-```text
-Bitrix24 Contact Center
-        |
-        v
-[bitrix24-connector-settings]
-  - PLACEMENT_OPTIONS.LINE = N
-  - imconnector.activate(CONNECTOR, LINE, ACTIVE=1)
-  - imconnector.connector.data.set(...)
-  - return "successfully"
-        |
-        v
-Conector Ativo no Contact Center (visivel ao utilizador)
-        |
-        v
-Mensagem recebida pelo Bitrix24
-        |
-        v
-[bitrix24-events]
-  - Parse payload
-  - INSERT bitrix_event_queue (status=pending)
-  - Trigger bitrix24-worker (fire & forget)
-  - return "successfully" (< 200ms)
-        |
-        v
-[bitrix24-worker]
-  - SELECT pending events
-  - Process: ONIMBOTMESSAGEADD -> ai-process-message -> im.message.add
-  - Process: ONIMCONNECTORMESSAGEADD -> message-send (WhatsApp/Instagram)
-  - UPDATE status = done/failed
+// CORRECTO (a implementar):
+const botId = integration.config?.bot_id || integration.bitrix_agent_id;
+await callBitrix(integration.client_endpoint, accessToken, "imbot.message.add", {
+  BOT_ID: botId,           // ← OBRIGATÓRIO para o bot responder
+  DIALOG_ID: dialogId,
+  MESSAGE: replyText,
+});
 ```
 
-### Ficheiros a Criar/Editar
+Também corrigir a extracção do `dialogId` do payload, que está aninhado dentro de `data.PARAMS`:
 
-1. **`supabase/functions/bitrix24-connector-settings/index.ts`** - Reescrever com logica de activacao
-2. **`supabase/functions/bitrix24-events/index.ts`** - Converter para ACK rapido + enfileiramento
-3. **`supabase/functions/bitrix24-worker/index.ts`** - Criar nova funcao (processamento assincrono)
-4. **`supabase/config.toml`** - Adicionar `bitrix24-worker`
+```typescript
+// O payload guardado na queue tem esta estrutura:
+// { event: "ONIMBOTMESSAGEADD", data: { PARAMS: { DIALOG_ID: "...", MESSAGE: "..." } }, auth: {...} }
+const msgData = payload.data || {};
+const params = msgData.PARAMS || {};
+const dialogId = params.DIALOG_ID || params.dialog_id || "";
+const messageText = params.MESSAGE || params.message || "";
+```
+
+### Correcção 2: `bitrix24-worker/index.ts` - Função `handleWelcome`
+
+Idem para a welcome message, usar `imbot.message.add`:
+
+```typescript
+const botId = integration.config?.bot_id;
+await callBitrix(integration.client_endpoint, accessToken, "imbot.message.add", {
+  BOT_ID: botId,
+  DIALOG_ID: dialogId,
+  MESSAGE: welcomeText,
+});
+```
+
+### Correcção 3: `bitrix24-install/index.ts` - Registo do Bot
+
+Adicionar verificação de erro `EVENT_WELCOME_MESSAGE_ERROR` e tentar registo sem `EVENT_WELCOME_MESSAGE` como fallback. Também guardar o `bot_id` directamente na coluna `bitrix_agent_id` da tabela para facilitar acesso:
+
+```typescript
+await supabase
+  .from("bitrix24_integrations")
+  .update({
+    bitrix_agent_id: botId,   // ← guardar na coluna directa
+    config: {
+      ...existingConfig,
+      bot_id: botId,
+    },
+  })
+  .eq("id", integrationId);
+```
+
+### Correcção 4: `bitrix24-events/index.ts` - Adicionar `ONIMBOTWELCOMEMESSAGE`
+
+O evento de boas-vindas do bot é `ONIMBOTWELCOMEMESSAGE` mas não está na lista de eventos suportados:
+
+```typescript
+const SUPPORTED_EVENTS = [
+  "ONIMCONNECTORMESSAGEADD",
+  "ONIMBOTMESSAGEADD",
+  "ONIMBOTJOINOPEN",
+  "ONIMBOTWELCOMEMESSAGE",   // ← já existe, OK
+  "ONIMCONNECTORSTATUSDELETE",
+];
+```
+
+## Ficheiros a Editar
+
+1. `supabase/functions/bitrix24-worker/index.ts` - Corrigir método de resposta do bot (`imbot.message.add` + `BOT_ID`) e extracção correcta do payload
+2. `supabase/functions/bitrix24-install/index.ts` - Guardar `bot_id` também em `bitrix_agent_id` (coluna directa) e melhorar tratamento de erros no registo
+3. Deploy das funções editadas
+4. Após deploy, reinstalar a aplicação no Bitrix24 para criar um bot fresco com ID correcto
+
+## O que NÃO precisa de ser mudado
+
+- `bitrix24-events/index.ts` está correcto - faz ACK rápido e enfileira
+- `bitrix24-connector-settings/index.ts` está correcto para o conector
+- A arquitectura da fila (`bitrix_event_queue`) está correcta
+
+## Resumo do Fluxo Correcto Após Fix
+
+```text
+Utilizador escreve no chat do Bitrix24 ao bot "Emmely AI"
+        ↓
+Bitrix24 dispara ONIMBOTMESSAGEADD
+        ↓
+bitrix24-events: enfileira em bitrix_event_queue + retorna "successfully"
+        ↓
+bitrix24-worker: processa ONIMBOTMESSAGEADD
+  - Extrai: params.DIALOG_ID, params.MESSAGE, params.BOT_ID
+  - Chama ai-process-message para gerar resposta IA
+  - Chama imbot.message.add com BOT_ID=10245 e DIALOG_ID
+        ↓
+Resposta aparece no chat do Bitrix24 como mensagem do bot "Emmely AI"
+```
