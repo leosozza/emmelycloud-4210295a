@@ -47,10 +47,26 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ skipped: "human_mode" }), { headers: jsonHeaders });
     }
 
-    // 3. Find agent (specific, or default)
+    // 3. Check chatbot_channel_settings — respect per-channel enable/disable
+    const { data: channelSetting } = await supabase
+      .from("chatbot_channel_settings")
+      .select("enabled, agent_id")
+      .eq("channel", conversation.channel)
+      .maybeSingle();
+
+    if (channelSetting && !channelSetting.enabled) {
+      console.log(`[AI-PROCESS] Chatbot disabled for channel: ${conversation.channel}`);
+      return new Response(JSON.stringify({ skipped: "chatbot_disabled_for_channel" }), { headers: jsonHeaders });
+    }
+
+    // 4. Find agent — use channel-specific agent if configured, otherwise explicit or default
     let agent: any = null;
     if (agent_id) {
       const { data } = await supabase.from("ai_agents").select("*").eq("id", agent_id).eq("is_active", true).single();
+      agent = data;
+    }
+    if (!agent && channelSetting?.agent_id) {
+      const { data } = await supabase.from("ai_agents").select("*").eq("id", channelSetting.agent_id).eq("is_active", true).maybeSingle();
       agent = data;
     }
     if (!agent) {
