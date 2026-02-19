@@ -383,12 +383,45 @@ Deno.serve(async (req) => {
       }).eq("id", event.id);
 
       try {
-        // Find integration
-        const { data: integration } = await supabase
-          .from("bitrix24_integrations")
-          .select("*")
-          .eq("member_id", event.member_id)
-          .single();
+        // Find integration by member_id (primary) or fallback to domain from payload
+        let integration: any = null;
+
+        if (event.member_id) {
+          const { data } = await supabase
+            .from("bitrix24_integrations")
+            .select("*")
+            .eq("member_id", event.member_id)
+            .single();
+          integration = data;
+        }
+
+        // Fallback: if member_id is null, try to find by domain from auth payload
+        if (!integration) {
+          const payloadAuth = (event.payload as any)?.auth || {};
+          const payloadDomain = payloadAuth.domain || (event.payload as any)?.domain || null;
+          if (payloadDomain) {
+            const cleanDom = payloadDomain.replace(/^https?:\/\//, "").replace(/\/.*$/, "").toLowerCase();
+            const { data } = await supabase
+              .from("bitrix24_integrations")
+              .select("*")
+              .ilike("domain", `%${cleanDom}%`)
+              .single();
+            integration = data;
+            if (integration) console.log("[WORKER] Found integration via domain fallback:", cleanDom);
+          }
+        }
+
+        // Second fallback: get first active integration (single-tenant)
+        if (!integration) {
+          const { data } = await supabase
+            .from("bitrix24_integrations")
+            .select("*")
+            .order("created_at", { ascending: false })
+            .limit(1)
+            .single();
+          integration = data;
+          if (integration) console.log("[WORKER] Found integration via single-tenant fallback");
+        }
 
         if (!integration) {
           throw new Error(`Integration not found for member: ${event.member_id}`);

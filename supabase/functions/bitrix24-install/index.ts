@@ -244,13 +244,16 @@ Deno.serve(async (req) => {
       // 2. Do NOT auto-activate on lines — user must manually enable in Contact Center
       const connectorActive = false;
 
-      // 3. Bind events
+      // 3. Bind events (connector + bot)
       const eventsUrl = `${supabaseUrl}/functions/v1/bitrix24-events`;
       const events = [
         "OnImConnectorMessageAdd",
         "OnImConnectorDialogStart",
         "OnImConnectorDialogFinish",
         "OnImConnectorStatusDelete",
+        "OnImbotMessageAdd",       // eventos do IM Bot
+        "OnImbotWelcomeMessage",   // boas-vindas do IM Bot
+        "OnImbotJoinOpen",         // bot adicionado a open line
       ];
 
       for (const event of events) {
@@ -355,17 +358,29 @@ Deno.serve(async (req) => {
         }
 
         if (finalBotId) {
-          // Guardar bot_id em AMBOS: config (para compatibilidade) e bitrix_agent_id (coluna directa)
+          // IMPORTANTE: bitrix_agent_id é UUID — NÃO podemos guardar o bot_id numérico lá.
+          // Guardamos o bot_id APENAS no campo config (JSONB aceita qualquer valor).
+          // Fazemos merge com o config existente para não perder auth_payload, etc.
+          const { data: currentIntData } = await supabase
+            .from("bitrix24_integrations")
+            .select("config")
+            .eq("id", integrationId)
+            .single();
+
+          const existingConfig = (currentIntData?.config as any) || {};
+
           await supabase
             .from("bitrix24_integrations")
             .update({
-              bitrix_agent_id: finalBotId,
               config: {
-                installed_at: new Date().toISOString(),
-                bot_id: finalBotId,
+                ...existingConfig,            // preservar installed_at, auth_payload, etc.
+                bot_id: finalBotId,           // string numérica ex: "10265"
+                bot_registered_at: new Date().toISOString(),
               },
             })
             .eq("id", integrationId);
+
+          console.log("[INSTALL] bot_id saved in config:", finalBotId);
         }
 
         await debugLog(supabase, integrationId, "bot_registered", "outbound", { botResult, finalBotId });
