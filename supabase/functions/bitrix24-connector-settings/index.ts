@@ -5,38 +5,23 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-const cspValue = [
-  "default-src * 'unsafe-inline' 'unsafe-eval' data: blob:",
-  "script-src * 'unsafe-inline' 'unsafe-eval'",
-  "style-src * 'unsafe-inline'",
-  "img-src * data: blob:",
-  "connect-src *",
-  "frame-ancestors *",
-  "font-src * data:",
-].join("; ");
+const CONNECTOR_ID = "emmely_connector";
 
-const htmlHeaders = {
-  ...corsHeaders,
-  "Content-Type": "text/html; charset=utf-8",
-  "Content-Security-Policy": cspValue,
-  "X-Frame-Options": "ALLOWALL",
-};
-
-const jsonHeaders = {
-  ...corsHeaders,
-  "Content-Type": "application/json",
-};
-
-function parseBody(bodyText: string, contentType: string): Record<string, any> {
+function parsePhpStyleBody(bodyText: string): Record<string, any> {
   if (!bodyText) return {};
-  if (contentType.includes("application/json")) return JSON.parse(bodyText);
   const params = new URLSearchParams(bodyText);
   const data: Record<string, any> = {};
+
   for (const [key, value] of params.entries()) {
-    const match = key.match(/^(\w+)\[(\w+)\]$/);
-    if (match) {
-      if (!data[match[1]]) data[match[1]] = {};
-      data[match[1]][match[2]] = value;
+    // Support nested PHP-style arrays: data[FIELD][SUBFIELD] or auth[member_id]
+    const parts = key.match(/([^\[\]]+)/g);
+    if (parts && parts.length > 1) {
+      let current = data;
+      for (let i = 0; i < parts.length - 1; i++) {
+        if (!current[parts[i]]) current[parts[i]] = {};
+        current = current[parts[i]];
+      }
+      current[parts[parts.length - 1]] = value;
     } else {
       data[key] = value;
     }
@@ -44,8 +29,54 @@ function parseBody(bodyText: string, contentType: string): Record<string, any> {
   return data;
 }
 
-function extractMemberId(data: any): string | null {
-  return data.auth?.member_id || data.member_id || null;
+function parseBody(bodyText: string, contentType: string): Record<string, any> {
+  if (!bodyText) return {};
+  if (contentType.includes("application/json")) {
+    try { return JSON.parse(bodyText); } catch { return {}; }
+  }
+  return parsePhpStyleBody(bodyText);
+}
+
+async function callBitrix(endpoint: string, token: string, method: string, params: Record<string, any> = {}): Promise<any> {
+  const url = `${endpoint}${method}`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ...params, auth: token }),
+  });
+  return await res.json();
+}
+
+async function ensureValidToken(supabase: any, integration: any): Promise<string> {
+  const expiresAt = new Date(integration.expires_at);
+  const now = new Date();
+  if (expiresAt.getTime() - now.getTime() > 5 * 60 * 1000) {
+    return integration.access_token;
+  }
+
+  console.log("[SETTINGS] Refreshing token...");
+  const res = await fetch("https://oauth.bitrix.info/oauth/token/", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      grant_type: "refresh_token",
+      client_id: Deno.env.get("BITRIX24_CLIENT_ID")!,
+      client_secret: Deno.env.get("BITRIX24_CLIENT_SECRET")!,
+      refresh_token: integration.refresh_token,
+    }),
+  });
+
+  const data = await res.json();
+  if (data.error) throw new Error(`Token refresh failed: ${data.error}`);
+
+  await supabase.from("bitrix24_integrations").update({
+    access_token: data.access_token,
+    refresh_token: data.refresh_token,
+    expires_at: new Date(Date.now() + data.expires_in * 1000).toISOString(),
+  }).eq("id", integration.id);
+
+  integration.access_token = data.access_token;
+  return data.access_token;
 }
 
 Deno.serve(async (req) => {
@@ -59,164 +90,158 @@ Deno.serve(async (req) => {
   );
 
   try {
-    const url = new URL(req.url);
-    const formatParam = url.searchParams.get("format");
-    const memberIdParam = url.searchParams.get("member_id");
-    const acceptHeader = req.headers.get("accept") || "";
+    const contentType = req.headers.get("content-type") || "";
+    const bodyText = await req.text();
+    const data = parseBody(bodyText, contentType);
 
-    // JSON mode: GET with format=json or Accept: application/json
-    const wantsJson = formatParam === "json" || acceptHeader.includes("application/json") || req.method === "GET";
+    console.log("[SETTINGS] Received:", JSON.stringify(data).substring(0, 500));
 
-    let memberId: string | null = memberIdParam;
-
-    // For POST requests, parse the body
-    if (req.method === "POST") {
-      const contentType = req.headers.get("content-type") || "";
-      const bodyText = await req.text();
-      const data = parseBody(bodyText, contentType);
-      console.log("[SETTINGS] Payload:", JSON.stringify(data).substring(0, 300));
-      if (!memberId) memberId = extractMemberId(data);
-    }
-
-    let integration = null;
-    let mappings: any[] = [];
-    let recentLogs: any[] = [];
-
-    if (memberId) {
-      const { data: intData } = await supabase
-        .from("bitrix24_integrations")
-        .select("*")
-        .eq("member_id", memberId)
-        .single();
-      integration = intData;
-
-      if (integration) {
-        const { data: mapData } = await supabase
-          .from("bitrix24_channel_mappings")
-          .select("*")
-          .eq("integration_id", integration.id)
-          .eq("is_active", true);
-        mappings = mapData || [];
-
-        // Fetch recent debug logs
-        const { data: logData } = await supabase
-          .from("bitrix24_debug_logs")
-          .select("event_type, direction, created_at, error")
-          .eq("integration_id", integration.id)
-          .order("created_at", { ascending: false })
-          .limit(20);
-        recentLogs = logData || [];
-      }
-    }
-
-    // --- JSON Response ---
-    if (wantsJson && req.method === "GET") {
-      const jsonResponse = {
-        integration: integration ? {
-          id: integration.id,
-          member_id: integration.member_id,
-          domain: integration.domain,
-          connector_registered: integration.connector_registered,
-          connector_active: integration.connector_active,
-          bitrix_agent_id: integration.bitrix_agent_id || null,
-          updated_at: integration.updated_at,
-        } : null,
-        channels: mappings.map((m: any) => ({
-          channel: m.channel,
-          line_id: m.line_id,
-          line_name: m.line_name,
-          is_active: m.is_active,
-        })),
-        recent_logs: recentLogs,
-      };
-      return new Response(JSON.stringify(jsonResponse), { headers: jsonHeaders });
-    }
-
-    // --- If connector is fully active, return "successfully" (Bitrix24 expects this) ---
-    if (integration?.connector_active && integration?.connector_registered) {
+    // Extract member_id from auth or top-level
+    const memberId = data.auth?.member_id || data.member_id;
+    if (!memberId) {
+      console.log("[SETTINGS] No member_id found, returning successfully");
       return new Response("successfully", {
-        headers: { ...htmlHeaders, "Content-Type": "text/plain; charset=utf-8" },
+        headers: { ...corsHeaders, "Content-Type": "text/plain; charset=utf-8" },
       });
     }
 
-    // --- HTML Response (Bitrix24 placement handler / settings slider) ---
-    const statusIcon = integration?.connector_active ? "🟢" : "🔴";
-    const statusText = integration?.connector_active ? "Ativo" : "Inativo";
+    // Find integration
+    const { data: integration } = await supabase
+      .from("bitrix24_integrations")
+      .select("*")
+      .eq("member_id", memberId)
+      .single();
 
-    const channelRows = mappings.length > 0
-      ? mappings.map((m: any) => `
-        <tr>
-          <td style="padding:8px;border-bottom:1px solid #eee;">${m.channel}</td>
-          <td style="padding:8px;border-bottom:1px solid #eee;">${m.line_name || m.line_id}</td>
-          <td style="padding:8px;border-bottom:1px solid #eee;">${m.is_active ? "✅" : "❌"}</td>
-        </tr>
-      `).join("")
-      : `<tr><td colspan="3" style="padding:16px;text-align:center;color:#999;">Nenhum canal mapeado</td></tr>`;
+    if (!integration) {
+      console.error("[SETTINGS] Integration not found for:", memberId);
+      return new Response("successfully", {
+        headers: { ...corsHeaders, "Content-Type": "text/plain; charset=utf-8" },
+      });
+    }
 
-    const html = `<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <meta http-equiv="Content-Security-Policy" content="frame-ancestors *;">
-  <script src="https://api.bitrix24.com/api/v1/"></script>
-  <style>
-    * { box-sizing: border-box; }
-    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; margin: 0; padding: 20px; background: #fff; color: #333; }
-    .header { display: flex; align-items: center; gap: 12px; margin-bottom: 24px; padding-bottom: 16px; border-bottom: 1px solid #e5e5e5; }
-    .logo { width: 40px; height: 40px; background: #25D366; border-radius: 10px; display: flex; align-items: center; justify-content: center; color: white; font-weight: bold; font-size: 18px; }
-    .status { display: inline-flex; align-items: center; gap: 6px; padding: 4px 12px; border-radius: 20px; font-size: 13px; background: ${integration?.connector_active ? "#e8f5e9" : "#ffeaea"}; }
-    table { width: 100%; border-collapse: collapse; margin-top: 12px; }
-    th { text-align: left; padding: 8px; border-bottom: 2px solid #e5e5e5; font-size: 13px; color: #666; text-transform: uppercase; }
-    .info { background: #f0f7ff; border: 1px solid #cce0ff; border-radius: 8px; padding: 12px 16px; margin-top: 20px; font-size: 13px; color: #1a5276; }
-  </style>
-</head>
-<body>
-  <div class="header">
-    <div class="logo">E</div>
-    <div>
-      <h2 style="margin:0;font-size:18px;">Emmely Cloud</h2>
-      <span class="status">${statusIcon} ${statusText}</span>
-    </div>
-  </div>
+    // Parse PLACEMENT_OPTIONS - Bitrix24 sends this when opening the settings slider
+    let placementOptions: Record<string, any> = {};
+    if (data.PLACEMENT_OPTIONS) {
+      try {
+        placementOptions = typeof data.PLACEMENT_OPTIONS === "string"
+          ? JSON.parse(data.PLACEMENT_OPTIONS)
+          : data.PLACEMENT_OPTIONS;
+      } catch {
+        placementOptions = {};
+      }
+    }
 
-  ${integration ? `
-    <p style="font-size:14px;color:#666;">Portal: <strong>${integration.domain || memberId}</strong></p>
-    
-    <h3 style="font-size:15px;margin-top:24px;">Canais Configurados</h3>
-    <table>
-      <thead>
-        <tr>
-          <th>Canal</th>
-          <th>Open Line</th>
-          <th>Status</th>
-        </tr>
-      </thead>
-      <tbody>
-        ${channelRows}
-      </tbody>
-    </table>
+    const lineId = placementOptions.LINE ? parseInt(placementOptions.LINE, 10) : 0;
+    const activeStatus = placementOptions.ACTIVE_STATUS;
+    const connectorId = placementOptions.CONNECTOR || CONNECTOR_ID;
+    const placement = data.PLACEMENT || "";
 
-    <div class="info">
-      ℹ️ Os canais são configurados automaticamente durante a instalação. Para gerenciar conversas, acesse o Contact Center do Bitrix24.
-    </div>
-  ` : `
-    <div class="info">
-      ⚠️ Integração não encontrada. Reinstale o aplicativo Emmely Cloud.
-    </div>
-  `}
+    console.log("[SETTINGS] Placement:", placement, "LINE:", lineId, "ACTIVE_STATUS:", activeStatus, "CONNECTOR:", connectorId);
 
-  <script>
-    try { BX24.init(function() { BX24.fitWindow(); }); } catch(e) {}
-  </script>
-</body>
-</html>`;
+    // Log for debugging
+    await supabase.from("bitrix24_debug_logs").insert({
+      integration_id: integration.id,
+      event_type: "connector_settings",
+      direction: "inbound",
+      payload: { placement, placementOptions, memberId },
+    }).catch(() => {});
 
-    return new Response(html, { headers: htmlHeaders });
+    // If this is a SETTING_CONNECTOR placement or has LINE info, activate the connector
+    if (placement === "SETTING_CONNECTOR" || lineId > 0) {
+      const accessToken = await ensureValidToken(supabase, integration);
+
+      // Step 1: Activate the connector on the Open Line
+      console.log("[SETTINGS] Activating connector on LINE:", lineId);
+      const activateResult = await callBitrix(integration.client_endpoint, accessToken, "imconnector.activate", {
+        CONNECTOR: connectorId,
+        LINE: lineId,
+        ACTIVE: 1,
+      });
+      console.log("[SETTINGS] imconnector.activate result:", JSON.stringify(activateResult));
+
+      // Step 2: Set connector data (handler URL for receiving messages)
+      const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+      const handlerUrl = `${supabaseUrl}/functions/v1/bitrix24-events`;
+
+      const dataSetResult = await callBitrix(integration.client_endpoint, accessToken, "imconnector.connector.data.set", {
+        CONNECTOR: connectorId,
+        LINE: lineId,
+        DATA: {
+          id: connectorId,
+          name: "Emmely Messages",
+          icon: { data_image: "" },
+          icon_disabled: { data_image: "" },
+          placement_handler: handlerUrl,
+        },
+      });
+      console.log("[SETTINGS] imconnector.connector.data.set result:", JSON.stringify(dataSetResult));
+
+      // Step 3: Get Open Line config to confirm and find line name
+      let lineName = `Open Line ${lineId}`;
+      try {
+        const configResult = await callBitrix(integration.client_endpoint, accessToken, "imopenlines.config.list.get", {
+          params: { select: ["LINE_NAME", "ID"] },
+        });
+        if (configResult.result) {
+          const lines = Array.isArray(configResult.result) ? configResult.result : Object.values(configResult.result);
+          const matchedLine = lines.find((l: any) => parseInt(l.ID, 10) === lineId);
+          if (matchedLine) {
+            lineName = matchedLine.LINE_NAME || lineName;
+          }
+        }
+      } catch (e) {
+        console.log("[SETTINGS] Could not fetch line name:", e);
+      }
+
+      // Step 4: Upsert channel mapping
+      const { data: existingMapping } = await supabase
+        .from("bitrix24_channel_mappings")
+        .select("id")
+        .eq("integration_id", integration.id)
+        .eq("line_id", lineId)
+        .maybeSingle();
+
+      if (existingMapping) {
+        await supabase.from("bitrix24_channel_mappings").update({
+          is_active: true,
+          line_name: lineName,
+          channel: "whatsapp",
+        }).eq("id", existingMapping.id);
+      } else {
+        await supabase.from("bitrix24_channel_mappings").insert({
+          integration_id: integration.id,
+          line_id: lineId,
+          line_name: lineName,
+          channel: "whatsapp",
+          is_active: true,
+        });
+      }
+
+      // Step 5: Mark integration as active
+      await supabase.from("bitrix24_integrations").update({
+        connector_active: true,
+      }).eq("id", integration.id);
+
+      // Log success
+      await supabase.from("bitrix24_debug_logs").insert({
+        integration_id: integration.id,
+        event_type: "connector_activated",
+        direction: "outbound",
+        payload: { lineId, lineName, connectorId, activateResult, dataSetResult },
+      }).catch(() => {});
+
+      console.log("[SETTINGS] Connector activated successfully on LINE:", lineId);
+    }
+
+    // Always return "successfully" - Bitrix24 expects this plain text response
+    return new Response("successfully", {
+      headers: { ...corsHeaders, "Content-Type": "text/plain; charset=utf-8" },
+    });
   } catch (error) {
     console.error("[SETTINGS] Error:", error);
-    return new Response(`<html><body><p>Erro: ${error}</p></body></html>`, {
-      status: 500,
-      headers: htmlHeaders,
+    // Even on error, try to return "successfully" to avoid Bitrix24 retries
+    return new Response("successfully", {
+      headers: { ...corsHeaders, "Content-Type": "text/plain; charset=utf-8" },
     });
   }
 });

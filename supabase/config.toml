@@ -68,3 +68,6 @@ verify_jwt = false
 
 [functions.bitrix24-fields]
 verify_jwt = false
+
+[functions.bitrix24-worker]
+verify_jwt = false
