@@ -252,6 +252,8 @@ function DashboardView({ integration, botId, domain, loading, onResync, onRefres
   const [selectedAgent, setSelectedAgent] = useState<string>(integration?.bitrix_agent_id || "");
   const [savingAgent, setSavingAgent] = useState(false);
   const [logs, setLogs] = useState<any[]>([]);
+  const [rebinding, setRebinding] = useState(false);
+  const [rebindResult, setRebindResult] = useState<string | null>(null);
 
   useEffect(() => {
     fetch(`${SUPABASE_URL}/rest/v1/ai_agents?select=id,name,is_active,is_default&is_active=eq.true&order=name.asc`, {
@@ -277,6 +279,31 @@ function DashboardView({ integration, botId, domain, loading, onResync, onRefres
       onRefresh();
     } catch (e) { console.error(e); }
     setSavingAgent(false);
+  };
+
+  const handleRebindEvents = async () => {
+    setRebinding(true);
+    setRebindResult(null);
+    try {
+      const mid = integration?.member_id;
+      const url = mid
+        ? `${SUPABASE_URL}/functions/v1/bitrix24-rebind-events?member_id=${encodeURIComponent(mid)}`
+        : `${SUPABASE_URL}/functions/v1/bitrix24-rebind-events`;
+      const res = await fetch(url, {
+        headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` },
+      });
+      const data = await res.json();
+      if (data.success) {
+        const ok = Object.values(data.results || {}).filter((v) => v === "OK").length;
+        const total = Object.keys(data.results || {}).length;
+        setRebindResult(`✅ ${ok}/${total} eventos re-registados com sucesso!`);
+      } else {
+        setRebindResult(`❌ Erro: ${data.error || "Falha desconhecida"}`);
+      }
+    } catch (e) {
+      setRebindResult(`❌ Erro de rede: ${e}`);
+    }
+    setRebinding(false);
   };
 
   return (
@@ -421,9 +448,18 @@ function DashboardView({ integration, botId, domain, loading, onResync, onRefres
         </CardContent>
       </Card>
 
-      <Button onClick={onResync} disabled={loading} className="w-full" variant="outline">
-        {loading ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Sincronizando...</> : <><RefreshCw className="h-4 w-4 mr-2" />Re-sincronizar Conector</>}
-      </Button>
+      {/* Re-bind Events Button */}
+      <div className="space-y-2">
+        <Button onClick={handleRebindEvents} disabled={rebinding} className="w-full" variant="default">
+          {rebinding ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Registando webhooks...</> : <><Zap className="h-4 w-4 mr-2" />Re-registar Webhooks de Eventos</>}
+        </Button>
+        {rebindResult && (
+          <p className="text-xs text-center text-muted-foreground">{rebindResult}</p>
+        )}
+        <Button onClick={onResync} disabled={loading} className="w-full" variant="outline">
+          {loading ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Sincronizando...</> : <><RefreshCw className="h-4 w-4 mr-2" />Re-sincronizar Conector</>}
+        </Button>
+      </div>
 
       {/* Logs */}
       {logs.length > 0 && (
