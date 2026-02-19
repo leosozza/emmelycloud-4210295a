@@ -281,6 +281,58 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ ok: true }), { headers: jsonHeaders });
     }
 
+    // Handle ONIMBOTMESSAGEADD - bot receives a message in Bitrix24
+    if (event === "ONIMBOTMESSAGEADD" || event === "OnImBotMessageAdd") {
+      const msgData = data.data || {};
+      const messageText = msgData.PARAMS?.MESSAGE || msgData.message || "";
+      const chatId = msgData.PARAMS?.CHAT_ID || msgData.chat_id || "";
+      const fromUserId = msgData.PARAMS?.FROM_USER_ID || "";
+
+      if (!messageText || !chatId) {
+        return new Response(JSON.stringify({ ok: true, skipped: "no message or chat" }), { headers: jsonHeaders });
+      }
+
+      // Skip bot's own messages
+      if (isBotMessage(messageText)) {
+        return new Response(JSON.stringify({ ok: true, skipped: "bot_self" }), { headers: jsonHeaders });
+      }
+
+      console.log("[EVENTS] Bot message received:", messageText.substring(0, 100));
+
+      // Try to find a conversation linked to this chat and trigger chatbot-reply
+      const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+      const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+
+      // Look for recent conversations to match
+      const { data: recentConv } = await supabase
+        .from("conversations")
+        .select("id")
+        .eq("status", "aberta")
+        .order("last_message_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (recentConv) {
+        fetch(`${supabaseUrl}/functions/v1/chatbot-reply`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${serviceKey}`,
+          },
+          body: JSON.stringify({
+            conversation_id: recentConv.id,
+            message_text: messageText,
+          }),
+        }).catch((e) => console.error("[EVENTS] Chatbot reply error:", e));
+      }
+
+      await debugLog(supabase, integration.id, "bot_message_received", "inbound", {
+        chatId, fromUserId, messageText: messageText.substring(0, 100),
+      });
+
+      return new Response(JSON.stringify({ ok: true }), { headers: jsonHeaders });
+    }
+
     // Other events - just log
     return new Response(JSON.stringify({ ok: true, event }), { headers: jsonHeaders });
   } catch (error) {
