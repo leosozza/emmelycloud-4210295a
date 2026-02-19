@@ -286,21 +286,26 @@ Deno.serve(async (req) => {
       try {
         const eventsUrl = `${supabaseUrl}/functions/v1/bitrix24-events`;
 
-        // 1. List existing bots to find and unregister old ones
-        const botListResult = await callBitrix(clientEndpoint, accessToken, "imbot.list", {});
+        // 1. List existing bots and unregister old ones
+        // NOTE: imbot.bot.list is the correct method (imbot.list does not exist)
+        const botListResult = await callBitrix(clientEndpoint, accessToken, "imbot.bot.list", {});
         if (botListResult.result && Array.isArray(botListResult.result)) {
           for (const bot of botListResult.result) {
-            if (bot.CODE === "emmely_ai_bot" || (bot.NAME && bot.NAME.includes("Emmely"))) {
+            if (bot.CODE === "emmely_ai_bot" || (bot.NAME && bot.NAME.includes("Emmely AI"))) {
               console.log(`[INSTALL] Unregistering existing bot ID ${bot.ID} (${bot.NAME})`);
               await callBitrix(clientEndpoint, accessToken, "imbot.unregister", { BOT_ID: bot.ID });
             }
           }
+        } else {
+          console.log("[INSTALL] imbot.bot.list result:", JSON.stringify(botListResult).substring(0, 200));
         }
 
         // 2. Register fresh bot
+        // TYPE: "H" = Human-like bot — required to appear in Contact Center Open Line chatbot selector
+        // TYPE: "B" = Standard bot (only for direct chat, does NOT appear in Open Lines chatbot list)
         const botResult = await callBitrix(clientEndpoint, accessToken, "imbot.register", {
           CODE: "emmely_ai_bot",
-          TYPE: "B",
+          TYPE: "H",
           EVENT_MESSAGE_ADD: eventsUrl,
           EVENT_WELCOME_MESSAGE: eventsUrl,
           EVENT_BOT_DELETE: eventsUrl,
@@ -311,13 +316,27 @@ Deno.serve(async (req) => {
             OPENLINE: "Y",
           },
         });
+
         const botErr = String(botResult.error || "") + " " + String(botResult.error_description || "");
-        if (botResult.error && !botErr.includes("ALREADY") && !botErr.includes("EVENT_WELCOME_MESSAGE_ERROR")) {
+        let finalBotId: string | null = null;
+
+        if (botResult.result) {
+          finalBotId = String(botResult.result);
+          console.log("[INSTALL] Bot Emmely AI registered OK, ID:", finalBotId);
+        } else if (botErr.includes("ALREADY")) {
+          // Already registered — try to get its ID from list
+          const listAgain = await callBitrix(clientEndpoint, accessToken, "imbot.bot.list", {});
+          if (listAgain.result && Array.isArray(listAgain.result)) {
+            const existing = listAgain.result.find((b: any) => b.CODE === "emmely_ai_bot");
+            if (existing) finalBotId = String(existing.ID);
+          }
+          console.log("[INSTALL] Bot already exists, ID:", finalBotId);
+        } else {
           console.error("[INSTALL] Bot registration failed:", botResult.error, botResult.error_description);
-          // Fallback: tentar sem EVENT_WELCOME_MESSAGE (alguns portais têm problemas com este evento)
+          // Fallback: register without EVENT_WELCOME_MESSAGE
           const botResult2 = await callBitrix(clientEndpoint, accessToken, "imbot.register", {
             CODE: "emmely_ai_bot",
-            TYPE: "B",
+            TYPE: "H",
             EVENT_MESSAGE_ADD: eventsUrl,
             EVENT_BOT_DELETE: eventsUrl,
             PROPERTIES: {
@@ -327,28 +346,29 @@ Deno.serve(async (req) => {
               OPENLINE: "Y",
             },
           });
-          const botId2 = botResult2.result;
-          if (botId2) {
-            console.log("[INSTALL] Bot registered (fallback, no welcome event), ID:", botId2);
-            await supabase.from("bitrix24_integrations").update({
-              config: { installed_at: new Date().toISOString(), bot_id: String(botId2) },
-            }).eq("id", integrationId);
+          if (botResult2.result) {
+            finalBotId = String(botResult2.result);
+            console.log("[INSTALL] Bot registered (fallback, no welcome event), ID:", finalBotId);
+          } else {
+            console.error("[INSTALL] Fallback bot registration also failed:", botResult2.error);
           }
-        } else {
-          const botId = botResult.result;
-          console.log("[INSTALL] Bot Emmely AI registered OK, ID:", botId);
-          // Guardar bot_id na config para o worker usar
+        }
+
+        if (finalBotId) {
+          // Guardar bot_id em AMBOS: config (para compatibilidade) e bitrix_agent_id (coluna directa)
           await supabase
             .from("bitrix24_integrations")
             .update({
+              bitrix_agent_id: finalBotId,
               config: {
                 installed_at: new Date().toISOString(),
-                bot_id: String(botId),
+                bot_id: finalBotId,
               },
             })
             .eq("id", integrationId);
         }
-        await debugLog(supabase, integrationId, "bot_registered", "outbound", { botResult });
+
+        await debugLog(supabase, integrationId, "bot_registered", "outbound", { botResult, finalBotId });
       } catch (botError) {
         console.error("[INSTALL] Bot registration error:", botError);
         await debugLog(supabase, integrationId, "bot_register_error", "outbound", null, String(botError));
