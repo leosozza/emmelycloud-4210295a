@@ -210,7 +210,7 @@ const endpoints: Endpoint[] = [
     path: "/ai-playground",
     auth: "Public",
     category: "ai",
-    description: "Envia mensagens para um agente de IA e recebe respostas. Suporta multi-provedor (Lovable AI, OpenAI, Anthropic, etc.) e base de conhecimento RAG.",
+    description: "Envia mensagens para um agente de IA e recebe respostas. Suporta multi-provedor (Emmely AI, OpenAI, Anthropic, etc.) e base de conhecimento RAG.",
     request: `{
   "agent_id": "uuid",
   "messages": [
