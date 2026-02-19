@@ -143,6 +143,9 @@ Deno.serve(async (req) => {
 
     await debugLog(supabase, integration.id, `event_${event}`, "inbound", data);
 
+    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+    const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+
     // Handle OnImConnectorMessageAdd - operator sends message in Bitrix24
     if (event === "OnImConnectorMessageAdd" || event === "ONIMCONNECTORMESSAGEADD") {
       const eventData = data.data || {};
@@ -163,8 +166,6 @@ Deno.serve(async (req) => {
         // Check if bot message
         if (isBotMessage(messageText)) {
           console.log("[EVENTS] Skipping bot message:", messageText.substring(0, 50));
-
-          // Send delivery status only
           try {
             const accessToken = await ensureValidToken(supabase, integration);
             await callBitrix(integration.client_endpoint, accessToken, "imconnector.send.status.delivery", {
@@ -178,7 +179,7 @@ Deno.serve(async (req) => {
           continue;
         }
 
-        // Find channel mapping to determine which channel to send to
+        // Find channel mapping
         const { data: mapping } = await supabase
           .from("bitrix24_channel_mappings")
           .select("*")
@@ -189,17 +190,13 @@ Deno.serve(async (req) => {
 
         const channel = mapping?.channel || "whatsapp";
 
-        // Find the conversation in Emmely that corresponds to this Bitrix24 chat
-        // We use the external chat user info to find the contact
+        // Find the conversation user info
         const chatUser = msg.user || msg.USER || {};
         const userId = chatUser.id || chatUser.ID || "";
         const userName = chatUser.name || chatUser.NAME || "Operador";
 
-        // For now, log the outbound message and route to Callbell
-        const callbellToken = Deno.env.get("CALLBELL_API_TOKEN");
-        if (callbellToken && userId) {
+        if (userId) {
           // Try to find conversation by external contact info
-          // The userId from Bitrix events is the external user ID we set when sending messages
           const { data: conversation } = await supabase
             .from("conversations")
             .select("id, contact_phone, contact_instagram, channel")
@@ -207,34 +204,22 @@ Deno.serve(async (req) => {
             .maybeSingle();
 
           if (conversation) {
-            // Send via Callbell
-            const cbBody: any = {
-              to: conversation.contact_phone || conversation.contact_instagram,
-              from: "whatsapp",
-              type: "text",
-              content: { text: messageText },
-            };
-
+            // Send via unified message-send (direct Meta API)
             try {
-              const cbResponse = await fetch("https://api.callbell.eu/v1/messages/send", {
+              const sendRes = await fetch(`${supabaseUrl}/functions/v1/message-send`, {
                 method: "POST",
                 headers: {
-                  Authorization: `Bearer ${callbellToken}`,
                   "Content-Type": "application/json",
+                  "Authorization": `Bearer ${serviceKey}`,
                 },
-                body: JSON.stringify(cbBody),
+                body: JSON.stringify({
+                  conversation_id: conversation.id,
+                  content: messageText,
+                }),
               });
-              const cbResult = await cbResponse.json();
-              console.log("[EVENTS] Callbell send result:", JSON.stringify(cbResult));
 
-              // Save outbound message in Emmely
-              await supabase.from("messages").insert({
-                conversation_id: conversation.id,
-                direction: "outbound",
-                content: messageText,
-                sender_name: userName,
-                external_id: `bx_${messageId}`,
-              });
+              const sendResult = await sendRes.json();
+              console.log("[EVENTS] message-send result:", JSON.stringify(sendResult));
 
               // Send delivery status back to Bitrix24
               const accessToken = await ensureValidToken(supabase, integration);
@@ -244,14 +229,14 @@ Deno.serve(async (req) => {
                 MESSAGES: [{ im_id: messageId, date: new Date().toISOString() }],
               });
 
-              await debugLog(supabase, integration.id, "message_forwarded_to_callbell", "outbound", {
+              await debugLog(supabase, integration.id, "message_forwarded_direct", "outbound", {
                 messageText: messageText.substring(0, 100),
                 conversationId: conversation.id,
-                channel,
+                channel: conversation.channel,
               });
-            } catch (cbError) {
-              console.error("[EVENTS] Callbell send error:", cbError);
-              await debugLog(supabase, integration.id, "callbell_send_error", "outbound", null, String(cbError));
+            } catch (sendError) {
+              console.error("[EVENTS] message-send error:", sendError);
+              await debugLog(supabase, integration.id, "message_send_error", "outbound", null, String(sendError));
             }
           } else {
             console.log("[EVENTS] No matching conversation found for userId:", userId);
@@ -298,10 +283,6 @@ Deno.serve(async (req) => {
       }
 
       console.log("[EVENTS] Bot message received:", messageText.substring(0, 100));
-
-      // Try to find a conversation linked to this chat and trigger chatbot-reply
-      const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-      const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
       // Look for recent conversations to match
       const { data: recentConv } = await supabase

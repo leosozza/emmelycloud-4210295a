@@ -4,7 +4,6 @@ import { supabase } from "@/integrations/supabase/client";
 import { ConversationList } from "@/components/atendimento/ConversationList";
 import { ChatPanel } from "@/components/atendimento/ChatPanel";
 import { ContactProfile } from "@/components/atendimento/ContactProfile";
-import { getSendFunctionName } from "@/lib/messagingProvider";
 
 type Channel = "whatsapp" | "instagram" | "email" | "webchat";
 type Status = "aberta" | "em_atendimento" | "aguardando" | "fechada";
@@ -95,9 +94,9 @@ export default function AtendimentoPage() {
       if (!selectedId) return;
       const conv = conversations.find((c) => c.id === selectedId);
 
+      // Use unified message-send for Instagram and WhatsApp (direct Meta API)
       if (conv?.channel === "instagram" || conv?.channel === "whatsapp") {
-        const fnName = getSendFunctionName(conv.channel as "instagram" | "whatsapp");
-        const { data, error } = await supabase.functions.invoke(fnName, {
+        const { data, error } = await supabase.functions.invoke("message-send", {
           body: { conversation_id: selectedId, content },
         });
         if (error) throw error;
@@ -105,6 +104,7 @@ export default function AtendimentoPage() {
         return;
       }
 
+      // Other channels: direct DB insert
       const { error } = await supabase.from("messages").insert({
         conversation_id: selectedId,
         direction: "outbound" as Direction,
@@ -160,32 +160,7 @@ export default function AtendimentoPage() {
     };
   }, [selectedId, queryClient]);
 
-  // Poll delivery status
-  useEffect(() => {
-    if (!selectedId) return;
-    const hasPending = messages.some(
-      (m) => m.direction === "outbound" && m.delivery_status && m.delivery_status !== "read"
-    );
-    if (!hasPending) return;
-
-    const pollStatus = async () => {
-      try {
-        const { data } = await supabase.functions.invoke(
-          `callbell-status?conversation_id=${selectedId}`,
-          { method: "GET" }
-        );
-        if (data?.updated?.length > 0) {
-          queryClient.invalidateQueries({ queryKey: ["messages", selectedId] });
-        }
-      } catch (e) {
-        console.error("Status poll error:", e);
-      }
-    };
-
-    pollStatus();
-    const interval = setInterval(pollStatus, 15000);
-    return () => clearInterval(interval);
-  }, [selectedId, messages, queryClient]);
+  // No longer polling Callbell status - delivery status comes from Meta webhooks
 
   const selectedConversation = conversations.find((c) => c.id === selectedId) ?? null;
 

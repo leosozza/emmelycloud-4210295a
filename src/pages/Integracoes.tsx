@@ -31,11 +31,6 @@ import {
   Eye,
   EyeOff,
 } from "lucide-react";
-import {
-  getProviderForChannel,
-  setProviderForChannel,
-  type MessagingProvider,
-} from "@/lib/messagingProvider";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 
@@ -312,17 +307,11 @@ function OmniChannelTab() {
   const [conversations, setConversations] = useState<{ channel: string; count: number }[]>([]);
   const [igTesting, setIgTesting] = useState(false);
   const [igResult, setIgResult] = useState<any>(null);
-  const [igProvider, setIgProvider] = useState<MessagingProvider>(() => getProviderForChannel("instagram"));
-  const [waProvider, setWaProvider] = useState<MessagingProvider>(() => getProviderForChannel("whatsapp"));
   const [credentials, setCredentials] = useState<Record<string, { has_value: boolean; masked: string }>>({});
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState<string | null>(null);
 
-  const handleProviderChange = (channel: "instagram" | "whatsapp", value: MessagingProvider) => {
-    setProviderForChannel(channel, value);
-    if (channel === "instagram") setIgProvider(value);
-    else setWaProvider(value);
-  };
+  // Provider selection removed - always direct Meta API
 
   const loadCredentials = useCallback(async () => {
     try {
@@ -403,43 +392,21 @@ function OmniChannelTab() {
             </div>
             <div>
               <CardTitle className="text-base">WhatsApp</CardTitle>
-              <CardDescription>Envio de mensagens</CardDescription>
+              <CardDescription>WhatsApp Business API (Meta)</CardDescription>
             </div>
           </div>
           <StatusBadge status="active" />
         </CardHeader>
         <CardContent className="space-y-3 text-sm">
-          <div className="space-y-1.5">
-            <p className="font-medium text-xs uppercase text-muted-foreground tracking-wide">Provedor de envio</p>
-            <Select value={waProvider} onValueChange={(v) => handleProviderChange("whatsapp", v as MessagingProvider)}>
-              <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="callbell">Callbell API</SelectItem>
-                <SelectItem value="direct">WhatsApp Business API (direto)</SelectItem>
-              </SelectContent>
-            </Select>
+          <div className="space-y-2">
+            <p className="font-medium text-xs uppercase text-muted-foreground tracking-wide">Credenciais WhatsApp Business</p>
+            <CredentialInput provider="meta" credentialKey="META_WA_ACCESS_TOKEN" label="Access Token" {...credProps} />
+            <CredentialInput provider="meta" credentialKey="META_WA_PHONE_NUMBER_ID" label="Phone Number ID" {...credProps} />
           </div>
-
-          {waProvider === "callbell" && (
-            <div className="space-y-2">
-              <p className="font-medium text-xs uppercase text-muted-foreground tracking-wide">Credenciais Callbell</p>
-              <CredentialInput provider="callbell" credentialKey="CALLBELL_API_TOKEN" label="API Token" {...credProps} />
-              <CredentialInput provider="callbell" credentialKey="CALLBELL_WA_CHANNEL_UUID" label="WhatsApp Channel UUID" {...credProps} />
-            </div>
-          )}
-
-          {waProvider === "direct" && (
-            <div className="space-y-2">
-              <p className="font-medium text-xs uppercase text-muted-foreground tracking-wide">Credenciais WhatsApp Business</p>
-              <CredentialInput provider="meta" credentialKey="META_PAGE_ACCESS_TOKEN" label="Page Access Token" {...credProps} />
-              <CredentialInput provider="meta" credentialKey="META_WA_PHONE_NUMBER_ID" label="Phone Number ID" {...credProps} />
-              <p className="text-xs text-muted-foreground mt-1">⚠️ Envio direto WhatsApp ainda não implementado. Será usado Callbell.</p>
-            </div>
-          )}
         </CardContent>
       </Card>
 
-      {/* Instagram — Detailed */}
+      {/* Instagram — Direct Meta API */}
       <Card>
         <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-2">
           <div className="flex items-center gap-3">
@@ -448,73 +415,33 @@ function OmniChannelTab() {
             </div>
             <div>
               <CardTitle className="text-base">Instagram</CardTitle>
-              <CardDescription>Mensagens via DM</CardDescription>
+              <CardDescription>Meta Graph API (direto)</CardDescription>
             </div>
           </div>
           <StatusBadge status={igResult ? (igResult.ok ? "active" : "inactive") : "pending"} />
         </CardHeader>
         <CardContent className="space-y-3 text-sm">
-          <div className="space-y-1.5">
-            <p className="font-medium text-xs uppercase text-muted-foreground tracking-wide">Provedor de envio</p>
-            <Select value={igProvider} onValueChange={(v) => handleProviderChange("instagram", v as MessagingProvider)}>
-              <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="callbell">Callbell API</SelectItem>
-                <SelectItem value="direct">Meta Graph API (direto)</SelectItem>
-              </SelectContent>
-            </Select>
+          <div className="space-y-2">
+            <p className="font-medium text-xs uppercase text-muted-foreground tracking-wide">Credenciais Meta / Instagram</p>
+            <CredentialInput provider="meta" credentialKey="META_PAGE_ACCESS_TOKEN" label="Page Access Token" {...credProps} />
+            <CredentialInput provider="meta" credentialKey="META_IG_ACCOUNT_ID" label="Instagram Account ID" {...credProps} />
+            <CredentialInput provider="meta" credentialKey="META_APP_ID" label="App ID" {...credProps} />
+            <CredentialInput provider="meta" credentialKey="META_APP_SECRET" label="App Secret" {...credProps} />
           </div>
-
-          {igProvider === "callbell" && (
-            <div className="space-y-2">
-              <p className="font-medium text-xs uppercase text-muted-foreground tracking-wide">Credenciais Callbell</p>
-              <CredentialInput provider="callbell" credentialKey="CALLBELL_API_TOKEN" label="API Token" {...credProps} />
-              <CredentialInput provider="callbell" credentialKey="CALLBELL_IG_CHANNEL_UUID" label="Instagram Channel UUID" {...credProps} />
-            </div>
-          )}
-
-          {igProvider === "direct" && (
-            <div className="space-y-2">
-              <p className="font-medium text-xs uppercase text-muted-foreground tracking-wide">Credenciais Meta / Instagram</p>
-              <CredentialInput provider="meta" credentialKey="META_PAGE_ACCESS_TOKEN" label="Page Access Token" {...credProps} />
-              <CredentialInput provider="meta" credentialKey="META_IG_ACCOUNT_ID" label="Instagram Account ID" {...credProps} />
-              <CredentialInput provider="meta" credentialKey="META_APP_ID" label="App ID" {...credProps} />
-              <CredentialInput provider="meta" credentialKey="META_APP_SECRET" label="App Secret" {...credProps} />
-            </div>
-          )}
 
           <Button size="sm" variant="outline" className="w-full" onClick={handleTestInstagram} disabled={igTesting}>
             {igTesting ? <RefreshCw className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <Activity className="h-3.5 w-3.5 mr-1.5" />}
             {igTesting ? "A testar…" : "Testar Conexão Instagram"}
           </Button>
 
-          {igResult && (
-            <div className="space-y-2">
-              {igProvider === "callbell" && igResult.callbell && (
-                <div className={`flex items-start gap-2 rounded-md px-3 py-2 ${igResult.callbell.ok ? "bg-green-50 text-green-800" : "bg-red-50 text-red-800"}`}>
-                  {igResult.callbell.ok ? <CheckCircle2 className="h-4 w-4 shrink-0 mt-0.5" /> : <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />}
-                  <div className="text-xs">
-                    <p className="font-medium">Callbell: {igResult.callbell.ok ? igResult.callbell.message : "Erro"}</p>
-                    {igResult.callbell.ok && (
-                      <>
-                        <p>Canal IG encontrado: {igResult.callbell.ig_channel_found ? "Sim" : "Não"}</p>
-                        <p>Total canais: {igResult.callbell.total_channels}</p>
-                      </>
-                    )}
-                    {!igResult.callbell.ok && <p>{igResult.callbell.error}</p>}
-                  </div>
-                </div>
-              )}
-              {igProvider === "direct" && igResult.meta && (
-                <div className={`flex items-start gap-2 rounded-md px-3 py-2 ${igResult.meta.ok ? "bg-green-50 text-green-800" : "bg-red-50 text-red-800"}`}>
-                  {igResult.meta.ok ? <CheckCircle2 className="h-4 w-4 shrink-0 mt-0.5" /> : <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />}
-                  <div className="text-xs">
-                    <p className="font-medium">Meta API: {igResult.meta.ok ? igResult.meta.message : "Erro"}</p>
-                    {igResult.meta.ok && igResult.meta.username && <p>Username: @{igResult.meta.username}</p>}
-                    {!igResult.meta.ok && <p>{igResult.meta.error}</p>}
-                  </div>
-                </div>
-              )}
+          {igResult?.meta && (
+            <div className={`flex items-start gap-2 rounded-md px-3 py-2 ${igResult.meta.ok ? "bg-green-50 text-green-800" : "bg-red-50 text-red-800"}`}>
+              {igResult.meta.ok ? <CheckCircle2 className="h-4 w-4 shrink-0 mt-0.5" /> : <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />}
+              <div className="text-xs">
+                <p className="font-medium">Meta API: {igResult.meta.ok ? igResult.meta.message : "Erro"}</p>
+                {igResult.meta.ok && igResult.meta.username && <p>Username: @{igResult.meta.username}</p>}
+                {!igResult.meta.ok && <p>{igResult.meta.error}</p>}
+              </div>
             </div>
           )}
         </CardContent>
