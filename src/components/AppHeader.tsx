@@ -85,7 +85,7 @@ const navItems: NavItem[] = [
       { title: "Agentes", url: "/agentes", icon: Bot },
       { title: "Fluxos", url: "/flows", icon: Workflow },
       { title: "Treinamento", url: "/training", icon: GraduationCap },
-      { title: "Playground", url: "/playground-ia", icon: FlaskConical },
+      { title: "Playground", url: "/playground", icon: FlaskConical },
     ],
   },
   { type: "link", title: "Roadmap", url: "/roadmap", icon: Map },
