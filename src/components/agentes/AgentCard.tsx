@@ -1,8 +1,11 @@
+import { useState } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Bot, Edit, Trash2, Star, GitBranch, BookOpen, Users, Volume2 } from "lucide-react";
+import { Bot, Edit, Trash2, Star, GitBranch, BookOpen, Users, Volume2, Sparkles } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { AgentTrainingChat } from "@/components/agentes/AgentTrainingChat";
 import type { AIAgent, AIProvider } from "@/pages/Agentes";
 
 interface AgentCardProps {
@@ -16,6 +19,7 @@ interface AgentCardProps {
 export function AgentCard({ agent, providers, onEdit, onDelete, onToggleDefault }: AgentCardProps) {
   const textProvider = providers.find(p => p.slug === agent.ai_provider);
   const voiceProvider = agent.voice_provider ? providers.find(p => p.slug === agent.voice_provider) : null;
+  const [trainingOpen, setTrainingOpen] = useState(false);
 
   return (
     <Card className={`relative ${!agent.is_active ? 'opacity-60' : ''}`}>
@@ -34,6 +38,7 @@ export function AgentCard({ agent, providers, onEdit, onDelete, onToggleDefault 
             </div>
           </div>
           <div className="flex gap-1">
+            <Button variant="ghost" size="icon" className="h-7 w-7 text-primary" title="Treinar" onClick={() => setTrainingOpen(true)}><Sparkles className="h-3 w-3" /></Button>
             <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => onEdit(agent)}><Edit className="h-3 w-3" /></Button>
             <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => onDelete(agent.id)}><Trash2 className="h-3 w-3" /></Button>
           </div>
@@ -65,6 +70,15 @@ export function AgentCard({ agent, providers, onEdit, onDelete, onToggleDefault 
           </Button>
         </div>
       </CardContent>
+
+      <Dialog open={trainingOpen} onOpenChange={setTrainingOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Treinar Agente</DialogTitle>
+          </DialogHeader>
+          <AgentTrainingChat agentId={agent.id} agentName={agent.name} />
+        </DialogContent>
+      </Dialog>
     </Card>
   );
 }

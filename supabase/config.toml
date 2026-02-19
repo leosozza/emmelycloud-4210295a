@@ -71,3 +71,9 @@ verify_jwt = false
 
 [functions.bitrix24-worker]
 verify_jwt = false
+
+[functions.persona-trainer]
+verify_jwt = false
+
+[functions.chatbot-reply]
+verify_jwt = false

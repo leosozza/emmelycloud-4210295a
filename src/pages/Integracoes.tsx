@@ -5,6 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
@@ -30,7 +31,9 @@ import {
   Save,
   Eye,
   EyeOff,
+  Bot,
 } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 
@@ -747,6 +750,161 @@ function PagamentosTab() {
   );
 }
 
+// ─── Chatbot Tab ─────────────────────────────────────────────────────────────
+
+interface ChatbotChannelConfig {
+  channel: string;
+  label: string;
+  icon: typeof Phone;
+  iconColor: string;
+  bgColor: string;
+}
+
+const CHATBOT_CHANNELS: ChatbotChannelConfig[] = [
+  { channel: "whatsapp", label: "WhatsApp", icon: Phone, iconColor: "text-green-600", bgColor: "bg-green-100" },
+  { channel: "instagram", label: "Instagram", icon: Instagram, iconColor: "text-pink-600", bgColor: "bg-pink-100" },
+];
+
+interface ChatbotSettings {
+  channel: string;
+  enabled: boolean;
+  agent_id: string | null;
+}
+
+function ChatbotTab() {
+  const [settings, setSettings] = useState<ChatbotSettings[]>(
+    CHATBOT_CHANNELS.map((c) => ({ channel: c.channel, enabled: false, agent_id: null }))
+  );
+  const [agents, setAgents] = useState<{ id: string; name: string }[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState<string | null>(null);
+
+  useEffect(() => {
+    async function load() {
+      setLoading(true);
+      const [agentsRes, settingsRes] = await Promise.all([
+        supabase.from("ai_agents").select("id, name").eq("is_active", true).order("name"),
+        supabase.from("chatbot_channel_settings" as any).select("channel, enabled, agent_id"),
+      ]);
+
+      if (agentsRes.data) setAgents(agentsRes.data as { id: string; name: string }[]);
+
+      if (settingsRes.data && settingsRes.data.length > 0) {
+        setSettings((prev) =>
+          prev.map((s) => {
+            const row = (settingsRes.data as ChatbotSettings[]).find((r) => r.channel === s.channel);
+            return row ? { channel: s.channel, enabled: row.enabled ?? false, agent_id: row.agent_id ?? null } : s;
+          })
+        );
+      }
+      setLoading(false);
+    }
+    load();
+  }, []);
+
+  const handleToggle = async (channel: string, enabled: boolean) => {
+    setSettings((prev) => prev.map((s) => (s.channel === channel ? { ...s, enabled } : s)));
+    await saveChannel(channel, enabled, settings.find((s) => s.channel === channel)?.agent_id ?? null);
+  };
+
+  const handleAgentChange = async (channel: string, agentId: string) => {
+    const newAgentId = agentId === "none" ? null : agentId;
+    setSettings((prev) => prev.map((s) => (s.channel === channel ? { ...s, agent_id: newAgentId } : s)));
+    await saveChannel(channel, settings.find((s) => s.channel === channel)?.enabled ?? false, newAgentId);
+  };
+
+  const saveChannel = async (channel: string, enabled: boolean, agentId: string | null) => {
+    setSaving(channel);
+    try {
+      const { error } = await supabase.from("chatbot_channel_settings" as any).upsert({
+        channel,
+        enabled,
+        agent_id: agentId,
+        updated_at: new Date().toISOString(),
+      }, { onConflict: "channel" });
+      if (error) throw error;
+      toast.success(`Chatbot ${channel} ${enabled ? "ativado" : "desativado"}`);
+    } catch (e: unknown) {
+      toast.error((e as Error)?.message || "Erro ao guardar");
+    } finally {
+      setSaving(null);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="flex justify-center py-12">
+        <RefreshCw className="h-6 w-6 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="grid gap-4 md:grid-cols-2">
+      {CHATBOT_CHANNELS.map((ch) => {
+        const Icon = ch.icon;
+        const setting = settings.find((s) => s.channel === ch.channel)!;
+        const isSaving = saving === ch.channel;
+
+        return (
+          <Card key={ch.channel}>
+            <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-2">
+              <div className="flex items-center gap-3">
+                <div className={`flex h-10 w-10 items-center justify-center rounded-lg ${ch.bgColor}`}>
+                  <Icon className={`h-5 w-5 ${ch.iconColor}`} />
+                </div>
+                <div>
+                  <CardTitle className="text-base">{ch.label}</CardTitle>
+                  <CardDescription>Chatbot IA</CardDescription>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                {isSaving && <RefreshCw className="h-3.5 w-3.5 animate-spin text-muted-foreground" />}
+                <Switch
+                  checked={setting.enabled}
+                  onCheckedChange={(v) => handleToggle(ch.channel, v)}
+                />
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-3 text-sm">
+              <div>
+                <Label className="text-xs text-muted-foreground">Agente IA ativo</Label>
+                <Select
+                  value={setting.agent_id ?? "none"}
+                  onValueChange={(v) => handleAgentChange(ch.channel, v)}
+                  disabled={!setting.enabled}
+                >
+                  <SelectTrigger className="mt-1 h-8 text-xs">
+                    <SelectValue placeholder="Selecionar agente" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">— Sem agente —</SelectItem>
+                    {agents.map((a) => (
+                      <SelectItem key={a.id} value={a.id}>
+                        <div className="flex items-center gap-2">
+                          <Bot className="h-3 w-3" />
+                          {a.name}
+                        </div>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                {setting.enabled
+                  ? setting.agent_id
+                    ? `✅ Chatbot ativo com agente selecionado.`
+                    : `⚠️ Chatbot ativado mas sem agente. Selecione um agente acima.`
+                  : `Chatbot desativado para este canal.`}
+              </p>
+            </CardContent>
+          </Card>
+        );
+      })}
+    </div>
+  );
+}
+
 // ─── Main Page ───────────────────────────────────────────────────────────────
 
 export default function IntegracoesPage() {
@@ -755,7 +913,7 @@ export default function IntegracoesPage() {
       <PageHeader title="Central de Integrações" description="Gerencie todas as integrações e conectores do sistema" />
 
       <Tabs defaultValue="crm" className="w-full">
-        <TabsList className="grid w-full grid-cols-3">
+        <TabsList className="grid w-full grid-cols-4">
           <TabsTrigger value="crm" className="flex items-center gap-2">
             <Plug className="h-4 w-4" />
             CRM
@@ -763,6 +921,10 @@ export default function IntegracoesPage() {
           <TabsTrigger value="omnichannel" className="flex items-center gap-2">
             <MessageCircle className="h-4 w-4" />
             Omni Channel
+          </TabsTrigger>
+          <TabsTrigger value="chatbot" className="flex items-center gap-2">
+            <Bot className="h-4 w-4" />
+            Chatbot
           </TabsTrigger>
           <TabsTrigger value="pagamentos" className="flex items-center gap-2">
             <CreditCard className="h-4 w-4" />
@@ -772,6 +934,7 @@ export default function IntegracoesPage() {
 
         <TabsContent value="crm"><CRMTab /></TabsContent>
         <TabsContent value="omnichannel"><OmniChannelTab /></TabsContent>
+        <TabsContent value="chatbot"><ChatbotTab /></TabsContent>
         <TabsContent value="pagamentos"><PagamentosTab /></TabsContent>
       </Tabs>
     </div>

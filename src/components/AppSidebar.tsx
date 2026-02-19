@@ -19,6 +19,7 @@ import {
   Sparkles,
   Phone,
   FileCode,
+  BookOpen,
 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import {
@@ -62,6 +63,7 @@ const secondaryNav = [
   { title: "Automações", url: "/automacoes", icon: Zap },
   { title: "Relatórios", url: "/relatorios", icon: BarChart3 },
   { title: "API Docs", url: "/api-docs", icon: FileCode },
+  { title: "Manual", url: "/manual", icon: BookOpen },
   { title: "Roadmap", url: "/roadmap", icon: Map },
 ];
 
