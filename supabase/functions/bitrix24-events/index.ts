@@ -288,7 +288,7 @@ Deno.serve(async (req) => {
       // Find default active agent
       const { data: agent } = await supabase
         .from("ai_agents")
-        .select("id")
+        .select("id, welcome_message")
         .eq("is_default", true)
         .eq("is_active", true)
         .maybeSingle();
@@ -338,6 +338,40 @@ Deno.serve(async (req) => {
         await debugLog(supabase, integration.id, "bot_reply_error", "outbound", {
           dialogId, chatId, messageText: messageText.substring(0, 100),
         }, String(aiError));
+      }
+
+      return new Response(JSON.stringify({ ok: true }), { headers: jsonHeaders });
+    }
+
+    // Handle ONIMBOTWELCOMEMESSAGE - bot welcome message when user starts chat
+    if (event === "ONIMBOTWELCOMEMESSAGE" || event === "OnImBotWelcomeMessage") {
+      const msgData = data.data || {};
+      const dialogId = msgData.PARAMS?.DIALOG_ID || msgData.dialog_id || "";
+      const chatId = msgData.PARAMS?.CHAT_ID || msgData.chat_id || "";
+
+      console.log("[EVENTS] Welcome message requested, dialogId:", dialogId);
+
+      // Find default agent's welcome message
+      const { data: agent } = await supabase
+        .from("ai_agents")
+        .select("welcome_message")
+        .eq("is_default", true)
+        .eq("is_active", true)
+        .maybeSingle();
+
+      const welcomeText = agent?.welcome_message || "Olá! Sou a Emmely, a sua assistente virtual. Como posso ajudar?";
+
+      try {
+        const accessToken = await ensureValidToken(supabase, integration);
+        const sendResult = await callBitrix(integration.client_endpoint, accessToken, "im.message.add", {
+          DIALOG_ID: dialogId || chatId,
+          MESSAGE: welcomeText,
+        });
+        console.log("[EVENTS] Welcome message sent:", JSON.stringify(sendResult));
+        await debugLog(supabase, integration.id, "bot_welcome_sent", "outbound", { dialogId, chatId, welcomeText: welcomeText.substring(0, 100) });
+      } catch (welcomeError) {
+        console.error("[EVENTS] Welcome message error:", welcomeError);
+        await debugLog(supabase, integration.id, "bot_welcome_error", "outbound", { dialogId, chatId }, String(welcomeError));
       }
 
       return new Response(JSON.stringify({ ok: true }), { headers: jsonHeaders });

@@ -289,6 +289,8 @@ Deno.serve(async (req) => {
           CODE: "emmely_ai_bot",
           TYPE: "B",
           EVENT_MESSAGE_ADD: eventsUrl,
+          EVENT_WELCOME_MESSAGE: eventsUrl,
+          EVENT_BOT_DELETE: eventsUrl,
           PROPERTIES: {
             NAME: "Emmely AI",
             WORK_POSITION: "Assistente Virtual IA",
