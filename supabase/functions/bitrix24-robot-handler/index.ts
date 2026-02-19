@@ -250,6 +250,88 @@ async function handleCheckPayment(properties: Record<string, any>, supabaseUrl: 
   }
 }
 
+async function handleExecuteFlow(properties: Record<string, any>, supabaseUrl: string, serviceKey: string): Promise<Record<string, string>> {
+  const flowId = properties.flow_id || properties.FLOW_ID || "";
+  const phone = properties.phone || properties.PHONE || "";
+  const triggerMessage = properties.trigger_message || properties.TRIGGER_MESSAGE || "iniciar";
+
+  if (!flowId) {
+    return { status: "error", error: "flow_id is required" };
+  }
+
+  try {
+    const supabase = createClient(supabaseUrl, serviceKey);
+
+    // Verify flow exists and is active
+    const { data: flow, error: flowErr } = await supabase
+      .from("flows")
+      .select("id, name, is_active")
+      .eq("id", flowId)
+      .single();
+
+    if (flowErr || !flow) {
+      return { status: "error", error: "Flow not found" };
+    }
+    if (!flow.is_active) {
+      return { status: "error", error: "Flow is not active" };
+    }
+
+    // Find or create conversation
+    let conversationId: string;
+    if (phone) {
+      const { data: existing } = await supabase
+        .from("conversations")
+        .select("id")
+        .eq("channel", "whatsapp")
+        .eq("contact_phone", phone)
+        .maybeSingle();
+
+      if (existing) {
+        conversationId = existing.id;
+      } else {
+        const { data: newConv } = await supabase
+          .from("conversations")
+          .insert({
+            channel: "whatsapp",
+            // Use phone as contact_name placeholder; will be updated when customer replies
+            contact_name: phone,
+            contact_phone: phone,
+            status: "aberta",
+          })
+          .select("id")
+          .single();
+        conversationId = newConv?.id || "";
+      }
+    } else {
+      return { status: "error", error: "phone is required to identify conversation" };
+    }
+
+    if (!conversationId) {
+      return { status: "error", error: "Could not find or create conversation" };
+    }
+
+    // Trigger the flow-engine
+    const res = await fetch(`${supabaseUrl}/functions/v1/flow-engine`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${serviceKey}`,
+      },
+      body: JSON.stringify({ conversation_id: conversationId, message_text: triggerMessage }),
+    });
+
+    const result = await res.json();
+    return {
+      status: result.error ? "error" : "triggered",
+      conversation_id: conversationId,
+      flow_name: flow.name,
+      error: result.error || "",
+    };
+  } catch (e) {
+    return { status: "error", error: String(e) };
+  }
+}
+
 // --- Main Handler ---
 
 Deno.serve(async (req) => {
@@ -303,6 +385,9 @@ Deno.serve(async (req) => {
         break;
       case "emmely_check_payment":
         returnValues = await handleCheckPayment(properties, supabaseUrl);
+        break;
+      case "emmely_execute_flow":
+        returnValues = await handleExecuteFlow(properties, supabaseUrl, serviceKey);
         break;
       default:
         console.error("[ROBOT-HANDLER] Unknown robot code:", code);
