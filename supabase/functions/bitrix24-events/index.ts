@@ -312,22 +312,24 @@ Deno.serve(async (req) => {
         return new Response(JSON.stringify({ ok: true, skipped: "no_agent" }), { headers: jsonHeaders });
       }
 
-      // Call ai-playground to generate response
+      // Call ai-process-message to generate response
       try {
-        const aiRes = await fetch(`${supabaseUrl}/functions/v1/ai-playground`, {
+        const aiRes = await fetch(`${supabaseUrl}/functions/v1/ai-process-message`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
             "Authorization": `Bearer ${serviceKey}`,
           },
           body: JSON.stringify({
+            conversation_id: null, // No conversation for Bitrix24 internal chat
+            message_text: messageText,
             agent_id: agent.id,
-            messages: [{ role: "user", content: messageText }],
+            skip_send: true,
           }),
         });
 
         const aiResult = await aiRes.json();
-        const replyText = aiResult.content || "Desculpe, não consegui processar a sua mensagem.";
+        const replyText = aiResult.reply || aiResult.content || "Desculpe, não consegui processar a sua mensagem.";
 
         console.log("[EVENTS] AI reply generated:", replyText.substring(0, 100));
 

@@ -228,6 +228,45 @@ export type Database = {
         }
         Relationships: []
       }
+      bitrix_event_queue: {
+        Row: {
+          attempts: number
+          created_at: string
+          event_type: string
+          id: string
+          last_error: string | null
+          max_attempts: number
+          member_id: string | null
+          payload: Json
+          processed_at: string | null
+          status: string
+        }
+        Insert: {
+          attempts?: number
+          created_at?: string
+          event_type: string
+          id?: string
+          last_error?: string | null
+          max_attempts?: number
+          member_id?: string | null
+          payload?: Json
+          processed_at?: string | null
+          status?: string
+        }
+        Update: {
+          attempts?: number
+          created_at?: string
+          event_type?: string
+          id?: string
+          last_error?: string | null
+          max_attempts?: number
+          member_id?: string | null
+          payload?: Json
+          processed_at?: string | null
+          status?: string
+        }
+        Relationships: []
+      }
       bitrix24_channel_mappings: {
         Row: {
           channel: string
@@ -578,6 +617,8 @@ export type Database = {
       conversations: {
         Row: {
           assigned_to: string | null
+          attendance_mode: string | null
+          bot_state: Json | null
           channel: Database["public"]["Enums"]["channel_type"]
           client_id: string | null
           contact_avatar_url: string | null
@@ -588,14 +629,18 @@ export type Database = {
           created_at: string
           department: string | null
           id: string
+          last_customer_message_at: string | null
           last_message_at: string | null
           last_message_preview: string | null
+          processing_lock_at: string | null
           status: Database["public"]["Enums"]["conversation_status"]
           unread_count: number
           updated_at: string
         }
         Insert: {
           assigned_to?: string | null
+          attendance_mode?: string | null
+          bot_state?: Json | null
           channel: Database["public"]["Enums"]["channel_type"]
           client_id?: string | null
           contact_avatar_url?: string | null
@@ -606,14 +651,18 @@ export type Database = {
           created_at?: string
           department?: string | null
           id?: string
+          last_customer_message_at?: string | null
           last_message_at?: string | null
           last_message_preview?: string | null
+          processing_lock_at?: string | null
           status?: Database["public"]["Enums"]["conversation_status"]
           unread_count?: number
           updated_at?: string
         }
         Update: {
           assigned_to?: string | null
+          attendance_mode?: string | null
+          bot_state?: Json | null
           channel?: Database["public"]["Enums"]["channel_type"]
           client_id?: string | null
           contact_avatar_url?: string | null
@@ -624,8 +673,10 @@ export type Database = {
           created_at?: string
           department?: string | null
           id?: string
+          last_customer_message_at?: string | null
           last_message_at?: string | null
           last_message_preview?: string | null
+          processing_lock_at?: string | null
           status?: Database["public"]["Enums"]["conversation_status"]
           unread_count?: number
           updated_at?: string
