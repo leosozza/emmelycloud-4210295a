@@ -1,104 +1,178 @@
 
+# Plano: Chatbot IA Funcional + Dashboard Completo no Bitrix24
 
-# Adicionar Provedores de IA e Voz ao Sistema Multi-Provedor
+## Resumo
 
-## Situacao Atual
-
-A tabela `ai_providers` existe e o sistema ja suporta multi-provedor (a edge function `ai-playground` ja resolve credenciais dinamicamente). Porem, apenas o **Lovable AI** esta cadastrado. Precisamos popular os provedores e ajustar a UI.
-
-## Provedores a Adicionar
-
-### Provedores de Texto/Chat
-
-| Provider | Slug | Base URL | Modelos |
-|----------|------|----------|---------|
-| OpenAI | openai | https://api.openai.com/v1/chat/completions | gpt-4o, gpt-4o-mini, gpt-4-turbo, o1, o1-mini |
-| DeepSeek | deepseek | https://api.deepseek.com/v1/chat/completions | deepseek-chat, deepseek-reasoner |
-| Groq | groq | https://api.groq.com/openai/v1/chat/completions | llama-3.3-70b, mixtral-8x7b, gemma2-9b |
-| Google Gemini | gemini | https://generativelanguage.googleapis.com/v1beta/openai/chat/completions | gemini-2.5-pro, gemini-2.5-flash, gemini-2.0-flash |
-| Qwen Local | qwen-local | http://localhost:11434/v1/chat/completions | qwen2.5:7b, qwen2.5:14b, qwen2.5:32b |
-
-### Provedores de Voz
-
-| Provider | Slug | Base URL | Tipo |
-|----------|------|----------|------|
-| ElevenLabs | elevenlabs | https://api.elevenlabs.io/v1 | TTS + STT + Conversational |
-| OpenAI TTS | openai-tts | https://api.openai.com/v1/audio | TTS + STT |
-
-## Alteracoes
-
-### 1. Migracao SQL - Inserir Provedores
-
-Inserir os 7 provedores na tabela `ai_providers` com os modelos disponiveis em `available_models` (formato JSON array com `name` e `display`), `base_url`, `credential_key` (nome da chave na tabela `integration_credentials`), e `is_native: false`.
-
-Para os de voz, adicionar um campo `provider_type` na tabela `ai_providers`:
-- `text` (default) - Provedores de chat/completions
-- `voice` - Provedores de voz (TTS/STT)
-- `multimodal` - Ambos
-
-### 2. Tabela `ai_providers` - Nova Coluna
-
-```text
-provider_type text NOT NULL DEFAULT 'text'
-```
-
-Valores: `text`, `voice`, `multimodal`
-
-### 3. Pagina Agentes (`src/pages/Agentes.tsx`)
-
-- Separar provedores de texto e voz no selector
-- Quando `agent_type` = "voice" ou "hybrid", mostrar selector adicional de **Provider de Voz** com os provedores tipo `voice`
-- Adicionar campos:
-  - `voice_provider`: slug do provedor de voz (nova coluna em `ai_agents`)
-  - `voice_model`: modelo de voz (ex: `eleven_multilingual_v2`)
-  - `voice_id`: ID da voz (ex: ID do ElevenLabs)
-- Mostrar campos de credenciais quando provedor nao e nativo
-
-### 4. Tabela `ai_agents` - Novas Colunas
-
-```text
-voice_provider text DEFAULT NULL
-voice_model text DEFAULT NULL
-voice_id text DEFAULT NULL
-```
-
-### 5. Pagina de Integracoes - Credenciais
-
-O sistema ja tem `integration_credentials` e `manage-credentials`. Cada provedor usara:
-- OpenAI: `provider=openai, credential_key=api_key`
-- DeepSeek: `provider=deepseek, credential_key=api_key`
-- Groq: `provider=groq, credential_key=api_key`
-- Gemini: `provider=gemini, credential_key=api_key`
-- ElevenLabs: `provider=elevenlabs, credential_key=api_key`
-- Qwen Local: sem credencial (local)
-
-As chaves sao configuradas na Central de Integracoes existente.
-
-### 6. Edge Function `ai-playground` - Ajustes Menores
-
-- Para Google Gemini direto: o header de auth e `x-goog-api-key` (sem Bearer), ja suportado pelo campo `auth_header` e `auth_prefix` na tabela
-- Para Qwen Local: sem auth, ja funciona pois `apiKey` sera vazio e o endpoint local nao exige
-
-### 7. Preview na UI
-
-No card do agente, mostrar badges distintas para provider de texto e voz:
-- Badge texto: "OpenAI / gpt-4o"
-- Badge voz: "ElevenLabs / Sarah"
+Este plano aborda duas grandes areas:
+1. **Motor de chatbot funcional** -- ligar o agente de IA ao fluxo de mensagens para que responda automaticamente no Contact Center do Bitrix24
+2. **Dashboard completo no iframe** -- expandir o painel Bitrix24 para incluir gestao de Agentes, Flows, Training e Playground diretamente dentro do iframe
 
 ---
 
-## Resumo Tecnico
+## Parte 1: Motor de Chatbot (Auto-Reply com IA)
 
-### Migracoes SQL:
-1. Adicionar `provider_type text DEFAULT 'text'` a `ai_providers`
-2. Adicionar `voice_provider text`, `voice_model text`, `voice_id text` a `ai_agents`
-3. Inserir 7 provedores com modelos e configuracoes
+### Problema Atual
+Quando uma mensagem chega via Callbell webhook:
+- E salva na tabela `messages`
+- E reencaminhada ao Bitrix24 via `bitrix24-send`
+- **MAS nao ha nenhuma chamada ao agente de IA para gerar resposta automatica**
+
+### Solucao
+
+**1.1 Modificar `callbell-webhook/index.ts`**
+Apos salvar a mensagem inbound e antes do forward ao Bitrix24, adicionar logica de auto-reply:
+
+```text
+Fluxo:
+  Mensagem inbound chega
+  -> Salva na tabela messages
+  -> Busca agente default (is_default=true, is_active=true)
+  -> Se existe agente ativo:
+     -> Busca ultimas N mensagens da conversa (contexto)
+     -> Chama edge function ai-playground com agent_id + historico
+     -> Recebe resposta do agente
+     -> Salva mensagem outbound (direction=outbound, sender_name=AgenteName)
+     -> Envia resposta via Callbell API (callbell-send)
+     -> Envia resposta ao Bitrix24 (bitrix24-send) como mensagem do bot
+  -> Forward original ao Bitrix24 (como ja faz)
+```
+
+Detalhes tecnicos:
+- Buscar o agente default: `SELECT * FROM ai_agents WHERE is_default=true AND is_active=true LIMIT 1`
+- Buscar historico: ultimas 10 mensagens da conversa para contexto
+- Chamar `ai-playground` internamente (fetch para a propria edge function)
+- Enviar resposta via Callbell usando `callbell-send`
+- Enviar ao Bitrix24 com prefixo `[b]EmmelyAI[/b]` para que o `bitrix24-events` reconheca como mensagem de bot e nao crie loop
+
+**1.2 Criar nova edge function `chatbot-reply/index.ts`** (alternativa mais limpa)
+Em vez de sobrecarregar o webhook, criar uma funcao dedicada que:
+- Recebe `conversation_id` e `message_text`
+- Busca agente default ou agente especifico configurado para o canal
+- Gera resposta via Lovable AI
+- Envia para Callbell e Bitrix24
+- Salva na base de dados
+
+O `callbell-webhook` apenas faz um fire-and-forget para `chatbot-reply`.
+
+**Decisao: Usar a abordagem 1.2** (funcao separada) -- mais modular e testavel.
+
+**1.3 Registar chatbot como "bot" no Bitrix24**
+O conector `emmely_connector` ja esta registado. Quando o agente responde, a mensagem aparece no Contact Center como mensagem do conector. O operador no Bitrix24 ve a conversa e pode intervir.
+
+Para que no Contact Center > Chatbot o agente apareca:
+- Registar via `imbot.register` durante o install um bot chamado "Emmely AI"
+- Este bot fica disponivel na lista de chatbots do Contact Center
+- O bot recebe mensagens via evento `ONIMBOTMESSAGEADD` e responde automaticamente
+
+**1.4 Atualizar `bitrix24-install/index.ts`**
+Adicionar registo do bot IM:
+```
+callBitrix(clientEndpoint, accessToken, "imbot.register", {
+  CODE: "emmely_ai_bot",
+  TYPE: "B",  // Bot type
+  EVENT_MESSAGE_ADD: eventsUrl,
+  PROPERTIES: {
+    NAME: "Emmely AI",
+    WORK_POSITION: "Assistente Virtual",
+    COLOR: "#25D366",
+    OPENLINE: "Y",  // Disponivel para Open Lines
+  }
+});
+```
+
+---
+
+## Parte 2: Dashboard Bitrix24 Expandido
+
+### Problema Atual
+O `Bitrix24App.tsx` tem 4 abas, duas sao placeholders:
+- Conector (funcional)
+- Conversas (placeholder)
+- Pagamentos (funcional)
+- Automacoes (placeholder)
+
+### Solucao
+
+**2.1 Expandir as abas para:**
+
+| Aba | Conteudo | Estado Atual |
+|-----|----------|-------------|
+| Conector | Status da integracao, canais, logs | Funcional |
+| Agentes | CRUD de agentes IA, selecao de default | Novo |
+| Training | Upload de documentos, URLs, texto | Novo |
+| Flows | Lista e editor simplificado de fluxos | Novo |
+| Playground | Chat de teste com agente selecionado | Novo |
+| Pagamentos | Criar cobrancas, listar transacoes | Funcional |
+
+**2.2 Implementacao tecnica**
+
+Como o iframe do Bitrix24 nao pode usar Tailwind/Shadcn (sem CSS do projeto principal), todas as novas abas serao implementadas com **inline styles** (mesmo padrao do `Bitrix24App.tsx` atual).
+
+Cada aba nova sera um componente funcional dentro do mesmo ficheiro (para simplicidade no iframe):
+
+- **AgentesTab**: Lista agentes da tabela `ai_agents`, permite criar/editar nome, prompt, modelo. Botao para definir agente default.
+- **TrainingTab**: Upload de texto/URL para criar `knowledge_documents`, listar documentos existentes, vincular a agentes.
+- **FlowsTab**: Lista fluxos existentes, toggle ativo/inativo, criar fluxo basico (nome + trigger keyword). Editor visual completo fica na app principal.
+- **PlaygroundTab**: Chat simples que envia mensagens ao `ai-playground` usando o agente selecionado e mostra respostas.
+
+**2.3 Comunicacao com o backend**
+
+Todas as chamadas usarao `fetch` direto para as edge functions (mesmo padrao do Bitrix24App atual):
+- `GET/POST ${SUPABASE_URL}/functions/v1/ai-playground` -- para playground
+- Criar nova edge function `bitrix24-admin/index.ts` que expoe CRUD simplificado para agentes, documentos e fluxos sem necessitar JWT (autenticado via member_id do Bitrix24)
+
+---
+
+## Parte 3: Ficheiros a Criar/Modificar
+
+### Novos ficheiros:
+1. `supabase/functions/chatbot-reply/index.ts` -- Motor de auto-reply
+2. Expandir `src/pages/Bitrix24App.tsx` -- Adicionar 4 novas abas
 
 ### Ficheiros a modificar:
-- `src/pages/Agentes.tsx` - Selectores de voz, campos novos, badges
-- Migracao SQL (via ferramenta)
+1. `supabase/functions/callbell-webhook/index.ts` -- Adicionar fire-and-forget para `chatbot-reply`
+2. `supabase/functions/bitrix24-install/index.ts` -- Registar bot IM (`imbot.register`)
+3. `supabase/functions/bitrix24-events/index.ts` -- Handler para `ONIMBOTMESSAGEADD` (mensagens direcionadas ao bot)
+4. `supabase/config.toml` -- Adicionar `chatbot-reply`
 
-### Ficheiros que NAO precisam de alteracao:
-- `supabase/functions/ai-playground/index.ts` - Ja suporta multi-provedor dinamicamente
-- `src/pages/Integracoes.tsx` - Ja permite configurar credenciais por provedor
+### Resumo de alteracoes:
 
+```text
+callbell-webhook (modificar)
+  +  Apos salvar mensagem, chamar chatbot-reply
+
+chatbot-reply (novo)
+  - Recebe conversation_id + message
+  - Busca agente default
+  - Busca historico da conversa
+  - Chama ai-playground
+  - Envia resposta via callbell-send
+  - Envia resposta via bitrix24-send
+  - Salva mensagem outbound
+
+bitrix24-install (modificar)
+  + Registar imbot "Emmely AI" com OPENLINE=Y
+
+bitrix24-events (modificar)
+  + Handler para ONIMBOTMESSAGEADD
+  + Chamar chatbot-reply quando bot recebe mensagem
+
+Bitrix24App.tsx (expandir)
+  + Tab Agentes (CRUD inline)
+  + Tab Training (upload texto/URL)
+  + Tab Flows (lista + toggle)
+  + Tab Playground (chat)
+  - Remover placeholders
+```
+
+---
+
+## Ordem de Implementacao
+
+1. Criar `chatbot-reply` edge function
+2. Modificar `callbell-webhook` para chamar chatbot-reply
+3. Atualizar `bitrix24-install` com registo de bot
+4. Atualizar `bitrix24-events` para bot messages
+5. Expandir `Bitrix24App.tsx` com todas as novas abas
+6. Atualizar `config.toml`
+7. Deploy e teste
