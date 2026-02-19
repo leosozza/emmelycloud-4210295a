@@ -19,9 +19,9 @@ export function useBitrixFields(entity: "lead" | "deal" | "spa", spaEntityTypeId
   const [fields, setFields] = useState<BitrixFieldInfo[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const fetchedRef = useRef(false);
 
   const cacheKey = entity === "spa" ? `spa_${spaEntityTypeId || "0"}` : entity;
+  const cacheKeyRef = useRef(cacheKey);
 
   const fetchFields = useCallback(async (force = false) => {
     // Check cache
@@ -40,20 +40,32 @@ export function useBitrixFields(entity: "lead" | "deal" | "spa", spaEntityTypeId
       }
 
       const { data, error: fnError } = await supabase.functions.invoke("bitrix24-fields", {
-        body: null,
-        headers: {},
         method: "GET",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: null,
       });
 
-      // supabase.functions.invoke doesn't support query params well, use fetch directly
-      const projectId = import.meta.env.VITE_SUPABASE_PROJECT_ID;
+      // supabase.functions.invoke doesn't pass query params, so use the response
+      // and if it fails, fall back to direct fetch
+      if (fnError) {
+        throw new Error(fnError.message || String(fnError));
+      }
+
+      // The invoke without query params returns default (lead) entity
+      // For specific entity, do a direct fetch with query params
       const queryStr = new URLSearchParams(params).toString();
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+      const supabaseKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+      const session = (await supabase.auth.getSession()).data.session;
+
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/bitrix24-fields?${queryStr}`,
+        `${supabaseUrl}/functions/v1/bitrix24-fields?${queryStr}`,
         {
           headers: {
-            "apikey": import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
-            "Authorization": `Bearer ${(await supabase.auth.getSession()).data.session?.access_token || import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+            "apikey": supabaseKey,
+            "Authorization": `Bearer ${session?.access_token || supabaseKey}`,
           },
         }
       );
@@ -77,22 +89,7 @@ export function useBitrixFields(entity: "lead" | "deal" | "spa", spaEntityTypeId
   }, [entity, spaEntityTypeId, cacheKey]);
 
   useEffect(() => {
-    if (!fetchedRef.current) {
-      fetchedRef.current = true;
-      fetchFields();
-    }
-  }, [fetchFields]);
-
-  // Re-fetch when entity changes
-  useEffect(() => {
-    fetchedRef.current = false;
-  }, [cacheKey]);
-
-  useEffect(() => {
-    if (!fetchedRef.current) {
-      fetchedRef.current = true;
-      fetchFields();
-    }
+    fetchFields();
   }, [fetchFields]);
 
   return { fields, loading, error, refetch: () => fetchFields(true) };
