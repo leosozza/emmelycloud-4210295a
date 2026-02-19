@@ -1,98 +1,81 @@
 
 
-# Plano: Ativar Chatbot como IM Bot Nativo no Bitrix24
+# Plano: Redesign do iframe Bitrix24 + Remover branding "Lovable"
 
-## Contexto Atual
+## Problema 1: Interface do iframe
 
-O sistema ja tem:
-- `chatbot-reply` edge function (busca agente, gera resposta IA, salva mensagem)
-- `bitrix24-events` com handler ONIMBOTMESSAGEADD
-- `bitrix24-install` que regista o bot "Emmely AI" com `OPENLINE=Y`
-- Dashboard Bitrix24 com aba Agentes (CRUD completo)
+O `Bitrix24App.tsx` usa inline styles basicos (fundo branco, botoes verdes, sem sombras, sem gradientes). A app principal usa Tailwind, Shadcn, gradientes, cards com bordas arredondadas e badges coloridas.
 
-## Problemas a Resolver
+Como o iframe do Bitrix24 nao carrega o CSS do projeto principal (Tailwind/Shadcn), a solucao e redesenhar os inline styles para replicar a estetica da app principal:
 
-1. **Nenhum agente existe na base** -- a tabela `ai_agents` esta vazia, o chatbot sempre retorna "no_active_agent"
-2. **ONIMBOTMESSAGEADD nao responde no Bitrix24** -- atualmente so procura conversas externas e chama `chatbot-reply`, mas nunca envia resposta de volta ao chat do Bitrix24 via `im.message.add`
-3. **chatbot-reply so funciona com conversas externas** -- nao suporta o cenario de responder diretamente no chat do Bitrix24 sem conversa externa
+### Alteracoes visuais no `Bitrix24App.tsx`:
 
-## Alteracoes
+**Header:**
+- Gradiente linear `#2583d8 -> #7b5ea7 -> #d4728b` (mesmo do header principal)
+- Logo "E" com fundo gradiente, texto branco
+- Badge de status com cores suaves
 
-### 1. `bitrix24-events/index.ts` -- Responder diretamente no Bitrix24
+**Tabs:**
+- Estilo pill/arredondado similar ao header da app principal
+- Tab ativa com fundo semi-transparente branco, texto bold
+- Icones em vez de emojis
 
-O handler ONIMBOTMESSAGEADD precisa de:
-- Receber a mensagem do utilizador no chat do Bitrix24
-- Chamar `ai-playground` diretamente (em vez de `chatbot-reply`) para gerar resposta
-- Enviar resposta de volta ao chat do Bitrix24 via `im.message.add` usando o BOT_ID
-- Se existir conversa externa associada, tambem encaminhar via `message-send`
+**Cards/Seccoes:**
+- Border-radius 12px, sombra suave `0 1px 3px rgba(0,0,0,0.08)`
+- Fundo `#fafbfc` nas seccoes
+- Tipografia Figtree (font-family fallback)
 
-Fluxo corrigido:
-```text
-ONIMBOTMESSAGEADD recebido
-  -> Extrair messageText, chatId, dialogId
-  -> Buscar agente default (is_default=true, is_active=true)
-  -> Se nao ha agente: ignorar
-  -> Chamar ai-playground com agente + mensagem
-  -> Enviar resposta via im.message.add (DIALOG_ID, MESSAGE)
-  -> (Opcional) Se ha conversa externa: forward via message-send
-```
+**Botoes:**
+- Botao primario com gradiente azul-roxo (consistente com a marca)
+- Botao secundario outline com border suave
+- Tamanhos e padding consistentes com Shadcn
 
-### 2. `chatbot-reply/index.ts` -- Manter para canais externos
+**Forms:**
+- Inputs com border `#e2e8f0`, focus ring azul
+- Labels com texto `#64748b`, uppercase 10px
+- Selects estilizados
 
-Continua a ser usado quando mensagens chegam de canais externos (Instagram/WhatsApp webhooks). Nenhuma alteracao necessaria -- ja funciona corretamente para esse cenario.
+**Chat Playground:**
+- Bubbles com bordas arredondadas assimétricas (como na app principal)
+- Bubble do user com gradiente azul, bubble do assistant com fundo cinza claro
+- Loading com animacao CSS inline
 
-### 3. Agente Default Automatico
-
-Adicionar logica ao `bitrix24-install` para criar um agente default se nao existir nenhum, garantindo que o chatbot funciona imediatamente apos a instalacao.
-
----
-
-## Detalhes Tecnicos
-
-### Alteracao 1: `bitrix24-events/index.ts`
-
-No bloco ONIMBOTMESSAGEADD (linhas 270-314), substituir a logica atual por:
-
-```text
-1. Extrair DIALOG_ID (para responder no chat correto)
-2. Buscar agente default da tabela ai_agents
-3. Chamar ai-playground com agent_id + [{ role: "user", content: messageText }]
-4. Obter token valido via ensureValidToken
-5. Chamar im.message.add:
-   - DIALOG_ID: dialogId do evento
-   - MESSAGE: resposta da IA
-```
-
-### Alteracao 2: `bitrix24-install/index.ts`
-
-Apos registar o bot, verificar se existe algum agente na tabela. Se nao:
-- Inserir agente default "Emmely AI" com:
-  - `is_default: true`
-  - `is_active: true`
-  - `ai_provider: "lovable"`
-  - `ai_model: "google/gemini-3-flash-preview"`
-  - `system_prompt`: prompt basico de assistente
-
-### Alteracao 3: Deploy
-
-Fazer deploy das edge functions atualizadas:
-- `bitrix24-events`
-- `bitrix24-install`
+**Agentes lista:**
+- Cards individuais em vez de lista plana
+- Avatar com iniciais, badges de modelo/temperatura
+- Botoes de acao com hover states
 
 ---
 
-## Ficheiros a Modificar
+## Problema 2: Branding "Lovable"
+
+O provider nativo chama-se "Lovable AI" (slug: `lovable`) na tabela `ai_providers`. Aparece:
+- No `AgentCard.tsx` como badge "Lovable AI"
+- No `AgentFormDialog.tsx` no select de provider
+- No `Bitrix24App.tsx` como `ai_provider: "lovable"`
+- No `PlaygroundIA.tsx` como badge "lovable"
+- No `Roadmap.tsx` e `ApiDocs.tsx` em textos
+
+### Solucao:
+- Renomear na base de dados: `UPDATE ai_providers SET name = 'Emmely AI' WHERE slug = 'lovable'`
+- No codigo, o slug `lovable` continua igual (e o identificador tecnico), mas o **nome visivel** muda para "Emmely AI"
+- Nos textos do Roadmap e ApiDocs, substituir "Lovable AI" por "Emmely AI" ou simplesmente "IA nativa"
+- No `bitrix24-install`, o agente default ja se chama "Emmely AI" -- correto
+
+---
+
+## Ficheiros a modificar
 
 | Ficheiro | Alteracao |
 |----------|-----------|
-| `supabase/functions/bitrix24-events/index.ts` | Reescrever handler ONIMBOTMESSAGEADD para responder via im.message.add |
-| `supabase/functions/bitrix24-install/index.ts` | Criar agente default se tabela vazia |
+| `src/pages/Bitrix24App.tsx` | Redesign completo dos inline styles (~800 linhas) |
+| `src/pages/Roadmap.tsx` | Substituir "Lovable" por "Emmely AI" nos textos |
+| `src/pages/ApiDocs.tsx` | Substituir "Lovable AI" por "Emmely AI" na descricao |
+| Migracao SQL | `UPDATE ai_providers SET name = 'Emmely AI' WHERE slug = 'lovable'` |
 
-## Resultado Esperado
+## Resultado esperado
 
-Apos instalar a app no Bitrix24:
-1. Bot "Emmely AI" aparece no Contact Center > Chatbot
-2. Agente default e criado automaticamente
-3. Quando alguem envia mensagem ao bot no Bitrix24, ele responde diretamente no chat usando IA
-4. Funciona independente de ter WhatsApp/Instagram conectados
+- Iframe do Bitrix24 com visual coerente com a app principal (gradientes, cards, tipografia)
+- Zero referencias a "Lovable" visiveis ao utilizador final
+- Provider nativo aparece como "Emmely AI" em todas as interfaces
 
