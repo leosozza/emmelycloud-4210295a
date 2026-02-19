@@ -1,150 +1,98 @@
 
-# Plano: Remover Callbell e Reestruturar Integracao Direta + Chatbot Bitrix24
 
-## Resumo
+# Plano: Ativar Chatbot como IM Bot Nativo no Bitrix24
 
-Remover completamente o Callbell como intermediario. O WhatsApp e Instagram passam a ser integracoes diretas (Meta Graph API / WhatsApp Business API). O chatbot funciona como IM Bot nativo no Bitrix24, independente de ter instancias de canal conectadas.
+## Contexto Atual
 
----
+O sistema ja tem:
+- `chatbot-reply` edge function (busca agente, gera resposta IA, salva mensagem)
+- `bitrix24-events` com handler ONIMBOTMESSAGEADD
+- `bitrix24-install` que regista o bot "Emmely AI" com `OPENLINE=Y`
+- Dashboard Bitrix24 com aba Agentes (CRUD completo)
 
-## Parte 1: Ficheiros a Eliminar
+## Problemas a Resolver
 
-Estas edge functions e testes serao completamente removidos:
+1. **Nenhum agente existe na base** -- a tabela `ai_agents` esta vazia, o chatbot sempre retorna "no_active_agent"
+2. **ONIMBOTMESSAGEADD nao responde no Bitrix24** -- atualmente so procura conversas externas e chama `chatbot-reply`, mas nunca envia resposta de volta ao chat do Bitrix24 via `im.message.add`
+3. **chatbot-reply so funciona com conversas externas** -- nao suporta o cenario de responder diretamente no chat do Bitrix24 sem conversa externa
 
-| Ficheiro | Razao |
-|----------|-------|
-| `supabase/functions/callbell-send/` | Substituido por envio direto |
-| `supabase/functions/callbell-status/` | Sem equivalente necessario |
-| `supabase/functions/callbell-webhook/` | Substituido por `instagram-webhook` e novo `whatsapp-webhook` |
-| `supabase/functions/_tests/callbell-send.test.ts` | Testes do Callbell |
-| `supabase/functions/_tests/callbell-status.test.ts` | Testes do Callbell |
-| `supabase/functions/_tests/callbell-webhook.test.ts` | Testes do Callbell |
-| `src/lib/messagingProvider.ts` | Conceito callbell/direct ja nao faz sentido |
+## Alteracoes
 
----
+### 1. `bitrix24-events/index.ts` -- Responder diretamente no Bitrix24
 
-## Parte 2: Reestruturar Envio de Mensagens
+O handler ONIMBOTMESSAGEADD precisa de:
+- Receber a mensagem do utilizador no chat do Bitrix24
+- Chamar `ai-playground` diretamente (em vez de `chatbot-reply`) para gerar resposta
+- Enviar resposta de volta ao chat do Bitrix24 via `im.message.add` usando o BOT_ID
+- Se existir conversa externa associada, tambem encaminhar via `message-send`
 
-### 2.1 Novo `message-send` (edge function unificada)
-
-Substitui `callbell-send`. Logica:
-
+Fluxo corrigido:
 ```text
-Recebe: conversation_id, content
--> Busca conversa (canal, contacto)
--> Se instagram: envia via Meta Graph API (reutiliza logica do instagram-send actual)
--> Se whatsapp: envia via WhatsApp Business API (Meta Cloud API)
--> Se email/webchat: salva directo na DB
--> Salva mensagem outbound
--> Atualiza conversa
+ONIMBOTMESSAGEADD recebido
+  -> Extrair messageText, chatId, dialogId
+  -> Buscar agente default (is_default=true, is_active=true)
+  -> Se nao ha agente: ignorar
+  -> Chamar ai-playground com agente + mensagem
+  -> Enviar resposta via im.message.add (DIALOG_ID, MESSAGE)
+  -> (Opcional) Se ha conversa externa: forward via message-send
 ```
 
-### 2.2 Novo `whatsapp-webhook` (edge function)
+### 2. `chatbot-reply/index.ts` -- Manter para canais externos
 
-Recebe webhooks directos do WhatsApp Business API (Meta Cloud API):
-- Verifica assinatura do webhook
-- Processa mensagens inbound
-- Cria/atualiza conversas
-- Dispara `chatbot-reply` (fire and forget)
-- Forward ao Bitrix24 via `bitrix24-send`
+Continua a ser usado quando mensagens chegam de canais externos (Instagram/WhatsApp webhooks). Nenhuma alteracao necessaria -- ja funciona corretamente para esse cenario.
 
-### 2.3 Atualizar `instagram-webhook`
+### 3. Agente Default Automatico
 
-Actualmente so faz acknowledge (200 OK) porque dependia do Callbell. Agora passa a processar mensagens inbound directamente:
-- Parse do payload Meta webhook
-- Criar/atualizar conversas
-- Salvar mensagens
-- Disparar `chatbot-reply`
-- Forward ao Bitrix24
+Adicionar logica ao `bitrix24-install` para criar um agente default se nao existir nenhum, garantindo que o chatbot funciona imediatamente apos a instalacao.
 
 ---
 
-## Parte 3: Chatbot como IM Bot Nativo no Bitrix24
+## Detalhes Tecnicos
 
-O chatbot ja esta parcialmente implementado. Mudancas necessarias:
+### Alteracao 1: `bitrix24-events/index.ts`
 
-### 3.1 `chatbot-reply/index.ts`
-- Remover todo o bloco de envio via Callbell (linhas 120-144)
-- Quando o chatbot gera resposta, enviar via:
-  - `message-send` (para o canal do cliente -- Instagram/WhatsApp directo)
-  - `bitrix24-send` (para o operador no Bitrix24 ver a resposta do bot)
-- O bot IM no Bitrix24 ja esta registado como `emmely_ai_bot` com `OPENLINE=Y`
-
-### 3.2 `bitrix24-events/index.ts`
-- Remover toda a logica de envio via Callbell API (linhas 199-260)
-- Quando operador responde no Bitrix24 (`OnImConnectorMessageAdd`):
-  - Encontrar a conversa correspondente
-  - Enviar via `message-send` (que roteia para Instagram/WhatsApp directamente)
-  - Salvar mensagem outbound na DB
-
-### 3.3 Fluxo do Chatbot (independente de canais)
+No bloco ONIMBOTMESSAGEADD (linhas 270-314), substituir a logica atual por:
 
 ```text
-Mensagem no Bitrix24 (ONIMBOTMESSAGEADD)
-  -> bitrix24-events detecta
-  -> Chama chatbot-reply com contexto
-  -> chatbot-reply gera resposta via IA
-  -> Responde no Bitrix24 via imbot (im.message.add)
-  -> Se ha conversa com canal externo: envia via message-send
+1. Extrair DIALOG_ID (para responder no chat correto)
+2. Buscar agente default da tabela ai_agents
+3. Chamar ai-playground com agent_id + [{ role: "user", content: messageText }]
+4. Obter token valido via ensureValidToken
+5. Chamar im.message.add:
+   - DIALOG_ID: dialogId do evento
+   - MESSAGE: resposta da IA
 ```
 
-O chatbot funciona mesmo sem Instagram/WhatsApp conectados -- responde directamente no chat do Bitrix24 como bot IM.
+### Alteracao 2: `bitrix24-install/index.ts`
+
+Apos registar o bot, verificar se existe algum agente na tabela. Se nao:
+- Inserir agente default "Emmely AI" com:
+  - `is_default: true`
+  - `is_active: true`
+  - `ai_provider: "lovable"`
+  - `ai_model: "google/gemini-3-flash-preview"`
+  - `system_prompt`: prompt basico de assistente
+
+### Alteracao 3: Deploy
+
+Fazer deploy das edge functions atualizadas:
+- `bitrix24-events`
+- `bitrix24-install`
 
 ---
 
-## Parte 4: Frontend - Remover Referencias Callbell
+## Ficheiros a Modificar
 
-### 4.1 `src/pages/Atendimento.tsx`
-- Remover import de `messagingProvider`
-- Envio de mensagens passa a chamar `message-send` para todos os canais
-- Remover poll de status via `callbell-status`
+| Ficheiro | Alteracao |
+|----------|-----------|
+| `supabase/functions/bitrix24-events/index.ts` | Reescrever handler ONIMBOTMESSAGEADD para responder via im.message.add |
+| `supabase/functions/bitrix24-install/index.ts` | Criar agente default se tabela vazia |
 
-### 4.2 `src/pages/Integracoes.tsx`
-- Remover opcao "Callbell API" dos selects de provider
-- Remover campos de credenciais Callbell (`CALLBELL_API_TOKEN`, `CALLBELL_IG_CHANNEL_UUID`, `CALLBELL_WA_CHANNEL_UUID`)
-- WhatsApp mostra campos: `META_WA_PHONE_NUMBER_ID`, `META_WA_ACCESS_TOKEN`, `META_WA_VERIFY_TOKEN`
-- Instagram mantem campos Meta existentes
+## Resultado Esperado
 
-### 4.3 `src/pages/ApiDocs.tsx`
-- Remover endpoints Callbell da documentacao
-- Adicionar endpoints `message-send`, `whatsapp-webhook`
+Apos instalar a app no Bitrix24:
+1. Bot "Emmely AI" aparece no Contact Center > Chatbot
+2. Agente default e criado automaticamente
+3. Quando alguem envia mensagem ao bot no Bitrix24, ele responde diretamente no chat usando IA
+4. Funciona independente de ter WhatsApp/Instagram conectados
 
-### 4.4 `src/pages/Roadmap.tsx`
-- Substituir "Integracao Callbell" por "Integracao WhatsApp/Instagram Directa"
-
----
-
-## Parte 5: config.toml
-
-- Remover entradas `callbell-webhook`, `callbell-send`, `callbell-status`
-- Adicionar `message-send`, `whatsapp-webhook`
-
----
-
-## Ordem de Implementacao
-
-1. Criar `message-send` edge function (envio unificado)
-2. Criar `whatsapp-webhook` edge function
-3. Atualizar `instagram-webhook` para processar mensagens inbound
-4. Atualizar `chatbot-reply` (remover Callbell, usar message-send)
-5. Atualizar `bitrix24-events` (remover Callbell, usar message-send)
-6. Atualizar frontend (`Atendimento`, `Integracoes`, `ApiDocs`, `Roadmap`)
-7. Eliminar ficheiros Callbell e `messagingProvider.ts`
-8. Atualizar `config.toml`
-9. Deploy de todas as edge functions
-
----
-
-## Segredos Necessarios
-
-Ja existentes e suficientes para Instagram:
-- `META_PAGE_ACCESS_TOKEN`
-- `META_IG_ACCOUNT_ID`
-- `META_APP_SECRET`
-
-Para WhatsApp Business API (novos, a solicitar ao utilizador):
-- `META_WA_PHONE_NUMBER_ID` -- ID do numero de telefone no Meta Business
-- `META_WA_ACCESS_TOKEN` -- Token de acesso permanente do WhatsApp Business
-
-Segredos Callbell a manter temporariamente (nao sao eliminados automaticamente):
-- `CALLBELL_API_TOKEN`, `CALLBELL_IG_CHANNEL_UUID`, `CALLBELL_WA_CHANNEL_UUID` ficam sem uso
