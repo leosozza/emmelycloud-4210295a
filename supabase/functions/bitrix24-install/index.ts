@@ -307,6 +307,40 @@ Deno.serve(async (req) => {
         console.error("[INSTALL] Bot registration error:", botError);
         await debugLog(supabase, integrationId, "bot_register_error", "outbound", null, String(botError));
       }
+
+      // --- Create default AI agent if none exists ---
+      try {
+        const { count } = await supabase
+          .from("ai_agents")
+          .select("id", { count: "exact", head: true });
+
+        if (count === 0) {
+          const { error: agentErr } = await supabase.from("ai_agents").insert({
+            name: "Emmely AI",
+            description: "Assistente virtual padrão criado automaticamente na instalação.",
+            is_default: true,
+            is_active: true,
+            ai_provider: "lovable",
+            ai_model: "google/gemini-3-flash-preview",
+            agent_type: "text",
+            temperature: 0.7,
+            system_prompt: "Você é a Emmely, uma assistente virtual inteligente e simpática. Responda de forma clara, objetiva e profissional. Ajude os utilizadores com as suas questões da melhor forma possível.",
+            fallback_message: "Desculpe, não consegui processar a sua mensagem. Tente novamente.",
+            welcome_message: "Olá! Sou a Emmely, a sua assistente virtual. Como posso ajudar?",
+          });
+
+          if (agentErr) {
+            console.error("[INSTALL] Default agent creation error:", agentErr);
+          } else {
+            console.log("[INSTALL] Default agent 'Emmely AI' created successfully");
+          }
+          await debugLog(supabase, integrationId, "default_agent_created", "outbound", { error: agentErr?.message || null });
+        } else {
+          console.log("[INSTALL] Agents already exist, skipping default creation");
+        }
+      } catch (agentSetupError) {
+        console.error("[INSTALL] Agent setup error:", agentSetupError);
+      }
     } catch (connectorError) {
       console.error("[INSTALL] Connector setup error:", connectorError);
       await debugLog(supabase, integrationId, "connector_setup_error", "outbound", null, String(connectorError));
