@@ -117,35 +117,23 @@ Deno.serve(async (req) => {
       })
       .eq("id", conversation_id);
 
-    // 6. Send via Callbell (fire and forget)
-    const callbellToken = Deno.env.get("CALLBELL_API_TOKEN");
-    if (callbellToken) {
-      const to = conversation.contact_phone || conversation.contact_instagram;
-      const channelUuid = conversation.channel === "instagram"
-        ? Deno.env.get("CALLBELL_IG_CHANNEL_UUID")
-        : Deno.env.get("CALLBELL_WA_CHANNEL_UUID");
-
-      if (to && channelUuid) {
-        fetch("https://api.callbell.eu/v1/messages/send", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "Authorization": `Bearer ${callbellToken}`,
-          },
-          body: JSON.stringify({
-            to,
-            from: "whatsapp",
-            type: "text",
-            content: { text: replyText },
-            channel_uuid: channelUuid,
-            optin_contact: true,
-          }),
-        }).catch((e) => console.error("[CHATBOT] Callbell send error:", e));
-      }
+    // 6. Send reply to the external channel via message-send (fire and forget)
+    if (conversation.channel === "instagram" || conversation.channel === "whatsapp") {
+      fetch(`${supabaseUrl}/functions/v1/message-send`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${serviceKey}`,
+        },
+        body: JSON.stringify({
+          conversation_id,
+          content: replyText,
+        }),
+      }).catch((e) => console.error("[CHATBOT] message-send error:", e));
     }
 
     // 7. Forward to Bitrix24 as bot message (fire and forget)
-    const botMessage = `[b]EmmelyAI[/b] - ${replyText}`;
+    const botMessage = `[b]${agent.name || "EmmelyAI"}[/b] - ${replyText}`;
     fetch(`${supabaseUrl}/functions/v1/bitrix24-send`, {
       method: "POST",
       headers: {

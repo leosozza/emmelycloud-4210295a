@@ -64,7 +64,7 @@ async function debugLog(
 
 // --- Robot Handlers ---
 
-async function handleSendWhatsApp(properties: Record<string, any>, supabaseUrl: string): Promise<Record<string, string>> {
+async function handleSendWhatsApp(properties: Record<string, any>, supabaseUrl: string, serviceKey: string): Promise<Record<string, string>> {
   const phone = properties.phone || properties.PHONE || "";
   const message = properties.message || properties.MESSAGE || "";
 
@@ -73,17 +73,46 @@ async function handleSendWhatsApp(properties: Record<string, any>, supabaseUrl: 
   }
 
   try {
-    const res = await fetch(`${supabaseUrl}/functions/v1/callbell-send`, {
+    // Find or create conversation for this phone
+    const supabase = createClient(supabaseUrl, serviceKey);
+    let conversationId: string;
+
+    const { data: existing } = await supabase
+      .from("conversations")
+      .select("id")
+      .eq("channel", "whatsapp")
+      .eq("contact_phone", phone)
+      .maybeSingle();
+
+    if (existing) {
+      conversationId = existing.id;
+    } else {
+      const { data: newConv } = await supabase
+        .from("conversations")
+        .insert({ channel: "whatsapp", contact_name: phone, contact_phone: phone, status: "aberta" })
+        .select("id")
+        .single();
+      conversationId = newConv?.id || "";
+    }
+
+    if (!conversationId) {
+      return { message_id: "", status: "error", error: "Failed to find/create conversation" };
+    }
+
+    const res = await fetch(`${supabaseUrl}/functions/v1/message-send`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ to: phone, text: message, channel: "whatsapp" }),
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${serviceKey}`,
+      },
+      body: JSON.stringify({ conversation_id: conversationId, content: message }),
     });
     const data = await res.json();
     if (data.error) {
       return { message_id: "", status: "error", error: data.error };
     }
     return {
-      message_id: data.message_id || data.id || "",
+      message_id: data.message_id || "",
       status: "sent",
       error: "",
     };
@@ -92,7 +121,7 @@ async function handleSendWhatsApp(properties: Record<string, any>, supabaseUrl: 
   }
 }
 
-async function handleSendInstagram(properties: Record<string, any>, supabaseUrl: string): Promise<Record<string, string>> {
+async function handleSendInstagram(properties: Record<string, any>, supabaseUrl: string, serviceKey: string): Promise<Record<string, string>> {
   const instagramUser = properties.instagram_user || properties.INSTAGRAM_USER || "";
   const message = properties.message || properties.MESSAGE || "";
 
@@ -101,17 +130,46 @@ async function handleSendInstagram(properties: Record<string, any>, supabaseUrl:
   }
 
   try {
-    const res = await fetch(`${supabaseUrl}/functions/v1/instagram-send`, {
+    // Find or create conversation for this Instagram user
+    const supabase = createClient(supabaseUrl, serviceKey);
+    let conversationId: string;
+
+    const { data: existing } = await supabase
+      .from("conversations")
+      .select("id")
+      .eq("channel", "instagram")
+      .eq("contact_instagram", instagramUser)
+      .maybeSingle();
+
+    if (existing) {
+      conversationId = existing.id;
+    } else {
+      const { data: newConv } = await supabase
+        .from("conversations")
+        .insert({ channel: "instagram", contact_name: instagramUser, contact_instagram: instagramUser, status: "aberta" })
+        .select("id")
+        .single();
+      conversationId = newConv?.id || "";
+    }
+
+    if (!conversationId) {
+      return { message_id: "", status: "error", error: "Failed to find/create conversation" };
+    }
+
+    const res = await fetch(`${supabaseUrl}/functions/v1/message-send`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ to: instagramUser, text: message }),
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${serviceKey}`,
+      },
+      body: JSON.stringify({ conversation_id: conversationId, content: message }),
     });
     const data = await res.json();
     if (data.error) {
       return { message_id: "", status: "error", error: data.error };
     }
     return {
-      message_id: data.message_id || data.id || "",
+      message_id: data.message_id || "",
       status: "sent",
       error: "",
     };
@@ -204,6 +262,7 @@ Deno.serve(async (req) => {
     Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
   );
   const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+  const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
   try {
     const contentType = req.headers.get("content-type") || "";
@@ -234,10 +293,10 @@ Deno.serve(async (req) => {
 
     switch (code) {
       case "emmely_send_whatsapp":
-        returnValues = await handleSendWhatsApp(properties, supabaseUrl);
+        returnValues = await handleSendWhatsApp(properties, supabaseUrl, serviceKey);
         break;
       case "emmely_send_instagram":
-        returnValues = await handleSendInstagram(properties, supabaseUrl);
+        returnValues = await handleSendInstagram(properties, supabaseUrl, serviceKey);
         break;
       case "emmely_create_charge":
         returnValues = await handleCreateCharge(properties, supabaseUrl);

@@ -30,57 +30,41 @@ interface Endpoint {
 }
 
 const endpoints: Endpoint[] = [
-  // ── Omni Channel - Callbell ──
+  // ── Omni Channel - Unified Send ──
   {
-    name: "Enviar Mensagem (Callbell)",
+    name: "Enviar Mensagem (Unificado)",
     method: "POST",
-    path: "/callbell-send",
-    auth: "Bearer JWT",
+    path: "/message-send",
+    auth: "Service Role",
     category: "omnichannel",
-    description: "Envia mensagem via WhatsApp ou Instagram através do Callbell. Suporta mensagens de texto e templates.",
+    description: "Envia mensagem via WhatsApp Business API ou Instagram Graph API. Roteia automaticamente pelo canal da conversa.",
     request: `{
   "conversation_id": "uuid",
-  "content": "Olá, como posso ajudar?",
-  // OU para templates:
-  "template_uuid": "uuid-do-template",
-  "template_values": { "1": "valor" }
+  "content": "Olá, como posso ajudar?"
 }`,
     response: `{
   "success": true,
-  "message_id": "callbell-uuid"
+  "message_id": "external-id"
 }`,
-    notes: "O canal (WhatsApp/Instagram) é determinado automaticamente pela conversa. Para WhatsApp, inclui optin_contact no primeiro contacto.",
+    notes: "Instagram usa META_PAGE_ACCESS_TOKEN + META_IG_ACCOUNT_ID. WhatsApp usa META_WA_ACCESS_TOKEN + META_WA_PHONE_NUMBER_ID.",
   },
   {
-    name: "Verificar Status (Callbell)",
-    method: "GET",
-    path: "/callbell-status?conversation_id=uuid",
-    auth: "Bearer JWT",
-    category: "omnichannel",
-    description: "Verifica o status de entrega das mensagens enviadas (sent → delivered → read).",
-    response: `{
-  "success": true,
-  "updated": [
-    { "id": "msg-uuid", "status": "delivered" }
-  ]
-}`,
-  },
-  {
-    name: "Webhook Callbell",
-    method: "POST",
-    path: "/callbell-webhook",
+    name: "Webhook WhatsApp (Meta)",
+    method: "GET/POST",
+    path: "/whatsapp-webhook",
     auth: "Public",
     category: "omnichannel",
-    description: "Recebe eventos do Callbell (message_created). Cria conversas automaticamente e encaminha para Bitrix24.",
-    request: `{
-  "event": "message_created",
-  "payload": {
-    "message": { "text": "...", "from": "...", "channel": "instagram" },
-    "contact": { "name": "...", "phone": "...", "profile_picture": "..." }
-  }
-}`,
-    response: `{ "success": true }`,
-    notes: "Configure o webhook URL no painel Callbell: Settings → Webhooks. Apenas eventos 'message_created' inbound são processados.",
+    description: "Recebe mensagens inbound do WhatsApp Business API. GET para verificação, POST para mensagens. Cria conversas e dispara chatbot-reply automaticamente.",
+    notes: "Configure no Meta Business > WhatsApp > Configuration > Webhook URL. O verify_token é META_APP_SECRET.",
+  },
+  {
+    name: "Webhook Instagram (Meta)",
+    method: "GET/POST",
+    path: "/instagram-webhook",
+    auth: "Public",
+    category: "omnichannel",
+    description: "Recebe mensagens inbound do Instagram Messaging API. GET para verificação, POST para mensagens. Cria conversas e dispara chatbot-reply automaticamente.",
+    notes: "Configure no Meta Developers > Instagram > Webhooks. O verify_token é META_APP_SECRET.",
   },
   // ── Omni Channel - Instagram ──
   {
@@ -89,7 +73,7 @@ const endpoints: Endpoint[] = [
     path: "/instagram-send",
     auth: "Bearer JWT",
     category: "omnichannel",
-    description: "Envia mensagem via Instagram Messaging API (Meta Graph API v24.0).",
+    description: "Envia mensagem via Instagram Messaging API (Meta Graph API v24.0). Uso direto pelo frontend.",
     request: `{
   "conversation_id": "uuid",
   "content": "Olá!"
@@ -98,7 +82,7 @@ const endpoints: Endpoint[] = [
   "success": true,
   "message_id": "ig-message-id"
 }`,
-    notes: "Requer META_PAGE_ACCESS_TOKEN (prefixo IGAA...) e META_IG_ACCOUNT_ID configurados nos secrets.",
+    notes: "Requer META_PAGE_ACCESS_TOKEN (prefixo IGAA...) e META_IG_ACCOUNT_ID configurados.",
   },
   {
     name: "Publicar no Instagram Feed",
@@ -110,7 +94,7 @@ const endpoints: Endpoint[] = [
     request: `{
   "image_url": "https://example.com/image.jpg",
   "caption": "Legenda do post",
-  "media_type": "IMAGE"  // ou "REELS"
+  "media_type": "IMAGE"
 }`,
     response: `{
   "success": true,
@@ -123,22 +107,29 @@ const endpoints: Endpoint[] = [
     path: "/instagram-test-connection",
     auth: "Public",
     category: "omnichannel",
-    description: "Verifica o estado das conexões Callbell e Meta Graph API para Instagram.",
+    description: "Verifica o estado da conexão Meta Graph API para Instagram.",
     response: `{
   "ok": true,
-  "message": "Todas as conexões Instagram estão operacionais!",
-  "callbell": { "ok": true, "total_channels": 2, "ig_channel_found": true },
+  "message": "Conexão Instagram operacional!",
   "meta": { "ok": true, "username": "emmelycloud" }
 }`,
   },
   {
-    name: "Webhook Instagram (Meta)",
-    method: "GET/POST",
-    path: "/instagram-webhook",
-    auth: "Public",
-    category: "omnichannel",
-    description: "Endpoint de verificação e recepção de webhooks Meta. GET para verificação (hub.challenge), POST apenas reconhece eventos (processamento via Callbell).",
-    notes: "O verify_token é o META_APP_SECRET. Eventos POST são apenas reconhecidos (200 OK) pois o processamento real é feito pelo webhook Callbell.",
+    name: "Chatbot Auto-Reply",
+    method: "POST",
+    path: "/chatbot-reply",
+    auth: "Service Role",
+    category: "ai",
+    description: "Motor de auto-resposta IA. Busca agente default, gera resposta e envia para o canal externo e Bitrix24.",
+    request: `{
+  "conversation_id": "uuid",
+  "message_text": "Qual o prazo?"
+}`,
+    response: `{
+  "success": true,
+  "reply": "O prazo médio é..."
+}`,
+    notes: "Chamado internamente pelos webhooks. Requer agente com is_default=true e is_active=true.",
   },
   // ── Pagamentos ──
   {
@@ -303,7 +294,7 @@ const endpoints: Endpoint[] = [
     path: "/bitrix24-events",
     auth: "Public",
     category: "bitrix24",
-    description: "Processa eventos do Bitrix24 (OnImConnectorMessageAdd, OnImConnectorStatusDelete). Encaminha mensagens de operadores para Callbell.",
+    description: "Processa eventos do Bitrix24 (OnImConnectorMessageAdd, OnImConnectorStatusDelete, ONIMBOTMESSAGEADD). Encaminha mensagens via Meta API direta.",
     notes: "Inclui detecção de mensagens de bot para evitar loops. Faz refresh automático de tokens OAuth expirados.",
   },
   {
@@ -312,7 +303,7 @@ const endpoints: Endpoint[] = [
     path: "/bitrix24-send",
     auth: "Service Role",
     category: "bitrix24",
-    description: "Encaminha mensagens recebidas (Callbell) para o Open Channel do Bitrix24. Chamado internamente pelo callbell-webhook.",
+    description: "Encaminha mensagens recebidas para o Open Channel do Bitrix24. Chamado internamente pelos webhooks de Instagram e WhatsApp.",
     request: `{
   "message": "Texto da mensagem",
   "contactName": "João Silva",

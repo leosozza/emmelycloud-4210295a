@@ -9,10 +9,13 @@ verify_jwt = false
 [functions.instagram-publish]
 verify_jwt = false
 
-[functions.callbell-webhook]
+[functions.instagram-test-connection]
 verify_jwt = false
 
-[functions.callbell-send]
+[functions.whatsapp-webhook]
+verify_jwt = false
+
+[functions.message-send]
 verify_jwt = false
 
 [functions.bitrix24-install]
