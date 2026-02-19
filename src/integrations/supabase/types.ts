@@ -462,6 +462,35 @@ export type Database = {
           },
         ]
       }
+      chatbot_channel_settings: {
+        Row: {
+          agent_id: string | null
+          channel: string
+          enabled: boolean
+          updated_at: string
+        }
+        Insert: {
+          agent_id?: string | null
+          channel: string
+          enabled?: boolean
+          updated_at?: string
+        }
+        Update: {
+          agent_id?: string | null
+          channel?: string
+          enabled?: boolean
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "chatbot_channel_settings_agent_id_fkey"
+            columns: ["agent_id"]
+            isOneToOne: false
+            referencedRelation: "ai_agents"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       client_contacts: {
         Row: {
           client_id: string
