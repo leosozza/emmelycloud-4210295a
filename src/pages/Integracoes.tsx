@@ -792,7 +792,7 @@ function ChatbotTab() {
       if (settingsRes.data && settingsRes.data.length > 0) {
         setSettings((prev) =>
           prev.map((s) => {
-            const row = (settingsRes.data as ChatbotSettings[]).find((r) => r.channel === s.channel);
+            const row = (settingsRes.data as unknown as ChatbotSettings[]).find((r) => r.channel === s.channel);
             return row ? { channel: s.channel, enabled: row.enabled ?? false, agent_id: row.agent_id ?? null } : s;
           })
         );
