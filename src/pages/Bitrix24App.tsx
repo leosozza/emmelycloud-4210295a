@@ -29,6 +29,39 @@ interface IntegrationData {
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
 
+// ==================== DESIGN TOKENS ====================
+const colors = {
+  gradient: "linear-gradient(135deg, #2583d8 0%, #7b5ea7 50%, #d4728b 100%)",
+  gradientBtn: "linear-gradient(135deg, #2583d8 0%, #7b5ea7 100%)",
+  primary: "#2583d8",
+  primaryDark: "#1d6bb5",
+  accent: "#7b5ea7",
+  surface: "#f5f7fa",
+  surfaceCard: "#ffffff",
+  border: "#e2e8f0",
+  borderLight: "#f1f5f9",
+  text: "#1e293b",
+  textSecondary: "#64748b",
+  textMuted: "#94a3b8",
+  success: "#10b981",
+  successBg: "#ecfdf5",
+  successBorder: "#a7f3d0",
+  error: "#ef4444",
+  errorBg: "#fef2f2",
+  errorBorder: "#fecaca",
+  warning: "#f59e0b",
+  warningBg: "#fffbeb",
+  infoBg: "#eff6ff",
+  infoBorder: "#bfdbfe",
+  infoText: "#1e40af",
+  chatUser: "linear-gradient(135deg, #2583d8, #7b5ea7)",
+  chatBot: "#f1f5f9",
+  shadow: "0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.04)",
+  shadowMd: "0 4px 6px -1px rgba(0,0,0,0.07), 0 2px 4px -2px rgba(0,0,0,0.05)",
+};
+
+const font = "'Figtree', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
+
 const Bitrix24App = () => {
   const [status, setStatus] = useState<AppStatus>("loading");
   const [errorMsg, setErrorMsg] = useState("");
@@ -114,10 +147,12 @@ const Bitrix24App = () => {
 
   if (status === "loading") {
     return (
-      <div style={containerStyle}>
-        <div style={cardStyle}>
-          <div style={{ fontSize: 48, marginBottom: 16 }}>⏳</div>
-          <h2 style={titleStyle}>Carregando...</h2>
+      <div style={s.page}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "60vh" }}>
+          <div style={{ textAlign: "center" }}>
+            <div style={{ ...s.loadingDot, margin: "0 auto 16px" }} />
+            <p style={{ color: colors.textSecondary, fontSize: 14 }}>Carregando...</p>
+          </div>
         </div>
       </div>
     );
@@ -125,22 +160,22 @@ const Bitrix24App = () => {
 
   if (status === "error") {
     return (
-      <div style={containerStyle}>
-        <div style={cardStyle}>
-          <div style={{ fontSize: 48, marginBottom: 16 }}>⚠️</div>
-          <h2 style={titleStyle}>Erro na configuração</h2>
-          <p style={subtitleStyle}>{errorMsg || "Tente reinstalar o aplicativo."}</p>
+      <div style={s.page}>
+        <div style={{ ...s.card, maxWidth: 400, margin: "40px auto", textAlign: "center", padding: 32 }}>
+          <div style={{ width: 48, height: 48, borderRadius: 12, background: colors.errorBg, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 16px", fontSize: 24 }}>⚠️</div>
+          <h2 style={{ margin: "0 0 8px", fontSize: 18, color: colors.text }}>Erro na configuração</h2>
+          <p style={{ color: colors.textSecondary, fontSize: 14, margin: 0 }}>{errorMsg || "Tente reinstalar o aplicativo."}</p>
         </div>
       </div>
     );
   }
 
   const tabs: { id: TabId; label: string; icon: string }[] = [
-    { id: "connector", label: "Conector", icon: "🔗" },
+    { id: "connector", label: "Conector", icon: "⚡" },
     { id: "agentes", label: "Agentes", icon: "🤖" },
     { id: "training", label: "Training", icon: "📚" },
-    { id: "flows", label: "Flows", icon: "⚡" },
-    { id: "playground", label: "Playground", icon: "🧪" },
+    { id: "flows", label: "Flows", icon: "🔀" },
+    { id: "playground", label: "Playground", icon: "💬" },
     { id: "pagamentos", label: "Pagamentos", icon: "💳" },
   ];
 
@@ -149,29 +184,47 @@ const Bitrix24App = () => {
   const logs = integrationData?.recent_logs || [];
 
   return (
-    <div style={pageStyle}>
-      <div style={headerStyle}>
-        <div style={logoStyle}>E</div>
-        <div style={{ flex: 1 }}>
-          <h2 style={{ margin: 0, fontSize: 18 }}>Emmely Cloud</h2>
-          <span style={{ ...badgeStyle, background: integration?.connector_active ? "#e8f5e9" : "#ffeaea" }}>
-            {integration?.connector_active ? "🟢 Ativo" : "🔴 Inativo"}
-          </span>
+    <div style={s.page}>
+      {/* Header with gradient */}
+      <div style={s.header}>
+        <div style={s.headerInner}>
+          <div style={s.logo}>E</div>
+          <div style={{ flex: 1 }}>
+            <h2 style={{ margin: 0, fontSize: 17, fontWeight: 700, color: "#fff" }}>Emmely Cloud</h2>
+            <div style={{ marginTop: 4 }}>
+              <span style={{
+                display: "inline-flex", alignItems: "center", gap: 4,
+                padding: "2px 10px", borderRadius: 20, fontSize: 11, fontWeight: 600,
+                background: integration?.connector_active ? "rgba(16,185,129,0.2)" : "rgba(239,68,68,0.2)",
+                color: "#fff",
+                backdropFilter: "blur(4px)",
+              }}>
+                <span style={{ width: 6, height: 6, borderRadius: "50%", background: integration?.connector_active ? "#34d399" : "#fca5a5" }} />
+                {integration?.connector_active ? "Ativo" : "Inativo"}
+              </span>
+            </div>
+          </div>
         </div>
       </div>
 
-      <div style={tabBarStyle}>
+      {/* Tab bar */}
+      <div style={s.tabBar}>
         {tabs.map((tab) => (
           <button
             key={tab.id}
             onClick={() => setActiveTab(tab.id)}
-            style={{ ...tabStyle, ...(activeTab === tab.id ? tabActiveStyle : {}) }}
+            style={{
+              ...s.tab,
+              ...(activeTab === tab.id ? s.tabActive : {}),
+            }}
           >
-            {tab.icon} {tab.label}
+            <span style={{ fontSize: 13 }}>{tab.icon}</span>
+            <span>{tab.label}</span>
           </button>
         ))}
       </div>
 
+      {/* Content */}
       <div style={{ marginTop: 20 }}>
         {activeTab === "connector" && (
           <ConnectorTab integration={integration} channels={channels} logs={logs} loading={loadingData} onResync={handleResync} />
@@ -196,60 +249,68 @@ function ConnectorTab({ integration, channels, logs, loading, onResync }: {
 }) {
   return (
     <div>
-      <div style={sectionStyle}>
-        <h3 style={sectionTitleStyle}>Status da Integração</h3>
+      <div style={s.card}>
+        <h3 style={s.cardTitle}>Status da Integração</h3>
         {integration ? (
-          <div>
-            <div style={rowStyle}><span style={labelStyle}>Portal:</span><span>{integration.domain || integration.member_id}</span></div>
-            <div style={rowStyle}><span style={labelStyle}>Conector:</span><span>{integration.connector_registered ? "✅ Registado" : "❌ Não registado"}</span></div>
-            <div style={rowStyle}><span style={labelStyle}>Status:</span><span>{integration.connector_active ? "🟢 Ativo" : "🔴 Inativo"}</span></div>
-            <div style={rowStyle}><span style={labelStyle}>Última atualização:</span><span>{new Date(integration.updated_at).toLocaleString()}</span></div>
+          <div style={{ display: "grid", gap: 8 }}>
+            <InfoRow label="Portal" value={integration.domain || integration.member_id} />
+            <InfoRow label="Conector" value={integration.connector_registered ? "✅ Registado" : "❌ Não registado"} />
+            <InfoRow label="Status" value={integration.connector_active ? "🟢 Ativo" : "🔴 Inativo"} />
+            <InfoRow label="Última atualização" value={new Date(integration.updated_at).toLocaleString()} />
           </div>
         ) : (
-          <p style={{ color: "#999", fontSize: 14 }}>Integração não encontrada. Reinstale o aplicativo.</p>
+          <p style={{ color: colors.textMuted, fontSize: 13, margin: 0 }}>Integração não encontrada. Reinstale o aplicativo.</p>
         )}
       </div>
 
-      <div style={sectionStyle}>
-        <h3 style={sectionTitleStyle}>Canais Configurados</h3>
+      <div style={s.card}>
+        <h3 style={s.cardTitle}>Canais Configurados</h3>
         {channels.length > 0 ? (
-          <table style={tableStyle}>
-            <thead><tr><th style={thStyle}>Canal</th><th style={thStyle}>Open Line</th><th style={thStyle}>Status</th></tr></thead>
-            <tbody>
-              {channels.map((ch, i) => (
-                <tr key={i}>
-                  <td style={tdStyle}>{ch.channel === "whatsapp" ? "📱 WhatsApp" : "📸 Instagram"}</td>
-                  <td style={tdStyle}>{ch.line_name || `Line ${ch.line_id}`}</td>
-                  <td style={tdStyle}>{ch.is_active ? "✅" : "❌"}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <div style={{ display: "grid", gap: 6 }}>
+            {channels.map((ch, i) => (
+              <div key={i} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 12px", background: colors.surface, borderRadius: 8, fontSize: 13 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <span style={{ fontSize: 16 }}>{ch.channel === "whatsapp" ? "📱" : "📸"}</span>
+                  <span style={{ fontWeight: 500, color: colors.text }}>{ch.channel === "whatsapp" ? "WhatsApp" : "Instagram"}</span>
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <span style={{ fontSize: 12, color: colors.textSecondary }}>{ch.line_name || `Line ${ch.line_id}`}</span>
+                  <StatusDot active={ch.is_active} />
+                </div>
+              </div>
+            ))}
+          </div>
         ) : (
-          <p style={{ color: "#999", fontSize: 14 }}>Nenhum canal mapeado ainda.</p>
+          <p style={{ color: colors.textMuted, fontSize: 13, margin: 0 }}>Nenhum canal mapeado ainda.</p>
         )}
       </div>
 
-      <button onClick={onResync} disabled={loading} style={btnStyle}>
+      <button onClick={onResync} disabled={loading} style={s.btnPrimary}>
         {loading ? "⏳ Sincronizando..." : "🔄 Re-sincronizar Conector"}
       </button>
 
       {logs.length > 0 && (
-        <div style={{ ...sectionStyle, marginTop: 16 }}>
-          <h3 style={sectionTitleStyle}>Últimos Eventos</h3>
+        <div style={{ ...s.card, marginTop: 12 }}>
+          <h3 style={s.cardTitle}>Últimos Eventos</h3>
           <div style={{ maxHeight: 200, overflowY: "auto" }}>
             {logs.map((log, i) => (
-              <div key={i} style={{ padding: "6px 10px", fontSize: 12, borderBottom: "1px solid #f0f0f0", display: "flex", justifyContent: "space-between" }}>
-                <span>{log.direction === "inbound" ? "📥" : "📤"} {log.event_type}{log.error && <span style={{ color: "#e74c3c", marginLeft: 6 }}>⚠️</span>}</span>
-                <span style={{ color: "#999" }}>{new Date(log.created_at).toLocaleTimeString()}</span>
+              <div key={i} style={{ padding: "6px 0", fontSize: 12, borderBottom: i < logs.length - 1 ? `1px solid ${colors.borderLight}` : "none", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <span style={{ width: 20, height: 20, borderRadius: 6, background: log.direction === "inbound" ? colors.infoBg : colors.surface, display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 10 }}>
+                    {log.direction === "inbound" ? "📥" : "📤"}
+                  </span>
+                  <span style={{ color: colors.text }}>{log.event_type}</span>
+                  {log.error && <span style={{ color: colors.error, fontSize: 10 }}>⚠️</span>}
+                </span>
+                <span style={{ color: colors.textMuted, fontSize: 11 }}>{new Date(log.created_at).toLocaleTimeString()}</span>
               </div>
             ))}
           </div>
         </div>
       )}
 
-      <div style={infoBoxStyle}>
-        ℹ️ Para gerenciar conversas, acesse o <strong>Contact Center</strong> do Bitrix24 e selecione o conector <strong>Emmely Cloud</strong>.
+      <div style={s.infoBox}>
+        ℹ️ Para gerenciar conversas, acesse o <strong>Contact Center</strong> do Bitrix24 e selecione o conector <strong>Emmely Messages</strong>.
       </div>
     </div>
   );
@@ -313,7 +374,6 @@ function AgentesTab() {
   };
 
   const handleSetDefault = async (id: string) => {
-    // Unset all defaults, then set the one
     await fetch(`${SUPABASE_URL}/rest/v1/ai_agents?is_default=eq.true`, {
       method: "PATCH",
       headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${SUPABASE_KEY}`, "Content-Type": "application/json", "Prefer": "return=minimal" },
@@ -341,55 +401,75 @@ function AgentesTab() {
 
   return (
     <div>
-      <button onClick={() => { setEditing({}); setForm({ name: "", system_prompt: "", ai_model: "google/gemini-3-flash-preview", temperature: "0.7", welcome_message: "", fallback_message: "Desculpe, não consegui processar a sua mensagem." }); }} style={{ ...btnStyle, marginBottom: 16 }}>
+      <button onClick={() => { setEditing({}); setForm({ name: "", system_prompt: "", ai_model: "google/gemini-3-flash-preview", temperature: "0.7", welcome_message: "", fallback_message: "Desculpe, não consegui processar a sua mensagem." }); }} style={{ ...s.btnPrimary, marginBottom: 16 }}>
         ➕ Novo Agente
       </button>
 
       {editing && (
-        <div style={sectionStyle}>
-          <h3 style={sectionTitleStyle}>{editing.id ? "Editar Agente" : "Novo Agente"}</h3>
-          <div style={{ display: "grid", gap: 10 }}>
-            <div><label style={formLabelStyle}>Nome</label><input style={inputStyle} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Nome do agente" /></div>
-            <div><label style={formLabelStyle}>Modelo IA</label>
-              <select style={inputStyle} value={form.ai_model} onChange={(e) => setForm({ ...form, ai_model: e.target.value })}>
+        <div style={s.card}>
+          <h3 style={s.cardTitle}>{editing.id ? "✏️ Editar Agente" : "✨ Novo Agente"}</h3>
+          <div style={{ display: "grid", gap: 12 }}>
+            <FormField label="Nome">
+              <input style={s.input} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Nome do agente" />
+            </FormField>
+            <FormField label="Modelo IA">
+              <select style={s.input} value={form.ai_model} onChange={(e) => setForm({ ...form, ai_model: e.target.value })}>
                 <option value="google/gemini-3-flash-preview">Gemini 3 Flash</option>
                 <option value="google/gemini-2.5-flash">Gemini 2.5 Flash</option>
                 <option value="google/gemini-2.5-pro">Gemini 2.5 Pro</option>
                 <option value="openai/gpt-5-mini">GPT-5 Mini</option>
                 <option value="openai/gpt-5">GPT-5</option>
               </select>
-            </div>
-            <div><label style={formLabelStyle}>Temperatura ({form.temperature})</label><input style={inputStyle} type="range" min="0" max="1" step="0.1" value={form.temperature} onChange={(e) => setForm({ ...form, temperature: e.target.value })} /></div>
-            <div><label style={formLabelStyle}>System Prompt</label><textarea style={{ ...inputStyle, minHeight: 120, resize: "vertical" }} value={form.system_prompt} onChange={(e) => setForm({ ...form, system_prompt: e.target.value })} placeholder="Instruções para o agente..." /></div>
-            <div><label style={formLabelStyle}>Mensagem de Boas-Vindas</label><input style={inputStyle} value={form.welcome_message} onChange={(e) => setForm({ ...form, welcome_message: e.target.value })} /></div>
-            <div><label style={formLabelStyle}>Mensagem de Fallback</label><input style={inputStyle} value={form.fallback_message} onChange={(e) => setForm({ ...form, fallback_message: e.target.value })} /></div>
+            </FormField>
+            <FormField label={`Temperatura (${form.temperature})`}>
+              <input style={{ ...s.input, padding: "4px 8px" }} type="range" min="0" max="1" step="0.1" value={form.temperature} onChange={(e) => setForm({ ...form, temperature: e.target.value })} />
+            </FormField>
+            <FormField label="System Prompt">
+              <textarea style={{ ...s.input, minHeight: 120, resize: "vertical" }} value={form.system_prompt} onChange={(e) => setForm({ ...form, system_prompt: e.target.value })} placeholder="Instruções para o agente..." />
+            </FormField>
+            <FormField label="Mensagem de Boas-Vindas">
+              <input style={s.input} value={form.welcome_message} onChange={(e) => setForm({ ...form, welcome_message: e.target.value })} />
+            </FormField>
+            <FormField label="Mensagem de Fallback">
+              <input style={s.input} value={form.fallback_message} onChange={(e) => setForm({ ...form, fallback_message: e.target.value })} />
+            </FormField>
           </div>
-          <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
-            <button onClick={handleSave} disabled={saving || !form.name} style={{ ...btnStyle, flex: 1 }}>{saving ? "⏳ Salvando..." : "💾 Salvar"}</button>
-            <button onClick={() => setEditing(null)} style={{ ...btnStyle, flex: 1, background: "#999" }}>Cancelar</button>
+          <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
+            <button onClick={handleSave} disabled={saving || !form.name} style={{ ...s.btnPrimary, flex: 1 }}>{saving ? "⏳ Salvando..." : "💾 Salvar"}</button>
+            <button onClick={() => setEditing(null)} style={{ ...s.btnSecondary, flex: 1 }}>Cancelar</button>
           </div>
         </div>
       )}
 
-      <div style={sectionStyle}>
-        <h3 style={sectionTitleStyle}>Agentes Configurados</h3>
-        {loading ? <p style={{ color: "#999", fontSize: 13 }}>Carregando...</p> : agents.length === 0 ? (
-          <p style={{ color: "#999", fontSize: 13 }}>Nenhum agente criado.</p>
+      <div style={s.card}>
+        <h3 style={s.cardTitle}>Agentes Configurados</h3>
+        {loading ? <LoadingText /> : agents.length === 0 ? (
+          <EmptyText text="Nenhum agente criado." />
         ) : (
-          agents.map((a) => (
-            <div key={a.id} style={{ padding: "10px 0", borderBottom: "1px solid #eee", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <div>
-                <strong style={{ fontSize: 14 }}>{a.name}</strong>
-                {a.is_default && <span style={{ marginLeft: 8, padding: "2px 8px", borderRadius: 12, fontSize: 11, background: "#e8f5e9", color: "#2e7d32" }}>⭐ Default</span>}
-                {!a.is_active && <span style={{ marginLeft: 8, padding: "2px 8px", borderRadius: 12, fontSize: 11, background: "#ffeaea", color: "#c62828" }}>Inativo</span>}
-                <div style={{ fontSize: 12, color: "#888", marginTop: 2 }}>{a.ai_model} · T={a.temperature}</div>
+          <div style={{ display: "grid", gap: 8 }}>
+            {agents.map((a) => (
+              <div key={a.id} style={s.agentCard}>
+                <div style={{ display: "flex", alignItems: "center", gap: 10, flex: 1 }}>
+                  <div style={s.avatar}>{a.name?.charAt(0)?.toUpperCase() || "A"}</div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                      <strong style={{ fontSize: 14, color: colors.text }}>{a.name}</strong>
+                      {a.is_default && <span style={s.badgeSuccess}>⭐ Default</span>}
+                      {!a.is_active && <span style={s.badgeError}>Inativo</span>}
+                    </div>
+                    <div style={{ display: "flex", gap: 6, marginTop: 4, flexWrap: "wrap" }}>
+                      <span style={s.badgeOutline}>{a.ai_model?.split("/").pop()}</span>
+                      <span style={s.badgeOutline}>T={a.temperature}</span>
+                    </div>
+                  </div>
+                </div>
+                <div style={{ display: "flex", gap: 4 }}>
+                  {!a.is_default && <button onClick={() => handleSetDefault(a.id)} style={s.iconBtn} title="Definir como default">⭐</button>}
+                  <button onClick={() => startEdit(a)} style={s.iconBtn} title="Editar">✏️</button>
+                </div>
               </div>
-              <div style={{ display: "flex", gap: 6 }}>
-                {!a.is_default && <button onClick={() => handleSetDefault(a.id)} style={smallBtnStyle} title="Definir como default">⭐</button>}
-                <button onClick={() => startEdit(a)} style={smallBtnStyle} title="Editar">✏️</button>
-              </div>
-            </div>
-          ))
+            ))}
+          </div>
         )}
       </div>
     </div>
@@ -435,7 +515,6 @@ function TrainingTab() {
         body: JSON.stringify(body),
       });
 
-      // Also create a chunk for text content
       if (form.source_type === "text" && form.content) {
         const docRes = await fetch(`${SUPABASE_URL}/rest/v1/knowledge_documents?select=id&order=created_at.desc&limit=1`, {
           headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${SUPABASE_KEY}` },
@@ -459,48 +538,61 @@ function TrainingTab() {
 
   return (
     <div>
-      <button onClick={() => setShowForm(!showForm)} style={{ ...btnStyle, marginBottom: 16, background: showForm ? "#999" : "#25D366" }}>
+      <button onClick={() => setShowForm(!showForm)} style={{ ...s.btnPrimary, marginBottom: 16, ...(showForm ? { background: colors.textMuted } : {}) }}>
         {showForm ? "✕ Cancelar" : "➕ Novo Documento"}
       </button>
 
       {showForm && (
-        <div style={sectionStyle}>
-          <h3 style={sectionTitleStyle}>Adicionar Conhecimento</h3>
-          <div style={{ display: "grid", gap: 10 }}>
-            <div><label style={formLabelStyle}>Título</label><input style={inputStyle} value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} placeholder="Título do documento" /></div>
-            <div><label style={formLabelStyle}>Tipo</label>
-              <select style={inputStyle} value={form.source_type} onChange={(e) => setForm({ ...form, source_type: e.target.value })}>
+        <div style={s.card}>
+          <h3 style={s.cardTitle}>📝 Adicionar Conhecimento</h3>
+          <div style={{ display: "grid", gap: 12 }}>
+            <FormField label="Título">
+              <input style={s.input} value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} placeholder="Título do documento" />
+            </FormField>
+            <FormField label="Tipo">
+              <select style={s.input} value={form.source_type} onChange={(e) => setForm({ ...form, source_type: e.target.value })}>
                 <option value="text">Texto</option>
                 <option value="url">URL</option>
               </select>
-            </div>
+            </FormField>
             {form.source_type === "text" && (
-              <div><label style={formLabelStyle}>Conteúdo</label><textarea style={{ ...inputStyle, minHeight: 150, resize: "vertical" }} value={form.content} onChange={(e) => setForm({ ...form, content: e.target.value })} placeholder="Cole aqui o conteúdo de treino..." /></div>
+              <FormField label="Conteúdo">
+                <textarea style={{ ...s.input, minHeight: 150, resize: "vertical" }} value={form.content} onChange={(e) => setForm({ ...form, content: e.target.value })} placeholder="Cole aqui o conteúdo de treino..." />
+              </FormField>
             )}
             {form.source_type === "url" && (
-              <div><label style={formLabelStyle}>URL</label><input style={inputStyle} value={form.source_url} onChange={(e) => setForm({ ...form, source_url: e.target.value })} placeholder="https://..." /></div>
+              <FormField label="URL">
+                <input style={s.input} value={form.source_url} onChange={(e) => setForm({ ...form, source_url: e.target.value })} placeholder="https://..." />
+              </FormField>
             )}
           </div>
-          <button onClick={handleSave} disabled={saving || !form.title} style={{ ...btnStyle, marginTop: 12 }}>
+          <button onClick={handleSave} disabled={saving || !form.title} style={{ ...s.btnPrimary, marginTop: 12 }}>
             {saving ? "⏳ Salvando..." : "💾 Salvar Documento"}
           </button>
         </div>
       )}
 
-      <div style={sectionStyle}>
-        <h3 style={sectionTitleStyle}>Documentos de Conhecimento</h3>
-        {loading ? <p style={{ color: "#999", fontSize: 13 }}>Carregando...</p> : docs.length === 0 ? (
-          <p style={{ color: "#999", fontSize: 13 }}>Nenhum documento adicionado.</p>
+      <div style={s.card}>
+        <h3 style={s.cardTitle}>📚 Documentos de Conhecimento</h3>
+        {loading ? <LoadingText /> : docs.length === 0 ? (
+          <EmptyText text="Nenhum documento adicionado." />
         ) : (
-          docs.map((d) => (
-            <div key={d.id} style={{ padding: "8px 0", borderBottom: "1px solid #eee", fontSize: 13 }}>
-              <div style={{ display: "flex", justifyContent: "space-between" }}>
-                <strong>{d.title}</strong>
-                <span style={{ fontSize: 11, color: "#888" }}>{d.source_type === "url" ? "🔗" : "📝"} {d.status}</span>
+          <div style={{ display: "grid", gap: 6 }}>
+            {docs.map((d) => (
+              <div key={d.id} style={{ padding: "10px 12px", background: colors.surface, borderRadius: 8, fontSize: 13 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <strong style={{ color: colors.text }}>{d.title}</strong>
+                  <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                    <span style={s.badgeOutline}>{d.source_type === "url" ? "🔗 URL" : "📝 Texto"}</span>
+                    <span style={{ ...s.badgeOutline, ...(d.status === "ready" ? { background: colors.successBg, color: colors.success, borderColor: colors.successBorder } : {}) }}>
+                      {d.status}
+                    </span>
+                  </div>
+                </div>
+                {d.chunks_count > 0 && <div style={{ fontSize: 11, color: colors.textMuted, marginTop: 4 }}>{d.chunks_count} chunks</div>}
               </div>
-              {d.chunks_count > 0 && <div style={{ fontSize: 11, color: "#888", marginTop: 2 }}>{d.chunks_count} chunks</div>}
-            </div>
-          ))
+            ))}
+          </div>
         )}
       </div>
     </div>
@@ -536,29 +628,38 @@ function FlowsTab() {
 
   return (
     <div>
-      <div style={infoBoxStyle}>
+      <div style={s.infoBox}>
         ℹ️ Para criar e editar fluxos completos, utilize o <strong>editor visual</strong> na aplicação principal Emmely Cloud.
       </div>
 
-      <div style={{ ...sectionStyle, marginTop: 16 }}>
-        <h3 style={sectionTitleStyle}>Fluxos de Automação</h3>
-        {loading ? <p style={{ color: "#999", fontSize: 13 }}>Carregando...</p> : flows.length === 0 ? (
-          <p style={{ color: "#999", fontSize: 13 }}>Nenhum fluxo criado.</p>
+      <div style={{ ...s.card, marginTop: 12 }}>
+        <h3 style={s.cardTitle}>🔀 Fluxos de Automação</h3>
+        {loading ? <LoadingText /> : flows.length === 0 ? (
+          <EmptyText text="Nenhum fluxo criado." />
         ) : (
-          flows.map((f) => (
-            <div key={f.id} style={{ padding: "10px 0", borderBottom: "1px solid #eee", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <div>
-                <strong style={{ fontSize: 14 }}>{f.name}</strong>
-                <div style={{ fontSize: 12, color: "#888", marginTop: 2 }}>
-                  {f.trigger_type} · {f.flow_type}
-                  {f.keywords?.length > 0 && ` · Keywords: ${f.keywords.join(", ")}`}
+          <div style={{ display: "grid", gap: 6 }}>
+            {flows.map((f) => (
+              <div key={f.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 12px", background: colors.surface, borderRadius: 8 }}>
+                <div>
+                  <strong style={{ fontSize: 14, color: colors.text }}>{f.name}</strong>
+                  <div style={{ fontSize: 12, color: colors.textSecondary, marginTop: 2, display: "flex", gap: 6 }}>
+                    <span style={s.badgeOutline}>{f.trigger_type}</span>
+                    <span style={s.badgeOutline}>{f.flow_type}</span>
+                    {f.keywords?.length > 0 && <span style={{ ...s.badgeOutline, fontSize: 10 }}>🏷️ {f.keywords.join(", ")}</span>}
+                  </div>
                 </div>
+                <button onClick={() => toggleActive(f.id, f.is_active)} style={{
+                  ...s.iconBtn,
+                  background: f.is_active ? colors.successBg : colors.errorBg,
+                  color: f.is_active ? colors.success : colors.error,
+                  border: `1px solid ${f.is_active ? colors.successBorder : colors.errorBorder}`,
+                  fontSize: 11, padding: "4px 10px", fontWeight: 600,
+                }}>
+                  {f.is_active ? "✅ Ativo" : "❌ Inativo"}
+                </button>
               </div>
-              <button onClick={() => toggleActive(f.id, f.is_active)} style={{ ...smallBtnStyle, background: f.is_active ? "#e8f5e9" : "#ffeaea", color: f.is_active ? "#2e7d32" : "#c62828" }}>
-                {f.is_active ? "✅ Ativo" : "❌ Inativo"}
-              </button>
-            </div>
-          ))
+            ))}
+          </div>
         )}
       </div>
     </div>
@@ -614,46 +715,81 @@ function PlaygroundTab() {
   return (
     <div>
       <div style={{ marginBottom: 12 }}>
-        <label style={formLabelStyle}>Agente</label>
-        <select style={inputStyle} value={selectedAgent} onChange={(e) => { setSelectedAgent(e.target.value); setMessages([]); }}>
-          {agents.map((a) => <option key={a.id} value={a.id}>{a.name} {a.is_default ? "⭐" : ""}</option>)}
-        </select>
+        <FormField label="Agente">
+          <select style={s.input} value={selectedAgent} onChange={(e) => { setSelectedAgent(e.target.value); setMessages([]); }}>
+            {agents.map((a) => <option key={a.id} value={a.id}>{a.name} {a.is_default ? "⭐" : ""}</option>)}
+          </select>
+        </FormField>
       </div>
 
-      <div style={{ ...sectionStyle, minHeight: 300, maxHeight: 400, overflowY: "auto", display: "flex", flexDirection: "column", gap: 8 }}>
-        {messages.length === 0 && <p style={{ color: "#bbb", textAlign: "center", marginTop: 60, fontSize: 13 }}>Envie uma mensagem para testar o agente...</p>}
+      <div style={s.chatContainer}>
+        {messages.length === 0 && (
+          <div style={{ textAlign: "center", padding: "60px 20px" }}>
+            <div style={{ fontSize: 40, marginBottom: 12, opacity: 0.3 }}>💬</div>
+            <p style={{ color: colors.textMuted, fontSize: 13, margin: 0 }}>Envie uma mensagem para testar o agente...</p>
+          </div>
+        )}
         {messages.map((m, i) => (
           <div key={i} style={{
-            alignSelf: m.role === "user" ? "flex-end" : "flex-start",
-            background: m.role === "user" ? "#25D366" : "#f0f0f0",
-            color: m.role === "user" ? "white" : "#333",
-            padding: "8px 14px", borderRadius: 16, maxWidth: "80%", fontSize: 13, whiteSpace: "pre-wrap",
+            display: "flex",
+            justifyContent: m.role === "user" ? "flex-end" : "flex-start",
+            marginBottom: 8,
           }}>
-            {m.content}
+            <div style={{
+              background: m.role === "user" ? colors.chatUser : colors.chatBot,
+              color: m.role === "user" ? "#fff" : colors.text,
+              padding: "10px 14px",
+              borderRadius: m.role === "user" ? "18px 18px 4px 18px" : "18px 18px 18px 4px",
+              maxWidth: "80%",
+              fontSize: 13,
+              lineHeight: 1.5,
+              whiteSpace: "pre-wrap",
+              boxShadow: m.role === "user" ? "none" : colors.shadow,
+            }}>
+              {m.content}
+            </div>
           </div>
         ))}
-        {loading && <div style={{ alignSelf: "flex-start", background: "#f0f0f0", padding: "8px 14px", borderRadius: 16, fontSize: 13 }}>⏳ Pensando...</div>}
+        {loading && (
+          <div style={{ display: "flex", justifyContent: "flex-start", marginBottom: 8 }}>
+            <div style={{ background: colors.chatBot, padding: "10px 18px", borderRadius: "18px 18px 18px 4px", boxShadow: colors.shadow }}>
+              <div style={s.typingDots}>
+                <span style={{ ...s.dot, animationDelay: "0s" }} />
+                <span style={{ ...s.dot, animationDelay: "0.2s" }} />
+                <span style={{ ...s.dot, animationDelay: "0.4s" }} />
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
         <input
-          style={{ ...inputStyle, flex: 1 }}
+          style={{ ...s.input, flex: 1 }}
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && sendMessage()}
           placeholder="Digite uma mensagem..."
           disabled={loading}
         />
-        <button onClick={sendMessage} disabled={loading || !input.trim()} style={{ ...btnStyle, width: "auto", padding: "8px 20px" }}>
-          Enviar
+        <button onClick={sendMessage} disabled={loading || !input.trim()} style={{ ...s.btnPrimary, width: "auto", padding: "8px 20px" }}>
+          ➤
         </button>
       </div>
 
       {messages.length > 0 && (
-        <button onClick={() => setMessages([])} style={{ ...btnStyle, marginTop: 8, background: "#999", fontSize: 12 }}>
+        <button onClick={() => setMessages([])} style={{ ...s.btnSecondary, marginTop: 8, fontSize: 12 }}>
           🗑️ Limpar conversa
         </button>
       )}
+
+      {/* CSS animation for typing dots */}
+      <style>{`
+        @keyframes emmelyDotPulse {
+          0%, 60%, 100% { opacity: 0.3; transform: scale(0.8); }
+          30% { opacity: 1; transform: scale(1); }
+        }
+      `}</style>
     </div>
   );
 }
@@ -705,62 +841,69 @@ function PagamentosTab() {
     setCreating(false);
   };
 
-  const statusMap: Record<string, { label: string; color: string }> = {
-    pending: { label: "⏳ Pendente", color: "#f39c12" }, confirmed: { label: "✅ Confirmado", color: "#27ae60" },
-    received: { label: "✅ Recebido", color: "#27ae60" }, failed: { label: "❌ Falhou", color: "#e74c3c" },
-    canceled: { label: "🚫 Cancelado", color: "#999" }, refunded: { label: "↩️ Reembolsado", color: "#8e44ad" },
-    overdue: { label: "⚠️ Vencido", color: "#e74c3c" },
+  const statusMap: Record<string, { label: string; bg: string; color: string }> = {
+    pending: { label: "Pendente", bg: colors.warningBg, color: colors.warning },
+    confirmed: { label: "Confirmado", bg: colors.successBg, color: colors.success },
+    received: { label: "Recebido", bg: colors.successBg, color: colors.success },
+    failed: { label: "Falhou", bg: colors.errorBg, color: colors.error },
+    canceled: { label: "Cancelado", bg: colors.surface, color: colors.textMuted },
+    refunded: { label: "Reembolsado", bg: "#f5f3ff", color: "#7c3aed" },
+    overdue: { label: "Vencido", bg: colors.errorBg, color: colors.error },
   };
 
   return (
     <div>
-      <button onClick={() => setShowForm(!showForm)} style={{ ...btnStyle, marginBottom: 16, background: showForm ? "#999" : "#25D366" }}>
+      <button onClick={() => setShowForm(!showForm)} style={{ ...s.btnPrimary, marginBottom: 16, ...(showForm ? { background: colors.textMuted } : {}) }}>
         {showForm ? "✕ Cancelar" : "➕ Nova Cobrança"}
       </button>
 
       {showForm && (
-        <div style={sectionStyle}>
-          <h3 style={sectionTitleStyle}>Nova Cobrança</h3>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-            <div><label style={formLabelStyle}>Nome</label><input style={inputStyle} value={form.customer_name} onChange={(e) => setForm({ ...form, customer_name: e.target.value })} /></div>
-            <div><label style={formLabelStyle}>Email</label><input style={inputStyle} value={form.customer_email} onChange={(e) => setForm({ ...form, customer_email: e.target.value })} /></div>
-            <div><label style={formLabelStyle}>Valor</label><input style={inputStyle} type="number" step="0.01" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} /></div>
-            <div><label style={formLabelStyle}>Moeda</label>
-              <select style={inputStyle} value={form.currency} onChange={(e) => setForm({ ...form, currency: e.target.value, payment_method: e.target.value === "BRL" ? "pix" : "card" })}>
+        <div style={s.card}>
+          <h3 style={s.cardTitle}>💳 Nova Cobrança</h3>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+            <FormField label="Nome"><input style={s.input} value={form.customer_name} onChange={(e) => setForm({ ...form, customer_name: e.target.value })} /></FormField>
+            <FormField label="Email"><input style={s.input} value={form.customer_email} onChange={(e) => setForm({ ...form, customer_email: e.target.value })} /></FormField>
+            <FormField label="Valor"><input style={s.input} type="number" step="0.01" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} /></FormField>
+            <FormField label="Moeda">
+              <select style={s.input} value={form.currency} onChange={(e) => setForm({ ...form, currency: e.target.value, payment_method: e.target.value === "BRL" ? "pix" : "card" })}>
                 <option value="EUR">🇪🇺 EUR</option><option value="BRL">🇧🇷 BRL</option>
               </select>
-            </div>
-            <div><label style={formLabelStyle}>Método</label>
-              <select style={inputStyle} value={form.payment_method} onChange={(e) => setForm({ ...form, payment_method: e.target.value })}>
+            </FormField>
+            <FormField label="Método">
+              <select style={s.input} value={form.payment_method} onChange={(e) => setForm({ ...form, payment_method: e.target.value })}>
                 {form.currency === "BRL" ? <><option value="pix">PIX</option><option value="boleto">Boleto</option><option value="card">Cartão</option></> : <option value="card">Cartão</option>}
               </select>
-            </div>
-            <div><label style={formLabelStyle}>Descrição</label><input style={inputStyle} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} /></div>
+            </FormField>
+            <FormField label="Descrição"><input style={s.input} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} /></FormField>
           </div>
-          <button onClick={handleCreate} disabled={creating} style={{ ...btnStyle, marginTop: 12 }}>{creating ? "⏳ Criando..." : "💳 Criar"}</button>
+          <button onClick={handleCreate} disabled={creating} style={{ ...s.btnPrimary, marginTop: 12 }}>{creating ? "⏳ Criando..." : "💳 Criar Cobrança"}</button>
         </div>
       )}
 
-      <div style={sectionStyle}>
+      <div style={s.card}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-          <h3 style={{ ...sectionTitleStyle, margin: 0 }}>Transações Recentes</h3>
-          <button onClick={fetchTransactions} disabled={loading} style={{ border: "none", background: "transparent", cursor: "pointer", fontSize: 16 }}>🔄</button>
+          <h3 style={{ ...s.cardTitle, margin: 0 }}>💰 Transações Recentes</h3>
+          <button onClick={fetchTransactions} disabled={loading} style={s.iconBtn}>🔄</button>
         </div>
-        {loading ? <p style={{ textAlign: "center", color: "#999", fontSize: 13 }}>Carregando...</p> : transactions.length === 0 ? (
-          <p style={{ textAlign: "center", color: "#999", fontSize: 13 }}>Nenhuma transação.</p>
+        {loading ? <LoadingText /> : transactions.length === 0 ? (
+          <EmptyText text="Nenhuma transação." />
         ) : (
-          <div style={{ maxHeight: 300, overflowY: "auto" }}>
+          <div style={{ maxHeight: 300, overflowY: "auto", display: "grid", gap: 6 }}>
             {transactions.map((tx: any) => {
-              const st = statusMap[tx.status] || { label: tx.status, color: "#666" };
+              const st = statusMap[tx.status] || { label: tx.status, bg: colors.surface, color: colors.textMuted };
               return (
-                <div key={tx.id} style={{ padding: "10px 0", borderBottom: "1px solid #eee", fontSize: 13 }}>
-                  <div style={{ display: "flex", justifyContent: "space-between" }}>
-                    <div><strong>{tx.currency} {Number(tx.amount).toFixed(2)}</strong><span style={{ marginLeft: 8, padding: "2px 8px", borderRadius: 12, fontSize: 11, background: st.color + "22", color: st.color }}>{st.label}</span></div>
-                    <span style={{ fontSize: 11, color: "#999" }}>{tx.gateway === "stripe" ? "🟣 Stripe" : "🟢 Asaas"}</span>
+                <div key={tx.id} style={{ padding: "10px 12px", background: colors.surface, borderRadius: 8, fontSize: 13 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <strong style={{ color: colors.text }}>{tx.currency} {Number(tx.amount).toFixed(2)}</strong>
+                      <span style={{ padding: "2px 8px", borderRadius: 20, fontSize: 11, fontWeight: 600, background: st.bg, color: st.color }}>{st.label}</span>
+                    </div>
+                    <span style={{ fontSize: 11, color: colors.textSecondary }}>{tx.gateway === "stripe" ? "🟣 Stripe" : "🟢 Asaas"}</span>
                   </div>
-                  <div style={{ color: "#888", fontSize: 11, marginTop: 4 }}>
-                    {tx.payment_method} · {new Date(tx.created_at).toLocaleString()}
-                    {tx.payment_url && <a href={tx.payment_url} target="_blank" rel="noopener noreferrer" style={{ marginLeft: 8, color: "#2980b9" }}>🔗 Link</a>}
+                  <div style={{ color: colors.textMuted, fontSize: 11, marginTop: 4, display: "flex", gap: 8 }}>
+                    <span>{tx.payment_method}</span>
+                    <span>{new Date(tx.created_at).toLocaleString()}</span>
+                    {tx.payment_url && <a href={tx.payment_url} target="_blank" rel="noopener noreferrer" style={{ color: colors.primary, textDecoration: "none" }}>🔗 Link</a>}
                   </div>
                 </div>
               );
@@ -772,29 +915,278 @@ function PagamentosTab() {
   );
 }
 
+// ==================== HELPER COMPONENTS ====================
+function InfoRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", fontSize: 13, borderBottom: `1px solid ${colors.borderLight}` }}>
+      <span style={{ color: colors.textSecondary, fontWeight: 500 }}>{label}</span>
+      <span style={{ color: colors.text }}>{value}</span>
+    </div>
+  );
+}
+
+function StatusDot({ active }: { active: boolean }) {
+  return <span style={{ width: 8, height: 8, borderRadius: "50%", background: active ? colors.success : colors.error, display: "inline-block" }} />;
+}
+
+function FormField({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div>
+      <label style={s.formLabel}>{label}</label>
+      {children}
+    </div>
+  );
+}
+
+function LoadingText() {
+  return <p style={{ color: colors.textMuted, fontSize: 13, margin: 0, textAlign: "center", padding: "12px 0" }}>Carregando...</p>;
+}
+
+function EmptyText({ text }: { text: string }) {
+  return <p style={{ color: colors.textMuted, fontSize: 13, margin: 0, textAlign: "center", padding: "12px 0" }}>{text}</p>;
+}
+
 // ==================== INLINE STYLES ====================
-const containerStyle: React.CSSProperties = { fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif", display: "flex", alignItems: "center", justifyContent: "center", minHeight: "100vh", margin: 0, background: "#f5f5f5" };
-const cardStyle: React.CSSProperties = { textAlign: "center", padding: 40, background: "white", borderRadius: 12, boxShadow: "0 2px 12px rgba(0,0,0,0.1)", maxWidth: 400 };
-const titleStyle: React.CSSProperties = { color: "#333", marginBottom: 8, fontSize: 18 };
-const subtitleStyle: React.CSSProperties = { color: "#666", fontSize: 14 };
-const pageStyle: React.CSSProperties = { fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif", margin: 0, padding: 20, background: "#fff", color: "#333", minHeight: "100vh" };
-const headerStyle: React.CSSProperties = { display: "flex", alignItems: "center", gap: 12, marginBottom: 16, paddingBottom: 12, borderBottom: "1px solid #e5e5e5" };
-const logoStyle: React.CSSProperties = { width: 40, height: 40, background: "#25D366", borderRadius: 10, display: "flex", alignItems: "center", justifyContent: "center", color: "white", fontWeight: "bold", fontSize: 18 };
-const badgeStyle: React.CSSProperties = { display: "inline-flex", alignItems: "center", gap: 6, padding: "2px 10px", borderRadius: 20, fontSize: 12, marginTop: 2 };
-const tabBarStyle: React.CSSProperties = { display: "flex", gap: 2, borderBottom: "2px solid #e5e5e5", paddingBottom: 0, overflowX: "auto" };
-const tabStyle: React.CSSProperties = { padding: "8px 12px", border: "none", background: "transparent", cursor: "pointer", fontSize: 12, color: "#666", borderBottom: "2px solid transparent", marginBottom: -2, transition: "all 0.2s", whiteSpace: "nowrap" };
-const tabActiveStyle: React.CSSProperties = { color: "#25D366", borderBottomColor: "#25D366", fontWeight: 600 };
-const sectionStyle: React.CSSProperties = { background: "#fafafa", borderRadius: 8, padding: 16, marginBottom: 12, border: "1px solid #eee" };
-const sectionTitleStyle: React.CSSProperties = { fontSize: 14, fontWeight: 600, marginTop: 0, marginBottom: 12, color: "#333" };
-const rowStyle: React.CSSProperties = { display: "flex", justifyContent: "space-between", padding: "4px 0", fontSize: 13 };
-const labelStyle: React.CSSProperties = { color: "#888", fontWeight: 500 };
-const tableStyle: React.CSSProperties = { width: "100%", borderCollapse: "collapse", fontSize: 13 };
-const thStyle: React.CSSProperties = { textAlign: "left", padding: 8, borderBottom: "2px solid #e5e5e5", fontSize: 12, color: "#666", textTransform: "uppercase" };
-const tdStyle: React.CSSProperties = { padding: 8, borderBottom: "1px solid #eee" };
-const btnStyle: React.CSSProperties = { width: "100%", padding: "10px 16px", background: "#25D366", color: "white", border: "none", borderRadius: 8, cursor: "pointer", fontSize: 14, fontWeight: 600 };
-const smallBtnStyle: React.CSSProperties = { padding: "4px 10px", border: "1px solid #ddd", background: "#fff", borderRadius: 6, cursor: "pointer", fontSize: 14 };
-const infoBoxStyle: React.CSSProperties = { background: "#f0f7ff", border: "1px solid #cce0ff", borderRadius: 8, padding: "12px 16px", fontSize: 13, color: "#1a5276", marginTop: 16 };
-const inputStyle: React.CSSProperties = { width: "100%", padding: "8px 10px", border: "1px solid #ddd", borderRadius: 6, fontSize: 13, outline: "none", boxSizing: "border-box" };
-const formLabelStyle: React.CSSProperties = { display: "block", fontSize: 11, color: "#888", marginBottom: 4, fontWeight: 500 };
+const s: Record<string, React.CSSProperties> = {
+  page: {
+    fontFamily: font,
+    margin: 0,
+    padding: 0,
+    background: colors.surface,
+    color: colors.text,
+    minHeight: "100vh",
+  },
+  header: {
+    background: colors.gradient,
+    padding: "16px 20px",
+    borderRadius: "0 0 16px 16px",
+    marginBottom: 0,
+  },
+  headerInner: {
+    display: "flex",
+    alignItems: "center",
+    gap: 12,
+  },
+  logo: {
+    width: 40,
+    height: 40,
+    background: "rgba(255,255,255,0.2)",
+    backdropFilter: "blur(8px)",
+    borderRadius: 12,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    color: "white",
+    fontWeight: 800,
+    fontSize: 20,
+    letterSpacing: "-0.5px",
+  },
+  tabBar: {
+    display: "flex",
+    gap: 4,
+    padding: "8px 12px",
+    overflowX: "auto",
+    background: colors.surfaceCard,
+    borderBottom: `1px solid ${colors.border}`,
+    position: "sticky" as const,
+    top: 0,
+    zIndex: 10,
+  },
+  tab: {
+    padding: "6px 12px",
+    border: "none",
+    background: "transparent",
+    cursor: "pointer",
+    fontSize: 12,
+    color: colors.textSecondary,
+    borderRadius: 20,
+    transition: "all 0.2s",
+    whiteSpace: "nowrap" as const,
+    fontFamily: font,
+    fontWeight: 500,
+    display: "flex",
+    alignItems: "center",
+    gap: 4,
+  },
+  tabActive: {
+    background: colors.primary,
+    color: "#fff",
+    fontWeight: 600,
+  },
+  card: {
+    background: colors.surfaceCard,
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 12,
+    border: `1px solid ${colors.border}`,
+    boxShadow: colors.shadow,
+  },
+  cardTitle: {
+    fontSize: 14,
+    fontWeight: 700,
+    marginTop: 0,
+    marginBottom: 12,
+    color: colors.text,
+    letterSpacing: "-0.2px",
+  },
+  btnPrimary: {
+    width: "100%",
+    padding: "10px 16px",
+    background: colors.gradientBtn,
+    color: "white",
+    border: "none",
+    borderRadius: 10,
+    cursor: "pointer",
+    fontSize: 13,
+    fontWeight: 600,
+    fontFamily: font,
+    transition: "opacity 0.2s",
+    letterSpacing: "-0.1px",
+  },
+  btnSecondary: {
+    width: "100%",
+    padding: "10px 16px",
+    background: "transparent",
+    color: colors.textSecondary,
+    border: `1px solid ${colors.border}`,
+    borderRadius: 10,
+    cursor: "pointer",
+    fontSize: 13,
+    fontWeight: 500,
+    fontFamily: font,
+    transition: "all 0.2s",
+  },
+  iconBtn: {
+    padding: "6px 10px",
+    border: `1px solid ${colors.border}`,
+    background: colors.surfaceCard,
+    borderRadius: 8,
+    cursor: "pointer",
+    fontSize: 14,
+    transition: "all 0.15s",
+    fontFamily: font,
+  },
+  input: {
+    width: "100%",
+    padding: "9px 12px",
+    border: `1px solid ${colors.border}`,
+    borderRadius: 8,
+    fontSize: 13,
+    outline: "none",
+    boxSizing: "border-box" as const,
+    fontFamily: font,
+    color: colors.text,
+    background: colors.surfaceCard,
+    transition: "border-color 0.2s",
+  },
+  formLabel: {
+    display: "block",
+    fontSize: 11,
+    color: colors.textSecondary,
+    marginBottom: 4,
+    fontWeight: 600,
+    textTransform: "uppercase" as const,
+    letterSpacing: "0.5px",
+  },
+  infoBox: {
+    background: colors.infoBg,
+    border: `1px solid ${colors.infoBorder}`,
+    borderRadius: 10,
+    padding: "12px 16px",
+    fontSize: 13,
+    color: colors.infoText,
+    marginTop: 16,
+    lineHeight: 1.5,
+  },
+  agentCard: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    padding: "12px",
+    background: colors.surface,
+    borderRadius: 10,
+    border: `1px solid ${colors.borderLight}`,
+    transition: "border-color 0.2s",
+  },
+  avatar: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    background: colors.gradientBtn,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    color: "#fff",
+    fontWeight: 700,
+    fontSize: 15,
+    flexShrink: 0,
+  },
+  badgeSuccess: {
+    display: "inline-flex",
+    alignItems: "center",
+    gap: 4,
+    padding: "1px 8px",
+    borderRadius: 20,
+    fontSize: 11,
+    fontWeight: 600,
+    background: colors.successBg,
+    color: colors.success,
+    border: `1px solid ${colors.successBorder}`,
+  },
+  badgeError: {
+    display: "inline-flex",
+    alignItems: "center",
+    padding: "1px 8px",
+    borderRadius: 20,
+    fontSize: 11,
+    fontWeight: 600,
+    background: colors.errorBg,
+    color: colors.error,
+    border: `1px solid ${colors.errorBorder}`,
+  },
+  badgeOutline: {
+    display: "inline-flex",
+    alignItems: "center",
+    padding: "1px 8px",
+    borderRadius: 20,
+    fontSize: 10,
+    fontWeight: 500,
+    background: "transparent",
+    color: colors.textSecondary,
+    border: `1px solid ${colors.border}`,
+  },
+  chatContainer: {
+    background: colors.surfaceCard,
+    borderRadius: 12,
+    border: `1px solid ${colors.border}`,
+    padding: 16,
+    minHeight: 300,
+    maxHeight: 400,
+    overflowY: "auto" as const,
+    boxShadow: "inset 0 1px 3px rgba(0,0,0,0.03)",
+  },
+  loadingDot: {
+    width: 32,
+    height: 32,
+    borderRadius: "50%",
+    border: `3px solid ${colors.border}`,
+    borderTopColor: colors.primary,
+    animation: "spin 0.8s linear infinite",
+  },
+  typingDots: {
+    display: "flex",
+    gap: 4,
+    alignItems: "center",
+    height: 20,
+  },
+  dot: {
+    width: 6,
+    height: 6,
+    borderRadius: "50%",
+    background: colors.textMuted,
+    animation: "emmelyDotPulse 1.2s ease-in-out infinite",
+    display: "inline-block",
+  },
+};
 
 export default Bitrix24App;
