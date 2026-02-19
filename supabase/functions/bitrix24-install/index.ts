@@ -285,6 +285,19 @@ Deno.serve(async (req) => {
       // Register IM Bot for Contact Center chatbot
       try {
         const eventsUrl = `${supabaseUrl}/functions/v1/bitrix24-events`;
+
+        // 1. List existing bots to find and unregister old ones
+        const botListResult = await callBitrix(clientEndpoint, accessToken, "imbot.list", {});
+        if (botListResult.result && Array.isArray(botListResult.result)) {
+          for (const bot of botListResult.result) {
+            if (bot.CODE === "emmely_ai_bot" || (bot.NAME && bot.NAME.includes("Emmely"))) {
+              console.log(`[INSTALL] Unregistering existing bot ID ${bot.ID} (${bot.NAME})`);
+              await callBitrix(clientEndpoint, accessToken, "imbot.unregister", { BOT_ID: bot.ID });
+            }
+          }
+        }
+
+        // 2. Register fresh bot
         const botResult = await callBitrix(clientEndpoint, accessToken, "imbot.register", {
           CODE: "emmely_ai_bot",
           TYPE: "B",
@@ -302,7 +315,18 @@ Deno.serve(async (req) => {
         if (botResult.error && !botErr.includes("ALREADY")) {
           console.error("[INSTALL] Bot registration failed:", botResult.error, botResult.error_description);
         } else {
-          console.log("[INSTALL] Bot Emmely AI registered OK");
+          const botId = botResult.result;
+          console.log("[INSTALL] Bot Emmely AI registered OK, ID:", botId);
+          // Store bot ID in integration config for debugging
+          await supabase
+            .from("bitrix24_integrations")
+            .update({
+              config: {
+                installed_at: new Date().toISOString(),
+                bot_id: botId,
+              },
+            })
+            .eq("id", integrationId);
         }
         await debugLog(supabase, integrationId, "bot_registered", "outbound", { botResult });
       } catch (botError) {
