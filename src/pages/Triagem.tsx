@@ -16,7 +16,8 @@ import { Constants, Tables } from "@/integrations/supabase/types";
 import { differenceInHours, differenceInMinutes, parseISO, format } from "date-fns";
 import { useLocale } from "@/contexts/LocaleContext";
 import { useToast } from "@/hooks/use-toast";
-import { ChevronRight, Clock, AlertTriangle, AlertCircle, CheckCircle } from "lucide-react";
+import { useAiTriage } from "@/hooks/useAiTriage";
+import { ChevronRight, Clock, AlertTriangle, AlertCircle, CheckCircle, Sparkles, Loader2 } from "lucide-react";
 import {
   Sheet, SheetContent, SheetHeader, SheetTitle,
 } from "@/components/ui/sheet";
@@ -51,6 +52,8 @@ const TriagemPage = () => {
   const queryClient = useQueryClient();
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
   const [sheetOpen, setSheetOpen] = useState(false);
+  const aiTriageMutation = useAiTriage();
+  const [triagingLeadId, setTriagingLeadId] = useState<string | null>(null);
 
   // Triage form state
   const [legalArea, setLegalArea] = useState("outro");
@@ -111,7 +114,24 @@ const TriagemPage = () => {
 
   return (
     <div className="space-y-4">
-      <PageHeader title="Triagem com IA" description="Classificação e análise inteligente de leads" />
+      <PageHeader title="Triagem com IA" description="Classificação e análise inteligente de leads">
+        <Button
+          onClick={async () => {
+            for (const lead of leads) {
+              setTriagingLeadId(lead.id);
+              try {
+                await aiTriageMutation.mutateAsync(lead.id);
+              } catch { /* toast already shown */ }
+            }
+            setTriagingLeadId(null);
+          }}
+          disabled={leads.length === 0 || aiTriageMutation.isPending}
+          className="bg-white/20 hover:bg-white/30 text-white border-0 rounded-full"
+        >
+          {aiTriageMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Sparkles className="mr-2 h-4 w-4" />}
+          Classificar Todos com IA
+        </Button>
+      </PageHeader>
 
       {/* KPI Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -180,9 +200,30 @@ const TriagemPage = () => {
                   <TableCell className="text-xs text-muted-foreground">
                     {format(parseISO(lead.created_at), "dd/MM HH:mm", { locale: dateFnsLocale })}
                   </TableCell>
-                  <TableCell>
+                  <TableCell className="flex gap-1">
                     <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); openTriage(lead); }}>
                       Triar
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={async (e) => {
+                        e.stopPropagation();
+                        setTriagingLeadId(lead.id);
+                        try {
+                          const result = await aiTriageMutation.mutateAsync(lead.id);
+                          // If sheet is open for this lead, update form state
+                          if (selectedLead?.id === lead.id) {
+                            setLegalArea(result.legal_area);
+                            setUrgency(result.urgency);
+                            setNotes(result.notes);
+                          }
+                        } catch { /* toast shown */ }
+                        setTriagingLeadId(null);
+                      }}
+                      disabled={triagingLeadId === lead.id}
+                    >
+                      {triagingLeadId === lead.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3" />}
                     </Button>
                   </TableCell>
                 </TableRow>
@@ -241,15 +282,36 @@ const TriagemPage = () => {
                     placeholder="Resumo do caso, motivo do contacto..."
                   />
                 </div>
-                <Button
-                  size="sm"
-                  className="w-full"
-                  onClick={() => triageMutation.mutate(selectedLead.id)}
-                  disabled={triageMutation.isPending}
-                >
-                  <ChevronRight className="mr-1 h-3 w-3" />
-                  {triageMutation.isPending ? "A processar..." : "Concluir Triagem e Avançar para Proposta"}
-                </Button>
+                <div className="flex gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="flex-1"
+                    onClick={async () => {
+                      setTriagingLeadId(selectedLead.id);
+                      try {
+                        const result = await aiTriageMutation.mutateAsync(selectedLead.id);
+                        setLegalArea(result.legal_area);
+                        setUrgency(result.urgency);
+                        setNotes(result.notes);
+                      } catch { /* toast shown */ }
+                      setTriagingLeadId(null);
+                    }}
+                    disabled={triagingLeadId === selectedLead.id}
+                  >
+                    {triagingLeadId === selectedLead.id ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : <Sparkles className="mr-1 h-3 w-3" />}
+                    Classificar com IA
+                  </Button>
+                  <Button
+                    size="sm"
+                    className="flex-1"
+                    onClick={() => triageMutation.mutate(selectedLead.id)}
+                    disabled={triageMutation.isPending}
+                  >
+                    <ChevronRight className="mr-1 h-3 w-3" />
+                    {triageMutation.isPending ? "A processar..." : "Concluir Triagem"}
+                  </Button>
+                </div>
               </div>
             </div>
           </SheetContent>

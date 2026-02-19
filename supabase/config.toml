@@ -53,3 +53,6 @@ verify_jwt = false
 
 [functions.elevenlabs-conversation-token]
 verify_jwt = false
+
+[functions.ai-triage]
+verify_jwt = false
