@@ -1,170 +1,232 @@
 
-# Problema Diagnosticado: IM Bot vs Conector - Dois Sistemas Distintos
+# Diagnóstico Definitivo + Plano por Fases
 
-## O que o utilizador tem razão em apontar
+## O Problema Real (Após Leitura Completa do Thothai)
 
-O Bitrix24 tem **duas funcionalidades completamente independentes**:
+Após ler CADA ficheiro do thothai e comparar com o nosso sistema, encontrei **3 diferenças críticas** que impedem o bot de funcionar:
 
-### Sistema 1: IM Bot (Chatbot nativo)
-- Registado via `imbot.register` com `TYPE: "B"`
-- Aparece nos **Contactos do utilizador no Bitrix24** (secção de Mensagens/Chat)
-- Responde a eventos `ONIMBOTMESSAGEADD` e `ONIMBOTWELCOMEMESSAGE`
-- Para responder, usa `imbot.message.add` com o parâmetro **`BOT_ID`** obrigatório
-- É **completamente independente** do WhatsApp/Instagram
-- Problema actual: o worker tenta `im.message.add` em vez de `imbot.message.add`
+---
 
-### Sistema 2: Conector (Canal externo no Contact Center)
-- Registado via `imconnector.register`
-- Aparece no **Contact Center** para receber mensagens de WhatsApp/Instagram
-- Requer activação manual em cada Open Line
-- Usa `ONIMCONNECTORMESSAGEADD` para eventos
+### PROBLEMA 1: O bot_id NUNCA é guardado na base de dados
 
-## Problemas Encontrados na Análise
+Os logs mostram que o bot foi registado com ID `10265`, mas a tabela `bitrix24_integrations` tem:
+- `bitrix_agent_id = NULL`
+- `config = { "installed_at": "...", "auth_payload": {} }`
+- **`bot_id NÃO ESTÁ no config!`**
 
-### Problema 1: Worker usa método errado para responder ao bot
-O `handleBotMessage` no worker chama:
+**Por quê?** O código actual faz `update` com `config: { installed_at, bot_id }`, mas no momento da instalação o campo `config` já tem `{ installed_at, auth_payload }` e o update **sobrescreve sem fazer merge** com o auth_payload existente. O bot_id é salvo mas num campo diferente do que o worker procura.
+
+**O worker procura:** `integration.config.bot_id` — mas o campo config está assim: `{ installed_at: "...", auth_payload: {} }` — **sem bot_id**.
+
+---
+
+### PROBLEMA 2: A tabela bitrix_event_queue nunca recebe eventos
+
+Os logs da DB mostram que a `bitrix_event_queue` está **vazia** (0 registos). Isso significa que os eventos do Bitrix24 não estão a chegar à função `bitrix24-events`, OU estão a chegar mas a falhar antes do INSERT. 
+
+**Por quê?** O `bitrix24-events` tem a coluna `member_id` no INSERT mas o payload do Bitrix24 pode não ter `member_id` explícito no evento `ONIMBOTMESSAGEADD` — ele vem dentro de `auth.member_id` ou `data.PARAMS`.
+
+**O thothai não guarda `member_id` no insert da queue** — apenas guarda `event_type`, `payload`, e `status`. A nossa tabela tem a coluna `member_id` mas o worker a vai buscar depois com `.eq("member_id", event.member_id)`. Se o `member_id` não for guardado no insert, o worker não encontra a integração!
+
+---
+
+### PROBLEMA 3: A função `bitrix24-install` retorna HTML em vez de texto simples
+
+O thothai, quando recebe `ONAPPINSTALL`, retorna HTML com `BX24.installFinish()`. O nosso sistema retorna um redirect para `/bitrix24`. O problema é que o Bitrix24 **não chama** `BX24.installFinish()` e a instalação fica incompleta — os event bindings podem não estar ativos.
+
+---
+
+### PROBLEMA 4 (Thothai usa função separada): `ai-process-bitrix24` vs `ai-process-message`
+
+O thothai tem uma função dedicada `ai-process-bitrix24` que:
+1. Usa `imbot.message.add` com BOT_ID para responder
+2. Gere histórico de conversa específico para o contexto Bitrix24
+3. Tem anti-loop (lock de processamento)
+
+O nosso `ai-process-message` foi desenhado para WhatsApp/Instagram e usa `skip_send: true` — o worker tenta responder, mas a função retorna o texto sem enviar nada, e o worker faz o envio. **Isso está correto na nossa arquitetura**, mas precisa de garantir que o BOT_ID está disponível.
+
+---
+
+## Arquitetura Correcta (Baseada no Thothai)
+
+```text
+FASE 1: Fix Instalação
+bitrix24-install
+  ├── Registar bot com TYPE:"H"  ✅ (já feito)
+  ├── Guardar bot_id em config E bitrix_agent_id  ❌ (bug: não faz merge)
+  └── Retornar HTML com BX24.installFinish()  ❌ (falta)
+
+FASE 2: Fix Events
+bitrix24-events
+  ├── Parsear payload PHP-style  ✅ (feito)
+  ├── Extrair member_id corretamente  ⚠️ (pode falhar)
+  ├── INSERT com member_id correto  ❌ (pode ser null)
+  └── Trigger worker  ✅ (feito)
+
+FASE 3: Fix Worker
+bitrix24-worker
+  ├── Buscar integration por member_id  ✅ (feito)
+  ├── Obter bot_id de config  ❌ (não está no config)
+  ├── Extrair dialogId de data.PARAMS  ✅ (feito)
+  └── Chamar imbot.message.add com BOT_ID  ✅ (feito)
 ```
-im.message.add { DIALOG_ID: dialogId, MESSAGE: text }
-```
-Devia chamar:
-```
-imbot.message.add { BOT_ID: 10245, DIALOG_ID: dialogId, MESSAGE: text }
-```
-Sem `BOT_ID`, a mensagem não é associada ao bot e **não aparece** no chat.
 
-### Problema 2: Bot ID não está no integration correctamente
-O `bitrix_agent_id` é `null` na base de dados. O `bot_id` está guardado dentro do campo `config` como JSON (config->>'bot_id' = '10245'), mas o worker procura em `integration.bitrix_agent_id` (campo da tabela) em vez de `integration.config->>'bot_id'`.
+---
 
-### Problema 3: EVENT_WELCOME_MESSAGE_ERROR no registo
-Os logs mostram que numa instalação anterior houve `EVENT_WELCOME_MESSAGE_ERROR`. O URL do handler precisa de ser acessível publicamente e aceitar o POST do Bitrix24.
+## Plano por Fases
 
-### Problema 4: bitrix_agent_id em vez de usar config.bot_id
-O worker procura:
+### FASE 1 — Corrigir a Instalação (Fix crítico do bot_id)
+
+**Ficheiro:** `supabase/functions/bitrix24-install/index.ts`
+
+**Problema:** O update do `config` sobrescreve em vez de fazer merge. O campo `config` fica sem `bot_id`.
+
+**Fix:**
 ```typescript
-if (integration.bitrix_agent_id) { ... }
-```
-Mas o bot_id está em `integration.config.bot_id`, não em `integration.bitrix_agent_id`.
-
-### Problema 5: Payload ONIMBOTMESSAGEADD mal estruturado
-O Bitrix24 envia o evento com esta estrutura:
-```json
-{
-  "event": "ONIMBOTMESSAGEADD",
-  "data": {
-    "PARAMS": {
-      "BOT_ID": "10245",
-      "DIALOG_ID": "chat123",
-      "MESSAGE": "Olá",
-      "FROM_USER_ID": "5"
-    }
-  }
+// ANTES (errado - sobrescreve tudo):
+config: {
+  installed_at: new Date().toISOString(),
+  bot_id: finalBotId,
 }
-```
-O worker actual acede como `msgData.PARAMS` mas o payload guardado na queue é a estrutura completa incluindo o campo `data` como subchave.
 
-## Solução: 3 Ficheiros a Corrigir
-
-### Correcção 1: `bitrix24-worker/index.ts` - Função `handleBotMessage`
-
-Mudar de `im.message.add` para `imbot.message.add` com `BOT_ID`:
-
-```typescript
-// ERRADO (actual):
-await callBitrix(integration.client_endpoint, accessToken, "im.message.add", {
-  DIALOG_ID: dialogId || chatId,
-  MESSAGE: replyText,
-});
-
-// CORRECTO (a implementar):
-const botId = integration.config?.bot_id || integration.bitrix_agent_id;
-await callBitrix(integration.client_endpoint, accessToken, "imbot.message.add", {
-  BOT_ID: botId,           // ← OBRIGATÓRIO para o bot responder
-  DIALOG_ID: dialogId,
-  MESSAGE: replyText,
-});
-```
-
-Também corrigir a extracção do `dialogId` do payload, que está aninhado dentro de `data.PARAMS`:
-
-```typescript
-// O payload guardado na queue tem esta estrutura:
-// { event: "ONIMBOTMESSAGEADD", data: { PARAMS: { DIALOG_ID: "...", MESSAGE: "..." } }, auth: {...} }
-const msgData = payload.data || {};
-const params = msgData.PARAMS || {};
-const dialogId = params.DIALOG_ID || params.dialog_id || "";
-const messageText = params.MESSAGE || params.message || "";
-```
-
-### Correcção 2: `bitrix24-worker/index.ts` - Função `handleWelcome`
-
-Idem para a welcome message, usar `imbot.message.add`:
-
-```typescript
-const botId = integration.config?.bot_id;
-await callBitrix(integration.client_endpoint, accessToken, "imbot.message.add", {
-  BOT_ID: botId,
-  DIALOG_ID: dialogId,
-  MESSAGE: welcomeText,
-});
-```
-
-### Correcção 3: `bitrix24-install/index.ts` - Registo do Bot
-
-Adicionar verificação de erro `EVENT_WELCOME_MESSAGE_ERROR` e tentar registo sem `EVENT_WELCOME_MESSAGE` como fallback. Também guardar o `bot_id` directamente na coluna `bitrix_agent_id` da tabela para facilitar acesso:
-
-```typescript
-await supabase
+// DEPOIS (correto - merge com config existente):
+// 1. Primeiro buscar o config actual
+const { data: currentInt } = await supabase
   .from("bitrix24_integrations")
-  .update({
-    bitrix_agent_id: botId,   // ← guardar na coluna directa
-    config: {
-      ...existingConfig,
-      bot_id: botId,
-    },
-  })
-  .eq("id", integrationId);
+  .select("config")
+  .eq("id", integrationId)
+  .single();
+
+// 2. Fazer merge
+const currentConfig = currentInt?.config || {};
+await supabase.from("bitrix24_integrations").update({
+  bitrix_agent_id: finalBotId,
+  config: {
+    ...currentConfig,   // preservar installed_at, auth_payload, etc.
+    bot_id: finalBotId,
+    bot_registered_at: new Date().toISOString(),
+  },
+}).eq("id", integrationId);
 ```
 
-### Correcção 4: `bitrix24-events/index.ts` - Adicionar `ONIMBOTWELCOMEMESSAGE`
+**Também adicionar:** A resposta HTML com `BX24.installFinish()` (copiado do thothai) para garantir que a instalação fica completa no Bitrix24.
 
-O evento de boas-vindas do bot é `ONIMBOTWELCOMEMESSAGE` mas não está na lista de eventos suportados:
+**Também adicionar:** Binding do evento `OnImbotMessageAdd` (com maiúsculas como o Bitrix24 espera) para que os eventos do bot cheguem ao `bitrix24-events`.
 
+---
+
+### FASE 2 — Corrigir o Events Handler (Fix do member_id na queue)
+
+**Ficheiro:** `supabase/functions/bitrix24-events/index.ts`
+
+**Problema:** O `member_id` pode não ser extraído correctamente do payload, resultando em `member_id: null` na queue, e o worker não consegue encontrar a integração.
+
+**Fix:**
 ```typescript
-const SUPPORTED_EVENTS = [
-  "ONIMCONNECTORMESSAGEADD",
-  "ONIMBOTMESSAGEADD",
-  "ONIMBOTJOINOPEN",
-  "ONIMBOTWELCOMEMESSAGE",   // ← já existe, OK
-  "ONIMCONNECTORSTATUSDELETE",
-];
+// Extrair member_id de múltiplas fontes (como o thothai faz)
+const memberId = 
+  payload.auth?.member_id ||
+  payload.member_id ||
+  payload.data?.auth?.member_id ||
+  payload.data?.PARAMS?.member_id ||
+  null;
+
+// Inserir com member_id correctamente
+await supabase.from("bitrix_event_queue").insert({
+  event_type: event,
+  payload: payload,
+  member_id: memberId,  // CRÍTICO para o worker encontrar a integração
+  status: "pending"
+});
 ```
+
+**Também adicionar:** Logging detalhado (como o thothai) para poder ver o payload completo nos logs da função.
+
+---
+
+### FASE 3 — Corrigir o Worker (Fallback para bot_id)
+
+**Ficheiro:** `supabase/functions/bitrix24-worker/index.ts`
+
+**Problema:** O worker procura `integration.config.bot_id` mas esse campo não está guardado (problema da Fase 1). Também precisa de fallback para `integration.bitrix_agent_id`.
+
+**Fix — adicionar múltiplos fallbacks para bot_id:**
+```typescript
+const configData = integration.config as any || {};
+
+// Tentar obter bot_id de múltiplas fontes:
+const botId = 
+  configData.bot_id ||                    // config.bot_id (depois do fix da Fase 1)
+  integration.bitrix_agent_id ||           // coluna directa (depois do fix da Fase 1)
+  params.BOT_ID ||                         // payload do evento (Bitrix24 envia isto)
+  botIdFromPayload ||
+  null;
+```
+
+**Também adicionar:** Para o evento `ONIMBOTMESSAGEADD`, o Bitrix24 envia o `BOT_ID` no próprio payload — isso deve ser sempre usado como fallback mesmo que o config não tenha o bot_id.
+
+---
+
+### FASE 4 — Criar Edge Function `ai-process-bitrix24` (dedicada ao bot Bitrix24)
+
+**Ficheiro:** `supabase/functions/ai-process-bitrix24/index.ts` (novo)
+
+Esta é a **diferença mais importante** do thothai: ele tem uma função de IA dedicada ao contexto Bitrix24 que:
+
+1. Recebe `{ bitrix24_dialog_id, bitrix24_bot_id, content, integration_id, ... }`
+2. Busca o agente IA configurado
+3. Chama o modelo de IA (Gemini/GPT)
+4. Responde diretamente via `imbot.message.add` com o BOT_ID
+5. Salva o histórico de conversa associado ao `dialog_id`
+
+**O nosso worker actual** chama `ai-process-message` com `skip_send: true` e depois faz `imbot.message.add` separado. Isso funciona, mas é frágil. A abordagem do thothai é mais robusta porque o envio e o processamento ficam na mesma função.
+
+No entanto, para não fazer demasiadas mudanças de uma vez, podemos manter a abordagem actual do worker mas garantindo que o bot_id está disponível (Fase 3).
+
+---
+
+### FASE 5 — Corrigir a UI do Painel Bitrix24 (/bitrix24)
+
+Baseado nas screenshots do thothai, o painel dentro do Bitrix24 deve ter:
+- **Dashboard** com status de conexão
+- **Instâncias** (configuração de canais)
+- **Personas/Agentes** com indicador "Bot Ativo"
+- Botão "Republicar" para re-registar o bot
+
+Atualmente o nosso `/bitrix24` tem uma interface com tabs mas sem visibilidade do estado do bot.
+
+---
+
+## Ordem de Execução
+
+```text
+Fase 1 → Deploy → Reinstalar app no Bitrix24
+                     ↓
+Fase 2 → Deploy → Verificar logs da bitrix_event_queue
+                     ↓
+Fase 3 → Deploy → Testar envio de mensagem ao bot
+                     ↓
+Verificar se o bot responde no Bitrix24
+                     ↓
+Fase 4 (se necessário) → Criar ai-process-bitrix24 dedicada
+                     ↓
+Fase 5 → Melhorar UI do painel
+```
+
+---
 
 ## Ficheiros a Editar
 
-1. `supabase/functions/bitrix24-worker/index.ts` - Corrigir método de resposta do bot (`imbot.message.add` + `BOT_ID`) e extracção correcta do payload
-2. `supabase/functions/bitrix24-install/index.ts` - Guardar `bot_id` também em `bitrix_agent_id` (coluna directa) e melhorar tratamento de erros no registo
-3. Deploy das funções editadas
-4. Após deploy, reinstalar a aplicação no Bitrix24 para criar um bot fresco com ID correcto
+1. **`supabase/functions/bitrix24-install/index.ts`** — Fix do merge do config + HTML com BX24.installFinish() + binding correto de OnImbotMessageAdd
+2. **`supabase/functions/bitrix24-events/index.ts`** — Fix da extração do member_id + logging detalhado
+3. **`supabase/functions/bitrix24-worker/index.ts`** — Fix dos fallbacks do bot_id + usar BOT_ID do payload sempre que disponível
+4. **`supabase/functions/ai-process-bitrix24/index.ts`** *(novo)* — Função dedicada ao processamento IA no contexto Bitrix24 (Fase 4)
 
-## O que NÃO precisa de ser mudado
+## Resultado Esperado Após Implementação
 
-- `bitrix24-events/index.ts` está correcto - faz ACK rápido e enfileira
-- `bitrix24-connector-settings/index.ts` está correcto para o conector
-- A arquitectura da fila (`bitrix_event_queue`) está correcta
-
-## Resumo do Fluxo Correcto Após Fix
-
-```text
-Utilizador escreve no chat do Bitrix24 ao bot "Emmely AI"
-        ↓
-Bitrix24 dispara ONIMBOTMESSAGEADD
-        ↓
-bitrix24-events: enfileira em bitrix_event_queue + retorna "successfully"
-        ↓
-bitrix24-worker: processa ONIMBOTMESSAGEADD
-  - Extrai: params.DIALOG_ID, params.MESSAGE, params.BOT_ID
-  - Chama ai-process-message para gerar resposta IA
-  - Chama imbot.message.add com BOT_ID=10245 e DIALOG_ID
-        ↓
-Resposta aparece no chat do Bitrix24 como mensagem do bot "Emmely AI"
-```
+Após o deploy e reinstalação da app no Bitrix24:
+- O bot "Emmely AI" aparece nos Contactos do Bitrix24
+- Ao escrever ao bot, o evento chega à `bitrix_event_queue` com `member_id` correto
+- O worker processa o evento, encontra o `bot_id` (do payload OU do config)
+- A IA gera uma resposta e o bot responde via `imbot.message.add`
+- A mensagem aparece no chat do Bitrix24
