@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback, useRef } from "react";
+import { useBitrix24Theme } from "@/hooks/useBitrix24Theme";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -38,6 +39,7 @@ type AppView = "loading" | "dashboard" | "agentes" | "training" | "flows" | "pla
 
 // ==================== MAIN COMPONENT ====================
 const Bitrix24App = () => {
+  const { isDark } = useBitrix24Theme();
   const [view, setView] = useState<AppView>("loading");
   const [memberId, setMemberId] = useState<string | null>(null);
   const [domain, setDomain] = useState<string | null>(null);
@@ -150,7 +152,7 @@ const Bitrix24App = () => {
 
   if (view === "loading") {
     return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
+      <div className={cn("min-h-screen bg-background flex items-center justify-center", isDark && "dark")}>
         <div className="text-center">
           <Loader2 className="h-12 w-12 animate-spin text-primary mx-auto mb-4" />
           <p className="text-muted-foreground text-sm">Carregando Emmely Cloud...</p>
@@ -160,7 +162,7 @@ const Bitrix24App = () => {
   }
 
   return (
-    <div className="min-h-screen bg-background flex">
+    <div className={cn("min-h-screen bg-background flex", isDark && "dark")}>
       {/* ── Sidebar ── */}
       <aside className="w-56 border-r bg-card flex flex-col shrink-0">
         {/* Logo */}
