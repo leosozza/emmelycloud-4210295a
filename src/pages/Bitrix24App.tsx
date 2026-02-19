@@ -41,6 +41,7 @@ interface IntegrationData {
     domain: string;
     connector_registered: boolean;
     connector_active: boolean;
+    bitrix_agent_id: string | null;
     updated_at: string;
   } | null;
   channels: Array<{
@@ -178,7 +179,7 @@ const Bitrix24App = () => {
         </TabsList>
 
         <TabsContent value="connector">
-          <ConnectorTab integration={integration} channels={integrationData?.channels || []} logs={integrationData?.recent_logs || []} loading={loadingData} onResync={handleResync} />
+          <ConnectorTab integration={integration} channels={integrationData?.channels || []} logs={integrationData?.recent_logs || []} loading={loadingData} onResync={handleResync} onRefresh={() => memberId && fetchIntegrationData(memberId)} />
         </TabsContent>
         <TabsContent value="agentes"><AgentesTab /></TabsContent>
         <TabsContent value="training"><TrainingTab /></TabsContent>
@@ -191,13 +192,42 @@ const Bitrix24App = () => {
 };
 
 // ==================== CONNECTOR TAB ====================
-function ConnectorTab({ integration, channels, logs, loading, onResync }: {
+function ConnectorTab({ integration, channels, logs, loading, onResync, onRefresh }: {
   integration: IntegrationData["integration"];
   channels: IntegrationData["channels"];
   logs: IntegrationData["recent_logs"];
   loading: boolean;
   onResync: () => void;
+  onRefresh: () => void;
 }) {
+  const [agents, setAgents] = useState<any[]>([]);
+  const [selectedAgent, setSelectedAgent] = useState<string>(integration?.bitrix_agent_id || "");
+  const [savingAgent, setSavingAgent] = useState(false);
+
+  useEffect(() => {
+    fetch(`${SUPABASE_URL}/rest/v1/ai_agents?select=id,name,is_active,is_default&is_active=eq.true&order=name.asc`, {
+      headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` },
+    }).then(r => r.json()).then(setAgents).catch(console.error);
+  }, []);
+
+  useEffect(() => {
+    setSelectedAgent(integration?.bitrix_agent_id || "");
+  }, [integration?.bitrix_agent_id]);
+
+  const handleSaveAgent = async () => {
+    if (!integration?.id) return;
+    setSavingAgent(true);
+    try {
+      await fetch(`${SUPABASE_URL}/rest/v1/bitrix24_integrations?id=eq.${integration.id}`, {
+        method: "PATCH",
+        headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}`, "Content-Type": "application/json", Prefer: "return=minimal" },
+        body: JSON.stringify({ bitrix_agent_id: selectedAgent || null }),
+      });
+      onRefresh();
+    } catch (e) { console.error(e); }
+    setSavingAgent(false);
+  };
+
   return (
     <div className="space-y-3">
       <Card>
@@ -215,6 +245,40 @@ function ConnectorTab({ integration, channels, logs, loading, onResync }: {
           ) : (
             <p className="text-xs text-muted-foreground">Integração não encontrada. Reinstale o aplicativo.</p>
           )}
+        </CardContent>
+      </Card>
+
+      {/* Agent Selector for Open Channel */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-sm flex items-center gap-2">
+            <Bot className="h-4 w-4" /> Agente do Canal Aberto
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <p className="text-xs text-muted-foreground">
+            Selecione qual agente de IA responde automaticamente no canal aberto (Open Channel) do Bitrix24.
+          </p>
+          <Select value={selectedAgent} onValueChange={setSelectedAgent}>
+            <SelectTrigger>
+              <SelectValue placeholder="Selecionar agente..." />
+            </SelectTrigger>
+            <SelectContent>
+              {agents.map((a) => (
+                <SelectItem key={a.id} value={a.id}>
+                  {a.name} {a.is_default ? "(padrão)" : ""}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Button
+            onClick={handleSaveAgent}
+            disabled={savingAgent || selectedAgent === (integration?.bitrix_agent_id || "")}
+            className="w-full"
+            size="sm"
+          >
+            {savingAgent ? <><Loader2 className="h-3.5 w-3.5 mr-2 animate-spin" /> Salvando...</> : <><Save className="h-3.5 w-3.5 mr-2" /> Salvar Agente</>}
+          </Button>
         </CardContent>
       </Card>
 
