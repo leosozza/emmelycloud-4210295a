@@ -285,16 +285,29 @@ Deno.serve(async (req) => {
 
       console.log("[EVENTS] Bot message received:", messageText.substring(0, 100), "dialogId:", dialogId);
 
-      // Find default active agent
-      const { data: agent } = await supabase
-        .from("ai_agents")
-        .select("id, welcome_message")
-        .eq("is_default", true)
-        .eq("is_active", true)
-        .maybeSingle();
+      // Find agent: prefer bitrix_agent_id from integration, fallback to default
+      let agent: any = null;
+      if (integration.bitrix_agent_id) {
+        const { data: specificAgent } = await supabase
+          .from("ai_agents")
+          .select("id, welcome_message")
+          .eq("id", integration.bitrix_agent_id)
+          .eq("is_active", true)
+          .maybeSingle();
+        agent = specificAgent;
+      }
+      if (!agent) {
+        const { data: defaultAgent } = await supabase
+          .from("ai_agents")
+          .select("id, welcome_message")
+          .eq("is_default", true)
+          .eq("is_active", true)
+          .maybeSingle();
+        agent = defaultAgent;
+      }
 
       if (!agent) {
-        console.log("[EVENTS] No default active agent found, skipping bot reply");
+        console.log("[EVENTS] No active agent found, skipping bot reply");
         await debugLog(supabase, integration.id, "bot_no_agent", "inbound", { messageText: messageText.substring(0, 100) });
         return new Response(JSON.stringify({ ok: true, skipped: "no_agent" }), { headers: jsonHeaders });
       }
@@ -351,13 +364,26 @@ Deno.serve(async (req) => {
 
       console.log("[EVENTS] Welcome message requested, dialogId:", dialogId);
 
-      // Find default agent's welcome message
-      const { data: agent } = await supabase
-        .from("ai_agents")
-        .select("welcome_message")
-        .eq("is_default", true)
-        .eq("is_active", true)
-        .maybeSingle();
+      // Find agent: prefer bitrix_agent_id, fallback to default
+      let agent: any = null;
+      if (integration.bitrix_agent_id) {
+        const { data: specificAgent } = await supabase
+          .from("ai_agents")
+          .select("welcome_message")
+          .eq("id", integration.bitrix_agent_id)
+          .eq("is_active", true)
+          .maybeSingle();
+        agent = specificAgent;
+      }
+      if (!agent) {
+        const { data: defaultAgent } = await supabase
+          .from("ai_agents")
+          .select("welcome_message")
+          .eq("is_default", true)
+          .eq("is_active", true)
+          .maybeSingle();
+        agent = defaultAgent;
+      }
 
       const welcomeText = agent?.welcome_message || "Olá! Sou a Emmely, a sua assistente virtual. Como posso ajudar?";
 

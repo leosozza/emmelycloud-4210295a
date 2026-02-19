@@ -118,6 +118,7 @@ Deno.serve(async (req) => {
           domain: integration.domain,
           connector_registered: integration.connector_registered,
           connector_active: integration.connector_active,
+          bitrix_agent_id: integration.bitrix_agent_id || null,
           updated_at: integration.updated_at,
         } : null,
         channels: mappings.map((m: any) => ({
