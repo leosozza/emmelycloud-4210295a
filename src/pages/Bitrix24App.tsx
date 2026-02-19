@@ -92,14 +92,16 @@ const Bitrix24App = () => {
     setLoadingData(true);
     try {
       const res = await fetch(
-        `${SUPABASE_URL}/functions/v1/bitrix24-connector-settings?member_id=${mid}&format=json`
+        `${SUPABASE_URL}/functions/v1/bitrix24-connector-settings?member_id=${encodeURIComponent(mid)}&format=json`,
+        { headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` } }
       );
       if (res.ok) {
         const data = await res.json();
-        setIntegration(data.integration || null);
-        // Extract bot_id from config
-        const cfg = data.integration?.config || {};
-        setBotId(cfg.bot_id || null);
+        const int = data.integration || null;
+        setIntegration(int);
+        // Extract bot_id from config (stored as numeric string)
+        const cfg = int?.config || {};
+        setBotId(cfg.bot_id ? String(cfg.bot_id) : null);
       }
     } catch (e) {
       console.error("[BITRIX24] Fetch error:", e);

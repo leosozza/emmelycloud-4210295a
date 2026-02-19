@@ -90,16 +90,23 @@ Deno.serve(async (req) => {
   );
 
   try {
+    const url = new URL(req.url);
+    const isJsonRequest = url.searchParams.get("format") === "json";
     const contentType = req.headers.get("content-type") || "";
     const bodyText = await req.text();
     const data = parseBody(bodyText, contentType);
 
     console.log("[SETTINGS] Received:", JSON.stringify(data).substring(0, 500));
 
-    // Extract member_id from auth or top-level
-    const memberId = data.auth?.member_id || data.member_id;
+    // Extract member_id: from body (Bitrix24 POST) OR from URL query param (frontend GET)
+    const memberId = data.auth?.member_id || data.member_id || url.searchParams.get("member_id");
     if (!memberId) {
       console.log("[SETTINGS] No member_id found, returning successfully");
+      if (isJsonRequest) {
+        return new Response(JSON.stringify({ integration: null }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
       return new Response("successfully", {
         headers: { ...corsHeaders, "Content-Type": "text/plain; charset=utf-8" },
       });
@@ -237,13 +244,19 @@ Deno.serve(async (req) => {
       console.log("[SETTINGS] Connector activated successfully on LINE:", lineId);
     }
 
-    // Always return "successfully" - Bitrix24 expects this plain text response
+    // If JSON format requested (frontend call), return integration data
+    if (isJsonRequest) {
+      return new Response(JSON.stringify({ integration }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // Always return "successfully" for Bitrix24 POST calls
     return new Response("successfully", {
       headers: { ...corsHeaders, "Content-Type": "text/plain; charset=utf-8" },
     });
   } catch (error) {
     console.error("[SETTINGS] Error:", error);
-    // Even on error, try to return "successfully" to avoid Bitrix24 retries
     return new Response("successfully", {
       headers: { ...corsHeaders, "Content-Type": "text/plain; charset=utf-8" },
     });
