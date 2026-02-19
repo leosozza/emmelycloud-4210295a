@@ -1,20 +1,18 @@
 import { useEffect, useState, useCallback, useRef } from "react";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Separator } from "@/components/ui/separator";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import {
   ReactFlow, Controls, Background, MiniMap,
   useNodesState, useEdgesState, addEdge,
-  type Connection, type Node, MarkerType, Panel,
+  type Connection, type Node, MarkerType,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import CustomFlowNode from "@/components/flows/CustomFlowNode";
@@ -24,8 +22,10 @@ import { type FlowNodeType, type FlowNodeData, getDefaultData } from "@/componen
 import { useFlowHistory } from "@/hooks/useFlowHistory";
 import {
   Loader2, Bot, Send, RotateCcw, Sparkles, RefreshCw,
-  Zap, FileText, Globe, Upload, Brain, Trash2, Eye, Plus,
-  ArrowLeft, Save, Undo2, Redo2, Download, Copy,
+  FileText, Upload, Trash2, Plus, ArrowLeft, Save,
+  Undo2, Redo2, LayoutDashboard, Plug, BookOpen, GitBranch,
+  Settings, CreditCard, Zap, CheckCircle, XCircle, Activity,
+  Power, ExternalLink, AlertCircle, MessageSquare,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -34,83 +34,84 @@ const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
 
 const customNodeTypes = { custom: CustomFlowNode };
 
-interface IntegrationData {
-  integration: {
-    id: string;
-    member_id: string;
-    domain: string;
-    connector_registered: boolean;
-    connector_active: boolean;
-    bitrix_agent_id: string | null;
-    updated_at: string;
-  } | null;
-  channels: Array<{
-    channel: string;
-    line_id: number;
-    line_name: string;
-    is_active: boolean;
-  }>;
-  recent_logs: Array<{
-    event_type: string;
-    direction: string;
-    created_at: string;
-    error: string | null;
-  }>;
-}
+type AppView = "loading" | "dashboard" | "agentes" | "training" | "flows" | "playground" | "pagamentos";
 
 // ==================== MAIN COMPONENT ====================
-
 const Bitrix24App = () => {
-  const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
+  const [view, setView] = useState<AppView>("loading");
   const [memberId, setMemberId] = useState<string | null>(null);
-  const [integrationData, setIntegrationData] = useState<IntegrationData | null>(null);
+  const [domain, setDomain] = useState<string | null>(null);
+  const [integration, setIntegration] = useState<any | null>(null);
+  const [botId, setBotId] = useState<string | null>(null);
   const [loadingData, setLoadingData] = useState(false);
 
   useEffect(() => {
+    // Get URL params (for testing outside Bitrix24)
+    const params = new URLSearchParams(window.location.search);
+    const midParam = params.get("member_id");
+    const domainParam = params.get("DOMAIN");
+    if (domainParam) setDomain(domainParam);
+
     const script = document.createElement("script");
     script.src = "https://api.bitrix24.com/api/v1/";
     script.onload = () => {
       try {
-        // @ts-ignore
-        if (window.BX24) {
-          // @ts-ignore
-          window.BX24.init(() => {
-            // @ts-ignore
-            const auth = window.BX24.getAuth();
-            if (auth?.member_id) {
-              setMemberId(auth.member_id);
-              fetchIntegrationData(auth.member_id);
+        if ((window as any).BX24) {
+          (window as any).BX24.init(() => {
+            (window as any).BX24.fitWindow?.();
+            try { (window as any).BX24.installFinish?.(); } catch {}
+            const auth = (window as any).BX24.getAuth?.();
+            const mid = auth?.member_id || midParam;
+            if (mid) {
+              setMemberId(mid);
+              if (auth?.domain) setDomain(auth.domain);
+              fetchData(mid);
+            } else {
+              setView("dashboard");
             }
-            setStatus("ready");
           });
         } else {
-          setStatus("ready");
+          const mid = midParam || domainParam;
+          if (mid) { setMemberId(mid); fetchData(mid); }
+          else setView("dashboard");
         }
       } catch {
-        setStatus("ready");
+        setView("dashboard");
       }
     };
-    script.onerror = () => setStatus("ready");
+    script.onerror = () => {
+      const mid = midParam || domainParam;
+      if (mid) { setMemberId(mid); fetchData(mid); }
+      else setView("dashboard");
+    };
     document.head.appendChild(script);
     return () => { try { document.head.removeChild(script); } catch {} };
   }, []);
 
-  const fetchIntegrationData = useCallback(async (mid: string) => {
+  const fetchData = useCallback(async (mid: string) => {
     setLoadingData(true);
     try {
-      const res = await fetch(`${SUPABASE_URL}/functions/v1/bitrix24-connector-settings?member_id=${mid}&format=json`);
-      if (res.ok) setIntegrationData(await res.json());
+      const res = await fetch(
+        `${SUPABASE_URL}/functions/v1/bitrix24-connector-settings?member_id=${mid}&format=json`
+      );
+      if (res.ok) {
+        const data = await res.json();
+        setIntegration(data.integration || null);
+        // Extract bot_id from config
+        const cfg = data.integration?.config || {};
+        setBotId(cfg.bot_id || null);
+      }
     } catch (e) {
       console.error("[BITRIX24] Fetch error:", e);
     } finally {
       setLoadingData(false);
+      setView("dashboard");
     }
   }, []);
 
   const handleResync = async () => {
     if (!memberId) return;
-    // @ts-ignore
-    const auth = window.BX24?.getAuth?.();
+    const auth = (window as any).BX24?.getAuth?.();
     if (!auth) return;
     setLoadingData(true);
     try {
@@ -128,7 +129,7 @@ const Bitrix24App = () => {
           member_id: auth.member_id,
         }),
       });
-      await fetchIntegrationData(memberId);
+      await fetchData(memberId);
     } catch (e) {
       console.error("[BITRIX24] Resync error:", e);
     } finally {
@@ -136,66 +137,111 @@ const Bitrix24App = () => {
     }
   };
 
-  if (status === "loading") {
+  const navItems = [
+    { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
+    { id: "agentes", label: "Personas", icon: Bot },
+    { id: "training", label: "Treinamento", icon: BookOpen },
+    { id: "flows", label: "Fluxos", icon: GitBranch },
+    { id: "playground", label: "Playground", icon: MessageSquare },
+    { id: "pagamentos", label: "Pagamentos", icon: CreditCard },
+  ];
+
+  if (view === "loading") {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
         <div className="text-center">
-          <Loader2 className="h-8 w-8 animate-spin text-primary mx-auto mb-3" />
-          <p className="text-sm text-muted-foreground">Carregando...</p>
+          <Loader2 className="h-12 w-12 animate-spin text-primary mx-auto mb-4" />
+          <p className="text-muted-foreground text-sm">Carregando Emmely Cloud...</p>
         </div>
       </div>
     );
   }
 
-  const integration = integrationData?.integration;
-
   return (
-    <div className="min-h-screen bg-background">
-      {/* Header */}
-      <div className="bg-gradient-to-r from-[hsl(var(--primary))] via-[hsl(var(--accent))] to-[hsl(var(--primary))] p-4 rounded-b-2xl">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 bg-white/20 backdrop-blur-sm rounded-xl flex items-center justify-center text-white font-extrabold text-lg">
-            E
+    <div className="min-h-screen bg-background flex">
+      {/* ── Sidebar ── */}
+      <aside className="w-56 border-r bg-card flex flex-col shrink-0">
+        {/* Logo */}
+        <div className="p-4 border-b">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-lg flex items-center justify-center font-extrabold text-primary-foreground text-sm bg-primary">
+              E
+            </div>
+            <div>
+              <p className="font-bold text-sm leading-tight">Emmely Cloud</p>
+              <p className="text-[10px] text-muted-foreground">for Bitrix24</p>
+            </div>
           </div>
-          <div className="flex-1">
-            <h2 className="text-white font-bold text-base">Emmely Cloud</h2>
-            <Badge variant={integration?.connector_active ? "default" : "destructive"} className="text-[10px] mt-1">
-              <span className={cn("w-1.5 h-1.5 rounded-full mr-1.5", integration?.connector_active ? "bg-green-300" : "bg-red-300")} />
-              {integration?.connector_active ? "Ativo" : "Inativo"}
+          {domain && (
+            <Badge variant="secondary" className="mt-2.5 text-[10px] w-full justify-center truncate">
+              {domain}
             </Badge>
-          </div>
+          )}
         </div>
-      </div>
 
-      {/* Tabs */}
-      <Tabs defaultValue="connector" className="p-3">
-        <TabsList className="w-full grid grid-cols-6 h-auto">
-          <TabsTrigger value="connector" className="text-[11px] py-1.5">⚡ Conector</TabsTrigger>
-          <TabsTrigger value="agentes" className="text-[11px] py-1.5">🤖 Agentes</TabsTrigger>
-          <TabsTrigger value="training" className="text-[11px] py-1.5">📚 Training</TabsTrigger>
-          <TabsTrigger value="flows" className="text-[11px] py-1.5">🔀 Flows</TabsTrigger>
-          <TabsTrigger value="playground" className="text-[11px] py-1.5">💬 Playground</TabsTrigger>
-          <TabsTrigger value="pagamentos" className="text-[11px] py-1.5">💳 Pagamentos</TabsTrigger>
-        </TabsList>
+        {/* Nav */}
+        <nav className="flex-1 p-2 space-y-0.5">
+          {navItems.map((item) => (
+            <button
+              key={item.id}
+              onClick={() => setView(item.id as AppView)}
+              className={cn(
+                "w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors text-left",
+                view === item.id
+                  ? "bg-primary/10 text-primary font-semibold"
+                  : "text-muted-foreground hover:bg-muted hover:text-foreground"
+              )}
+            >
+              <item.icon className="h-4 w-4 shrink-0" />
+              {item.label}
+            </button>
+          ))}
+        </nav>
 
-        <TabsContent value="connector">
-          <ConnectorTab integration={integration} channels={integrationData?.channels || []} logs={integrationData?.recent_logs || []} loading={loadingData} onResync={handleResync} onRefresh={() => memberId && fetchIntegrationData(memberId)} />
-        </TabsContent>
-        <TabsContent value="agentes"><AgentesTab /></TabsContent>
-        <TabsContent value="training"><TrainingTab /></TabsContent>
-        <TabsContent value="flows"><FlowsTab /></TabsContent>
-        <TabsContent value="playground"><PlaygroundTab /></TabsContent>
-        <TabsContent value="pagamentos"><PagamentosTab /></TabsContent>
-      </Tabs>
+        {/* Footer */}
+        <div className="p-3 border-t space-y-2">
+          <div className="flex items-center gap-2">
+            <div className={cn("w-2 h-2 rounded-full shrink-0", integration ? "bg-green-500" : "bg-red-500")} />
+            <span className="text-xs text-muted-foreground truncate">
+              {integration ? "Conectado" : "Desconectado"}
+            </span>
+          </div>
+          {botId && (
+            <div className="flex items-center gap-2">
+              <Bot className="h-3 w-3 text-muted-foreground shrink-0" />
+              <span className="text-[10px] text-muted-foreground truncate">Bot ID: {botId}</span>
+            </div>
+          )}
+        </div>
+      </aside>
+
+      {/* ── Main Content ── */}
+      <main className="flex-1 overflow-auto">
+        {view === "dashboard" && (
+          <DashboardView
+            integration={integration}
+            botId={botId}
+            domain={domain}
+            loading={loadingData}
+            onResync={handleResync}
+            onRefresh={() => memberId && fetchData(memberId)}
+          />
+        )}
+        {view === "agentes" && <AgentesView botId={botId} integrationId={integration?.id} />}
+        {view === "training" && <TrainingView />}
+        {view === "flows" && <FlowsView />}
+        {view === "playground" && <PlaygroundView />}
+        {view === "pagamentos" && <PagamentosView />}
+      </main>
     </div>
   );
 };
 
-// ==================== CONNECTOR TAB ====================
-function ConnectorTab({ integration, channels, logs, loading, onResync, onRefresh }: {
-  integration: IntegrationData["integration"];
-  channels: IntegrationData["channels"];
-  logs: IntegrationData["recent_logs"];
+// ==================== DASHBOARD VIEW ====================
+function DashboardView({ integration, botId, domain, loading, onResync, onRefresh }: {
+  integration: any;
+  botId: string | null;
+  domain: string | null;
   loading: boolean;
   onResync: () => void;
   onRefresh: () => void;
@@ -203,16 +249,19 @@ function ConnectorTab({ integration, channels, logs, loading, onResync, onRefres
   const [agents, setAgents] = useState<any[]>([]);
   const [selectedAgent, setSelectedAgent] = useState<string>(integration?.bitrix_agent_id || "");
   const [savingAgent, setSavingAgent] = useState(false);
+  const [logs, setLogs] = useState<any[]>([]);
 
   useEffect(() => {
     fetch(`${SUPABASE_URL}/rest/v1/ai_agents?select=id,name,is_active,is_default&is_active=eq.true&order=name.asc`, {
       headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` },
     }).then(r => r.json()).then(setAgents).catch(console.error);
+
+    fetch(`${SUPABASE_URL}/rest/v1/bitrix24_debug_logs?select=event_type,direction,created_at,error&order=created_at.desc&limit=10`, {
+      headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` },
+    }).then(r => r.json()).then(setLogs).catch(console.error);
   }, []);
 
-  useEffect(() => {
-    setSelectedAgent(integration?.bitrix_agent_id || "");
-  }, [integration?.bitrix_agent_id]);
+  useEffect(() => { setSelectedAgent(integration?.bitrix_agent_id || ""); }, [integration?.bitrix_agent_id]);
 
   const handleSaveAgent = async () => {
     if (!integration?.id) return;
@@ -229,36 +278,124 @@ function ConnectorTab({ integration, channels, logs, loading, onResync, onRefres
   };
 
   return (
-    <div className="space-y-3">
+    <div className="p-6 space-y-6">
+      <div>
+        <h1 className="text-2xl font-bold">Dashboard</h1>
+        <p className="text-muted-foreground text-sm">Portal: {domain || integration?.domain || "—"}</p>
+      </div>
+
+      {/* Status Cards */}
+      <div className="grid grid-cols-2 gap-4">
+        <Card>
+          <CardContent className="pt-5">
+            <div className="flex items-center gap-3">
+              {integration ? (
+                <CheckCircle className="h-8 w-8 text-green-500" />
+              ) : (
+                <XCircle className="h-8 w-8 text-red-500" />
+              )}
+              <div>
+                <p className="text-sm font-semibold">Integração</p>
+                <p className="text-xs text-muted-foreground">{integration ? "Conectado" : "Desconectado"}</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardContent className="pt-5">
+            <div className="flex items-center gap-3">
+              {botId ? (
+                <Bot className="h-8 w-8 text-primary" />
+              ) : (
+                <Bot className="h-8 w-8 text-muted-foreground" />
+              )}
+              <div>
+                <p className="text-sm font-semibold">Bot IA</p>
+                <p className="text-xs text-muted-foreground">{botId ? `ID: ${botId}` : "Não registado"}</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardContent className="pt-5">
+            <div className="flex items-center gap-3">
+              {integration?.connector_registered ? (
+                <Plug className="h-8 w-8 text-green-500" />
+              ) : (
+                <Plug className="h-8 w-8 text-muted-foreground" />
+              )}
+              <div>
+                <p className="text-sm font-semibold">Conector</p>
+                <p className="text-xs text-muted-foreground">{integration?.connector_registered ? "Registado" : "Não registado"}</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardContent className="pt-5">
+            <div className="flex items-center gap-3">
+              <Activity className="h-8 w-8 text-primary" />
+              <div>
+                <p className="text-sm font-semibold">Últimos eventos</p>
+                <p className="text-xs text-muted-foreground">{logs.length} registos</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Início Rápido */}
       <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-sm">Status da Integração</CardTitle>
+        <CardHeader>
+          <CardTitle className="text-base">Início Rápido</CardTitle>
+          <CardDescription>Configure o bot para responder automaticamente</CardDescription>
         </CardHeader>
-        <CardContent className="space-y-2">
-          {integration ? (
-            <>
-              <InfoRow label="Portal" value={integration.domain || integration.member_id} />
-              <InfoRow label="Conector" value={integration.connector_registered ? "✅ Registado" : "❌ Não registado"} />
-              <InfoRow label="Status" value={integration.connector_active ? "🟢 Ativo" : "🔴 Inativo"} />
-              <InfoRow label="Última atualização" value={new Date(integration.updated_at).toLocaleString()} />
-            </>
-          ) : (
-            <p className="text-xs text-muted-foreground">Integração não encontrada. Reinstale o aplicativo.</p>
-          )}
+        <CardContent className="space-y-4">
+          <div className="space-y-1">
+            <div className="flex items-center gap-3 p-3 rounded-lg bg-muted/50">
+              <div className={cn("w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold", integration ? "bg-green-500 text-white" : "bg-muted-foreground/30 text-muted-foreground")}>1</div>
+              <div>
+                <p className="text-sm font-medium">Instalar o App</p>
+                <p className="text-xs text-muted-foreground">App instalado no Bitrix24 {integration ? "✅" : "⏳"}</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-3 p-3 rounded-lg bg-muted/50">
+              <div className={cn("w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold", botId ? "bg-green-500 text-white" : "bg-muted-foreground/30 text-muted-foreground")}>2</div>
+              <div>
+                <p className="text-sm font-medium">Registar Bot IA</p>
+                <p className="text-xs text-muted-foreground">Bot Emmely AI {botId ? `registado (ID: ${botId}) ✅` : "não encontrado ❌"}</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-3 p-3 rounded-lg bg-muted/50">
+              <div className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold bg-muted-foreground/30 text-muted-foreground">3</div>
+              <div>
+                <p className="text-sm font-medium">Configurar Persona</p>
+                <p className="text-xs text-muted-foreground">Acesse a aba Personas e selecione um agente IA</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-3 p-3 rounded-lg bg-muted/50">
+              <div className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold bg-muted-foreground/30 text-muted-foreground">4</div>
+              <div>
+                <p className="text-sm font-medium">Vinculação ao Contact Center</p>
+                <p className="text-xs text-muted-foreground">No Bitrix24 → Contact Center → Emmely Messages</p>
+              </div>
+            </div>
+          </div>
         </CardContent>
       </Card>
 
-      {/* Agent Selector for Open Channel */}
+      {/* Agente do Canal Aberto */}
       <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-sm flex items-center gap-2">
+        <CardHeader>
+          <CardTitle className="text-base flex items-center gap-2">
             <Bot className="h-4 w-4" /> Agente do Canal Aberto
           </CardTitle>
+          <CardDescription>Selecione qual agente IA responde automaticamente no Open Channel</CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
-          <p className="text-xs text-muted-foreground">
-            Selecione qual agente de IA responde automaticamente no canal aberto (Open Channel) do Bitrix24.
-          </p>
           <Select value={selectedAgent} onValueChange={setSelectedAgent}>
             <SelectTrigger>
               <SelectValue placeholder="Selecionar agente..." />
@@ -277,88 +414,54 @@ function ConnectorTab({ integration, channels, logs, loading, onResync, onRefres
             className="w-full"
             size="sm"
           >
-            {savingAgent ? <><Loader2 className="h-3.5 w-3.5 mr-2 animate-spin" /> Salvando...</> : <><Save className="h-3.5 w-3.5 mr-2" /> Salvar Agente</>}
+            {savingAgent ? <><Loader2 className="h-3.5 w-3.5 mr-2 animate-spin" />Salvando...</> : <><Save className="h-3.5 w-3.5 mr-2" />Salvar Agente</>}
           </Button>
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-sm">Canais Configurados</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {channels.length > 0 ? (
-            <div className="space-y-1.5">
-              {channels.map((ch, i) => (
-                <div key={i} className="flex items-center justify-between p-2 bg-muted rounded-lg text-xs">
-                  <div className="flex items-center gap-2">
-                    <span>{ch.channel === "whatsapp" ? "📱" : "📸"}</span>
-                    <span className="font-medium">{ch.channel === "whatsapp" ? "WhatsApp" : "Instagram"}</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-muted-foreground">{ch.line_name || `Line ${ch.line_id}`}</span>
-                    <span className={cn("w-2 h-2 rounded-full", ch.is_active ? "bg-green-500" : "bg-red-500")} />
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <p className="text-xs text-muted-foreground">Nenhum canal mapeado.</p>
-          )}
-        </CardContent>
-      </Card>
-
-      <Button onClick={onResync} disabled={loading} className="w-full">
-        {loading ? <><Loader2 className="h-3.5 w-3.5 mr-2 animate-spin" /> Sincronizando...</> : <><RefreshCw className="h-3.5 w-3.5 mr-2" /> Re-sincronizar Conector</>}
+      <Button onClick={onResync} disabled={loading} className="w-full" variant="outline">
+        {loading ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Sincronizando...</> : <><RefreshCw className="h-4 w-4 mr-2" />Re-sincronizar Conector</>}
       </Button>
 
+      {/* Logs */}
       {logs.length > 0 && (
         <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm">Últimos Eventos</CardTitle>
+          <CardHeader>
+            <CardTitle className="text-base">Últimos Eventos</CardTitle>
           </CardHeader>
           <CardContent>
-            <ScrollArea className="max-h-48">
-              {logs.map((log, i) => (
-                <div key={i} className="flex items-center justify-between py-1.5 border-b border-border/50 last:border-0 text-xs">
-                  <div className="flex items-center gap-1.5">
-                    <span className="w-5 h-5 rounded bg-muted flex items-center justify-center text-[10px]">
-                      {log.direction === "inbound" ? "📥" : "📤"}
-                    </span>
-                    <span>{log.event_type}</span>
-                    {log.error && <span className="text-destructive text-[10px]">⚠️</span>}
+            <ScrollArea className="h-48">
+              <div className="space-y-1">
+                {logs.map((log, i) => (
+                  <div key={i} className="flex items-center justify-between py-2 border-b border-border/50 last:border-0 text-xs">
+                    <div className="flex items-center gap-2">
+                      <span>{log.direction === "inbound" ? "📥" : "📤"}</span>
+                      <span className="font-medium">{log.event_type}</span>
+                      {log.error && <span className="text-destructive text-[10px]">⚠️</span>}
+                    </div>
+                    <span className="text-muted-foreground">{new Date(log.created_at).toLocaleTimeString()}</span>
                   </div>
-                  <span className="text-muted-foreground text-[10px]">{new Date(log.created_at).toLocaleTimeString()}</span>
-                </div>
-              ))}
+                ))}
+              </div>
             </ScrollArea>
           </CardContent>
         </Card>
       )}
-
-      <div className="bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded-xl p-3 text-xs text-blue-800 dark:text-blue-200">
-        ℹ️ Para gerenciar conversas, acesse o <strong>Contact Center</strong> do Bitrix24 e selecione o conector <strong>Emmely Messages</strong>.
-      </div>
     </div>
   );
 }
 
-function InfoRow({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex justify-between py-1.5 border-b border-border/50 text-xs">
-      <span className="text-muted-foreground font-medium">{label}</span>
-      <span>{value}</span>
-    </div>
-  );
-}
-
-// ==================== AGENTES TAB ====================
-function AgentesTab() {
+// ==================== AGENTES / PERSONAS VIEW ====================
+function AgentesView({ botId, integrationId }: { botId: string | null; integrationId?: string }) {
   const [agents, setAgents] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState<any | null>(null);
-  const [form, setForm] = useState({ name: "", system_prompt: "", ai_model: "google/gemini-3-flash-preview", temperature: 0.7, welcome_message: "", fallback_message: "Desculpe, não consegui processar a sua mensagem." });
+  const [form, setForm] = useState({
+    name: "", system_prompt: "", ai_model: "google/gemini-3-flash-preview",
+    temperature: 0.7, welcome_message: "", fallback_message: "Desculpe, não consegui processar a sua mensagem."
+  });
   const [saving, setSaving] = useState(false);
+  const [republishing, setRepublishing] = useState<string | null>(null);
 
   const fetchAgents = async () => {
     setLoading(true);
@@ -376,7 +479,11 @@ function AgentesTab() {
   const handleSave = async () => {
     setSaving(true);
     try {
-      const body = { name: form.name, system_prompt: form.system_prompt, ai_model: form.ai_model, temperature: form.temperature, welcome_message: form.welcome_message, fallback_message: form.fallback_message, ai_provider: "lovable", agent_type: "text" };
+      const body = {
+        name: form.name, system_prompt: form.system_prompt, ai_model: form.ai_model,
+        temperature: form.temperature, welcome_message: form.welcome_message,
+        fallback_message: form.fallback_message, ai_provider: "lovable", agent_type: "text"
+      };
       const url = editing?.id ? `${SUPABASE_URL}/rest/v1/ai_agents?id=eq.${editing.id}` : `${SUPABASE_URL}/rest/v1/ai_agents`;
       await fetch(url, {
         method: editing?.id ? "PATCH" : "POST",
@@ -403,107 +510,173 @@ function AgentesTab() {
     fetchAgents();
   };
 
+  const handleRepublish = async (id: string) => {
+    setRepublishing(id);
+    // Link this agent as the active bot agent in the integration
+    if (integrationId) {
+      await fetch(`${SUPABASE_URL}/rest/v1/bitrix24_integrations?id=eq.${integrationId}`, {
+        method: "PATCH",
+        headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}`, "Content-Type": "application/json", Prefer: "return=minimal" },
+        body: JSON.stringify({ bitrix_agent_id: id }),
+      });
+    }
+    await handleSetDefault(id);
+    setRepublishing(null);
+  };
+
+  const handleDelete = async (id: string) => {
+    if (!confirm("Remover esta persona?")) return;
+    await fetch(`${SUPABASE_URL}/rest/v1/ai_agents?id=eq.${id}`, {
+      method: "DELETE",
+      headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` },
+    });
+    fetchAgents();
+  };
+
   const startEdit = (agent: any) => {
     setEditing(agent);
-    setForm({ name: agent.name || "", system_prompt: agent.system_prompt || "", ai_model: agent.ai_model || "google/gemini-3-flash-preview", temperature: agent.temperature || 0.7, welcome_message: agent.welcome_message || "", fallback_message: agent.fallback_message || "" });
+    setForm({
+      name: agent.name || "", system_prompt: agent.system_prompt || "",
+      ai_model: agent.ai_model || "google/gemini-3-flash-preview",
+      temperature: agent.temperature || 0.7, welcome_message: agent.welcome_message || "",
+      fallback_message: agent.fallback_message || ""
+    });
   };
 
   return (
-    <div className="space-y-3">
-      <Button onClick={() => { setEditing({}); setForm({ name: "", system_prompt: "", ai_model: "google/gemini-3-flash-preview", temperature: 0.7, welcome_message: "", fallback_message: "Desculpe, não consegui processar a sua mensagem." }); }} className="w-full">
-        <Plus className="h-3.5 w-3.5 mr-2" /> Novo Agente
-      </Button>
+    <div className="p-6 space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold">Personas</h1>
+          <p className="text-muted-foreground text-sm">Configure a personalidade do seu bot</p>
+        </div>
+        <Button onClick={() => { setEditing({}); setForm({ name: "", system_prompt: "", ai_model: "google/gemini-3-flash-preview", temperature: 0.7, welcome_message: "", fallback_message: "Desculpe, não consegui processar a sua mensagem." }); }}>
+          <Plus className="h-4 w-4 mr-2" /> Nova Persona
+        </Button>
+      </div>
 
       {editing && (
         <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm">{editing.id ? "✏️ Editar Agente" : "✨ Novo Agente"}</CardTitle>
+          <CardHeader>
+            <CardTitle className="text-base">{editing.id ? "✏️ Editar Persona" : "✨ Nova Persona"}</CardTitle>
           </CardHeader>
-          <CardContent className="space-y-3">
-            <div><Label className="text-xs">Nome</Label><Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Nome do agente" /></div>
+          <CardContent className="space-y-4">
             <div>
-              <Label className="text-xs">Modelo IA</Label>
+              <Label>Nome da Persona</Label>
+              <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Ex: Emmely AI" className="mt-1" />
+            </div>
+            <div>
+              <Label>Prompt do Sistema</Label>
+              <Textarea
+                value={form.system_prompt}
+                onChange={(e) => setForm({ ...form, system_prompt: e.target.value })}
+                rows={4}
+                placeholder="Você é uma assistente virtual..."
+                className="mt-1"
+              />
+            </div>
+            <div>
+              <Label>Mensagem de Boas-vindas</Label>
+              <Textarea value={form.welcome_message} onChange={(e) => setForm({ ...form, welcome_message: e.target.value })} rows={2} className="mt-1" placeholder="Olá! Como posso ajudar?" />
+            </div>
+            <div>
+              <Label>Modelo IA</Label>
               <Select value={form.ai_model} onValueChange={(v) => setForm({ ...form, ai_model: v })}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="google/gemini-3-flash-preview">Gemini 3 Flash</SelectItem>
+                  <SelectItem value="google/gemini-3-flash-preview">Gemini Flash (rápido)</SelectItem>
                   <SelectItem value="google/gemini-2.5-flash">Gemini 2.5 Flash</SelectItem>
                   <SelectItem value="google/gemini-2.5-pro">Gemini 2.5 Pro</SelectItem>
                   <SelectItem value="openai/gpt-5-mini">GPT-5 Mini</SelectItem>
-                  <SelectItem value="openai/gpt-5">GPT-5</SelectItem>
                 </SelectContent>
               </Select>
             </div>
-            <div>
-              <Label className="text-xs">Temperatura ({form.temperature})</Label>
-              <input type="range" min="0" max="1" step="0.1" value={form.temperature} onChange={(e) => setForm({ ...form, temperature: parseFloat(e.target.value) })} className="w-full mt-1" />
-            </div>
-            <div><Label className="text-xs">System Prompt</Label><Textarea value={form.system_prompt} onChange={(e) => setForm({ ...form, system_prompt: e.target.value })} rows={5} placeholder="Instruções para o agente..." /></div>
-            <div><Label className="text-xs">Mensagem de Boas-Vindas</Label><Input value={form.welcome_message} onChange={(e) => setForm({ ...form, welcome_message: e.target.value })} /></div>
-            <div><Label className="text-xs">Mensagem de Fallback</Label><Input value={form.fallback_message} onChange={(e) => setForm({ ...form, fallback_message: e.target.value })} /></div>
-            <div className="flex gap-2">
-              <Button onClick={handleSave} disabled={saving || !form.name} className="flex-1">{saving ? "Salvando..." : "💾 Salvar"}</Button>
+            <div className="flex gap-2 pt-2">
+              <Button onClick={handleSave} disabled={saving} className="flex-1">
+                {saving ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Salvando...</> : <><Save className="h-4 w-4 mr-2" />Salvar</>}
+              </Button>
               <Button variant="outline" onClick={() => setEditing(null)} className="flex-1">Cancelar</Button>
             </div>
           </CardContent>
         </Card>
       )}
 
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-sm">Agentes Configurados</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {loading ? (
-            <div className="flex justify-center py-6"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>
-          ) : agents.length === 0 ? (
-            <p className="text-xs text-muted-foreground text-center py-4">Nenhum agente criado.</p>
-          ) : (
-            <div className="space-y-2">
-              {agents.map((a) => (
-                <div key={a.id} className="flex items-center justify-between p-3 bg-muted rounded-xl">
-                  <div className="flex items-center gap-3 flex-1 min-w-0">
-                    <div className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center text-primary font-bold text-sm shrink-0">
-                      {a.name?.charAt(0)?.toUpperCase() || "A"}
+      {loading ? (
+        <div className="flex justify-center py-12"><Loader2 className="h-8 w-8 animate-spin text-muted-foreground" /></div>
+      ) : agents.length === 0 ? (
+        <Card>
+          <CardContent className="py-12 text-center text-muted-foreground">
+            <Bot className="h-12 w-12 mx-auto mb-4 opacity-30" />
+            <p>Nenhuma persona criada</p>
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="grid gap-4">
+          {agents.map((agent) => (
+            <Card key={agent.id} className={cn("transition-all", agent.is_default && "border-primary/50 shadow-sm")}>
+              <CardContent className="pt-5">
+                <div className="flex items-start justify-between gap-4">
+                  <div className="flex items-start gap-3 flex-1 min-w-0">
+                    <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
+                      <Bot className="h-5 w-5 text-primary" />
                     </div>
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-1.5 flex-wrap">
-                        <span className="font-semibold text-sm truncate">{a.name}</span>
-                        {a.is_default && <Badge variant="secondary" className="text-[9px]">⭐ Default</Badge>}
-                        {!a.is_active && <Badge variant="destructive" className="text-[9px]">Inativo</Badge>}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <p className="font-semibold text-base">{agent.name}</p>
+                        {agent.is_default && botId && (
+                          <Badge className="text-[10px] bg-green-500/10 text-green-700 border-green-200 dark:text-green-400 dark:border-green-800">
+                            Bot Ativo
+                          </Badge>
+                        )}
+                        {agent.is_default && !botId && (
+                          <Badge variant="secondary" className="text-[10px]">Padrão</Badge>
+                        )}
                       </div>
-                      <div className="flex gap-1 mt-1">
-                        <Badge variant="outline" className="text-[9px]">{a.ai_model?.split("/").pop()}</Badge>
-                        <Badge variant="outline" className="text-[9px]">T={a.temperature}</Badge>
+                      <p className="text-sm text-muted-foreground mt-0.5 truncate">{agent.description || "Sem descrição"}</p>
+                      <div className="flex gap-3 mt-2 text-xs text-muted-foreground">
+                        <span>{agent.ai_model?.split("/")[1] || agent.ai_model}</span>
                       </div>
                     </div>
                   </div>
-                  <div className="flex gap-1">
-                    {!a.is_default && <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => handleSetDefault(a.id)} title="Definir default">⭐</Button>}
-                    <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => startEdit(a)} title="Editar">✏️</Button>
+                  <div className="flex flex-col gap-2 shrink-0">
+                    <Button
+                      size="sm"
+                      variant={agent.is_default ? "default" : "outline"}
+                      className="h-8 text-xs"
+                      onClick={() => handleRepublish(agent.id)}
+                      disabled={republishing === agent.id}
+                    >
+                      {republishing === agent.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <><Power className="h-3 w-3 mr-1.5" />Republicar</>}
+                    </Button>
+                    <Button size="sm" variant="outline" className="h-8 text-xs" onClick={() => startEdit(agent)}>
+                      Editar
+                    </Button>
+                    <Button size="sm" variant="ghost" className="h-8 text-xs text-destructive hover:text-destructive" onClick={() => handleDelete(agent.id)}>
+                      <Trash2 className="h-3 w-3 mr-1.5" />Remover
+                    </Button>
                   </div>
                 </div>
-              ))}
-            </div>
-          )}
-        </CardContent>
-      </Card>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
 
-// ==================== TRAINING TAB ====================
-function TrainingTab() {
+// ==================== TRAINING VIEW ====================
+function TrainingView() {
   const [docs, setDocs] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState({ title: "", content: "", source_type: "text", source_url: "" });
-  const [saving, setSaving] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [text, setText] = useState("");
+  const [title, setTitle] = useState("");
 
   const fetchDocs = async () => {
     setLoading(true);
     try {
-      const res = await fetch(`${SUPABASE_URL}/rest/v1/knowledge_documents?select=*&order=created_at.desc&limit=50`, {
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/knowledge_documents?select=*&order=created_at.desc`, {
         headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` },
       });
       if (res.ok) setDocs(await res.json());
@@ -513,116 +686,113 @@ function TrainingTab() {
 
   useEffect(() => { fetchDocs(); }, []);
 
-  const handleSave = async () => {
-    if (!form.title) return;
-    setSaving(true);
+  const handleUpload = async () => {
+    if (!title.trim() || !text.trim()) return;
+    setUploading(true);
     try {
-      const body: any = { title: form.title, source_type: form.source_type, status: "ready" };
-      if (form.source_type === "text") body.content = form.content;
-      if (form.source_type === "url") body.source_url = form.source_url;
-
       await fetch(`${SUPABASE_URL}/rest/v1/knowledge_documents`, {
         method: "POST",
         headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}`, "Content-Type": "application/json", Prefer: "return=minimal" },
-        body: JSON.stringify(body),
+        body: JSON.stringify({ title, content: text, source_type: "text", status: "ready" }),
       });
-
-      if (form.source_type === "text" && form.content) {
-        const docRes = await fetch(`${SUPABASE_URL}/rest/v1/knowledge_documents?select=id&order=created_at.desc&limit=1`, {
-          headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` },
-        });
-        const newDocs = await docRes.json();
-        if (newDocs[0]) {
-          await fetch(`${SUPABASE_URL}/rest/v1/knowledge_chunks`, {
-            method: "POST",
-            headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}`, "Content-Type": "application/json", Prefer: "return=minimal" },
-            body: JSON.stringify({ document_id: newDocs[0].id, content: form.content, chunk_index: 0, tokens_count: Math.ceil(form.content.length / 4) }),
-          });
-        }
-      }
-
-      setShowForm(false);
-      setForm({ title: "", content: "", source_type: "text", source_url: "" });
+      setTitle("");
+      setText("");
       fetchDocs();
     } catch (e) { console.error(e); }
-    setSaving(false);
+    setUploading(false);
+  };
+
+  const handleDelete = async (id: string) => {
+    await fetch(`${SUPABASE_URL}/rest/v1/knowledge_documents?id=eq.${id}`, {
+      method: "DELETE",
+      headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` },
+    });
+    fetchDocs();
   };
 
   return (
-    <div className="space-y-3">
-      <Button onClick={() => setShowForm(!showForm)} variant={showForm ? "secondary" : "default"} className="w-full">
-        {showForm ? "✕ Cancelar" : <><Plus className="h-3.5 w-3.5 mr-2" /> Novo Documento</>}
-      </Button>
-
-      {showForm && (
-        <Card>
-          <CardHeader className="pb-3"><CardTitle className="text-sm">📝 Adicionar Conhecimento</CardTitle></CardHeader>
-          <CardContent className="space-y-3">
-            <div><Label className="text-xs">Título</Label><Input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} placeholder="Título do documento" /></div>
-            <div>
-              <Label className="text-xs">Tipo</Label>
-              <Select value={form.source_type} onValueChange={(v) => setForm({ ...form, source_type: v })}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="text">Texto</SelectItem>
-                  <SelectItem value="url">URL</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            {form.source_type === "text" && (
-              <div><Label className="text-xs">Conteúdo</Label><Textarea value={form.content} onChange={(e) => setForm({ ...form, content: e.target.value })} rows={6} placeholder="Cole aqui o conteúdo de treino..." /></div>
-            )}
-            {form.source_type === "url" && (
-              <div><Label className="text-xs">URL</Label><Input value={form.source_url} onChange={(e) => setForm({ ...form, source_url: e.target.value })} placeholder="https://..." /></div>
-            )}
-            <Button onClick={handleSave} disabled={saving || !form.title} className="w-full">{saving ? "Salvando..." : "💾 Salvar Documento"}</Button>
-          </CardContent>
-        </Card>
-      )}
+    <div className="p-6 space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold">Treinamento do Bot</h1>
+          <p className="text-muted-foreground text-sm">Adicione conhecimento para o seu bot</p>
+        </div>
+      </div>
 
       <Card>
-        <CardHeader className="pb-3"><CardTitle className="text-sm">📚 Documentos de Conhecimento</CardTitle></CardHeader>
-        <CardContent>
-          {loading ? (
-            <div className="flex justify-center py-6"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>
-          ) : docs.length === 0 ? (
-            <p className="text-xs text-muted-foreground text-center py-4">Nenhum documento adicionado.</p>
-          ) : (
-            <div className="space-y-1.5">
-              {docs.map((d) => (
-                <div key={d.id} className="p-2.5 bg-muted rounded-lg text-xs">
-                  <div className="flex justify-between items-center">
-                    <span className="font-medium truncate">{d.title}</span>
-                    <div className="flex gap-1 items-center">
-                      <Badge variant="outline" className="text-[9px]">{d.source_type === "url" ? "🔗 URL" : "📝 Texto"}</Badge>
-                      <Badge variant={d.status === "ready" ? "default" : "secondary"} className="text-[9px]">{d.status}</Badge>
-                    </div>
-                  </div>
-                  {d.chunks_count > 0 && <p className="text-muted-foreground text-[10px] mt-1">{d.chunks_count} chunks</p>}
-                </div>
-              ))}
-            </div>
-          )}
+        <CardHeader>
+          <CardTitle className="text-base flex items-center gap-2">
+            <FileText className="h-4 w-4" /> Novo Documento
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div>
+            <Label>Título</Label>
+            <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Nome do documento..." className="mt-1" />
+          </div>
+          <div>
+            <Label>Conteúdo</Label>
+            <Textarea value={text} onChange={(e) => setText(e.target.value)} rows={5} placeholder="Cole o texto aqui..." className="mt-1" />
+          </div>
+          <Button onClick={handleUpload} disabled={uploading || !title.trim() || !text.trim()} className="w-full">
+            {uploading ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Salvando...</> : <><Upload className="h-4 w-4 mr-2" />Adicionar Documento</>}
+          </Button>
         </CardContent>
       </Card>
+
+      <div>
+        <h2 className="text-lg font-semibold mb-3">Base de Conhecimento</h2>
+        {loading ? (
+          <div className="flex justify-center py-8"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
+        ) : docs.length === 0 ? (
+          <Card>
+            <CardContent className="py-12 text-center text-muted-foreground">
+              <BookOpen className="h-12 w-12 mx-auto mb-4 opacity-30" />
+              <p>Nenhum documento adicionado</p>
+            </CardContent>
+          </Card>
+        ) : (
+          <div className="space-y-3">
+            {docs.map((d) => (
+              <Card key={d.id}>
+                <CardContent className="pt-4 pb-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-3 flex-1 min-w-0">
+                      <div className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
+                        <FileText className="h-4 w-4 text-primary" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="font-medium text-sm truncate">{d.title}</p>
+                        <p className="text-xs text-muted-foreground mt-0.5">
+                          {d.source_type} • {d.chunks_count || 0} chunks
+                        </p>
+                      </div>
+                    </div>
+                    <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:text-destructive shrink-0" onClick={() => handleDelete(d.id)}>
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
 
-// ==================== FLOWS TAB (with ReactFlow editor) ====================
-function FlowsTab() {
+// ==================== FLOWS VIEW ====================
+function FlowsView() {
   const [flows, setFlows] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedFlow, setSelectedFlow] = useState<any | null>(null);
   const [saving, setSaving] = useState(false);
 
-  // Editor state
   const [nodes, setNodes, onNodesChange] = useNodesState([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
-
   const { pushState, undo, redo, canUndo, canRedo } = useFlowHistory(nodes, edges, setNodes as any, setEdges as any);
-
   const selectedNodeData = selectedNodeId ? (nodes.find(n => n.id === selectedNodeId)?.data as unknown as FlowNodeData | null) : null;
 
   const fetchFlows = async () => {
@@ -650,8 +820,7 @@ function FlowsTab() {
   const openFlow = (flow: any) => {
     setSelectedFlow(flow);
     const convertedNodes = (flow.nodes || []).map((n: any) => ({
-      ...n,
-      type: n.type === "default" ? "custom" : (n.type || "custom"),
+      ...n, type: n.type === "default" ? "custom" : (n.type || "custom"),
       data: n.data?.nodeType ? n.data : { nodeType: n.data?.nodeType || "message", ...n.data },
     }));
     setNodes(convertedNodes);
@@ -667,9 +836,7 @@ function FlowsTab() {
 
   const addNode = useCallback((type: FlowNodeType, position?: { x: number; y: number }) => {
     const id = `node_${Date.now()}`;
-    const pos = position || { x: 250, y: (nodes.length + 1) * 120 };
-    const data = getDefaultData(type);
-    const newNode: Node = { id, type: "custom", position: pos, data: data as any };
+    const newNode: Node = { id, type: "custom", position: position || { x: 250, y: (nodes.length + 1) * 120 }, data: getDefaultData(type) as any };
     setNodes((nds) => [...nds, newNode]);
     setTimeout(pushState, 0);
   }, [nodes.length, setNodes, pushState]);
@@ -683,11 +850,7 @@ function FlowsTab() {
     addNode(type, { x: event.clientX - bounds.left, y: event.clientY - bounds.top });
   }, [addNode]);
 
-  const onDragOver = useCallback((event: React.DragEvent) => {
-    event.preventDefault();
-    event.dataTransfer.dropEffect = "move";
-  }, []);
-
+  const onDragOver = useCallback((event: React.DragEvent) => { event.preventDefault(); event.dataTransfer.dropEffect = "move"; }, []);
   const onNodeClick = useCallback((_: any, node: Node) => setSelectedNodeId(node.id), []);
   const onPaneClick = useCallback(() => setSelectedNodeId(null), []);
 
@@ -718,102 +881,98 @@ function FlowsTab() {
     setSaving(false);
   };
 
-  // Editor view
   if (selectedFlow) {
     return (
-      <div className="flex flex-col" style={{ height: "calc(100vh - 160px)" }}>
-        <div className="flex items-center justify-between p-2 border-b bg-card shrink-0">
+      <div className="flex flex-col h-screen">
+        <div className="flex items-center justify-between p-3 border-b bg-card shrink-0">
           <div className="flex items-center gap-2">
-            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => { setSelectedFlow(null); setSelectedNodeId(null); fetchFlows(); }}>
-              <ArrowLeft className="h-3.5 w-3.5" />
+            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => { setSelectedFlow(null); setSelectedNodeId(null); fetchFlows(); }}>
+              <ArrowLeft className="h-4 w-4" />
             </Button>
             <div>
-              <h3 className="text-xs font-semibold">{selectedFlow.name}</h3>
-              <p className="text-[10px] text-muted-foreground">{selectedFlow.description || "Sem descrição"}</p>
+              <h3 className="text-sm font-semibold">{selectedFlow.name}</h3>
+              <p className="text-xs text-muted-foreground">{selectedFlow.description || "Sem descrição"}</p>
             </div>
           </div>
           <div className="flex items-center gap-1">
-            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={undo} disabled={!canUndo}><Undo2 className="h-3 w-3" /></Button>
-            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={redo} disabled={!canRedo}><Redo2 className="h-3 w-3" /></Button>
-            <Button variant="outline" size="sm" className="h-7 text-xs" onClick={handleSaveFlow} disabled={saving}>
-              <Save className="h-3 w-3 mr-1" /> {saving ? "..." : "Guardar"}
+            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={undo} disabled={!canUndo}><Undo2 className="h-3.5 w-3.5" /></Button>
+            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={redo} disabled={!canRedo}><Redo2 className="h-3.5 w-3.5" /></Button>
+            <Button variant="outline" size="sm" className="h-8 text-xs" onClick={handleSaveFlow} disabled={saving}>
+              <Save className="h-3.5 w-3.5 mr-1" />{saving ? "Salvando..." : "Salvar"}
             </Button>
           </div>
         </div>
-
         <div className="flex-1 flex relative">
           <FlowNodePalette collapsed={false} onToggleCollapse={() => {}} onAddNode={(type) => addNode(type)} />
-
           <div className="flex-1">
-            <ReactFlow
-              nodes={nodes}
-              edges={edges}
-              onNodesChange={onNodesChange}
-              onEdgesChange={onEdgesChange}
-              onConnect={onConnect}
-              onDrop={onDrop}
-              onDragOver={onDragOver}
-              onNodeClick={onNodeClick}
-              onPaneClick={onPaneClick}
-              nodeTypes={customNodeTypes}
-              fitView
-            >
-              <Controls />
-              <Background />
-              <MiniMap className="!bottom-2 !right-2" style={{ height: 80, width: 120 }} />
+            <ReactFlow nodes={nodes} edges={edges} onNodesChange={onNodesChange} onEdgesChange={onEdgesChange}
+              onConnect={onConnect} onDrop={onDrop} onDragOver={onDragOver} onNodeClick={onNodeClick}
+              onPaneClick={onPaneClick} nodeTypes={customNodeTypes} fitView>
+              <Controls /><Background /><MiniMap className="!bottom-2 !right-2" style={{ height: 80, width: 120 }} />
             </ReactFlow>
           </div>
-
           {selectedNodeData && (
-            <NodeConfigPanel
-              data={selectedNodeData}
-              onChange={handleNodeDataChange}
-              onDelete={handleDeleteNode}
-              onClose={() => setSelectedNodeId(null)}
-            />
+            <NodeConfigPanel data={selectedNodeData} onChange={handleNodeDataChange} onDelete={handleDeleteNode} onClose={() => setSelectedNodeId(null)} />
           )}
         </div>
       </div>
     );
   }
 
-  // Flow list view
   return (
-    <div className="space-y-3">
-      <Card>
-        <CardHeader className="pb-3"><CardTitle className="text-sm">🔀 Fluxos de Automação</CardTitle></CardHeader>
-        <CardContent>
-          {loading ? (
-            <div className="flex justify-center py-6"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>
-          ) : flows.length === 0 ? (
-            <p className="text-xs text-muted-foreground text-center py-4">Nenhum fluxo criado.</p>
-          ) : (
-            <div className="space-y-1.5">
-              {flows.map((f) => (
-                <div key={f.id} className="flex items-center justify-between p-2.5 bg-muted rounded-lg cursor-pointer hover:bg-muted/80 transition-colors" onClick={() => openFlow(f)}>
-                  <div>
-                    <span className="font-semibold text-sm">{f.name}</span>
-                    <div className="flex gap-1 mt-1">
-                      <Badge variant="outline" className="text-[9px]">{f.trigger_type}</Badge>
-                      <Badge variant="outline" className="text-[9px]">{f.flow_type}</Badge>
-                      {f.keywords?.length > 0 && <Badge variant="outline" className="text-[9px]">🏷️ {f.keywords.join(", ")}</Badge>}
+    <div className="p-6 space-y-6">
+      <div>
+        <h1 className="text-2xl font-bold">Fluxos de Automação</h1>
+        <p className="text-muted-foreground text-sm">Configure automações integradas ao Bitrix24</p>
+      </div>
+
+      {loading ? (
+        <div className="flex justify-center py-12"><Loader2 className="h-8 w-8 animate-spin text-muted-foreground" /></div>
+      ) : flows.length === 0 ? (
+        <Card>
+          <CardContent className="py-12 text-center text-muted-foreground">
+            <GitBranch className="h-12 w-12 mx-auto mb-4 opacity-30" />
+            <p>Nenhum fluxo criado</p>
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="space-y-3">
+          {flows.map((f) => (
+            <Card key={f.id} className="cursor-pointer hover:shadow-sm transition-shadow" onClick={() => openFlow(f)}>
+              <CardContent className="pt-4 pb-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-3 flex-1 min-w-0">
+                    <div className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
+                      <GitBranch className="h-4 w-4 text-primary" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-semibold text-sm">{f.name}</p>
+                      <div className="flex gap-1.5 mt-1 flex-wrap">
+                        <Badge variant="outline" className="text-[10px]">{f.trigger_type}</Badge>
+                        <Badge variant="outline" className="text-[10px]">{f.flow_type}</Badge>
+                      </div>
                     </div>
                   </div>
-                  <Button variant={f.is_active ? "default" : "secondary"} size="sm" className="text-[10px] h-6" onClick={(e) => { e.stopPropagation(); toggleActive(f.id, f.is_active); }}>
+                  <Button
+                    variant={f.is_active ? "default" : "secondary"}
+                    size="sm"
+                    className="h-8 text-xs shrink-0"
+                    onClick={(e) => { e.stopPropagation(); toggleActive(f.id, f.is_active); }}
+                  >
                     {f.is_active ? "✅ Ativo" : "❌ Inativo"}
                   </Button>
                 </div>
-              ))}
-            </div>
-          )}
-        </CardContent>
-      </Card>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
 
-// ==================== PLAYGROUND TAB ====================
-function PlaygroundTab() {
+// ==================== PLAYGROUND VIEW ====================
+function PlaygroundView() {
   const [agents, setAgents] = useState<any[]>([]);
   const [selectedAgent, setSelectedAgent] = useState("");
   const [messages, setMessages] = useState<Array<{ role: string; content: string }>>([]);
@@ -856,9 +1015,14 @@ function PlaygroundTab() {
   };
 
   return (
-    <div className="space-y-3">
-      <div>
-        <Label className="text-xs">Agente</Label>
+    <div className="p-6 flex flex-col h-screen">
+      <div className="mb-4">
+        <h1 className="text-2xl font-bold">Playground</h1>
+        <p className="text-muted-foreground text-sm">Teste o seu agente IA em tempo real</p>
+      </div>
+
+      <div className="mb-4">
+        <Label className="text-sm">Agente</Label>
         <Select value={selectedAgent} onValueChange={(v) => { setSelectedAgent(v); setMessages([]); }}>
           <SelectTrigger className="mt-1"><SelectValue placeholder="Selecionar agente" /></SelectTrigger>
           <SelectContent>
@@ -867,25 +1031,23 @@ function PlaygroundTab() {
         </Select>
       </div>
 
-      <Card className="flex flex-col" style={{ height: "calc(100vh - 320px)" }}>
-        <div ref={scrollRef} className="flex-1 overflow-y-auto p-3 space-y-2">
+      <Card className="flex-1 flex flex-col overflow-hidden">
+        <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-3">
           {messages.length === 0 && (
             <div className="flex items-center justify-center h-full">
               <div className="text-center text-muted-foreground">
-                <Sparkles className="h-10 w-10 mx-auto mb-2 opacity-30" />
-                <p className="text-xs">Envie uma mensagem para testar o agente...</p>
+                <Sparkles className="h-12 w-12 mx-auto mb-3 opacity-20" />
+                <p className="text-sm">Envie uma mensagem para testar o agente...</p>
               </div>
             </div>
           )}
           {messages.map((m, i) => (
             <div key={i} className={cn("flex", m.role === "user" ? "justify-end" : "justify-start")}>
               <div className={cn(
-                "max-w-[80%] rounded-2xl px-3.5 py-2 text-sm",
-                m.role === "user"
-                  ? "bg-primary text-primary-foreground rounded-br-md"
-                  : "bg-muted text-foreground rounded-bl-md"
+                "max-w-[80%] rounded-2xl px-4 py-2.5 text-sm",
+                m.role === "user" ? "bg-primary text-primary-foreground rounded-br-md" : "bg-muted text-foreground rounded-bl-md"
               )}>
-                <p className="whitespace-pre-wrap text-xs">{m.content}</p>
+                <p className="whitespace-pre-wrap">{m.content}</p>
               </div>
             </div>
           ))}
@@ -897,47 +1059,39 @@ function PlaygroundTab() {
             </div>
           )}
         </div>
-
-        <div className="border-t p-2.5">
+        <div className="border-t p-3">
           <div className="flex gap-2">
-            <Input
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && sendMessage()}
-              placeholder="Digite uma mensagem..."
-              disabled={loading}
-              className="flex-1 text-xs"
-            />
-            <Button size="icon" onClick={sendMessage} disabled={!input.trim() || loading}>
-              <Send className="h-3.5 w-3.5" />
-            </Button>
+            <Input value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => e.key === "Enter" && sendMessage()} placeholder="Digite uma mensagem..." disabled={loading} className="flex-1" />
+            <Button size="icon" onClick={sendMessage} disabled={!input.trim() || loading}><Send className="h-4 w-4" /></Button>
+            {messages.length > 0 && (
+              <Button variant="ghost" size="icon" onClick={() => setMessages([])}><RotateCcw className="h-4 w-4" /></Button>
+            )}
           </div>
         </div>
       </Card>
-
-      {messages.length > 0 && (
-        <Button variant="outline" size="sm" className="w-full text-xs" onClick={() => setMessages([])}>
-          <RotateCcw className="h-3 w-3 mr-1.5" /> Limpar conversa
-        </Button>
-      )}
     </div>
   );
 }
 
-// ==================== PAGAMENTOS TAB ====================
-function PagamentosTab() {
+// ==================== PAGAMENTOS VIEW ====================
+function PagamentosView() {
   const [transactions, setTransactions] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
   const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState({ amount: "", currency: "EUR", payment_method: "card", customer_name: "", customer_email: "", description: "" });
+  const [form, setForm] = useState({
+    amount: "", currency: "EUR", payment_method: "card",
+    customer_name: "", customer_email: "", description: ""
+  });
 
   useEffect(() => { fetchTransactions(); }, []);
 
   const fetchTransactions = async () => {
     setLoading(true);
     try {
-      const res = await fetch(`${SUPABASE_URL}/functions/v1/payment-status?list=true`, { headers: { "Content-Type": "application/json" } });
+      const res = await fetch(`${SUPABASE_URL}/functions/v1/payment-status?list=true`, {
+        headers: { "Content-Type": "application/json" },
+      });
       if (res.ok) { const data = await res.json(); setTransactions(data.transactions || []); }
     } catch (e) { console.error(e); }
     setLoading(false);
@@ -947,107 +1101,104 @@ function PagamentosTab() {
     if (!form.amount || Number(form.amount) <= 0) return;
     setCreating(true);
     try {
-      const res = await fetch(`${SUPABASE_URL}/functions/v1/payment-create`, {
+      await fetch(`${SUPABASE_URL}/functions/v1/payment-create`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           amount: Number(form.amount), currency: form.currency, payment_method: form.payment_method,
           description: form.description || "Cobrança Emmely Cloud",
-          customer_data: { name: form.customer_name, email: form.customer_email, country: form.currency === "BRL" ? "Brasil" : "Portugal" },
+          customer_data: { name: form.customer_name, email: form.customer_email },
         }),
       });
-      const data = await res.json();
-      if (data.ok) { setShowForm(false); setForm({ amount: "", currency: "EUR", payment_method: "card", customer_name: "", customer_email: "", description: "" }); fetchTransactions(); }
-    } catch (e: any) { console.error(e); }
+      setShowForm(false);
+      setForm({ amount: "", currency: "EUR", payment_method: "card", customer_name: "", customer_email: "", description: "" });
+      fetchTransactions();
+    } catch (e) { console.error(e); }
     setCreating(false);
   };
 
-  const statusStyles: Record<string, string> = {
-    pending: "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400",
-    confirmed: "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400",
-    received: "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400",
-    failed: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400",
-    canceled: "bg-muted text-muted-foreground",
+  const statusColors: Record<string, string> = {
+    pending: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400",
+    confirmed: "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400",
+    received: "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400",
+    failed: "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400",
   };
 
   return (
-    <div className="space-y-3">
-      <Button onClick={() => setShowForm(!showForm)} variant={showForm ? "secondary" : "default"} className="w-full">
-        {showForm ? "✕ Cancelar" : <><Plus className="h-3.5 w-3.5 mr-2" /> Nova Cobrança</>}
-      </Button>
+    <div className="p-6 space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold">Pagamentos</h1>
+          <p className="text-muted-foreground text-sm">Gerir cobranças e transações</p>
+        </div>
+        <Button onClick={() => setShowForm(!showForm)} variant={showForm ? "secondary" : "default"}>
+          {showForm ? "✕ Cancelar" : <><Plus className="h-4 w-4 mr-2" />Nova Cobrança</>}
+        </Button>
+      </div>
 
       {showForm && (
         <Card>
-          <CardHeader className="pb-3"><CardTitle className="text-sm">💳 Nova Cobrança</CardTitle></CardHeader>
-          <CardContent className="space-y-3">
-            <div className="grid grid-cols-2 gap-3">
-              <div><Label className="text-xs">Nome</Label><Input value={form.customer_name} onChange={(e) => setForm({ ...form, customer_name: e.target.value })} /></div>
-              <div><Label className="text-xs">Email</Label><Input value={form.customer_email} onChange={(e) => setForm({ ...form, customer_email: e.target.value })} /></div>
-              <div><Label className="text-xs">Valor</Label><Input type="number" step="0.01" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} /></div>
+          <CardHeader><CardTitle className="text-base">💳 Nova Cobrança</CardTitle></CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div><Label>Nome</Label><Input value={form.customer_name} onChange={(e) => setForm({ ...form, customer_name: e.target.value })} className="mt-1" /></div>
+              <div><Label>Email</Label><Input value={form.customer_email} onChange={(e) => setForm({ ...form, customer_email: e.target.value })} className="mt-1" /></div>
+              <div><Label>Valor</Label><Input type="number" step="0.01" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} className="mt-1" /></div>
               <div>
-                <Label className="text-xs">Moeda</Label>
+                <Label>Moeda</Label>
                 <Select value={form.currency} onValueChange={(v) => setForm({ ...form, currency: v, payment_method: v === "BRL" ? "pix" : "card" })}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="EUR">🇪🇺 EUR</SelectItem>
                     <SelectItem value="BRL">🇧🇷 BRL</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
-              <div>
-                <Label className="text-xs">Método</Label>
-                <Select value={form.payment_method} onValueChange={(v) => setForm({ ...form, payment_method: v })}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    {form.currency === "BRL" ? (
-                      <><SelectItem value="pix">PIX</SelectItem><SelectItem value="boleto">Boleto</SelectItem><SelectItem value="card">Cartão</SelectItem></>
-                    ) : (
-                      <SelectItem value="card">Cartão</SelectItem>
-                    )}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div><Label className="text-xs">Descrição</Label><Input value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} /></div>
             </div>
-            <Button onClick={handleCreate} disabled={creating} className="w-full">{creating ? "Criando..." : "💳 Criar Cobrança"}</Button>
+            <div><Label>Descrição</Label><Input value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} className="mt-1" placeholder="Ex: Honorários advocatícios" /></div>
+            <Button onClick={handleCreate} disabled={creating || !form.amount} className="w-full">
+              {creating ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Criando...</> : "Criar Cobrança"}
+            </Button>
           </CardContent>
         </Card>
       )}
 
-      <Card>
-        <CardHeader className="pb-3 flex flex-row items-center justify-between">
-          <CardTitle className="text-sm">💰 Transações Recentes</CardTitle>
-          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={fetchTransactions} disabled={loading}><RefreshCw className="h-3 w-3" /></Button>
-        </CardHeader>
-        <CardContent>
-          {loading ? (
-            <div className="flex justify-center py-6"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>
-          ) : transactions.length === 0 ? (
-            <p className="text-xs text-muted-foreground text-center py-4">Nenhuma transação.</p>
-          ) : (
-            <ScrollArea className="max-h-72">
-              <div className="space-y-1.5">
-                {transactions.map((tx: any) => (
-                  <div key={tx.id} className="p-2.5 bg-muted rounded-lg text-xs">
-                    <div className="flex justify-between items-center">
-                      <div className="flex items-center gap-2">
-                        <span className="font-semibold">{tx.currency} {Number(tx.amount).toFixed(2)}</span>
-                        <span className={cn("px-2 py-0.5 rounded-full text-[10px] font-semibold", statusStyles[tx.status] || "bg-muted text-muted-foreground")}>{tx.status}</span>
-                      </div>
-                      <span className="text-muted-foreground text-[10px]">{tx.gateway === "stripe" ? "🟣 Stripe" : "🟢 Asaas"}</span>
+      <div>
+        <h2 className="text-lg font-semibold mb-3">Transações Recentes</h2>
+        {loading ? (
+          <div className="flex justify-center py-8"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
+        ) : transactions.length === 0 ? (
+          <Card>
+            <CardContent className="py-12 text-center text-muted-foreground">
+              <CreditCard className="h-12 w-12 mx-auto mb-4 opacity-30" />
+              <p>Nenhuma transação encontrada</p>
+            </CardContent>
+          </Card>
+        ) : (
+          <div className="space-y-3">
+            {transactions.map((t) => (
+              <Card key={t.id}>
+                <CardContent className="pt-4 pb-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <p className="font-semibold text-sm">{t.metadata?.customer_name || "Cliente"}</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        {new Date(t.created_at).toLocaleDateString()} • {t.gateway}
+                      </p>
                     </div>
-                    <div className="text-muted-foreground text-[10px] mt-1 flex gap-2">
-                      <span>{tx.payment_method}</span>
-                      <span>{new Date(tx.created_at).toLocaleString()}</span>
-                      {tx.payment_url && <a href={tx.payment_url} target="_blank" rel="noopener noreferrer" className="text-primary">🔗 Link</a>}
+                    <div className="text-right">
+                      <p className="font-bold">{t.currency} {Number(t.amount).toFixed(2)}</p>
+                      <span className={cn("text-[10px] px-2 py-0.5 rounded-full font-medium", statusColors[t.status] || "bg-muted text-muted-foreground")}>
+                        {t.status}
+                      </span>
                     </div>
                   </div>
-                ))}
-              </div>
-            </ScrollArea>
-          )}
-        </CardContent>
-      </Card>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
