@@ -96,7 +96,7 @@ const allLinks = navItems.flatMap((item) =>
   item.type === "link" ? [item] : item.children.map((c) => ({ ...c, type: "link" as const }))
 );
 
-export function AppHeader() {
+export function AppHeader({ onSearchClick }: { onSearchClick?: () => void }) {
   const { user } = useAuth();
   const { locale, setLocale } = useLocale();
   const navigate = useNavigate();
@@ -134,14 +134,17 @@ export function AppHeader() {
           </div>
         </div>
 
-        {/* Search */}
-        <div className="relative flex-1 max-w-md">
-          <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-white/50" />
-          <Input
-            placeholder="Pesquisar leads, casos, propostas..."
-            className="pl-9 h-9 bg-white/15 border-0 text-white placeholder:text-white/40 focus-visible:ring-1 focus-visible:ring-white/30 rounded-full"
-          />
-        </div>
+        {/* Search trigger */}
+        <button
+          onClick={onSearchClick}
+          className="relative flex-1 max-w-md flex items-center gap-2 h-9 px-3 bg-white/15 rounded-full text-white/40 text-sm hover:bg-white/20 transition-colors"
+        >
+          <Search className="h-4 w-4" />
+          <span>Pesquisar...</span>
+          <kbd className="ml-auto hidden sm:inline-flex h-5 items-center gap-0.5 rounded border border-white/20 bg-white/10 px-1.5 font-mono text-[10px] font-medium text-white/50">
+            ⌘K
+          </kbd>
+        </button>
 
         {/* Right actions */}
         <div className="ml-auto flex items-center gap-1">

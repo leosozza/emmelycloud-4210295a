@@ -1,10 +1,13 @@
+import { useState } from "react";
 import { Outlet, Navigate } from "react-router-dom";
 import { AppHeader } from "@/components/AppHeader";
+import { CommandPalette } from "@/components/CommandPalette";
 import { useAuthContext } from "@/contexts/AuthContext";
 import { Scale } from "lucide-react";
 
 export function AppLayout() {
   const { session, loading } = useAuthContext();
+  const [cmdOpen, setCmdOpen] = useState(false);
 
   if (loading) {
     return (
@@ -25,10 +28,11 @@ export function AppLayout() {
 
   return (
     <div className="flex min-h-screen w-full flex-col">
-      <AppHeader />
+      <AppHeader onSearchClick={() => setCmdOpen(true)} />
       <main className="flex-1 p-6 bg-background">
         <Outlet />
       </main>
+      <CommandPalette open={cmdOpen} onOpenChange={setCmdOpen} />
     </div>
   );
 }
