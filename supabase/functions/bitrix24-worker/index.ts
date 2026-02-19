@@ -198,30 +198,43 @@ async function handleConnectorMessage(supabase: any, integration: any, payload: 
 async function handleBotMessage(supabase: any, integration: any, payload: any) {
   const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
   const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+
+  // O payload guardado na queue tem estrutura: { event, data: { PARAMS: {...} }, auth: {...} }
   const msgData = payload.data || {};
   const params = msgData.PARAMS || msgData;
-  const messageText = params.MESSAGE || params.message || msgData.message || "";
+  const messageText = params.MESSAGE || params.message || "";
   const dialogId = params.DIALOG_ID || params.dialog_id || "";
-  const chatId = params.CHAT_ID || params.chat_id || "";
+  // bot_id do payload (Bitrix24 envia o BOT_ID no evento)
+  const botIdFromPayload = params.BOT_ID || params.bot_id || "";
 
   if (!messageText || isBotMessage(messageText)) return;
 
-  console.log("[WORKER] Bot message:", messageText.substring(0, 100));
+  console.log("[WORKER] Bot message:", messageText.substring(0, 100), "dialogId:", dialogId);
 
-  // Find agent
+  // Obter bot_id: prioridade config.bot_id > payload BOT_ID
+  const configData = integration.config as any || {};
+  const botId = configData.bot_id || botIdFromPayload;
+
+  if (!botId) {
+    console.error("[WORKER] No bot_id found! Cannot reply as bot. config:", JSON.stringify(configData).substring(0, 200));
+    await debugLog(supabase, integration.id, "bot_reply_error", "outbound", { dialogId }, "No bot_id available");
+    return;
+  }
+
+  // Find AI agent (default)
   let agent: any = null;
-  if (integration.bitrix_agent_id) {
-    const { data } = await supabase.from("ai_agents").select("id, welcome_message")
-      .eq("id", integration.bitrix_agent_id).eq("is_active", true).maybeSingle();
-    agent = data;
-  }
+  const { data: defaultAgent } = await supabase.from("ai_agents").select("id, welcome_message")
+    .eq("is_default", true).eq("is_active", true).maybeSingle();
+  agent = defaultAgent;
+
   if (!agent) {
-    const { data } = await supabase.from("ai_agents").select("id, welcome_message")
-      .eq("is_default", true).eq("is_active", true).maybeSingle();
-    agent = data;
+    const { data: anyAgent } = await supabase.from("ai_agents").select("id, welcome_message")
+      .eq("is_active", true).maybeSingle();
+    agent = anyAgent;
   }
+
   if (!agent) {
-    console.log("[WORKER] No agent found");
+    console.log("[WORKER] No active agent found");
     return;
   }
 
@@ -245,18 +258,26 @@ async function handleBotMessage(supabase: any, integration: any, payload: any) {
     const replyText = aiResult.reply || "Desculpe, não consegui processar a sua mensagem.";
 
     const accessToken = await ensureValidToken(supabase, integration);
-    await callBitrix(integration.client_endpoint, accessToken, "im.message.add", {
-      DIALOG_ID: dialogId || chatId,
+
+    // CORRECTO: imbot.message.add com BOT_ID obrigatório
+    const botReplyResult = await callBitrix(integration.client_endpoint, accessToken, "imbot.message.add", {
+      BOT_ID: botId,
+      DIALOG_ID: dialogId,
       MESSAGE: replyText,
     });
 
+    console.log("[WORKER] imbot.message.add result:", JSON.stringify(botReplyResult).substring(0, 200));
+
     await debugLog(supabase, integration.id, "bot_reply_sent", "outbound", {
-      dialogId, messageText: messageText.substring(0, 100),
-      replyText: replyText.substring(0, 100), agentId: agent.id,
+      botId, dialogId,
+      messageText: messageText.substring(0, 100),
+      replyText: replyText.substring(0, 100),
+      agentId: agent.id,
+      bitrixResult: botReplyResult,
     });
   } catch (e) {
     console.error("[WORKER] AI error:", e);
-    await debugLog(supabase, integration.id, "bot_reply_error", "outbound", { dialogId }, String(e));
+    await debugLog(supabase, integration.id, "bot_reply_error", "outbound", { dialogId, botId }, String(e));
   }
 }
 
@@ -264,29 +285,40 @@ async function handleWelcome(supabase: any, integration: any, payload: any) {
   const msgData = payload.data || {};
   const params = msgData.PARAMS || msgData;
   const dialogId = params.DIALOG_ID || params.dialog_id || "";
-  const chatId = params.CHAT_ID || params.chat_id || "";
+
+  // Obter bot_id da config
+  const configData = integration.config as any || {};
+  const botId = configData.bot_id || params.BOT_ID || params.bot_id || "";
 
   let agent: any = null;
-  if (integration.bitrix_agent_id) {
-    const { data } = await supabase.from("ai_agents").select("welcome_message")
-      .eq("id", integration.bitrix_agent_id).eq("is_active", true).maybeSingle();
-    agent = data;
-  }
+  const { data: defaultAgent } = await supabase.from("ai_agents").select("welcome_message")
+    .eq("is_default", true).eq("is_active", true).maybeSingle();
+  agent = defaultAgent;
+
   if (!agent) {
-    const { data } = await supabase.from("ai_agents").select("welcome_message")
-      .eq("is_default", true).eq("is_active", true).maybeSingle();
-    agent = data;
+    const { data: anyAgent } = await supabase.from("ai_agents").select("welcome_message")
+      .eq("is_active", true).maybeSingle();
+    agent = anyAgent;
   }
 
   const welcomeText = agent?.welcome_message || "Olá! Sou a Emmely, a sua assistente virtual. Como posso ajudar?";
 
   try {
     const accessToken = await ensureValidToken(supabase, integration);
-    await callBitrix(integration.client_endpoint, accessToken, "im.message.add", {
-      DIALOG_ID: dialogId || chatId,
-      MESSAGE: welcomeText,
-    });
-    await debugLog(supabase, integration.id, "welcome_sent", "outbound", { dialogId, welcomeText: welcomeText.substring(0, 100) });
+
+    if (botId) {
+      // CORRECTO: imbot.message.add com BOT_ID obrigatório
+      const result = await callBitrix(integration.client_endpoint, accessToken, "imbot.message.add", {
+        BOT_ID: botId,
+        DIALOG_ID: dialogId,
+        MESSAGE: welcomeText,
+      });
+      console.log("[WORKER] Welcome imbot.message.add result:", JSON.stringify(result).substring(0, 200));
+    } else {
+      console.error("[WORKER] No bot_id for welcome message");
+    }
+
+    await debugLog(supabase, integration.id, "welcome_sent", "outbound", { botId, dialogId, welcomeText: welcomeText.substring(0, 100) });
   } catch (e) {
     console.error("[WORKER] Welcome error:", e);
     await debugLog(supabase, integration.id, "welcome_error", "outbound", { dialogId }, String(e));
