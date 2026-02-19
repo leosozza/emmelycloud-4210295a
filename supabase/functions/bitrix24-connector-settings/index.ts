@@ -251,7 +251,28 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Always return "successfully" for Bitrix24 POST calls
+    // For Bitrix24 PLACEMENT_HANDLER calls — return HTML with BX24.installFinish()
+    // This is required for the connector activation flow in Contact Center
+    if (placement === "SETTING_CONNECTOR" || lineId > 0) {
+      return new Response(`<!DOCTYPE html>
+<html>
+<head>
+  <script src="//api.bitrix24.com/api/v1/"></script>
+  <script>
+    BX24.init(function() {
+      BX24.installFinish();
+    });
+  </script>
+</head>
+<body>
+  <p>Emmely Messages configurado com sucesso!</p>
+</body>
+</html>`, {
+        headers: { ...corsHeaders, "Content-Type": "text/html; charset=utf-8" },
+      });
+    }
+
+    // Plain text for other Bitrix24 POST calls
     return new Response("successfully", {
       headers: { ...corsHeaders, "Content-Type": "text/plain; charset=utf-8" },
     });
