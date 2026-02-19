@@ -60,5 +60,8 @@ verify_jwt = false
 [functions.ai-triage]
 verify_jwt = false
 
-[functions.chatbot-reply]
+[functions.flow-engine]
+verify_jwt = false
+
+[functions.ai-process-message]
 verify_jwt = false
