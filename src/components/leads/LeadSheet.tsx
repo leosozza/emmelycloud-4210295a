@@ -21,11 +21,12 @@ import { Tables } from "@/integrations/supabase/types";
 import { Constants } from "@/integrations/supabase/types";
 import { differenceInHours, differenceInMinutes, parseISO, format } from "date-fns";
 import { useLocale } from "@/contexts/LocaleContext";
-import { ChevronRight, Pencil, Trash2, FileText, ExternalLink, ClipboardCheck } from "lucide-react";
+import { ChevronRight, Pencil, Trash2, FileText, ExternalLink, ClipboardCheck, Sparkles, Loader2 } from "lucide-react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useNavigate } from "react-router-dom";
 import { useToast } from "@/hooks/use-toast";
+import { useAiTriage } from "@/hooks/useAiTriage";
 
 type Lead = Tables<"leads">;
 
@@ -83,7 +84,7 @@ function LeadSheetContent({ lead, onOpenChange, onEdit, onDelete, onMoveStage, o
   const [triageNotes, setTriageNotes] = useState<string>(lead.notes || "");
 
   const isTriageStage = lead.funnel_stage === "triagem";
-
+  const aiTriageMutation = useAiTriage();
   // Query associated case for this lead
   const { data: linkedCase } = useQuery({
     queryKey: ["lead-case", lead.id],
@@ -193,15 +194,34 @@ function LeadSheetContent({ lead, onOpenChange, onEdit, onDelete, onMoveStage, o
                     placeholder="Resumo do caso, motivo do contacto..."
                   />
                 </div>
-                <Button
-                  size="sm"
-                  className="w-full"
-                  onClick={() => triageMutation.mutate()}
-                  disabled={triageMutation.isPending}
-                >
-                  <ChevronRight className="mr-1 h-3 w-3" />
-                  {triageMutation.isPending ? "A processar..." : "Concluir Triagem e Avançar para Proposta"}
-                </Button>
+                <div className="flex gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="flex-1"
+                    onClick={async () => {
+                      try {
+                        const result = await aiTriageMutation.mutateAsync(lead.id);
+                        setTriageLegalArea(result.legal_area);
+                        setTriageUrgency(result.urgency);
+                        setTriageNotes(result.notes);
+                      } catch { /* toast shown */ }
+                    }}
+                    disabled={aiTriageMutation.isPending}
+                  >
+                    {aiTriageMutation.isPending ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : <Sparkles className="mr-1 h-3 w-3" />}
+                    Classificar com IA
+                  </Button>
+                  <Button
+                    size="sm"
+                    className="flex-1"
+                    onClick={() => triageMutation.mutate()}
+                    disabled={triageMutation.isPending}
+                  >
+                    <ChevronRight className="mr-1 h-3 w-3" />
+                    {triageMutation.isPending ? "A processar..." : "Concluir Triagem"}
+                  </Button>
+                </div>
               </div>
               <Separator />
             </>
@@ -222,7 +242,22 @@ function LeadSheetContent({ lead, onOpenChange, onEdit, onDelete, onMoveStage, o
 
           {/* AI */}
           <div className="space-y-2 text-sm">
-            <Detail label="AI Score" value={lead.ai_score != null ? String(lead.ai_score) : null} />
+            <div className="flex items-center justify-between">
+              <span className="font-medium text-muted-foreground">Análise IA</span>
+              {!isTriageStage && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-7 text-xs"
+                  onClick={() => aiTriageMutation.mutate(lead.id)}
+                  disabled={aiTriageMutation.isPending}
+                >
+                  {aiTriageMutation.isPending ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : <Sparkles className="mr-1 h-3 w-3" />}
+                  Reclassificar
+                </Button>
+              )}
+            </div>
+            <Detail label="AI Score" value={lead.ai_score != null ? `${lead.ai_score}/100` : null} />
             <Detail label="AI Viabilidade" value={lead.ai_viability} />
           </div>
 
