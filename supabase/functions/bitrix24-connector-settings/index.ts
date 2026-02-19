@@ -139,12 +139,14 @@ Deno.serve(async (req) => {
     console.log("[SETTINGS] Placement:", placement, "LINE:", lineId, "ACTIVE_STATUS:", activeStatus, "CONNECTOR:", connectorId);
 
     // Log for debugging
-    await supabase.from("bitrix24_debug_logs").insert({
-      integration_id: integration.id,
-      event_type: "connector_settings",
-      direction: "inbound",
-      payload: { placement, placementOptions, memberId },
-    }).catch(() => {});
+    try {
+      await supabase.from("bitrix24_debug_logs").insert({
+        integration_id: integration.id,
+        event_type: "connector_settings",
+        direction: "inbound",
+        payload: { placement, placementOptions, memberId },
+      });
+    } catch (_) { /* ignore log errors */ }
 
     // If this is a SETTING_CONNECTOR placement or has LINE info, activate the connector
     if (placement === "SETTING_CONNECTOR" || lineId > 0) {
@@ -223,12 +225,14 @@ Deno.serve(async (req) => {
       }).eq("id", integration.id);
 
       // Log success
-      await supabase.from("bitrix24_debug_logs").insert({
-        integration_id: integration.id,
-        event_type: "connector_activated",
-        direction: "outbound",
-        payload: { lineId, lineName, connectorId, activateResult, dataSetResult },
-      }).catch(() => {});
+      try {
+        await supabase.from("bitrix24_debug_logs").insert({
+          integration_id: integration.id,
+          event_type: "connector_activated",
+          direction: "outbound",
+          payload: { lineId, lineName, connectorId, activateResult, dataSetResult },
+        });
+      } catch (_) { /* ignore log errors */ }
 
       console.log("[SETTINGS] Connector activated successfully on LINE:", lineId);
     }
