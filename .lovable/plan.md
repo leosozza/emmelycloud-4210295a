@@ -1,164 +1,122 @@
 
-# Sincronização de Tema Bitrix24 no iframe da aplicação
+# Fix crítico: Chatbot Emmely AI não aparece no Contact Center Bitrix24
 
-## Contexto e Investigação
+## Diagnóstico definitivo baseado na documentação oficial
 
-### O que o Bitrix24 oferece para sincronização de tema
+### Erro no `imbot.register` — causa raiz do bot não aparecer
 
-Após análise da documentação oficial e do SDK oficial (`b24jssdk`), existem três mecanismos disponíveis:
+A documentação oficial em `imbot.register` define:
 
-1. **BX24 JS SDK (legacy)**: `BX24.getAuth()` não retorna informação de tema. O BX24 tem `BX24.bind()` para eventos, mas não existe um evento de tema documentado publicamente no SDK legado.
+- `TYPE: "B"` — chat-bot normal (respostas imediatas, só chat privado)
+- `TYPE: "O"` — chat-bot para Open Lines (aparece no Contact Center)
+- `TYPE: "S"` — supervisor (acesso a todas as mensagens)
+- `TYPE: "H"` — **NÃO EXISTE na documentação oficial** — é um valor inválido!
 
-2. **b24jssdk (novo SDK oficial)**: O `B24Frame` tem um `ThemeManager` interno que acede ao tema via mensagens `postMessage` com o frame pai. Usa o campo `ThemeType` (`dark` | `light`) detectado pela comunicação com o iframe pai.
+O código atual usa `TYPE: "H"` (Human-like), que não é reconhecido pelo Bitrix24 para o selector de chatbot de Open Lines.
 
-3. **Mecanismo nativo do iframe**: O Bitrix24 injeta variáveis CSS no documento pai e comunica com o iframe via `postMessage`. A forma mais fiável e testada em produção é **detectar a preferência de cor do sistema** (já que o Bitrix24 sincroniza o seu tema com o sistema operativo do utilizador) **combinada com escuta de mensagens postMessage** do parent frame.
+**Solução**: Usar `TYPE: "B"` + `OPENLINE: "Y"` na raiz do objeto (modo híbrido) conforme a documentação.
 
-### Como funciona o tema no Bitrix24
+### Segundo erro crítico — `OPENLINE` no lugar errado
 
-O Bitrix24 tem dois conceitos:
-- **Tema de fundo/header**: é uma imagem/cor personalizada (azul, roxo, gradiente, etc.) — este é o tema visual de "branding"
-- **Modo claro/escuro**: determina se o texto e os ícones são claros ou escuros — este é o que realmente importa para o design da aplicação iframe
-
-O `BX24Frame` do novo SDK detecta o modo claro/escuro lendo `prefers-color-scheme` do browser do utilizador **e** escutando mensagens do parent. O Bitrix24 usa `prefers-color-scheme` do sistema do utilizador como base do seu modo escuro.
-
-### Abordagem escolhida: sem dependência extra
-
-Como o projeto usa React + Tailwind (não Vue/Nuxt), **não** é prático instalar o `@bitrix24/b24ui` (que é exclusivamente Vue/Nuxt). Em vez disso, implementamos:
-
-1. **Hook `useBitrix24Theme`**: detecta e sincroniza o tema em tempo real
-2. **Fonte de verdade**: `prefers-color-scheme` como base + `postMessage` do BX24 parent como override
-3. **Aplicação via classe `dark`** no elemento raiz do `Bitrix24App`, compatível com o sistema de CSS variables já existente
-
-## Solução Técnica
-
-### Como aplicar o tema
-
-O Tailwind já tem o `.dark { ... }` definido no `src/index.css` com todas as CSS variables. Basta aplicar a classe `dark` ao wrapper root do `Bitrix24App`, **sem afectar o resto da aplicação principal** (que tem o seu próprio `ThemeProvider`).
-
-### Detecção de tema — três camadas em sequência
+O `OPENLINE: "Y"` está dentro do objeto `PROPERTIES`, mas a documentação mostra que é um parâmetro de **raiz** do `imbot.register`:
 
 ```
-Camada 1: BX24.appOption (tema guardado nas opções da app no Bitrix24)
-    ↓ (fallback)
-Camada 2: postMessage do parent Bitrix24 (quando o utilizador muda o tema em tempo real)
-    ↓ (fallback)
-Camada 3: prefers-color-scheme do sistema operativo
+// ERRADO (atual):
+{
+  TYPE: "H",
+  PROPERTIES: {
+    NAME: "Emmely AI",
+    OPENLINE: "Y"   // ← ERRADO, dentro de PROPERTIES
+  }
+}
+
+// CORRETO (conforme docs):
+{
+  TYPE: "B",
+  OPENLINE: "Y",    // ← raiz do objeto
+  PROPERTIES: {
+    NAME: "Emmely AI"
+  }
+}
 ```
 
-### Estrutura do postMessage do Bitrix24
+### O que é o "Chatbot" na aba de Integrações — problema de design
 
-O Bitrix24 envia mensagens `postMessage` ao iframe em formato:
-```json
-{ "action": "ChangeColorScheme", "scheme": "dark" }
+O utilizador está certo: a aba "Chatbot" em `/integracoes` mostra WhatsApp e Instagram com toggles, mas isso está conceptualmente errado. O chatbot no Bitrix24 é o **IM Bot** registado via `imbot.register`, que aparece no Contact Center → Open Lines → selecionar chatbot. A configuração de qual agente responde nas Open Lines já existe na aba **Conector** do `Bitrix24App.tsx` (campo "Agente do Canal Aberto"). A aba Chatbot em `/integracoes` confunde o utilizador e deve ser **reformulada** para mostrar apenas o estado do bot Bitrix24 e a configuração do agente padrão para canais diretos (WhatsApp/Instagram via chatbot automático, que é diferente do IM Bot).
+
+## Plano de Correção
+
+### Parte 1 — Corrigir o registo do bot (causa raiz)
+
+**Ficheiro: `supabase/functions/bitrix24-install/index.ts`**
+
+Alterar o `imbot.register` de:
+```typescript
+TYPE: "H",
+PROPERTIES: {
+  NAME: "Emmely AI",
+  OPENLINE: "Y",   // ERRADO
+}
 ```
-ou via o SDK legado com `BX24.bind('changeColorScheme', callback)`.
+Para:
+```typescript
+TYPE: "B",        // Standard bot com OPENLINE habilitado = modo híbrido
+OPENLINE: "Y",    // RAIZ, não dentro de PROPERTIES
+PROPERTIES: {
+  NAME: "Emmely AI",
+  WORK_POSITION: "Assistente Virtual IA",
+  COLOR: "GREEN",  // Bitrix24 usa nomes de cor, não hex
+}
+```
+
+Também remover o `COLOR` em formato hex (`"#25D366"`) que pode ser inválido — a documentação mostra valores como `"GREEN"`, `"BLUE"`, `"AQUA"`, etc.
+
+### Parte 2 — Corrigir o `bitrix24-rebind-events` (mesmo fix)
+
+**Ficheiro: `supabase/functions/bitrix24-rebind-events/index.ts`**
+
+Aplicar o mesmo fix no `imbot.update` ou re-register que existe nesta função, para que quando o utilizador clique em "Re-registar Bot" o resultado seja correto.
+
+### Parte 3 — Reformular a aba "Chatbot" em `/integracoes`
+
+A aba atual mostra "WhatsApp — Chatbot IA" e "Instagram — Chatbot IA" com toggles que escrevem em `chatbot_channel_settings`. Isso é funcionalidade correta mas com **título e contexto errados** que confundem o utilizador. Renomear e reorganizar para:
+
+**Nova estrutura da aba "Chatbot"**:
+
+**Secção 1 — Bot Bitrix24 (Contact Center)**
+- Estado do bot registado (ID, nome)
+- Instrução: "Para ativar em Open Lines, vá ao Contact Center → selecione a linha → Chatbot → Emmely AI"
+- Botão "Re-registar Bot" (que chama a edge function para re-registar com os parâmetros corretos)
+- Seletor de agente padrão para o canal aberto (já existente no DashboardView do Bitrix24App)
+
+**Secção 2 — Chatbot Automático (WhatsApp / Instagram)**
+- Explicação clara: "Resposta automática para mensagens recebidas diretamente via WhatsApp e Instagram (sem necessidade do Bitrix24)"
+- Os toggles e seletores de agente existentes — MAS com label correto
+
+Isto resolve a confusão: o utilizador entende que:
+1. Para o Bitrix24 Contact Center → configurar na aba Conector do Bitrix24App
+2. Para WhatsApp/Instagram diretos → configurar nesta aba
+
+### Parte 4 — Botão de re-registo no Bitrix24App (DashboardView)
+
+O botão "Re-registar Bot" que já existe no `Bitrix24App.tsx` deve também aplicar o fix correto (`TYPE: "B"`, `OPENLINE: "Y"` na raiz). Verificar se a edge function `bitrix24-rebind-events` já faz o re-registo correto e corrigir se necessário.
 
 ## Ficheiros a Alterar
 
-### 1. Novo ficheiro: `src/hooks/useBitrix24Theme.ts`
-
-Hook React que:
-- Lê `prefers-color-scheme` do browser via `window.matchMedia`
-- Escuta `window.addEventListener('message', ...)` para mensagens do parent Bitrix24 com informação de tema
-- Tenta ler `BX24.getAppOption('colorScheme')` se o BX24 SDK estiver disponível
-- Usa `BX24.bind('themeChange', ...)` para mudanças em tempo real (quando disponível)
-- Retorna `{ isDark: boolean, scheme: 'dark' | 'light' }`
-
-```typescript
-// Pseudo-código do hook
-export function useBitrix24Theme() {
-  const [isDark, setIsDark] = useState(() => {
-    // Preferência inicial do sistema
-    return window.matchMedia('(prefers-color-scheme: dark)').matches;
-  });
-
-  useEffect(() => {
-    // Camada 1: prefers-color-scheme
-    const mq = window.matchMedia('(prefers-color-scheme: dark)');
-    const handleMQ = (e: MediaQueryListEvent) => setIsDark(e.matches);
-    mq.addEventListener('change', handleMQ);
-
-    // Camada 2: postMessage do parent Bitrix24
-    const handleMessage = (e: MessageEvent) => {
-      if (!e.data) return;
-      const { action, scheme, colorScheme } = e.data;
-      if (action === 'ChangeColorScheme' || action === 'themeChange') {
-        setIsDark(scheme === 'dark' || colorScheme === 'dark');
-      }
-    };
-    window.addEventListener('message', handleMessage);
-
-    // Camada 3: BX24 SDK bind (quando disponível)
-    const BX24 = (window as any).BX24;
-    if (BX24?.bind) {
-      try {
-        BX24.bind('themeChange', (data: any) => {
-          setIsDark(data?.scheme === 'dark');
-        });
-      } catch {}
-    }
-
-    return () => {
-      mq.removeEventListener('change', handleMQ);
-      window.removeEventListener('message', handleMessage);
-    };
-  }, []);
-
-  return { isDark, scheme: isDark ? 'dark' : 'light' };
-}
-```
-
-### 2. `src/pages/Bitrix24App.tsx` — usar o hook e aplicar a classe
-
-No componente `Bitrix24App`, usar o hook e aplicar `dark` ou `light` ao wrapper raiz:
-
-```tsx
-const { isDark } = useBitrix24Theme();
-
-return (
-  <div className={cn("min-h-screen bg-background flex", isDark && "dark")}>
-    {/* ... resto do conteúdo ... */}
-  </div>
-);
-```
-
-Também aplicar ao loading state:
-```tsx
-if (view === "loading") {
-  return (
-    <div className={cn("min-h-screen bg-background flex items-center justify-center", isDark && "dark")}>
-      ...
-    </div>
-  );
-}
-```
-
-### Por que esta abordagem funciona
-
-- O Tailwind aplica as CSS variables do `.dark { ... }` para todos os elementos dentro do wrapper
-- **Sem afectar** o resto da app (o wrapper `.dark` está isolado ao `Bitrix24App`)
-- Reage **em tempo real** às mudanças de tema (sem reload)
-- Funciona mesmo sem o Bitrix24 (fallback para `prefers-color-scheme`)
-- Zero dependências extras — apenas React hooks nativos
-
-### Resultado visual esperado
-
-| Bitrix24 theme | App iframe |
+| Ficheiro | Alteração |
 |---|---|
-| Claro (padrão) | `bg-background` branco, `text-foreground` escuro |
-| Escuro | `dark` class aplicada → fundos escuros, textos claros |
-| Utilizador muda o tema | Reage em tempo real via `postMessage` |
-| Fora do Bitrix24 (dev) | Segue o tema do sistema operativo |
+| `supabase/functions/bitrix24-install/index.ts` | Fix `imbot.register`: `TYPE: "B"`, `OPENLINE: "Y"` na raiz, `COLOR: "GREEN"` |
+| `supabase/functions/bitrix24-rebind-events/index.ts` | Verificar e aplicar o mesmo fix no re-registo do bot |
+| `src/pages/Integracoes.tsx` | Reformular `ChatbotTab`: separar Bot Bitrix24 de Chatbot Automático (WA/IG) com labels claros |
 
-## Ficheiros a Criar/Editar
+## Sequência após o deploy
 
-| Ficheiro | Acção |
-|---|---|
-| `src/hooks/useBitrix24Theme.ts` | CRIAR — hook de sincronização de tema |
-| `src/pages/Bitrix24App.tsx` | EDITAR — usar o hook, aplicar classe `dark` ao wrapper |
+1. Clicar em **"Re-registar Bot"** no painel Bitrix24App → bot re-registado com `TYPE: "B"` + `OPENLINE: "Y"` correto
+2. No Bitrix24 → Contact Center → abrir uma Open Line → Configurações → Chatbot → **Emmely AI** aparece na lista
+3. Selecionar Emmely AI → guardar → o bot começa a responder automaticamente
 
 ## O que NÃO muda
 
-- `src/index.css` — as CSS variables do `.dark` já existem e estão correctas
-- `tailwind.config.ts` — já tem `darkMode: ["class"]` configurado
-- Edge functions, base de dados, resto da aplicação — sem alterações
+- A tabela `chatbot_channel_settings` e os dados já guardados — continuam a controlar o chatbot automático para WA/Instagram
+- O sistema de agentes IA, edge functions de reply, etc.
+- A UI do Bitrix24App — apenas o bug no `imbot.register` é corrigido
