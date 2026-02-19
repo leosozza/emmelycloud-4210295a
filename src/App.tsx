@@ -25,6 +25,7 @@ import TrainingPage from "./pages/Training";
 import FlowsPage from "./pages/Flows";
 import PlaygroundIAPage from "./pages/PlaygroundIA";
 import VoiceAgentsPage from "./pages/VoiceAgents";
+import ApiDocsPage from "./pages/ApiDocs";
 import Privacy from "./pages/Privacy";
 import Terms from "./pages/Terms";
 import DataDeletion from "./pages/DataDeletion";
@@ -66,6 +67,7 @@ const App = () => (
             <Route path="/flows" element={<FlowsPage />} />
             <Route path="/playground" element={<PlaygroundIAPage />} />
             <Route path="/voice-agents" element={<VoiceAgentsPage />} />
+            <Route path="/api-docs" element={<ApiDocsPage />} />
           </Route>
           <Route path="*" element={<NotFound />} />
         </Routes>
