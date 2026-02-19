@@ -87,10 +87,8 @@ async function handleConnectorMessage(supabase: any, integration: any, payload: 
   const line = eventData.LINE || 0;
   const messages = eventData.MESSAGES || {};
 
-  if (connector !== CONNECTOR_ID) {
-    console.log("[WORKER] Wrong connector:", connector);
-    return;
-  }
+  // Aceita mensagens de qualquer conector (emmely_connector ou outros configurados no Contact Center)
+  console.log("[WORKER] Processing connector message from:", connector, "line:", line);
 
   // Messages can be an object with numeric keys from PHP form data
   const msgArray = Array.isArray(messages) ? messages : Object.values(messages);
@@ -108,7 +106,7 @@ async function handleConnectorMessage(supabase: any, integration: any, payload: 
       try {
         const accessToken = await ensureValidToken(supabase, integration);
         await callBitrix(integration.client_endpoint, accessToken, "imconnector.send.status.delivery", {
-          CONNECTOR: CONNECTOR_ID,
+          CONNECTOR: connector || CONNECTOR_ID,
           LINE: line,
           MESSAGES: [{ im_id: messageId, date: new Date().toISOString() }],
         });
@@ -175,7 +173,7 @@ async function handleConnectorMessage(supabase: any, integration: any, payload: 
         // Delivery ACK
         const accessToken = await ensureValidToken(supabase, integration);
         await callBitrix(integration.client_endpoint, accessToken, "imconnector.send.status.delivery", {
-          CONNECTOR: CONNECTOR_ID,
+          CONNECTOR: connector || CONNECTOR_ID,
           LINE: line,
           MESSAGES: [{ im_id: messageId, date: new Date().toISOString() }],
         });
@@ -330,11 +328,10 @@ async function handleStatusDelete(supabase: any, integration: any, payload: any)
   const connector = eventData.CONNECTOR || "";
   const line = eventData.LINE || 0;
 
-  if (connector === CONNECTOR_ID) {
-    await supabase.from("bitrix24_channel_mappings").update({ is_active: false })
-      .eq("integration_id", integration.id).eq("line_id", parseInt(line, 10));
-    await debugLog(supabase, integration.id, "connector_deactivated", "inbound", { line });
-  }
+  // Desativar o mapeamento do canal desta linha (qualquer conector)
+  await supabase.from("bitrix24_channel_mappings").update({ is_active: false })
+    .eq("integration_id", integration.id).eq("line_id", parseInt(line, 10));
+  await debugLog(supabase, integration.id, "connector_deactivated", "inbound", { line, connector });
 }
 
 // ─── Main Worker ───
