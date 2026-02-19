@@ -254,6 +254,8 @@ function DashboardView({ integration, botId, domain, loading, onResync, onRefres
   const [logs, setLogs] = useState<any[]>([]);
   const [rebinding, setRebinding] = useState(false);
   const [rebindResult, setRebindResult] = useState<string | null>(null);
+  const [reregisteringBot, setReregisteringBot] = useState(false);
+  const [reregisterBotResult, setReregisterBotResult] = useState<string | null>(null);
 
   useEffect(() => {
     fetch(`${SUPABASE_URL}/rest/v1/ai_agents?select=id,name,is_active,is_default&is_active=eq.true&order=name.asc`, {
@@ -448,9 +450,68 @@ function DashboardView({ integration, botId, domain, loading, onResync, onRefres
         </CardContent>
       </Card>
 
-      {/* Re-bind Events Button */}
+      {/* Bot + Events buttons */}
       <div className="space-y-2">
-        <Button onClick={handleRebindEvents} disabled={rebinding} className="w-full" variant="default">
+        <Button
+          onClick={async () => {
+            setReregisteringBot(true);
+            setReregisterBotResult(null);
+            try {
+              const auth = (window as any).BX24?.getAuth?.();
+              if (!auth && !integration?.member_id) {
+                setReregisterBotResult("❌ Sem sessão BX24 disponível. Abra o app dentro do Bitrix24.");
+                return;
+              }
+              const res = await fetch(`${SUPABASE_URL}/functions/v1/bitrix24-install`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json", apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` },
+                body: JSON.stringify({
+                  auth: auth ? {
+                    access_token: auth.access_token,
+                    refresh_token: auth.refresh_token,
+                    member_id: auth.member_id,
+                    domain: auth.domain,
+                    client_endpoint: auth.client_endpoint,
+                    expires_in: String(auth.expires || 3600),
+                  } : {
+                    member_id: integration?.member_id,
+                    access_token: integration?.access_token,
+                    refresh_token: integration?.refresh_token,
+                    client_endpoint: integration?.client_endpoint,
+                    domain: integration?.domain,
+                    expires_in: "3600",
+                  },
+                }),
+              });
+              const data = await res.json();
+              if (data.success || res.ok) {
+                setReregisterBotResult("✅ Bot re-registado com EVENT_JOIN_CHAT! Verifique o Contact Center → Chatbot → Emmely AI.");
+                if (integration?.member_id) {
+                  // reload integration to get new bot_id
+                  setTimeout(() => onRefresh(), 1500);
+                }
+              } else {
+                setReregisterBotResult(`❌ Erro: ${data.error || res.status}`);
+              }
+            } catch (e) {
+              setReregisterBotResult(`❌ Erro de rede: ${e}`);
+            } finally {
+              setReregisteringBot(false);
+            }
+          }}
+          disabled={reregisteringBot}
+          className="w-full"
+          variant="default"
+        >
+          {reregisteringBot
+            ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Re-registando Bot...</>
+            : <><Bot className="h-4 w-4 mr-2" />Re-registar Bot (EVENT_JOIN_CHAT)</>}
+        </Button>
+        {reregisterBotResult && (
+          <p className="text-xs text-center text-muted-foreground">{reregisterBotResult}</p>
+        )}
+
+        <Button onClick={handleRebindEvents} disabled={rebinding} className="w-full" variant="outline">
           {rebinding ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Registando webhooks...</> : <><Zap className="h-4 w-4 mr-2" />Re-registar Webhooks de Eventos</>}
         </Button>
         {rebindResult && (

@@ -105,10 +105,16 @@ async function handleConnectorMessage(supabase: any, integration: any, payload: 
       console.log("[WORKER] Skipping bot message");
       try {
         const accessToken = await ensureValidToken(supabase, integration);
+        const imData = msg.im || msg.IM || {};
+        const chatData = msg.chat || msg.CHAT || {};
         await callBitrix(integration.client_endpoint, accessToken, "imconnector.send.status.delivery", {
           CONNECTOR: connector || CONNECTOR_ID,
           LINE: line,
-          MESSAGES: [{ im_id: messageId, date: new Date().toISOString() }],
+          MESSAGES: [{
+            im: imData,
+            message: { id: [messageId] },
+            chat: { id: chatData.id || chatData.ID || "" },
+          }],
         });
       } catch {}
       continue;
@@ -170,12 +176,18 @@ async function handleConnectorMessage(supabase: any, integration: any, payload: 
         const sendResult = await sendRes.json();
         console.log("[WORKER] message-send result:", JSON.stringify(sendResult).substring(0, 200));
 
-        // Delivery ACK
+        // Delivery ACK — estrutura correta conforme documentação oficial
         const accessToken = await ensureValidToken(supabase, integration);
+        const imData = msg.im || msg.IM || {};
+        const chatData = msg.chat || msg.CHAT || {};
         await callBitrix(integration.client_endpoint, accessToken, "imconnector.send.status.delivery", {
           CONNECTOR: connector || CONNECTOR_ID,
           LINE: line,
-          MESSAGES: [{ im_id: messageId, date: new Date().toISOString() }],
+          MESSAGES: [{
+            im: imData,
+            message: { id: [messageId] },
+            chat: { id: chatData.id || chatData.ID || "" },
+          }],
         });
 
         await debugLog(supabase, integration.id, "message_forwarded", "outbound", {
@@ -334,6 +346,25 @@ async function handleStatusDelete(supabase: any, integration: any, payload: any)
   await debugLog(supabase, integration.id, "connector_deactivated", "inbound", { line, connector });
 }
 
+// ONIMBOTJOINCHAT — bot foi adicionado a uma Open Line via Contact Center
+async function handleBotJoinChat(supabase: any, integration: any, payload: any) {
+  const params = payload.data?.PARAMS || payload.data || {};
+  const chatEntityType = params.CHAT_ENTITY_TYPE || params.chat_entity_type || "";
+  const dialogId = params.DIALOG_ID || params.dialog_id || "";
+
+  console.log("[WORKER] ONIMBOTJOINCHAT — CHAT_ENTITY_TYPE:", chatEntityType, "dialogId:", dialogId);
+
+  // Se for uma Open Line (LINES), envia a mensagem de boas-vindas
+  if (chatEntityType === "LINES" || !chatEntityType) {
+    // Reutiliza o handler de welcome para enviar a mensagem de boas-vindas
+    await handleWelcome(supabase, integration, payload);
+  }
+
+  await debugLog(supabase, integration.id, "bot_join_chat", "inbound", {
+    chatEntityType, dialogId
+  });
+}
+
 // ─── Main Worker ───
 
 Deno.serve(async (req) => {
@@ -439,6 +470,10 @@ Deno.serve(async (req) => {
             break;
           case "ONIMCONNECTORSTATUSDELETE":
             await handleStatusDelete(supabase, integration, event.payload);
+            break;
+          case "ONIMBOTJOINCHAT":
+            // Bot adicionado a uma Open Line via Contact Center
+            await handleBotJoinChat(supabase, integration, event.payload);
             break;
           default:
             console.log("[WORKER] Unknown event type:", eventType);

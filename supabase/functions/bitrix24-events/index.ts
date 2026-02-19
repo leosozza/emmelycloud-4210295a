@@ -6,20 +6,38 @@ const corsHeaders = {
 };
 
 // Parse PHP-style nested form data (Bitrix24 sends data[MESSAGES][0][message][text] etc.)
+// Numeric keys are correctly reconstructed as arrays (not objects with numeric string keys)
 function parsePhpStyleBody(bodyText: string): Record<string, any> {
   if (!bodyText) return {};
   const params = new URLSearchParams(bodyText);
   const data: Record<string, any> = {};
 
+  function setNestedValue(obj: any, parts: string[], value: string) {
+    for (let i = 0; i < parts.length - 1; i++) {
+      const key = parts[i];
+      const nextKey = parts[i + 1];
+      const nextIsNumeric = /^\d+$/.test(nextKey);
+      if (obj[key] === undefined || obj[key] === null) {
+        obj[key] = nextIsNumeric ? [] : {};
+      }
+      obj = obj[key];
+    }
+    const lastKey = parts[parts.length - 1];
+    if (Array.isArray(obj)) {
+      obj[parseInt(lastKey, 10)] = value;
+    } else {
+      obj[lastKey] = value;
+    }
+  }
+
   for (const [key, value] of params.entries()) {
     const parts = key.match(/([^\[\]]+)/g);
     if (parts && parts.length > 1) {
-      let current = data;
-      for (let i = 0; i < parts.length - 1; i++) {
-        if (!current[parts[i]]) current[parts[i]] = {};
-        current = current[parts[i]];
+      // Check if root key needs array (next key is numeric)
+      if (/^\d+$/.test(parts[1]) && !Array.isArray(data[parts[0]])) {
+        data[parts[0]] = data[parts[0]] ? Object.values(data[parts[0]]) : [];
       }
-      current[parts[parts.length - 1]] = value;
+      setNestedValue(data, parts, value);
     } else {
       data[key] = value;
     }
@@ -57,6 +75,7 @@ const SUPPORTED_EVENTS = [
   "ONIMBOTMESSAGEADD",
   "ONIMBOTJOINOPEN",
   "ONIMBOTWELCOMEMESSAGE",
+  "ONIMBOTJOINCHAT",   // NOVO — Open Lines join event
 ];
 
 Deno.serve(async (req) => {

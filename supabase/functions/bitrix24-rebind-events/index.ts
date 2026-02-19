@@ -86,6 +86,7 @@ Deno.serve(async (req) => {
       "OnImbotMessageAdd",
       "OnImbotWelcomeMessage",
       "OnImbotJoinOpen",
+      "OnImbotJoinChat",    // NOVO — obrigatório para Open Lines chatbot selector
     ];
 
     const results: Record<string, any> = {};

@@ -254,6 +254,7 @@ Deno.serve(async (req) => {
         "OnImbotMessageAdd",       // eventos do IM Bot
         "OnImbotWelcomeMessage",   // boas-vindas do IM Bot
         "OnImbotJoinOpen",         // bot adicionado a open line
+        "OnImbotJoinChat",         // NOVO — bot adicionado via Open Lines (Contact Center)
       ];
 
       for (const event of events) {
@@ -316,6 +317,7 @@ Deno.serve(async (req) => {
           TYPE: "H",
           EVENT_MESSAGE_ADD: eventsUrl,
           EVENT_WELCOME_MESSAGE: eventsUrl,
+          EVENT_JOIN_CHAT: eventsUrl,  // OBRIGATÓRIO para Open Lines chatbot selector
           EVENT_BOT_DELETE: eventsUrl,
           PROPERTIES: {
             NAME: "Emmely AI",
@@ -347,6 +349,8 @@ Deno.serve(async (req) => {
             CODE: "emmely_ai_bot",
             TYPE: "H",
             EVENT_MESSAGE_ADD: eventsUrl,
+            EVENT_WELCOME_MESSAGE: eventsUrl,
+            EVENT_JOIN_CHAT: eventsUrl,  // OBRIGATÓRIO para Open Lines
             EVENT_BOT_DELETE: eventsUrl,
             PROPERTIES: {
               NAME: "Emmely AI",
