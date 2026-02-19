@@ -760,7 +760,7 @@ interface ChatbotChannelConfig {
   bgColor: string;
 }
 
-const CHATBOT_CHANNELS: ChatbotChannelConfig[] = [
+const DIRECT_CHANNELS: ChatbotChannelConfig[] = [
   { channel: "whatsapp", label: "WhatsApp", icon: Phone, iconColor: "text-green-600", bgColor: "bg-green-100" },
   { channel: "instagram", label: "Instagram", icon: Instagram, iconColor: "text-pink-600", bgColor: "bg-pink-100" },
 ];
@@ -771,23 +771,34 @@ interface ChatbotSettings {
   agent_id: string | null;
 }
 
+interface BitrixIntegrationBot {
+  id: string;
+  domain: string | null;
+  config: Record<string, any> | null;
+  connector_registered: boolean;
+}
+
 function ChatbotTab() {
   const [settings, setSettings] = useState<ChatbotSettings[]>(
-    CHATBOT_CHANNELS.map((c) => ({ channel: c.channel, enabled: false, agent_id: null }))
+    DIRECT_CHANNELS.map((c) => ({ channel: c.channel, enabled: false, agent_id: null }))
   );
   const [agents, setAgents] = useState<{ id: string; name: string }[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState<string | null>(null);
+  const [integration, setIntegration] = useState<BitrixIntegrationBot | null>(null);
+  const [reregistering, setReregistering] = useState(false);
 
   useEffect(() => {
     async function load() {
       setLoading(true);
-      const [agentsRes, settingsRes] = await Promise.all([
+      const [agentsRes, settingsRes, intRes] = await Promise.all([
         supabase.from("ai_agents").select("id, name").eq("is_active", true).order("name"),
         supabase.from("chatbot_channel_settings" as any).select("channel, enabled, agent_id"),
+        supabase.from("bitrix24_integrations").select("id, domain, config, connector_registered").limit(1).single(),
       ]);
 
       if (agentsRes.data) setAgents(agentsRes.data as { id: string; name: string }[]);
+      if (intRes.data) setIntegration(intRes.data as BitrixIntegrationBot);
 
       if (settingsRes.data && settingsRes.data.length > 0) {
         setSettings((prev) =>
@@ -831,6 +842,25 @@ function ChatbotTab() {
     }
   };
 
+  const handleReregisterBot = async () => {
+    setReregistering(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("bitrix24-rebind-events");
+      if (error) throw error;
+      if (data?.success) {
+        toast.success("Bot Emmely AI re-registado com sucesso! Verifique no Contact Center → Open Lines → Chatbot.");
+        const { data: intData } = await supabase.from("bitrix24_integrations").select("id, domain, config, connector_registered").limit(1).single();
+        if (intData) setIntegration(intData as BitrixIntegrationBot);
+      } else {
+        toast.error(data?.error || "Erro ao re-registar bot");
+      }
+    } catch (e: unknown) {
+      toast.error((e as Error)?.message || "Erro de rede");
+    } finally {
+      setReregistering(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex justify-center py-12">
@@ -839,71 +869,167 @@ function ChatbotTab() {
     );
   }
 
-  return (
-    <div className="grid gap-4 md:grid-cols-2">
-      {CHATBOT_CHANNELS.map((ch) => {
-        const Icon = ch.icon;
-        const setting = settings.find((s) => s.channel === ch.channel)!;
-        const isSaving = saving === ch.channel;
+  const botId = (integration?.config as any)?.bot_id;
+  const botRegistered = integration?.connector_registered;
 
-        return (
-          <Card key={ch.channel}>
-            <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-2">
+  return (
+    <div className="space-y-6">
+
+      {/* ── Secção 1: Bot Bitrix24 (Contact Center) ── */}
+      <div>
+        <div className="mb-3">
+          <h3 className="text-sm font-semibold">Bot Bitrix24 — Contact Center</h3>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            O bot "Emmely AI" registado no Bitrix24. Para ativá-lo numa Open Line vá a{" "}
+            <strong>Contact Center → selecione a linha → Configurações → Chatbot → Emmely AI</strong>.
+          </p>
+        </div>
+
+        <Card>
+          <CardContent className="pt-5 space-y-4">
+            <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
-                <div className={`flex h-10 w-10 items-center justify-center rounded-lg ${ch.bgColor}`}>
-                  <Icon className={`h-5 w-5 ${ch.iconColor}`} />
+                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-blue-100">
+                  <Bot className="h-5 w-5 text-blue-600" />
                 </div>
                 <div>
-                  <CardTitle className="text-base">{ch.label}</CardTitle>
-                  <CardDescription>Chatbot IA</CardDescription>
+                  <p className="text-sm font-medium">Emmely AI</p>
+                  <p className="text-xs text-muted-foreground">
+                    {integration?.domain ? `Registado em ${integration.domain}` : "Não conectado ao Bitrix24"}
+                  </p>
                 </div>
               </div>
               <div className="flex items-center gap-2">
-                {isSaving && <RefreshCw className="h-3.5 w-3.5 animate-spin text-muted-foreground" />}
-                <Switch
-                  checked={setting.enabled}
-                  onCheckedChange={(v) => handleToggle(ch.channel, v)}
-                />
+                {botRegistered ? (
+                  <Badge variant="outline" className="bg-green-100 text-green-800 border-green-200">
+                    <CheckCircle2 className="h-3 w-3 mr-1" />
+                    Registado
+                  </Badge>
+                ) : (
+                  <Badge variant="outline" className="bg-yellow-100 text-yellow-800 border-yellow-200">
+                    <Clock className="h-3 w-3 mr-1" />
+                    Pendente
+                  </Badge>
+                )}
               </div>
-            </CardHeader>
-            <CardContent className="space-y-3 text-sm">
-              <div>
-                <Label className="text-xs text-muted-foreground">Agente IA ativo</Label>
-                <Select
-                  value={setting.agent_id ?? "none"}
-                  onValueChange={(v) => handleAgentChange(ch.channel, v)}
-                  disabled={!setting.enabled}
-                >
-                  <SelectTrigger className="mt-1 h-8 text-xs">
-                    <SelectValue placeholder="Selecionar agente" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">— Sem agente —</SelectItem>
-                    {agents.map((a) => (
-                      <SelectItem key={a.id} value={a.id}>
-                        <div className="flex items-center gap-2">
-                          <Bot className="h-3 w-3" />
-                          {a.name}
-                        </div>
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+            </div>
+
+            {botId && (
+              <div className="flex items-center gap-2 rounded-md bg-muted/50 px-3 py-2 text-xs">
+                <span className="text-muted-foreground">Bot ID:</span>
+                <span className="font-mono font-medium">{botId}</span>
               </div>
-              <p className="text-xs text-muted-foreground">
-                {setting.enabled
-                  ? setting.agent_id
-                    ? `✅ Chatbot ativo com agente selecionado.`
-                    : `⚠️ Chatbot ativado mas sem agente. Selecione um agente acima.`
-                  : `Chatbot desativado para este canal.`}
+            )}
+
+            <div className="rounded-md border border-blue-200 bg-blue-50 px-4 py-3 text-xs text-blue-800 space-y-1">
+              <p className="font-semibold">📋 Como ativar o chatbot no Contact Center:</p>
+              <ol className="list-decimal ml-4 space-y-0.5">
+                <li>No Bitrix24, abra <strong>Contact Center</strong></li>
+                <li>Selecione a <strong>Open Line</strong> desejada → <strong>Configurações</strong></li>
+                <li>Na secção <strong>Chatbot</strong>, selecione <strong>Emmely AI</strong></li>
+                <li>Guarde as configurações</li>
+              </ol>
+            </div>
+
+            <Button
+              size="sm"
+              variant="outline"
+              className="w-full"
+              onClick={handleReregisterBot}
+              disabled={reregistering || !integration}
+            >
+              {reregistering
+                ? <><RefreshCw className="h-3.5 w-3.5 mr-1.5 animate-spin" />A re-registar…</>
+                : <><RefreshCw className="h-3.5 w-3.5 mr-1.5" />Re-registar Bot no Bitrix24</>
+              }
+            </Button>
+            {!integration && (
+              <p className="text-xs text-muted-foreground text-center">
+                Nenhuma integração Bitrix24 encontrada. Instale a app primeiro.
               </p>
-            </CardContent>
-          </Card>
-        );
-      })}
+            )}
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* ── Secção 2: Chatbot Automático (WhatsApp / Instagram) ── */}
+      <div>
+        <div className="mb-3">
+          <h3 className="text-sm font-semibold">Chatbot Automático — WhatsApp &amp; Instagram</h3>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            Resposta automática para mensagens recebidas diretamente via WhatsApp e Instagram,
+            <strong> sem necessidade do Bitrix24</strong>. Configure qual agente IA responde em cada canal.
+          </p>
+        </div>
+
+        <div className="grid gap-4 md:grid-cols-2">
+          {DIRECT_CHANNELS.map((ch) => {
+            const Icon = ch.icon;
+            const setting = settings.find((s) => s.channel === ch.channel)!;
+            const isSaving = saving === ch.channel;
+
+            return (
+              <Card key={ch.channel}>
+                <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-2">
+                  <div className="flex items-center gap-3">
+                    <div className={`flex h-10 w-10 items-center justify-center rounded-lg ${ch.bgColor}`}>
+                      <Icon className={`h-5 w-5 ${ch.iconColor}`} />
+                    </div>
+                    <div>
+                      <CardTitle className="text-base">{ch.label}</CardTitle>
+                      <CardDescription>Resposta automática direta</CardDescription>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {isSaving && <RefreshCw className="h-3.5 w-3.5 animate-spin text-muted-foreground" />}
+                    <Switch
+                      checked={setting.enabled}
+                      onCheckedChange={(v) => handleToggle(ch.channel, v)}
+                    />
+                  </div>
+                </CardHeader>
+                <CardContent className="space-y-3 text-sm">
+                  <div>
+                    <Label className="text-xs text-muted-foreground">Agente IA</Label>
+                    <Select
+                      value={setting.agent_id ?? "none"}
+                      onValueChange={(v) => handleAgentChange(ch.channel, v)}
+                      disabled={!setting.enabled}
+                    >
+                      <SelectTrigger className="mt-1 h-8 text-xs">
+                        <SelectValue placeholder="Selecionar agente" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">— Sem agente —</SelectItem>
+                        {agents.map((a) => (
+                          <SelectItem key={a.id} value={a.id}>
+                            <div className="flex items-center gap-2">
+                              <Bot className="h-3 w-3" />
+                              {a.name}
+                            </div>
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    {setting.enabled
+                      ? setting.agent_id
+                        ? `✅ Chatbot ativo com agente selecionado.`
+                        : `⚠️ Chatbot ativado mas sem agente. Selecione um agente acima.`
+                      : `Chatbot desativado para este canal.`}
+                  </p>
+                </CardContent>
+              </Card>
+            );
+          })}
+        </div>
+      </div>
     </div>
   );
 }
+
+
 
 // ─── Main Page ───────────────────────────────────────────────────────────────
 

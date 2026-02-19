@@ -310,11 +310,11 @@ Deno.serve(async (req) => {
         }
 
         // 2. Register fresh bot
-        // TYPE: "H" = Human-like bot — required to appear in Contact Center Open Line chatbot selector
-        // TYPE: "B" = Standard bot (only for direct chat, does NOT appear in Open Lines chatbot list)
+        // TYPE: "B" + OPENLINE: "Y" (root level) = hybrid mode — appears in Contact Center Open Lines chatbot selector
         const botResult = await callBitrix(clientEndpoint, accessToken, "imbot.register", {
           CODE: "emmely_ai_bot",
-          TYPE: "H",
+          TYPE: "B",
+          OPENLINE: "Y",              // RAIZ — obrigatório para aparecer no selector de chatbot das Open Lines
           EVENT_MESSAGE_ADD: eventsUrl,
           EVENT_WELCOME_MESSAGE: eventsUrl,
           EVENT_JOIN_CHAT: eventsUrl,  // OBRIGATÓRIO para Open Lines chatbot selector
@@ -322,8 +322,7 @@ Deno.serve(async (req) => {
           PROPERTIES: {
             NAME: "Emmely AI",
             WORK_POSITION: "Assistente Virtual IA",
-            COLOR: "#25D366",
-            OPENLINE: "Y",
+            COLOR: "GREEN",           // Nome de cor válido (não hex)
           },
         });
 
@@ -347,16 +346,16 @@ Deno.serve(async (req) => {
           // Fallback: register without EVENT_WELCOME_MESSAGE
           const botResult2 = await callBitrix(clientEndpoint, accessToken, "imbot.register", {
             CODE: "emmely_ai_bot",
-            TYPE: "H",
+            TYPE: "B",
+            OPENLINE: "Y",            // RAIZ — obrigatório para Open Lines
             EVENT_MESSAGE_ADD: eventsUrl,
             EVENT_WELCOME_MESSAGE: eventsUrl,
-            EVENT_JOIN_CHAT: eventsUrl,  // OBRIGATÓRIO para Open Lines
+            EVENT_JOIN_CHAT: eventsUrl,
             EVENT_BOT_DELETE: eventsUrl,
             PROPERTIES: {
               NAME: "Emmely AI",
               WORK_POSITION: "Assistente Virtual IA",
-              COLOR: "#25D366",
-              OPENLINE: "Y",
+              COLOR: "GREEN",
             },
           });
           if (botResult2.result) {
