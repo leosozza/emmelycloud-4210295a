@@ -50,3 +50,6 @@ verify_jwt = false
 
 [functions.ai-playground]
 verify_jwt = false
+
+[functions.elevenlabs-conversation-token]
+verify_jwt = false
