@@ -1,66 +1,77 @@
 
 
-# Plano: Redesign do iframe Bitrix24 + Remover branding "Lovable"
+# Plano: App completa no iframe Bitrix24 + Corrigir chatbot
 
 ## Problema 1: Interface do iframe
 
-O `Bitrix24App.tsx` usa inline styles basicos (fundo branco, botoes verdes, sem sombras, sem gradientes). A app principal usa Tailwind, Shadcn, gradientes, cards com bordas arredondadas e badges coloridas.
+A pagina `/bitrix24` carrega a **mesma aplicacao Vite** -- ou seja, Tailwind, Shadcn e todos os componentes React **estao disponiveis**. Nao ha necessidade de usar inline styles. O `Bitrix24App.tsx` pode e deve reutilizar os componentes reais da aplicacao (Cards, Tabs, Buttons, Flow editor, etc.).
 
-Como o iframe do Bitrix24 nao carrega o CSS do projeto principal (Tailwind/Shadcn), a solucao e redesenhar os inline styles para replicar a estetica da app principal:
+### Solucao
 
-### Alteracoes visuais no `Bitrix24App.tsx`:
+Refatorar o `Bitrix24App.tsx` para:
+- Usar **Tailwind CSS** e **componentes Shadcn** (Tabs, Card, Button, Badge, Input, Select, ScrollArea)
+- Embeber o **Flow editor** (react-flow) diretamente na aba Flows, reutilizando os componentes de `src/components/flows/`
+- Reutilizar o componente de **AgentCard** e **AgentFormDialog** na aba Agentes
+- Reutilizar o **PlaygroundIA** (ou partes dele) na aba Playground
+- Manter a logica BX24 (init, auth, member_id) mas com UI nativa da app
 
-**Header:**
-- Gradiente linear `#2583d8 -> #7b5ea7 -> #d4728b` (mesmo do header principal)
-- Logo "E" com fundo gradiente, texto branco
-- Badge de status com cores suaves
+### Estrutura da nova pagina
 
-**Tabs:**
-- Estilo pill/arredondado similar ao header da app principal
-- Tab ativa com fundo semi-transparente branco, texto bold
-- Icones em vez de emojis
+```
+Bitrix24App.tsx (container com BX24 init)
+  |-- Header com gradiente (Tailwind)
+  |-- Tabs (Shadcn Tabs component)
+       |-- Conector: Card com status, logs, botao resync
+       |-- Agentes: Lista de AgentCards + AgentFormDialog
+       |-- Training: Upload de ficheiros de conhecimento
+       |-- Flows: FlowEditor embebido (react-flow)
+       |-- Playground: Chat com IA
+       |-- Pagamentos: Config de gateways
+```
 
-**Cards/Seccoes:**
-- Border-radius 12px, sombra suave `0 1px 3px rgba(0,0,0,0.08)`
-- Fundo `#fafbfc` nas seccoes
-- Tipografia Figtree (font-family fallback)
+### Alteracoes tecnicas
 
-**Botoes:**
-- Botao primario com gradiente azul-roxo (consistente com a marca)
-- Botao secundario outline com border suave
-- Tamanhos e padding consistentes com Shadcn
+| Ficheiro | Alteracao |
+|----------|-----------|
+| `src/pages/Bitrix24App.tsx` | Reescrever usando Tailwind + Shadcn, remover todos os inline styles. Importar e reutilizar componentes reais (AgentCard, Flow editor, etc.) |
 
-**Forms:**
-- Inputs com border `#e2e8f0`, focus ring azul
-- Labels com texto `#64748b`, uppercase 10px
-- Selects estilizados
-
-**Chat Playground:**
-- Bubbles com bordas arredondadas assimétricas (como na app principal)
-- Bubble do user com gradiente azul, bubble do assistant com fundo cinza claro
-- Loading com animacao CSS inline
-
-**Agentes lista:**
-- Cards individuais em vez de lista plana
-- Avatar com iniciais, badges de modelo/temperatura
-- Botoes de acao com hover states
+O ficheiro atual tem ~1192 linhas de inline styles. Sera substituido por ~400-500 linhas usando Tailwind e componentes Shadcn.
 
 ---
 
-## Problema 2: Branding "Lovable"
+## Problema 2: Chatbot nao aparece no Bitrix24
 
-O provider nativo chama-se "Lovable AI" (slug: `lovable`) na tabela `ai_providers`. Aparece:
-- No `AgentCard.tsx` como badge "Lovable AI"
-- No `AgentFormDialog.tsx` no select de provider
-- No `Bitrix24App.tsx` como `ai_provider: "lovable"`
-- No `PlaygroundIA.tsx` como badge "lovable"
-- No `Roadmap.tsx` e `ApiDocs.tsx` em textos
+Os logs mostram que o bot foi registado com sucesso (result ID: 10213). Na instalacao anterior, o registo falhou com `EVENT_WELCOME_MESSAGE_ERROR`, mas na reinstalacao mais recente, o bot registou-se corretamente.
 
-### Solucao:
-- Renomear na base de dados: `UPDATE ai_providers SET name = 'Emmely AI' WHERE slug = 'lovable'`
-- No codigo, o slug `lovable` continua igual (e o identificador tecnico), mas o **nome visivel** muda para "Emmely AI"
-- Nos textos do Roadmap e ApiDocs, substituir "Lovable AI" por "Emmely AI" ou simplesmente "IA nativa"
-- No `bitrix24-install`, o agente default ja se chama "Emmely AI" -- correto
+O problema e que o Bitrix24 pode ter **dois bots registados** (o antigo com erro e o novo). Alem disso, o bot precisa de ser **desregistado antes de re-registar** (tal como fazemos com os robots).
+
+### Solucao
+
+No `bitrix24-install/index.ts`:
+1. Antes de `imbot.register`, chamar `imbot.unregister` com o CODE do bot (para limpar registos antigos)
+2. Registar novamente com os parametros corretos
+3. Adicionar log do `botResult.result` (o bot ID) na tabela de integracoes para debugging
+
+```typescript
+// Delete existing bot first (safe for reinstall)
+await callBitrix(clientEndpoint, accessToken, "imbot.unregister", { 
+  BOT_ID: existingBotId // ou usar listagem para encontrar
+});
+
+// Re-register
+const botResult = await callBitrix(clientEndpoint, accessToken, "imbot.register", {
+  CODE: "emmely_ai_bot",
+  TYPE: "B",
+  ...
+});
+```
+
+### Nota sobre o selector de chatbots
+
+Na imagem, o selector mostra "Emmely Fernandes Advocacia" -- este e provavelmente o bot do PowerBot. O bot "Emmely AI" devera aparecer como opcao separada apos a correica do registo. O utilizador precisara de:
+1. Reinstalar a app no Bitrix24
+2. Ir a Contact Center > Open Line > Chatbots
+3. Selecionar "Emmely AI" no dropdown
 
 ---
 
@@ -68,14 +79,12 @@ O provider nativo chama-se "Lovable AI" (slug: `lovable`) na tabela `ai_provider
 
 | Ficheiro | Alteracao |
 |----------|-----------|
-| `src/pages/Bitrix24App.tsx` | Redesign completo dos inline styles (~800 linhas) |
-| `src/pages/Roadmap.tsx` | Substituir "Lovable" por "Emmely AI" nos textos |
-| `src/pages/ApiDocs.tsx` | Substituir "Lovable AI" por "Emmely AI" na descricao |
-| Migracao SQL | `UPDATE ai_providers SET name = 'Emmely AI' WHERE slug = 'lovable'` |
+| `src/pages/Bitrix24App.tsx` | Reescrita completa: inline styles para Tailwind + Shadcn + componentes reutilizados |
+| `supabase/functions/bitrix24-install/index.ts` | Adicionar `imbot.unregister` antes de `imbot.register` para limpar bots duplicados |
 
 ## Resultado esperado
 
-- Iframe do Bitrix24 com visual coerente com a app principal (gradientes, cards, tipografia)
-- Zero referencias a "Lovable" visiveis ao utilizador final
-- Provider nativo aparece como "Emmely AI" em todas as interfaces
+- Iframe do Bitrix24 com a **mesma qualidade visual** da app principal (Tailwind, Shadcn, mesmos componentes)
+- Flow editor funcional dentro do iframe
+- Bot "Emmely AI" visivel no selector de chatbots do Contact Center apos reinstalacao
 
