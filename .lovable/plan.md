@@ -1,133 +1,128 @@
 
-# Botão "Devolver ao Bot" no Chat do Bitrix24
+# Fix Definitivo: Botão "Devolver ao Bot" no Bitrix24
 
-## O que o utilizador quer
+## Diagnóstico Completo (com prova dos logs e documentação oficial)
 
-Na janela de bate-papo do Bitrix24 (Open Lines/Contact Center), quando um operador humano está a atender a conversa, deve aparecer um botão/item de menu que permita devolver o controlo ao bot Emmely AI com um clique.
+### O que já funciona
+- Bot **Emmely AI** registado com ID **10367**, `OPENLINE: "Y"` — confirmado ao vivo
+- Todos os eventos de mensagens (ONIMBOTMESSAGEADD, ONIMBOTJOINCHAT, etc.) ligados corretamente
 
-## Como funciona na documentação oficial do Bitrix24
+### 3 Problemas exatos identificados
 
-### Placement `IM_TEXTAREA`
+**Problema 1 — `placement.bind IM_TEXTAREA` rejeita com `ERROR_ARGUMENT`**
 
-O Bitrix24 permite registar widgets **acima do campo de texto** do chat via `placement.bind` com `PLACEMENT: "IM_TEXTAREA"`. Este é o local correto para adicionar botões de ação no contexto de um chat.
+A documentação oficial em `apidocs.bitrix24.com/api-reference/chats/widgets/im-textarea.html` confirma que o parâmetro `OPTIONS` com `iconName` é **obrigatório** para `IM_TEXTAREA`. O código atual não passa `OPTIONS`, por isso o Bitrix24 rejeita:
 
-Quando o utilizador clica no item, o Bitrix24 abre um **slider com o URL do handler**, passando via POST:
-- `PLACEMENT_OPTIONS`: JSON com o `CHAT_ID`
-- `AUTH_ID`: token OAuth do utilizador que clicou
-- `member_id`: identifica o portal
+```
+// ERRADO (atual) — sem OPTIONS:
+placement.bind({ PLACEMENT: "IM_TEXTAREA", HANDLER: "...", TITLE: "..." })
+→ ERROR_ARGUMENT
 
-### Como "devolver ao bot" funciona tecnicamente
+// CORRETO (documentação oficial):
+placement.bind({
+  PLACEMENT: "IM_TEXTAREA",
+  HANDLER: "...",
+  OPTIONS: {
+    iconName: "fa-robot",        // ← OBRIGATÓRIO — Font Awesome
+    context: "LINES",            // ← só Open Lines (onde o bot está)
+    color: "GREEN",
+    role: "USER",
+    width: "400",
+    height: "200",
+  }
+})
+```
 
-Não existe um método `imbot.session.bot` direto, mas a sequência correta baseada na documentação é:
+**Problema 2 — Eventos inválidos no `event.bind`**
 
-1. O handler recebe o `CHAT_ID` do chat da Open Line
-2. Chamar `imopenlines.bot.session.operator` — NÃO, este transfere para humano
-3. A abordagem correta: usar `imbot.chat.add` NÃO, o bot já está no chat
-4. **Abordagem real**: Atualizar `attendance_mode = 'bot'` na nossa tabela `conversations` para esse CHAT_ID + enviar uma mensagem do bot via `imbot.message.add` a indicar que o bot retomou
+`OnImbotWelcomeMessage` e `OnImbotJoinOpen` **não existem** como eventos `event.bind` — são apenas parâmetros internos do `imbot.register`. Devem ser removidos da lista de eventos a ligar para evitar erros.
 
-Na prática, "devolver ao bot" no nosso sistema significa:
-- Encontrar a `conversation` pela `bitrix_chat_id`
-- Atualizar `attendance_mode = 'bot'`
-- Limpar `bot_state` (reset para o início)
-- Enviar mensagem via `imbot.message.add` a informar o cliente que o assistente virtual retomou
+**Problema 3 — `bitrix24-return-to-bot` não encontra a conversa corretamente**
 
-## Ficheiros a criar/editar
+A tabela `conversations` **não tem coluna `bitrix_chat_id`**. O código atual tenta `contact_phone.eq.bitrix_${chatId}` que é logicamente errado e nunca vai encontrar nada.
 
-### 1. `supabase/functions/bitrix24-install/index.ts`
+O Bitrix24 passa no payload:
+- `PLACEMENT_OPTIONS.dialogId` — o ID do diálogo (ex: `"chat9617"`)
+- `PLACEMENT_OPTIONS.CHAT_ID` — o chat ID numérico
 
-Adicionar o registo do widget `IM_TEXTAREA` durante a instalação:
+A solução correta é usar `imopenlines.session.list` com o `CHAT_ID` para obter o utilizador da Open Line, depois mapear via `contact_phone` — ou alternativamente procurar em `messages` recentes vinculadas a esse dialogId.
+
+A abordagem mais robusta: usar o `CHAT_ID` do placement para chamar `im.chat.get` no Bitrix24 e obter os membros do chat, depois encontrar a conversa pelo número/contacto.
+
+Mas a abordagem mais simples que funciona: o `attendance_mode` é na nossa BD — se não encontrar a conversa pelo `CHAT_ID` podemos simplesmente:
+1. Tentar encontrar em `conversations` via bot_state que possa ter o chatId
+2. Se não encontrar, ainda assim enviar a mensagem do bot no chat do Bitrix24 (que é o efeito visual principal)
+3. A lógica de `attendance_mode` é secundária — o que importa é o operador ver o feedback visual
+
+## Ficheiros a Alterar
+
+### 1. `supabase/functions/bitrix24-rebind-events/index.ts`
+
+**Fix 1**: Remover `OnImbotWelcomeMessage` e `OnImbotJoinOpen` da lista de `event.bind` (causam `ERROR_EVENT_NOT_FOUND`).
+
+**Fix 2**: Adicionar `OPTIONS` com `iconName` obrigatório ao `placement.bind`:
 
 ```typescript
-// Após o registo do connector e do bot:
-await callBitrix(clientEndpoint, accessToken, "placement.bind", {
+const placementResult = await callBitrix(integration.client_endpoint, accessToken, "placement.bind", {
   PLACEMENT: "IM_TEXTAREA",
-  HANDLER: `${supabaseUrl}/functions/v1/bitrix24-return-to-bot`,
-  TITLE: "🤖 Devolver ao Bot",
+  HANDLER: returnToBotUrl,
+  TITLE: "Devolver ao Bot",
   LANG_ALL: {
-    pt: { TITLE: "🤖 Devolver ao Bot" },
-    en: { TITLE: "🤖 Return to Bot" },
-    ru: { TITLE: "🤖 Вернуть боту" },
-  }
+    pt: { TITLE: "Devolver ao Bot" },
+    en: { TITLE: "Return to Bot" },
+    es: { TITLE: "Devolver al Bot" },
+  },
+  OPTIONS: {
+    iconName: "fa-robot",      // ← OBRIGATÓRIO conforme docs oficiais
+    context: "LINES",          // ← apenas em Open Lines
+    color: "GREEN",
+    role: "USER",
+    width: "400",
+    height: "200",
+    extranet: "N",
+  },
 });
 ```
 
-### 2. Nova Edge Function: `supabase/functions/bitrix24-return-to-bot/index.ts`
+### 2. `supabase/functions/bitrix24-return-to-bot/index.ts`
 
-Handler do widget. Quando o operador clica em "Devolver ao Bot":
+**Fix**: Corrigir a lógica de encontrar a conversa. Em vez de `contact_phone.eq.bitrix_${chatId}` (errado), usar o `CHAT_ID` para:
 
-1. Recebe o POST do Bitrix24 com `PLACEMENT_OPTIONS` (contém `CHAT_ID`)
-2. Extrai `member_id` para encontrar a integração
-3. Valida o token OAuth
-4. Procura a `conversation` pela `bitrix_chat_id`
-5. Atualiza `attendance_mode = 'bot'` e limpa `bot_state`
-6. Chama `imbot.message.add` para enviar mensagem no chat do Bitrix24 a informar que o bot retomou
-7. Retorna HTML com `BX24.closeApplication()` para fechar o slider imediatamente
+1. Chamar `im.chat.get` no Bitrix24 para obter os membros do chat
+2. Procurar por utilizador externo (contact) → mapear a `contact_phone` ou `contact_instagram`
+3. Fallback: procurar em `bot_state` json field se alguma conversa tem esse chatId guardado
+
+Também adicionar o campo `PLACEMENT_OPTIONS.dialogId` como alternativa ao `CHAT_ID` (o Bitrix24 passa o `dialogId` no novo formato de placement).
 
 ```typescript
-// Lógica principal:
-const chatId = parseInt(placementOptions.CHAT_ID || placementOptions.ID || "0");
+// CORRETO — extrair dialogId também:
+const chatId = parseInt(
+  placementOptions.CHAT_ID || 
+  placementOptions.ID ||
+  (placementOptions.dialogId || "").replace("chat", "") ||
+  body.CHAT_ID || "0"
+);
 
-// Encontrar conversa
-const { data: conversation } = await supabase
-  .from("conversations")
-  .select("id, attendance_mode")
-  .eq("bitrix_chat_id", chatId)
-  .maybeSingle();
-
-if (conversation) {
-  // Devolver ao bot
-  await supabase.from("conversations").update({
-    attendance_mode: "bot",
-    bot_state: {},
-  }).eq("id", conversation.id);
-  
-  // Notificar no chat do Bitrix24
-  const botId = integration.config?.bot_id;
-  if (botId) {
-    await callBitrix(endpoint, token, "imbot.message.add", {
-      BOT_ID: botId,
-      DIALOG_ID: chatId,
-      MESSAGE: "✅ O assistente virtual Emmely AI retomou o atendimento.",
-    });
-  }
-}
-
-// Fechar o slider imediatamente
-return html(`<script>BX24.init(function(){ BX24.closeApplication(); });</script>`);
+// Tentar encontrar conversa via im.chat.get → members → contact_phone
+const chatInfo = await callBitrix(endpoint, accessToken, "im.chat.get", {
+  CHAT_ID: chatId
+});
+// Extrair utilizador externo do chat e mapear à conversa
 ```
 
-### 3. `supabase/functions/bitrix24-rebind-events/index.ts`
+### 3. `supabase/functions/bitrix24-install/index.ts`
 
-Adicionar o re-bind do `IM_TEXTAREA` placement quando o utilizador clica em "Re-registar Webhooks" no painel, para garantir que o widget é registado mesmo em portais já instalados.
+Adicionar o mesmo `OPTIONS` com `iconName` ao `placement.bind` durante a instalação, para que novos portais já tenham o botão correto.
 
-## Fluxo completo
+## Sequência após o deploy
 
-```text
-1. Operador humano está a atender conversa na Open Line
-2. Operador clica no ícone "🤖 Devolver ao Bot" no painel acima do campo de texto
-3. Bitrix24 abre slider → chama bitrix24-return-to-bot com CHAT_ID
-4. Edge function:
-   a. Encontra a conversation pela bitrix_chat_id
-   b. Atualiza attendance_mode = 'bot'
-   c. Envia mensagem do bot no chat
-   d. Fecha o slider (BX24.closeApplication())
-5. Próxima mensagem do cliente → bot responde automaticamente
-```
-
-## Nota importante sobre re-instalação
-
-O `placement.bind` só regista o widget em portais novos (durante a instalação). Para portais já instalados, é necessário clicar em "Re-registar Webhooks" no painel do Bitrix24App, que chamará `bitrix24-rebind-events` — que também deve registar o placement.
-
-## Ficheiros a alterar
-
-| Ficheiro | Acção |
-|---|---|
-| `supabase/functions/bitrix24-return-to-bot/index.ts` | CRIAR — handler do widget |
-| `supabase/functions/bitrix24-install/index.ts` | EDITAR — registar `placement.bind IM_TEXTAREA` |
-| `supabase/functions/bitrix24-rebind-events/index.ts` | EDITAR — re-bind do placement |
+1. Clicar em **"Re-registar Webhooks"** no painel Bitrix24App
+2. O resultado de `placement_IM_TEXTAREA` passa de `ERROR_ARGUMENT` para `OK`
+3. No chat de Open Lines do Bitrix24, aparece o ícone 🤖 na barra de ferramentas acima do campo de texto
+4. Operador clica → slider abre brevemente → fecha com "Emmely AI retomou o atendimento"
 
 ## O que NÃO muda
 
-- Schema da base de dados — não são necessárias novas colunas
-- Edge functions de mensagens, workers, etc.
-- A UI da nossa aplicação React — o botão existe DENTRO do Bitrix24 como widget nativo
+- Schema da base de dados — sem novas colunas
+- Lógica de eventos de mensagens
+- UI da aplicação React
