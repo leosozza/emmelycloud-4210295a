@@ -32,7 +32,21 @@ import {
   Eye,
   EyeOff,
   Bot,
+  Plus,
+  Trash2,
+  Server,
+  Power,
+  PowerOff,
 } from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 import { Switch } from "@/components/ui/switch";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
@@ -959,6 +973,349 @@ function ChatbotTab() {
 }
 
 
+// ─── Instances Tab ───────────────────────────────────────────────────────────
+
+interface ChannelInstance {
+  id: string;
+  name: string;
+  channel_type: "whatsapp" | "instagram";
+  status: "active" | "inactive" | "error";
+  config: Record<string, any>;
+  created_at: string;
+  updated_at: string;
+}
+
+function InstancesTab() {
+  const [instances, setInstances] = useState<ChannelInstance[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [newName, setNewName] = useState("");
+  const [newType, setNewType] = useState<"whatsapp" | "instagram">("whatsapp");
+  const [creating, setCreating] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [configDrafts, setConfigDrafts] = useState<Record<string, Record<string, string>>>({});
+  const [savingConfig, setSavingConfig] = useState<string | null>(null);
+  const [showValues, setShowValues] = useState<Record<string, boolean>>({});
+  const [toggling, setToggling] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState<string | null>(null);
+
+  const loadInstances = useCallback(async () => {
+    setLoading(true);
+    const { data } = await supabase
+      .from("channel_instances")
+      .select("*")
+      .order("created_at", { ascending: true });
+    if (data) setInstances(data as ChannelInstance[]);
+    setLoading(false);
+  }, []);
+
+  useEffect(() => { loadInstances(); }, [loadInstances]);
+
+  const handleCreate = async () => {
+    if (!newName.trim()) return;
+    setCreating(true);
+    const { error } = await supabase.from("channel_instances").insert({
+      name: newName.trim(),
+      channel_type: newType,
+      status: "inactive",
+      config: {},
+    });
+    if (error) {
+      toast.error("Erro ao criar instância");
+    } else {
+      toast.success(`Instância "${newName}" criada`);
+      setNewName("");
+      setDialogOpen(false);
+      await loadInstances();
+    }
+    setCreating(false);
+  };
+
+  const handleDelete = async (id: string) => {
+    setDeleting(id);
+    const { error } = await supabase.from("channel_instances").delete().eq("id", id);
+    if (error) {
+      toast.error("Erro ao eliminar instância");
+    } else {
+      toast.success("Instância eliminada");
+      setEditingId(null);
+      await loadInstances();
+    }
+    setDeleting(null);
+  };
+
+  const handleToggleStatus = async (inst: ChannelInstance) => {
+    const newStatus = inst.status === "active" ? "inactive" : "active";
+    setToggling(inst.id);
+    const { error } = await supabase
+      .from("channel_instances")
+      .update({ status: newStatus })
+      .eq("id", inst.id);
+    if (error) {
+      toast.error("Erro ao alterar estado");
+    } else {
+      toast.success(`Instância ${newStatus === "active" ? "ativada" : "desativada"}`);
+      await loadInstances();
+    }
+    setToggling(null);
+  };
+
+  const handleSaveConfig = async (inst: ChannelInstance) => {
+    const drafts = configDrafts[inst.id] || {};
+    const newConfig = { ...inst.config };
+    for (const [k, v] of Object.entries(drafts)) {
+      if (v) newConfig[k] = v;
+    }
+    setSavingConfig(inst.id);
+    const { error } = await supabase
+      .from("channel_instances")
+      .update({ config: newConfig })
+      .eq("id", inst.id);
+    if (error) {
+      toast.error("Erro ao guardar configuração");
+    } else {
+      toast.success("Configuração guardada");
+      setConfigDrafts((prev) => ({ ...prev, [inst.id]: {} }));
+      await loadInstances();
+    }
+    setSavingConfig(null);
+  };
+
+  const getConfigFields = (type: string): { key: string; label: string }[] => {
+    if (type === "whatsapp") {
+      return [
+        { key: "access_token", label: "Access Token (Meta)" },
+        { key: "phone_number_id", label: "Phone Number ID" },
+        { key: "waba_id", label: "WhatsApp Business Account ID" },
+        { key: "verify_token", label: "Webhook Verify Token" },
+      ];
+    }
+    return [
+      { key: "access_token", label: "Page Access Token (Meta)" },
+      { key: "ig_account_id", label: "Instagram Account ID" },
+      { key: "app_id", label: "App ID" },
+      { key: "app_secret", label: "App Secret" },
+    ];
+  };
+
+  const maskValue = (val: string) => {
+    if (!val || val.length < 8) return "••••••••";
+    return val.slice(0, 4) + "••••" + val.slice(-4);
+  };
+
+  if (loading) {
+    return (
+      <div className="flex justify-center py-12">
+        <RefreshCw className="h-6 w-6 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* Header with create button */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h3 className="text-sm font-semibold">Instâncias de Canal</h3>
+          <p className="text-xs text-muted-foreground">Crie e configure instâncias de WhatsApp (API Oficial Meta) ou Instagram.</p>
+        </div>
+        <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+          <DialogTrigger asChild>
+            <Button size="sm" className="gap-1.5">
+              <Plus className="h-4 w-4" />
+              Nova Instância
+            </Button>
+          </DialogTrigger>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Criar Nova Instância</DialogTitle>
+              <DialogDescription>Escolha o tipo de canal e dê um nome à instância.</DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 py-2">
+              <div className="space-y-2">
+                <Label>Nome da Instância</Label>
+                <Input
+                  placeholder="Ex: WhatsApp Principal, Instagram Loja…"
+                  value={newName}
+                  onChange={(e) => setNewName(e.target.value)}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Tipo de Canal</Label>
+                <Select value={newType} onValueChange={(v) => setNewType(v as "whatsapp" | "instagram")}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="whatsapp">
+                      <div className="flex items-center gap-2">
+                        <Phone className="h-4 w-4 text-green-600" />
+                        WhatsApp — API Oficial Meta
+                      </div>
+                    </SelectItem>
+                    <SelectItem value="instagram">
+                      <div className="flex items-center gap-2">
+                        <Instagram className="h-4 w-4 text-pink-600" />
+                        Instagram — Meta Graph API
+                      </div>
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancelar</Button>
+              <Button onClick={handleCreate} disabled={!newName.trim() || creating}>
+                {creating ? <RefreshCw className="h-4 w-4 mr-1.5 animate-spin" /> : <Plus className="h-4 w-4 mr-1.5" />}
+                Criar
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      </div>
+
+      {/* Empty state */}
+      {instances.length === 0 && (
+        <Card>
+          <CardContent className="flex flex-col items-center justify-center py-12 text-center">
+            <Server className="h-10 w-10 text-muted-foreground mb-3" />
+            <p className="text-sm font-medium">Nenhuma instância configurada</p>
+            <p className="text-xs text-muted-foreground mt-1">Crie a sua primeira instância de WhatsApp ou Instagram para começar.</p>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Instance cards */}
+      <div className="grid gap-4 md:grid-cols-2">
+        {instances.map((inst) => {
+          const isEditing = editingId === inst.id;
+          const fields = getConfigFields(inst.channel_type);
+          const drafts = configDrafts[inst.id] || {};
+          const isWhatsapp = inst.channel_type === "whatsapp";
+          const showVal = showValues[inst.id] ?? false;
+
+          return (
+            <Card key={inst.id} className={inst.status === "active" ? "border-green-200" : ""}>
+              <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-2">
+                <div className="flex items-center gap-3">
+                  <div className={`flex h-10 w-10 items-center justify-center rounded-lg ${isWhatsapp ? "bg-green-100" : "bg-pink-100"}`}>
+                    {isWhatsapp ? <Phone className="h-5 w-5 text-green-600" /> : <Instagram className="h-5 w-5 text-pink-600" />}
+                  </div>
+                  <div>
+                    <CardTitle className="text-base">{inst.name}</CardTitle>
+                    <CardDescription>
+                      {isWhatsapp ? "WhatsApp Business API" : "Instagram Graph API"}
+                    </CardDescription>
+                  </div>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <StatusBadge status={inst.status === "error" ? "inactive" : inst.status as "active" | "inactive"} />
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-3 text-sm">
+                {/* Config summary */}
+                <div className="space-y-1">
+                  {fields.map((f) => (
+                    <div key={f.key} className="flex justify-between text-xs">
+                      <span className="text-muted-foreground">{f.label}</span>
+                      <span className={inst.config[f.key] ? "text-green-600" : "text-muted-foreground"}>
+                        {inst.config[f.key] ? "✓ Configurado" : "—"}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Editing config */}
+                {isEditing && (
+                  <div className="space-y-2 border-t pt-3">
+                    <div className="flex items-center justify-between">
+                      <p className="text-xs font-medium uppercase text-muted-foreground tracking-wide">Credenciais</p>
+                      <button
+                        onClick={() => setShowValues((prev) => ({ ...prev, [inst.id]: !showVal }))}
+                        className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1"
+                      >
+                        {showVal ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
+                        {showVal ? "Ocultar" : "Mostrar"}
+                      </button>
+                    </div>
+                    {fields.map((f) => (
+                      <div key={f.key} className="space-y-1">
+                        <label className="text-xs text-muted-foreground">{f.label}</label>
+                        <Input
+                          type={showVal ? "text" : "password"}
+                          placeholder={inst.config[f.key] ? maskValue(inst.config[f.key]) : "Não configurado"}
+                          value={drafts[f.key] || ""}
+                          onChange={(e) =>
+                            setConfigDrafts((prev) => ({
+                              ...prev,
+                              [inst.id]: { ...(prev[inst.id] || {}), [f.key]: e.target.value },
+                            }))
+                          }
+                          className="h-8 text-xs"
+                        />
+                      </div>
+                    ))}
+                    <div className="flex gap-2 pt-1">
+                      <Button
+                        size="sm"
+                        className="flex-1"
+                        onClick={() => handleSaveConfig(inst)}
+                        disabled={savingConfig === inst.id}
+                      >
+                        {savingConfig === inst.id ? <RefreshCw className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <Save className="h-3.5 w-3.5 mr-1.5" />}
+                        Guardar
+                      </Button>
+                      <Button size="sm" variant="outline" onClick={() => setEditingId(null)}>Fechar</Button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Action buttons */}
+                <div className="flex gap-2 pt-1">
+                  {!isEditing && (
+                    <Button size="sm" variant="outline" className="flex-1" onClick={() => setEditingId(inst.id)}>
+                      Configurar
+                    </Button>
+                  )}
+                  <Button
+                    size="sm"
+                    variant={inst.status === "active" ? "destructive" : "default"}
+                    className="gap-1"
+                    onClick={() => handleToggleStatus(inst)}
+                    disabled={toggling === inst.id}
+                  >
+                    {toggling === inst.id ? (
+                      <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                    ) : inst.status === "active" ? (
+                      <PowerOff className="h-3.5 w-3.5" />
+                    ) : (
+                      <Power className="h-3.5 w-3.5" />
+                    )}
+                    {inst.status === "active" ? "Desativar" : "Ativar"}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="text-destructive hover:text-destructive"
+                    onClick={() => handleDelete(inst.id)}
+                    disabled={deleting === inst.id}
+                  >
+                    {deleting === inst.id ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+                  </Button>
+                </div>
+
+                {/* Created at */}
+                <p className="text-xs text-muted-foreground">
+                  Criada em {new Date(inst.created_at).toLocaleDateString("pt-PT", { day: "2-digit", month: "2-digit", year: "numeric" })}
+                </p>
+              </CardContent>
+            </Card>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
 
 // ─── Main Page ───────────────────────────────────────────────────────────────
 
@@ -967,8 +1324,12 @@ export default function IntegracoesPage() {
     <div className="space-y-6">
       <PageHeader title="Central de Integrações" description="Gerencie todas as integrações e conectores do sistema" />
 
-      <Tabs defaultValue="crm" className="w-full">
-        <TabsList className="grid w-full grid-cols-4">
+      <Tabs defaultValue="instancias" className="w-full">
+        <TabsList className="grid w-full grid-cols-5">
+          <TabsTrigger value="instancias" className="flex items-center gap-2">
+            <Server className="h-4 w-4" />
+            Instâncias
+          </TabsTrigger>
           <TabsTrigger value="crm" className="flex items-center gap-2">
             <Plug className="h-4 w-4" />
             CRM
@@ -987,6 +1348,7 @@ export default function IntegracoesPage() {
           </TabsTrigger>
         </TabsList>
 
+        <TabsContent value="instancias"><InstancesTab /></TabsContent>
         <TabsContent value="crm"><CRMTab /></TabsContent>
         <TabsContent value="omnichannel"><OmniChannelTab /></TabsContent>
         <TabsContent value="chatbot"><ChatbotTab /></TabsContent>

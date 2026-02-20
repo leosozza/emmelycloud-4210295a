@@ -462,6 +462,36 @@ export type Database = {
           },
         ]
       }
+      channel_instances: {
+        Row: {
+          channel_type: string
+          config: Json
+          created_at: string
+          id: string
+          name: string
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          channel_type: string
+          config?: Json
+          created_at?: string
+          id?: string
+          name: string
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          channel_type?: string
+          config?: Json
+          created_at?: string
+          id?: string
+          name?: string
+          status?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       chatbot_channel_settings: {
         Row: {
           agent_id: string | null
