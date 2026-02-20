@@ -8,6 +8,36 @@ const corsHeaders = {
 
 const GRAPH_URL = "https://graph.instagram.com/v24.0";
 
+async function resolveInstagramCredentials(supabase: any): Promise<{ token: string; accountId: string; instanceName: string }> {
+  // Try channel_instances first
+  const { data: instances } = await supabase
+    .from("channel_instances")
+    .select("id, name, config")
+    .eq("channel_type", "instagram")
+    .eq("status", "active")
+    .order("created_at")
+    .limit(1);
+
+  const inst = instances?.[0];
+  if (inst?.config) {
+    const cfg = inst.config as Record<string, any>;
+    const token = cfg.access_token || cfg.ig_access_token;
+    const accountId = cfg.ig_account_id;
+    if (token && accountId) {
+      console.log(`[IG-SEND] Using instance: ${inst.name}`);
+      return { token, accountId, instanceName: inst.name };
+    }
+  }
+
+  // Fallback to env vars
+  console.log("[IG-SEND] Falling back to env vars");
+  return {
+    token: Deno.env.get("META_PAGE_ACCESS_TOKEN")?.trim().replace(/[\r\n\s]+/g, "") || "",
+    accountId: Deno.env.get("META_IG_ACCOUNT_ID")?.trim() || "",
+    instanceName: "env-fallback",
+  };
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -18,8 +48,7 @@ Deno.serve(async (req) => {
     const authHeader = req.headers.get("Authorization");
     if (!authHeader?.startsWith("Bearer ")) {
       return new Response(JSON.stringify({ error: "Unauthorized" }), {
-        status: 401,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
@@ -33,20 +62,17 @@ Deno.serve(async (req) => {
     const { data: claimsData, error: claimsError } = await supabase.auth.getClaims(token);
     if (claimsError || !claimsData?.claims) {
       return new Response(JSON.stringify({ error: "Unauthorized" }), {
-        status: 401,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
     const { conversation_id, content } = await req.json();
     if (!conversation_id || !content) {
       return new Response(JSON.stringify({ error: "conversation_id and content required" }), {
-        status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    // Get conversation to find Instagram IGSID
     const serviceSupabase = createClient(
       Deno.env.get("SUPABASE_URL")!,
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
@@ -60,48 +86,33 @@ Deno.serve(async (req) => {
 
     if (convError || !conv) {
       return new Response(JSON.stringify({ error: "Conversation not found" }), {
-        status: 404,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
     if (conv.channel !== "instagram") {
       return new Response(JSON.stringify({ error: "Not an Instagram conversation" }), {
-        status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    // Instagram User Access Token (IGAA... prefix) for Instagram Login apps
-    const IG_TOKEN = Deno.env.get("META_PAGE_ACCESS_TOKEN")?.trim().replace(/[\r\n\s]+/g, "");
-    if (!IG_TOKEN) {
-      return new Response(JSON.stringify({ error: "META_PAGE_ACCESS_TOKEN not configured" }), {
-        status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+    // Resolve credentials from instances or env
+    const creds = await resolveInstagramCredentials(serviceSupabase);
+
+    if (!creds.token) {
+      return new Response(JSON.stringify({ error: "No Instagram access token configured. Create an active Instagram instance or set META_PAGE_ACCESS_TOKEN." }), {
+        status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    if (!creds.accountId) {
+      return new Response(JSON.stringify({ error: "No Instagram account ID configured. Create an active Instagram instance or set META_IG_ACCOUNT_ID." }), {
+        status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    const igAccountId = Deno.env.get("META_IG_ACCOUNT_ID")?.trim();
-    if (!igAccountId) {
-      return new Response(JSON.stringify({ error: "META_IG_ACCOUNT_ID not configured" }), {
-        status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-
-    console.log("DEBUG IG token prefix:", IG_TOKEN.slice(0, 6), "length:", IG_TOKEN.length);
-    console.log("DEBUG IG account ID:", igAccountId);
-    console.log("DEBUG recipient IGSID:", conv.contact_instagram);
-
-    // Send message via Instagram Messaging API (for Instagram Login apps)
-    const sendEndpoint = `${GRAPH_URL}/${igAccountId}/messages`;
-
-    const igResponse = await fetch(sendEndpoint, {
+    const igResponse = await fetch(`${GRAPH_URL}/${creds.accountId}/messages`, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${IG_TOKEN}`,
-      },
+      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${creds.token}` },
       body: JSON.stringify({
         recipient: { id: conv.contact_instagram },
         message: { text: content },
@@ -110,41 +121,30 @@ Deno.serve(async (req) => {
 
     const igResult = await igResponse.json();
     if (!igResponse.ok) {
-      console.error("Instagram API error:", JSON.stringify(igResult));
+      console.error(`[IG-SEND] API error (instance: ${creds.instanceName}):`, JSON.stringify(igResult));
       return new Response(JSON.stringify({ error: "Failed to send Instagram message", details: igResult }), {
-        status: 502,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    // Store outbound message
     await serviceSupabase.from("messages").insert({
-      conversation_id,
-      direction: "outbound",
-      content,
-      sender_name: "Atendente",
-      external_id: igResult.message_id ?? null,
+      conversation_id, direction: "outbound", content,
+      sender_name: "Atendente", external_id: igResult.message_id ?? null,
     });
 
-    // Update conversation preview
-    await serviceSupabase
-      .from("conversations")
-      .update({
-        last_message_at: new Date().toISOString(),
-        last_message_preview: content.slice(0, 100),
-      })
-      .eq("id", conversation_id);
+    await serviceSupabase.from("conversations").update({
+      last_message_at: new Date().toISOString(),
+      last_message_preview: content.slice(0, 100),
+    }).eq("id", conversation_id);
 
     return new Response(JSON.stringify({ success: true, message_id: igResult.message_id }), {
-      status: 200,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
+      status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (err) {
-    console.error("Send error:", err);
+    console.error("[IG-SEND] Error:", err);
     const msg = err instanceof Error ? err.message : "Unknown error";
     return new Response(JSON.stringify({ error: msg }), {
-      status: 500,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
+      status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }
 });

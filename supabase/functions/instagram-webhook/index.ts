@@ -68,7 +68,22 @@ Deno.serve(async (req) => {
             // Try to get sender name from Instagram API
             let senderName = senderId;
             try {
-              const igToken = Deno.env.get("META_PAGE_ACCESS_TOKEN")?.trim();
+              // Resolve IG token from instances or env
+              let igToken = "";
+              const { data: igInst } = await supabase
+                .from("channel_instances")
+                .select("config")
+                .eq("channel_type", "instagram")
+                .eq("status", "active")
+                .order("created_at")
+                .limit(1);
+              if (igInst?.[0]?.config) {
+                const cfg = igInst[0].config as Record<string, any>;
+                igToken = cfg.access_token || cfg.ig_access_token || "";
+              }
+              if (!igToken) {
+                igToken = Deno.env.get("META_PAGE_ACCESS_TOKEN")?.trim() || "";
+              }
               if (igToken) {
                 const profileRes = await fetch(
                   `https://graph.instagram.com/v24.0/${senderId}?fields=name,username&access_token=${igToken}`
