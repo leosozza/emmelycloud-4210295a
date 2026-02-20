@@ -77,6 +77,189 @@ async function debugLog(supabase: any, integrationId: string | null, eventType: 
   }).catch(() => {});
 }
 
+// ─── Bitrix24 Configurable Activity Badge Helper ───
+
+interface BadgeParams {
+  supabase: any;
+  conversationId?: string;
+  channel?: string;
+  badgeCode: string;
+  headerTitle: string;
+  messagePreview?: string;
+  instanceName?: string;
+  extraBlocks?: Record<string, any>;
+}
+
+async function createBitrixBadgeActivity(params: BadgeParams): Promise<void> {
+  const { supabase, conversationId, channel, badgeCode, headerTitle, messagePreview, instanceName, extraBlocks } = params;
+
+  try {
+    // Find active integration
+    const { data: integration } = await supabase
+      .from("bitrix24_integrations")
+      .select("*")
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .single();
+
+    if (!integration || !integration.client_endpoint) {
+      console.log("[BADGE] No active Bitrix24 integration found, skipping badge");
+      return;
+    }
+
+    const accessToken = await ensureValidToken(supabase, integration);
+
+    // Resolve entity (Lead/Deal) from conversation
+    let ownerTypeId = 1; // Lead
+    let ownerId = 0;
+
+    if (conversationId) {
+      const { data: conv } = await supabase
+        .from("conversations")
+        .select("bot_state, contact_phone, contact_instagram, contact_email")
+        .eq("id", conversationId)
+        .single();
+
+      if (conv) {
+        const botState = (conv.bot_state as any) || {};
+
+        // 1. Check cached entity
+        if (botState.bitrix_entity_id) {
+          const parts = String(botState.bitrix_entity_id).split(":");
+          if (parts.length === 2) {
+            ownerTypeId = parseInt(parts[0]) || 1;
+            ownerId = parseInt(parts[1]) || 0;
+          } else {
+            ownerId = parseInt(parts[0]) || 0;
+          }
+        }
+
+        // 2. Search by phone in Bitrix24
+        if (!ownerId && conv.contact_phone) {
+          const phone = conv.contact_phone.replace(/\D/g, "");
+          if (phone.length >= 8) {
+            const leadSearch = await callBitrix(integration.client_endpoint, accessToken, "crm.lead.list", {
+              filter: { PHONE: phone },
+              select: ["ID"],
+            });
+            const leads = leadSearch.result || [];
+            if (leads.length > 0) {
+              ownerTypeId = 1;
+              ownerId = parseInt(leads[0].ID);
+              // Cache for future
+              await supabase.from("conversations").update({
+                bot_state: { ...botState, bitrix_entity_id: `1:${ownerId}` },
+              }).eq("id", conversationId);
+            }
+          }
+        }
+
+        // 3. Search contact by phone
+        if (!ownerId && conv.contact_phone) {
+          const phone = conv.contact_phone.replace(/\D/g, "");
+          if (phone.length >= 8) {
+            const contactSearch = await callBitrix(integration.client_endpoint, accessToken, "crm.contact.list", {
+              filter: { PHONE: phone },
+              select: ["ID"],
+            });
+            const contacts = contactSearch.result || [];
+            if (contacts.length > 0) {
+              ownerTypeId = 3; // Contact
+              ownerId = parseInt(contacts[0].ID);
+              await supabase.from("conversations").update({
+                bot_state: { ...botState, bitrix_entity_id: `3:${ownerId}` },
+              }).eq("id", conversationId);
+            }
+          }
+        }
+      }
+    }
+
+    if (!ownerId) {
+      console.log("[BADGE] No CRM entity found for conversation, skipping badge");
+      return;
+    }
+
+    // Build layout
+    const bodyBlocks: Record<string, any> = {};
+
+    if (channel) {
+      bodyBlocks.channel = {
+        type: "text",
+        properties: { value: channel === "whatsapp" ? "WhatsApp" : channel === "instagram" ? "Instagram" : channel },
+      };
+    }
+
+    if (messagePreview) {
+      bodyBlocks.message = {
+        type: "largeText",
+        properties: { value: messagePreview.substring(0, 200) },
+      };
+    }
+
+    if (instanceName && instanceName !== "env-fallback" && instanceName !== "none") {
+      bodyBlocks.instance = {
+        type: "text",
+        properties: { value: instanceName },
+      };
+    }
+
+    if (extraBlocks) {
+      Object.assign(bodyBlocks, extraBlocks);
+    }
+
+    const layout: any = {
+      icon: { code: "chat" },
+      header: { title: headerTitle },
+      body: {
+        logo: { code: "robot" },
+        blocks: bodyBlocks,
+      },
+    };
+
+    // Add footer with "Ver Conversa" button if we have a conversationId
+    if (conversationId) {
+      layout.footer = {
+        buttons: {
+          openConversation: {
+            title: "Ver Conversa",
+            action: {
+              type: "openRestApp",
+              actionParams: { conversationId },
+            },
+            type: "primary",
+          },
+        },
+      };
+    }
+
+    const activityResult = await callBitrix(integration.client_endpoint, accessToken, "crm.activity.configurable.add", {
+      ownerTypeId,
+      ownerId,
+      fields: {
+        completed: false,
+        isIncomingChannel: "N",
+        responsibleId: 1,
+        badgeCode,
+      },
+      layout,
+    });
+
+    if (activityResult.error) {
+      console.error(`[BADGE] crm.activity.configurable.add error:`, activityResult.error, activityResult.error_description);
+    } else {
+      console.log(`[BADGE] Activity created: ${badgeCode} for ${ownerTypeId}:${ownerId}, activityId:`, activityResult.result);
+    }
+
+    await debugLog(supabase, integration.id, "badge_activity_created", "outbound", {
+      badgeCode, ownerTypeId, ownerId, activityId: activityResult.result,
+      error: activityResult.error || null,
+    });
+  } catch (e) {
+    console.error("[BADGE] Error creating badge activity:", e);
+  }
+}
+
 // ─── Event Handlers ───
 
 async function handleConnectorMessage(supabase: any, integration: any, payload: any) {
@@ -377,6 +560,31 @@ Deno.serve(async (req) => {
   );
 
   try {
+    // Check if this is a badge creation request (from chatbot-reply, message-send, etc.)
+    const contentType = req.headers.get("content-type") || "";
+    if (contentType.includes("application/json")) {
+      try {
+        const bodyText = await req.clone().text();
+        const body = JSON.parse(bodyText);
+        if (body._badgeRequest) {
+          console.log("[WORKER] Processing badge request:", body.badgeCode);
+          await createBitrixBadgeActivity({
+            supabase,
+            conversationId: body.conversationId,
+            channel: body.channel,
+            badgeCode: body.badgeCode,
+            headerTitle: body.headerTitle,
+            messagePreview: body.messagePreview,
+            instanceName: body.instanceName,
+            extraBlocks: body.extraBlocks,
+          });
+          return new Response(JSON.stringify({ ok: true, type: "badge" }), {
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+      } catch {}
+    }
+
     // Fetch pending events (batch of 10)
     const { data: events, error } = await supabase
       .from("bitrix_event_queue")

@@ -436,6 +436,36 @@ Deno.serve(async (req) => {
       await debugLog(supabase, integrationId, "connector_setup_error", "outbound", null, String(connectorError));
     }
 
+    // --- Register Configurable Activity Badges ---
+    try {
+      const badges = [
+        { code: "emmely_bot_replied", title: "Emmely AI", value: "Bot respondeu", type: "success" },
+        { code: "emmely_msg_sent", title: "Mensagem Enviada", value: "Enviada", type: "primary" },
+        { code: "emmely_msg_delivered", title: "Entregue", value: "Entregue", type: "success" },
+        { code: "emmely_msg_failed", title: "Erro de Envio", value: "Falhou", type: "failure" },
+        { code: "emmely_human_takeover", title: "Atendimento Humano", value: "Humano", type: "warning" },
+        { code: "emmely_payment_created", title: "Cobrança Criada", value: "Cobrança", type: "primary" },
+        { code: "emmely_payment_confirmed", title: "Pagamento Confirmado", value: "Pago", type: "success" },
+      ];
+
+      for (const badge of badges) {
+        const badgeResult = await callBitrix(clientEndpoint, accessToken, "crm.activity.badge.add", badge);
+        const badgeErr = String(badgeResult.error || "");
+        if (badgeResult.error && !badgeErr.includes("ALREADY") && !badgeErr.includes("DUPLICATE")) {
+          console.error(`[INSTALL] Badge ${badge.code} registration failed:`, badgeResult.error, badgeResult.error_description);
+        } else {
+          console.log(`[INSTALL] Badge ${badge.code}: registered OK`);
+        }
+      }
+
+      await debugLog(supabase, integrationId, "badges_registered", "outbound", {
+        badges: badges.map(b => b.code),
+      });
+    } catch (badgeError) {
+      console.error("[INSTALL] Badge registration error:", badgeError);
+      await debugLog(supabase, integrationId, "badges_error", "outbound", null, String(badgeError));
+    }
+
     // --- Register BizProc Robots ---
     try {
       const robotHandlerUrl = `${supabaseUrl}/functions/v1/bitrix24-robot-handler`;
