@@ -248,24 +248,23 @@ async function handleBotMessage(supabase: any, integration: any, payload: any) {
     return;
   }
 
-  // Call AI
+  // Call AI via ai-playground (aceita sem conversation_id)
   try {
-    const aiRes = await fetch(`${supabaseUrl}/functions/v1/ai-process-message`, {
+    const aiRes = await fetch(`${supabaseUrl}/functions/v1/ai-playground`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         "Authorization": `Bearer ${serviceKey}`,
       },
       body: JSON.stringify({
-        conversation_id: null,
-        message_text: messageText,
         agent_id: agent.id,
-        skip_send: true,
+        messages: [{ role: "user", content: messageText }],
       }),
     });
 
     const aiResult = await aiRes.json();
-    const replyText = aiResult.reply || "Desculpe, não consegui processar a sua mensagem.";
+    console.log("[WORKER] ai-playground result:", JSON.stringify(aiResult).substring(0, 200));
+    const replyText = aiResult.content || aiResult.reply || "Desculpe, não consegui processar a sua mensagem.";
 
     const accessToken = await ensureValidToken(supabase, integration);
 

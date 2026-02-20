@@ -27,36 +27,48 @@ Deno.serve(async (req) => {
 
   try {
     const { conversation_id, message_text, agent_id, skip_send } = await req.json();
-    if (!conversation_id || !message_text) {
-      return new Response(JSON.stringify({ error: "conversation_id and message_text required" }), { status: 400, headers: jsonHeaders });
+    if (!message_text) {
+      return new Response(JSON.stringify({ error: "message_text required" }), { status: 400, headers: jsonHeaders });
     }
 
-    // 1. Get conversation
-    const { data: conversation } = await supabase
-      .from("conversations")
-      .select("id, channel, contact_phone, contact_instagram, contact_email, contact_name, attendance_mode, bot_state")
-      .eq("id", conversation_id)
-      .single();
+    // Modo "sem conversa": skip_send=true e sem conversation_id → vai direto à IA
+    const noConversationMode = !conversation_id && skip_send;
 
-    if (!conversation) {
-      return new Response(JSON.stringify({ error: "Conversation not found" }), { status: 404, headers: jsonHeaders });
-    }
+    let conversation: any = null;
+    if (!noConversationMode) {
+      if (!conversation_id) {
+        return new Response(JSON.stringify({ error: "conversation_id required when skip_send is false" }), { status: 400, headers: jsonHeaders });
+      }
 
-    // 2. Check human mode
-    if (conversation.attendance_mode === "human") {
-      return new Response(JSON.stringify({ skipped: "human_mode" }), { headers: jsonHeaders });
-    }
+      // 1. Get conversation
+      const { data: conv } = await supabase
+        .from("conversations")
+        .select("id, channel, contact_phone, contact_instagram, contact_email, contact_name, attendance_mode, bot_state")
+        .eq("id", conversation_id)
+        .single();
 
-    // 3. Check chatbot_channel_settings — respect per-channel enable/disable
-    const { data: channelSetting } = await supabase
-      .from("chatbot_channel_settings")
-      .select("enabled, agent_id")
-      .eq("channel", conversation.channel)
-      .maybeSingle();
+      if (!conv) {
+        return new Response(JSON.stringify({ error: "Conversation not found" }), { status: 404, headers: jsonHeaders });
+      }
 
-    if (channelSetting && !channelSetting.enabled) {
-      console.log(`[AI-PROCESS] Chatbot disabled for channel: ${conversation.channel}`);
-      return new Response(JSON.stringify({ skipped: "chatbot_disabled_for_channel" }), { headers: jsonHeaders });
+      // 2. Check human mode
+      if (conv.attendance_mode === "human") {
+        return new Response(JSON.stringify({ skipped: "human_mode" }), { headers: jsonHeaders });
+      }
+
+      // 3. Check chatbot_channel_settings — respect per-channel enable/disable
+      const { data: channelSetting } = await supabase
+        .from("chatbot_channel_settings")
+        .select("enabled, agent_id")
+        .eq("channel", conv.channel)
+        .maybeSingle();
+
+      if (channelSetting && !channelSetting.enabled) {
+        console.log(`[AI-PROCESS] Chatbot disabled for channel: ${conv.channel}`);
+        return new Response(JSON.stringify({ skipped: "chatbot_disabled_for_channel" }), { headers: jsonHeaders });
+      }
+
+      conversation = conv;
     }
 
     // 4. Find agent — use channel-specific agent if configured, otherwise explicit or default
@@ -65,9 +77,12 @@ Deno.serve(async (req) => {
       const { data } = await supabase.from("ai_agents").select("*").eq("id", agent_id).eq("is_active", true).single();
       agent = data;
     }
-    if (!agent && channelSetting?.agent_id) {
-      const { data } = await supabase.from("ai_agents").select("*").eq("id", channelSetting.agent_id).eq("is_active", true).maybeSingle();
-      agent = data;
+    if (!agent && conversation) {
+      const { data: cs } = await supabase.from("chatbot_channel_settings").select("agent_id").eq("channel", conversation.channel).maybeSingle();
+      if (cs?.agent_id) {
+        const { data } = await supabase.from("ai_agents").select("*").eq("id", cs.agent_id).eq("is_active", true).maybeSingle();
+        agent = data;
+      }
     }
     if (!agent) {
       const { data } = await supabase.from("ai_agents").select("*").eq("is_default", true).eq("is_active", true).maybeSingle();
@@ -78,13 +93,14 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ skipped: "no_active_agent" }), { headers: jsonHeaders });
     }
 
-    // 4. Get conversation history (last 15 messages for context)
-    const { data: history } = await supabase
+    // 4. Get conversation history (last 15 messages for context) — skip in noConversationMode
+    const historyResult = conversation_id ? await supabase
       .from("messages")
       .select("direction, content, created_at")
       .eq("conversation_id", conversation_id)
       .order("created_at", { ascending: false })
-      .limit(15);
+      .limit(15) : { data: null };
+    const history = historyResult.data;
 
     const messages = (history || []).reverse().map((m: any) => ({
       role: m.direction === "inbound" ? "user" : "assistant",
@@ -127,8 +143,10 @@ Deno.serve(async (req) => {
         "\nSeja criativo e varie as suas respostas.\n";
     }
 
-    // 7. Build system prompt with contact context
-    const contactContext = `\nDados do contacto:\n- Nome: ${conversation.contact_name || "Desconhecido"}\n- Canal: ${conversation.channel}\n`;
+    // 7. Build system prompt with contact context (skip if no conversation)
+    const contactContext = conversation
+      ? `\nDados do contacto:\n- Nome: ${conversation.contact_name || "Desconhecido"}\n- Canal: ${conversation.channel}\n`
+      : "";
     const systemPrompt = (agent.system_prompt || "") + knowledgeContext + contactContext + antiRepetitionPrompt;
 
     // 8. Call AI API
