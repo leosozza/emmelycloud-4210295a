@@ -258,6 +258,10 @@ function DashboardView({ integration, botId, domain, loading, onResync, onRefres
   const [rebindResult, setRebindResult] = useState<string | null>(null);
   const [reregisteringBot, setReregisteringBot] = useState(false);
   const [reregisterBotResult, setReregisterBotResult] = useState<string | null>(null);
+  const [returnToBotDialogId, setReturnToBotDialogId] = useState("");
+  const [returningToBot, setReturningToBot] = useState(false);
+  const [returnToBotResult, setReturnToBotResult] = useState<string | null>(null);
+  const [openConversations, setOpenConversations] = useState<any[]>([]);
 
   useEffect(() => {
     fetch(`${SUPABASE_URL}/rest/v1/ai_agents?select=id,name,is_active,is_default&is_active=eq.true&order=name.asc`, {
@@ -267,6 +271,11 @@ function DashboardView({ integration, botId, domain, loading, onResync, onRefres
     fetch(`${SUPABASE_URL}/rest/v1/bitrix24_debug_logs?select=event_type,direction,created_at,error&order=created_at.desc&limit=10`, {
       headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` },
     }).then(r => r.json()).then(setLogs).catch(console.error);
+
+    // Load open conversations for "Devolver ao Bot"
+    fetch(`${SUPABASE_URL}/rest/v1/conversations?select=id,contact_name,contact_phone,channel,attendance_mode&status=in.(aberta,em_atendimento,aguardando)&order=last_message_at.desc&limit=20`, {
+      headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` },
+    }).then(r => r.json()).then(setOpenConversations).catch(console.error);
   }, []);
 
   useEffect(() => { setSelectedAgent(integration?.bitrix_agent_id || ""); }, [integration?.bitrix_agent_id]);
@@ -308,6 +317,36 @@ function DashboardView({ integration, botId, domain, loading, onResync, onRefres
       setRebindResult(`❌ Erro de rede: ${e}`);
     }
     setRebinding(false);
+  };
+
+  const handleReturnToBot = async (conversationId?: string) => {
+    const targetId = conversationId || returnToBotDialogId.trim();
+    if (!targetId) return;
+    setReturningToBot(true);
+    setReturnToBotResult(null);
+    try {
+      const res = await fetch(`${SUPABASE_URL}/functions/v1/bitrix24-return-to-bot`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` },
+        body: JSON.stringify({
+          conversation_id: targetId,
+          member_id: integration?.member_id,
+        }),
+      });
+      const data = await res.json();
+      if (data.success || res.ok) {
+        setReturnToBotResult(`✅ Conversa devolvida ao bot com sucesso!`);
+        setReturnToBotDialogId("");
+        fetch(`${SUPABASE_URL}/rest/v1/conversations?select=id,contact_name,contact_phone,channel,attendance_mode&status=in.(aberta,em_atendimento,aguardando)&order=last_message_at.desc&limit=20`, {
+          headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` },
+        }).then(r => r.json()).then(setOpenConversations).catch(console.error);
+      } else {
+        setReturnToBotResult(`❌ Erro: ${data.error || JSON.stringify(data)}`);
+      }
+    } catch (e) {
+      setReturnToBotResult(`❌ Erro de rede: ${e}`);
+    }
+    setReturningToBot(false);
   };
 
   return (
@@ -548,6 +587,75 @@ function DashboardView({ integration, botId, domain, loading, onResync, onRefres
           </CardContent>
         </Card>
       )}
+
+      {/* ── Devolver ao Bot ── */}
+      <Card className="border-primary/30">
+        <CardHeader>
+          <CardTitle className="text-base flex items-center gap-2">
+            <Bot className="h-4 w-4 text-primary" /> Devolver ao Bot
+          </CardTitle>
+          <CardDescription>Devolva manualmente uma conversa ao controlo do bot IA</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {/* Open conversations list */}
+          {openConversations.length > 0 && (
+            <div className="space-y-2">
+              <p className="text-xs font-medium text-muted-foreground">Conversas abertas ({openConversations.length})</p>
+              <div className="space-y-1.5 max-h-48 overflow-y-auto">
+                {openConversations.map((conv) => (
+                  <div key={conv.id} className="flex items-center justify-between gap-2 p-2.5 rounded-lg bg-muted/50 hover:bg-muted transition-colors">
+                    <div className="flex items-center gap-2 flex-1 min-w-0">
+                      <div className={cn(
+                        "w-2 h-2 rounded-full shrink-0",
+                        conv.attendance_mode === "bot" ? "bg-green-500" : "bg-yellow-500"
+                      )} />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-medium truncate">{conv.contact_name}</p>
+                        <p className="text-[10px] text-muted-foreground">
+                          {conv.channel} • {conv.attendance_mode === "bot" ? "Bot ativo" : "Humano/Aguardando"}
+                        </p>
+                      </div>
+                    </div>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-7 text-xs shrink-0"
+                      disabled={returningToBot || conv.attendance_mode === "bot"}
+                      onClick={() => handleReturnToBot(conv.id)}
+                    >
+                      {conv.attendance_mode === "bot" ? "✅ Bot" : <><Bot className="h-3 w-3 mr-1" />Devolver</>}
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Manual ID input */}
+          <div className="space-y-2">
+            <p className="text-xs font-medium text-muted-foreground">Ou inserir ID manualmente</p>
+            <div className="flex gap-2">
+              <Input
+                value={returnToBotDialogId}
+                onChange={(e) => setReturnToBotDialogId(e.target.value)}
+                placeholder="ID da conversa..."
+                className="text-xs h-9 flex-1"
+              />
+              <Button
+                size="sm"
+                className="h-9 shrink-0"
+                onClick={() => handleReturnToBot()}
+                disabled={returningToBot || !returnToBotDialogId.trim()}
+              >
+                {returningToBot ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <><Bot className="h-3.5 w-3.5 mr-1.5" />Devolver</>}
+              </Button>
+            </div>
+          </div>
+          {returnToBotResult && (
+            <p className="text-xs text-center text-muted-foreground">{returnToBotResult}</p>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }
