@@ -47,7 +47,7 @@ export function AgentCard({ agent, providers, onEdit, onDelete, onToggleDefault 
       <CardContent className="pt-0">
         <div className="flex flex-wrap gap-1.5 mb-3">
           <Badge variant="outline" className="text-[10px]">
-            {textProvider?.name || agent.ai_provider}
+            {textProvider?.name || (agent.ai_provider === "lovable" ? "nativo" : agent.ai_provider)}
           </Badge>
           <Badge variant="secondary" className="text-[10px]">
             {agent.ai_model.split('/').pop()}
