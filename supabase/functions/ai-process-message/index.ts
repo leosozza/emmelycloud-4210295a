@@ -7,6 +7,26 @@ const corsHeaders = {
 
 const jsonHeaders = { ...corsHeaders, "Content-Type": "application/json" };
 
+// ─── Token optimization utilities (TOON-inspired) ───
+
+// Serializa chunks da KB em formato tabular compacto (reduz ~35% vs texto livre)
+function chunksToToon(chunks: { content: string }[]): string {
+  if (chunks.length === 0) return "";
+  const rows = chunks.map((c, i) =>
+    `  ${i + 1},${c.content.replace(/,/g, ";").replace(/\n+/g, " ").trim().substring(0, 500)}`
+  );
+  return `KB[${chunks.length}]{idx,content}:\n${rows.join("\n")}`;
+}
+
+// Comprime histórico antigo em bloco tabular para o system prompt (reduz ~50% vs incluir tudo)
+function compressOldHistory(messages: { role: string; content: string }[]): string {
+  if (messages.length === 0) return "";
+  const rows = messages.map((m, i) =>
+    `  ${i + 1},${m.role === "user" ? "U" : "A"},${m.content.replace(/,/g, ";").replace(/\n+/g, " ").trim().substring(0, 200)}`
+  );
+  return `\n\nCONTEXTO_ANTERIOR[${messages.length}]{idx,role,msg}:\n${rows.join("\n")}\n`;
+}
+
 // Simple hash for duplicate detection
 function simpleHash(str: string): string {
   let hash = 0;
@@ -17,6 +37,10 @@ function simpleHash(str: string): string {
   }
   return hash.toString(36);
 }
+
+// ─── Constants ───
+const RECENT_MSG_COUNT = 5; // mensagens reais no messages[] (protocolo OpenAI)
+const MAX_CHUNKS = 20;      // chunks máximos da KB
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
@@ -93,7 +117,7 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ skipped: "no_active_agent" }), { headers: jsonHeaders });
     }
 
-    // 4. Get conversation history (last 15 messages for context) — skip in noConversationMode
+    // 5. Get conversation history (last 15 raw messages for context split) — skip in noConversationMode
     const historyResult = conversation_id ? await supabase
       .from("messages")
       .select("direction, content, created_at")
@@ -102,12 +126,22 @@ Deno.serve(async (req) => {
       .limit(15) : { data: null };
     const history = historyResult.data;
 
-    const messages = (history || []).reverse().map((m: any) => ({
+    // ── TOON Técnica 2: dividir histórico em recente (messages[]) + antigo (TOON comprimido) ──
+    const allHistory = (history || []).reverse(); // ordem cronológica
+
+    const recentMessages = allHistory.slice(-RECENT_MSG_COUNT).map((m: any) => ({
       role: m.direction === "inbound" ? "user" : "assistant",
       content: m.content,
     }));
 
-    // 5. Get knowledge base context
+    const olderMessages = allHistory.slice(0, Math.max(0, allHistory.length - RECENT_MSG_COUNT)).map((m: any) => ({
+      role: m.direction === "inbound" ? "user" : "assistant",
+      content: m.content,
+    }));
+
+    const compressedHistory = compressOldHistory(olderMessages);
+
+    // 6. Get knowledge base context — TOON Técnica 1
     let knowledgeContext = "";
     const { data: linkedDocs } = await supabase
       .from("agent_knowledge_documents")
@@ -121,16 +155,15 @@ Deno.serve(async (req) => {
         .select("content")
         .in("document_id", docIds)
         .order("chunk_index")
-        .limit(20);
+        .limit(MAX_CHUNKS);
 
       if (chunks && chunks.length > 0) {
-        knowledgeContext = "\n\n--- BASE DE CONHECIMENTO ---\n" +
-          chunks.map((c: any) => c.content).join("\n\n") +
-          "\n--- FIM DA BASE DE CONHECIMENTO ---\n";
+        const kbToon = chunksToToon(chunks);
+        knowledgeContext = `\n\n--- BASE DE CONHECIMENTO ---\n${kbToon}\n--- FIM ---\n`;
       }
     }
 
-    // 6. Build anti-repetition context
+    // 7. Build anti-repetition context (TOON Técnica 3: truncar a 50 chars)
     const recentBotMessages = (history || [])
       .filter((m: any) => m.direction === "outbound")
       .slice(0, 3)
@@ -138,18 +171,22 @@ Deno.serve(async (req) => {
 
     let antiRepetitionPrompt = "";
     if (recentBotMessages.length > 0) {
-      antiRepetitionPrompt = "\n\nIMPORTANTE: Evite repetir estas respostas recentes:\n" +
-        recentBotMessages.map((m: string, i: number) => `${i + 1}. "${m.substring(0, 100)}"`).join("\n") +
-        "\nSeja criativo e varie as suas respostas.\n";
+      antiRepetitionPrompt = "\n\nEVITAR repetir:\n" +
+        recentBotMessages.map((m: string, i: number) => `${i + 1}."${m.substring(0, 50)}"`).join(" | ") +
+        "\nVarIar respostas.\n";
     }
 
-    // 7. Build system prompt with contact context (skip if no conversation)
+    // 8. Build system prompt with contact context
     const contactContext = conversation
-      ? `\nDados do contacto:\n- Nome: ${conversation.contact_name || "Desconhecido"}\n- Canal: ${conversation.channel}\n`
+      ? `\nContacto: ${conversation.contact_name || "?"} | Canal: ${conversation.channel}\n`
       : "";
-    const systemPrompt = (agent.system_prompt || "") + knowledgeContext + contactContext + antiRepetitionPrompt;
 
-    // 8. Call AI API
+    // System prompt final: KB (TOON) + histórico antigo (TOON) + contexto + anti-repetição
+    const systemPrompt = (agent.system_prompt || "") + knowledgeContext + compressedHistory + contactContext + antiRepetitionPrompt;
+
+    console.log(`[AI-PROCESS] Tokens context: recent_msgs=${recentMessages.length}, older_compressed=${olderMessages.length}, kb_chunks=${linkedDocs?.length || 0}`);
+
+    // 9. Call AI API
     let apiUrl: string;
     let apiKey: string;
     let authHeader = "Authorization";
@@ -189,7 +226,10 @@ Deno.serve(async (req) => {
       headers: { [authHeader]: `${authPrefix} ${apiKey}`, "Content-Type": "application/json" },
       body: JSON.stringify({
         model: agent.ai_model,
-        messages: [{ role: "system", content: systemPrompt }, ...messages],
+        messages: [
+          { role: "system", content: systemPrompt },
+          ...recentMessages, // apenas as 5 mensagens mais recentes
+        ],
         temperature: agent.temperature || 0.7,
       }),
     });
@@ -209,7 +249,7 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ skipped: "empty_response" }), { headers: jsonHeaders });
     }
 
-    // 9. Duplicate detection - check if we just sent this exact reply
+    // 10. Duplicate detection
     const replyHash = simpleHash(replyText);
     const lastSent = recentBotMessages[0];
     if (lastSent && simpleHash(lastSent) === replyHash) {
@@ -217,12 +257,16 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ skipped: "duplicate_response" }), { headers: jsonHeaders });
     }
 
-    // 10. Send the reply (unless skip_send)
+    // 11. Log token usage
+    const usage = result.usage || {};
+    console.log(`[AI-PROCESS] Token usage: prompt=${usage.prompt_tokens}, completion=${usage.completion_tokens}, total=${usage.total_tokens}`);
+
+    // 12. Send the reply (unless skip_send)
     if (!skip_send) {
       await sendReply(supabaseUrl, serviceKey, conversation, agent, replyText);
     }
 
-    return new Response(JSON.stringify({ reply: replyText, agent_id: agent.id, usage: result.usage }), { headers: jsonHeaders });
+    return new Response(JSON.stringify({ reply: replyText, agent_id: agent.id, usage }), { headers: jsonHeaders });
   } catch (err) {
     console.error("[AI-PROCESS] Error:", err);
     return new Response(JSON.stringify({ error: "Internal error" }), { status: 500, headers: jsonHeaders });
