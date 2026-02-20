@@ -151,11 +151,11 @@ const phases: RoadmapPhase[] = [
       },
       { name: "IA Resumo de Conversas", description: "Resumo automático de chats para ficha do lead", progress: 0, status: "por_iniciar",
         details: "Gerar resumos automáticos de conversas usando IA para incluir na ficha do lead e facilitar o acompanhamento.",
-        prompt: "Implementar resumo automático de conversas com IA. 1) Criar edge function 'ai-summarize-conversation' que recebe conversation_id, busca todas as mensagens da conversa, envia ao LLM (Lovable AI - google/gemini-3-flash-preview) com prompt: 'Resuma esta conversa de atendimento jurídico em 3-5 pontos principais. Identifique: assunto principal, dados do cliente mencionados, área jurídica, próximos passos sugeridos.' 2) Retornar o resumo estruturado. 3) Na Central de Atendimento (ChatPanel), adicionar botão 'Resumir' no header da conversa que chama a função e mostra o resumo num dialog. 4) Opção de salvar o resumo nas notas do lead vinculado à conversa. 5) Na ficha do Lead (LeadSheet), mostrar resumos das conversas vinculadas. 6) Adicionar campo 'ai_summary' (text) na tabela conversations via migração."
+        prompt: "Implementar resumo automático de conversas com IA. 1) Criar edge function 'ai-summarize-conversation' que recebe conversation_id, busca todas as mensagens da conversa, envia ao LLM (Emmely AI - google/gemini-3-flash-preview) com prompt: 'Resuma esta conversa de atendimento jurídico em 3-5 pontos principais. Identifique: assunto principal, dados do cliente mencionados, área jurídica, próximos passos sugeridos.' 2) Retornar o resumo estruturado. 3) Na Central de Atendimento (ChatPanel), adicionar botão 'Resumir' no header da conversa que chama a função e mostra o resumo num dialog. 4) Opção de salvar o resumo nas notas do lead vinculado à conversa. 5) Na ficha do Lead (LeadSheet), mostrar resumos das conversas vinculadas. 6) Adicionar campo 'ai_summary' (text) na tabela conversations via migração."
       },
       { name: "IA Análise Documental", description: "Extração inteligente de dados de documentos", progress: 0, status: "por_iniciar",
         details: "Análise inteligente de documentos enviados pelos clientes para extrair dados relevantes (nomes, datas, números de processo, etc.).",
-        prompt: "Implementar análise documental com IA. 1) Criar edge function 'ai-analyze-document' que recebe document_id (da base de conhecimento), busca o conteúdo do documento, e usa IA (Lovable AI) para extrair: dados pessoais (nome, NIF, data nascimento), datas relevantes, valores monetários, referências de processos, área jurídica identificada, e resumo do documento. 2) Retornar resultado estruturado em JSON. 3) Na página /training, adicionar botão 'Analisar com IA' em cada documento que mostra os dados extraídos num dialog. 4) Opção de criar lead automaticamente com os dados extraídos. 5) Salvar a análise no campo metadata do knowledge_documents."
+        prompt: "Implementar análise documental com IA. 1) Criar edge function 'ai-analyze-document' que recebe document_id (da base de conhecimento), busca o conteúdo do documento, e usa IA (Emmely AI) para extrair: dados pessoais (nome, NIF, data nascimento), datas relevantes, valores monetários, referências de processos, área jurídica identificada, e resumo do documento. 2) Retornar resultado estruturado em JSON. 3) Na página /training, adicionar botão 'Analisar com IA' em cada documento que mostra os dados extraídos num dialog. 4) Opção de criar lead automaticamente com os dados extraídos. 5) Salvar a análise no campo metadata do knowledge_documents."
       },
     ],
   },
@@ -169,7 +169,7 @@ const phases: RoadmapPhase[] = [
       },
       { name: "IA Previsão Inadimplência", description: "Score de risco financeiro baseado em histórico", progress: 0, status: "por_iniciar",
         details: "Modelo de IA para prever risco de inadimplência baseado no histórico de pagamentos, perfil do cliente e padrões comportamentais.",
-        prompt: "Implementar previsão de inadimplência com IA. 1) Criar edge function 'ai-risk-score' que recebe client_id, busca histórico de pagamentos (financial_records), contratos, e perfil do cliente, e usa IA (Lovable AI) para calcular: risk_score (0-100, onde 100=alto risco), risk_factors (lista de fatores), recommendation (ação sugerida). 2) Na ficha do Cliente, mostrar badge de risco com cor (verde <30, amarelo 30-70, vermelho >70). 3) No dashboard financeiro, mostrar lista de clientes de alto risco. 4) Adicionar campo 'risk_score' (numeric) na tabela clients via migração."
+        prompt: "Implementar previsão de inadimplência com IA. 1) Criar edge function 'ai-risk-score' que recebe client_id, busca histórico de pagamentos (financial_records), contratos, e perfil do cliente, e usa IA (Emmely AI) para calcular: risk_score (0-100, onde 100=alto risco), risk_factors (lista de fatores), recommendation (ação sugerida). 2) Na ficha do Cliente, mostrar badge de risco com cor (verde <30, amarelo 30-70, vermelho >70). 3) No dashboard financeiro, mostrar lista de clientes de alto risco. 4) Adicionar campo 'risk_score' (numeric) na tabela clients via migração."
       },
       { name: "IA Sugestão Honorários", description: "Valores sugeridos baseados em histórico e mercado", progress: 0, status: "por_iniciar",
         details: "IA que sugere valores de honorários baseado no histórico de propostas aceites, tipo de serviço, complexidade do caso e perfil do cliente.",
@@ -241,7 +241,7 @@ export default function RoadmapPage() {
   const copyPrompt = (prompt: string) => {
     navigator.clipboard.writeText(prompt);
     setCopied(true);
-    toast.success("Prompt copiado! Cole no chat do Lovable para implementar.");
+    toast.success("Prompt copiado! Cole no chat para implementar.");
     setTimeout(() => setCopied(false), 2000);
   };
 
@@ -352,7 +352,7 @@ export default function RoadmapPage() {
                     {selectedModule.prompt}
                   </div>
                   <p className="text-[11px] text-muted-foreground italic">
-                    💡 Copie o prompt acima e cole diretamente no chat do Lovable para implementar esta funcionalidade.
+                    💡 Copie o prompt acima e cole diretamente no chat para implementar esta funcionalidade.
                   </p>
                 </div>
               )}
