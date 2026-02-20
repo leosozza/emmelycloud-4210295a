@@ -1,128 +1,63 @@
 
-# Fix Definitivo: Botão "Devolver ao Bot" no Bitrix24
+# Fix: IA só responde "Desculpe, não consegui processar a sua mensagem"
 
-## Diagnóstico Completo (com prova dos logs e documentação oficial)
+## Causa Raiz Identificada (confirmada por logs)
 
-### O que já funciona
-- Bot **Emmely AI** registado com ID **10367**, `OPENLINE: "Y"` — confirmado ao vivo
-- Todos os eventos de mensagens (ONIMBOTMESSAGEADD, ONIMBOTJOINCHAT, etc.) ligados corretamente
+O `bitrix24-worker` chama o `ai-process-message` com `conversation_id: null` intencionalmente (quer apenas a resposta da IA sem gravar na base de dados), mas o `ai-process-message` exige `conversation_id` obrigatoriamente e rejeita com **HTTP 400**.
 
-### 3 Problemas exatos identificados
+O worker então cai no fallback `aiResult.reply || "Desculpe, não consegui processar a sua mensagem."` — que é precisamente o que o utilizador vê no Bitrix24.
 
-**Problema 1 — `placement.bind IM_TEXTAREA` rejeita com `ERROR_ARGUMENT`**
-
-A documentação oficial em `apidocs.bitrix24.com/api-reference/chats/widgets/im-textarea.html` confirma que o parâmetro `OPTIONS` com `iconName` é **obrigatório** para `IM_TEXTAREA`. O código atual não passa `OPTIONS`, por isso o Bitrix24 rejeita:
-
+**Pipeline com erro:**
 ```
-// ERRADO (atual) — sem OPTIONS:
-placement.bind({ PLACEMENT: "IM_TEXTAREA", HANDLER: "...", TITLE: "..." })
-→ ERROR_ARGUMENT
-
-// CORRETO (documentação oficial):
-placement.bind({
-  PLACEMENT: "IM_TEXTAREA",
-  HANDLER: "...",
-  OPTIONS: {
-    iconName: "fa-robot",        // ← OBRIGATÓRIO — Font Awesome
-    context: "LINES",            // ← só Open Lines (onde o bot está)
-    color: "GREEN",
-    role: "USER",
-    width: "400",
-    height: "200",
-  }
-})
+Utilizador envia mensagem no Bitrix24 IM Bot
+→ bitrix24-worker.handleBotMessage()
+→ POST ai-process-message { conversation_id: null, message_text: "...", skip_send: true }
+→ ai-process-message retorna 400 (conversation_id required)
+→ worker usa fallback: "Desculpe, não consegui processar a sua mensagem."
+→ imbot.message.add com o fallback ← utilizador vê isto
 ```
 
-**Problema 2 — Eventos inválidos no `event.bind`**
+## Solução: 2 mudanças simples
 
-`OnImbotWelcomeMessage` e `OnImbotJoinOpen` **não existem** como eventos `event.bind` — são apenas parâmetros internos do `imbot.register`. Devem ser removidos da lista de eventos a ligar para evitar erros.
+### Mudança 1 — `ai-process-message` aceitar modo "sem conversa"
 
-**Problema 3 — `bitrix24-return-to-bot` não encontra a conversa corretamente**
+Tornar `conversation_id` opcional quando `skip_send: true`. Se não houver `conversation_id`, salta todas as verificações de conversa (attendance_mode, channel settings) e chama a IA diretamente:
 
-A tabela `conversations` **não tem coluna `bitrix_chat_id`**. O código atual tenta `contact_phone.eq.bitrix_${chatId}` que é logicamente errado e nunca vai encontrar nada.
+```typescript
+// ANTES (linha 30):
+if (!conversation_id || !message_text) return 400
 
-O Bitrix24 passa no payload:
-- `PLACEMENT_OPTIONS.dialogId` — o ID do diálogo (ex: `"chat9617"`)
-- `PLACEMENT_OPTIONS.CHAT_ID` — o chat ID numérico
+// DEPOIS:
+if (!message_text) return 400
+// Se skip_send=true e conversation_id=null, vai direto à IA
+```
 
-A solução correta é usar `imopenlines.session.list` com o `CHAT_ID` para obter o utilizador da Open Line, depois mapear via `contact_phone` — ou alternativamente procurar em `messages` recentes vinculadas a esse dialogId.
+Quando `conversation_id` é nulo com `skip_send: true`:
+- Não verifica attendance_mode
+- Não verifica chatbot_channel_settings
+- Vai direto ao agente e chama a IA
+- Devolve `{ reply: "..." }` normalmente
 
-A abordagem mais robusta: usar o `CHAT_ID` do placement para chamar `im.chat.get` no Bitrix24 e obter os membros do chat, depois encontrar a conversa pelo número/contacto.
+### Mudança 2 — `bitrix24-worker` também usa `ai-playground` como alternativa
 
-Mas a abordagem mais simples que funciona: o `attendance_mode` é na nossa BD — se não encontrar a conversa pelo `CHAT_ID` podemos simplesmente:
-1. Tentar encontrar em `conversations` via bot_state que possa ter o chatId
-2. Se não encontrar, ainda assim enviar a mensagem do bot no chat do Bitrix24 (que é o efeito visual principal)
-3. A lógica de `attendance_mode` é secundária — o que importa é o operador ver o feedback visual
+Como o `ai-process-message` é mais complexo, uma alternativa mais simples: o worker pode chamar diretamente o `ai-playground` (que já aceita sem `conversation_id`) em vez de `ai-process-message` para respostas do IM Bot.
+
+O `ai-playground` já aceita apenas `{ agent_id, messages }` e devolve `{ content: "..." }`. É exatamente o que o worker precisa para o bot IM.
 
 ## Ficheiros a Alterar
 
-### 1. `supabase/functions/bitrix24-rebind-events/index.ts`
+### `supabase/functions/ai-process-message/index.ts`
+- Tornar `conversation_id` opcional
+- Se `conversation_id` for null/ausente E `skip_send=true`: saltar verificações de conversa, ir direto à IA com o `agent_id` fornecido
 
-**Fix 1**: Remover `OnImbotWelcomeMessage` e `OnImbotJoinOpen` da lista de `event.bind` (causam `ERROR_EVENT_NOT_FOUND`).
+### `supabase/functions/bitrix24-worker/index.ts`
+- Na função `handleBotMessage`: mudar de `ai-process-message` para `ai-playground`
+- Ajustar o parsing da resposta: `aiResult.reply` → `aiResult.content`
+- Passar o histórico de mensagens correto para manter contexto da conversa
 
-**Fix 2**: Adicionar `OPTIONS` com `iconName` obrigatório ao `placement.bind`:
+## Impacto
 
-```typescript
-const placementResult = await callBitrix(integration.client_endpoint, accessToken, "placement.bind", {
-  PLACEMENT: "IM_TEXTAREA",
-  HANDLER: returnToBotUrl,
-  TITLE: "Devolver ao Bot",
-  LANG_ALL: {
-    pt: { TITLE: "Devolver ao Bot" },
-    en: { TITLE: "Return to Bot" },
-    es: { TITLE: "Devolver al Bot" },
-  },
-  OPTIONS: {
-    iconName: "fa-robot",      // ← OBRIGATÓRIO conforme docs oficiais
-    context: "LINES",          // ← apenas em Open Lines
-    color: "GREEN",
-    role: "USER",
-    width: "400",
-    height: "200",
-    extranet: "N",
-  },
-});
-```
-
-### 2. `supabase/functions/bitrix24-return-to-bot/index.ts`
-
-**Fix**: Corrigir a lógica de encontrar a conversa. Em vez de `contact_phone.eq.bitrix_${chatId}` (errado), usar o `CHAT_ID` para:
-
-1. Chamar `im.chat.get` no Bitrix24 para obter os membros do chat
-2. Procurar por utilizador externo (contact) → mapear a `contact_phone` ou `contact_instagram`
-3. Fallback: procurar em `bot_state` json field se alguma conversa tem esse chatId guardado
-
-Também adicionar o campo `PLACEMENT_OPTIONS.dialogId` como alternativa ao `CHAT_ID` (o Bitrix24 passa o `dialogId` no novo formato de placement).
-
-```typescript
-// CORRETO — extrair dialogId também:
-const chatId = parseInt(
-  placementOptions.CHAT_ID || 
-  placementOptions.ID ||
-  (placementOptions.dialogId || "").replace("chat", "") ||
-  body.CHAT_ID || "0"
-);
-
-// Tentar encontrar conversa via im.chat.get → members → contact_phone
-const chatInfo = await callBitrix(endpoint, accessToken, "im.chat.get", {
-  CHAT_ID: chatId
-});
-// Extrair utilizador externo do chat e mapear à conversa
-```
-
-### 3. `supabase/functions/bitrix24-install/index.ts`
-
-Adicionar o mesmo `OPTIONS` com `iconName` ao `placement.bind` durante a instalação, para que novos portais já tenham o botão correto.
-
-## Sequência após o deploy
-
-1. Clicar em **"Re-registar Webhooks"** no painel Bitrix24App
-2. O resultado de `placement_IM_TEXTAREA` passa de `ERROR_ARGUMENT` para `OK`
-3. No chat de Open Lines do Bitrix24, aparece o ícone 🤖 na barra de ferramentas acima do campo de texto
-4. Operador clica → slider abre brevemente → fecha com "Emmely AI retomou o atendimento"
-
-## O que NÃO muda
-
-- Schema da base de dados — sem novas colunas
-- Lógica de eventos de mensagens
-- UI da aplicação React
+- Sem alterações à base de dados
+- O bot IM do Bitrix24 volta a responder corretamente com IA real
+- As mensagens do Instagram/WhatsApp não são afetadas (continuam a usar `ai-process-message` com `conversation_id` real)
+- A mensagem de boas-vindas também fica correta (já usa `handleWelcome` separado)
