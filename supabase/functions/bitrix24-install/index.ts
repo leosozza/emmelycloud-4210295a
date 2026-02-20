@@ -576,6 +576,41 @@ Deno.serve(async (req) => {
       await debugLog(supabase, integrationId, "placement_bind_error", "outbound", null, String(placementError));
     }
 
+    // --- Register CRM_LEAD_DETAIL_TAB placement (Emmely AI tab in Lead detail) ---
+    try {
+      const crmTabUrl = `${supabaseUrl}/functions/v1/bitrix24-crm-tab`;
+
+      await callBitrix(clientEndpoint, accessToken, "placement.unbind", {
+        PLACEMENT: "CRM_LEAD_DETAIL_TAB",
+        HANDLER: crmTabUrl,
+      });
+
+      const crmTabResult = await callBitrix(clientEndpoint, accessToken, "placement.bind", {
+        PLACEMENT: "CRM_LEAD_DETAIL_TAB",
+        HANDLER: crmTabUrl,
+        TITLE: "Emmely AI",
+        DESCRIPTION: "Conversa e histórico do cliente",
+        LANG_ALL: {
+          pt: { TITLE: "Emmely AI", DESCRIPTION: "Conversa e histórico do cliente" },
+          en: { TITLE: "Emmely AI", DESCRIPTION: "Conversation and client history" },
+          es: { TITLE: "Emmely AI", DESCRIPTION: "Conversación e historial del cliente" },
+          ru: { TITLE: "Emmely AI", DESCRIPTION: "Переписка и история клиента" },
+        },
+      });
+
+      const crmTabErr = crmTabResult.error || "";
+      if (crmTabErr && !String(crmTabErr).toLowerCase().includes("already")) {
+        console.error("[INSTALL] placement.bind CRM_LEAD_DETAIL_TAB error:", crmTabErr);
+      } else {
+        console.log("[INSTALL] placement.bind CRM_LEAD_DETAIL_TAB: OK");
+      }
+
+      await debugLog(supabase, integrationId, "crm_tab_placement_bind", "outbound", { result: crmTabResult });
+    } catch (crmTabError) {
+      console.error("[INSTALL] CRM tab placement error:", crmTabError);
+      await debugLog(supabase, integrationId, "crm_tab_placement_error", "outbound", null, String(crmTabError));
+    }
+
     // If called via JSON (from frontend fetch), return JSON
     if (contentType.includes("application/json")) {
       return new Response(

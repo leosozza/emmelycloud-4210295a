@@ -86,3 +86,6 @@ verify_jwt = false
 
 [functions.bitrix24-reregister-bot]
 verify_jwt = false
+
+[functions.bitrix24-crm-tab]
+verify_jwt = false

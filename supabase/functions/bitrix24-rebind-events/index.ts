@@ -150,6 +150,34 @@ Deno.serve(async (req) => {
       console.error("[REBIND] placement.bind error:", pe);
     }
 
+    // --- Register CRM_LEAD_DETAIL_TAB placement (Emmely AI tab in Lead detail) ---
+    const crmTabUrl = `${supabaseUrl}/functions/v1/bitrix24-crm-tab`;
+    try {
+      await callBitrix(integration.client_endpoint, accessToken, "placement.unbind", {
+        PLACEMENT: "CRM_LEAD_DETAIL_TAB",
+        HANDLER: crmTabUrl,
+      });
+      const crmTabResult = await callBitrix(integration.client_endpoint, accessToken, "placement.bind", {
+        PLACEMENT: "CRM_LEAD_DETAIL_TAB",
+        HANDLER: crmTabUrl,
+        TITLE: "Emmely AI",
+        DESCRIPTION: "Conversa e histórico do cliente",
+        LANG_ALL: {
+          pt: { TITLE: "Emmely AI", DESCRIPTION: "Conversa e histórico do cliente" },
+          en: { TITLE: "Emmely AI", DESCRIPTION: "Conversation and client history" },
+          es: { TITLE: "Emmely AI", DESCRIPTION: "Conversación e historial del cliente" },
+          ru: { TITLE: "Emmely AI", DESCRIPTION: "Переписка и история клиента" },
+        },
+      });
+      results["placement_CRM_LEAD_DETAIL_TAB"] = crmTabResult.error
+        ? `ERROR: ${crmTabResult.error}`
+        : "OK";
+      console.log("[REBIND] placement.bind CRM_LEAD_DETAIL_TAB:", JSON.stringify(crmTabResult));
+    } catch (crmTabErr) {
+      results["placement_CRM_LEAD_DETAIL_TAB"] = `ERROR: ${crmTabErr}`;
+      console.error("[REBIND] placement.bind CRM_LEAD_DETAIL_TAB error:", crmTabErr);
+    }
+
     // Also verify event.get to confirm bindings
     const boundEvents = await callBitrix(integration.client_endpoint, accessToken, "event.get", {});
     console.log("[REBIND] Current bindings:", JSON.stringify(boundEvents).substring(0, 500));
