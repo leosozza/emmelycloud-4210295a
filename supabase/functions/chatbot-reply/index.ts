@@ -184,6 +184,26 @@ Deno.serve(async (req) => {
       }),
     }).catch((e) => console.error("[CHATBOT] Bitrix24 forward error:", e));
 
+    // 10. Create Bitrix24 badge activity (fire and forget)
+    try {
+      fetch(`${supabaseUrl}/functions/v1/bitrix24-worker`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${serviceKey}`,
+          "X-Badge-Action": "create",
+        },
+        body: JSON.stringify({
+          _badgeRequest: true,
+          conversationId: conversation_id,
+          channel: conversation.channel,
+          badgeCode: "emmely_bot_replied",
+          headerTitle: "Emmely AI respondeu",
+          messagePreview: replyText,
+        }),
+      }).catch((e) => console.error("[CHATBOT] Badge creation error:", e));
+    } catch {}
+
     return new Response(JSON.stringify({ success: true, reply: replyText }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });

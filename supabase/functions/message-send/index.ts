@@ -145,6 +145,20 @@ Deno.serve(async (req) => {
       const igResult = await igResponse.json();
       if (!igResponse.ok) {
         console.error(`[MESSAGE-SEND] Instagram API error (instance: ${creds.instanceName}):`, JSON.stringify(igResult));
+        // Fire-and-forget: badge for failed send
+        try {
+          const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+          const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+          fetch(`${supabaseUrl}/functions/v1/bitrix24-worker`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "Authorization": `Bearer ${serviceKey}` },
+            body: JSON.stringify({
+              _badgeRequest: true, conversationId: conversation_id, channel: "instagram",
+              badgeCode: "emmely_msg_failed", headerTitle: "Erro de Envio (Instagram)",
+              messagePreview: content, instanceName: creds.instanceName,
+            }),
+          }).catch(() => {});
+        } catch {}
         return new Response(JSON.stringify({ error: "Failed to send Instagram message", details: igResult, instance: creds.instanceName }), {
           status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
@@ -218,6 +232,20 @@ Deno.serve(async (req) => {
       const waResult = await waResponse.json();
       if (!waResponse.ok) {
         console.error(`[MESSAGE-SEND] WhatsApp API error (instance: ${creds.instanceName}):`, JSON.stringify(waResult));
+        // Fire-and-forget: badge for failed send
+        try {
+          const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+          const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+          fetch(`${supabaseUrl}/functions/v1/bitrix24-worker`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "Authorization": `Bearer ${serviceKey}` },
+            body: JSON.stringify({
+              _badgeRequest: true, conversationId: conversation_id, channel: "whatsapp",
+              badgeCode: "emmely_msg_failed", headerTitle: "Erro de Envio (WhatsApp)",
+              messagePreview: content, instanceName: creds.instanceName,
+            }),
+          }).catch(() => {});
+        } catch {}
         return new Response(JSON.stringify({ error: "Failed to send WhatsApp message", details: waResult, instance: creds.instanceName }), {
           status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
@@ -243,6 +271,27 @@ Deno.serve(async (req) => {
         last_message_preview: content.slice(0, 100),
       }).eq("id", conversation_id);
     }
+
+    // Create Bitrix24 badge activity for sent message (fire and forget)
+    try {
+      const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+      const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+      fetch(`${supabaseUrl}/functions/v1/bitrix24-worker`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${serviceKey}`,
+        },
+        body: JSON.stringify({
+          _badgeRequest: true,
+          conversationId: conversation_id,
+          channel: conv.channel,
+          badgeCode: "emmely_msg_sent",
+          headerTitle: "Mensagem Enviada",
+          messagePreview: content,
+        }),
+      }).catch(() => {});
+    } catch {}
 
     return new Response(JSON.stringify({ success: true, message_id: externalMessageId }), {
       status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },

@@ -287,6 +287,25 @@ Deno.serve(async (req) => {
       console.warn("[RETURN-TO-BOT] bot_id not found in config, skipping message:", config);
     }
 
+    // Create badge for human takeover return
+    if (targetConversation) {
+      try {
+        const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+        const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+        fetch(`${supabaseUrl}/functions/v1/bitrix24-worker`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "Authorization": `Bearer ${serviceKey}` },
+          body: JSON.stringify({
+            _badgeRequest: true,
+            conversationId: targetConversation.id,
+            badgeCode: "emmely_human_takeover",
+            headerTitle: "Devolvido ao Bot",
+            messagePreview: "Atendimento devolvido à Emmely AI",
+          }),
+        }).catch(() => {});
+      } catch {}
+    }
+
     return new Response(
       closeSliderHtml("Emmely AI retomou o atendimento! ✨", true),
       { headers: htmlHeaders }
