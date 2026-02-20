@@ -113,6 +113,33 @@ Deno.serve(async (req) => {
       console.log(`[REBIND] ${event}:`, JSON.stringify(bindResult));
     }
 
+    // Re-bind IM_TEXTAREA placement (Devolver ao Bot button)
+    const returnToBotUrl = `${supabaseUrl}/functions/v1/bitrix24-return-to-bot`;
+    try {
+      await callBitrix(integration.client_endpoint, accessToken, "placement.unbind", {
+        PLACEMENT: "IM_TEXTAREA",
+        HANDLER: returnToBotUrl,
+      });
+      const placementResult = await callBitrix(integration.client_endpoint, accessToken, "placement.bind", {
+        PLACEMENT: "IM_TEXTAREA",
+        HANDLER: returnToBotUrl,
+        TITLE: "🤖 Devolver ao Bot",
+        LANG_ALL: {
+          pt: { TITLE: "🤖 Devolver ao Bot" },
+          en: { TITLE: "🤖 Return to Bot" },
+          es: { TITLE: "🤖 Devolver al Bot" },
+          ru: { TITLE: "🤖 Вернуть боту" },
+        },
+      });
+      results["placement_IM_TEXTAREA"] = placementResult.error
+        ? `ERROR: ${placementResult.error}`
+        : "OK";
+      console.log("[REBIND] placement.bind IM_TEXTAREA:", JSON.stringify(placementResult));
+    } catch (pe) {
+      results["placement_IM_TEXTAREA"] = `ERROR: ${pe}`;
+      console.error("[REBIND] placement.bind error:", pe);
+    }
+
     // Also verify event.get to confirm bindings
     const boundEvents = await callBitrix(integration.client_endpoint, accessToken, "event.get", {});
     console.log("[REBIND] Current bindings:", JSON.stringify(boundEvents).substring(0, 500));
