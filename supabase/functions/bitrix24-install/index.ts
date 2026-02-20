@@ -532,6 +532,41 @@ Deno.serve(async (req) => {
       await debugLog(supabase, integrationId, "robots_setup_error", "outbound", null, String(robotError));
     }
 
+    // --- Register IM_TEXTAREA placement (Devolver ao Bot button) ---
+    try {
+      const returnToBotUrl = `${supabaseUrl}/functions/v1/bitrix24-return-to-bot`;
+
+      // Unbind first to avoid duplicates
+      await callBitrix(clientEndpoint, accessToken, "placement.unbind", {
+        PLACEMENT: "IM_TEXTAREA",
+        HANDLER: returnToBotUrl,
+      });
+
+      const placementResult = await callBitrix(clientEndpoint, accessToken, "placement.bind", {
+        PLACEMENT: "IM_TEXTAREA",
+        HANDLER: returnToBotUrl,
+        TITLE: "🤖 Devolver ao Bot",
+        LANG_ALL: {
+          pt: { TITLE: "🤖 Devolver ao Bot" },
+          en: { TITLE: "🤖 Return to Bot" },
+          es: { TITLE: "🤖 Devolver al Bot" },
+          ru: { TITLE: "🤖 Вернуть боту" },
+        },
+      });
+
+      const plErr = placementResult.error || "";
+      if (plErr && !String(plErr).toLowerCase().includes("already")) {
+        console.error("[INSTALL] placement.bind IM_TEXTAREA error:", plErr, placementResult.error_description);
+      } else {
+        console.log("[INSTALL] placement.bind IM_TEXTAREA: OK");
+      }
+
+      await debugLog(supabase, integrationId, "placement_bind", "outbound", { result: placementResult });
+    } catch (placementError) {
+      console.error("[INSTALL] placement.bind error:", placementError);
+      await debugLog(supabase, integrationId, "placement_bind_error", "outbound", null, String(placementError));
+    }
+
     // If called via JSON (from frontend fetch), return JSON
     if (contentType.includes("application/json")) {
       return new Response(
