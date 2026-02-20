@@ -1,102 +1,157 @@
 
-# Aba "Emmely AI" no Detalhe de Lead do Bitrix24 (CRM_LEAD_DETAIL_TAB)
+# Otimização de Tokens no Agente de IA com TOON + Compressão Inteligente
 
-## O que vai ser construído
+## Diagnóstico atual
 
-Ao registar o placement `CRM_LEAD_DETAIL_TAB`, vai aparecer uma aba "Emmely AI" em cada Lead/Contacto do Bitrix24 (como o WhatCRM tem a aba "Whatsapp"). Ao clicar nessa aba, abre um iframe com a conversa do cliente ligada a esse Lead — mostrando o histórico de mensagens, o modo de atendimento atual (bot/humano) e um botão para devolver ao bot.
+Analisando o `ai-process-message/index.ts`, existem 3 fontes principais de consumo excessivo de tokens:
 
-## Como funciona o placement CRM_LEAD_DETAIL_TAB
+### Fonte 1 — Histórico de conversa (15 mensagens)
+Passado como array `messages` da API OpenAI. **Não pode ser substituído por TOON** porque é formato de protocolo fixo. Mas pode ser **reduzido e comprimido**.
 
-O Bitrix24 ao abrir o detalhe de um Lead passa os seguintes dados no PLACEMENT_OPTIONS do POST para o handler:
-- `ENTITY_TYPE_ID` — tipo de entidade (1=Lead, 2=Deal, 3=Contact, etc.)
-- `ENTITY_ID` — ID numérico do Lead/Deal/Contact
-- `member_id` — identifica a integração
+### Fonte 2 — Base de Conhecimento (20 chunks injetados no system prompt)
+```
+--- BASE DE CONHECIMENTO ---
+[chunk 1 completo]
 
-O handler (uma Edge Function) recebe estes dados, faz lookup da conversa associada ao Lead/Contact, e retorna HTML renderizado dentro do iframe da aba.
+[chunk 2 completo]
+...
+--- FIM DA BASE DE CONHECIMENTO ---
+```
+Esta parte **pode ser reformatada com TOON** pois são arrays uniformes de objetos texto. Redução esperada: ~30-40%.
 
-## Arquitetura da solução
+### Fonte 3 — System prompt verboso com anti-repetição
+Frases longas em português que repetem instruções. Pode ser comprimido.
 
-```text
-Bitrix24 Lead Detail Page
-  └─ Aba "Emmely AI" (CRM_LEAD_DETAIL_TAB)
-       └─ iframe → Edge Function: bitrix24-crm-tab
-                    ├─ Recebe ENTITY_ID + ENTITY_TYPE_ID + member_id
-                    ├─ Lookup: busca conversa por ENTITY_ID no campo bot_state.bitrix_lead_id
-                    │          OU por telefone do Lead via imopenlines.session.list
-                    ├─ Renderiza HTML com:
-                    │   ├─ Histórico das últimas 20 mensagens
-                    │   ├─ Badge: modo bot / humano
-                    │   ├─ Botão "Devolver ao Bot"
-                    │   └─ Campo para enviar mensagem manual
-                    └─ Retorna HTML com X-Frame-Options: ALLOWALL
+## Estratégia de otimização (sem biblioteca TOON — implementação nativa em Deno)
+
+O TOON é uma spec aberta. A biblioteca npm `@toon-format/toon` **não é compatível com Deno edge functions** diretamente (usa Node.js). A solução é implementar a serialização TOON relevante para o caso de uso diretamente como função utilitária na edge function.
+
+### O que vamos implementar
+
+**Técnica 1 — TOON para Knowledge Base** (maior impacto)
+
+Em vez de:
+```
+--- BASE DE CONHECIMENTO ---
+Os serviços jurídicos incluem assessoria em imigração...
+
+Taxas de serviço são calculadas conforme...
+--- FIM DA BASE DE CONHECIMENTO ---
 ```
 
-## Ficheiros a criar/modificar
+Com TOON tabular:
+```
+KB[3]{idx,content}:
+  1,Os serviços jurídicos incluem assessoria em imigração...
+  2,Taxas de serviço são calculadas conforme...
+  3,...
+```
 
-### 1. Nova Edge Function: `supabase/functions/bitrix24-crm-tab/index.ts`
-- Handler do placement `CRM_LEAD_DETAIL_TAB`
-- Recebe POST do Bitrix24 com `PLACEMENT_OPTIONS` contendo `ENTITY_ID` e `ENTITY_TYPE_ID`
-- Lookup da conversa: busca por `bot_state->>'bitrix_lead_id'` OU por telefone do Lead (via `callBitrix → crm.lead.get`)
-- Renderiza HTML completo com:
-  - Cabeçalho com nome do contacto e badge de modo
-  - Histórico das últimas 20 mensagens (botões de devolver ao bot)
-  - Se não encontrar conversa: mensagem informativa
+**Técnica 2 — Compressão do histórico de conversa (maior impacto prático)**
 
-### 2. Modificar `supabase/functions/bitrix24-rebind-events/index.ts`
-- Adicionar registo do placement `CRM_LEAD_DETAIL_TAB` na função de rebind
-- Unbind primeiro para evitar duplicados
-- Bind com TITLE "Emmely AI", HANDLER apontando para `bitrix24-crm-tab`
-
-### 3. Modificar `supabase/functions/bitrix24-install/index.ts`
-- Adicionar registo do placement `CRM_LEAD_DETAIL_TAB` durante a instalação (ao lado do `IM_TEXTAREA` que já existe)
-
-## Detalhes técnicos da Edge Function `bitrix24-crm-tab`
+Em vez de passar 15 mensagens completas no array `messages` da API, implementamos **sumarização automática** para conversas longas:
+- Se há mais de 8 mensagens: sumariza as mais antigas num bloco no system prompt
+- As últimas 4-6 mensagens ficam como `messages[]` reais (contexto imediato)
+- Economia estimada: 40-60% do contexto de histórico
 
 ```typescript
-// Lógica de lookup da conversa
-// 1. Obter dados do Lead no Bitrix24
-const leadData = await callBitrix(endpoint, token, "crm.lead.get", { ID: entityId });
-const phone = leadData.result?.PHONE?.[0]?.VALUE || "";
-
-// 2. Buscar conversa por telefone
-const cleanPhone = phone.replace(/\D/g, "");
-const conv = await supabase.from("conversations")
-  .select("id, contact_name, attendance_mode, channel")
-  .ilike("contact_phone", `%${cleanPhone}%`)
-  .neq("status", "fechada")
-  .limit(1).single();
-
-// 3. Buscar mensagens
-const msgs = await supabase.from("messages")
-  .select("content, direction, created_at, sender_name")
-  .eq("conversation_id", conv.id)
-  .order("created_at", { ascending: false })
-  .limit(20);
+// Estratégia híbrida:
+// system prompt ← resumo comprimido das mensagens antigas (TOON tabular)
+// messages[]    ← apenas as últimas 5 mensagens (protocolo OpenAI)
 ```
 
-O HTML renderizado vai usar estilos inline (sem dependências externas) para ficar visual dentro do iframe do Bitrix24, com cores adaptadas ao tema do portal.
+**Técnica 3 — Prompt do sistema mais curto**
 
-## Placement binding
+O anti-repetition prompt atual repete até 100 chars de cada mensagem recente. Será encurtado para 50 chars.
+
+## Ficheiros a modificar
+
+### `supabase/functions/ai-process-message/index.ts`
+
+Adicionar funções utilitárias no topo:
 
 ```typescript
-await callBitrix(endpoint, token, "placement.bind", {
-  PLACEMENT: "CRM_LEAD_DETAIL_TAB",
-  HANDLER: `${supabaseUrl}/functions/v1/bitrix24-crm-tab`,
-  TITLE: "Emmely AI",
-  DESCRIPTION: "Conversa e histórico do cliente",
-  LANG_ALL: {
-    pt: { TITLE: "Emmely AI" },
-    en: { TITLE: "Emmely AI" },
-  },
-});
+// ─── Token optimization utilities ───
+
+// Serializa array de chunks em formato TOON tabular (compacto, sem biblioteca externa)
+function chunksToToon(chunks: { content: string }[]): string {
+  if (chunks.length === 0) return "";
+  const rows = chunks.map((c, i) => `  ${i + 1},${c.content.replace(/,/g, ";").replace(/\n/g, " ").substring(0, 500)}`);
+  return `KB[${chunks.length}]{idx,content}:\n${rows.join("\n")}`;
+}
+
+// Comprime histórico antigo em bloco de contexto para o system prompt
+function compressOldHistory(messages: { role: string; content: string }[]): string {
+  if (messages.length === 0) return "";
+  const rows = messages.map((m, i) =>
+    `  ${i + 1},${m.role === "user" ? "U" : "A"},${m.content.replace(/,/g, ";").replace(/\n/g, " ").substring(0, 200)}`
+  );
+  return `\n\nCONTEXTO_ANTERIOR[${messages.length}]{idx,role,msg}:\n${rows.join("\n")}\n`;
+}
 ```
 
-## Resultado final
+Modificar a lógica de montagem do contexto:
 
-Após o rebind, em cada Lead do Bitrix24 vai aparecer uma aba **"Emmely AI"** (como a aba "Whatsapp" do WhatCRM). Ao clicar:
-- Mostra o histórico de mensagens do cliente
-- Indica se está em modo **bot** ou **humano**
-- Tem botão **"Devolver ao Bot"** que chama a edge function existente
-- Se não houver conversa associada, mostra uma mensagem clara
+```typescript
+// ANTES: 15 mensagens no messages[] + 20 chunks no system prompt (muito tokens)
+// DEPOIS: 
+//   - 5 mensagens recentes no messages[]
+//   - mensagens antigas comprimidas no system prompt em formato TOON
+//   - chunks da KB em formato TOON tabular
 
-O utilizador também precisará de clicar em **"Re-registar Eventos"** no Dashboard do iframe para ativar o placement na instalação existente (sem precisar de reinstalar a app).
+const RECENT_MSG_COUNT = 5;
+const MAX_CHUNKS = 20;
+
+// Dividir histórico
+const allHistory = (history || []).reverse(); // cronológico
+const recentMessages = allHistory.slice(-RECENT_MSG_COUNT).map((m) => ({
+  role: m.direction === "inbound" ? "user" : "assistant",
+  content: m.content,
+}));
+const olderMessages = allHistory.slice(0, -RECENT_MSG_COUNT).map((m) => ({
+  role: m.direction === "inbound" ? "user" : "assistant",
+  content: m.content,
+}));
+
+// Knowledge base em formato TOON
+const kbToon = chunksToToon(chunks || []);
+const knowledgeContext = kbToon 
+  ? `\n\n--- BASE DE CONHECIMENTO ---\n${kbToon}\n--- FIM ---\n` 
+  : "";
+
+// Contexto histórico comprimido
+const compressedHistory = compressOldHistory(olderMessages);
+
+// System prompt final
+const systemPrompt = agent.system_prompt + knowledgeContext + compressedHistory + contactContext + antiRepetitionPrompt;
+
+// Enviar apenas mensagens recentes ao modelo
+// messages = recentMessages (5 mensagens, não 15)
+```
+
+### `supabase/functions/ai-playground/index.ts`
+
+Aplicar a mesma serialização TOON para a base de conhecimento (usado no Playground e no treinamento de agentes).
+
+## Estimativa de redução de tokens
+
+| Componente | Antes | Depois | Redução |
+|---|---|---|---|
+| Histórico conversa (messages[]) | 15 mensagens completas | 5 mensagens | ~65% |
+| Histórico antigo | não incluído | TOON comprimido no system | ~50% vs incluir tudo |
+| Base de conhecimento | 20 chunks em texto livre | TOON tabular | ~35% |
+| Anti-repetição | 100 chars/mensagem | 50 chars/mensagem | ~30% |
+| **Total estimado** | **baseline** | | **~40-50% menos tokens** |
+
+## Limitações e trade-offs
+
+- **TOON para histórico antigo**: o modelo vê o contexto em formato tabular, não como mensagens reais — pode perder nuances subtis em conversas muito complexas. As últimas 5 mensagens reais compensam.
+- **Chunks limitados a 500 chars**: se um chunk tem informação importante no final, pode ser cortado. O limite atual já é de 20 chunks × comprimento completo, por isso continua melhor.
+- **Sem biblioteca externa**: a serialização TOON implementada é simplificada (CSV-style, sem escape completo da spec). Para o uso de contexto em LLMs, isso é suficiente.
+
+## Ordem de implementação
+
+1. Adicionar funções `chunksToToon` e `compressOldHistory` em ambas as edge functions
+2. Modificar `ai-process-message` para usar 5 mensagens recentes + contexto comprimido
+3. Modificar `ai-playground` para usar TOON na base de conhecimento
+4. Deploy e monitorizar `usage.total_tokens` nos logs para confirmar redução
