@@ -545,12 +545,21 @@ Deno.serve(async (req) => {
       const placementResult = await callBitrix(clientEndpoint, accessToken, "placement.bind", {
         PLACEMENT: "IM_TEXTAREA",
         HANDLER: returnToBotUrl,
-        TITLE: "🤖 Devolver ao Bot",
+        TITLE: "Devolver ao Bot",
         LANG_ALL: {
-          pt: { TITLE: "🤖 Devolver ao Bot" },
-          en: { TITLE: "🤖 Return to Bot" },
-          es: { TITLE: "🤖 Devolver al Bot" },
-          ru: { TITLE: "🤖 Вернуть боту" },
+          pt: { TITLE: "Devolver ao Bot" },
+          en: { TITLE: "Return to Bot" },
+          es: { TITLE: "Devolver al Bot" },
+          ru: { TITLE: "Вернуть боту" },
+        },
+        OPTIONS: {
+          iconName: "fa-robot",   // OBRIGATÓRIO — Font Awesome icon name
+          context: "LINES",       // apenas em Open Lines
+          color: "GREEN",
+          role: "USER",
+          width: "400",
+          height: "200",
+          extranet: "N",
         },
       });
 

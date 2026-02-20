@@ -84,9 +84,8 @@ Deno.serve(async (req) => {
       "OnImConnectorDialogFinish",
       "OnImConnectorStatusDelete",
       "OnImbotMessageAdd",
-      "OnImbotWelcomeMessage",
-      "OnImbotJoinOpen",
-      "OnImbotJoinChat",    // NOVO — obrigatório para Open Lines chatbot selector
+      "OnImbotJoinChat",    // obrigatório para Open Lines chatbot selector
+      // NOTA: OnImbotWelcomeMessage e OnImbotJoinOpen NÃO existem como event.bind — são parâmetros do imbot.register
     ];
 
     const results: Record<string, any> = {};
@@ -123,12 +122,21 @@ Deno.serve(async (req) => {
       const placementResult = await callBitrix(integration.client_endpoint, accessToken, "placement.bind", {
         PLACEMENT: "IM_TEXTAREA",
         HANDLER: returnToBotUrl,
-        TITLE: "🤖 Devolver ao Bot",
+        TITLE: "Devolver ao Bot",
         LANG_ALL: {
-          pt: { TITLE: "🤖 Devolver ao Bot" },
-          en: { TITLE: "🤖 Return to Bot" },
-          es: { TITLE: "🤖 Devolver al Bot" },
-          ru: { TITLE: "🤖 Вернуть боту" },
+          pt: { TITLE: "Devolver ao Bot" },
+          en: { TITLE: "Return to Bot" },
+          es: { TITLE: "Devolver al Bot" },
+          ru: { TITLE: "Вернуть боту" },
+        },
+        OPTIONS: {
+          iconName: "fa-robot",   // OBRIGATÓRIO — Font Awesome icon name
+          context: "LINES",       // apenas em Open Lines
+          color: "GREEN",
+          role: "USER",
+          width: "400",
+          height: "200",
+          extranet: "N",
         },
       });
       results["placement_IM_TEXTAREA"] = placementResult.error
