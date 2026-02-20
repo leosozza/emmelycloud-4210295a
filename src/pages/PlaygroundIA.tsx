@@ -41,11 +41,18 @@ interface AIAgent {
   fallback_message: string | null;
 }
 
+interface AIProvider {
+  id: string;
+  slug: string;
+  name: string;
+}
+
 export default function PlaygroundIAPage() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [agents, setAgents] = useState<AIAgent[]>([]);
+  const [providers, setProviders] = useState<AIProvider[]>([]);
   const [selectedAgentId, setSelectedAgentId] = useState("");
   const [metrics, setMetrics] = useState<Metrics | null>(null);
   const [showDebug, setShowDebug] = useState(false);
@@ -53,6 +60,7 @@ export default function PlaygroundIAPage() {
 
   useEffect(() => {
     loadAgents();
+    loadProviders();
   }, []);
 
   useEffect(() => {
@@ -74,7 +82,19 @@ export default function PlaygroundIAPage() {
     }
   };
 
+  const loadProviders = async () => {
+    const { data } = await supabase
+      .from("ai_providers")
+      .select("id, slug, name")
+      .eq("is_active", true);
+    if (data) setProviders(data as AIProvider[]);
+  };
+
   const selectedAgent = agents.find(a => a.id === selectedAgentId);
+  const getProviderName = (slug: string) => {
+    const provider = providers.find(p => p.slug === slug);
+    return provider?.name || (slug === "lovable" ? "nativo" : slug);
+  };
 
   const handleSend = async () => {
     const trimmed = input.trim();
@@ -167,7 +187,7 @@ export default function PlaygroundIAPage() {
               <>
                 <div className="space-y-1">
                   <p className="text-[10px] text-muted-foreground uppercase font-semibold">Provider</p>
-                  <Badge variant="outline" className="text-[10px]">{selectedAgent.ai_provider}</Badge>
+                  <Badge variant="outline" className="text-[10px]">{getProviderName(selectedAgent.ai_provider)}</Badge>
                 </div>
                 <div className="space-y-1">
                   <p className="text-[10px] text-muted-foreground uppercase font-semibold">Modelo</p>
