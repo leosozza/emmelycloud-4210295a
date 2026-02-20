@@ -152,10 +152,17 @@ Deno.serve(async (req) => {
     const boundEvents = await callBitrix(integration.client_endpoint, accessToken, "event.get", {});
     console.log("[REBIND] Current bindings:", JSON.stringify(boundEvents).substring(0, 500));
 
+    // Verify placement.get to confirm IM_TEXTAREA registration
+    const placementGet = await callBitrix(integration.client_endpoint, accessToken, "placement.get", {
+      PLACEMENT: "IM_TEXTAREA",
+    });
+    console.log("[REBIND] placement.get IM_TEXTAREA:", JSON.stringify(placementGet).substring(0, 1000));
+
     return new Response(JSON.stringify({
       success: true,
       results,
       bound_events: boundEvents.result || [],
+      placement_im_textarea: placementGet.result || placementGet,
       integration_domain: integration.domain,
     }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
 
