@@ -8,13 +8,87 @@ const corsHeaders = {
 const IG_GRAPH_URL = "https://graph.instagram.com/v24.0";
 const WA_GRAPH_URL = "https://graph.facebook.com/v22.0";
 
+interface InstanceCredentials {
+  accessToken: string;
+  phoneNumberId?: string;
+  igAccountId?: string;
+  instanceName?: string;
+}
+
+/**
+ * Resolve credentials for a channel from channel_instances table.
+ * Falls back to environment variables if no active instance found.
+ */
+async function resolveCredentials(
+  supabase: any,
+  channel: string,
+  instanceId?: string
+): Promise<InstanceCredentials> {
+  // Try to get from channel_instances
+  let query = supabase
+    .from("channel_instances")
+    .select("id, name, config, status")
+    .eq("channel_type", channel)
+    .eq("status", "active");
+
+  if (instanceId) {
+    query = query.eq("id", instanceId);
+  }
+
+  const { data: instances } = await query.order("created_at").limit(1);
+  const instance = instances?.[0];
+
+  if (instance?.config) {
+    const cfg = instance.config as Record<string, any>;
+
+    if (channel === "whatsapp") {
+      const token = cfg.access_token || cfg.wa_access_token;
+      const phoneId = cfg.phone_number_id || cfg.wa_phone_number_id;
+      if (token && phoneId) {
+        console.log(`[MESSAGE-SEND] Using WhatsApp instance: ${instance.name} (${instance.id})`);
+        return { accessToken: token, phoneNumberId: phoneId, instanceName: instance.name };
+      }
+    }
+
+    if (channel === "instagram") {
+      const token = cfg.access_token || cfg.ig_access_token;
+      const accountId = cfg.ig_account_id;
+      if (token && accountId) {
+        console.log(`[MESSAGE-SEND] Using Instagram instance: ${instance.name} (${instance.id})`);
+        return { accessToken: token, igAccountId: accountId, instanceName: instance.name };
+      }
+    }
+  }
+
+  // Fallback to environment variables
+  console.log(`[MESSAGE-SEND] No active instance for ${channel}, falling back to env vars`);
+
+  if (channel === "whatsapp") {
+    return {
+      accessToken: Deno.env.get("META_WA_ACCESS_TOKEN")?.trim() || "",
+      phoneNumberId: Deno.env.get("META_WA_PHONE_NUMBER_ID")?.trim() || "",
+      instanceName: "env-fallback",
+    };
+  }
+
+  if (channel === "instagram") {
+    return {
+      accessToken: Deno.env.get("META_PAGE_ACCESS_TOKEN")?.trim().replace(/[\r\n\s]+/g, "") || "",
+      igAccountId: Deno.env.get("META_IG_ACCOUNT_ID")?.trim() || "",
+      instanceName: "env-fallback",
+    };
+  }
+
+  return { accessToken: "", instanceName: "none" };
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
 
   try {
-    const { conversation_id, content, message_type, interactive_data, skip_db_save } = await req.json();
+    const { conversation_id, content, message_type, interactive_data, skip_db_save, instance_id } = await req.json();
     if (!conversation_id || !content) {
       return new Response(JSON.stringify({ error: "conversation_id and content required" }), {
         status: 400,
@@ -45,11 +119,10 @@ Deno.serve(async (req) => {
 
     // ── Instagram: send via Meta Graph API ──
     if (conv.channel === "instagram") {
-      const igToken = Deno.env.get("META_PAGE_ACCESS_TOKEN")?.trim().replace(/[\r\n\s]+/g, "");
-      const igAccountId = Deno.env.get("META_IG_ACCOUNT_ID")?.trim();
+      const creds = await resolveCredentials(supabase, "instagram", instance_id);
 
-      if (!igToken || !igAccountId) {
-        return new Response(JSON.stringify({ error: "META_PAGE_ACCESS_TOKEN and META_IG_ACCOUNT_ID required" }), {
+      if (!creds.accessToken || !creds.igAccountId) {
+        return new Response(JSON.stringify({ error: "No Instagram credentials configured. Create an active Instagram instance or set META_PAGE_ACCESS_TOKEN + META_IG_ACCOUNT_ID." }), {
           status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
@@ -60,9 +133,9 @@ Deno.serve(async (req) => {
         });
       }
 
-      const igResponse = await fetch(`${IG_GRAPH_URL}/${igAccountId}/messages`, {
+      const igResponse = await fetch(`${IG_GRAPH_URL}/${creds.igAccountId}/messages`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${igToken}` },
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${creds.accessToken}` },
         body: JSON.stringify({
           recipient: { id: conv.contact_instagram },
           message: { text: content },
@@ -71,8 +144,8 @@ Deno.serve(async (req) => {
 
       const igResult = await igResponse.json();
       if (!igResponse.ok) {
-        console.error("[MESSAGE-SEND] Instagram API error:", JSON.stringify(igResult));
-        return new Response(JSON.stringify({ error: "Failed to send Instagram message", details: igResult }), {
+        console.error(`[MESSAGE-SEND] Instagram API error (instance: ${creds.instanceName}):`, JSON.stringify(igResult));
+        return new Response(JSON.stringify({ error: "Failed to send Instagram message", details: igResult, instance: creds.instanceName }), {
           status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
@@ -80,11 +153,10 @@ Deno.serve(async (req) => {
 
     // ── WhatsApp: send via WhatsApp Business API (Meta Cloud API) ──
     } else if (conv.channel === "whatsapp") {
-      const waToken = Deno.env.get("META_WA_ACCESS_TOKEN")?.trim();
-      const waPhoneId = Deno.env.get("META_WA_PHONE_NUMBER_ID")?.trim();
+      const creds = await resolveCredentials(supabase, "whatsapp", instance_id);
 
-      if (!waToken || !waPhoneId) {
-        return new Response(JSON.stringify({ error: "META_WA_ACCESS_TOKEN and META_WA_PHONE_NUMBER_ID required" }), {
+      if (!creds.accessToken || !creds.phoneNumberId) {
+        return new Response(JSON.stringify({ error: "No WhatsApp credentials configured. Create an active WhatsApp instance or set META_WA_ACCESS_TOKEN + META_WA_PHONE_NUMBER_ID." }), {
           status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
@@ -101,124 +173,52 @@ Deno.serve(async (req) => {
       let waPayload: any;
 
       if (message_type === "interactive_buttons" && interactive_data) {
-        // Interactive buttons message
         const buttons = (interactive_data as any[]).slice(0, 3).map((btn: any, i: number) => ({
           type: "reply",
           reply: { id: btn.id || `btn_${i}`, title: (btn.title || btn.label || `Opção ${i + 1}`).substring(0, 20) },
         }));
-
         waPayload = {
-          messaging_product: "whatsapp",
-          to: phone,
-          type: "interactive",
-          interactive: {
-            type: "button",
-            body: { text: content },
-            action: { buttons },
-          },
+          messaging_product: "whatsapp", to: phone, type: "interactive",
+          interactive: { type: "button", body: { text: content }, action: { buttons } },
         };
       } else if (message_type === "interactive_list" && interactive_data) {
-        // Interactive list message
         const rows = (interactive_data as any[]).slice(0, 10).map((item: any, i: number) => ({
           id: item.id || `item_${i}`,
           title: (item.title || `Item ${i + 1}`).substring(0, 24),
           description: (item.description || "").substring(0, 72),
         }));
-
         waPayload = {
-          messaging_product: "whatsapp",
-          to: phone,
-          type: "interactive",
-          interactive: {
-            type: "list",
-            body: { text: content },
-            action: {
-              button: "Selecionar",
-              sections: [{ title: "Opções", rows }],
-            },
-          },
+          messaging_product: "whatsapp", to: phone, type: "interactive",
+          interactive: { type: "list", body: { text: content }, action: { button: "Selecionar", sections: [{ title: "Opções", rows }] } },
         };
       } else if (message_type === "image" && interactive_data) {
-        waPayload = {
-          messaging_product: "whatsapp",
-          to: phone,
-          type: "image",
-          image: { link: interactive_data.url || interactive_data, caption: content },
-        };
+        waPayload = { messaging_product: "whatsapp", to: phone, type: "image", image: { link: interactive_data.url || interactive_data, caption: content } };
       } else if (message_type === "document" && interactive_data) {
-        waPayload = {
-          messaging_product: "whatsapp",
-          to: phone,
-          type: "document",
-          document: { link: interactive_data.url || interactive_data, caption: content, filename: interactive_data.filename || "documento" },
-        };
+        waPayload = { messaging_product: "whatsapp", to: phone, type: "document", document: { link: interactive_data.url || interactive_data, caption: content, filename: interactive_data.filename || "documento" } };
       } else if (message_type === "audio" && interactive_data) {
-        waPayload = {
-          messaging_product: "whatsapp",
-          to: phone,
-          type: "audio",
-          audio: { link: interactive_data.url || interactive_data },
-        };
+        waPayload = { messaging_product: "whatsapp", to: phone, type: "audio", audio: { link: interactive_data.url || interactive_data } };
       } else if (message_type === "video" && interactive_data) {
-        waPayload = {
-          messaging_product: "whatsapp",
-          to: phone,
-          type: "video",
-          video: { link: interactive_data.url || interactive_data, caption: content },
-        };
+        waPayload = { messaging_product: "whatsapp", to: phone, type: "video", video: { link: interactive_data.url || interactive_data, caption: content } };
       } else if (message_type === "location" && interactive_data) {
-        waPayload = {
-          messaging_product: "whatsapp",
-          to: phone,
-          type: "location",
-          location: {
-            latitude: interactive_data.latitude,
-            longitude: interactive_data.longitude,
-            name: interactive_data.name || "",
-            address: interactive_data.address || "",
-          },
-        };
+        waPayload = { messaging_product: "whatsapp", to: phone, type: "location", location: { latitude: interactive_data.latitude, longitude: interactive_data.longitude, name: interactive_data.name || "", address: interactive_data.address || "" } };
       } else if (message_type === "template" && interactive_data) {
-        waPayload = {
-          messaging_product: "whatsapp",
-          to: phone,
-          type: "template",
-          template: {
-            name: interactive_data.name,
-            language: { code: interactive_data.language || "pt_BR" },
-            components: interactive_data.components || [],
-          },
-        };
+        waPayload = { messaging_product: "whatsapp", to: phone, type: "template", template: { name: interactive_data.name, language: { code: interactive_data.language || "pt_BR" }, components: interactive_data.components || [] } };
       } else if (message_type === "reaction" && interactive_data) {
-        waPayload = {
-          messaging_product: "whatsapp",
-          to: phone,
-          type: "reaction",
-          reaction: {
-            message_id: interactive_data.message_id,
-            emoji: interactive_data.emoji || "👍",
-          },
-        };
+        waPayload = { messaging_product: "whatsapp", to: phone, type: "reaction", reaction: { message_id: interactive_data.message_id, emoji: interactive_data.emoji || "👍" } };
       } else {
-        // Default: text message
-        waPayload = {
-          messaging_product: "whatsapp",
-          to: phone,
-          type: "text",
-          text: { body: content },
-        };
+        waPayload = { messaging_product: "whatsapp", to: phone, type: "text", text: { body: content } };
       }
 
-      const waResponse = await fetch(`${WA_GRAPH_URL}/${waPhoneId}/messages`, {
+      const waResponse = await fetch(`${WA_GRAPH_URL}/${creds.phoneNumberId}/messages`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${waToken}` },
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${creds.accessToken}` },
         body: JSON.stringify(waPayload),
       });
 
       const waResult = await waResponse.json();
       if (!waResponse.ok) {
-        console.error("[MESSAGE-SEND] WhatsApp API error:", JSON.stringify(waResult));
-        return new Response(JSON.stringify({ error: "Failed to send WhatsApp message", details: waResult }), {
+        console.error(`[MESSAGE-SEND] WhatsApp API error (instance: ${creds.instanceName}):`, JSON.stringify(waResult));
+        return new Response(JSON.stringify({ error: "Failed to send WhatsApp message", details: waResult, instance: creds.instanceName }), {
           status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
