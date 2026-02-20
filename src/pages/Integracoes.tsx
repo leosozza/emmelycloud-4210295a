@@ -845,14 +845,16 @@ function ChatbotTab() {
   const handleReregisterBot = async () => {
     setReregistering(true);
     try {
-      const { data, error } = await supabase.functions.invoke("bitrix24-rebind-events");
+      // Calls dedicated re-registration function (NOT rebind-events which only rebinds webhooks)
+      const { data, error } = await supabase.functions.invoke("bitrix24-reregister-bot");
       if (error) throw error;
       if (data?.success) {
-        toast.success("Bot Emmely AI re-registado com sucesso! Verifique no Contact Center → Open Lines → Chatbot.");
+        const botIdNew = data?.bot_id;
+        toast.success(`Bot Emmely AI registado com ID: ${botIdNew}. Agora vá ao Contact Center → Open Lines → Chatbot e selecione "Emmely AI".`);
         const { data: intData } = await supabase.from("bitrix24_integrations").select("id, domain, config, connector_registered").limit(1).single();
         if (intData) setIntegration(intData as BitrixIntegrationBot);
       } else {
-        toast.error(data?.error || "Erro ao re-registar bot");
+        toast.error(data?.error || data?.fallback_error || "Erro ao re-registar bot");
       }
     } catch (e: unknown) {
       toast.error((e as Error)?.message || "Erro de rede");
