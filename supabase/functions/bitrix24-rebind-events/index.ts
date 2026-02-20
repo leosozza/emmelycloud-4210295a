@@ -131,9 +131,9 @@ Deno.serve(async (req) => {
         },
         OPTIONS: {
           iconName: "fa-robot",   // OBRIGATÓRIO — Font Awesome icon name
-          context: "LINES",       // apenas em Open Lines
+          // context: "LINES" removido — testando sem restrição de contexto
           color: "GREEN",
-          role: "USER",
+          // role removido — sem restrição de papel
           width: "400",
           height: "200",
           extranet: "N",
