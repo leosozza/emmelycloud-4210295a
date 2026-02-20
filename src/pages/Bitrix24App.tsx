@@ -889,6 +889,16 @@ function FlowsView() {
   const [loading, setLoading] = useState(true);
   const [selectedFlow, setSelectedFlow] = useState<any | null>(null);
   const [saving, setSaving] = useState(false);
+  const [showCreateForm, setShowCreateForm] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [newFlowForm, setNewFlowForm] = useState({
+    name: "",
+    description: "",
+    trigger_type: "keyword",
+    keywords: "",
+    flow_type: "sequential",
+    priority: "0",
+  });
 
   const [nodes, setNodes, onNodesChange] = useNodesState([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
@@ -908,6 +918,50 @@ function FlowsView() {
   };
 
   useEffect(() => { fetchFlows(); }, []);
+
+  const handleCreateFlow = async () => {
+    if (!newFlowForm.name.trim()) return;
+    setCreating(true);
+    try {
+      const keywords = newFlowForm.trigger_type === "keyword" && newFlowForm.keywords.trim()
+        ? newFlowForm.keywords.split(",").map((k) => k.trim()).filter(Boolean)
+        : [];
+      const body = {
+        name: newFlowForm.name.trim(),
+        description: newFlowForm.description.trim() || null,
+        trigger_type: newFlowForm.trigger_type,
+        flow_type: newFlowForm.flow_type,
+        keywords,
+        priority: parseInt(newFlowForm.priority) || 0,
+        is_active: false,
+        nodes: [],
+        edges: [],
+      };
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/flows`, {
+        method: "POST",
+        headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}`, "Content-Type": "application/json", Prefer: "return=representation" },
+        body: JSON.stringify(body),
+      });
+      if (res.ok) {
+        const [created] = await res.json();
+        setShowCreateForm(false);
+        setNewFlowForm({ name: "", description: "", trigger_type: "keyword", keywords: "", flow_type: "sequential", priority: "0" });
+        await fetchFlows();
+        if (created) openFlow(created);
+      }
+    } catch (e) { console.error(e); }
+    setCreating(false);
+  };
+
+  const handleDeleteFlow = async (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!confirm("Remover este fluxo?")) return;
+    await fetch(`${SUPABASE_URL}/rest/v1/flows?id=eq.${id}`, {
+      method: "DELETE",
+      headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` },
+    });
+    fetchFlows();
+  };
 
   const toggleActive = async (id: string, current: boolean) => {
     await fetch(`${SUPABASE_URL}/rest/v1/flows?id=eq.${id}`, {
@@ -1022,10 +1076,99 @@ function FlowsView() {
 
   return (
     <div className="p-6 space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold">Fluxos de Automação</h1>
-        <p className="text-muted-foreground text-sm">Configure automações integradas ao Bitrix24</p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold">Fluxos de Automação</h1>
+          <p className="text-muted-foreground text-sm">Configure automações integradas ao Bitrix24</p>
+        </div>
+        <Button onClick={() => setShowCreateForm(!showCreateForm)} variant={showCreateForm ? "secondary" : "default"}>
+          {showCreateForm ? "✕ Cancelar" : <><Plus className="h-4 w-4 mr-2" />Novo Fluxo</>}
+        </Button>
       </div>
+
+      {/* Create Flow Form */}
+      {showCreateForm && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2">
+              <GitBranch className="h-4 w-4" /> Novo Fluxo
+            </CardTitle>
+            <CardDescription>Configure o fluxo e depois edite os nós no editor visual</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div>
+              <Label>Nome do Fluxo *</Label>
+              <Input
+                value={newFlowForm.name}
+                onChange={(e) => setNewFlowForm({ ...newFlowForm, name: e.target.value })}
+                placeholder="Ex: Atendimento Inicial"
+                className="mt-1"
+              />
+            </div>
+            <div>
+              <Label>Descrição</Label>
+              <Input
+                value={newFlowForm.description}
+                onChange={(e) => setNewFlowForm({ ...newFlowForm, description: e.target.value })}
+                placeholder="Breve descrição do fluxo..."
+                className="mt-1"
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label>Tipo de Gatilho</Label>
+                <Select value={newFlowForm.trigger_type} onValueChange={(v) => setNewFlowForm({ ...newFlowForm, trigger_type: v })}>
+                  <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="keyword">Palavra-chave</SelectItem>
+                    <SelectItem value="all_messages">Todas as mensagens</SelectItem>
+                    <SelectItem value="default_flow">Fluxo padrão</SelectItem>
+                    <SelectItem value="intent">Intenção IA</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label>Tipo de Fluxo</Label>
+                <Select value={newFlowForm.flow_type} onValueChange={(v) => setNewFlowForm({ ...newFlowForm, flow_type: v })}>
+                  <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="sequential">Sequencial</SelectItem>
+                    <SelectItem value="ai_agent">Agente IA</SelectItem>
+                    <SelectItem value="hybrid">Híbrido</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            {newFlowForm.trigger_type === "keyword" && (
+              <div>
+                <Label>Palavras-chave (separadas por vírgula)</Label>
+                <Input
+                  value={newFlowForm.keywords}
+                  onChange={(e) => setNewFlowForm({ ...newFlowForm, keywords: e.target.value })}
+                  placeholder="Ex: oi, olá, menu, ajuda"
+                  className="mt-1"
+                />
+              </div>
+            )}
+            <div>
+              <Label>Prioridade (maior = primeiro)</Label>
+              <Input
+                type="number"
+                value={newFlowForm.priority}
+                onChange={(e) => setNewFlowForm({ ...newFlowForm, priority: e.target.value })}
+                placeholder="0"
+                className="mt-1"
+              />
+            </div>
+            <div className="flex gap-2 pt-2">
+              <Button onClick={handleCreateFlow} disabled={creating || !newFlowForm.name.trim()} className="flex-1">
+                {creating ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Criando...</> : <><GitBranch className="h-4 w-4 mr-2" />Criar e Editar Fluxo</>}
+              </Button>
+              <Button variant="outline" onClick={() => setShowCreateForm(false)}>Cancelar</Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {loading ? (
         <div className="flex justify-center py-12"><Loader2 className="h-8 w-8 animate-spin text-muted-foreground" /></div>
@@ -1033,7 +1176,10 @@ function FlowsView() {
         <Card>
           <CardContent className="py-12 text-center text-muted-foreground">
             <GitBranch className="h-12 w-12 mx-auto mb-4 opacity-30" />
-            <p>Nenhum fluxo criado</p>
+            <p className="text-sm mb-3">Nenhum fluxo criado</p>
+            <Button size="sm" onClick={() => setShowCreateForm(true)}>
+              <Plus className="h-4 w-4 mr-2" />Criar primeiro fluxo
+            </Button>
           </CardContent>
         </Card>
       ) : (
@@ -1048,20 +1194,34 @@ function FlowsView() {
                     </div>
                     <div className="flex-1 min-w-0">
                       <p className="font-semibold text-sm">{f.name}</p>
+                      <p className="text-xs text-muted-foreground truncate">{f.description || "Sem descrição"}</p>
                       <div className="flex gap-1.5 mt-1 flex-wrap">
                         <Badge variant="outline" className="text-[10px]">{f.trigger_type}</Badge>
                         <Badge variant="outline" className="text-[10px]">{f.flow_type}</Badge>
+                        {f.keywords?.length > 0 && (
+                          <Badge variant="secondary" className="text-[10px]">{f.keywords.slice(0, 2).join(", ")}{f.keywords.length > 2 ? "..." : ""}</Badge>
+                        )}
                       </div>
                     </div>
                   </div>
-                  <Button
-                    variant={f.is_active ? "default" : "secondary"}
-                    size="sm"
-                    className="h-8 text-xs shrink-0"
-                    onClick={(e) => { e.stopPropagation(); toggleActive(f.id, f.is_active); }}
-                  >
-                    {f.is_active ? "✅ Ativo" : "❌ Inativo"}
-                  </Button>
+                  <div className="flex flex-col gap-1.5 shrink-0">
+                    <Button
+                      variant={f.is_active ? "default" : "secondary"}
+                      size="sm"
+                      className="h-7 text-xs"
+                      onClick={(e) => { e.stopPropagation(); toggleActive(f.id, f.is_active); }}
+                    >
+                      {f.is_active ? "✅ Ativo" : "❌ Inativo"}
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 text-xs text-destructive hover:text-destructive"
+                      onClick={(e) => handleDeleteFlow(f.id, e)}
+                    >
+                      <Trash2 className="h-3 w-3 mr-1" />Remover
+                    </Button>
+                  </div>
                 </div>
               </CardContent>
             </Card>
