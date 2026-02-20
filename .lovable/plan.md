@@ -1,56 +1,118 @@
 
 
-# Remover todas as referências visíveis a "Lovable"
+# Badges Configuráveis no Bitrix24 CRM — Diferencial Emmely AI
 
-## Problema
+## Visão Geral
 
-Existem 3 locais onde o nome "lovable" aparece visível ao utilizador:
+Integrar o sistema de **Configurable Activities + Badges** do Bitrix24 para que todas as ações da Emmely AI (chatbot respondeu, mensagem enviada, mensagem entregue, erro de envio, pagamento criado, etc.) apareçam como **badges visuais no Kanban do CRM** e **atividades configuráveis na timeline**, em vez de simples mensagens na timeline.
 
-1. **Playground IA** (`src/pages/PlaygroundIA.tsx`, linha 170) — O badge do Provider mostra o slug técnico (`ai_provider`) diretamente, ou seja, "lovable" em vez de "Emmely AI" ou "nativo"
-2. **Card do Agente** (`src/components/agentes/AgentCard.tsx`, linha 50) — O fallback `agent.ai_provider` pode mostrar "lovable" se o lookup do provider falhar
-3. **Meta tag Twitter** (`index.html`, linha 18) — `twitter:site` está definido como `@Lovable`
+Isto cria um diferencial competitivo significativo: o utilizador vê, diretamente no Kanban e na timeline do Lead/Negócio, badges coloridos com o estado de cada interação.
 
-## Correções
+## Arquitetura
 
-### 1. PlaygroundIA.tsx — Resolver nome do provider
+### 1. Registar Badge Types na Instalação (`bitrix24-install`)
 
-Carregar a lista de providers da base de dados (como já acontece na página Agentes) e mostrar o nome real em vez do slug. Se o slug for "lovable", mostrar "nativo".
+Durante a instalação da app, registar os tipos de badges personalizados via `crm.activity.badge.add`:
 
+| Badge Code | Title | Type (Cor) | Quando |
+|---|---|---|---|
+| `emmely_bot_replied` | Emmely AI | success (verde) | Bot respondeu com sucesso |
+| `emmely_msg_sent` | Mensagem Enviada | primary (azul) | Mensagem enviada ao canal |
+| `emmely_msg_delivered` | Entregue | success (verde) | Confirmação de entrega |
+| `emmely_msg_failed` | Erro de Envio | failure (vermelho) | Falha no envio |
+| `emmely_human_takeover` | Atendimento Humano | warning (amarelo) | Transferido para humano |
+| `emmely_payment_created` | Cobrança Criada | primary (azul) | Pagamento criado |
+| `emmely_payment_confirmed` | Pagamento Confirmado | success (verde) | Pagamento recebido |
+
+### 2. Criar Configurable Activities nos Eventos-Chave
+
+Em vez de simplesmente enviar mensagens na timeline, criar **atividades configuráveis** via `crm.activity.configurable.add` com layout rico:
+
+- **Header**: Titulo da ação (ex: "Emmely AI respondeu")
+- **Body**: Blocos com detalhes (mensagem, canal, instância usada)
+- **Footer**: Botões de ação (ex: "Abrir Conversa", "Ver Detalhes")
+- **badgeCode**: Referencia ao badge registado, que aparece no Kanban
+
+### 3. Pontos de Integração (Edge Functions a Modificar)
+
+#### a) `chatbot-reply/index.ts`
+Após o bot responder com sucesso, chamar o Bitrix24 para criar uma atividade configurável com badge `emmely_bot_replied` no Lead/Negócio associado à conversa.
+
+#### b) `message-send/index.ts`
+Após envio bem-sucedido ou falhado ao WhatsApp/Instagram, criar atividade com badge `emmely_msg_sent` ou `emmely_msg_failed`.
+
+#### c) `bitrix24-worker/index.ts`
+No handler de bot messages e connector messages, após processar, criar atividade configurável com o badge apropriado.
+
+#### d) `bitrix24-return-to-bot/index.ts`
+Quando o atendimento volta ao bot, criar atividade com badge `emmely_human_takeover` (ou inverso).
+
+### 4. Nova Função Utilitária: `createBitrixActivity`
+
+Criar uma função helper reutilizável dentro do `bitrix24-worker` (ou como módulo partilhado) que encapsula a lógica de:
+
+1. Encontrar a integração Bitrix24 ativa
+2. Garantir token válido
+3. Encontrar o `ownerTypeId` e `ownerId` (Lead=1, Deal=2, Contact=3) a partir da conversa (via `bot_state.bitrix_entity_id` ou pesquisa por telefone)
+4. Chamar `crm.activity.configurable.add` com o layout e badge corretos
+5. Log no `bitrix24_debug_logs`
+
+```text
++------------------+     +-------------------+     +------------------+
+| chatbot-reply    |---->|                   |---->| Bitrix24 API     |
+| message-send     |---->| createBitrixBadge |---->| configurable.add |
+| bitrix24-worker  |---->|   (helper)        |---->| + badge          |
+| return-to-bot    |---->|                   |     +------------------+
++------------------+     +-------------------+
 ```
-// Antes:
-<Badge>{selectedAgent.ai_provider}</Badge>
 
-// Depois: 
-<Badge>{providerName || "nativo"}</Badge>
+### 5. Exemplo de Layout de Atividade
+
+```text
+Layout para "Bot Respondeu":
+
+  icon: { code: "chat" }
+  header: { title: "Emmely AI respondeu" }
+  body:
+    logo: { code: "robot" }
+    blocks:
+      channel: { type: "text", value: "WhatsApp" }
+      message: { type: "largeText", value: "Olá! Como posso..." }
+      instance: { type: "text", value: "WhatsApp Principal" }
+  footer:
+    buttons:
+      openConversation:
+        title: "Ver Conversa"
+        action: { type: "openRestApp", actionParams: { conversationId } }
+  
+  badgeCode: "emmely_bot_replied"
 ```
 
-Isto requer adicionar um query para buscar os providers, tal como já é feito em `Agentes.tsx`.
+## Detalhes Técnicos
 
-### 2. AgentCard.tsx — Melhorar fallback
+### Ficheiros a Criar/Modificar
 
-Alterar o fallback para nunca mostrar o slug "lovable":
+| Ficheiro | Ação |
+|----------|------|
+| `supabase/functions/bitrix24-install/index.ts` | Registar badges via `crm.activity.badge.add` durante a instalação |
+| `supabase/functions/bitrix24-worker/index.ts` | Adicionar helper `createBitrixActivity()` e chamar após processar eventos de bot/connector |
+| `supabase/functions/chatbot-reply/index.ts` | Após resposta do bot, criar atividade configurável com badge no CRM |
+| `supabase/functions/message-send/index.ts` | Após envio (sucesso/falha), criar atividade com badge correspondente |
+| `supabase/functions/bitrix24-send/index.ts` | Integrar criação de badge quando mensagens são encaminhadas ao Bitrix24 |
 
-```
-// Antes:
-{textProvider?.name || agent.ai_provider}
+### Fluxo de Resolução do Entity (Lead/Deal)
 
-// Depois:
-{textProvider?.name || (agent.ai_provider === "lovable" ? "nativo" : agent.ai_provider)}
-```
+Para vincular a atividade ao Lead/Negócio correto:
 
-### 3. index.html — Corrigir meta tag
+1. Verificar `conversation.bot_state.bitrix_entity_id` (vinculação direta)
+2. Se não existir, pesquisar Lead por telefone via `crm.lead.list` com `PHONE`
+3. Se não existir, pesquisar Contacto via `crm.contact.list`
+4. Guardar o `entity_id` encontrado no `bot_state` para futuras pesquisas
 
-Alterar `@Lovable` para `@EmmelyAI` (ou remover a referência):
+### Considerações
 
-```html
-<meta name="twitter:site" content="@EmmelyAI" />
-```
-
-## Ficheiros a modificar
-
-| Ficheiro | Alteração |
-|----------|-----------|
-| `src/pages/PlaygroundIA.tsx` | Carregar providers e mostrar nome em vez de slug |
-| `src/components/agentes/AgentCard.tsx` | Fallback "nativo" quando slug = "lovable" |
-| `index.html` | twitter:site → `@EmmelyAI` |
+- As atividades configuráveis só podem ser criadas no contexto da app (precisam do access_token da app, não webhook)
+- Os badges aparecem no Kanban enquanto a atividade estiver aberta (`completed: false`)
+- Quando a conversa é resolvida, atualizar a atividade para `completed: true` (badge desaparece do Kanban)
+- Fire-and-forget pattern: a criação do badge não deve bloquear o fluxo principal (chatbot-reply, message-send)
 
