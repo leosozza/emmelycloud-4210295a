@@ -114,6 +114,8 @@ Deno.serve(async (req) => {
 
     // Re-bind IM_TEXTAREA placement (Devolver ao Bot button)
     const returnToBotUrl = `${supabaseUrl}/functions/v1/bitrix24-return-to-bot`;
+    // Icon: use Bitrix24 CDN-compatible robot SVG as background-image
+    const iconUrl = "https://cdn-icons-png.flaticon.com/32/4712/4712109.png";
     try {
       await callBitrix(integration.client_endpoint, accessToken, "placement.unbind", {
         PLACEMENT: "IM_TEXTAREA",
@@ -123,15 +125,18 @@ Deno.serve(async (req) => {
         PLACEMENT: "IM_TEXTAREA",
         HANDLER: returnToBotUrl,
         TITLE: "Devolver ao Bot",
+        DESCRIPTION: "Devolver conversa ao assistente IA",
+        ICON: iconUrl,
         LANG_ALL: {
-          pt: { TITLE: "Devolver ao Bot" },
-          en: { TITLE: "Return to Bot" },
-          es: { TITLE: "Devolver al Bot" },
-          ru: { TITLE: "Вернуть боту" },
+          pt: { TITLE: "Devolver ao Bot", DESCRIPTION: "Devolver conversa ao assistente IA" },
+          en: { TITLE: "Return to Bot", DESCRIPTION: "Return conversation to AI assistant" },
+          es: { TITLE: "Devolver al Bot", DESCRIPTION: "Devolver conversación al asistente IA" },
+          ru: { TITLE: "Вернуть боту", DESCRIPTION: "Вернуть разговор ИИ-ассистенту" },
         },
         OPTIONS: {
-          iconName: "fa-robot",   // OBRIGATÓRIO — Font Awesome icon name
-          context: "LINES",       // apenas em Open Lines
+          iconName: "fa-robot",
+          icon: iconUrl,
+          context: "LINES",
           color: "GREEN",
           width: "400",
           height: "200",
