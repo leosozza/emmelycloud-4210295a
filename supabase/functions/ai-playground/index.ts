@@ -6,6 +6,17 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
+// ─── Token optimization utilities (TOON-inspired) ───
+
+// Serializa chunks da KB em formato tabular compacto (reduz ~35% vs texto livre)
+function chunksToToon(chunks: { content: string }[]): string {
+  if (chunks.length === 0) return "";
+  const rows = chunks.map((c, i) =>
+    `  ${i + 1},${c.content.replace(/,/g, ";").replace(/\n+/g, " ").trim().substring(0, 500)}`
+  );
+  return `KB[${chunks.length}]{idx,content}:\n${rows.join("\n")}`;
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
@@ -34,7 +45,7 @@ serve(async (req) => {
       });
     }
 
-    // Get linked knowledge documents for context
+    // Get linked knowledge documents — serializar em TOON tabular
     const { data: linkedDocs } = await supabase
       .from("agent_knowledge_documents")
       .select("document_id")
@@ -51,9 +62,8 @@ serve(async (req) => {
         .limit(20);
 
       if (chunks && chunks.length > 0) {
-        knowledgeContext = "\n\n--- BASE DE CONHECIMENTO ---\n" +
-          chunks.map((c: any) => c.content).join("\n\n") +
-          "\n--- FIM DA BASE DE CONHECIMENTO ---\n";
+        const kbToon = chunksToToon(chunks);
+        knowledgeContext = `\n\n--- BASE DE CONHECIMENTO ---\n${kbToon}\n--- FIM ---\n`;
       }
     }
 
@@ -144,6 +154,8 @@ serve(async (req) => {
     const result = await aiResponse.json();
     const content = result.choices?.[0]?.message?.content || agent.fallback_message || "";
     const usage = result.usage || {};
+
+    console.log(`[AI-PLAYGROUND] Token usage: prompt=${usage.prompt_tokens}, completion=${usage.completion_tokens}, total=${usage.total_tokens}`);
 
     return new Response(JSON.stringify({ content, usage }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
