@@ -131,12 +131,10 @@ Deno.serve(async (req) => {
         },
         OPTIONS: {
           iconName: "fa-robot",   // OBRIGATÓRIO — Font Awesome icon name
-          // context: "LINES" removido — testando sem restrição de contexto
+          context: "LINES",       // apenas em Open Lines
           color: "GREEN",
-          // role removido — sem restrição de papel
           width: "400",
           height: "200",
-          extranet: "N",
         },
       });
       results["placement_IM_TEXTAREA"] = placementResult.error
