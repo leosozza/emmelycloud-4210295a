@@ -136,7 +136,6 @@ Deno.serve(async (req) => {
         OPTIONS: {
           iconName: "fa-robot",
           icon: iconUrl,
-          context: "LINES",
           color: "GREEN",
           width: "400",
           height: "200",
