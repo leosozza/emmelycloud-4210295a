@@ -133,12 +133,16 @@ Deno.serve(async (req) => {
       }
     }
 
-    // CHAT_ID may come as PLACEMENT_OPTIONS.CHAT_ID or PLACEMENT_OPTIONS.ID
+    // CHAT_ID may come as PLACEMENT_OPTIONS.CHAT_ID or PLACEMENT_OPTIONS.ID or PLACEMENT_OPTIONS.dialogId
+    const dialogId = placementOptions.dialogId || placementOptions.DIALOG_ID || "";
     const chatId = parseInt(
-      placementOptions.CHAT_ID || placementOptions.ID || body.CHAT_ID || "0"
+      placementOptions.CHAT_ID ||
+      placementOptions.ID ||
+      (dialogId ? dialogId.replace(/[^0-9]/g, "") : "") ||
+      body.CHAT_ID || "0"
     );
 
-    console.log("[RETURN-TO-BOT] member_id:", memberId, "chatId:", chatId, "placementOptions:", JSON.stringify(placementOptions));
+    console.log("[RETURN-TO-BOT] member_id:", memberId, "chatId:", chatId, "dialogId:", dialogId, "placementOptions:", JSON.stringify(placementOptions));
 
     // Find integration by member_id or fall back to latest
     let integration: any = null;
@@ -179,26 +183,59 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Find conversation by bitrix_chat_id
-    // We store the chatId in conversations — try multiple fields
-    const { data: conversation } = await supabase
-      .from("conversations")
-      .select("id, attendance_mode, contact_name")
-      .or(`contact_phone.eq.bitrix_${chatId},id.eq.00000000-0000-0000-0000-000000000000`)
-      .maybeSingle();
+    // Strategy 1: use imopenlines.session.list to get the user phone/contact from the chat
+    let targetConversation: any = null;
 
-    // Broader search: try matching via messages external_id pattern or direct lookup
-    // The bitrix worker stores conversations linked to bitrix chat via various fields
-    // Try finding by any conversation that has messages from this chat
-    let targetConversation = conversation;
+    try {
+      // Get Open Lines session info for this chat
+      const sessionList = await callBitrix(endpoint, accessToken, "imopenlines.session.list", {
+        FILTER: { CHAT_ID: chatId },
+      });
+      console.log("[RETURN-TO-BOT] Session list:", JSON.stringify(sessionList).substring(0, 500));
 
+      const sessions = sessionList.result?.sessions || sessionList.result || [];
+      const sessionArr = Array.isArray(sessions) ? sessions : Object.values(sessions);
+
+      for (const session of sessionArr) {
+        // session.USER_ID is the external user (client)
+        const externalUserId = session.USER_ID || session.user_id;
+        if (externalUserId) {
+          // Try to get user info to find phone/instagram
+          const userInfo = await callBitrix(endpoint, accessToken, "im.user.get", {
+            ID: externalUserId,
+          });
+          console.log("[RETURN-TO-BOT] User info:", JSON.stringify(userInfo).substring(0, 300));
+
+          const phone = userInfo.result?.PHONE_MOBILE || userInfo.result?.PERSONAL_PHONE || "";
+          const name = userInfo.result?.NAME || userInfo.result?.FULL_NAME || "";
+
+          if (phone) {
+            const cleanPhone = phone.replace(/\D/g, "");
+            const { data } = await supabase
+              .from("conversations")
+              .select("id, attendance_mode, contact_name")
+              .ilike("contact_phone", `%${cleanPhone}%`)
+              .neq("status", "fechada")
+              .order("last_message_at", { ascending: false })
+              .limit(1)
+              .maybeSingle();
+            if (data) {
+              targetConversation = data;
+              console.log("[RETURN-TO-BOT] Found conversation via phone:", data.id);
+              break;
+            }
+          }
+        }
+      }
+    } catch (sessionErr) {
+      console.warn("[RETURN-TO-BOT] imopenlines.session.list failed:", sessionErr);
+    }
+
+    // Strategy 2: search bot_state json field for bitrix_chat_id
     if (!targetConversation) {
-      // Try to find via bitrix_chat_id stored in bot_state or via the chat's dialog
-      // Look for conversations where bot_state contains the chatId
       const { data: convs } = await supabase
         .from("conversations")
         .select("id, attendance_mode, contact_name, bot_state, channel")
-        .eq("channel", "whatsapp")
         .neq("status", "fechada")
         .order("last_message_at", { ascending: false })
         .limit(100);
@@ -208,6 +245,7 @@ Deno.serve(async (req) => {
           const bs = (c.bot_state as any) || {};
           if (bs.bitrix_chat_id === chatId || bs.bitrix_chat_id === String(chatId)) {
             targetConversation = c;
+            console.log("[RETURN-TO-BOT] Found conversation via bot_state.bitrix_chat_id:", c.id);
             break;
           }
         }
