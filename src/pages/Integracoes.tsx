@@ -1069,14 +1069,17 @@ function InstancesTab() {
   const [showValues, setShowValues] = useState<Record<string, boolean>>({});
   const [toggling, setToggling] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<string | null>(null);
+  const [bitrixMappings, setBitrixMappings] = useState<ChannelMapping[]>([]);
+  const [linkingInstance, setLinkingInstance] = useState<string | null>(null);
 
   const loadInstances = useCallback(async () => {
     setLoading(true);
-    const { data } = await supabase
-      .from("channel_instances")
-      .select("*")
-      .order("created_at", { ascending: true });
-    if (data) setInstances(data as ChannelInstance[]);
+    const [instRes, mappingsRes] = await Promise.all([
+      supabase.from("channel_instances").select("*").order("created_at", { ascending: true }),
+      supabase.from("bitrix24_channel_mappings").select("id, channel, line_name, is_active"),
+    ]);
+    if (instRes.data) setInstances(instRes.data as ChannelInstance[]);
+    if (mappingsRes.data) setBitrixMappings(mappingsRes.data);
     setLoading(false);
   }, []);
 
@@ -1150,6 +1153,25 @@ function InstancesTab() {
       await loadInstances();
     }
     setSavingConfig(null);
+  };
+
+  const handleLinkToBitrix = async (instanceId: string, mappingId: string) => {
+    setLinkingInstance(instanceId);
+    const inst = instances.find((i) => i.id === instanceId);
+    if (!inst) return;
+    const newConfig = { ...inst.config, bitrix24_mapping_id: mappingId === "none" ? null : mappingId };
+    const { error } = await supabase
+      .from("channel_instances")
+      .update({ config: newConfig })
+      .eq("id", instanceId);
+    if (error) {
+      toast.error("Erro ao vincular ao Bitrix24");
+    } else {
+      const mapping = bitrixMappings.find((m) => m.id === mappingId);
+      toast.success(mappingId === "none" ? "Desvinculado do Bitrix24" : `Vinculado à linha "${mapping?.line_name || mappingId}"`);
+      await loadInstances();
+    }
+    setLinkingInstance(null);
   };
 
   const getConfigFields = (type: string): { key: string; label: string }[] => {
@@ -1295,6 +1317,38 @@ function InstancesTab() {
                     </div>
                   ))}
                 </div>
+
+                {/* Bitrix24 Link */}
+                {bitrixMappings.length > 0 && (
+                  <div className="space-y-1.5 border-t pt-3">
+                    <label className="text-xs font-medium text-muted-foreground flex items-center gap-1">
+                      <Plug className="h-3 w-3" />
+                      Vincular ao Bitrix24 (Open Line)
+                    </label>
+                    <Select
+                      value={inst.config.bitrix24_mapping_id || "none"}
+                      onValueChange={(v) => handleLinkToBitrix(inst.id, v)}
+                      disabled={linkingInstance === inst.id}
+                    >
+                      <SelectTrigger className="h-8 text-xs">
+                        <SelectValue placeholder="Selecionar linha…" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">Nenhuma (desvinculado)</SelectItem>
+                        {bitrixMappings.map((m) => (
+                          <SelectItem key={m.id} value={m.id}>
+                            {m.line_name || m.channel} {m.is_active ? "✓" : ""}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    {inst.config.bitrix24_mapping_id && (
+                      <p className="text-[10px] text-green-600">
+                        ✓ Vinculado à linha "{bitrixMappings.find((m) => m.id === inst.config.bitrix24_mapping_id)?.line_name || "—"}"
+                      </p>
+                    )}
+                  </div>
+                )}
 
                 {/* Editing config */}
                 {isEditing && (
