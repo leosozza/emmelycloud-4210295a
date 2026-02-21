@@ -5,6 +5,21 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+async function verifySignature(body: string, signature: string | null, secret: string): Promise<boolean> {
+  if (!signature) return false;
+  const expectedSig = signature.replace("sha256=", "");
+  const key = await crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode(secret),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"]
+  );
+  const sig = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(body));
+  const hex = Array.from(new Uint8Array(sig)).map(b => b.toString(16).padStart(2, "0")).join("");
+  return hex === expectedSig;
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -29,7 +44,19 @@ Deno.serve(async (req) => {
   // ─── POST: Incoming WhatsApp messages ───
   if (req.method === "POST") {
     try {
-      const body = await req.json();
+      const rawBody = await req.text();
+
+      // Validate X-Hub-Signature-256
+      if (META_APP_SECRET) {
+        const signature = req.headers.get("x-hub-signature-256");
+        const valid = await verifySignature(rawBody, signature, META_APP_SECRET);
+        if (!valid) {
+          console.error("[WA-WEBHOOK] Invalid signature - rejecting payload");
+          return new Response("Unauthorized", { status: 401 });
+        }
+      }
+
+      const body = JSON.parse(rawBody);
       console.log("[WA-WEBHOOK] Payload:", JSON.stringify(body).substring(0, 500));
 
       const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
