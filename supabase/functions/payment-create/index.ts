@@ -52,10 +52,8 @@ async function createStripePayment(apiKey: string, amount: number, currency: str
   };
 }
 
-async function createAsaasPayment(apiKey: string, amount: number, paymentMethod: string, customerData: any, description: string) {
-  // Detect sandbox keys (start with $aact_hmlg_ or similar sandbox prefixes)
-  const isSandbox = apiKey.includes("_hmlg_") || apiKey.includes("sandbox");
-  const baseUrl = isSandbox ? "https://sandbox.asaas.com/api/v3" : "https://api.asaas.com/v3";
+async function createAsaasPayment(apiKey: string, amount: number, paymentMethod: string, customerData: any, description: string, environment: string) {
+  const baseUrl = environment === "production" ? "https://api.asaas.com/v3" : "https://sandbox.asaas.com/api/v3";
 
   // 1. Find or create customer
   let customerId: string | null = null;
@@ -181,7 +179,8 @@ Deno.serve(async (req) => {
           status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
-      result = await createAsaasPayment(asaasKey, amount, payment_method, customer_data, description);
+      const asaasEnv = await getCredential(supabase, "asaas", "ASAAS_ENVIRONMENT") || "sandbox";
+      result = await createAsaasPayment(asaasKey, amount, payment_method, customer_data, description, asaasEnv);
     }
 
     // Save transaction
