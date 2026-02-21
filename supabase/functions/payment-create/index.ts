@@ -53,7 +53,9 @@ async function createStripePayment(apiKey: string, amount: number, currency: str
 }
 
 async function createAsaasPayment(apiKey: string, amount: number, paymentMethod: string, customerData: any, description: string) {
-  const baseUrl = "https://api.asaas.com/v3";
+  // Detect sandbox keys (start with $aact_hmlg_ or similar sandbox prefixes)
+  const isSandbox = apiKey.includes("_hmlg_") || apiKey.includes("sandbox");
+  const baseUrl = isSandbox ? "https://sandbox.asaas.com/api/v3" : "https://api.asaas.com/v3";
 
   // 1. Find or create customer
   let customerId: string | null = null;
