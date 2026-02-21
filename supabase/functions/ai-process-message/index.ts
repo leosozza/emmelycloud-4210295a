@@ -230,7 +230,7 @@ Deno.serve(async (req) => {
           { role: "system", content: systemPrompt },
           ...recentMessages, // apenas as 5 mensagens mais recentes
         ],
-        temperature: agent.temperature || 0.7,
+        temperature: Math.min(1, Math.max(0, agent.temperature || 0.7)),
       }),
     });
 
