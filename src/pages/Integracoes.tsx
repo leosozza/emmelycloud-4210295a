@@ -647,7 +647,7 @@ function PagamentosTab() {
     setAsaasResult(null);
     try {
       const { data, error } = await supabase.functions.invoke("payment-create", {
-        body: { amount: 0.01, currency: "BRL", payment_method: "pix", customer_data: { country: "Brasil", name: "Teste Emmely", cpf_cnpj: "24971563792" }, description: "Teste de conexão" },
+        body: { amount: 5.00, currency: "BRL", payment_method: "pix", customer_data: { country: "Brasil", name: "Teste Emmely", cpf_cnpj: "24971563792" }, description: "Teste de conexão Emmely Pay" },
       });
       if (error || data?.error) {
         setAsaasResult({ ok: false, error: data?.error || "Erro ao contactar Asaas" });
