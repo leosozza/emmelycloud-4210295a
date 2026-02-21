@@ -26,8 +26,13 @@ import {
   FileText, Upload, Trash2, Plus, ArrowLeft, Save,
   Undo2, Redo2, LayoutDashboard, Plug, BookOpen, GitBranch,
   Settings, CreditCard, Zap, CheckCircle, XCircle, Activity,
-  Power, ExternalLink, AlertCircle, MessageSquare,
+  Power, ExternalLink, AlertCircle, MessageSquare, BarChart3,
+  DollarSign, Clock, AlertTriangle, TrendingUp,
 } from "lucide-react";
+import {
+  BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis,
+  CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, Legend,
+} from "recharts";
 import { cn } from "@/lib/utils";
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
@@ -35,7 +40,7 @@ const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
 
 const customNodeTypes = { custom: CustomFlowNode };
 
-type AppView = "loading" | "dashboard" | "agentes" | "training" | "flows" | "playground" | "pagamentos";
+type AppView = "loading" | "dashboard" | "agentes" | "training" | "flows" | "playground" | "pagamentos" | "relatorios";
 
 // ==================== MAIN COMPONENT ====================
 const Bitrix24App = () => {
@@ -148,6 +153,7 @@ const Bitrix24App = () => {
     { id: "flows", label: "Fluxos", icon: GitBranch },
     { id: "playground", label: "Playground", icon: MessageSquare },
     { id: "pagamentos", label: "Pagamentos", icon: CreditCard },
+    { id: "relatorios", label: "Relatórios", icon: BarChart3 },
   ];
 
   if (view === "loading") {
@@ -236,6 +242,7 @@ const Bitrix24App = () => {
         {view === "flows" && <FlowsView />}
         {view === "playground" && <PlaygroundView />}
         {view === "pagamentos" && <PagamentosView />}
+        {view === "relatorios" && <RelatoriosView />}
       </main>
     </div>
   );
@@ -1568,6 +1575,306 @@ function PagamentosView() {
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+// ==================== RELATÓRIOS VIEW ====================
+const COLORS_STATUS = { confirmed: "#589731", pending: "#c49c00", overdue: "#df532d" };
+const COLORS_CHART = ["#2fc6f6", "#589731", "#c49c00", "#df532d", "#8b5cf6"];
+
+type PeriodKey = "7d" | "30d" | "90d" | "year" | "all";
+const PERIOD_OPTIONS: { key: PeriodKey; label: string }[] = [
+  { key: "7d", label: "7 dias" },
+  { key: "30d", label: "30 dias" },
+  { key: "90d", label: "90 dias" },
+  { key: "year", label: "Ano" },
+  { key: "all", label: "Todos" },
+];
+
+function RelatoriosView() {
+  const { isDark } = useBitrix24Theme();
+  const [transactions, setTransactions] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [period, setPeriod] = useState<PeriodKey>("30d");
+
+  useEffect(() => {
+    setLoading(true);
+    fetch(
+      `${SUPABASE_URL}/rest/v1/payment_transactions?select=*,clients(name)&order=created_at.desc&limit=1000`,
+      { headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` } }
+    )
+      .then((r) => r.json())
+      .then((data) => setTransactions(Array.isArray(data) ? data : []))
+      .catch(console.error)
+      .finally(() => setLoading(false));
+  }, []);
+
+  // Filter by period
+  const filtered = (() => {
+    if (period === "all") return transactions;
+    const now = new Date();
+    const ms: Record<string, number> = { "7d": 7, "30d": 30, "90d": 90, year: 365 };
+    const cutoff = new Date(now.getTime() - (ms[period] || 30) * 86400000);
+    return transactions.filter((t) => new Date(t.created_at) >= cutoff);
+  })();
+
+  const today = new Date();
+  const classify = (t: any) => {
+    if (t.status === "confirmed") return "confirmed";
+    if (t.status === "pending" && t.metadata?.due_date && new Date(t.metadata.due_date) < today) return "overdue";
+    return "pending";
+  };
+
+  const confirmed = filtered.filter((t) => classify(t) === "confirmed");
+  const pending = filtered.filter((t) => classify(t) === "pending");
+  const overdue = filtered.filter((t) => classify(t) === "overdue");
+
+  const totalRevenue = confirmed.reduce((s, t) => s + Number(t.amount || 0), 0);
+  const openAmount = pending.reduce((s, t) => s + Number(t.amount || 0), 0);
+  const overdueAmount = overdue.reduce((s, t) => s + Number(t.amount || 0), 0);
+  const paymentRate = filtered.length ? Math.round((confirmed.length / filtered.length) * 100) : 0;
+
+  const fmt = (v: number) =>
+    new Intl.NumberFormat("pt-PT", { style: "currency", currency: "EUR", minimumFractionDigits: 0 }).format(v);
+
+  // Monthly chart data
+  const monthlyData = (() => {
+    const months: Record<string, { month: string; pago: number; pendente: number }> = {};
+    const monthNames = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
+    filtered.forEach((t) => {
+      const d = new Date(t.created_at);
+      const key = `${d.getFullYear()}-${String(d.getMonth()).padStart(2, "0")}`;
+      if (!months[key]) months[key] = { month: `${monthNames[d.getMonth()]} ${d.getFullYear()}`, pago: 0, pendente: 0 };
+      if (classify(t) === "confirmed") months[key].pago += Number(t.amount || 0);
+      else months[key].pendente += Number(t.amount || 0);
+    });
+    return Object.entries(months).sort(([a], [b]) => a.localeCompare(b)).map(([, v]) => v);
+  })();
+
+  // Status donut data
+  const statusData = [
+    { name: "Pago", value: confirmed.length, color: COLORS_STATUS.confirmed },
+    { name: "Pendente", value: pending.length, color: COLORS_STATUS.pending },
+    { name: "Atrasado", value: overdue.length, color: COLORS_STATUS.overdue },
+  ].filter((d) => d.value > 0);
+
+  // By method
+  const methodData = (() => {
+    const map: Record<string, number> = {};
+    filtered.forEach((t) => {
+      const m = t.payment_method || "outro";
+      map[m] = (map[m] || 0) + Number(t.amount || 0);
+    });
+    return Object.entries(map).map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value);
+  })();
+
+  // Top 5 clients
+  const clientData = (() => {
+    const map: Record<string, number> = {};
+    filtered.forEach((t) => {
+      const name = t.clients?.name || "Sem cliente";
+      map[name] = (map[name] || 0) + Number(t.amount || 0);
+    });
+    return Object.entries(map).map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value).slice(0, 5);
+  })();
+
+  const textColor = isDark ? "#e5e7eb" : "#374151";
+  const gridColor = isDark ? "#374151" : "#e5e7eb";
+
+  if (loading) {
+    return (
+      <div className="p-6 flex items-center justify-center min-h-[400px]">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="p-6 space-y-5">
+      {/* Header + Period Filter */}
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div>
+          <h1 className="text-2xl font-bold">Relatórios Financeiros</h1>
+          <p className="text-muted-foreground text-sm">{filtered.length} transações no período</p>
+        </div>
+        <div className="flex gap-1">
+          {PERIOD_OPTIONS.map((p) => (
+            <button
+              key={p.key}
+              onClick={() => setPeriod(p.key)}
+              className={cn(
+                "px-3 py-1.5 rounded-lg text-xs font-medium transition-colors",
+                period === p.key
+                  ? "bg-primary text-primary-foreground"
+                  : "bg-muted text-muted-foreground hover:bg-muted/80"
+              )}
+            >
+              {p.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* KPI Cards */}
+      <div className="grid grid-cols-5 gap-3">
+        {[
+          { label: "Total Receita", value: fmt(totalRevenue), icon: DollarSign, accent: "text-green-500" },
+          { label: "Em Aberto", value: fmt(openAmount), icon: Clock, accent: "text-yellow-500" },
+          { label: "Em Atraso", value: fmt(overdueAmount), icon: AlertTriangle, accent: "text-red-500" },
+          { label: "Pagos", value: String(confirmed.length), icon: CheckCircle, accent: "text-green-500" },
+          { label: "Taxa Pgto", value: `${paymentRate}%`, icon: TrendingUp, accent: "text-blue-500" },
+        ].map((kpi) => (
+          <Card key={kpi.label}>
+            <CardContent className="pt-4 pb-3 px-4">
+              <div className="flex items-center gap-2 mb-1">
+                <kpi.icon className={cn("h-4 w-4", kpi.accent)} />
+                <span className="text-[11px] text-muted-foreground">{kpi.label}</span>
+              </div>
+              <p className="text-lg font-bold">{kpi.value}</p>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+
+      {/* Charts Row 1: Monthly + Status Donut */}
+      <div className="grid grid-cols-2 gap-4">
+        <Card>
+          <CardHeader className="pb-2 pt-4 px-4">
+            <CardTitle className="text-sm">Receitas por Mês</CardTitle>
+          </CardHeader>
+          <CardContent className="px-2 pb-3">
+            <ResponsiveContainer width="100%" height={220}>
+              <BarChart data={monthlyData}>
+                <CartesianGrid strokeDasharray="3 3" stroke={gridColor} />
+                <XAxis dataKey="month" tick={{ fill: textColor, fontSize: 10 }} />
+                <YAxis tick={{ fill: textColor, fontSize: 10 }} />
+                <RechartsTooltip
+                  contentStyle={{ backgroundColor: isDark ? "#1f2937" : "#fff", border: "1px solid " + gridColor, borderRadius: 8, fontSize: 12 }}
+                  labelStyle={{ color: textColor }}
+                />
+                <Legend wrapperStyle={{ fontSize: 11 }} />
+                <Bar dataKey="pago" name="Pago" fill={COLORS_STATUS.confirmed} radius={[4, 4, 0, 0]} />
+                <Bar dataKey="pendente" name="Pendente" fill={COLORS_STATUS.pending} radius={[4, 4, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-2 pt-4 px-4">
+            <CardTitle className="text-sm">Por Status</CardTitle>
+          </CardHeader>
+          <CardContent className="px-2 pb-3 flex items-center justify-center">
+            <ResponsiveContainer width="100%" height={220}>
+              <PieChart>
+                <Pie data={statusData} cx="50%" cy="50%" innerRadius={55} outerRadius={85} paddingAngle={3} dataKey="value" label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`} labelLine={false} style={{ fontSize: 11 }}>
+                  {statusData.map((entry, i) => (
+                    <Cell key={i} fill={entry.color} />
+                  ))}
+                </Pie>
+                <RechartsTooltip contentStyle={{ backgroundColor: isDark ? "#1f2937" : "#fff", border: "1px solid " + gridColor, borderRadius: 8, fontSize: 12 }} />
+              </PieChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Charts Row 2: Method + Client */}
+      <div className="grid grid-cols-2 gap-4">
+        <Card>
+          <CardHeader className="pb-2 pt-4 px-4">
+            <CardTitle className="text-sm">Por Método de Pagamento</CardTitle>
+          </CardHeader>
+          <CardContent className="px-2 pb-3">
+            <ResponsiveContainer width="100%" height={200}>
+              <BarChart data={methodData} layout="vertical">
+                <CartesianGrid strokeDasharray="3 3" stroke={gridColor} />
+                <XAxis type="number" tick={{ fill: textColor, fontSize: 10 }} />
+                <YAxis type="category" dataKey="name" tick={{ fill: textColor, fontSize: 10 }} width={80} />
+                <RechartsTooltip contentStyle={{ backgroundColor: isDark ? "#1f2937" : "#fff", border: "1px solid " + gridColor, borderRadius: 8, fontSize: 12 }} />
+                <Bar dataKey="value" name="Valor" fill="#2fc6f6" radius={[0, 4, 4, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-2 pt-4 px-4">
+            <CardTitle className="text-sm">Top 5 Clientes</CardTitle>
+          </CardHeader>
+          <CardContent className="px-2 pb-3">
+            <ResponsiveContainer width="100%" height={200}>
+              <BarChart data={clientData} layout="vertical">
+                <CartesianGrid strokeDasharray="3 3" stroke={gridColor} />
+                <XAxis type="number" tick={{ fill: textColor, fontSize: 10 }} />
+                <YAxis type="category" dataKey="name" tick={{ fill: textColor, fontSize: 10 }} width={100} />
+                <RechartsTooltip contentStyle={{ backgroundColor: isDark ? "#1f2937" : "#fff", border: "1px solid " + gridColor, borderRadius: 8, fontSize: 12 }} />
+                <Bar dataKey="value" name="Valor" radius={[0, 4, 4, 0]}>
+                  {clientData.map((_, i) => (
+                    <Cell key={i} fill={COLORS_CHART[i % COLORS_CHART.length]} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Detailed Table */}
+      <Card>
+        <CardHeader className="pb-2 pt-4 px-4">
+          <CardTitle className="text-sm">Transações Detalhadas</CardTitle>
+        </CardHeader>
+        <CardContent className="px-0 pb-2">
+          <div className="overflow-auto max-h-[400px]">
+            <table className="w-full text-xs">
+              <thead className="sticky top-0 bg-card">
+                <tr className="border-b">
+                  <th className="text-left px-4 py-2 font-medium text-muted-foreground">Data</th>
+                  <th className="text-left px-4 py-2 font-medium text-muted-foreground">Cliente</th>
+                  <th className="text-right px-4 py-2 font-medium text-muted-foreground">Valor</th>
+                  <th className="text-left px-4 py-2 font-medium text-muted-foreground">Método</th>
+                  <th className="text-left px-4 py-2 font-medium text-muted-foreground">Gateway</th>
+                  <th className="text-left px-4 py-2 font-medium text-muted-foreground">Status</th>
+                  <th className="text-left px-4 py-2 font-medium text-muted-foreground">Vencimento</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.map((t) => {
+                  const cls = classify(t);
+                  const statusBadge: Record<string, string> = {
+                    confirmed: "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400",
+                    pending: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400",
+                    overdue: "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400",
+                  };
+                  const statusLabel: Record<string, string> = { confirmed: "Pago", pending: "Pendente", overdue: "Atrasado" };
+                  return (
+                    <tr key={t.id} className="border-b hover:bg-muted/30 transition-colors">
+                      <td className="px-4 py-2">{new Date(t.created_at).toLocaleDateString("pt-PT")}</td>
+                      <td className="px-4 py-2">{t.clients?.name || "—"}</td>
+                      <td className="px-4 py-2 text-right font-medium">{fmt(Number(t.amount || 0))}</td>
+                      <td className="px-4 py-2">{t.payment_method}</td>
+                      <td className="px-4 py-2">{t.gateway}</td>
+                      <td className="px-4 py-2">
+                        <span className={cn("px-2 py-0.5 rounded-full text-[10px] font-semibold", statusBadge[cls])}>
+                          {statusLabel[cls]}
+                        </span>
+                      </td>
+                      <td className="px-4 py-2">{t.metadata?.due_date ? new Date(t.metadata.due_date).toLocaleDateString("pt-PT") : "—"}</td>
+                    </tr>
+                  );
+                })}
+                {filtered.length === 0 && (
+                  <tr>
+                    <td colSpan={7} className="text-center py-8 text-muted-foreground">Sem transações neste período</td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </CardContent>
+      </Card>
     </div>
   );
 }
