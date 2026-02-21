@@ -92,3 +92,6 @@ verify_jwt = false
 
 [functions.bitrix24-payment-handler]
 verify_jwt = false
+
+[functions.bitrix24-payment-tab]
+verify_jwt = false
