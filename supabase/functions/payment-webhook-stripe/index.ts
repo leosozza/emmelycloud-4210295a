@@ -15,6 +15,93 @@ async function getCredential(supabase: any, provider: string, key: string): Prom
   return data?.credential_value || null;
 }
 
+async function ensureValidToken(supabase: any, integration: any): Promise<string> {
+  const expiresAt = new Date(integration.expires_at);
+  if (expiresAt.getTime() - Date.now() > 5 * 60 * 1000) {
+    return integration.access_token;
+  }
+  const res = await fetch("https://oauth.bitrix.info/oauth/token/", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      grant_type: "refresh_token",
+      client_id: Deno.env.get("BITRIX24_CLIENT_ID") || "",
+      client_secret: Deno.env.get("BITRIX24_CLIENT_SECRET") || "",
+      refresh_token: integration.refresh_token,
+    }),
+  });
+  const data = await res.json();
+  if (data.error) throw new Error(`Token refresh: ${data.error}`);
+  await supabase.from("bitrix24_integrations").update({
+    access_token: data.access_token,
+    refresh_token: data.refresh_token,
+    expires_at: new Date(Date.now() + data.expires_in * 1000).toISOString(),
+  }).eq("id", integration.id);
+  return data.access_token;
+}
+
+async function notifyBitrix24DealPayment(supabase: any, txMeta: any, paidAmount: number, currency: string) {
+  const dealId = txMeta?.bitrix_deal_id;
+  if (!dealId) return;
+
+  try {
+    const { data: integration } = await supabase
+      .from("bitrix24_integrations")
+      .select("*")
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (!integration?.client_endpoint) return;
+
+    const accessToken = await ensureValidToken(supabase, integration);
+    const endpoint = integration.client_endpoint.endsWith("/")
+      ? integration.client_endpoint
+      : integration.client_endpoint + "/";
+
+    // 1. Get current deal
+    const dealRes = await fetch(`${endpoint}crm.deal.get`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ID: dealId, auth: accessToken }),
+    });
+    const dealData = await dealRes.json();
+    const deal = dealData.result || {};
+    const currentAmount = parseFloat(deal.OPPORTUNITY || "0");
+
+    // 2. Update OPPORTUNITY
+    const newAmount = Math.max(0, currentAmount - paidAmount);
+    await fetch(`${endpoint}crm.deal.update`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        ID: dealId,
+        fields: { OPPORTUNITY: newAmount },
+        auth: accessToken,
+      }),
+    });
+
+    // 3. Timeline comment
+    const fmt = (v: number) => new Intl.NumberFormat("pt-PT", { style: "currency", currency: currency || "EUR" }).format(v);
+    await fetch(`${endpoint}crm.timeline.comment.add`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        fields: {
+          ENTITY_ID: dealId,
+          ENTITY_TYPE: "deal",
+          COMMENT: `✅ Pagamento confirmado: ${fmt(paidAmount)}\nSaldo em aberto atualizado para ${fmt(newAmount)}`,
+        },
+        auth: accessToken,
+      }),
+    });
+
+    console.log(`[STRIPE-WEBHOOK] Bitrix24 deal ${dealId} updated: ${currentAmount} -> ${newAmount}`);
+  } catch (err) {
+    console.error("[STRIPE-WEBHOOK] Bitrix24 notification error:", err);
+  }
+}
+
 // Simple Stripe signature verification
 async function verifyStripeSignature(payload: string, sigHeader: string, secret: string): Promise<boolean> {
   try {
@@ -89,21 +176,36 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Update payment_transactions
-    const { data: tx, error } = await supabase
+    // First get existing transaction to preserve metadata
+    const { data: existingTx } = await supabase
       .from("payment_transactions")
-      .update({ status: newStatus, metadata: { stripe_event: event.type, updated_via: "webhook" } })
+      .select("id, financial_record_id, metadata, amount, currency")
       .eq("gateway_payment_id", paymentIntent.id)
       .eq("gateway", "stripe")
-      .select("id, financial_record_id, status")
+      .maybeSingle();
+
+    const mergedMeta = { ...(existingTx?.metadata as any || {}), stripe_event: event.type, updated_via: "webhook" };
+
+    // Update payment_transactions
+    const { data: tx } = await supabase
+      .from("payment_transactions")
+      .update({ status: newStatus, metadata: mergedMeta })
+      .eq("gateway_payment_id", paymentIntent.id)
+      .eq("gateway", "stripe")
+      .select("id, financial_record_id, metadata, amount, currency")
       .maybeSingle();
 
     // Also update financial_records if linked
-    if (tx?.financial_record_id && (newStatus === "confirmed" || newStatus === "received")) {
+    if (tx?.financial_record_id && newStatus === "confirmed") {
       await supabase
         .from("financial_records")
         .update({ status: "paga", paid_at: new Date().toISOString(), stripe_payment_id: paymentIntent.id })
         .eq("id", tx.financial_record_id);
+    }
+
+    // Notify Bitrix24 on payment confirmation
+    if (tx && newStatus === "confirmed") {
+      await notifyBitrix24DealPayment(supabase, tx.metadata as any, tx.amount, tx.currency);
     }
 
     return new Response(JSON.stringify({ ok: true, status: newStatus }), {

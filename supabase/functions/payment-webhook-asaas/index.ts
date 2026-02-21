@@ -15,6 +15,145 @@ async function getCredential(supabase: any, provider: string, key: string): Prom
   return data?.credential_value || null;
 }
 
+async function ensureValidToken(supabase: any, integration: any): Promise<string> {
+  const expiresAt = new Date(integration.expires_at);
+  if (expiresAt.getTime() - Date.now() > 5 * 60 * 1000) {
+    return integration.access_token;
+  }
+  const res = await fetch("https://oauth.bitrix.info/oauth/token/", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      grant_type: "refresh_token",
+      client_id: Deno.env.get("BITRIX24_CLIENT_ID") || "",
+      client_secret: Deno.env.get("BITRIX24_CLIENT_SECRET") || "",
+      refresh_token: integration.refresh_token,
+    }),
+  });
+  const data = await res.json();
+  if (data.error) throw new Error(`Token refresh: ${data.error}`);
+  await supabase.from("bitrix24_integrations").update({
+    access_token: data.access_token,
+    refresh_token: data.refresh_token,
+    expires_at: new Date(Date.now() + data.expires_in * 1000).toISOString(),
+  }).eq("id", integration.id);
+  return data.access_token;
+}
+
+async function notifyBitrix24DealPayment(supabase: any, txMeta: any, paidAmount: number, currency: string) {
+  const dealId = txMeta?.bitrix_deal_id;
+  if (!dealId) return;
+
+  try {
+    const { data: integration } = await supabase
+      .from("bitrix24_integrations")
+      .select("*")
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (!integration?.client_endpoint) return;
+
+    const accessToken = await ensureValidToken(supabase, integration);
+    const endpoint = integration.client_endpoint.endsWith("/")
+      ? integration.client_endpoint
+      : integration.client_endpoint + "/";
+
+    // 1. Get current deal data
+    const dealRes = await fetch(`${endpoint}crm.deal.get`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ID: dealId, auth: accessToken }),
+    });
+    const dealData = await dealRes.json();
+    const deal = dealData.result || {};
+    const currentAmount = parseFloat(deal.OPPORTUNITY || "0");
+
+    // 2. Update OPPORTUNITY: subtract paid amount (floor at 0)
+    const newAmount = Math.max(0, currentAmount - paidAmount);
+    const updateRes = await fetch(`${endpoint}crm.deal.update`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        ID: dealId,
+        fields: { OPPORTUNITY: newAmount },
+        auth: accessToken,
+      }),
+    });
+    const updateData = await updateRes.json();
+    console.log("[WEBHOOK] Bitrix24 deal.update result:", JSON.stringify(updateData).substring(0, 200));
+
+    // 3. Add a timeline activity
+    const formattedAmount = new Intl.NumberFormat("pt-PT", { style: "currency", currency: currency || "EUR" }).format(paidAmount);
+    await fetch(`${endpoint}crm.timeline.comment.add`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        fields: {
+          ENTITY_ID: dealId,
+          ENTITY_TYPE: "deal",
+          COMMENT: `✅ Pagamento confirmado: ${formattedAmount}\nSaldo em aberto atualizado para ${new Intl.NumberFormat("pt-PT", { style: "currency", currency: currency || "EUR" }).format(newAmount)}`,
+        },
+        auth: accessToken,
+      }),
+    });
+
+    // 4. Create configurable activity (badge)
+    try {
+      await fetch(`${endpoint}crm.activity.configurable.add`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ownerTypeId: 2, // Deal
+          ownerId: dealId,
+          typeId: "emmely_payment_confirmed",
+          title: `Pagamento confirmado: ${formattedAmount}`,
+          description: `Saldo em aberto: ${new Intl.NumberFormat("pt-PT", { style: "currency", currency: currency || "EUR" }).format(newAmount)}`,
+          completed: true,
+          auth: accessToken,
+        }),
+      });
+    } catch { /* badge may not be registered */ }
+
+    console.log(`[WEBHOOK] Bitrix24 deal ${dealId} updated: ${currentAmount} -> ${newAmount}`);
+  } catch (err) {
+    console.error("[WEBHOOK] Bitrix24 notification error:", err);
+  }
+}
+
+// Also handle Bitrix24 native paysystem notification
+async function notifyBitrix24PaySystem(supabase: any, txMeta: any) {
+  if (!txMeta?.bitrix24_payment_id || !txMeta?.bitrix24_paysystem_id) return;
+  try {
+    const { data: integration } = await supabase
+      .from("bitrix24_integrations")
+      .select("*")
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (!integration?.client_endpoint) return;
+    const accessToken = await ensureValidToken(supabase, integration);
+    const endpoint = integration.client_endpoint.endsWith("/")
+      ? integration.client_endpoint
+      : integration.client_endpoint + "/";
+
+    const payRes = await fetch(`${endpoint}sale.paysystem.pay.payment`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        PAYMENT_ID: txMeta.bitrix24_payment_id,
+        PAY_SYSTEM_ID: txMeta.bitrix24_paysystem_id,
+        auth: accessToken,
+      }),
+    });
+    const payData = await payRes.json();
+    console.log("[ASAAS-WEBHOOK] Bitrix24 pay.payment result:", JSON.stringify(payData).substring(0, 300));
+  } catch (bxErr) {
+    console.error("[ASAAS-WEBHOOK] Bitrix24 paysystem error:", bxErr);
+  }
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -65,16 +204,23 @@ Deno.serve(async (req) => {
       });
     }
 
+    // First get existing transaction to preserve metadata
+    const { data: existingTx } = await supabase
+      .from("payment_transactions")
+      .select("id, financial_record_id, metadata, amount, currency")
+      .eq("gateway_payment_id", payment.id)
+      .eq("gateway", "asaas")
+      .maybeSingle();
+
+    const mergedMeta = { ...(existingTx?.metadata as any || {}), asaas_event: event, updated_via: "webhook" };
+
     // Update payment_transactions
     const { data: tx } = await supabase
       .from("payment_transactions")
-      .update({
-        status: newStatus,
-        metadata: { asaas_event: event, updated_via: "webhook" },
-      })
+      .update({ status: newStatus, metadata: mergedMeta })
       .eq("gateway_payment_id", payment.id)
       .eq("gateway", "asaas")
-      .select("id, financial_record_id, metadata")
+      .select("id, financial_record_id, metadata, amount, currency")
       .maybeSingle();
 
     // Also update financial_records if linked
@@ -85,37 +231,13 @@ Deno.serve(async (req) => {
         .eq("id", tx.financial_record_id);
     }
 
-    // Notify Bitrix24 if this payment originated from Bitrix24
-    const txMeta = tx?.metadata as any;
-    if (txMeta?.bitrix24_payment_id && txMeta?.bitrix24_paysystem_id && (newStatus === "confirmed" || newStatus === "received")) {
-      try {
-        // Find a Bitrix24 integration to get credentials
-        const { data: integration } = await supabase
-          .from("bitrix24_integrations")
-          .select("client_endpoint, access_token")
-          .limit(1)
-          .maybeSingle();
-
-        if (integration?.client_endpoint && integration?.access_token) {
-          const endpoint = integration.client_endpoint.endsWith("/")
-            ? integration.client_endpoint
-            : integration.client_endpoint + "/";
-
-          const payRes = await fetch(`${endpoint}sale.paysystem.pay.payment`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              PAYMENT_ID: txMeta.bitrix24_payment_id,
-              PAY_SYSTEM_ID: txMeta.bitrix24_paysystem_id,
-              auth: integration.access_token,
-            }),
-          });
-          const payData = await payRes.json();
-          console.log("[ASAAS-WEBHOOK] Bitrix24 pay.payment result:", JSON.stringify(payData).substring(0, 300));
-        }
-      } catch (bxErr) {
-        console.error("[ASAAS-WEBHOOK] Bitrix24 notification error:", bxErr);
-      }
+    // Notify Bitrix24 on payment confirmation
+    if (tx && (newStatus === "confirmed" || newStatus === "received")) {
+      const txMeta = tx.metadata as any;
+      await Promise.all([
+        notifyBitrix24DealPayment(supabase, txMeta, tx.amount, tx.currency),
+        notifyBitrix24PaySystem(supabase, txMeta),
+      ]);
     }
 
     return new Response(JSON.stringify({ ok: true, status: newStatus }), {
