@@ -186,7 +186,7 @@ Deno.serve(async (req) => {
     );
 
     const body = await req.json();
-    const { contract_id, client_id, financial_record_id, amount, currency = "EUR", payment_method = "card", customer_data, description = "Pagamento Emmely Cloud" } = body;
+    const { contract_id, client_id, financial_record_id, amount, currency = "EUR", payment_method = "card", customer_data, description = "Pagamento Emmely Cloud", metadata: extraMetadata } = body;
 
     if (!amount || amount <= 0) {
       return new Response(JSON.stringify({ error: "amount is required and must be > 0" }), {
@@ -247,7 +247,7 @@ Deno.serve(async (req) => {
       payment_url: result.payment_url,
       pix_qr_code: result.pix_qr_code || null,
       pix_code: result.pix_code || null,
-      metadata: { client_secret: result.client_secret || null },
+      metadata: { client_secret: result.client_secret || null, ...(extraMetadata || {}) },
     }).select().single();
 
     if (txError) throw new Error(txError.message);
