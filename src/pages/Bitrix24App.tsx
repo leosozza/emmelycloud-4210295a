@@ -1597,6 +1597,8 @@ function RelatoriosView() {
   const [transactions, setTransactions] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [period, setPeriod] = useState<PeriodKey>("30d");
+  const [gatewayFilter, setGatewayFilter] = useState<string>("all");
+  const [clientFilter, setClientFilter] = useState<string>("all");
 
   useEffect(() => {
     setLoading(true);
@@ -1610,13 +1612,22 @@ function RelatoriosView() {
       .finally(() => setLoading(false));
   }, []);
 
-  // Filter by period
+  // Unique gateways and clients for filters
+  const gateways = Array.from(new Set(transactions.map((t) => t.gateway).filter(Boolean))).sort();
+  const clients = Array.from(new Set(transactions.map((t) => t.clients?.name).filter(Boolean))).sort() as string[];
+
+  // Filter by period, gateway, client
   const filtered = (() => {
-    if (period === "all") return transactions;
-    const now = new Date();
-    const ms: Record<string, number> = { "7d": 7, "30d": 30, "90d": 90, year: 365 };
-    const cutoff = new Date(now.getTime() - (ms[period] || 30) * 86400000);
-    return transactions.filter((t) => new Date(t.created_at) >= cutoff);
+    let data = transactions;
+    if (period !== "all") {
+      const now = new Date();
+      const ms: Record<string, number> = { "7d": 7, "30d": 30, "90d": 90, year: 365 };
+      const cutoff = new Date(now.getTime() - (ms[period] || 30) * 86400000);
+      data = data.filter((t) => new Date(t.created_at) >= cutoff);
+    }
+    if (gatewayFilter !== "all") data = data.filter((t) => t.gateway === gatewayFilter);
+    if (clientFilter !== "all") data = data.filter((t) => (t.clients?.name || "") === clientFilter);
+    return data;
   })();
 
   const today = new Date();
@@ -1698,21 +1709,48 @@ function RelatoriosView() {
           <h1 className="text-2xl font-bold">Relatórios Financeiros</h1>
           <p className="text-muted-foreground text-sm">{filtered.length} transações no período</p>
         </div>
-        <div className="flex gap-1">
-          {PERIOD_OPTIONS.map((p) => (
-            <button
-              key={p.key}
-              onClick={() => setPeriod(p.key)}
-              className={cn(
-                "px-3 py-1.5 rounded-lg text-xs font-medium transition-colors",
-                period === p.key
-                  ? "bg-primary text-primary-foreground"
-                  : "bg-muted text-muted-foreground hover:bg-muted/80"
-              )}
-            >
-              {p.label}
-            </button>
-          ))}
+        <div className="flex items-center gap-3 flex-wrap">
+          {/* Period pills */}
+          <div className="flex gap-1">
+            {PERIOD_OPTIONS.map((p) => (
+              <button
+                key={p.key}
+                onClick={() => setPeriod(p.key)}
+                className={cn(
+                  "px-3 py-1.5 rounded-lg text-xs font-medium transition-colors",
+                  period === p.key
+                    ? "bg-primary text-primary-foreground"
+                    : "bg-muted text-muted-foreground hover:bg-muted/80"
+                )}
+              >
+                {p.label}
+              </button>
+            ))}
+          </div>
+          {/* Gateway filter */}
+          <Select value={gatewayFilter} onValueChange={setGatewayFilter}>
+            <SelectTrigger className="h-8 w-[130px] text-xs">
+              <SelectValue placeholder="Gateway" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Todos Gateways</SelectItem>
+              {gateways.map((g) => (
+                <SelectItem key={g} value={g}>{g}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          {/* Client filter */}
+          <Select value={clientFilter} onValueChange={setClientFilter}>
+            <SelectTrigger className="h-8 w-[160px] text-xs">
+              <SelectValue placeholder="Cliente" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Todos Clientes</SelectItem>
+              {clients.map((c) => (
+                <SelectItem key={c} value={c}>{c}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
       </div>
 
