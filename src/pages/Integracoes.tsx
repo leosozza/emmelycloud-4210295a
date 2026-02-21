@@ -37,6 +37,9 @@ import {
   Server,
   Power,
   PowerOff,
+  Copy,
+  Check,
+  Link,
 } from "lucide-react";
 import {
   Dialog,
@@ -314,6 +317,39 @@ function CredentialInput({
       {existing?.has_value && !draftValue && (
         <span className="text-xs text-green-600">✓ Configurado</span>
       )}
+    </div>
+  );
+}
+
+// ─── Webhook URL Display ─────────────────────────────────────────────────────
+
+function WebhookUrlDisplay({ label, url, hint }: { label: string; url: string; hint?: string }) {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = () => {
+    navigator.clipboard.writeText(url);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  return (
+    <div className="space-y-1">
+      <label className="text-xs text-muted-foreground flex items-center gap-1">
+        <Link className="h-3 w-3" />
+        {label}
+      </label>
+      <div className="flex gap-1.5">
+        <Input
+          readOnly
+          value={url}
+          className="h-8 text-xs font-mono bg-muted/50 cursor-text"
+          onClick={(e) => (e.target as HTMLInputElement).select()}
+        />
+        <Button size="sm" variant="outline" className="h-8 px-2 shrink-0" onClick={handleCopy}>
+          {copied ? <Check className="h-3.5 w-3.5 text-green-600" /> : <Copy className="h-3.5 w-3.5" />}
+        </Button>
+      </div>
+      {hint && <p className="text-[10px] text-muted-foreground leading-tight">{hint}</p>}
     </div>
   );
 }
@@ -702,6 +738,12 @@ function PagamentosTab() {
         <CardContent className="space-y-3 text-sm">
           <CredentialInput provider="asaas" credentialKey="ASAAS_API_KEY" label="API Key" {...credProps} />
           <CredentialInput provider="asaas" credentialKey="ASAAS_WEBHOOK_TOKEN" label="Webhook Token" {...credProps} />
+
+          <WebhookUrlDisplay
+            label="Webhook URL (configurar no painel Asaas)"
+            url={`https://qohnsluvhyziovfynzlu.supabase.co/functions/v1/payment-webhook-asaas`}
+            hint="Eventos: PAYMENT_CONFIRMED, PAYMENT_RECEIVED, PAYMENT_OVERDUE, PAYMENT_DELETED, PAYMENT_RESTORED, PAYMENT_REFUNDED, PAYMENT_UPDATED, PAYMENT_CREATED"
+          />
 
           <div className="flex justify-between text-xs text-muted-foreground">
             <span>Total processado</span>
