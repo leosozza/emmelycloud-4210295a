@@ -1298,6 +1298,12 @@ function InstancesTab() {
                     <CardTitle className="text-base">{inst.name}</CardTitle>
                     <CardDescription>
                       {isWhatsapp ? "WhatsApp Business API" : "Instagram Graph API"}
+                      {inst.config.bitrix24_mapping_id && bitrixMappings.length > 0 && (
+                        <span className="text-[10px] text-blue-600 flex items-center gap-0.5 mt-0.5">
+                          <Plug className="h-2.5 w-2.5" />
+                          Bitrix24: {bitrixMappings.find((m) => m.id === inst.config.bitrix24_mapping_id)?.line_name || "Vinculado"}
+                        </span>
+                      )}
                     </CardDescription>
                   </div>
                 </div>
