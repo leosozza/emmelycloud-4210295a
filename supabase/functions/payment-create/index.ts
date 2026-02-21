@@ -52,6 +52,47 @@ async function createStripePayment(apiKey: string, amount: number, currency: str
   };
 }
 
+function isValidCPF(cpf: string): boolean {
+  cpf = cpf.replace(/[^\d]+/g, '');
+  if (cpf.length !== 11) return false;
+  if (/^(\d)\1{10}$/.test(cpf)) return false;
+  let sum = 0;
+  for (let i = 1; i <= 9; i++) sum += parseInt(cpf.substring(i - 1, i)) * (11 - i);
+  let rem = (sum * 10) % 11;
+  if (rem >= 10) rem = 0;
+  if (rem !== parseInt(cpf.substring(9, 10))) return false;
+  sum = 0;
+  for (let i = 1; i <= 10; i++) sum += parseInt(cpf.substring(i - 1, i)) * (12 - i);
+  rem = (sum * 10) % 11;
+  if (rem >= 10) rem = 0;
+  if (rem !== parseInt(cpf.substring(10, 11))) return false;
+  return true;
+}
+
+function isValidCNPJ(cnpj: string): boolean {
+  cnpj = cnpj.replace(/[^\d]+/g, '');
+  if (cnpj.length !== 14) return false;
+  if (/^(\d)\1{13}$/.test(cnpj)) return false;
+  const weights1 = [5,4,3,2,9,8,7,6,5,4,3,2];
+  const weights2 = [6,5,4,3,2,9,8,7,6,5,4,3,2];
+  let sum = 0;
+  for (let i = 0; i < 12; i++) sum += parseInt(cnpj[i]) * weights1[i];
+  let rem = sum % 11;
+  if (parseInt(cnpj[12]) !== (rem < 2 ? 0 : 11 - rem)) return false;
+  sum = 0;
+  for (let i = 0; i < 13; i++) sum += parseInt(cnpj[i]) * weights2[i];
+  rem = sum % 11;
+  if (parseInt(cnpj[13]) !== (rem < 2 ? 0 : 11 - rem)) return false;
+  return true;
+}
+
+function isValidCpfCnpj(value: string): boolean {
+  const digits = value.replace(/[^\d]+/g, '');
+  if (digits.length === 11) return isValidCPF(digits);
+  if (digits.length === 14) return isValidCNPJ(digits);
+  return false;
+}
+
 async function createAsaasPayment(apiKey: string, amount: number, paymentMethod: string, customerData: any, description: string, environment: string) {
   const baseUrl = environment === "production" ? "https://api.asaas.com/v3" : "https://sandbox.asaas.com/api/v3";
 
@@ -173,6 +214,14 @@ Deno.serve(async (req) => {
       }
       result = await createStripePayment(stripeKey, amount, currency, customer_data?.email || "", description);
     } else {
+      // Validate CPF/CNPJ before calling Asaas
+      if (customer_data?.cpf_cnpj) {
+        if (!isValidCpfCnpj(customer_data.cpf_cnpj)) {
+          return new Response(JSON.stringify({ error: "CPF/CNPJ inválido. Informe um CPF (11 dígitos) ou CNPJ (14 dígitos) válido." }), {
+            status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+      }
       const asaasKey = await getCredential(supabase, "asaas", "ASAAS_API_KEY");
       if (!asaasKey) {
         return new Response(JSON.stringify({ error: "Asaas API key not configured" }), {
