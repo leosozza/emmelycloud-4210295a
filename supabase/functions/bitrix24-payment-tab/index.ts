@@ -82,6 +82,7 @@ interface InstallmentData {
   payment_url?: string;
   is_down_payment?: boolean;
   invoice_id?: number;
+  is_direct?: boolean;
 }
 
 function getStatusColor(status: string): { bg: string; bgDark: string; text: string; textDark: string; label: string } {
@@ -136,6 +137,11 @@ function renderPaymentTab(opts: {
         ${inst.description ? `<div class="b24-item-desc">${inst.description}</div>` : ""}
         ${inst.payment_url && inst.status !== "paga" ? `<div class="b24-link-row"><a href="${inst.payment_url}" target="_blank" class="b24-link">Link de pagamento</a><button class="b24-btn-copy" onclick="copyLink(this,'${inst.payment_url.replace(/'/g, "\\'")}')" title="Copiar link"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button></div>` : ""}
         ${inst.invoice_id ? `<div class="b24-link-row"><a href="javascript:void(0)" onclick="openInvoice(${inst.invoice_id})" class="b24-link">📄 Ver Fatura #${inst.invoice_id}</a></div>` : ""}
+        ${inst.status !== "paga" && inst.is_direct ? `
+          <div class="b24-item-actions">
+            <button onclick="markAsPaid('${inst.transaction_id}')" class="b24-btn-primary" style="background:#589731">✓ Dar Baixa</button>
+          </div>
+        ` : ""}
         ${inst.status !== "paga" && contactPhone && flows.length > 0 ? `
           <div class="b24-item-actions">
             <select id="flow-${inst.id}" class="b24-select">
@@ -363,10 +369,11 @@ function renderPaymentTab(opts: {
       </div>
       <div class="b24-form-group">
         <label class="b24-form-label">Método</label>
-        <select id="pay-method" class="b24-input" style="height:32px">
+        <select id="pay-method" class="b24-input" style="height:32px" onchange="toggleMethodFields()">
           <option value="card">Cartão</option>
           <option value="pix">PIX</option>
           <option value="boleto">Boleto</option>
+          <option value="direto">Recebimento Direto</option>
         </select>
       </div>
     </div>
@@ -424,10 +431,19 @@ function renderPaymentTab(opts: {
     document.getElementById('pay-result').style.display = 'none';
   }
 
-  // Toggle CPF field based on currency
+  // Toggle CPF field based on currency and method fields
   document.getElementById('pay-currency').addEventListener('change', function() {
     document.getElementById('cpf-group').style.display = this.value === 'BRL' ? 'block' : 'none';
+    toggleMethodFields();
   });
+
+  function toggleMethodFields() {
+    var method = document.getElementById('pay-method').value;
+    var isDireto = method === 'direto';
+    // Hide email/cpf fields for direct payment since no gateway is used
+    var emailEl = document.getElementById('pay-email');
+    if (emailEl) emailEl.closest('.b24-form-group').style.opacity = isDireto ? '0.5' : '1';
+  }
 
   // Set default first due date to today + interval
   function initForm() {
@@ -647,6 +663,24 @@ function renderPaymentTab(opts: {
     el.innerHTML = msg;
     el.style.display = 'block';
     el.style.color = isError ? 'var(--value-open)' : 'var(--value-paid)';
+  }
+
+  async function markAsPaid(txId) {
+    if (!confirm('Confirmar baixa manual deste pagamento?')) return;
+    setStatus('A dar baixa...', 'var(--text-secondary)');
+    try {
+      var res = await fetch(SUPABASE_URL + '/functions/v1/payment-create', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_KEY },
+        body: JSON.stringify({ transaction_id: txId, metadata_update: { manual_paid: true, paid_at: new Date().toISOString() }, status_update: 'confirmed' })
+      });
+      var data = await res.json();
+      if (data.error) throw new Error(data.error);
+      setStatus('Baixa registada com sucesso!', 'var(--value-paid)');
+      setTimeout(function() { location.reload(); }, 1500);
+    } catch(e) {
+      setStatus('Erro: ' + e.message, 'var(--value-open)');
+    }
   }
 
   function triggerFlow(installmentId, phone, installmentNum) {
@@ -900,6 +934,7 @@ Deno.serve(async (req) => {
           payment_url: tx.payment_url,
           is_down_payment: isDown,
           invoice_id: meta.bitrix_invoice_id || null,
+          is_direct: tx.gateway === "direto" || tx.payment_method === "parcelado_direto",
         };
       });
 

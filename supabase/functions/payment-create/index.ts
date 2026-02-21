@@ -187,16 +187,18 @@ Deno.serve(async (req) => {
         Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
       );
       const body = await req.json();
-      const { transaction_id, metadata_update } = body;
-      if (!transaction_id || !metadata_update) {
-        return new Response(JSON.stringify({ error: "transaction_id and metadata_update required" }), {
+      const { transaction_id, metadata_update, status_update } = body;
+      if (!transaction_id) {
+        return new Response(JSON.stringify({ error: "transaction_id required" }), {
           status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
       // Get existing metadata and merge
       const { data: existing } = await supabase.from("payment_transactions").select("metadata").eq("id", transaction_id).maybeSingle();
-      const merged = { ...(existing?.metadata as any || {}), ...metadata_update };
-      const { error } = await supabase.from("payment_transactions").update({ metadata: merged }).eq("id", transaction_id);
+      const merged = metadata_update ? { ...(existing?.metadata as any || {}), ...metadata_update } : (existing?.metadata || {});
+      const updatePayload: any = { metadata: merged };
+      if (status_update) updatePayload.status = status_update;
+      const { error } = await supabase.from("payment_transactions").update(updatePayload).eq("id", transaction_id);
       if (error) throw new Error(error.message);
       return new Response(JSON.stringify({ ok: true }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -234,7 +236,18 @@ Deno.serve(async (req) => {
 
     let result: any;
 
-    if (gateway === "stripe") {
+    if (payment_method === "direto") {
+      // Direct payment - no gateway call, just record the transaction
+      result = {
+        gateway_payment_id: `direto_${crypto.randomUUID()}`,
+        payment_url: null,
+        client_secret: null,
+        status: "pending",
+        gateway_customer_id: null,
+        pix_qr_code: null,
+        pix_code: null,
+      };
+    } else if (gateway === "stripe") {
       const stripeKey = await getCredential(supabase, "stripe", "STRIPE_SECRET_KEY");
       if (!stripeKey) {
         return new Response(JSON.stringify({ error: "Stripe API key not configured" }), {
@@ -261,17 +274,19 @@ Deno.serve(async (req) => {
       result = await createAsaasPayment(asaasKey, amount, payment_method, customer_data, description, asaasEnv, due_date);
     }
 
+    const effectiveGateway = payment_method === "direto" ? "direto" : gateway;
+
     // Save transaction
     const { data: tx, error: txError } = await supabase.from("payment_transactions").insert({
       contract_id: contract_id || null,
       client_id: client_id || null,
       financial_record_id: financial_record_id || null,
-      gateway,
+      gateway: effectiveGateway,
       gateway_payment_id: result.gateway_payment_id,
       gateway_customer_id: result.gateway_customer_id || null,
       amount,
       currency,
-      payment_method,
+      payment_method: payment_method === "direto" ? "parcelado_direto" : payment_method,
       status: result.status || "pending",
       payment_url: result.payment_url,
       pix_qr_code: result.pix_qr_code || null,
