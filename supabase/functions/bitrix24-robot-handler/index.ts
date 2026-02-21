@@ -181,14 +181,21 @@ async function handleSendInstagram(properties: Record<string, any>, supabaseUrl:
 async function handleCreateCharge(properties: Record<string, any>, supabaseUrl: string): Promise<Record<string, string>> {
   const amount = parseFloat(properties.amount || properties.AMOUNT || "0");
   const currency = properties.currency || properties.CURRENCY || "EUR";
+  const gateway = properties.gateway || properties.GATEWAY || "auto";
   const paymentMethod = properties.payment_method || properties.PAYMENT_METHOD || "card";
   const customerName = properties.customer_name || properties.CUSTOMER_NAME || "";
   const customerEmail = properties.customer_email || properties.CUSTOMER_EMAIL || "";
+  const customerCpf = properties.customer_cpf || properties.CUSTOMER_CPF || "";
   const description = properties.description || properties.DESCRIPTION || "Cobrança Emmely via Bitrix24";
 
   if (!amount || amount <= 0) {
-    return { charge_id: "", charge_status: "error", payment_url: "", pix_code: "", error: "amount must be > 0" };
+    return { charge_id: "", charge_status: "error", payment_url: "", pix_code: "", gateway_used: "", error: "amount must be > 0" };
   }
+
+  // Determine country based on gateway selection
+  let country = currency === "BRL" ? "Brasil" : "Portugal";
+  if (gateway === "stripe") country = "Portugal";
+  else if (gateway === "asaas") country = "Brasil";
 
   try {
     const res = await fetch(`${supabaseUrl}/functions/v1/payment-create`, {
@@ -201,14 +208,15 @@ async function handleCreateCharge(properties: Record<string, any>, supabaseUrl: 
         customer_data: {
           name: customerName,
           email: customerEmail,
-          country: currency === "BRL" ? "Brasil" : "Portugal",
+          cpf_cnpj: customerCpf || undefined,
+          country,
         },
         description,
       }),
     });
     const data = await res.json();
     if (data.error) {
-      return { charge_id: "", charge_status: "error", payment_url: "", pix_code: "", error: data.error };
+      return { charge_id: "", charge_status: "error", payment_url: "", pix_code: "", gateway_used: "", error: data.error };
     }
     const tx = data.transaction || {};
     return {
@@ -216,10 +224,11 @@ async function handleCreateCharge(properties: Record<string, any>, supabaseUrl: 
       charge_status: tx.status || "pending",
       payment_url: tx.payment_url || "",
       pix_code: tx.pix_code || "",
+      gateway_used: tx.gateway || "",
       error: "",
     };
   } catch (e) {
-    return { charge_id: "", charge_status: "error", payment_url: "", pix_code: "", error: String(e) };
+    return { charge_id: "", charge_status: "error", payment_url: "", pix_code: "", gateway_used: "", error: String(e) };
   }
 }
 
