@@ -116,6 +116,55 @@ async function notifyBitrix24DealPayment(supabase: any, txMeta: any, paidAmount:
     } catch { /* badge may not be registered */ }
 
     console.log(`[WEBHOOK] Bitrix24 deal ${dealId} updated: ${currentAmount} -> ${newAmount}`);
+
+    // 5. Mark Smart Invoice as paid if linked
+    if (txMeta?.bitrix_invoice_id) {
+      try {
+        // Get available stages to find "paid" stage
+        const stagesRes = await fetch(`${endpoint}crm.status.list`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ filter: { ENTITY_ID: "SMART_INVOICE_STAGE_31" }, auth: accessToken }),
+        });
+        const stagesData = await stagesRes.json();
+        const stages = stagesData.result || [];
+        // Find a stage that indicates "paid" - look for semantic IDs
+        const paidStage = stages.find((s: any) =>
+          s.STATUS_ID?.includes("WON") || s.STATUS_ID?.includes("FINAL_INVOICE") ||
+          s.NAME?.toLowerCase().includes("pag") || s.NAME?.toLowerCase().includes("paid")
+        );
+        const stageId = paidStage?.STATUS_ID || "DT31_6:WON"; // fallback
+
+        await fetch(`${endpoint}crm.item.update`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            entityTypeId: 31,
+            id: txMeta.bitrix_invoice_id,
+            fields: { stageId },
+            auth: accessToken,
+          }),
+        });
+
+        // Add timeline comment to the invoice
+        await fetch(`${endpoint}crm.timeline.comment.add`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            fields: {
+              ENTITY_ID: txMeta.bitrix_invoice_id,
+              ENTITY_TYPE: "dynamic_31",
+              COMMENT: `✅ Pagamento confirmado: ${formattedAmount}`,
+            },
+            auth: accessToken,
+          }),
+        });
+
+        console.log(`[WEBHOOK] Smart Invoice ${txMeta.bitrix_invoice_id} marked as paid`);
+      } catch (invErr) {
+        console.error("[WEBHOOK] Smart Invoice update error:", invErr);
+      }
+    }
   } catch (err) {
     console.error("[WEBHOOK] Bitrix24 notification error:", err);
   }

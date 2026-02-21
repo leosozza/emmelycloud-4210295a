@@ -81,6 +81,7 @@ interface InstallmentData {
   transaction_id?: string;
   payment_url?: string;
   is_down_payment?: boolean;
+  invoice_id?: number;
 }
 
 function getStatusColor(status: string): { bg: string; bgDark: string; text: string; textDark: string; label: string } {
@@ -134,6 +135,7 @@ function renderPaymentTab(opts: {
         </div>
         ${inst.description ? `<div class="b24-item-desc">${inst.description}</div>` : ""}
         ${inst.payment_url && inst.status !== "paga" ? `<div class="b24-link-row"><a href="${inst.payment_url}" target="_blank" class="b24-link">Link de pagamento</a><button class="b24-btn-copy" onclick="copyLink(this,'${inst.payment_url.replace(/'/g, "\\'")}')" title="Copiar link"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button></div>` : ""}
+        ${inst.invoice_id ? `<div class="b24-link-row"><a href="javascript:void(0)" onclick="openInvoice(${inst.invoice_id})" class="b24-link">📄 Ver Fatura #${inst.invoice_id}</a></div>` : ""}
         ${inst.status !== "paga" && contactPhone && flows.length > 0 ? `
           <div class="b24-item-actions">
             <select id="flow-${inst.id}" class="b24-select">
@@ -544,7 +546,7 @@ function renderPaymentTab(opts: {
     var btn = document.getElementById('pay-submit');
     btn.disabled = true;
 
-    var errors = [];
+    var createdTxIds = [];
     for (var j = 0; j < parcels.length; j++) {
       var parcel = parcels[j];
       btn.textContent = 'A criar ' + (j+1) + '/' + parcels.length + '...';
@@ -569,9 +571,63 @@ function renderPaymentTab(opts: {
           })
         });
         var data = await res.json();
-        if (data.error) errors.push('Fatura ' + (j+1) + ': ' + data.error);
+        if (data.error) {
+          errors.push('Fatura ' + (j+1) + ': ' + data.error);
+        } else if (data.transaction) {
+          createdTxIds.push({ txId: data.transaction.id, parcel: parcel, index: j });
+        }
       } catch (e) {
         errors.push('Fatura ' + (j+1) + ': ' + e.message);
+      }
+    }
+
+    // Create Smart Invoices in Bitrix24 for each created transaction
+    if (createdTxIds.length > 0 && typeof BX24 !== 'undefined') {
+      btn.textContent = 'A criar faturas no CRM...';
+      showPayResult('A criar Smart Invoices no Bitrix24...', false);
+
+      // Get deal info for invoice linking
+      try {
+        for (var k = 0; k < createdTxIds.length; k++) {
+          var item = createdTxIds[k];
+          var invoiceLabel = item.parcel.is_down_payment ? 'Entrada' : ('Parcela ' + item.parcel.installment_number + '/' + numInstallments);
+          var invoiceTitle = invoiceLabel + ' - ' + (desc || 'Negócio');
+
+          await new Promise(function(resolve) {
+            BX24.callMethod('crm.item.add', {
+              entityTypeId: 31,
+              fields: {
+                title: invoiceTitle,
+                opportunity: item.parcel.amount,
+                currencyId: currency,
+                isManualOpportunity: 'Y',
+                parentId2: parseInt(ENTITY_ID),
+                begindate: new Date().toISOString().split('T')[0],
+                closedate: item.parcel.due_date,
+                comments: 'Fatura gerada automaticamente pelo Emmely Pay. ' + invoiceLabel + '. Grupo: ' + groupId
+              }
+            }, function(result) {
+              if (result.error()) {
+                console.error('Smart Invoice error:', result.error());
+                resolve(null);
+              } else {
+                var invoiceId = result.data() && result.data().item ? result.data().item.id : null;
+                if (invoiceId) {
+                  // Update transaction metadata with invoice ID
+                  fetch(SUPABASE_URL + '/functions/v1/payment-create', {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_KEY },
+                    body: JSON.stringify({ transaction_id: item.txId, metadata_update: { bitrix_invoice_id: invoiceId } })
+                  }).then(function() { resolve(invoiceId); }).catch(function() { resolve(invoiceId); });
+                } else {
+                  resolve(null);
+                }
+              }
+            });
+          });
+        }
+      } catch (e) {
+        console.error('Smart Invoice creation error:', e);
       }
     }
 
@@ -639,6 +695,17 @@ function renderPaymentTab(opts: {
       applyTheme(d.theme === 'dark');
     }
   });
+
+  // Open Smart Invoice in Bitrix24
+  function openInvoice(invoiceId) {
+    try {
+      BX24.openPath('/crm/type/31/details/' + invoiceId + '/');
+    } catch(e) {
+      // Fallback: try to open via navigation
+      try { BX24.openApplication({ bx24_label: { bgColor: 'transparent' } }); } catch(e2) {}
+      setStatus('Fatura #' + invoiceId, 'var(--link-color)');
+    }
+  }
 
   try {
     BX24.init(function() { BX24.fitWindow(); });
@@ -832,6 +899,7 @@ Deno.serve(async (req) => {
           transaction_id: tx.id,
           payment_url: tx.payment_url,
           is_down_payment: isDown,
+          invoice_id: meta.bitrix_invoice_id || null,
         };
       });
 
