@@ -1,0 +1,338 @@
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+};
+
+async function getCredential(supabase: any, provider: string, key: string): Promise<string | null> {
+  const { data } = await supabase
+    .from("integration_credentials")
+    .select("credential_value")
+    .eq("provider", provider)
+    .eq("credential_key", key)
+    .maybeSingle();
+  return data?.credential_value || null;
+}
+
+function isValidCpfCnpj(value: string): boolean {
+  const digits = value.replace(/[^\d]+/g, '');
+  if (digits.length === 11) return isValidCPF(digits);
+  if (digits.length === 14) return isValidCNPJ(digits);
+  return false;
+}
+
+function isValidCPF(cpf: string): boolean {
+  cpf = cpf.replace(/[^\d]+/g, '');
+  if (cpf.length !== 11 || /^(\d)\1{10}$/.test(cpf)) return false;
+  let sum = 0;
+  for (let i = 1; i <= 9; i++) sum += parseInt(cpf.substring(i - 1, i)) * (11 - i);
+  let rem = (sum * 10) % 11;
+  if (rem >= 10) rem = 0;
+  if (rem !== parseInt(cpf.substring(9, 10))) return false;
+  sum = 0;
+  for (let i = 1; i <= 10; i++) sum += parseInt(cpf.substring(i - 1, i)) * (12 - i);
+  rem = (sum * 10) % 11;
+  if (rem >= 10) rem = 0;
+  return rem === parseInt(cpf.substring(10, 11));
+}
+
+function isValidCNPJ(cnpj: string): boolean {
+  cnpj = cnpj.replace(/[^\d]+/g, '');
+  if (cnpj.length !== 14 || /^(\d)\1{13}$/.test(cnpj)) return false;
+  const w1 = [5,4,3,2,9,8,7,6,5,4,3,2];
+  const w2 = [6,5,4,3,2,9,8,7,6,5,4,3,2];
+  let sum = 0;
+  for (let i = 0; i < 12; i++) sum += parseInt(cnpj[i]) * w1[i];
+  let rem = sum % 11;
+  if (parseInt(cnpj[12]) !== (rem < 2 ? 0 : 11 - rem)) return false;
+  sum = 0;
+  for (let i = 0; i < 13; i++) sum += parseInt(cnpj[i]) * w2[i];
+  rem = sum % 11;
+  return parseInt(cnpj[13]) === (rem < 2 ? 0 : 11 - rem);
+}
+
+/**
+ * Bitrix24 Payment Handler — CHECKOUT Mode
+ * 
+ * Receives POST from Bitrix24 with payment data, creates a charge via Asaas or Stripe,
+ * and returns { PAYMENT_URL, PAYMENT_ID } for the customer to be redirected.
+ * 
+ * Expected POST body (from Bitrix24 CHECKOUT_DATA):
+ * {
+ *   BX_SYSTEM_PARAMS: { RETURN_URL, PAYSYSTEM_ID, PAYMENT_ID, SUM, CURRENCY, EXTERNAL_PAYMENT_ID },
+ *   ... additional FIELDS from handler CODES
+ * }
+ */
+Deno.serve(async (req) => {
+  if (req.method === "OPTIONS") {
+    return new Response(null, { headers: corsHeaders });
+  }
+
+  try {
+    const supabase = createClient(
+      Deno.env.get("SUPABASE_URL")!,
+      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
+    );
+
+    // Parse body — Bitrix24 may send as form-urlencoded or JSON
+    const contentType = req.headers.get("content-type") || "";
+    let body: Record<string, any>;
+
+    if (contentType.includes("application/json")) {
+      body = await req.json();
+    } else {
+      // Form-urlencoded with PHP-style array notation
+      const text = await req.text();
+      body = parseFormData(text);
+    }
+
+    console.log("[BX24-PAYMENT] Received:", JSON.stringify(body).substring(0, 1000));
+
+    const sysParams = body.BX_SYSTEM_PARAMS || body.bx_system_params || {};
+    const paymentId = sysParams.PAYMENT_ID || sysParams.payment_id || body.PAYMENT_ID;
+    const paySystemId = sysParams.PAYSYSTEM_ID || sysParams.paysystem_id || body.PAYSYSTEM_ID;
+    const sum = parseFloat(sysParams.SUM || sysParams.sum || body.PAYMENT_SHOULD_PAY || "0");
+    const currency = (sysParams.CURRENCY || sysParams.currency || body.PAYMENT_CURRENCY || "BRL").toUpperCase();
+    const returnUrl = sysParams.RETURN_URL || sysParams.return_url || "";
+    const externalPaymentId = sysParams.EXTERNAL_PAYMENT_ID || sysParams.external_payment_id || "";
+
+    if (!sum || sum <= 0) {
+      return new Response(JSON.stringify({ PAYMENT_ERRORS: ["Valor inválido. O valor deve ser maior que zero."] }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // If there's already an external payment ID, check if we have a transaction
+    if (externalPaymentId) {
+      const { data: existingTx } = await supabase
+        .from("payment_transactions")
+        .select("id, payment_url, gateway_payment_id, status")
+        .eq("gateway_payment_id", externalPaymentId)
+        .maybeSingle();
+
+      if (existingTx?.payment_url) {
+        return new Response(JSON.stringify({
+          PAYMENT_URL: existingTx.payment_url,
+          PAYMENT_ID: existingTx.gateway_payment_id,
+        }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+    }
+
+    // Determine gateway based on currency
+    const gateway = (currency === "BRL") ? "asaas" : "stripe";
+    const paymentMethod = (currency === "BRL") ? "pix" : "card";
+    const description = `Bitrix24 Payment #${paymentId}`;
+
+    let result: any;
+
+    if (gateway === "asaas") {
+      const asaasKey = await getCredential(supabase, "asaas", "ASAAS_API_KEY");
+      if (!asaasKey) {
+        return new Response(JSON.stringify({ PAYMENT_ERRORS: ["Asaas API key não configurada."] }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      const asaasEnv = await getCredential(supabase, "asaas", "ASAAS_ENVIRONMENT") || "sandbox";
+      const isHmlg = asaasKey.includes("_hmlg_");
+      const baseUrl = (asaasEnv === "production" && !isHmlg)
+        ? "https://api.asaas.com/v3"
+        : "https://sandbox.asaas.com/api/v3";
+
+      // Find or create customer (generic for Bitrix24)
+      let customerId: string | null = null;
+      const customerName = body.CUSTOMER_NAME || body.customer_name || "Cliente Bitrix24";
+      const customerEmail = body.CUSTOMER_EMAIL || body.customer_email || "";
+      const customerCpfCnpj = body.CUSTOMER_CPF_CNPJ || body.customer_cpf_cnpj || "";
+
+      if (customerCpfCnpj && !isValidCpfCnpj(customerCpfCnpj)) {
+        return new Response(JSON.stringify({ PAYMENT_ERRORS: ["CPF/CNPJ inválido."] }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      // Search existing customer by CPF/CNPJ
+      if (customerCpfCnpj) {
+        const searchRes = await fetch(`${baseUrl}/customers?cpfCnpj=${customerCpfCnpj}`, {
+          headers: { "access_token": asaasKey },
+        });
+        const searchData = await searchRes.json();
+        if (searchData.data?.length > 0) customerId = searchData.data[0].id;
+      }
+
+      if (!customerId) {
+        const createRes = await fetch(`${baseUrl}/customers`, {
+          method: "POST",
+          headers: { "access_token": asaasKey, "Content-Type": "application/json" },
+          body: JSON.stringify({
+            name: customerName,
+            email: customerEmail || undefined,
+            cpfCnpj: customerCpfCnpj || undefined,
+          }),
+        });
+        const createData = await createRes.json();
+        if (createData.errors) {
+          return new Response(JSON.stringify({ PAYMENT_ERRORS: createData.errors.map((e: any) => e.description || e.code) }), {
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+        customerId = createData.id;
+      }
+
+      // Create payment
+      const dueDate = new Date();
+      dueDate.setDate(dueDate.getDate() + 3);
+
+      const paymentRes = await fetch(`${baseUrl}/payments`, {
+        method: "POST",
+        headers: { "access_token": asaasKey, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          customer: customerId,
+          billingType: "PIX",
+          value: sum,
+          dueDate: dueDate.toISOString().split("T")[0],
+          description,
+          externalReference: `bitrix24_${paymentId}`,
+        }),
+      });
+
+      const paymentData = await paymentRes.json();
+      if (paymentData.errors) {
+        return new Response(JSON.stringify({ PAYMENT_ERRORS: paymentData.errors.map((e: any) => e.description || e.code) }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      // Get PIX QR code
+      let pixQrCode = null;
+      let pixCode = null;
+      if (paymentData.id) {
+        const pixRes = await fetch(`${baseUrl}/payments/${paymentData.id}/pixQrCode`, {
+          headers: { "access_token": asaasKey },
+        });
+        const pixData = await pixRes.json();
+        if (pixData.encodedImage) pixQrCode = pixData.encodedImage;
+        if (pixData.payload) pixCode = pixData.payload;
+      }
+
+      result = {
+        gateway_payment_id: paymentData.id,
+        gateway_customer_id: customerId,
+        payment_url: paymentData.invoiceUrl || paymentData.bankSlipUrl || null,
+        pix_qr_code: pixQrCode,
+        pix_code: pixCode,
+      };
+    } else {
+      // Stripe
+      const stripeKey = await getCredential(supabase, "stripe", "STRIPE_SECRET_KEY");
+      if (!stripeKey) {
+        return new Response(JSON.stringify({ PAYMENT_ERRORS: ["Stripe API key não configurada."] }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      const params = new URLSearchParams();
+      params.append("amount", Math.round(sum * 100).toString());
+      params.append("currency", currency.toLowerCase());
+      params.append("description", description);
+      params.append("payment_method_types[]", "card");
+      if (returnUrl) {
+        params.append("metadata[return_url]", returnUrl);
+      }
+
+      const res = await fetch("https://api.stripe.com/v1/payment_intents", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${stripeKey}`,
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: params.toString(),
+      });
+
+      const data = await res.json();
+      if (data.error) {
+        return new Response(JSON.stringify({ PAYMENT_ERRORS: [data.error.message] }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      result = {
+        gateway_payment_id: data.id,
+        payment_url: null,
+        client_secret: data.client_secret,
+      };
+    }
+
+    // Save transaction in our DB
+    const { data: tx, error: txError } = await supabase.from("payment_transactions").insert({
+      gateway,
+      gateway_payment_id: result.gateway_payment_id,
+      gateway_customer_id: result.gateway_customer_id || null,
+      amount: sum,
+      currency,
+      payment_method: paymentMethod,
+      status: "pending",
+      payment_url: result.payment_url,
+      pix_qr_code: result.pix_qr_code || null,
+      pix_code: result.pix_code || null,
+      metadata: {
+        bitrix24_payment_id: paymentId,
+        bitrix24_paysystem_id: paySystemId,
+        bitrix24_return_url: returnUrl,
+        client_secret: result.client_secret || null,
+      },
+    }).select("id").single();
+
+    if (txError) {
+      console.error("[BX24-PAYMENT] TX insert error:", txError);
+    }
+
+    // Return response to Bitrix24
+    const paymentUrl = result.payment_url || returnUrl;
+
+    if (!paymentUrl) {
+      // For Stripe without payment_url, return error (Stripe needs frontend with client_secret)
+      return new Response(JSON.stringify({
+        PAYMENT_ERRORS: ["Sistema de pagamento Stripe requer configuração adicional do frontend. Use PIX/Boleto para pagamentos BRL."],
+      }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    console.log("[BX24-PAYMENT] Success. URL:", paymentUrl, "ID:", result.gateway_payment_id);
+
+    return new Response(JSON.stringify({
+      PAYMENT_URL: paymentUrl,
+      PAYMENT_ID: result.gateway_payment_id,
+    }), {
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+
+  } catch (err) {
+    console.error("[BX24-PAYMENT] Error:", err);
+    return new Response(JSON.stringify({ PAYMENT_ERRORS: [err.message || "Erro interno"] }), {
+      status: 500,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+});
+
+// Parse form-urlencoded with PHP notation: BX_SYSTEM_PARAMS[PAYMENT_ID]=123
+function parseFormData(text: string): Record<string, any> {
+  if (!text) return {};
+  const params = new URLSearchParams(text);
+  const data: Record<string, any> = {};
+  for (const [key, value] of params.entries()) {
+    const match = key.match(/^(\w+)\[(\w+)\]$/);
+    if (match) {
+      if (!data[match[1]]) data[match[1]] = {};
+      data[match[1]][match[2]] = value;
+    } else {
+      data[key] = value;
+    }
+  }
+  return data;
+}
