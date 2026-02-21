@@ -82,16 +82,16 @@ interface InstallmentData {
   payment_url?: string;
 }
 
-function getStatusColor(status: string): { bg: string; border: string; text: string; icon: string; label: string } {
+function getStatusColor(status: string): { bg: string; bgDark: string; text: string; textDark: string; label: string } {
   switch (status) {
     case "paga":
-      return { bg: "#dcfce7", border: "#22c55e", text: "#166534", icon: "✅", label: "Pago" };
+      return { bg: "#e0f5d7", bgDark: "#2a4a2a", text: "#589731", textDark: "#8bc34a", label: "Pago" };
     case "atrasada":
-      return { bg: "#fef2f2", border: "#ef4444", text: "#991b1b", icon: "⚠️", label: "Em Atraso" };
+      return { bg: "#fce4e1", bgDark: "#4a2a2a", text: "#df532d", textDark: "#ef5350", label: "Em Atraso" };
     case "vencendo":
-      return { bg: "#fefce8", border: "#eab308", text: "#854d0e", icon: "⏰", label: "Vencendo" };
+      return { bg: "#fef4d6", bgDark: "#4a4229", text: "#c49c00", textDark: "#ffd54f", label: "Vencendo" };
     default:
-      return { bg: "#f3f4f6", border: "#d1d5db", text: "#374151", icon: "⏳", label: "Pendente" };
+      return { bg: "#eef2f4", bgDark: "#33444f", text: "#959ca4", textDark: "#7b8b97", label: "Pendente" };
   }
 }
 
@@ -113,44 +113,42 @@ function renderPaymentTab(opts: {
 
   const paidPct = totalValue > 0 ? Math.round((paidValue / totalValue) * 100) : 0;
 
-  const installmentCards = installments.map((inst) => {
+  const installmentRows = installments.map((inst) => {
     const s = getStatusColor(inst.status);
     const flowOptions = flows.map(f => `<option value="${f.id}">${f.name}</option>`).join("");
 
     return `
-      <div class="installment-card" style="background:${s.bg};border:1.5px solid ${s.border};border-radius:12px;padding:14px 16px;position:relative;transition:box-shadow 0.2s" onmouseover="this.style.boxShadow='0 4px 12px rgba(0,0,0,0.08)'" onmouseout="this.style.boxShadow='none'">
-        <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px">
-          <div>
-            <span style="font-size:11px;font-weight:700;color:${s.text};text-transform:uppercase;letter-spacing:0.5px">${s.icon} Parcela ${inst.number}/${inst.total}</span>
-            <div style="font-size:18px;font-weight:800;color:${s.text};margin-top:4px">${formatCurrency(inst.value, inst.currency)}</div>
+      <div class="b24-item">
+        <div class="b24-item-row">
+          <div class="b24-item-left">
+            <span class="b24-item-title">Parcela ${inst.number}/${inst.total}</span>
+            <span class="b24-item-value">${formatCurrency(inst.value, inst.currency)}</span>
           </div>
-          <span style="display:inline-block;background:${s.border};color:#fff;border-radius:20px;padding:3px 10px;font-size:10px;font-weight:700">${s.label}</span>
+          <span class="b24-badge" style="--badge-bg:${s.bg};--badge-bg-dark:${s.bgDark};--badge-text:${s.text};--badge-text-dark:${s.textDark}">${s.label}</span>
         </div>
-        <div style="display:flex;gap:16px;font-size:11px;color:${s.text};opacity:0.85;margin-bottom:6px">
-          <span>📅 Vence: ${formatDate(inst.due_date)}</span>
-          ${inst.paid_at ? `<span>💰 Pago: ${formatDate(inst.paid_at)}</span>` : ""}
+        <div class="b24-item-meta">
+          <span>Vence: ${formatDate(inst.due_date)}</span>
+          ${inst.paid_at ? `<span>Pago: ${formatDate(inst.paid_at)}</span>` : ""}
         </div>
-        ${inst.description ? `<div style="font-size:11px;color:${s.text};opacity:0.7;margin-bottom:8px">${inst.description}</div>` : ""}
-        ${inst.payment_url && inst.status !== "paga" ? `<a href="${inst.payment_url}" target="_blank" style="display:inline-block;background:${s.border};color:#fff;text-decoration:none;padding:6px 14px;border-radius:6px;font-size:11px;font-weight:600;margin-right:6px">🔗 Link de Pagamento</a>` : ""}
+        ${inst.description ? `<div class="b24-item-desc">${inst.description}</div>` : ""}
+        ${inst.payment_url && inst.status !== "paga" ? `<a href="${inst.payment_url}" target="_blank" class="b24-link">Link de pagamento</a>` : ""}
         ${inst.status !== "paga" && contactPhone && flows.length > 0 ? `
-          <div style="display:flex;gap:6px;align-items:center;margin-top:8px">
-            <select id="flow-${inst.id}" style="flex:1;height:28px;font-size:11px;border:1px solid ${s.border};border-radius:6px;padding:0 6px;background:#fff;color:${s.text}">
+          <div class="b24-item-actions">
+            <select id="flow-${inst.id}" class="b24-select">
               <option value="">Selecionar fluxo...</option>
               ${flowOptions}
             </select>
-            <button onclick="triggerFlow('${inst.id}','${contactPhone}',${inst.number})" style="background:#722F37;color:#fff;border:none;padding:6px 12px;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap;transition:opacity 0.2s" onmouseover="this.style.opacity='0.85'" onmouseout="this.style.opacity='1'">
-              🚀 Disparar
-            </button>
+            <button onclick="triggerFlow('${inst.id}','${contactPhone}',${inst.number})" class="b24-btn-emmely">Disparar</button>
           </div>
         ` : ""}
       </div>`;
   }).join("");
 
   const noDataHtml = `
-    <div style="text-align:center;padding:48px 16px">
-      <div style="font-size:48px;margin-bottom:12px">💳</div>
-      <h3 style="color:#555;margin:0 0 8px;font-size:15px">Nenhum pagamento registado</h3>
-      <p style="color:#999;font-size:12px;margin:0">Este negócio ainda não possui registos financeiros associados.</p>
+    <div class="b24-empty">
+      <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
+      <div class="b24-empty-title">Nenhum pagamento registado</div>
+      <div class="b24-empty-desc">Este negócio ainda não possui registos financeiros associados.</div>
     </div>`;
 
   return `<!DOCTYPE html>
@@ -159,54 +157,118 @@ function renderPaymentTab(opts: {
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Emmely Pay</title>
+  <link href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;600;700&display=swap" rel="stylesheet">
   <script src="https://api.bitrix24.com/api/v1/"></script>
   <style>
+    :root {
+      --bg-page: #eef2f4;
+      --bg-card: #ffffff;
+      --text-primary: #333333;
+      --text-secondary: #959ca4;
+      --border-color: #e0e5e8;
+      --progress-bg: #dfe4e8;
+      --progress-fill: #2fc6f6;
+      --link-color: #2067b0;
+      --value-paid: #589731;
+      --value-open: #df532d;
+    }
+    body.dark {
+      --bg-page: #1e2b36;
+      --bg-card: #2a3942;
+      --text-primary: #e4e9eb;
+      --text-secondary: #7b8b97;
+      --border-color: #3d4f5c;
+      --progress-bg: #3d4f5c;
+      --progress-fill: #2fc6f6;
+      --link-color: #5db8e5;
+      --value-paid: #8bc34a;
+      --value-open: #ef5350;
+    }
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f8f8f8; color: #222; }
+    body { font-family: "Open Sans", Helvetica, Arial, sans-serif; font-size: 13px; background: var(--bg-page); color: var(--text-primary); line-height: 1.5; }
     #app { display: flex; flex-direction: column; min-height: 100vh; }
-    .summary-bar { background: #fff; border-bottom: 1px solid #e8e8e8; padding: 16px; }
-    .summary-title { font-size: 15px; font-weight: 700; color: #111; margin-bottom: 12px; display: flex; align-items: center; gap: 8px; }
-    .summary-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 12px; }
-    .summary-card { background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 10px; padding: 10px 12px; text-align: center; }
-    .summary-card .label { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; color: #6b7280; margin-bottom: 4px; }
-    .summary-card .value { font-size: 17px; font-weight: 800; }
-    .progress-bar { height: 8px; background: #e5e7eb; border-radius: 4px; overflow: hidden; }
-    .progress-fill { height: 100%; border-radius: 4px; transition: width 0.5s ease; }
-    .progress-label { font-size: 10px; color: #6b7280; margin-top: 4px; text-align: right; }
-    .installments-grid { padding: 16px; display: grid; gap: 12px; grid-template-columns: 1fr; }
-    @media (min-width: 600px) { .installments-grid { grid-template-columns: repeat(2, 1fr); } }
-    @media (min-width: 900px) { .installments-grid { grid-template-columns: repeat(3, 1fr); } }
-    #status-msg { font-size: 12px; color: #888; text-align: center; padding: 8px 16px; min-height: 20px; }
-    ::-webkit-scrollbar { width: 4px; } ::-webkit-scrollbar-thumb { background: #ddd; border-radius: 4px; }
+
+    /* Summary header */
+    .b24-summary { background: var(--bg-card); border-bottom: 1px solid var(--border-color); padding: 16px 20px; }
+    .b24-summary-title { font-size: 14px; font-weight: 700; color: var(--text-primary); margin-bottom: 14px; }
+    .b24-summary-grid { display: flex; gap: 24px; margin-bottom: 12px; }
+    .b24-summary-item { flex: 1; }
+    .b24-summary-label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.3px; color: var(--text-secondary); margin-bottom: 2px; }
+    .b24-summary-value { font-size: 16px; font-weight: 700; }
+    .b24-progress { height: 4px; background: var(--progress-bg); border-radius: 2px; overflow: hidden; margin-top: 2px; }
+    .b24-progress-fill { height: 100%; background: var(--progress-fill); border-radius: 2px; transition: width 0.4s ease; }
+    .b24-progress-label { font-size: 11px; color: var(--text-secondary); margin-top: 4px; text-align: right; }
+
+    /* Installment items */
+    .b24-list { padding: 12px 20px; display: flex; flex-direction: column; gap: 8px; }
+    .b24-item { background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 4px; padding: 12px 14px; }
+    .b24-item-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+    .b24-item-left { display: flex; align-items: baseline; gap: 10px; }
+    .b24-item-title { font-size: 13px; font-weight: 600; color: var(--text-primary); }
+    .b24-item-value { font-size: 14px; font-weight: 700; color: var(--text-primary); }
+    .b24-badge {
+      display: inline-block;
+      background: var(--badge-bg);
+      color: var(--badge-text);
+      border-radius: 10px;
+      padding: 2px 10px;
+      font-size: 11px;
+      font-weight: 600;
+      white-space: nowrap;
+    }
+    body.dark .b24-badge {
+      background: var(--badge-bg-dark);
+      color: var(--badge-text-dark);
+    }
+    .b24-item-meta { display: flex; gap: 16px; font-size: 12px; color: var(--text-secondary); margin-bottom: 4px; }
+    .b24-item-desc { font-size: 12px; color: var(--text-secondary); margin-bottom: 6px; }
+    .b24-link { font-size: 12px; color: var(--link-color); text-decoration: none; font-weight: 600; }
+    .b24-link:hover { text-decoration: underline; }
+
+    /* Actions */
+    .b24-item-actions { display: flex; gap: 6px; align-items: center; margin-top: 8px; }
+    .b24-select { flex: 1; height: 32px; font-size: 13px; font-family: inherit; border: 1px solid var(--border-color); border-radius: 3px; padding: 0 8px; background: var(--bg-card); color: var(--text-primary); outline: none; }
+    .b24-select:focus { border-color: var(--progress-fill); }
+    .b24-btn-emmely { background: #722F37; color: #fff; border: none; padding: 0 14px; height: 32px; border-radius: 4px; font-size: 12px; font-weight: 600; font-family: inherit; cursor: pointer; white-space: nowrap; transition: opacity 0.15s; }
+    .b24-btn-emmely:hover { opacity: 0.85; }
+
+    /* Empty state */
+    .b24-empty { text-align: center; padding: 60px 20px; color: var(--text-secondary); }
+    .b24-empty svg { margin-bottom: 12px; opacity: 0.4; }
+    .b24-empty-title { font-size: 14px; font-weight: 600; margin-bottom: 4px; }
+    .b24-empty-desc { font-size: 12px; }
+
+    #status-msg { font-size: 12px; color: var(--text-secondary); text-align: center; padding: 8px 20px; min-height: 20px; }
+    ::-webkit-scrollbar { width: 4px; } ::-webkit-scrollbar-thumb { background: var(--border-color); border-radius: 4px; }
   </style>
 </head>
 <body>
 <div id="app">
   ${noData ? noDataHtml : `
-  <div class="summary-bar">
-    <div class="summary-title">💳 ${(dealTitle || "Negócio").replace(/</g, "&lt;")}</div>
-    <div class="summary-grid">
-      <div class="summary-card">
-        <div class="label">Total</div>
-        <div class="value" style="color:#111">${formatCurrency(totalValue, currency)}</div>
+  <div class="b24-summary">
+    <div class="b24-summary-title">Emmely Pay — ${(dealTitle || "Negócio").replace(/</g, "&lt;")}</div>
+    <div class="b24-summary-grid">
+      <div class="b24-summary-item">
+        <div class="b24-summary-label">Total</div>
+        <div class="b24-summary-value">${formatCurrency(totalValue, currency)}</div>
       </div>
-      <div class="summary-card">
-        <div class="label">Pago</div>
-        <div class="value" style="color:#22c55e">${formatCurrency(paidValue, currency)}</div>
+      <div class="b24-summary-item">
+        <div class="b24-summary-label">Pago</div>
+        <div class="b24-summary-value" style="color:var(--value-paid)">${formatCurrency(paidValue, currency)}</div>
       </div>
-      <div class="summary-card">
-        <div class="label">Em Aberto</div>
-        <div class="value" style="color:${openValue > 0 ? '#ef4444' : '#22c55e'}">${formatCurrency(openValue, currency)}</div>
+      <div class="b24-summary-item">
+        <div class="b24-summary-label">Em Aberto</div>
+        <div class="b24-summary-value" style="color:${openValue > 0 ? 'var(--value-open)' : 'var(--value-paid)'}">${formatCurrency(openValue, currency)}</div>
       </div>
     </div>
-    <div class="progress-bar">
-      <div class="progress-fill" style="width:${paidPct}%;background:${paidPct >= 100 ? '#22c55e' : paidPct > 0 ? '#3b82f6' : '#d1d5db'}"></div>
+    <div class="b24-progress">
+      <div class="b24-progress-fill" style="width:${paidPct}%"></div>
     </div>
-    <div class="progress-label">${paidPct}% pago</div>
+    <div class="b24-progress-label">${paidPct}% pago</div>
   </div>
 
-  <div class="installments-grid">
-    ${installmentCards}
+  <div class="b24-list">
+    ${installmentRows}
   </div>
   `}
   <div id="status-msg"></div>
@@ -219,14 +281,14 @@ function renderPaymentTab(opts: {
 
   function setStatus(msg, color) {
     var el = document.getElementById('status-msg');
-    if (el) { el.textContent = msg; el.style.color = color || '#888'; }
+    if (el) { el.textContent = msg; el.style.color = color || 'var(--text-secondary)'; }
   }
 
   function triggerFlow(installmentId, phone, installmentNum) {
     var sel = document.getElementById('flow-' + installmentId);
-    if (!sel || !sel.value) { setStatus('Selecione um fluxo primeiro.', '#ef4444'); return; }
+    if (!sel || !sel.value) { setStatus('Selecione um fluxo primeiro.', 'var(--value-open)'); return; }
     var flowId = sel.value;
-    setStatus('A disparar fluxo...', '#888');
+    setStatus('A disparar fluxo...', 'var(--text-secondary)');
 
     fetch(SUPABASE_URL + '/functions/v1/flow-engine', {
       method: 'POST',
@@ -241,10 +303,35 @@ function renderPaymentTab(opts: {
     .then(function(r) { return r.json(); })
     .then(function(d) {
       if (d.error) throw new Error(d.error);
-      setStatus('✅ Fluxo disparado com sucesso para ' + phone, '#22c55e');
+      setStatus('Fluxo disparado com sucesso para ' + phone, 'var(--value-paid)');
     })
-    .catch(function(e) { setStatus('❌ Erro: ' + e.message, '#ef4444'); });
+    .catch(function(e) { setStatus('Erro: ' + e.message, 'var(--value-open)'); });
   }
+
+  // Theme detection
+  function applyTheme(isDark) {
+    document.body.classList.toggle('dark', isDark);
+  }
+  // Layer 1: system preference
+  if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+    applyTheme(true);
+  }
+  window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', function(e) { applyTheme(e.matches); });
+  // Layer 2: postMessage from Bitrix24
+  window.addEventListener('message', function(e) {
+    if (!e.data || typeof e.data !== 'object') return;
+    var d = e.data;
+    if (d.action === 'ChangeColorScheme' || d.action === 'themeChange') {
+      var s = d.scheme || d.colorScheme || d.theme;
+      if (s) applyTheme(s === 'dark');
+    } else if (d.type === 'B24Frame:theme' && d.payload && d.payload.type) {
+      applyTheme(d.payload.type === 'dark');
+    } else if (d.colorScheme) {
+      applyTheme(d.colorScheme === 'dark');
+    } else if (d.theme === 'dark' || d.theme === 'light') {
+      applyTheme(d.theme === 'dark');
+    }
+  });
 
   try {
     BX24.init(function() { BX24.fitWindow(); });
