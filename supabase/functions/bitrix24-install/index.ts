@@ -641,6 +641,132 @@ Deno.serve(async (req) => {
       await debugLog(supabase, integrationId, "crm_tab_placement_error", "outbound", null, String(crmTabError));
     }
 
+    // --- Register Emmely Pay as Bitrix24 Payment System (CHECKOUT mode) ---
+    try {
+      const paymentHandlerUrl = `${supabaseUrl}/functions/v1/bitrix24-payment-handler`;
+
+      // 1. Delete existing handler (safe for reinstall)
+      await callBitrix(clientEndpoint, accessToken, "sale.paysystem.handler.delete", {
+        ID: "emmely_pay",
+      });
+
+      // 2. Register payment handler with CHECKOUT mode
+      const handlerResult = await callBitrix(clientEndpoint, accessToken, "sale.paysystem.handler.add", {
+        NAME: "Emmely Pay",
+        CODE: "emmely_pay",
+        SORT: 100,
+        SETTINGS: {
+          CURRENCY: ["BRL", "EUR", "USD"],
+          CLIENT_TYPE: "b2c",
+          CHECKOUT_DATA: {
+            ACTION_URI: paymentHandlerUrl,
+          },
+          CODES: {
+            PAYMENT_ID: {
+              NAME: "Número do Pagamento",
+              SORT: "100",
+              GROUP: "PAYMENT",
+              DEFAULT: {
+                PROVIDER_KEY: "PAYMENT",
+                PROVIDER_VALUE: "ACCOUNT_NUMBER",
+              },
+            },
+            PAYMENT_SHOULD_PAY: {
+              NAME: "Valor do Pagamento",
+              SORT: "200",
+              GROUP: "PAYMENT",
+              DEFAULT: {
+                PROVIDER_KEY: "PAYMENT",
+                PROVIDER_VALUE: "SUM",
+              },
+            },
+            PAYMENT_CURRENCY: {
+              NAME: "Moeda",
+              SORT: "300",
+              GROUP: "PAYMENT",
+              DEFAULT: {
+                PROVIDER_KEY: "PAYMENT",
+                PROVIDER_VALUE: "CURRENCY",
+              },
+            },
+            CUSTOMER_NAME: {
+              NAME: "Nome do Cliente",
+              SORT: "400",
+              GROUP: "PAYMENT",
+              DEFAULT: {
+                PROVIDER_KEY: "USER",
+                PROVIDER_VALUE: "NAME",
+              },
+            },
+            CUSTOMER_EMAIL: {
+              NAME: "Email do Cliente",
+              SORT: "500",
+              GROUP: "PAYMENT",
+              DEFAULT: {
+                PROVIDER_KEY: "USER",
+                PROVIDER_VALUE: "EMAIL",
+              },
+            },
+            CUSTOMER_CPF_CNPJ: {
+              NAME: "CPF/CNPJ do Cliente",
+              SORT: "600",
+              DESCRIPTION: "Obrigatório para pagamentos em BRL (PIX/Boleto)",
+            },
+            PS_CHANGE_STATUS_PAY: {
+              NAME: "Mudança automática de status",
+              SORT: "700",
+              INPUT: { TYPE: "Y/N" },
+            },
+          },
+        },
+      });
+
+      const handlerErr = String(handlerResult.error || "");
+      if (handlerResult.error && !handlerErr.includes("ALREADY")) {
+        console.error("[INSTALL] Payment handler registration failed:", handlerResult.error, handlerResult.error_description);
+      } else {
+        console.log("[INSTALL] Payment handler 'emmely_pay': registered OK");
+      }
+
+      // 3. Create the actual payment system for CRM invoices
+      // We try both ORDER and CRM_INVOICE bindings
+      for (const entityType of ["ORDER", "CRM_INVOICE"]) {
+        const psResult = await callBitrix(clientEndpoint, accessToken, "sale.paysystem.add", {
+          NAME: entityType === "CRM_INVOICE" ? "Emmely Pay (Fatura)" : "Emmely Pay",
+          DESCRIPTION: "Pagamento via PIX, Boleto ou Cartão através do Emmely Cloud",
+          XML_ID: `emmely_pay_${entityType.toLowerCase()}`,
+          PERSON_TYPE_ID: 1,
+          BX_REST_HANDLER: "emmely_pay",
+          ACTIVE: "Y",
+          ENTITY_REGISTRY_TYPE: entityType,
+          NEW_WINDOW: "Y",
+          SETTINGS: {
+            PAYMENT_ID: { TYPE: "PAYMENT", VALUE: "ACCOUNT_NUMBER" },
+            PAYMENT_SHOULD_PAY: { TYPE: "PAYMENT", VALUE: "SUM" },
+            PAYMENT_CURRENCY: { TYPE: "PAYMENT", VALUE: "CURRENCY" },
+            CUSTOMER_NAME: { TYPE: "USER", VALUE: "NAME" },
+            CUSTOMER_EMAIL: { TYPE: "USER", VALUE: "EMAIL" },
+            PS_CHANGE_STATUS_PAY: { TYPE: "Y\\N", VALUE: "Y" },
+          },
+        });
+
+        const psErr = String(psResult.error || "");
+        if (psResult.error && !psErr.includes("ALREADY") && !psErr.includes("DUPLICATE")) {
+          console.error(`[INSTALL] PaySystem ${entityType} creation failed:`, psResult.error, psResult.error_description);
+        } else {
+          console.log(`[INSTALL] PaySystem ${entityType}: created OK, ID:`, psResult.result);
+        }
+      }
+
+      await debugLog(supabase, integrationId, "paysystem_setup", "outbound", {
+        handler: "emmely_pay",
+        url: paymentHandlerUrl,
+      });
+    } catch (paySystemError) {
+      console.error("[INSTALL] PaySystem setup error:", paySystemError);
+      await debugLog(supabase, integrationId, "paysystem_setup_error", "outbound", null, String(paySystemError));
+    }
+
     // If called via JSON (from frontend fetch), return JSON
     if (contentType.includes("application/json")) {
       return new Response(

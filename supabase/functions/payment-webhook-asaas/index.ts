@@ -74,7 +74,7 @@ Deno.serve(async (req) => {
       })
       .eq("gateway_payment_id", payment.id)
       .eq("gateway", "asaas")
-      .select("id, financial_record_id")
+      .select("id, financial_record_id, metadata")
       .maybeSingle();
 
     // Also update financial_records if linked
@@ -83,6 +83,39 @@ Deno.serve(async (req) => {
         .from("financial_records")
         .update({ status: "paga", paid_at: new Date().toISOString() })
         .eq("id", tx.financial_record_id);
+    }
+
+    // Notify Bitrix24 if this payment originated from Bitrix24
+    const txMeta = tx?.metadata as any;
+    if (txMeta?.bitrix24_payment_id && txMeta?.bitrix24_paysystem_id && (newStatus === "confirmed" || newStatus === "received")) {
+      try {
+        // Find a Bitrix24 integration to get credentials
+        const { data: integration } = await supabase
+          .from("bitrix24_integrations")
+          .select("client_endpoint, access_token")
+          .limit(1)
+          .maybeSingle();
+
+        if (integration?.client_endpoint && integration?.access_token) {
+          const endpoint = integration.client_endpoint.endsWith("/")
+            ? integration.client_endpoint
+            : integration.client_endpoint + "/";
+
+          const payRes = await fetch(`${endpoint}sale.paysystem.pay.payment`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              PAYMENT_ID: txMeta.bitrix24_payment_id,
+              PAY_SYSTEM_ID: txMeta.bitrix24_paysystem_id,
+              auth: integration.access_token,
+            }),
+          });
+          const payData = await payRes.json();
+          console.log("[ASAAS-WEBHOOK] Bitrix24 pay.payment result:", JSON.stringify(payData).substring(0, 300));
+        }
+      } catch (bxErr) {
+        console.error("[ASAAS-WEBHOOK] Bitrix24 notification error:", bxErr);
+      }
     }
 
     return new Response(JSON.stringify({ ok: true, status: newStatus }), {

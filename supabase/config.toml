@@ -89,3 +89,6 @@ verify_jwt = false
 
 [functions.bitrix24-crm-tab]
 verify_jwt = false
+
+[functions.bitrix24-payment-handler]
+verify_jwt = false
