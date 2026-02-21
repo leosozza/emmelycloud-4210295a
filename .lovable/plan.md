@@ -1,133 +1,114 @@
 
-# Plano: Criar Cobranças Parceladas com Faturas Individuais
 
-## Cenario
+# Plano: Criar Smart Invoices (CRM_SMART_INVOICE) no Bitrix24 para Cada Parcela
 
-O utilizador quer criar uma venda parcelada (ex: 1000 total = 500 entrada + 5 parcelas de 100) e que o sistema gere uma fatura individual para cada parcela, cada uma com vencimento diferente. Depois, cada fatura pode ser dada baixa individualmente.
+## Objetivo
 
-## Alteracoes
+Ao criar cobranças parceladas na aba Emmely Pay, além de criar as transações no gateway de pagamento (Asaas/Stripe), o sistema também criará uma **Smart Invoice** (entityTypeId 31) no Bitrix24 para cada parcela. Assim, as faturas aparecem diretamente no CRM e podem ser geridas nativamente. Quando o webhook de pagamento confirmar o pagamento, a fatura correspondente será marcada como paga no Bitrix24.
 
-### 1. Formulario na aba Emmely Pay (`bitrix24-payment-tab/index.ts`)
+## Alterações
 
-Adicionar campos ao formulario "Criar Cobranca":
+### 1. Criar Smart Invoices ao criar cobranças (`bitrix24-payment-tab/index.ts`)
 
-- **Valor Total** (campo existente, renomeado)
-- **Entrada** (novo campo, valor opcional, default 0)
-- **Numero de Parcelas** (novo campo, dropdown 1-12, excluindo a entrada)
-- **Intervalo entre parcelas** (novo campo, dropdown: 30/60/90 dias)
-- **Primeira parcela vence em** (novo campo, date input, default = hoje + intervalo)
+Após cada chamada bem-sucedida a `payment-create`, o JavaScript do iframe chamará a API Bitrix24 via `BX24.callMethod` para criar uma Smart Invoice:
 
-Logica de calculo exibida em tempo real no formulario:
 ```text
-Total: 1.000,00
-Entrada: 500,00
-Parcelas: 5x de 100,00
-Vencimentos: 01/04, 01/05, 01/06, 01/07, 01/08
+BX24.callMethod("crm.item.add", {
+  entityTypeId: 31,
+  fields: {
+    title: "Parcela 1/6 - Nome do Negócio",
+    opportunity: 100.00,
+    currencyId: "EUR",
+    isManualOpportunity: "Y",
+    contactId: <contactId do deal>,
+    parentId2: <dealId>,           // Vincula ao Deal
+    begindate: "2026-03-01",       // Data de emissão
+    closedate: "2026-04-01",       // Data de vencimento
+    comments: "Fatura gerada automaticamente pelo Emmely Pay. Parcela 1/6."
+  }
+});
 ```
 
-Ao submeter, o formulario chama `payment-create` em loop (ou uma nova rota batch) para cada parcela, com `installment_number`, `total_installments` e `due_date` nos metadados.
+O ID da Smart Invoice retornado será persistido nos metadados da transação via uma chamada de atualização.
 
-### 2. Backend `payment-create/index.ts`
+### 2. Atualizar metadados da transação com o ID da Invoice
 
-Adicionar suporte a novos parametros opcionais no body:
+Após criar a Smart Invoice no Bitrix24, o frontend chamará um endpoint para atualizar os metadados da transação (`payment_transactions.metadata`) com o `bitrix_invoice_id`, permitindo que o webhook saiba qual fatura atualizar quando o pagamento for confirmado.
 
-- `installments` (numero de parcelas total incluindo entrada)
-- `installment_number` (numero desta parcela)
-- `total_installments` (total de parcelas)
-- `due_date` (data de vencimento especifica para esta parcela)
-- `installment_group_id` (UUID gerado pelo frontend para agrupar todas as parcelas da mesma venda)
+Para isso, será necessário um novo endpoint simples ou uma atualização na Edge Function `payment-create` para aceitar atualizações de metadados.
 
-Quando `due_date` e fornecido, usar esse valor em vez de calcular `hoje + 3 dias`.
+### 3. Webhook marca a Invoice como paga (`payment-webhook-asaas/index.ts` e `payment-webhook-stripe/index.ts`)
 
-O campo `metadata` da transacao ira conter:
-```text
-{
-  bitrix_deal_id: "123",
-  installment_group_id: "uuid-grupo",
-  installment_number: 1,
-  total_installments: 6,
-  is_down_payment: true/false
-}
-```
+Quando o pagamento é confirmado via webhook:
 
-### 3. Logica do Formulario (JavaScript no iframe)
+1. O webhook já busca a transação e os metadados
+2. Se `metadata.bitrix_invoice_id` existir, chamar a API Bitrix24:
+   - `crm.item.update` com `entityTypeId: 31` para mover a fatura para o estágio "Paga"
+   - Ou usar `crm.item.payment.pay` se quiser usar o sistema nativo de pagamentos da invoice
+3. Adicionar comentário na timeline da Invoice
 
-A funcao `submitPayment` sera substituida por `submitInstallments` que:
+### 4. Exibição no painel Emmely Pay
 
-1. Calcula o valor da entrada e o valor de cada parcela
-2. Gera um `installment_group_id` (UUID simples)
-3. Chama `payment-create` N vezes sequencialmente (entrada + parcelas)
-4. Exibe progresso: "A criar parcela 1/6...", "A criar parcela 2/6..."
-5. Ao terminar, recarrega a pagina
+Ao renderizar os cards de parcelas, se `bitrix_invoice_id` estiver nos metadados, mostrar um link direto para abrir a Invoice no Bitrix24.
 
-### 4. Exibicao no Painel
-
-As transacoes ja aparecem agrupadas naturalmente porque sao filtradas por `bitrix_deal_id`. A numeracao `Parcela X/Y` ja funciona com o campo `installment_number` / `total_installments` nos metadados.
-
-Melhoria: ao renderizar, agrupar transacoes pelo `installment_group_id` e usar `metadata.installment_number` e `metadata.total_installments` para a numeracao em vez do indice do array.
-
-Se `metadata.is_down_payment` for true, mostrar "Entrada" em vez de "Parcela 1/6".
-
-## Detalhes Tecnicos
+## Detalhes Técnicos
 
 ### Ficheiros alterados
 
 1. **`supabase/functions/bitrix24-payment-tab/index.ts`**
-   - Formulario HTML: novos campos (entrada, parcelas, intervalo, primeiro vencimento)
-   - JavaScript: calculos em tempo real, funcao `submitInstallments`, geracao de UUID
-   - Renderizacao: usar metadados `installment_number` e `is_down_payment` para labels
+   - JavaScript: após cada `payment-create`, chamar `BX24.callMethod("crm.item.add", { entityTypeId: 31, ... })`
+   - Passar `contactId` e `dealId` do contexto do Deal para vincular as Invoices
+   - Atualizar os metadados da transação com o `bitrix_invoice_id` retornado
+   - Nos cards de parcelas, mostrar link para abrir a Invoice no Bitrix24 se disponível
 
 2. **`supabase/functions/payment-create/index.ts`**
-   - Aceitar `due_date` opcional e usar como vencimento no Asaas/Stripe
-   - Persistir `installment_number`, `total_installments`, `installment_group_id` no metadata
+   - Adicionar rota/lógica para atualizar metadados de uma transação existente (PATCH), ou criar um endpoint separado para isso
 
-### Calculo de parcelas
+3. **`supabase/functions/payment-webhook-asaas/index.ts`**
+   - Na função `notifyBitrix24DealPayment`, verificar `metadata.bitrix_invoice_id`
+   - Chamar `crm.item.update` com `entityTypeId: 31` para mover o estágio da Invoice para "Paga"
+   - Adicionar timeline comment na Invoice
 
-```text
-totalValue = 1000
-downPayment = 500
-remaining = totalValue - downPayment = 500
-numInstallments = 5
-installmentValue = Math.floor(remaining * 100 / numInstallments) / 100 = 100.00
-lastInstallment = remaining - (installmentValue * (numInstallments - 1)) = 100.00
-```
+4. **`supabase/functions/payment-webhook-stripe/index.ts`**
+   - Mesma lógica do webhook Asaas: atualizar a Invoice para "Paga" quando o pagamento for confirmado
 
-A ultima parcela absorve a diferenca de arredondamento.
-
-### Vencimentos
+### API Bitrix24 utilizada
 
 ```text
-intervalo = 30 dias
-primeiroVencimento = 2026-04-01
+Criar Invoice:
+  crm.item.add { entityTypeId: 31, fields: { title, opportunity, currencyId, isManualOpportunity: "Y", contactId, parentId2: dealId, begindate, closedate, comments } }
 
-Entrada: vencimento = hoje (imediato)
-Parcela 1: 2026-04-01
-Parcela 2: 2026-05-01
-Parcela 3: 2026-06-01
-...
+Atualizar Invoice (marcar como paga):
+  crm.item.update { entityTypeId: 31, id: invoiceId, fields: { stageId: "<estágio de paga>" } }
+
+Obter estágios disponíveis (uma vez, para saber qual é o estágio "Paga"):
+  crm.status.list { filter: { ENTITY_ID: "SMART_INVOICE_STAGE_<categoryId>" } }
 ```
 
-### Fluxo completo
+### Fluxo completo atualizado
 
 ```text
 1. Utilizador preenche: Total=1000, Entrada=500, Parcelas=5, Intervalo=30d
 2. Frontend calcula: Entrada (500) + 5x de 100
-3. Frontend gera installment_group_id = "abc-123"
-4. Frontend chama payment-create 6 vezes sequencialmente:
-   - Parcela 0 (entrada): amount=500, due_date=hoje, is_down_payment=true
-   - Parcela 1: amount=100, due_date=+30d
-   - Parcela 2: amount=100, due_date=+60d
-   - ...
-5. Cada chamada cria uma fatura no gateway (Asaas/Stripe)
-6. Cada fatura tem o seu proprio link de pagamento
-7. Pagina recarrega e mostra 6 cards com status individual
-8. Webhook de pagamento da baixa individual em cada fatura
+3. Para cada parcela:
+   a. Chama payment-create -> cria transação + cobrança no gateway
+   b. Chama BX24.callMethod("crm.item.add") -> cria Smart Invoice no Bitrix24
+   c. Atualiza metadata da transação com bitrix_invoice_id
+4. Painel mostra 6 cards com link para cada Invoice
+5. Cliente paga -> webhook confirma -> atualiza transação + move Invoice para "Paga"
 ```
+
+### Considerações
+
+- O estágio de "Paga" pode variar entre portais Bitrix24 (cada portal pode ter funis/estágios customizados). O webhook precisará buscar os estágios disponíveis via `crm.status.list` ou usar um estágio fixo como fallback
+- A vinculação Deal-Invoice é feita via `parentId2` (Deal é entityTypeId 2)
+- O `contactId` do Deal é reutilizado para vincular a Invoice ao mesmo contacto
 
 ## Resumo de Impacto
 
-- Formulario de criacao de cobranca evolui para suportar parcelamento
-- Backend `payment-create` aceita due_date e metadados de parcela
-- Cada parcela gera uma fatura independente no gateway
-- Baixa individual via webhook existente (sem alteracoes nos webhooks)
-- Visual do painel aproveita a estrutura existente de cards
+- Cada parcela gera uma Smart Invoice nativa no Bitrix24, visível no CRM
+- Invoices ficam vinculadas ao Deal e ao Contacto automaticamente
+- Webhook de pagamento marca a Invoice como paga automaticamente
+- Sem novas tabelas no banco de dados (usa o campo `metadata` existente)
+- Links diretos para Invoices nos cards do painel Emmely Pay
+
