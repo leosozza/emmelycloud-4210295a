@@ -97,6 +97,52 @@ async function notifyBitrix24DealPayment(supabase: any, txMeta: any, paidAmount:
     });
 
     console.log(`[STRIPE-WEBHOOK] Bitrix24 deal ${dealId} updated: ${currentAmount} -> ${newAmount}`);
+
+    // 4. Mark Smart Invoice as paid if linked
+    if (txMeta?.bitrix_invoice_id) {
+      try {
+        const stagesRes = await fetch(`${endpoint}crm.status.list`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ filter: { ENTITY_ID: "SMART_INVOICE_STAGE_31" }, auth: accessToken }),
+        });
+        const stagesData = await stagesRes.json();
+        const stages = stagesData.result || [];
+        const paidStage = stages.find((s: any) =>
+          s.STATUS_ID?.includes("WON") || s.STATUS_ID?.includes("FINAL_INVOICE") ||
+          s.NAME?.toLowerCase().includes("pag") || s.NAME?.toLowerCase().includes("paid")
+        );
+        const stageId = paidStage?.STATUS_ID || "DT31_6:WON";
+
+        await fetch(`${endpoint}crm.item.update`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            entityTypeId: 31,
+            id: txMeta.bitrix_invoice_id,
+            fields: { stageId },
+            auth: accessToken,
+          }),
+        });
+
+        await fetch(`${endpoint}crm.timeline.comment.add`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            fields: {
+              ENTITY_ID: txMeta.bitrix_invoice_id,
+              ENTITY_TYPE: "dynamic_31",
+              COMMENT: `✅ Pagamento confirmado: ${fmt(paidAmount)}`,
+            },
+            auth: accessToken,
+          }),
+        });
+
+        console.log(`[STRIPE-WEBHOOK] Smart Invoice ${txMeta.bitrix_invoice_id} marked as paid`);
+      } catch (invErr) {
+        console.error("[STRIPE-WEBHOOK] Smart Invoice update error:", invErr);
+      }
+    }
   } catch (err) {
     console.error("[STRIPE-WEBHOOK] Bitrix24 notification error:", err);
   }
