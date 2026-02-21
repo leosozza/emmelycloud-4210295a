@@ -124,7 +124,7 @@ serve(async (req) => {
           { role: "system", content: systemPrompt },
           ...messages,
         ],
-        temperature: agent.temperature || 0.7,
+        temperature: Math.min(1, Math.max(0, agent.temperature || 0.7)),
       }),
     });
 
