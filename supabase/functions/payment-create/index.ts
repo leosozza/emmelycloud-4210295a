@@ -93,7 +93,7 @@ function isValidCpfCnpj(value: string): boolean {
   return false;
 }
 
-async function createAsaasPayment(apiKey: string, amount: number, paymentMethod: string, customerData: any, description: string, environment: string) {
+async function createAsaasPayment(apiKey: string, amount: number, paymentMethod: string, customerData: any, description: string, environment: string, customDueDate?: string) {
   const baseUrl = environment === "production" ? "https://api.asaas.com/v3" : "https://sandbox.asaas.com/api/v3";
 
   // 1. Find or create customer
@@ -133,8 +133,8 @@ async function createAsaasPayment(apiKey: string, amount: number, paymentMethod:
   const billingType = billingTypeMap[paymentMethod] || "PIX";
 
   // 3. Create payment
-  const dueDate = new Date();
-  dueDate.setDate(dueDate.getDate() + 3);
+  const dueDate = customDueDate ? new Date(customDueDate) : new Date();
+  if (!customDueDate) dueDate.setDate(dueDate.getDate() + 3);
 
   const paymentRes = await fetch(`${baseUrl}/payments`, {
     method: "POST",
@@ -186,7 +186,7 @@ Deno.serve(async (req) => {
     );
 
     const body = await req.json();
-    const { contract_id, client_id, financial_record_id, amount, currency = "EUR", payment_method = "card", customer_data, description = "Pagamento Emmely Cloud", metadata: extraMetadata } = body;
+    const { contract_id, client_id, financial_record_id, amount, currency = "EUR", payment_method = "card", customer_data, description = "Pagamento Emmely Cloud", metadata: extraMetadata, due_date, installment_number, total_installments, installment_group_id, is_down_payment } = body;
 
     if (!amount || amount <= 0) {
       return new Response(JSON.stringify({ error: "amount is required and must be > 0" }), {
@@ -229,7 +229,7 @@ Deno.serve(async (req) => {
         });
       }
       const asaasEnv = await getCredential(supabase, "asaas", "ASAAS_ENVIRONMENT") || "sandbox";
-      result = await createAsaasPayment(asaasKey, amount, payment_method, customer_data, description, asaasEnv);
+      result = await createAsaasPayment(asaasKey, amount, payment_method, customer_data, description, asaasEnv, due_date);
     }
 
     // Save transaction
@@ -247,7 +247,7 @@ Deno.serve(async (req) => {
       payment_url: result.payment_url,
       pix_qr_code: result.pix_qr_code || null,
       pix_code: result.pix_code || null,
-      metadata: { client_secret: result.client_secret || null, ...(extraMetadata || {}) },
+      metadata: { client_secret: result.client_secret || null, installment_number: installment_number ?? null, total_installments: total_installments ?? null, installment_group_id: installment_group_id ?? null, is_down_payment: is_down_payment ?? false, ...(extraMetadata || {}) },
     }).select().single();
 
     if (txError) throw new Error(txError.message);

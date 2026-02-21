@@ -73,13 +73,14 @@ interface InstallmentData {
   number: number;
   total: number;
   value: number;
-  status: string; // pendente, paga, atrasada, vencendo
+  status: string;
   due_date: string | null;
   paid_at: string | null;
   currency: string;
   description: string;
   transaction_id?: string;
   payment_url?: string;
+  is_down_payment?: boolean;
 }
 
 function getStatusColor(status: string): { bg: string; bgDark: string; text: string; textDark: string; label: string } {
@@ -116,12 +117,13 @@ function renderPaymentTab(opts: {
   const installmentRows = installments.map((inst) => {
     const s = getStatusColor(inst.status);
     const flowOptions = flows.map(f => `<option value="${f.id}">${f.name}</option>`).join("");
+    const label = inst.is_down_payment ? "Entrada" : `Parcela ${inst.number}/${inst.total}`;
 
     return `
       <div class="b24-item">
         <div class="b24-item-row">
           <div class="b24-item-left">
-            <span class="b24-item-title">Parcela ${inst.number}/${inst.total}</span>
+            <span class="b24-item-title">${label}</span>
             <span class="b24-item-value">${formatCurrency(inst.value, inst.currency)}</span>
           </div>
           <span class="b24-badge" style="--badge-bg:${s.bg};--badge-bg-dark:${s.bgDark};--badge-text:${s.text};--badge-text-dark:${s.textDark}">${s.label}</span>
@@ -307,8 +309,47 @@ function renderPaymentTab(opts: {
   <div class="b24-form-card">
     <div class="b24-form-title">Criar Cobrança</div>
     <div class="b24-form-group">
-      <label class="b24-form-label">Valor</label>
-      <input type="number" id="pay-amount" class="b24-input" step="0.01" min="0.01" placeholder="0.00">
+      <label class="b24-form-label">Valor Total</label>
+      <input type="number" id="pay-amount" class="b24-input" step="0.01" min="0.01" placeholder="0.00" oninput="calcInstallments()">
+    </div>
+    <div class="b24-form-row">
+      <div class="b24-form-group">
+        <label class="b24-form-label">Entrada</label>
+        <input type="number" id="pay-down" class="b24-input" step="0.01" min="0" value="0" placeholder="0.00" oninput="calcInstallments()">
+      </div>
+      <div class="b24-form-group">
+        <label class="b24-form-label">Nº Parcelas</label>
+        <select id="pay-installments" class="b24-input" style="height:32px" onchange="calcInstallments()">
+          <option value="1">1</option>
+          <option value="2">2</option>
+          <option value="3">3</option>
+          <option value="4">4</option>
+          <option value="5">5</option>
+          <option value="6">6</option>
+          <option value="7">7</option>
+          <option value="8">8</option>
+          <option value="9">9</option>
+          <option value="10">10</option>
+          <option value="11">11</option>
+          <option value="12">12</option>
+        </select>
+      </div>
+    </div>
+    <div class="b24-form-row">
+      <div class="b24-form-group">
+        <label class="b24-form-label">Intervalo (dias)</label>
+        <select id="pay-interval" class="b24-input" style="height:32px" onchange="calcInstallments()">
+          <option value="30">30 dias</option>
+          <option value="60">60 dias</option>
+          <option value="90">90 dias</option>
+        </select>
+      </div>
+      <div class="b24-form-group">
+        <label class="b24-form-label">1º Vencimento</label>
+        <input type="date" id="pay-first-due" class="b24-input" onchange="calcInstallments()">
+      </div>
+    </div>
+    <div id="installment-preview" style="background:var(--bg-page);border:1px solid var(--border-color);border-radius:4px;padding:10px 12px;margin-bottom:12px;font-size:12px;display:none">
     </div>
     <div class="b24-form-row">
       <div class="b24-form-group">
@@ -346,7 +387,7 @@ function renderPaymentTab(opts: {
     </div>
     <div class="b24-form-actions">
       <button class="b24-btn-outline" onclick="closeCreateForm()">Cancelar</button>
-      <button class="b24-btn-primary" id="pay-submit" onclick="submitPayment()">Criar Cobrança</button>
+      <button class="b24-btn-primary" id="pay-submit" onclick="submitInstallments()">Criar Cobrança</button>
     </div>
     <div id="pay-result" style="margin-top:12px;font-size:12px;display:none"></div>
   </div>
@@ -386,10 +427,74 @@ function renderPaymentTab(opts: {
     document.getElementById('cpf-group').style.display = this.value === 'BRL' ? 'block' : 'none';
   });
 
-  function submitPayment() {
-    var amount = parseFloat(document.getElementById('pay-amount').value);
-    if (!amount || amount <= 0) { showPayResult('Informe um valor válido.', true); return; }
+  // Set default first due date to today + interval
+  function initForm() {
+    var interval = parseInt(document.getElementById('pay-interval').value) || 30;
+    var d = new Date();
+    d.setDate(d.getDate() + interval);
+    document.getElementById('pay-first-due').value = d.toISOString().split('T')[0];
+    calcInstallments();
+  }
+  initForm();
 
+  function calcInstallments() {
+    var total = parseFloat(document.getElementById('pay-amount').value) || 0;
+    var down = parseFloat(document.getElementById('pay-down').value) || 0;
+    var numInst = parseInt(document.getElementById('pay-installments').value) || 1;
+    var interval = parseInt(document.getElementById('pay-interval').value) || 30;
+    var firstDue = document.getElementById('pay-first-due').value;
+
+    var preview = document.getElementById('installment-preview');
+    if (total <= 0) { preview.style.display = 'none'; return; }
+    if (down > total) down = total;
+
+    var remaining = total - down;
+    var instValue = numInst > 0 ? Math.floor(remaining * 100 / numInst) / 100 : 0;
+    var lastInst = remaining - (instValue * (numInst - 1));
+
+    var lines = [];
+    lines.push('<div style="font-weight:600;margin-bottom:6px;color:var(--text-primary)">Resumo do parcelamento</div>');
+    lines.push('<div>Total: <strong>' + total.toFixed(2) + '</strong></div>');
+    if (down > 0) lines.push('<div>Entrada: <strong>' + down.toFixed(2) + '</strong> (vence hoje)</div>');
+    if (numInst > 0 && remaining > 0) {
+      lines.push('<div>Parcelas: <strong>' + numInst + 'x de ' + instValue.toFixed(2) + '</strong></div>');
+      if (Math.abs(lastInst - instValue) > 0.001) {
+        lines.push('<div style="font-size:11px;color:var(--text-secondary)">Última parcela: ' + lastInst.toFixed(2) + ' (ajuste)</div>');
+      }
+      // Show due dates
+      if (firstDue) {
+        var dates = [];
+        for (var i = 0; i < numInst && i < 6; i++) {
+          var d = new Date(firstDue);
+          d.setDate(d.getDate() + (interval * i));
+          dates.push(d.toLocaleDateString('pt-PT', { day: '2-digit', month: '2-digit' }));
+        }
+        if (numInst > 6) dates.push('...');
+        lines.push('<div style="margin-top:4px;font-size:11px;color:var(--text-secondary)">Vencimentos: ' + dates.join(', ') + '</div>');
+      }
+    }
+    var totalParcelas = (down > 0 ? 1 : 0) + numInst;
+    lines.push('<div style="margin-top:4px;font-size:11px;color:var(--text-secondary)">Total de faturas: ' + totalParcelas + '</div>');
+
+    preview.innerHTML = lines.join('');
+    preview.style.display = 'block';
+  }
+
+  function generateUUID() {
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+      var r = Math.random() * 16 | 0, v = c === 'x' ? r : (r & 0x3 | 0x8);
+      return v.toString(16);
+    });
+  }
+
+  async function submitInstallments() {
+    var totalAmount = parseFloat(document.getElementById('pay-amount').value);
+    if (!totalAmount || totalAmount <= 0) { showPayResult('Informe um valor válido.', true); return; }
+
+    var downPayment = parseFloat(document.getElementById('pay-down').value) || 0;
+    var numInstallments = parseInt(document.getElementById('pay-installments').value) || 1;
+    var interval = parseInt(document.getElementById('pay-interval').value) || 30;
+    var firstDue = document.getElementById('pay-first-due').value;
     var currency = document.getElementById('pay-currency').value;
     var method = document.getElementById('pay-method').value;
     var desc = document.getElementById('pay-desc').value || 'Pagamento';
@@ -397,44 +502,88 @@ function renderPaymentTab(opts: {
     var email = document.getElementById('pay-email').value;
     var cpf = document.getElementById('pay-cpf').value;
 
+    if (downPayment > totalAmount) { showPayResult('Entrada não pode ser maior que o total.', true); return; }
     if (currency === 'BRL' && !cpf) { showPayResult('CPF/CNPJ é obrigatório para BRL.', true); return; }
-    if (currency === 'BRL' && amount < 5) { showPayResult('Valor mínimo para BRL é R$ 5,00.', true); return; }
+
+    var remaining = totalAmount - downPayment;
+    var instValue = numInstallments > 0 ? Math.floor(remaining * 100 / numInstallments) / 100 : 0;
+    var lastInstValue = remaining - (instValue * (numInstallments - 1));
+    var groupId = generateUUID();
+    var hasDown = downPayment > 0;
+    var totalCount = (hasDown ? 1 : 0) + numInstallments;
+
+    // Build list of parcels
+    var parcels = [];
+    if (hasDown) {
+      parcels.push({
+        amount: downPayment,
+        due_date: new Date().toISOString().split('T')[0],
+        installment_number: 0,
+        is_down_payment: true
+      });
+    }
+    for (var i = 0; i < numInstallments; i++) {
+      var dueDate = new Date(firstDue);
+      dueDate.setDate(dueDate.getDate() + (interval * i));
+      var val = (i === numInstallments - 1) ? lastInstValue : instValue;
+      parcels.push({
+        amount: val,
+        due_date: dueDate.toISOString().split('T')[0],
+        installment_number: i + 1,
+        is_down_payment: false
+      });
+    }
+
+    // Validate BRL minimum
+    if (currency === 'BRL') {
+      for (var p = 0; p < parcels.length; p++) {
+        if (parcels[p].amount < 5) { showPayResult('Cada parcela deve ter no mínimo R$ 5,00. Parcela ' + (p+1) + ' tem R$ ' + parcels[p].amount.toFixed(2), true); return; }
+      }
+    }
 
     var btn = document.getElementById('pay-submit');
     btn.disabled = true;
-    btn.textContent = 'A criar...';
 
-    fetch(SUPABASE_URL + '/functions/v1/payment-create', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_KEY },
-      body: JSON.stringify({
-        amount: amount,
-        currency: currency,
-        payment_method: method,
-        description: desc,
-        customer_data: { name: name, email: email, cpf_cnpj: cpf || undefined },
-        metadata: { bitrix_deal_id: ENTITY_ID, source: 'bitrix24_payment_tab' }
-      })
-    })
-    .then(function(r) { return r.json(); })
-    .then(function(d) {
-      btn.disabled = false;
-      btn.textContent = 'Criar Cobrança';
-      if (d.error) { showPayResult('Erro: ' + d.error, true); return; }
-      var tx = d.transaction;
-      var msg = 'Cobrança criada com sucesso!';
-      if (tx && tx.payment_url) {
-        msg += ' <a href="' + tx.payment_url + '" target="_blank" class="b24-link">Abrir link de pagamento</a>';
+    var errors = [];
+    for (var j = 0; j < parcels.length; j++) {
+      var parcel = parcels[j];
+      btn.textContent = 'A criar ' + (j+1) + '/' + parcels.length + '...';
+      showPayResult('A criar fatura ' + (j+1) + ' de ' + parcels.length + '...', false);
+
+      try {
+        var res = await fetch(SUPABASE_URL + '/functions/v1/payment-create', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_KEY },
+          body: JSON.stringify({
+            amount: parcel.amount,
+            currency: currency,
+            payment_method: method,
+            description: desc + (parcels.length > 1 ? (parcel.is_down_payment ? ' (Entrada)' : ' (Parcela ' + parcel.installment_number + '/' + numInstallments + ')') : ''),
+            customer_data: { name: name, email: email, cpf_cnpj: cpf || undefined },
+            due_date: parcel.due_date,
+            installment_number: parcel.installment_number,
+            total_installments: totalCount,
+            installment_group_id: groupId,
+            is_down_payment: parcel.is_down_payment,
+            metadata: { bitrix_deal_id: ENTITY_ID, source: 'bitrix24_payment_tab' }
+          })
+        });
+        var data = await res.json();
+        if (data.error) errors.push('Fatura ' + (j+1) + ': ' + data.error);
+      } catch (e) {
+        errors.push('Fatura ' + (j+1) + ': ' + e.message);
       }
-      showPayResult(msg, false);
-      // Reload after 2s to show new transaction
-      setTimeout(function() { location.reload(); }, 2500);
-    })
-    .catch(function(e) {
-      btn.disabled = false;
-      btn.textContent = 'Criar Cobrança';
-      showPayResult('Erro: ' + e.message, true);
-    });
+    }
+
+    btn.disabled = false;
+    btn.textContent = 'Criar Cobrança';
+
+    if (errors.length > 0) {
+      showPayResult('Erros: ' + errors.join('; '), true);
+    } else {
+      showPayResult(parcels.length + ' fatura(s) criada(s) com sucesso!', false);
+      setTimeout(function() { location.reload(); }, 2000);
+    }
   }
 
   function showPayResult(msg, isError) {
@@ -665,10 +814,15 @@ Deno.serve(async (req) => {
         if (tx.status === "paid" || tx.status === "confirmed" || tx.status === "succeeded") status = "paga";
         else if (tx.status === "overdue" || tx.status === "failed") status = "atrasada";
 
+        const meta = tx.metadata || {};
+        const instNum = meta.installment_number != null ? meta.installment_number : (idx + 1);
+        const instTotal = meta.total_installments || dealTransactions.length;
+        const isDown = meta.is_down_payment === true;
+
         return {
           id: tx.id,
-          number: idx + 1,
-          total: dealTransactions.length,
+          number: isDown ? 0 : instNum,
+          total: instTotal,
           value: tx.amount || 0,
           status,
           due_date: tx.created_at,
@@ -677,6 +831,7 @@ Deno.serve(async (req) => {
           description: "",
           transaction_id: tx.id,
           payment_url: tx.payment_url,
+          is_down_payment: isDown,
         };
       });
 
