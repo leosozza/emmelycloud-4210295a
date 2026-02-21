@@ -43,9 +43,30 @@ Deno.serve(async (req) => {
           if (change.field !== "messages") continue;
 
           const value = change.value || {};
+          const phoneNumberId = value.metadata?.phone_number_id;
           const messages = value.messages || [];
           const contacts = value.contacts || [];
           const statuses = value.statuses || [];
+
+          // Lookup channel instance by phone_number_id
+          let instance: any = null;
+          if (phoneNumberId) {
+            const { data: instances } = await supabase
+              .from("channel_instances")
+              .select("id, name, config, status")
+              .eq("channel_type", "whatsapp")
+              .eq("status", "active");
+
+            instance = (instances || []).find(
+              (inst: any) => inst.config?.phone_number_id === phoneNumberId
+            );
+
+            if (instance) {
+              console.log(`[WA-WEBHOOK] Matched instance: ${instance.name} (${instance.id})`);
+            } else {
+              console.warn(`[WA-WEBHOOK] No instance found for phone_number_id: ${phoneNumberId}`);
+            }
+          }
 
           // Handle delivery status updates
           for (const status of statuses) {
@@ -195,7 +216,7 @@ Deno.serve(async (req) => {
               })
               .eq("id", conversationId);
 
-            // Call flow-engine instead of chatbot-reply (fire and forget)
+            // Call flow-engine (fire and forget)
             fetch(`${supabaseUrl}/functions/v1/flow-engine`, {
               method: "POST",
               headers: {
@@ -207,10 +228,12 @@ Deno.serve(async (req) => {
                 message_text: text,
                 message_type: msg.type,
                 interactive_response: interactiveResponse,
+                instance_id: instance?.id || null,
               }),
             }).catch((e) => console.error("[WA-WEBHOOK] Flow engine error:", e));
 
             // Forward to Bitrix24 (fire and forget)
+            const bitrixMappingId = instance?.config?.bitrix24_mapping_id || null;
             fetch(`${supabaseUrl}/functions/v1/bitrix24-send`, {
               method: "POST",
               headers: {
@@ -223,6 +246,7 @@ Deno.serve(async (req) => {
                 contactId: from,
                 channel: "whatsapp",
                 conversationId,
+                bitrix24MappingId: bitrixMappingId,
               }),
             }).catch((e) => console.error("[WA-WEBHOOK] Bitrix24 forward error:", e));
           }
