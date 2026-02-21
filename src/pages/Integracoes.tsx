@@ -1388,6 +1388,155 @@ function InstancesTab() {
   );
 }
 
+// ─── IA Tab (Ollama Remote) ──────────────────────────────────────────────────
+
+function IATab() {
+  const [ollamaUrl, setOllamaUrl] = useState("");
+  const [currentUrl, setCurrentUrl] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState<{ ok: boolean; message?: string; error?: string } | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  const loadUrl = useCallback(async () => {
+    setLoading(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("manage-credentials", { method: "GET" });
+      if (!error && data?.credentials) {
+        const cred = data.credentials.find((c: any) => c.provider === "qwen-local" && c.credential_key === "OLLAMA_BASE_URL");
+        if (cred?.has_value) {
+          setCurrentUrl(cred.credential_value_masked || "");
+        }
+      }
+    } catch {}
+    setLoading(false);
+  }, []);
+
+  useEffect(() => { loadUrl(); }, [loadUrl]);
+
+  const handleSave = async () => {
+    if (!ollamaUrl.trim()) return;
+    setSaving(true);
+    try {
+      const { error } = await supabase.functions.invoke("manage-credentials", {
+        method: "POST",
+        body: { provider: "qwen-local", credential_key: "OLLAMA_BASE_URL", credential_value: ollamaUrl.trim().replace(/\/+$/, "") },
+      });
+      if (error) {
+        toast.error("Erro ao guardar URL");
+      } else {
+        toast.success("URL do Ollama guardada com sucesso");
+        setOllamaUrl("");
+        await loadUrl();
+      }
+    } catch {
+      toast.error("Erro de rede");
+    }
+    setSaving(false);
+  };
+
+  const handleTest = async () => {
+    setTesting(true);
+    setTestResult(null);
+    try {
+      // Try to call the Ollama API to list models
+      const urlToTest = ollamaUrl.trim().replace(/\/+$/, "") || "";
+      if (!urlToTest && !currentUrl) {
+        setTestResult({ ok: false, error: "Nenhuma URL configurada" });
+        setTesting(false);
+        return;
+      }
+      // We test by calling the ai-playground with a minimal agent that uses qwen-local
+      // Instead, let's just verify we can reach the Ollama /api/tags endpoint
+      const baseUrl = urlToTest || currentUrl.replace(/•/g, "");
+      // Can't test masked URL, inform user
+      if (!urlToTest && currentUrl.includes("•")) {
+        setTestResult({ ok: false, error: "Insira a URL novamente para testar a conexão" });
+        setTesting(false);
+        return;
+      }
+      const cleanUrl = baseUrl.replace(/\/v1\/chat\/completions$/, "").replace(/\/+$/, "");
+      const resp = await fetch(`${cleanUrl}/api/tags`);
+      if (resp.ok) {
+        const data = await resp.json();
+        const modelNames = (data.models || []).map((m: any) => m.name).join(", ");
+        setTestResult({ ok: true, message: `Conexão OK! Modelos: ${modelNames || "nenhum encontrado"}` });
+      } else {
+        setTestResult({ ok: false, error: `Erro HTTP ${resp.status}` });
+      }
+    } catch (e: any) {
+      setTestResult({ ok: false, error: e.message || "Não foi possível conectar ao servidor Ollama" });
+    }
+    setTesting(false);
+  };
+
+  return (
+    <div className="grid gap-4 md:grid-cols-2">
+      <Card className="md:col-span-2">
+        <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-2">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-violet-100">
+              <Bot className="h-5 w-5 text-violet-600" />
+            </div>
+            <div>
+              <CardTitle className="text-base">Ollama Remoto — Qwen</CardTitle>
+              <CardDescription>Servidor Ollama exposto via túnel Cloudflare</CardDescription>
+            </div>
+          </div>
+          <StatusBadge status={currentUrl ? "active" : "inactive"} />
+        </CardHeader>
+        <CardContent className="space-y-4 text-sm">
+          <div className="rounded-md border border-violet-200 bg-violet-50 px-4 py-3 text-xs text-violet-800 space-y-1">
+            <p className="font-semibold">ℹ️ URLs de túneis Cloudflare são temporárias</p>
+            <p>Cada vez que reiniciar o túnel, a URL muda. Atualize aqui a nova URL do seu servidor Ollama.</p>
+          </div>
+
+          <div className="space-y-2">
+            <Label className="text-xs">URL do Servidor Ollama</Label>
+            <div className="flex gap-2">
+              <Input
+                placeholder="https://xxxx.trycloudflare.com"
+                value={ollamaUrl}
+                onChange={(e) => setOllamaUrl(e.target.value)}
+                className="flex-1"
+              />
+              <Button size="sm" onClick={handleSave} disabled={!ollamaUrl.trim() || saving}>
+                {saving ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+              </Button>
+            </div>
+            {currentUrl && (
+              <p className="text-xs text-green-600">✓ URL atual: {currentUrl}</p>
+            )}
+            {loading && <p className="text-xs text-muted-foreground">A carregar…</p>}
+          </div>
+
+          <Button size="sm" variant="outline" className="w-full" onClick={handleTest} disabled={testing}>
+            {testing ? <RefreshCw className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <Activity className="h-3.5 w-3.5 mr-1.5" />}
+            {testing ? "A testar…" : "Testar Conexão Ollama"}
+          </Button>
+
+          {testResult && (
+            <div className={`flex items-start gap-2 rounded-md px-3 py-2 ${testResult.ok ? "bg-green-50 text-green-800" : "bg-red-50 text-red-800"}`}>
+              {testResult.ok ? <CheckCircle2 className="h-4 w-4 shrink-0 mt-0.5" /> : <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />}
+              <span className="text-xs">{testResult.ok ? testResult.message : testResult.error}</span>
+            </div>
+          )}
+
+          <div className="pt-2 border-t space-y-1">
+            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Modelos disponíveis</p>
+            <div className="flex flex-wrap gap-1.5">
+              {["qwen2.5:7b", "qwen2.5:14b", "qwen2.5:32b"].map((m) => (
+                <Badge key={m} variant="secondary" className="text-xs">{m}</Badge>
+              ))}
+            </div>
+            <p className="text-[10px] text-muted-foreground">Selecione estes modelos ao criar/editar agentes com o provedor "Qwen Local".</p>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
 // ─── Main Page ───────────────────────────────────────────────────────────────
 
 export default function IntegracoesPage() {
@@ -1396,7 +1545,7 @@ export default function IntegracoesPage() {
       <PageHeader title="Central de Integrações" description="Gerencie todas as integrações e conectores do sistema" />
 
       <Tabs defaultValue="instancias" className="w-full">
-        <TabsList className="grid w-full grid-cols-5">
+        <TabsList className="grid w-full grid-cols-6">
           <TabsTrigger value="instancias" className="flex items-center gap-2">
             <Server className="h-4 w-4" />
             Instâncias
@@ -1417,6 +1566,10 @@ export default function IntegracoesPage() {
             <CreditCard className="h-4 w-4" />
             Pagamentos
           </TabsTrigger>
+          <TabsTrigger value="ia" className="flex items-center gap-2">
+            <Bot className="h-4 w-4" />
+            IA
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="instancias"><InstancesTab /></TabsContent>
@@ -1424,6 +1577,7 @@ export default function IntegracoesPage() {
         <TabsContent value="omnichannel"><OmniChannelTab /></TabsContent>
         <TabsContent value="chatbot"><ChatbotTab /></TabsContent>
         <TabsContent value="pagamentos"><PagamentosTab /></TabsContent>
+        <TabsContent value="ia"><IATab /></TabsContent>
       </Tabs>
     </div>
   );
