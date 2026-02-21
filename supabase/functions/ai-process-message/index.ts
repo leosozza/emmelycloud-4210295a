@@ -181,8 +181,11 @@ Deno.serve(async (req) => {
       ? `\nContacto: ${conversation.contact_name || "?"} | Canal: ${conversation.channel}\n`
       : "";
 
-    // System prompt final: KB (TOON) + histórico antigo (TOON) + contexto + anti-repetição
-    const systemPrompt = (agent.system_prompt || "") + knowledgeContext + compressedHistory + contactContext + antiRepetitionPrompt;
+    // Auto-detect language instruction
+    const autoLangPrompt = `\n\nIDIOMA: Deteta automaticamente o idioma da primeira mensagem do cliente e responde SEMPRE nesse mesmo idioma durante toda a conversa. Não perguntes o idioma — adapta-te silenciosamente. Suportas: Português, English, Español, Français, Deutsch, Italiano, 中文, 日本語, العربية, e outros.\n`;
+
+    // System prompt final: KB (TOON) + histórico antigo (TOON) + contexto + anti-repetição + auto-lang
+    const systemPrompt = (agent.system_prompt || "") + knowledgeContext + compressedHistory + contactContext + antiRepetitionPrompt + autoLangPrompt;
 
     console.log(`[AI-PROCESS] Tokens context: recent_msgs=${recentMessages.length}, older_compressed=${olderMessages.length}, kb_chunks=${linkedDocs?.length || 0}`);
 
