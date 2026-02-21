@@ -12,17 +12,26 @@ import {
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
-import { CheckCircle2, Clock, Calendar, Rocket, Copy, Check, Plus, Trash2 } from "lucide-react";
+import { CheckCircle2, Clock, Calendar, Rocket, Copy, Check, Plus, Trash2, ArrowUp, ArrowRight, ArrowDown, Flame } from "lucide-react";
 import { PageHeader } from "@/components/PageHeader";
 import { toast } from "sonner";
 
 type ModuleStatus = "concluido" | "em_progresso" | "por_iniciar";
+type ModulePriority = "critica" | "alta" | "media" | "baixa";
+
+const priorityConfig: Record<ModulePriority, { label: string; icon: React.ReactNode; className: string; order: number }> = {
+  critica: { label: "Crítica", icon: <Flame className="h-3 w-3" />, className: "border-destructive/60 text-destructive bg-destructive/10", order: 0 },
+  alta: { label: "Alta", icon: <ArrowUp className="h-3 w-3" />, className: "border-orange-500/60 text-orange-600 bg-orange-500/10", order: 1 },
+  media: { label: "Média", icon: <ArrowRight className="h-3 w-3" />, className: "border-primary/40 text-primary bg-primary/10", order: 2 },
+  baixa: { label: "Baixa", icon: <ArrowDown className="h-3 w-3" />, className: "border-muted-foreground/40 text-muted-foreground bg-muted", order: 3 },
+};
 
 interface RoadmapModule {
   name: string;
   description: string;
   progress: number;
   status: ModuleStatus;
+  priority?: ModulePriority;
   details?: string;
   prompt?: string;
   isCustom?: boolean;
@@ -213,6 +222,7 @@ export default function RoadmapPage() {
     details: "",
     prompt: "",
     status: "por_iniciar" as ModuleStatus,
+    priority: "media" as ModulePriority,
     progress: 0,
     phase: "📅 Próximas Etapas",
   });
@@ -256,7 +266,7 @@ export default function RoadmapPage() {
     };
     saveAndSetCustom([...customModules, entry]);
     setShowAddDialog(false);
-    setNewModule({ name: "", description: "", details: "", prompt: "", status: "por_iniciar", progress: 0, phase: "📅 Próximas Etapas" });
+    setNewModule({ name: "", description: "", details: "", prompt: "", status: "por_iniciar", priority: "media", progress: 0, phase: "📅 Próximas Etapas" });
     toast.success(`Módulo "${entry.name}" adicionado ao roadmap.`);
   };
 
@@ -318,7 +328,13 @@ export default function RoadmapPage() {
                   <CardContent className="p-4 space-y-3">
                     <div className="flex items-start justify-between gap-2">
                       <span className="text-sm font-semibold text-foreground leading-tight">{mod.name}</span>
-                      <div className="flex items-center gap-1 shrink-0">
+                      <div className="flex items-center gap-1 shrink-0 flex-wrap justify-end">
+                        {mod.priority && priorityConfig[mod.priority] && (
+                          <Badge variant="outline" className={`text-[10px] gap-0.5 ${priorityConfig[mod.priority].className}`}>
+                            {priorityConfig[mod.priority].icon}
+                            {priorityConfig[mod.priority].label}
+                          </Badge>
+                        )}
                         {mod.isCustom && (
                           <Badge variant="outline" className="text-[10px] border-primary/40 text-primary">Personalizado</Badge>
                         )}
@@ -453,6 +469,18 @@ export default function RoadmapPage() {
                   </SelectContent>
                 </Select>
               </div>
+            </div>
+            <div className="space-y-2">
+              <Label>Prioridade</Label>
+              <Select value={newModule.priority} onValueChange={(v) => setNewModule((p) => ({ ...p, priority: v as ModulePriority }))}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="critica">🔥 Crítica</SelectItem>
+                  <SelectItem value="alta">🔴 Alta</SelectItem>
+                  <SelectItem value="media">🟡 Média</SelectItem>
+                  <SelectItem value="baixa">🟢 Baixa</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
             <div className="space-y-2">
               <Label htmlFor="mod-progress">Progresso (%)</Label>
