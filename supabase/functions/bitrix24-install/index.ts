@@ -668,6 +668,7 @@ Deno.serve(async (req) => {
     // --- Register CRM Detail Tab placements (Lead, Contact, Deal, SPA) ---
     try {
       const crmTabUrl = `${supabaseUrl}/functions/v1/bitrix24-crm-tab`;
+      const paymentTabUrl = `${supabaseUrl}/functions/v1/bitrix24-payment-tab`;
       const crmPlacements = [
         "CRM_LEAD_DETAIL_TAB",
         "CRM_CONTACT_DETAIL_TAB",
@@ -701,6 +702,36 @@ Deno.serve(async (req) => {
           console.log(`[INSTALL] placement.bind ${placement}: OK`);
           installSummary.placements_registered.push(placement);
         }
+      }
+
+      // --- Register Emmely Pay tab on CRM_DEAL_DETAIL_TAB ---
+      try {
+        await callBitrix(clientEndpoint, accessToken, "placement.unbind", {
+          PLACEMENT: "CRM_DEAL_DETAIL_TAB",
+          HANDLER: paymentTabUrl,
+        });
+
+        const payTabResult = await callBitrix(clientEndpoint, accessToken, "placement.bind", {
+          PLACEMENT: "CRM_DEAL_DETAIL_TAB",
+          HANDLER: paymentTabUrl,
+          TITLE: "Emmely Pay",
+          DESCRIPTION: "Controlo de pagamentos do negócio",
+          LANG_ALL: {
+            pt: { TITLE: "Emmely Pay", DESCRIPTION: "Controlo de pagamentos do negócio" },
+            en: { TITLE: "Emmely Pay", DESCRIPTION: "Deal payment control" },
+            es: { TITLE: "Emmely Pay", DESCRIPTION: "Control de pagos del negocio" },
+          },
+        });
+
+        const payTabErr = payTabResult.error || "";
+        if (payTabErr && !String(payTabErr).toLowerCase().includes("already")) {
+          console.error("[INSTALL] placement.bind CRM_DEAL_DETAIL_TAB (pay) error:", payTabErr);
+        } else {
+          console.log("[INSTALL] placement.bind CRM_DEAL_DETAIL_TAB (Emmely Pay): OK");
+          installSummary.placements_registered.push("CRM_DEAL_DETAIL_TAB_PAY");
+        }
+      } catch (payTabErr) {
+        console.error("[INSTALL] Payment tab placement error:", payTabErr);
       }
 
       installSummary.installed_modules.push("crm_tabs");
