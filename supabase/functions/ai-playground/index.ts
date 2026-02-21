@@ -67,7 +67,8 @@ serve(async (req) => {
       }
     }
 
-    const systemPrompt = (agent.system_prompt || "") + knowledgeContext;
+    const autoLangPrompt = `\n\nIDIOMA: Deteta automaticamente o idioma da primeira mensagem do utilizador e responde SEMPRE nesse mesmo idioma durante toda a conversa. Não perguntes o idioma — adapta-te silenciosamente. Suportas: Português, English, Español, Français, Deutsch, Italiano, 中文, 日本語, العربية, e outros.\n`;
+    const systemPrompt = (agent.system_prompt || "") + knowledgeContext + autoLangPrompt;
 
     // Determine API URL and key
     let apiUrl: string;
