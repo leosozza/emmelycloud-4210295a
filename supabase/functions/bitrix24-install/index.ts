@@ -216,6 +216,39 @@ Deno.serve(async (req) => {
     const integrationId = integration.id;
     await debugLog(supabase, integrationId, "install_success", "inbound", { memberId, domain });
 
+    // --- Install summary tracker ---
+    const installSummary: any = {
+      connector_registered: false,
+      bot_id: null,
+      robots_registered: [],
+      placements_registered: [],
+      badges_registered: [],
+      paysystem_handler_registered: false,
+      installed_modules: [],
+      available_scopes: [],
+      missing_scopes: [],
+    };
+
+    // --- Verify scopes via app.info ---
+    try {
+      const appInfo = await callBitrix(clientEndpoint, accessToken, "app.info", {});
+      const scopeList = appInfo.result?.SCOPE || appInfo.result?.scope || [];
+      installSummary.available_scopes = scopeList;
+      const requiredScopes = ["crm", "imopenlines", "imconnector", "im", "imbot", "event", "user", "bizproc", "pay_system", "placement"];
+      installSummary.missing_scopes = requiredScopes.filter(function(s) { return scopeList.indexOf(s) === -1; });
+      if (installSummary.missing_scopes.length > 0) {
+        console.warn("[INSTALL] Missing scopes:", installSummary.missing_scopes.join(", "));
+      } else {
+        console.log("[INSTALL] All required scopes available");
+      }
+      await debugLog(supabase, integrationId, "scope_check", "outbound", {
+        available: scopeList,
+        missing: installSummary.missing_scopes,
+      });
+    } catch (scopeErr) {
+      console.error("[INSTALL] Scope check failed (continuing):", scopeErr);
+    }
+
     // --- Register Connector ---
     try {
       // 1. Register connector
@@ -240,6 +273,8 @@ Deno.serve(async (req) => {
       console.log("[INSTALL] Register connector result:", JSON.stringify(regResult));
 
       const connectorRegistered = !regResult.error || regResult.error === "CONNECTOR_ALREADY_EXISTS";
+      installSummary.connector_registered = connectorRegistered;
+      if (connectorRegistered) installSummary.installed_modules.push("connector");
 
       // 2. Do NOT auto-activate on lines — user must manually enable in Contact Center
       const connectorActive = false;
@@ -390,6 +425,8 @@ Deno.serve(async (req) => {
             .eq("id", integrationId);
 
           console.log("[INSTALL] bot_id saved in config:", finalBotId);
+          installSummary.bot_id = finalBotId;
+          installSummary.installed_modules.push("bot");
         }
 
         await debugLog(supabase, integrationId, "bot_registered", "outbound", { botResult, finalBotId });
@@ -455,8 +492,11 @@ Deno.serve(async (req) => {
           console.error(`[INSTALL] Badge ${badge.code} registration failed:`, badgeResult.error, badgeResult.error_description);
         } else {
           console.log(`[INSTALL] Badge ${badge.code}: registered OK`);
+          installSummary.badges_registered.push(badge.code);
         }
       }
+
+      installSummary.installed_modules.push("badges");
 
       await debugLog(supabase, integrationId, "badges_registered", "outbound", {
         badges: badges.map(b => b.code),
@@ -529,6 +569,21 @@ Deno.serve(async (req) => {
             error: { Name: "Erro", Type: "string" },
           },
         },
+        {
+          CODE: "emmely_execute_flow",
+          NAME: "Emmely: Executar Flow",
+          PROPERTIES: {
+            flow_id: { Name: "ID do Flow", Type: "string", Required: "Y", Description: "UUID do flow a executar" },
+            phone: { Name: "Telefone", Type: "string", Required: "Y", Description: "Número de telefone com código do país" },
+            trigger_message: { Name: "Mensagem Trigger", Type: "string", Description: "Mensagem para iniciar o flow", Default: "iniciar" },
+          },
+          RETURN_PROPERTIES: {
+            status: { Name: "Status", Type: "string" },
+            conversation_id: { Name: "ID da Conversa", Type: "string" },
+            flow_name: { Name: "Nome do Flow", Type: "string" },
+            error: { Name: "Erro", Type: "string" },
+          },
+        },
       ];
 
       for (const robot of robots) {
@@ -551,8 +606,11 @@ Deno.serve(async (req) => {
           console.error(`[INSTALL] Robot ${robot.CODE} registration failed:`, addResult.error, addResult.error_description);
         } else {
           console.log(`[INSTALL] Robot ${robot.CODE}: registered OK`);
+          installSummary.robots_registered.push(robot.CODE);
         }
       }
+
+      installSummary.installed_modules.push("robots");
 
       await debugLog(supabase, integrationId, "robots_setup", "outbound", {
         robotsRegistered: robots.map(r => r.CODE),
@@ -598,6 +656,7 @@ Deno.serve(async (req) => {
         console.error("[INSTALL] placement.bind IM_TEXTAREA error:", plErr, placementResult.error_description);
       } else {
         console.log("[INSTALL] placement.bind IM_TEXTAREA: OK");
+        installSummary.placements_registered.push("IM_TEXTAREA");
       }
 
       await debugLog(supabase, integrationId, "placement_bind", "outbound", { result: placementResult });
@@ -606,36 +665,49 @@ Deno.serve(async (req) => {
       await debugLog(supabase, integrationId, "placement_bind_error", "outbound", null, String(placementError));
     }
 
-    // --- Register CRM_LEAD_DETAIL_TAB placement (Emmely AI tab in Lead detail) ---
+    // --- Register CRM Detail Tab placements (Lead, Contact, Deal, SPA) ---
     try {
       const crmTabUrl = `${supabaseUrl}/functions/v1/bitrix24-crm-tab`;
+      const crmPlacements = [
+        "CRM_LEAD_DETAIL_TAB",
+        "CRM_CONTACT_DETAIL_TAB",
+        "CRM_DEAL_DETAIL_TAB",
+        "CRM_DYNAMIC_DETAIL_TAB",
+      ];
 
-      await callBitrix(clientEndpoint, accessToken, "placement.unbind", {
-        PLACEMENT: "CRM_LEAD_DETAIL_TAB",
-        HANDLER: crmTabUrl,
-      });
+      for (const placement of crmPlacements) {
+        await callBitrix(clientEndpoint, accessToken, "placement.unbind", {
+          PLACEMENT: placement,
+          HANDLER: crmTabUrl,
+        });
 
-      const crmTabResult = await callBitrix(clientEndpoint, accessToken, "placement.bind", {
-        PLACEMENT: "CRM_LEAD_DETAIL_TAB",
-        HANDLER: crmTabUrl,
-        TITLE: "Emmely AI",
-        DESCRIPTION: "Conversa e histórico do cliente",
-        LANG_ALL: {
-          pt: { TITLE: "Emmely AI", DESCRIPTION: "Conversa e histórico do cliente" },
-          en: { TITLE: "Emmely AI", DESCRIPTION: "Conversation and client history" },
-          es: { TITLE: "Emmely AI", DESCRIPTION: "Conversación e historial del cliente" },
-          ru: { TITLE: "Emmely AI", DESCRIPTION: "Переписка и история клиента" },
-        },
-      });
+        const crmTabResult = await callBitrix(clientEndpoint, accessToken, "placement.bind", {
+          PLACEMENT: placement,
+          HANDLER: crmTabUrl,
+          TITLE: "Emmely AI",
+          DESCRIPTION: "Conversa e histórico do cliente",
+          LANG_ALL: {
+            pt: { TITLE: "Emmely AI", DESCRIPTION: "Conversa e histórico do cliente" },
+            en: { TITLE: "Emmely AI", DESCRIPTION: "Conversation and client history" },
+            es: { TITLE: "Emmely AI", DESCRIPTION: "Conversación e historial del cliente" },
+            ru: { TITLE: "Emmely AI", DESCRIPTION: "Переписка и история клиента" },
+          },
+        });
 
-      const crmTabErr = crmTabResult.error || "";
-      if (crmTabErr && !String(crmTabErr).toLowerCase().includes("already")) {
-        console.error("[INSTALL] placement.bind CRM_LEAD_DETAIL_TAB error:", crmTabErr);
-      } else {
-        console.log("[INSTALL] placement.bind CRM_LEAD_DETAIL_TAB: OK");
+        const crmTabErr = crmTabResult.error || "";
+        if (crmTabErr && !String(crmTabErr).toLowerCase().includes("already")) {
+          console.error(`[INSTALL] placement.bind ${placement} error:`, crmTabErr);
+        } else {
+          console.log(`[INSTALL] placement.bind ${placement}: OK`);
+          installSummary.placements_registered.push(placement);
+        }
       }
 
-      await debugLog(supabase, integrationId, "crm_tab_placement_bind", "outbound", { result: crmTabResult });
+      installSummary.installed_modules.push("crm_tabs");
+      await debugLog(supabase, integrationId, "crm_tab_placements_bind", "outbound", {
+        placements: crmPlacements,
+        registered: installSummary.placements_registered,
+      });
     } catch (crmTabError) {
       console.error("[INSTALL] CRM tab placement error:", crmTabError);
       await debugLog(supabase, integrationId, "crm_tab_placement_error", "outbound", null, String(crmTabError));
@@ -758,6 +830,9 @@ Deno.serve(async (req) => {
         }
       }
 
+      installSummary.paysystem_handler_registered = true;
+      installSummary.installed_modules.push("paysystem");
+
       await debugLog(supabase, integrationId, "paysystem_setup", "outbound", {
         handler: "emmely_pay",
         url: paymentHandlerUrl,
@@ -765,6 +840,33 @@ Deno.serve(async (req) => {
     } catch (paySystemError) {
       console.error("[INSTALL] PaySystem setup error:", paySystemError);
       await debugLog(supabase, integrationId, "paysystem_setup_error", "outbound", null, String(paySystemError));
+    }
+
+    // --- Final config merge with install summary ---
+    try {
+      const { data: currentConfig } = await supabase
+        .from("bitrix24_integrations")
+        .select("config")
+        .eq("id", integrationId)
+        .single();
+
+      const existingConfig = currentConfig?.config || {};
+
+      await supabase
+        .from("bitrix24_integrations")
+        .update({
+          config: {
+            ...existingConfig,
+            ...installSummary,
+            install_completed_at: new Date().toISOString(),
+          },
+        })
+        .eq("id", integrationId);
+
+      console.log("[INSTALL] Final config merge complete:", JSON.stringify(installSummary).substring(0, 500));
+      await debugLog(supabase, integrationId, "install_summary", "outbound", installSummary);
+    } catch (configErr) {
+      console.error("[INSTALL] Config merge error:", configErr);
     }
 
     // If called via JSON (from frontend fetch), return JSON
