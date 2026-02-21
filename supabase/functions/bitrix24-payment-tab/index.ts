@@ -231,6 +231,26 @@ function renderPaymentTab(opts: {
     .b24-select:focus { border-color: var(--progress-fill); }
     .b24-btn-emmely { background: #722F37; color: #fff; border: none; padding: 0 14px; height: 32px; border-radius: 4px; font-size: 12px; font-weight: 600; font-family: inherit; cursor: pointer; white-space: nowrap; transition: opacity 0.15s; }
     .b24-btn-emmely:hover { opacity: 0.85; }
+    .b24-btn-primary { background: var(--progress-fill); color: #fff; border: none; padding: 0 16px; height: 32px; border-radius: 4px; font-size: 12px; font-weight: 600; font-family: inherit; cursor: pointer; white-space: nowrap; transition: opacity 0.15s; }
+    .b24-btn-primary:hover { opacity: 0.85; }
+    .b24-btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+    .b24-btn-outline { background: transparent; color: var(--text-primary); border: 1px solid var(--border-color); padding: 0 14px; height: 32px; border-radius: 4px; font-size: 12px; font-weight: 600; font-family: inherit; cursor: pointer; transition: background 0.15s; }
+    .b24-btn-outline:hover { background: var(--bg-page); }
+
+    /* Create form */
+    .b24-create-bar { background: var(--bg-card); border-bottom: 1px solid var(--border-color); padding: 10px 20px; display: flex; justify-content: flex-end; }
+    .b24-form-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.3); z-index: 100; justify-content: center; align-items: center; }
+    .b24-form-overlay.active { display: flex; }
+    .b24-form-card { background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 4px; padding: 20px; width: 400px; max-width: 90vw; max-height: 85vh; overflow-y: auto; }
+    .b24-form-title { font-size: 14px; font-weight: 700; margin-bottom: 16px; color: var(--text-primary); }
+    .b24-form-group { margin-bottom: 12px; }
+    .b24-form-label { display: block; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.3px; color: var(--text-secondary); margin-bottom: 4px; }
+    .b24-input { width: 100%; height: 32px; font-size: 13px; font-family: inherit; border: 1px solid var(--border-color); border-radius: 3px; padding: 0 8px; background: var(--bg-card); color: var(--text-primary); outline: none; box-sizing: border-box; }
+    .b24-input:focus { border-color: var(--progress-fill); }
+    .b24-form-row { display: flex; gap: 10px; }
+    .b24-form-row > * { flex: 1; }
+    .b24-form-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; }
+    .b24-form-hint { font-size: 11px; color: var(--text-secondary); margin-top: 2px; }
 
     /* Empty state */
     .b24-empty { text-align: center; padding: 60px 20px; color: var(--text-secondary); }
@@ -244,6 +264,9 @@ function renderPaymentTab(opts: {
 </head>
 <body>
 <div id="app">
+  <div class="b24-create-bar">
+    <button class="b24-btn-primary" onclick="openCreateForm()">+ Criar Cobrança</button>
+  </div>
   ${noData ? noDataHtml : `
   <div class="b24-summary">
     <div class="b24-summary-title">Emmely Pay — ${(dealTitle || "Negócio").replace(/</g, "&lt;")}</div>
@@ -274,14 +297,135 @@ function renderPaymentTab(opts: {
   <div id="status-msg"></div>
 </div>
 
+<!-- Create Payment Modal -->
+<div class="b24-form-overlay" id="create-overlay">
+  <div class="b24-form-card">
+    <div class="b24-form-title">Criar Cobrança</div>
+    <div class="b24-form-group">
+      <label class="b24-form-label">Valor</label>
+      <input type="number" id="pay-amount" class="b24-input" step="0.01" min="0.01" placeholder="0.00">
+    </div>
+    <div class="b24-form-row">
+      <div class="b24-form-group">
+        <label class="b24-form-label">Moeda</label>
+        <select id="pay-currency" class="b24-input" style="height:32px">
+          <option value="EUR" ${currency === "EUR" ? "selected" : ""}>EUR</option>
+          <option value="BRL" ${currency === "BRL" ? "selected" : ""}>BRL</option>
+        </select>
+      </div>
+      <div class="b24-form-group">
+        <label class="b24-form-label">Método</label>
+        <select id="pay-method" class="b24-input" style="height:32px">
+          <option value="card">Cartão</option>
+          <option value="pix">PIX</option>
+          <option value="boleto">Boleto</option>
+        </select>
+      </div>
+    </div>
+    <div class="b24-form-group">
+      <label class="b24-form-label">Descrição</label>
+      <input type="text" id="pay-desc" class="b24-input" placeholder="${(dealTitle || "Negócio").replace(/"/g, "&quot;")}" value="${(dealTitle || "").replace(/"/g, "&quot;")}">
+    </div>
+    <div class="b24-form-group">
+      <label class="b24-form-label">Nome do cliente</label>
+      <input type="text" id="pay-name" class="b24-input" placeholder="Nome">
+    </div>
+    <div class="b24-form-group">
+      <label class="b24-form-label">Email</label>
+      <input type="email" id="pay-email" class="b24-input" placeholder="email@exemplo.com">
+    </div>
+    <div id="cpf-group" class="b24-form-group" style="display:none">
+      <label class="b24-form-label">CPF/CNPJ</label>
+      <input type="text" id="pay-cpf" class="b24-input" placeholder="000.000.000-00">
+      <div class="b24-form-hint">Obrigatório para cobranças em BRL</div>
+    </div>
+    <div class="b24-form-actions">
+      <button class="b24-btn-outline" onclick="closeCreateForm()">Cancelar</button>
+      <button class="b24-btn-primary" id="pay-submit" onclick="submitPayment()">Criar Cobrança</button>
+    </div>
+    <div id="pay-result" style="margin-top:12px;font-size:12px;display:none"></div>
+  </div>
+</div>
+
 <script>
   var SUPABASE_URL = "${supabaseUrl}";
   var SUPABASE_KEY = "${Deno.env.get("SUPABASE_ANON_KEY") || ""}";
   var MEMBER_ID = "${memberId}";
+  var ENTITY_ID = "${opts.entityId}";
 
   function setStatus(msg, color) {
     var el = document.getElementById('status-msg');
     if (el) { el.textContent = msg; el.style.color = color || 'var(--text-secondary)'; }
+  }
+
+  // Create form
+  function openCreateForm() { document.getElementById('create-overlay').classList.add('active'); }
+  function closeCreateForm() {
+    document.getElementById('create-overlay').classList.remove('active');
+    document.getElementById('pay-result').style.display = 'none';
+  }
+
+  // Toggle CPF field based on currency
+  document.getElementById('pay-currency').addEventListener('change', function() {
+    document.getElementById('cpf-group').style.display = this.value === 'BRL' ? 'block' : 'none';
+  });
+
+  function submitPayment() {
+    var amount = parseFloat(document.getElementById('pay-amount').value);
+    if (!amount || amount <= 0) { showPayResult('Informe um valor válido.', true); return; }
+
+    var currency = document.getElementById('pay-currency').value;
+    var method = document.getElementById('pay-method').value;
+    var desc = document.getElementById('pay-desc').value || 'Pagamento';
+    var name = document.getElementById('pay-name').value;
+    var email = document.getElementById('pay-email').value;
+    var cpf = document.getElementById('pay-cpf').value;
+
+    if (currency === 'BRL' && !cpf) { showPayResult('CPF/CNPJ é obrigatório para BRL.', true); return; }
+    if (currency === 'BRL' && amount < 5) { showPayResult('Valor mínimo para BRL é R$ 5,00.', true); return; }
+
+    var btn = document.getElementById('pay-submit');
+    btn.disabled = true;
+    btn.textContent = 'A criar...';
+
+    fetch(SUPABASE_URL + '/functions/v1/payment-create', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_KEY },
+      body: JSON.stringify({
+        amount: amount,
+        currency: currency,
+        payment_method: method,
+        description: desc,
+        customer_data: { name: name, email: email, cpf_cnpj: cpf || undefined },
+        metadata: { bitrix_deal_id: ENTITY_ID, source: 'bitrix24_payment_tab' }
+      })
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      btn.disabled = false;
+      btn.textContent = 'Criar Cobrança';
+      if (d.error) { showPayResult('Erro: ' + d.error, true); return; }
+      var tx = d.transaction;
+      var msg = 'Cobrança criada com sucesso!';
+      if (tx && tx.payment_url) {
+        msg += ' <a href="' + tx.payment_url + '" target="_blank" class="b24-link">Abrir link de pagamento</a>';
+      }
+      showPayResult(msg, false);
+      // Reload after 2s to show new transaction
+      setTimeout(function() { location.reload(); }, 2500);
+    })
+    .catch(function(e) {
+      btn.disabled = false;
+      btn.textContent = 'Criar Cobrança';
+      showPayResult('Erro: ' + e.message, true);
+    });
+  }
+
+  function showPayResult(msg, isError) {
+    var el = document.getElementById('pay-result');
+    el.innerHTML = msg;
+    el.style.display = 'block';
+    el.style.color = isError ? 'var(--value-open)' : 'var(--value-paid)';
   }
 
   function triggerFlow(installmentId, phone, installmentNum) {
@@ -312,12 +456,10 @@ function renderPaymentTab(opts: {
   function applyTheme(isDark) {
     document.body.classList.toggle('dark', isDark);
   }
-  // Layer 1: system preference
   if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
     applyTheme(true);
   }
   window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', function(e) { applyTheme(e.matches); });
-  // Layer 2: postMessage from Bitrix24
   window.addEventListener('message', function(e) {
     if (!e.data || typeof e.data !== 'object') return;
     var d = e.data;
