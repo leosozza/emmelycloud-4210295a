@@ -543,9 +543,11 @@ Deno.serve(async (req) => {
           PROPERTIES: {
             amount: { Name: "Valor", Type: "double", Required: "Y", Description: "Valor da cobrança" },
             currency: { Name: "Moeda", Type: "select", Required: "Y", Options: { EUR: "EUR", BRL: "BRL" }, Default: "EUR" },
+            gateway: { Name: "Gateway", Type: "select", Options: { auto: "Automático (por moeda)", stripe: "Stripe", asaas: "Asaas" }, Default: "auto", Description: "Automático: EUR→Stripe, BRL→Asaas" },
             payment_method: { Name: "Método de Pagamento", Type: "select", Options: { card: "Cartão", pix: "PIX", boleto: "Boleto" }, Default: "card" },
             customer_name: { Name: "Nome do Cliente", Type: "string" },
             customer_email: { Name: "Email do Cliente", Type: "string" },
+            customer_cpf: { Name: "CPF/CNPJ", Type: "string", Description: "Obrigatório para Asaas (BRL)" },
             description: { Name: "Descrição", Type: "string" },
           },
           RETURN_PROPERTIES: {
@@ -553,6 +555,7 @@ Deno.serve(async (req) => {
             charge_status: { Name: "Status", Type: "string" },
             payment_url: { Name: "URL de Pagamento", Type: "string" },
             pix_code: { Name: "Código PIX", Type: "string" },
+            gateway_used: { Name: "Gateway Utilizado", Type: "string" },
             error: { Name: "Erro", Type: "string" },
           },
         },
