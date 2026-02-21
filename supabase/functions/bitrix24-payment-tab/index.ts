@@ -131,7 +131,7 @@ function renderPaymentTab(opts: {
           ${inst.paid_at ? `<span>Pago: ${formatDate(inst.paid_at)}</span>` : ""}
         </div>
         ${inst.description ? `<div class="b24-item-desc">${inst.description}</div>` : ""}
-        ${inst.payment_url && inst.status !== "paga" ? `<a href="${inst.payment_url}" target="_blank" class="b24-link">Link de pagamento</a>` : ""}
+        ${inst.payment_url && inst.status !== "paga" ? `<div class="b24-link-row"><a href="${inst.payment_url}" target="_blank" class="b24-link">Link de pagamento</a><button class="b24-btn-copy" onclick="copyLink(this,'${inst.payment_url.replace(/'/g, "\\'")}')" title="Copiar link"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button></div>` : ""}
         ${inst.status !== "paga" && contactPhone && flows.length > 0 ? `
           <div class="b24-item-actions">
             <select id="flow-${inst.id}" class="b24-select">
@@ -222,8 +222,13 @@ function renderPaymentTab(opts: {
     }
     .b24-item-meta { display: flex; gap: 16px; font-size: 12px; color: var(--text-secondary); margin-bottom: 4px; }
     .b24-item-desc { font-size: 12px; color: var(--text-secondary); margin-bottom: 6px; }
+    .b24-link-row { display: flex; align-items: center; gap: 6px; margin-bottom: 2px; }
     .b24-link { font-size: 12px; color: var(--link-color); text-decoration: none; font-weight: 600; }
     .b24-link:hover { text-decoration: underline; }
+    .b24-btn-copy { background: transparent; border: 1px solid var(--border-color); border-radius: 3px; padding: 3px 5px; cursor: pointer; color: var(--text-secondary); display: inline-flex; align-items: center; transition: all 0.15s; }
+    .b24-btn-copy:hover { background: var(--bg-page); color: var(--text-primary); }
+    .b24-btn-copy.copied { border-color: #589731; color: #589731; }
+    body.dark .b24-btn-copy.copied { border-color: #8bc34a; color: #8bc34a; }
 
     /* Actions */
     .b24-item-actions { display: flex; gap: 6px; align-items: center; margin-top: 8px; }
@@ -356,6 +361,17 @@ function renderPaymentTab(opts: {
   function setStatus(msg, color) {
     var el = document.getElementById('status-msg');
     if (el) { el.textContent = msg; el.style.color = color || 'var(--text-secondary)'; }
+  }
+
+  function copyLink(btn, url) {
+    navigator.clipboard.writeText(url).then(function() {
+      btn.classList.add('copied');
+      btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>';
+      setTimeout(function() {
+        btn.classList.remove('copied');
+        btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
+      }, 2000);
+    }).catch(function() { setStatus('Erro ao copiar link', 'var(--value-open)'); });
   }
 
   // Create form
