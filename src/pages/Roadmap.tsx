@@ -3,10 +3,16 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
 import {
   Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
-import { CheckCircle2, Clock, Calendar, Rocket, Copy, Check } from "lucide-react";
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from "@/components/ui/select";
+import { CheckCircle2, Clock, Calendar, Rocket, Copy, Check, Plus, Trash2 } from "lucide-react";
 import { PageHeader } from "@/components/PageHeader";
 import { toast } from "sonner";
 
@@ -19,6 +25,7 @@ interface RoadmapModule {
   status: ModuleStatus;
   details?: string;
   prompt?: string;
+  isCustom?: boolean;
 }
 
 interface RoadmapPhase {
@@ -27,7 +34,20 @@ interface RoadmapPhase {
   modules: RoadmapModule[];
 }
 
-const phases: RoadmapPhase[] = [
+const STORAGE_KEY = "emmely_roadmap_custom_modules";
+
+function loadCustomModules(): RoadmapModule[] {
+  try {
+    const saved = localStorage.getItem(STORAGE_KEY);
+    return saved ? JSON.parse(saved) : [];
+  } catch { return []; }
+}
+
+function saveCustomModules(modules: RoadmapModule[]) {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(modules));
+}
+
+const defaultPhases: RoadmapPhase[] = [
   {
     title: "✅ Concluído",
     icon: <CheckCircle2 className="h-5 w-5 text-success" />,
@@ -127,76 +147,18 @@ const phases: RoadmapPhase[] = [
       },
       { name: "Cobranças Automáticas", description: "Envio automático de links de pagamento e lembretes", progress: 0, status: "por_iniciar",
         details: "Sistema para enviar automaticamente links de pagamento e lembretes de vencimento para clientes via WhatsApp/Email.",
-        prompt: "Implementar sistema de cobranças automáticas. 1) Criar edge function 'payment-reminder' que: busca financial_records com status 'pendente' e due_date próximo (3 dias, 1 dia, no dia), gera link de pagamento via payment-create se não existir, envia mensagem ao cliente via callbell-send com o link de pagamento. 2) Criar edge function 'payment-overdue-check' que: busca parcelas vencidas (due_date < hoje e status='pendente'), atualiza status para 'atrasada', envia notificação de atraso ao cliente. 3) Na página /financeiro, adicionar botão 'Enviar Cobrança' em cada parcela pendente para envio manual. 4) Criar configuração de templates de mensagem de cobrança na tabela quick_replies com categoria 'cobranca'. 5) Na Central de Integrações, adicionar configuração de dias de antecedência para lembrete automático."
+        prompt: "Implementar cobranças automáticas. 1) Criar edge function 'payment-reminder' que: busca financial_records com status 'pendente' ou 'vencendo' e due_date próximo (3 dias, 1 dia, no dia), gera link de pagamento via payment-create, envia mensagem com link ao cliente via callbell-send (WhatsApp). 2) Criar um CRON trigger no fluxo (trigger_type='cron', trigger_value='0 9 * * *') que executa diariamente às 9h. 3) Personalizar a mensagem com: nome do cliente, valor, data de vencimento, link de pagamento. 4) Na página Financeiro, adicionar botão 'Enviar Cobrança' manual por parcela. 5) Registar cada envio na tabela messages vinculada à conversa do cliente. 6) Dashboard: card com total de cobranças enviadas no mês."
       },
-      { name: "Dashboard Financeiro", description: "Faturamento, inadimplência, previsões, gráficos", progress: 0, status: "por_iniciar",
-        details: "Dashboard financeiro com visão completa de faturamento, inadimplência, previsões de receita e gráficos analíticos.",
-        prompt: "Criar dashboard financeiro completo na página /financeiro com aba 'Dashboard'. 1) KPIs: receita total do mês, receita acumulada do ano, taxa de inadimplência (%), valor em atraso total, ticket médio por contrato. 2) Gráficos (recharts): receita mensal (bar chart, últimos 12 meses), receita por área jurídica (pie chart), evolução da inadimplência (line chart), previsão de receita dos próximos 3 meses (baseada em parcelas futuras). 3) Tabela 'Top 10 Devedores' com nome do cliente, valor em atraso, dias de atraso. 4) Filtro de período (PeriodFilter existente). 5) Buscar dados das tabelas financial_records, contracts, proposals, cases, clients via joins. 6) Calcular previsão somando installment_value de financial_records com due_date futura e status='pendente'."
+      { name: "WhatsApp Templates (HSM)", description: "Templates oficiais para mensagens proativas", progress: 0, status: "por_iniciar",
+        details: "Gestão de templates HSM do WhatsApp Business para envio de mensagens proativas (notificações, cobranças, confirmações).",
+        prompt: "Implementar gestão de templates HSM do WhatsApp Business. 1) Criar tabela 'whatsapp_templates' com: id, name, language, category (MARKETING/UTILITY/AUTHENTICATION), status (PENDING/APPROVED/REJECTED), components (jsonb - header, body, footer, buttons), meta_template_id, created_at. RLS: authenticated full access. 2) Criar página /integracoes/whatsapp-templates com CRUD de templates. 3) Criar edge function 'whatsapp-template-submit' que submete o template para aprovação via Meta API (POST /{WABA_ID}/message_templates). 4) Criar edge function 'whatsapp-template-send' que envia uma mensagem usando template aprovado a um contacto. 5) Na Central de Atendimento, adicionar botão 'Enviar Template' que abre selector de templates com preview e preenchimento de variáveis."
       },
-      { name: "Monitor de Integrações", description: "Dashboard de saúde: gateways, Bitrix24, provedores IA, Callbell", progress: 0, status: "por_iniciar",
-        details: "Dashboard centralizado para monitorar o estado de saúde de todas as integrações externas: gateways de pagamento, Bitrix24, provedores de IA e Callbell. Com indicadores visuais de status e alertas.",
-        prompt: "Criar página /monitoramento com dashboard de saúde das integrações. 1) Card por integração mostrando: nome, status (online/offline/degradado), último check, latência média. Integrações a monitorar: a) Callbell: verificar via edge function 'callbell-status' existente. b) Bitrix24: verificar token válido em bitrix24_integrations (expires_at > now()). c) Stripe: verificar via API /v1/balance. d) Asaas: verificar via API /api/v3/finance/balance. e) Provedores IA: fazer health check chamando cada provedor com uma mensagem simples. 2) Criar edge function 'integration-health-check' que testa cada integração e retorna o status. 3) Tabela com os últimos 50 erros de bitrix24_debug_logs. 4) Gráfico de uptime das últimas 24h por integração. 5) Botão 'Testar Agora' para cada integração. 6) Badge de status na sidebar (verde/amarelo/vermelho) com contagem de integrações com problemas."
+      { name: "Webchat Widget Embeddable", description: "Widget de chat para websites com customização", progress: 0, status: "por_iniciar",
+        details: "Widget de chat embeddable que pode ser instalado em qualquer website para atendimento via Emmely AI.",
+        prompt: "Implementar widget de webchat embeddable. 1) Criar componente WebchatWidget.tsx standalone (React) com: botão flutuante, janela de chat expansível, input de mensagem, lista de mensagens, indicador de digitação. 2) Criar edge function 'webchat-init' que cria uma conversa (channel='webchat') e retorna conversation_id + token. 3) Criar edge function 'webchat-message' que recebe mensagens do widget, salva em messages, e dispara a resposta do agente IA. 4) Usar SSE (Server-Sent Events) ou polling para receber respostas em tempo real. 5) Gerar snippet de embed: <script src='https://emmely.app/widget.js' data-key='...'></script>. 6) Customização via data attributes: cor primária, posição, mensagem de boas-vindas, avatar. 7) Página de configuração em /integracoes/webchat com preview e código de embed."
       },
-      { name: "Alertas de Falhas", description: "Notificações automáticas quando uma integração falha", progress: 0, status: "por_iniciar",
-        details: "Sistema de alertas que notifica administradores quando uma integração falha ou fica degradada.",
-        prompt: "Implementar sistema de alertas de falhas de integrações. 1) Criar tabela 'integration_alerts' com: id, integration_name, alert_type (error/warning/recovery), message, details (jsonb), acknowledged_at, created_at. RLS para admins. 2) Na edge function 'integration-health-check', ao detectar falha, inserir alerta na tabela. 3) Criar componente NotificationBell.tsx no AppHeader que mostra badge com contagem de alertas não reconhecidos, e dropdown com a lista de alertas recentes. 4) Ao clicar num alerta, marcar como reconhecido (acknowledged_at = now()). 5) Opcionalmente enviar email ao admin quando há falha crítica (usando uma edge function 'send-alert-email'). 6) Na página /monitoramento, mostrar timeline de alertas com filtro por integração e tipo."
-      },
-      { name: "Logs & Auditoria", description: "Histórico de ações, erros e eventos de todas as integrações", progress: 0, status: "por_iniciar",
-        details: "Sistema centralizado de logs e auditoria para todas as ações do sistema, integrações e erros, com busca e filtros avançados.",
-        prompt: "Implementar sistema de logs e auditoria centralizado. 1) Criar tabela 'audit_logs' com: id, user_id, action (text), entity_type (text), entity_id (uuid), old_values (jsonb), new_values (jsonb), ip_address (text), created_at. RLS para admins. 2) Criar edge function 'audit-log' que insere registos de auditoria. 3) Nos principais endpoints (ai-playground, callbell-webhook, bitrix24-events, payment-create), adicionar logging automático. 4) Na página /monitoramento, adicionar aba 'Logs' com: tabela paginada de logs, filtros por ação/entidade/utilizador/período, busca por texto, exportação CSV. 5) Agregar logs existentes da bitrix24_debug_logs na mesma visualização. 6) Adicionar contagem de erros por hora nas últimas 24h (sparkline chart)."
-      },
-      { name: "Triagem com IA", description: "Classificação automática de leads + score de viabilidade", progress: 0, status: "por_iniciar",
-        details: "Sistema de triagem automática que usa IA para classificar leads por viabilidade jurídica, urgência e score, baseado nas notas, conversas e dados do lead.",
-        prompt: "Implementar triagem automática de leads com IA. 1) Criar edge function 'ai-triage' que recebe lead_id, busca todos os dados do lead (notas, conversas, área jurídica, país), monta um prompt pedindo ao LLM para classificar: ai_score (0-100), ai_viability (viável/inviável/inconclusivo), urgency (alta/média/baixa), e uma justificação. Usar Emmely AI (google/gemini-3-flash-preview). 2) Atualizar os campos ai_score, ai_viability e urgency do lead com o resultado. 3) Na página /triagem, mostrar todos os leads com funnel_stage='triagem', ordenados por ai_score (desc), com badges coloridas para viabilidade e urgência. 4) Botão 'Triar com IA' individual e 'Triar Todos' para processar em lote. 5) Na ficha do Lead, mostrar secção 'Análise IA' com o score, viabilidade, urgência e justificação. 6) Adicionar coluna 'ai_justification' (text) na tabela leads via migração."
-      },
-      { name: "IA Resumo de Conversas", description: "Resumo automático de chats para ficha do lead", progress: 0, status: "por_iniciar",
-        details: "Gerar resumos automáticos de conversas usando IA para incluir na ficha do lead e facilitar o acompanhamento.",
-        prompt: "Implementar resumo automático de conversas com IA. 1) Criar edge function 'ai-summarize-conversation' que recebe conversation_id, busca todas as mensagens da conversa, envia ao LLM (Emmely AI - google/gemini-3-flash-preview) com prompt: 'Resuma esta conversa de atendimento jurídico em 3-5 pontos principais. Identifique: assunto principal, dados do cliente mencionados, área jurídica, próximos passos sugeridos.' 2) Retornar o resumo estruturado. 3) Na Central de Atendimento (ChatPanel), adicionar botão 'Resumir' no header da conversa que chama a função e mostra o resumo num dialog. 4) Opção de salvar o resumo nas notas do lead vinculado à conversa. 5) Na ficha do Lead (LeadSheet), mostrar resumos das conversas vinculadas. 6) Adicionar campo 'ai_summary' (text) na tabela conversations via migração."
-      },
-      { name: "IA Análise Documental", description: "Extração inteligente de dados de documentos", progress: 0, status: "por_iniciar",
-        details: "Análise inteligente de documentos enviados pelos clientes para extrair dados relevantes (nomes, datas, números de processo, etc.).",
-        prompt: "Implementar análise documental com IA. 1) Criar edge function 'ai-analyze-document' que recebe document_id (da base de conhecimento), busca o conteúdo do documento, e usa IA (Emmely AI) para extrair: dados pessoais (nome, NIF, data nascimento), datas relevantes, valores monetários, referências de processos, área jurídica identificada, e resumo do documento. 2) Retornar resultado estruturado em JSON. 3) Na página /training, adicionar botão 'Analisar com IA' em cada documento que mostra os dados extraídos num dialog. 4) Opção de criar lead automaticamente com os dados extraídos. 5) Salvar a análise no campo metadata do knowledge_documents."
-      },
-    ],
-  },
-  {
-    title: "🚀 Futuro",
-    icon: <Rocket className="h-5 w-5 text-accent" />,
-    modules: [
-      { name: "Portal de Desenvolvedor", description: "Página com docs interativas, exemplos, SDK e playground", progress: 0, status: "por_iniciar",
-        details: "Portal completo para desenvolvedores com documentação interativa, playground para testar APIs, exemplos de código e SDK.",
-        prompt: "Criar portal de desenvolvedor com documentação interativa. 1) Página /developer com: aba 'API Reference' (documentação gerada), aba 'Playground' (formulário para testar endpoints com resposta em tempo real), aba 'Webhooks' (logs de webhooks recebidos em tempo real), aba 'SDK' (exemplos de código em JavaScript, Python, curl). 2) No Playground: selector de endpoint, editor de body JSON, botão enviar, visualização da resposta formatada. 3) Na aba Webhooks: streaming de eventos usando Supabase Realtime na tabela bitrix24_debug_logs. 4) Gerar API keys para acesso externo (tabela 'api_keys' com: id, name, key_hash, permissions, created_by, expires_at, last_used_at). 5) Rate limiting info por endpoint."
-      },
-      { name: "IA Previsão Inadimplência", description: "Score de risco financeiro baseado em histórico", progress: 0, status: "por_iniciar",
-        details: "Modelo de IA para prever risco de inadimplência baseado no histórico de pagamentos, perfil do cliente e padrões comportamentais.",
-        prompt: "Implementar previsão de inadimplência com IA. 1) Criar edge function 'ai-risk-score' que recebe client_id, busca histórico de pagamentos (financial_records), contratos, e perfil do cliente, e usa IA (Emmely AI) para calcular: risk_score (0-100, onde 100=alto risco), risk_factors (lista de fatores), recommendation (ação sugerida). 2) Na ficha do Cliente, mostrar badge de risco com cor (verde <30, amarelo 30-70, vermelho >70). 3) No dashboard financeiro, mostrar lista de clientes de alto risco. 4) Adicionar campo 'risk_score' (numeric) na tabela clients via migração."
-      },
-      { name: "IA Sugestão Honorários", description: "Valores sugeridos baseados em histórico e mercado", progress: 0, status: "por_iniciar",
-        details: "IA que sugere valores de honorários baseado no histórico de propostas aceites, tipo de serviço, complexidade do caso e perfil do cliente.",
-        prompt: "Implementar sugestão de honorários com IA. 1) Criar edge function 'ai-fee-suggestion' que recebe: legal_area, service_id (opcional), case_complexity (simples/médio/complexo), client_country. 2) Busca histórico de propostas aceites (proposals com status='aceita') para casos similares. 3) Usa IA para sugerir: valor_minimo, valor_sugerido, valor_maximo, justificação, e comparação com o histórico. 4) No formulário de Propostas (PropostaForm), adicionar botão 'Sugerir Valor com IA' que preenche o campo de valor automaticamente com tooltip mostrando a faixa e justificação."
-      },
-      { name: "IA Multi-Agente Orquestrado", description: "Routing automático entre agentes especializados", progress: 0, status: "por_iniciar",
-        details: "Sistema de orquestração que roteia automaticamente conversas entre agentes especializados (cidadania, previdência, trabalhista, etc.) baseado na intenção detectada.",
-        prompt: "Implementar orquestração multi-agente. 1) Criar edge function 'ai-agent-router' que recebe a mensagem do cliente e o histórico, usa IA para detectar a intenção/área jurídica, e seleciona o agente especializado mais adequado usando os routing_rules e sub_agent_ids configurados no agente principal. 2) Se nenhum sub-agente for adequado, manter no agente default. 3) Na tabela conversations, adicionar campo 'current_agent_id' para tracking. 4) Ao trocar de agente, inserir mensagem de sistema na conversa ('Transferido para agente de Cidadania'). 5) Na UI do Atendimento, mostrar qual agente está ativo na conversa com opção de trocar manualmente. 6) Configuração dos routing_rules no formulário de Agentes: condições (área jurídica, palavras-chave, idioma) → agente destino."
-      },
-      { name: "Bitrix24 Multi-Portal", description: "Suporte a múltiplos portais Bitrix24 simultâneos", progress: 0, status: "por_iniciar",
-        details: "Suporte para conectar e gerir múltiplos portais Bitrix24 simultaneamente, com routing de mensagens por portal.",
-        prompt: "Implementar suporte multi-portal Bitrix24. 1) A tabela bitrix24_integrations já suporta múltiplos registos (por member_id). 2) Adicionar selector de portal ativo na Central de Integrações. 3) Nas edge functions de Bitrix24, resolver o portal correto baseado no member_id do evento. 4) No mapeamento de canais (bitrix24_channel_mappings), filtrar por integration_id. 5) Na UI de configuração, mostrar lista de portais conectados com status de cada um. 6) Adicionar campo 'portal_name' na tabela bitrix24_integrations para identificação visual."
-      },
-      { name: "Bitrix24 Auto-Reparo", description: "Reconexão automática e health checks do conector", progress: 0, status: "por_iniciar",
-        details: "Sistema de auto-reparo que deteta quando o conector Bitrix24 está desconectado ou com token expirado e tenta reconectar automaticamente.",
-        prompt: "Implementar auto-reparo do conector Bitrix24. 1) Criar edge function 'bitrix24-health-check' que verifica: token não expirado, conector registado e ativo, endpoint acessível. 2) Se o token está expirado, tentar refresh automático usando refresh_token. 3) Se o conector está inativo, tentar re-registar. 4) Criar cron job (pg_cron ou edge function scheduled) que executa o health check a cada 15 minutos. 5) Se falhar após 3 tentativas, criar alerta na tabela integration_alerts. 6) Na página de monitoramento, mostrar histórico de health checks e reconexões."
-      },
-      { name: "App Marketplace Bitrix24", description: "Aplicativo publicado no marketplace oficial", progress: 0, status: "por_iniciar",
-        details: "Preparar e publicar o Emmely Cloud como aplicativo oficial no marketplace do Bitrix24.",
-        prompt: "Preparar o Emmely Cloud para publicação no marketplace Bitrix24. 1) Criar landing page /bitrix24 com: descrição do app, funcionalidades, screenshots, botão de instalação. 2) Implementar fluxo de instalação OAuth completo conforme requisitos do marketplace (já parcialmente implementado em bitrix24-install). 3) Criar página de configuração embutida (iframe) em /bitrix24-app (já existe Bitrix24App.tsx). 4) Adicionar suporte a desinstalação (evento ONAPPUNINSTALL). 5) Gerar documentação de integração para submissão ao marketplace. 6) Implementar sandbox/teste mode para review do Bitrix24."
-      },
-      { name: "PDF Propostas/Contratos", description: "Geração automática de PDFs personalizados", progress: 0, status: "por_iniciar",
-        details: "Geração automática de PDFs de propostas e contratos com dados preenchidos, logo do escritório e layout profissional.",
-        prompt: "Implementar geração de PDF para propostas e contratos. 1) Criar edge function 'generate-pdf' que recebe entity_type ('proposal' ou 'contract') e entity_id. 2) Buscar todos os dados relacionados (proposta/contrato + caso + lead/cliente + serviço). 3) Usar uma biblioteca como jsPDF ou html-pdf para gerar o PDF com: cabeçalho com logo e dados do escritório, dados do cliente, descrição do serviço, valores e condições de pagamento, campo para assinatura, rodapé com avisos legais. 4) Fazer upload do PDF para o storage bucket. 5) Na ficha da Proposta e do Contrato, adicionar botão 'Gerar PDF' e 'Download PDF'. 6) Usar os campos contract_intro, contract_details e budget_details da tabela services como templates."
-      },
-      { name: "Assinatura Digital", description: "Contratos assinados digitalmente com certificado", progress: 0, status: "por_iniciar",
-        details: "Sistema de assinatura digital de contratos usando certificado digital qualificado ou assinatura simplificada por email/SMS.",
+      { name: "Assinatura Digital de Contratos", description: "Assinatura eletrónica com validade jurídica", progress: 0, status: "por_iniciar",
+        details: "Sistema de assinatura digital de contratos com captura de IP, timestamp e dados do signatário para validade jurídica.",
         prompt: "Implementar assinatura digital de contratos. 1) Criar fluxo de assinatura simplificada: gerar link único de assinatura para o cliente, página pública /sign/:token com visualização do contrato PDF e botão 'Assinar', capturar IP, user-agent e timestamp como prova. 2) Criar tabela 'digital_signatures' com: id, contract_id, signer_name, signer_email, signer_phone, ip_address, user_agent, signature_data (jsonb), signed_at. RLS: service role full access + authenticated read. 3) Ao assinar, atualizar contract.status='assinado' e contract.signed_at. 4) Enviar link de assinatura ao cliente via callbell-send. 5) Gerar certificado de assinatura em PDF como comprovativo. 6) Na ficha do Contrato, mostrar status da assinatura e histórico."
       },
       { name: "Relatórios Avançados", description: "Benchmarks, previsão de faturamento, exportações", progress: 0, status: "por_iniciar",
@@ -223,20 +185,58 @@ const phases: RoadmapPhase[] = [
   },
 ];
 
-const allModules = phases.flatMap((p) => p.modules);
-const overallProgress = Math.round(
-  allModules.reduce((sum, m) => sum + m.progress, 0) / allModules.length
-);
-
 const statusConfig: Record<ModuleStatus, { label: string; variant: "default" | "secondary" | "outline"; className: string }> = {
   concluido: { label: "Concluído", variant: "default", className: "bg-success text-success-foreground" },
   em_progresso: { label: "Em progresso", variant: "default", className: "bg-primary text-primary-foreground" },
   por_iniciar: { label: "Por iniciar", variant: "secondary", className: "" },
 };
 
+const phaseOptions: { value: string; label: string }[] = [
+  { value: "✅ Concluído", label: "✅ Concluído" },
+  { value: "🔧 Em Progresso", label: "🔧 Em Progresso" },
+  { value: "📅 Próximas Etapas", label: "📅 Próximas Etapas" },
+];
+
 export default function RoadmapPage() {
   const [selectedModule, setSelectedModule] = useState<RoadmapModule | null>(null);
   const [copied, setCopied] = useState(false);
+  const [customModules, setCustomModules] = useState<(RoadmapModule & { phase: string })[]>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY);
+      return saved ? JSON.parse(saved) : [];
+    } catch { return []; }
+  });
+  const [showAddDialog, setShowAddDialog] = useState(false);
+  const [newModule, setNewModule] = useState({
+    name: "",
+    description: "",
+    details: "",
+    prompt: "",
+    status: "por_iniciar" as ModuleStatus,
+    progress: 0,
+    phase: "📅 Próximas Etapas",
+  });
+
+  const saveAndSetCustom = (modules: (RoadmapModule & { phase: string })[]) => {
+    setCustomModules(modules);
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(modules));
+  };
+
+  // Merge default phases with custom modules
+  const phases: RoadmapPhase[] = defaultPhases.map((phase) => ({
+    ...phase,
+    modules: [
+      ...phase.modules,
+      ...customModules
+        .filter((m) => m.phase === phase.title)
+        .map(({ phase: _, ...mod }) => ({ ...mod, isCustom: true })),
+    ],
+  }));
+
+  const allModules = phases.flatMap((p) => p.modules);
+  const overallProgress = Math.round(
+    allModules.reduce((sum, m) => sum + m.progress, 0) / allModules.length
+  );
 
   const copyPrompt = (prompt: string) => {
     navigator.clipboard.writeText(prompt);
@@ -245,9 +245,35 @@ export default function RoadmapPage() {
     setTimeout(() => setCopied(false), 2000);
   };
 
+  const handleAddModule = () => {
+    if (!newModule.name.trim()) {
+      toast.error("O nome do módulo é obrigatório.");
+      return;
+    }
+    const entry = {
+      ...newModule,
+      isCustom: true,
+    };
+    saveAndSetCustom([...customModules, entry]);
+    setShowAddDialog(false);
+    setNewModule({ name: "", description: "", details: "", prompt: "", status: "por_iniciar", progress: 0, phase: "📅 Próximas Etapas" });
+    toast.success(`Módulo "${entry.name}" adicionado ao roadmap.`);
+  };
+
+  const handleDeleteModule = (moduleName: string) => {
+    saveAndSetCustom(customModules.filter((m) => m.name !== moduleName));
+    setSelectedModule(null);
+    toast.success("Módulo removido do roadmap.");
+  };
+
   return (
     <div className="space-y-8">
-      <PageHeader title="Roadmap" description="Progresso de desenvolvimento do Emmely Cloud — clique num módulo para ver detalhes e copiar o prompt" />
+      <PageHeader title="Roadmap" description="Progresso de desenvolvimento do Emmely Cloud — clique num módulo para ver detalhes e copiar o prompt">
+        <Button onClick={() => setShowAddDialog(true)} className="gap-2">
+          <Plus className="h-4 w-4" />
+          Novo Módulo
+        </Button>
+      </PageHeader>
 
       {/* Overall progress */}
       <Card>
@@ -286,15 +312,20 @@ export default function RoadmapPage() {
               return (
                 <Card
                   key={mod.name}
-                  className={`transition-shadow ${hasPrompt ? "hover:shadow-md cursor-pointer hover:ring-1 hover:ring-primary/30" : "hover:shadow-sm"}`}
-                  onClick={() => hasPrompt && setSelectedModule(mod)}
+                  className={`transition-shadow ${hasPrompt || mod.isCustom ? "hover:shadow-md cursor-pointer hover:ring-1 hover:ring-primary/30" : "hover:shadow-sm"}`}
+                  onClick={() => (hasPrompt || mod.isCustom) && setSelectedModule(mod)}
                 >
                   <CardContent className="p-4 space-y-3">
                     <div className="flex items-start justify-between gap-2">
                       <span className="text-sm font-semibold text-foreground leading-tight">{mod.name}</span>
-                      <Badge variant={cfg.variant} className={`shrink-0 text-[10px] ${cfg.className}`}>
-                        {cfg.label}
-                      </Badge>
+                      <div className="flex items-center gap-1 shrink-0">
+                        {mod.isCustom && (
+                          <Badge variant="outline" className="text-[10px] border-primary/40 text-primary">Personalizado</Badge>
+                        )}
+                        <Badge variant={cfg.variant} className={`text-[10px] ${cfg.className}`}>
+                          {cfg.label}
+                        </Badge>
+                      </div>
                     </div>
                     <p className="text-xs text-muted-foreground">{mod.description}</p>
                     <div className="flex items-center gap-2">
@@ -323,6 +354,9 @@ export default function RoadmapPage() {
                   <Badge variant={statusConfig[selectedModule.status].variant} className={`text-[10px] ${statusConfig[selectedModule.status].className}`}>
                     {statusConfig[selectedModule.status].label}
                   </Badge>
+                  {selectedModule.isCustom && (
+                    <Badge variant="outline" className="text-[10px] border-primary/40 text-primary">Personalizado</Badge>
+                  )}
                 </div>
                 <DialogDescription>{selectedModule.description}</DialogDescription>
               </DialogHeader>
@@ -361,8 +395,85 @@ export default function RoadmapPage() {
                 <Progress value={selectedModule.progress} className="h-2 flex-1" />
                 <span className="text-xs font-medium text-muted-foreground">{selectedModule.progress}%</span>
               </div>
+
+              {selectedModule.isCustom && (
+                <div className="pt-2 border-t">
+                  <Button
+                    variant="destructive"
+                    size="sm"
+                    className="gap-1.5"
+                    onClick={() => handleDeleteModule(selectedModule.name)}
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                    Remover Módulo
+                  </Button>
+                </div>
+              )}
             </>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Add Module Dialog */}
+      <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Novo Módulo</DialogTitle>
+            <DialogDescription>Adicione um novo módulo ao roadmap de desenvolvimento.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="mod-name">Nome *</Label>
+              <Input id="mod-name" placeholder="Ex: Integração Slack" value={newModule.name} onChange={(e) => setNewModule((p) => ({ ...p, name: e.target.value }))} />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="mod-desc">Descrição curta</Label>
+              <Input id="mod-desc" placeholder="Ex: Notificações e comandos via Slack" value={newModule.description} onChange={(e) => setNewModule((p) => ({ ...p, description: e.target.value }))} />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Fase</Label>
+                <Select value={newModule.phase} onValueChange={(v) => setNewModule((p) => ({ ...p, phase: v }))}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {phaseOptions.map((o) => (
+                      <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>Estado</Label>
+                <Select value={newModule.status} onValueChange={(v) => setNewModule((p) => ({ ...p, status: v as ModuleStatus }))}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="por_iniciar">Por iniciar</SelectItem>
+                    <SelectItem value="em_progresso">Em progresso</SelectItem>
+                    <SelectItem value="concluido">Concluído</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="mod-progress">Progresso (%)</Label>
+              <Input id="mod-progress" type="number" min={0} max={100} value={newModule.progress} onChange={(e) => setNewModule((p) => ({ ...p, progress: Number(e.target.value) }))} />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="mod-details">Detalhes (opcional)</Label>
+              <Textarea id="mod-details" placeholder="Descrição detalhada do módulo..." value={newModule.details} onChange={(e) => setNewModule((p) => ({ ...p, details: e.target.value }))} rows={3} />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="mod-prompt">Prompt de implementação (opcional)</Label>
+              <Textarea id="mod-prompt" placeholder="Prompt técnico para implementar este módulo..." value={newModule.prompt} onChange={(e) => setNewModule((p) => ({ ...p, prompt: e.target.value }))} rows={4} />
+            </div>
+            <div className="flex justify-end gap-2 pt-2">
+              <Button variant="outline" onClick={() => setShowAddDialog(false)}>Cancelar</Button>
+              <Button onClick={handleAddModule} className="gap-2">
+                <Plus className="h-4 w-4" />
+                Adicionar
+              </Button>
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
     </div>
