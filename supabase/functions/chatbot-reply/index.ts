@@ -12,7 +12,7 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const { conversation_id, message_text } = await req.json();
+    const { conversation_id, message_text, instance_id } = await req.json();
     if (!conversation_id || !message_text) {
       return new Response(JSON.stringify({ error: "conversation_id and message_text required" }), {
         status: 400,
@@ -163,6 +163,7 @@ Deno.serve(async (req) => {
         body: JSON.stringify({
           conversation_id,
           content: replyText,
+          instance_id: instance_id || undefined,
         }),
       }).catch((e) => console.error("[CHATBOT] message-send error:", e));
     }

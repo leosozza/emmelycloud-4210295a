@@ -21,7 +21,7 @@ Deno.serve(async (req) => {
   const supabase = createClient(supabaseUrl, serviceKey);
 
   try {
-    const { conversation_id, message_text, message_type, interactive_response } = await req.json();
+    const { conversation_id, message_text, message_type, interactive_response, instance_id } = await req.json();
     if (!conversation_id) {
       return new Response(JSON.stringify({ error: "conversation_id required" }), { status: 400, headers: jsonHeaders });
     }
@@ -68,26 +68,26 @@ Deno.serve(async (req) => {
     try {
       // 5. Check if we're waiting for a response (button/input)
       if (botState.waiting_for_button && interactive_response) {
-        result = await handleButtonResponse(supabase, supabaseUrl, serviceKey, conversation, botState, interactive_response);
+        result = await handleButtonResponse(supabase, supabaseUrl, serviceKey, conversation, botState, interactive_response, instance_id);
       } else if (botState.waiting_for_input) {
-        result = await handleInputResponse(supabase, supabaseUrl, serviceKey, conversation, botState, message_text);
+        result = await handleInputResponse(supabase, supabaseUrl, serviceKey, conversation, botState, message_text, instance_id);
       } else if (botState.force_flow_id) {
         // Resume a specific flow
         const { data: flow } = await supabase.from("flows").select("*").eq("id", botState.force_flow_id).eq("is_active", true).single();
         if (flow) {
-          result = await executeFlow(supabase, supabaseUrl, serviceKey, conversation, flow, botState, message_text);
+          result = await executeFlow(supabase, supabaseUrl, serviceKey, conversation, flow, botState, message_text, instance_id);
         } else {
-          result = await fallbackToAI(supabaseUrl, serviceKey, conversation, message_text);
+          result = await fallbackToAI(supabaseUrl, serviceKey, conversation, message_text, instance_id);
         }
       } else {
         // 6. Try to match a flow
         const match = await matchFlow(supabase, conversation, message_text);
         if (match) {
           console.log("[FLOW-ENGINE] Matched flow:", match.flow.name, "via", match.matchType);
-          result = await executeFlow(supabase, supabaseUrl, serviceKey, conversation, match.flow, {}, message_text);
+          result = await executeFlow(supabase, supabaseUrl, serviceKey, conversation, match.flow, {}, message_text, instance_id);
         } else {
           // 7. No flow matched - fallback to AI processor
-          result = await fallbackToAI(supabaseUrl, serviceKey, conversation, message_text);
+          result = await fallbackToAI(supabaseUrl, serviceKey, conversation, message_text, instance_id);
         }
       }
     } finally {
@@ -156,7 +156,8 @@ async function matchFlow(supabase: any, conversation: any, messageText: string):
 // ─── FLOW EXECUTION ───
 async function executeFlow(
   supabase: any, supabaseUrl: string, serviceKey: string,
-  conversation: any, flow: any, botState: Record<string, any>, messageText: string
+  conversation: any, flow: any, botState: Record<string, any>, messageText: string,
+  instanceId?: string | null
 ): Promise<any> {
   const nodes = (flow.nodes || []) as any[];
   const edges = (flow.edges || []) as any[];
@@ -187,7 +188,7 @@ async function executeFlow(
     switch (nodeType) {
       case "message": {
         const text = replaceVariables(nodeData.message || nodeData.content || "", variables);
-        await sendMessage(supabaseUrl, serviceKey, conversation.id, text);
+        await sendMessage(supabaseUrl, serviceKey, conversation.id, text, instanceId);
         currentNodeId = getNextNode(node.id, edges);
         break;
       }
@@ -195,7 +196,7 @@ async function executeFlow(
       case "message_buttons": {
         const text = replaceVariables(nodeData.message || "", variables);
         const buttons = (nodeData.buttons || []).slice(0, 3); // WhatsApp max 3 buttons
-        await sendInteractiveMessage(supabaseUrl, serviceKey, conversation, "buttons", text, buttons);
+        await sendInteractiveMessage(supabaseUrl, serviceKey, conversation, "buttons", text, buttons, instanceId);
         // Pause flow - wait for button response
         await updateBotState(supabase, conversation.id, {
           ...botState,
@@ -211,7 +212,7 @@ async function executeFlow(
       case "message_list": {
         const text = replaceVariables(nodeData.message || "", variables);
         const items = nodeData.items || [];
-        await sendInteractiveMessage(supabaseUrl, serviceKey, conversation, "list", text, items);
+        await sendInteractiveMessage(supabaseUrl, serviceKey, conversation, "list", text, items, instanceId);
         await updateBotState(supabase, conversation.id, {
           ...botState,
           flow_id: flow.id,
@@ -224,7 +225,7 @@ async function executeFlow(
 
       case "input_capture": {
         const prompt = replaceVariables(nodeData.prompt || nodeData.message || "Por favor, informe:", variables);
-        await sendMessage(supabaseUrl, serviceKey, conversation.id, prompt);
+        await sendMessage(supabaseUrl, serviceKey, conversation.id, prompt, instanceId);
         await updateBotState(supabase, conversation.id, {
           ...botState,
           flow_id: flow.id,
@@ -273,7 +274,7 @@ async function executeFlow(
       case "ai_response": {
         const aiResult = await callAIProcessor(supabaseUrl, serviceKey, conversation, messageText, nodeData);
         if (aiResult?.reply) {
-          await sendMessage(supabaseUrl, serviceKey, conversation.id, aiResult.reply);
+          await sendMessage(supabaseUrl, serviceKey, conversation.id, aiResult.reply, instanceId);
           variables["ai_response"] = aiResult.reply;
         }
         currentNodeId = getNextNode(node.id, edges);
@@ -282,7 +283,7 @@ async function executeFlow(
 
       case "transfer_to_human": {
         const transferMsg = replaceVariables(nodeData.message || "Transferindo para atendimento humano...", variables);
-        await sendMessage(supabaseUrl, serviceKey, conversation.id, transferMsg);
+        await sendMessage(supabaseUrl, serviceKey, conversation.id, transferMsg, instanceId);
         await supabase.from("conversations").update({ attendance_mode: "human" }).eq("id", conversation.id);
         await clearBotState(supabase, conversation.id);
         return { transferred: "human", node_id: node.id };
@@ -339,7 +340,8 @@ async function executeFlow(
 // ─── BUTTON/INPUT RESPONSE HANDLERS ───
 async function handleButtonResponse(
   supabase: any, supabaseUrl: string, serviceKey: string,
-  conversation: any, botState: Record<string, any>, interactiveResponse: any
+  conversation: any, botState: Record<string, any>, interactiveResponse: any,
+  instanceId?: string | null
 ): Promise<any> {
   const selectedId = interactiveResponse?.button_reply?.id || interactiveResponse?.list_reply?.id || interactiveResponse?.id || "";
   const selectedTitle = interactiveResponse?.button_reply?.title || interactiveResponse?.list_reply?.title || interactiveResponse?.title || "";
@@ -368,7 +370,7 @@ async function handleButtonResponse(
   await updateBotState(supabase, conversation.id, newState);
 
   if (nextNodeId) {
-    return executeFlow(supabase, supabaseUrl, serviceKey, conversation, flow, newState, selectedTitle);
+    return executeFlow(supabase, supabaseUrl, serviceKey, conversation, flow, newState, selectedTitle, instanceId);
   }
 
   await clearBotState(supabase, conversation.id);
@@ -377,7 +379,8 @@ async function handleButtonResponse(
 
 async function handleInputResponse(
   supabase: any, supabaseUrl: string, serviceKey: string,
-  conversation: any, botState: Record<string, any>, inputText: string
+  conversation: any, botState: Record<string, any>, inputText: string,
+  instanceId?: string | null
 ): Promise<any> {
   const variables = botState.flow_variables || {};
   const varName = botState.input_variable || "user_input";
@@ -389,7 +392,7 @@ async function handleInputResponse(
     const isValid = validateInput(inputText, validation);
     if (!isValid) {
       const errorMsg = validation.error_message || "Entrada inválida. Por favor, tente novamente.";
-      await sendMessage(supabaseUrl, serviceKey, conversation.id, errorMsg);
+      await sendMessage(supabaseUrl, serviceKey, conversation.id, errorMsg, instanceId);
       return { paused: "waiting_for_input_retry" };
     }
   }
@@ -405,7 +408,7 @@ async function handleInputResponse(
   await updateBotState(supabase, conversation.id, newState);
 
   if (nextNodeId) {
-    return executeFlow(supabase, supabaseUrl, serviceKey, conversation, flow, newState, inputText);
+    return executeFlow(supabase, supabaseUrl, serviceKey, conversation, flow, newState, inputText, instanceId);
   }
 
   await clearBotState(supabase, conversation.id);
@@ -456,17 +459,18 @@ async function clearBotState(supabase: any, conversationId: string) {
   await supabase.from("conversations").update({ bot_state: {} }).eq("id", conversationId);
 }
 
-async function sendMessage(supabaseUrl: string, serviceKey: string, conversationId: string, content: string) {
+async function sendMessage(supabaseUrl: string, serviceKey: string, conversationId: string, content: string, instanceId?: string | null) {
   await fetch(`${supabaseUrl}/functions/v1/message-send`, {
     method: "POST",
     headers: { "Content-Type": "application/json", "Authorization": `Bearer ${serviceKey}` },
-    body: JSON.stringify({ conversation_id: conversationId, content, skip_db_save: false }),
+    body: JSON.stringify({ conversation_id: conversationId, content, skip_db_save: false, instance_id: instanceId || undefined }),
   }).catch(e => console.error("[FLOW-ENGINE] sendMessage error:", e));
 }
 
 async function sendInteractiveMessage(
   supabaseUrl: string, serviceKey: string, conversation: any,
-  type: "buttons" | "list", text: string, options: any[]
+  type: "buttons" | "list", text: string, options: any[],
+  instanceId?: string | null
 ) {
   await fetch(`${supabaseUrl}/functions/v1/message-send`, {
     method: "POST",
@@ -476,6 +480,7 @@ async function sendInteractiveMessage(
       content: text,
       message_type: type === "buttons" ? "interactive_buttons" : "interactive_list",
       interactive_data: options,
+      instance_id: instanceId || undefined,
     }),
   }).catch(e => console.error("[FLOW-ENGINE] sendInteractive error:", e));
 }
@@ -499,7 +504,7 @@ async function callAIProcessor(supabaseUrl: string, serviceKey: string, conversa
   }
 }
 
-async function fallbackToAI(supabaseUrl: string, serviceKey: string, conversation: any, messageText: string): Promise<any> {
+async function fallbackToAI(supabaseUrl: string, serviceKey: string, conversation: any, messageText: string, instanceId?: string | null): Promise<any> {
   try {
     const res = await fetch(`${supabaseUrl}/functions/v1/ai-process-message`, {
       method: "POST",
@@ -507,6 +512,7 @@ async function fallbackToAI(supabaseUrl: string, serviceKey: string, conversatio
       body: JSON.stringify({
         conversation_id: conversation.id,
         message_text: messageText,
+        instance_id: instanceId || undefined,
       }),
     });
     return await res.json();
