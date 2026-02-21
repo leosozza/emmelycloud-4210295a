@@ -1,49 +1,111 @@
 
 
-# Integrar Ollama Remoto (Qwen) na Aplicação
+# Plano: Consolidar Instalacao do App Bitrix24
 
-## Contexto
+## Situacao Atual
 
-Você hospedou o modelo Qwen 2.5:32b via Ollama e expôs através de um túnel Cloudflare. O ficheiro HTML mostra a comunicação direta com `https://languages-merchants-participated-varied.trycloudflare.com/api/chat`. Atualmente, o provedor `qwen-local` existe na base de dados mas aponta para `localhost:11434`.
+A funcao `bitrix24-install` ja regista todos os modulos durante a instalacao:
 
-## Problema
+| Modulo | Metodo API | Status |
+|--------|-----------|--------|
+| Conector WhatsApp/Instagram | `imconnector.register` | Registado |
+| IM Bot (Emmely AI) | `imbot.register` | Registado |
+| Eventos (8 eventos) | `event.bind` | Vinculados |
+| Robots BizProc (4 robots) | `bizproc.robot.add` | Registados |
+| Badges CRM (7 badges) | `crm.activity.badge.add` | Registados |
+| CRM Tab (Lead Detail) | `placement.bind` | Registado |
+| Botao "Devolver ao Bot" | `placement.bind` (IM_TEXTAREA) | Registado |
+| Payment Handler | `sale.paysystem.handler.add` | Registado |
+| Payment Systems (2) | `sale.paysystem.add` | Registados |
 
-Existem **duas incompatibilidades** a resolver:
+## Problemas Identificados
 
-1. **URL**: O provedor `qwen-local` usa `localhost:11434` -- precisa apontar para a URL do túnel Cloudflare.
-2. **Formato da API**: A edge function `ai-playground` usa o formato OpenAI (`/v1/chat/completions`), mas o Ollama nativo usa `/api/chat` com um formato de resposta ligeiramente diferente (NDJSON vs SSE). No entanto, o Ollama **tambem suporta** o endpoint compativel com OpenAI em `/v1/chat/completions`, o que simplifica a integração.
+1. **Robot `emmely_execute_flow` em falta** -- existe no handler mas nao e registado na instalacao
+2. **CRM Tab so regista Lead** -- falta Contacto, Negocio e SPA (ja documentado na memoria)
+3. **Sem verificacao de sucesso consolidada** -- cada modulo falha silenciosamente sem impacto nos outros, mas nao ha resumo final
+4. **Config merge parcial** -- so o bot_id e guardado no config; falta guardar IDs dos payment systems para referencia futura
+5. **Scopes nao validados** -- nao ha verificacao se o app tem todos os scopes necessarios antes de tentar registar
 
-## Plano
+## Alteracoes Propostas
 
-### 1. Atualizar a URL do provedor na base de dados
+### 1. Adicionar Robot `emmely_execute_flow` ao registo
 
-Atualizar o registo `qwen-local` (ou criar um novo provedor `ollama-remote`) na tabela `ai_providers`:
-- `base_url`: de `http://localhost:11434/v1/chat/completions` para `https://languages-merchants-participated-varied.trycloudflare.com/v1/chat/completions`
-- Manter o endpoint compativel com OpenAI (`/v1/chat/completions`) para evitar alterações no código da edge function
+Adicionar o quinto robot que ja tem handler implementado mas nao e registado na instalacao:
 
-### 2. Permitir configurar a URL do Ollama na interface
+```
+{
+  CODE: "emmely_execute_flow",
+  NAME: "Emmely: Executar Flow",
+  PROPERTIES: {
+    flow_id: { Name: "ID do Flow", Type: "string", Required: "Y" },
+    phone: { Name: "Telefone", Type: "string", Required: "Y" },
+    trigger_message: { Name: "Mensagem Trigger", Type: "string", Default: "iniciar" },
+  },
+  RETURN_PROPERTIES: {
+    status: { Name: "Status", Type: "string" },
+    conversation_id: { Name: "ID da Conversa", Type: "string" },
+    flow_name: { Name: "Nome do Flow", Type: "string" },
+    error: { Name: "Erro", Type: "string" },
+  },
+}
+```
 
-Adicionar na Central de Integrações (ou na configuração do provedor) um campo para guardar a URL do túnel Cloudflare como credencial na tabela `integration_credentials`, permitindo atualizá-la facilmente quando o túnel mudar sem precisar editar a base de dados diretamente.
+### 2. Registar CRM Tab em todas as entidades
 
-### 3. Atualizar a edge function `ai-playground`
+Adicionar placements para Contacto, Negocio e SPA alem de Lead:
 
-Modificar a lógica de resolução de URL para, quando o provedor for `qwen-local`, verificar primeiro se existe uma URL personalizada guardada em `integration_credentials` (chave como `OLLAMA_BASE_URL`). Isto permite que a URL do túnel seja dinâmica.
+- `CRM_LEAD_DETAIL_TAB`
+- `CRM_CONTACT_DETAIL_TAB`
+- `CRM_DEAL_DETAIL_TAB`
+- `CRM_DYNAMIC_DETAIL_TAB` (SPA)
 
-### 4. Adicionar modelo `qwen2.5:32b` à lista de modelos disponíveis
+### 3. Guardar resumo completo no config
 
-Garantir que o modelo `qwen2.5:32b` está listado nos modelos disponíveis do provedor para poder ser selecionado ao criar/editar agentes.
+Apos todos os registos, fazer merge no campo `config` com:
 
----
+```json
+{
+  "bot_id": "10265",
+  "connector_registered": true,
+  "robots_registered": ["emmely_send_whatsapp", ...],
+  "placements_registered": ["CRM_LEAD_DETAIL_TAB", ...],
+  "paysystem_handler_registered": true,
+  "installed_modules": ["connector", "bot", "robots", "badges", "crm_tabs", "paysystem"],
+  "install_completed_at": "2026-02-21T..."
+}
+```
 
-## Detalhe Tecnico
+### 4. Adicionar verificacao de scopes
 
-| Ficheiro | Alteracao |
-|----------|-----------|
-| **Migração SQL** | UPDATE `ai_providers` SET `base_url` para usar URL do tunel; adicionar `credential_key = 'base_url'` para permitir override dinamico |
-| `supabase/functions/ai-playground/index.ts` | Quando o provider nao tem `auth_header` nem `auth_prefix` (como o Ollama), enviar request sem header de autorização; verificar override de `base_url` via `integration_credentials` |
-| `src/pages/Integracoes.tsx` | Adicionar secção para configurar a URL do Ollama remoto (campo de texto para a URL do tunel) |
+No inicio da instalacao, chamar `app.info` para verificar os scopes disponiveis e logar quais modulos podem ser registados:
 
-## Nota importante sobre o tunel Cloudflare
+```
+Scopes necessarios: crm, imopenlines, imconnector, im, imbot, event, user, bizproc, pay_system, placement
+```
 
-Os tuneis gratuitos do Cloudflare (`trycloudflare.com`) geram URLs temporarias que mudam cada vez que reinicia. Por isso, o campo de URL na interface e essencial para poder atualizar facilmente.
+Se faltar algum scope, o modulo correspondente e ignorado com log de aviso em vez de falhar.
+
+## Detalhes Tecnicos
+
+### Ficheiro alterado
+- `supabase/functions/bitrix24-install/index.ts`
+
+### Sequencia de execucao (sem alteracao)
+1. Parse do payload OAuth
+2. Upsert na tabela `bitrix24_integrations`
+3. (NOVO) Verificacao de scopes via `app.info`
+4. Registo do conector `imconnector.register`
+5. Bind de eventos
+6. Registo do IM Bot
+7. Criacao do agente IA padrao
+8. Registo de badges
+9. Registo de robots (agora com 5 em vez de 4)
+10. Bind de placements (agora com 4 CRM tabs + IM_TEXTAREA)
+11. Registo do payment handler e payment systems
+12. (NOVO) Merge final do config com resumo de todos os modulos
+13. Retorno HTML com `BX24.installFinish()`
+
+### Estimativa de impacto
+- Sem breaking changes -- apenas adicoes
+- A reinstalacao (resync) do app no Bitrix24 e necessaria para que os novos registos tomem efeito
 
