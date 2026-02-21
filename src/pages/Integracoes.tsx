@@ -739,6 +739,35 @@ function PagamentosTab() {
           <CredentialInput provider="asaas" credentialKey="ASAAS_API_KEY" label="API Key" {...credProps} />
           <CredentialInput provider="asaas" credentialKey="ASAAS_WEBHOOK_TOKEN" label="Webhook Token" {...credProps} />
 
+          {/* Ambiente Selector */}
+          <div className="space-y-1">
+            <label className="text-xs text-muted-foreground">Ambiente</label>
+            <div className="flex gap-2">
+              {(["sandbox", "production"] as const).map((env) => {
+                const currentEnv = credentials["asaas::ASAAS_ENVIRONMENT"]?.masked?.replace(/•/g, "") || "sandbox";
+                const isActive = currentEnv.includes(env.slice(0, 4));
+                return (
+                  <Button
+                    key={env}
+                    size="sm"
+                    variant={isActive ? "default" : "outline"}
+                    className={`flex-1 h-8 text-xs ${isActive && env === "sandbox" ? "bg-amber-600 hover:bg-amber-700" : ""} ${isActive && env === "production" ? "bg-green-600 hover:bg-green-700" : ""}`}
+                    onClick={async () => {
+                      await handleSaveCredential("asaas", "ASAAS_ENVIRONMENT", env);
+                    }}
+                  >
+                    {env === "sandbox" ? "🧪 Sandbox" : "🚀 Produção"}
+                  </Button>
+                );
+              })}
+            </div>
+            <p className="text-[10px] text-muted-foreground">
+              {credentials["asaas::ASAAS_ENVIRONMENT"]?.masked?.includes("prod")
+                ? "⚠️ Ambiente de produção — transações são reais"
+                : "Usando ambiente de testes — transações não são reais"}
+            </p>
+          </div>
+
           <WebhookUrlDisplay
             label="Webhook URL (configurar no painel Asaas)"
             url={`https://qohnsluvhyziovfynzlu.supabase.co/functions/v1/payment-webhook-asaas`}
