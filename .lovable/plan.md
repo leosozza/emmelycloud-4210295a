@@ -1,29 +1,49 @@
 
 
-# Corrigir erro de temperatura no Playground IA
+# Integrar Ollama Remoto (Qwen) na Aplicação
+
+## Contexto
+
+Você hospedou o modelo Qwen 2.5:32b via Ollama e expôs através de um túnel Cloudflare. O ficheiro HTML mostra a comunicação direta com `https://languages-merchants-participated-varied.trycloudflare.com/api/chat`. Atualmente, o provedor `qwen-local` existe na base de dados mas aponta para `localhost:11434`.
 
 ## Problema
 
-O Playground IA retorna "Desculpe, não consegui processar a sua mensagem" porque o agente selecionado tem `temperature: 1.2` configurado na base de dados, mas o modelo de IA utilizado (via Lovable AI gateway) apenas aceita valores entre 0 e 1.
+Existem **duas incompatibilidades** a resolver:
 
-O erro exacto nos logs:
-> `"temperature" does not support 1.2 with this model. Only the default (1) value is supported.`
+1. **URL**: O provedor `qwen-local` usa `localhost:11434` -- precisa apontar para a URL do túnel Cloudflare.
+2. **Formato da API**: A edge function `ai-playground` usa o formato OpenAI (`/v1/chat/completions`), mas o Ollama nativo usa `/api/chat` com um formato de resposta ligeiramente diferente (NDJSON vs SSE). No entanto, o Ollama **tambem suporta** o endpoint compativel com OpenAI em `/v1/chat/completions`, o que simplifica a integração.
 
-## Correção
+## Plano
 
-Adicionar validação/clamp do valor de temperatura na edge function `ai-playground` antes de enviar ao provider, limitando o valor ao intervalo suportado [0, 1]:
+### 1. Atualizar a URL do provedor na base de dados
 
-```
-temperature = Math.min(1, Math.max(0, agent.temperature || 0.7))
-```
+Atualizar o registo `qwen-local` (ou criar um novo provedor `ollama-remote`) na tabela `ai_providers`:
+- `base_url`: de `http://localhost:11434/v1/chat/completions` para `https://languages-merchants-participated-varied.trycloudflare.com/v1/chat/completions`
+- Manter o endpoint compativel com OpenAI (`/v1/chat/completions`) para evitar alterações no código da edge function
 
-Isto garante que qualquer valor fora do intervalo é automaticamente ajustado sem erro.
+### 2. Permitir configurar a URL do Ollama na interface
 
-## Ficheiro a Modificar
+Adicionar na Central de Integrações (ou na configuração do provedor) um campo para guardar a URL do túnel Cloudflare como credencial na tabela `integration_credentials`, permitindo atualizá-la facilmente quando o túnel mudar sem precisar editar a base de dados diretamente.
 
-| Ficheiro | Alteração |
+### 3. Atualizar a edge function `ai-playground`
+
+Modificar a lógica de resolução de URL para, quando o provedor for `qwen-local`, verificar primeiro se existe uma URL personalizada guardada em `integration_credentials` (chave como `OLLAMA_BASE_URL`). Isto permite que a URL do túnel seja dinâmica.
+
+### 4. Adicionar modelo `qwen2.5:32b` à lista de modelos disponíveis
+
+Garantir que o modelo `qwen2.5:32b` está listado nos modelos disponíveis do provedor para poder ser selecionado ao criar/editar agentes.
+
+---
+
+## Detalhe Tecnico
+
+| Ficheiro | Alteracao |
 |----------|-----------|
-| `supabase/functions/ai-playground/index.ts` | Clamp do `temperature` para o intervalo [0, 1] na linha 127 |
+| **Migração SQL** | UPDATE `ai_providers` SET `base_url` para usar URL do tunel; adicionar `credential_key = 'base_url'` para permitir override dinamico |
+| `supabase/functions/ai-playground/index.ts` | Quando o provider nao tem `auth_header` nem `auth_prefix` (como o Ollama), enviar request sem header de autorização; verificar override de `base_url` via `integration_credentials` |
+| `src/pages/Integracoes.tsx` | Adicionar secção para configurar a URL do Ollama remoto (campo de texto para a URL do tunel) |
 
-Tambem faz sentido aplicar a mesma correção na edge function `ai-process-message` e `chatbot-reply` caso usem temperatura directamente do agente.
+## Nota importante sobre o tunel Cloudflare
+
+Os tuneis gratuitos do Cloudflare (`trycloudflare.com`) geram URLs temporarias que mudam cada vez que reinicia. Por isso, o campo de URL na interface e essencial para poder atualizar facilmente.
 
