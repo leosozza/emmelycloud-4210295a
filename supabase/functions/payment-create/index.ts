@@ -13,7 +13,7 @@ async function getCredential(supabase: any, provider: string, key: string): Prom
     .eq("provider", provider)
     .eq("credential_key", key)
     .maybeSingle();
-  return data?.credential_value || null;
+  return data?.credential_value?.trim() || null;
 }
 
 function getGateway(country: string | null, currency: string): "stripe" | "asaas" {
