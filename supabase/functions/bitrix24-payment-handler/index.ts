@@ -235,15 +235,25 @@ Deno.serve(async (req) => {
       }
 
       const params = new URLSearchParams();
-      params.append("amount", Math.round(sum * 100).toString());
-      params.append("currency", currency.toLowerCase());
-      params.append("description", description);
-      params.append("payment_method_types[]", "card");
-      if (returnUrl) {
-        params.append("metadata[return_url]", returnUrl);
+      params.append("mode", "payment");
+      params.append("line_items[0][price_data][currency]", currency.toLowerCase());
+      params.append("line_items[0][price_data][unit_amount]", Math.round(sum * 100).toString());
+      params.append("line_items[0][price_data][product_data][name]", description);
+      params.append("line_items[0][quantity]", "1");
+
+      const paymentMethods = ["card", "sepa_debit", "multibanco", "ideal", "bancontact", "sofort", "klarna", "link"];
+      for (const pm of paymentMethods) {
+        params.append("payment_method_types[]", pm);
       }
 
-      const res = await fetch("https://api.stripe.com/v1/payment_intents", {
+      const customerEmail = body.CUSTOMER_EMAIL || body.customer_email || "";
+      if (customerEmail) params.append("customer_email", customerEmail);
+
+      const successUrl = returnUrl || "https://emmelycloud.lovable.app";
+      params.append("success_url", `${successUrl}?payment=success&session_id={CHECKOUT_SESSION_ID}`);
+      params.append("cancel_url", `${successUrl}?payment=cancelled`);
+
+      const res = await fetch("https://api.stripe.com/v1/checkout/sessions", {
         method: "POST",
         headers: {
           "Authorization": `Bearer ${stripeKey}`,
@@ -260,9 +270,9 @@ Deno.serve(async (req) => {
       }
 
       result = {
-        gateway_payment_id: data.id,
-        payment_url: null,
-        client_secret: data.client_secret,
+        gateway_payment_id: data.payment_intent || data.id,
+        payment_url: data.url,
+        client_secret: null,
       };
     }
 
@@ -293,10 +303,10 @@ Deno.serve(async (req) => {
     // Return response to Bitrix24
     const paymentUrl = result.payment_url || returnUrl;
 
+    // Stripe Checkout Sessions always provide a payment_url
     if (!paymentUrl) {
-      // For Stripe without payment_url, return error (Stripe needs frontend with client_secret)
       return new Response(JSON.stringify({
-        PAYMENT_ERRORS: ["Sistema de pagamento Stripe requer configuração adicional do frontend. Use PIX/Boleto para pagamentos BRL."],
+        PAYMENT_ERRORS: ["Não foi possível gerar um link de pagamento. Tente novamente."],
       }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });

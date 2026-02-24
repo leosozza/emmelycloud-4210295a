@@ -23,16 +23,28 @@ function getGateway(country: string | null, currency: string): "stripe" | "asaas
   return "stripe";
 }
 
-async function createStripePayment(apiKey: string, amount: number, currency: string, customerEmail: string, description: string) {
-  // Create a Payment Intent
+async function createStripePayment(apiKey: string, amount: number, currency: string, customerEmail: string, description: string, returnUrl?: string) {
+  // Create a Checkout Session with all payment methods
   const params = new URLSearchParams();
-  params.append("amount", Math.round(amount * 100).toString()); // Stripe uses cents
-  params.append("currency", currency.toLowerCase());
-  params.append("description", description);
-  if (customerEmail) params.append("receipt_email", customerEmail);
-  params.append("payment_method_types[]", "card");
+  params.append("mode", "payment");
+  params.append("line_items[0][price_data][currency]", currency.toLowerCase());
+  params.append("line_items[0][price_data][unit_amount]", Math.round(amount * 100).toString());
+  params.append("line_items[0][price_data][product_data][name]", description);
+  params.append("line_items[0][quantity]", "1");
 
-  const res = await fetch("https://api.stripe.com/v1/payment_intents", {
+  // All payment method types
+  const paymentMethods = ["card", "sepa_debit", "multibanco", "ideal", "bancontact", "sofort", "klarna", "link"];
+  for (const pm of paymentMethods) {
+    params.append("payment_method_types[]", pm);
+  }
+
+  if (customerEmail) params.append("customer_email", customerEmail);
+
+  const baseUrl = returnUrl || "https://emmelycloud.lovable.app";
+  params.append("success_url", `${baseUrl}?payment=success&session_id={CHECKOUT_SESSION_ID}`);
+  params.append("cancel_url", `${baseUrl}?payment=cancelled`);
+
+  const res = await fetch("https://api.stripe.com/v1/checkout/sessions", {
     method: "POST",
     headers: {
       "Authorization": `Bearer ${apiKey}`,
@@ -45,10 +57,11 @@ async function createStripePayment(apiKey: string, amount: number, currency: str
   if (data.error) throw new Error(data.error.message);
 
   return {
-    gateway_payment_id: data.id,
-    payment_url: null, // Payment Intent uses client_secret on frontend
-    client_secret: data.client_secret,
+    gateway_payment_id: data.payment_intent || data.id,
+    payment_url: data.url,
+    client_secret: null,
     status: "pending",
+    checkout_session_id: data.id,
   };
 }
 
@@ -254,7 +267,7 @@ Deno.serve(async (req) => {
           status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
-      result = await createStripePayment(stripeKey, amount, currency, customer_data?.email || "", description);
+      result = await createStripePayment(stripeKey, amount, currency, customer_data?.email || "", description, body.return_url);
     } else {
       // Validate CPF/CNPJ before calling Asaas
       if (customer_data?.cpf_cnpj) {

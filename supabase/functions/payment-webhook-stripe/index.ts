@@ -200,9 +200,9 @@ Deno.serve(async (req) => {
     }
 
     const event = JSON.parse(body);
-    const paymentIntent = event.data?.object;
-    if (!paymentIntent?.id) {
-      return new Response(JSON.stringify({ ok: true, message: "No payment intent" }), {
+    const eventObject = event.data?.object;
+    if (!eventObject?.id) {
+      return new Response(JSON.stringify({ ok: true, message: "No event object" }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
@@ -213,6 +213,7 @@ Deno.serve(async (req) => {
       "payment_intent.payment_failed": "failed",
       "payment_intent.canceled": "canceled",
       "charge.refunded": "refunded",
+      "checkout.session.completed": "confirmed",
     };
 
     const newStatus = statusMap[event.type];
@@ -222,11 +223,17 @@ Deno.serve(async (req) => {
       });
     }
 
+    // For checkout.session.completed, resolve the payment_intent ID from the session
+    let gatewayPaymentId = eventObject.id;
+    if (event.type === "checkout.session.completed") {
+      gatewayPaymentId = eventObject.payment_intent || eventObject.id;
+    }
+
     // First get existing transaction to preserve metadata
     const { data: existingTx } = await supabase
       .from("payment_transactions")
       .select("id, financial_record_id, metadata, amount, currency")
-      .eq("gateway_payment_id", paymentIntent.id)
+      .eq("gateway_payment_id", gatewayPaymentId)
       .eq("gateway", "stripe")
       .maybeSingle();
 
@@ -236,7 +243,7 @@ Deno.serve(async (req) => {
     const { data: tx } = await supabase
       .from("payment_transactions")
       .update({ status: newStatus, metadata: mergedMeta })
-      .eq("gateway_payment_id", paymentIntent.id)
+      .eq("gateway_payment_id", gatewayPaymentId)
       .eq("gateway", "stripe")
       .select("id, financial_record_id, metadata, amount, currency")
       .maybeSingle();
@@ -245,7 +252,7 @@ Deno.serve(async (req) => {
     if (tx?.financial_record_id && newStatus === "confirmed") {
       await supabase
         .from("financial_records")
-        .update({ status: "paga", paid_at: new Date().toISOString(), stripe_payment_id: paymentIntent.id })
+        .update({ status: "paga", paid_at: new Date().toISOString(), stripe_payment_id: gatewayPaymentId })
         .eq("id", tx.financial_record_id);
     }
 
