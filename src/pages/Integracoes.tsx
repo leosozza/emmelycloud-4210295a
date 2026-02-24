@@ -40,6 +40,7 @@ import {
   Copy,
   Check,
   Link,
+  ChevronDown,
 } from "lucide-react";
 import {
   Dialog,
@@ -702,6 +703,29 @@ function PagamentosTab() {
         <CardContent className="space-y-3 text-sm">
           <CredentialInput provider="stripe" credentialKey="STRIPE_SECRET_KEY" label="Secret Key (sk_...)" {...credProps} />
           <CredentialInput provider="stripe" credentialKey="STRIPE_WEBHOOK_SECRET" label="Webhook Secret (whsec_...)" {...credProps} />
+
+          <WebhookUrlDisplay
+            label="Webhook URL (configurar no Stripe Dashboard)"
+            url={`https://qohnsluvhyziovfynzlu.supabase.co/functions/v1/payment-webhook-stripe`}
+            hint="Eventos: payment_intent.succeeded, payment_intent.payment_failed, payment_intent.canceled, charge.refunded"
+          />
+
+          <details className="group rounded-md border border-border">
+            <summary className="flex cursor-pointer items-center justify-between px-3 py-2 text-xs font-medium text-muted-foreground hover:text-foreground">
+              <span>📋 Como configurar</span>
+              <ChevronDown className="h-3.5 w-3.5 transition-transform group-open:rotate-180" />
+            </summary>
+            <ol className="space-y-2 px-3 pb-3 pt-1 text-xs text-muted-foreground list-decimal list-inside">
+              <li>Aceda ao <a href="https://dashboard.stripe.com" target="_blank" rel="noopener noreferrer" className="underline text-primary">Stripe Dashboard</a></li>
+              <li>Vá a <strong>Developers → API Keys</strong></li>
+              <li>Copie a <strong>Secret Key</strong> (<code className="text-[10px] bg-muted px-1 rounded">sk_live_…</code> ou <code className="text-[10px] bg-muted px-1 rounded">sk_test_…</code>) e cole acima</li>
+              <li>Vá a <strong>Developers → Webhooks → Add endpoint</strong></li>
+              <li>Cole o <strong>Webhook URL</strong> acima como Endpoint URL</li>
+              <li>Selecione os eventos: <code className="text-[10px] bg-muted px-1 rounded">payment_intent.succeeded</code>, <code className="text-[10px] bg-muted px-1 rounded">payment_intent.payment_failed</code>, <code className="text-[10px] bg-muted px-1 rounded">payment_intent.canceled</code>, <code className="text-[10px] bg-muted px-1 rounded">charge.refunded</code></li>
+              <li>Após criar o endpoint, copie o <strong>Signing Secret</strong> (<code className="text-[10px] bg-muted px-1 rounded">whsec_…</code>) e cole acima</li>
+              <li>Clique em <strong>"Testar Conexão"</strong> para validar</li>
+            </ol>
+          </details>
 
           <div className="flex justify-between text-xs text-muted-foreground">
             <span>Total processado</span>
