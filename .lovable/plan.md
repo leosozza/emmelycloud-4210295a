@@ -1,49 +1,57 @@
 
 
-# Plano: Guia Passo-a-Passo Stripe na aba Pagamentos
+# Implementar Todos os Metodos de Pagamento Stripe (Checkout Sessions)
 
-## Objetivo
+## Abordagem
 
-Adicionar ao card do Stripe na pagina `/integracoes` (aba Pagamentos) um guia visual de configuracao e o URL do webhook, seguindo o mesmo padrao ja usado no card do Asaas.
+Migrar de **Payment Intents** (que so suporta `card`) para **Stripe Checkout Sessions** com `payment_method_types` explicitos. Isto permite que o Stripe apresente automaticamente todos os metodos de pagamento disponiveis, incluindo Multibanco, MB WAY, SEPA, Apple Pay, etc.
 
-## Alteracoes
+## Metodos de Pagamento a Ativar
 
-### Ficheiro: `src/pages/Integracoes.tsx`
+| Metodo | Codigo Stripe | Regiao |
+|--------|--------------|--------|
+| Cartao (Visa, MC, Amex) | `card` | Global |
+| SEPA Direct Debit | `sepa_debit` | Europa |
+| Multibanco | `multibanco` | Portugal |
+| MB WAY | `mbway` | Portugal (requer Stripe >= 2023) |
+| iDEAL | `ideal` | Holanda/UE |
+| Bancontact | `bancontact` | Belgica |
+| giropay | `giropay` | Alemanha |
+| Sofort | `sofort` | Alemanha/Europa |
+| Klarna | `klarna` | Europa |
+| Link | `link` | Global |
 
-Dentro do card Stripe (componente `PagamentosTab`, por volta da linha 702-721), adicionar:
+**Nota:** Apple Pay e Google Pay sao ativados automaticamente quando `card` esta presente no Checkout Sessions -- nao necessitam de tipo separado.
 
-**1. Webhook URL com botao de copiar**
+## Alteracoes Tecnicas
 
-Usar o componente `WebhookUrlDisplay` ja existente:
-```
-URL: https://qohnsluvhyziovfynzlu.supabase.co/functions/v1/payment-webhook-stripe
-Eventos: payment_intent.succeeded, payment_intent.payment_failed, charge.refunded
-```
+### 1. `supabase/functions/payment-create/index.ts`
 
-**2. Guia passo-a-passo (Accordion ou lista numerada)**
+**Substituir** a funcao `createStripePayment` para usar a API de Checkout Sessions:
 
-Secao colapsavel "Como configurar" com os seguintes passos:
+- Trocar o endpoint de `/v1/payment_intents` para `/v1/checkout/sessions`
+- Adicionar todos os `payment_method_types[]` listados acima
+- Adicionar `mode=payment` e URLs de `success_url` / `cancel_url`
+- Adicionar `line_items` com o valor e descricao
+- Retornar o `session.url` como `payment_url` (o cliente e redirecionado para a pagina hosted do Stripe)
+- Manter o `gateway_payment_id` como o ID do Payment Intent associado (via `payment_intent` no response)
 
-1. Aceda ao Stripe Dashboard em dashboard.stripe.com
-2. Va a Developers > API Keys
-3. Copie a Secret Key (sk_live_... ou sk_test_...) e cole acima
-4. Va a Developers > Webhooks > Add endpoint
-5. Cole o Webhook URL acima como Endpoint URL
-6. Selecione os eventos: `payment_intent.succeeded`, `payment_intent.payment_failed`, `payment_intent.canceled`, `charge.refunded`
-7. Apos criar o endpoint, copie o Signing Secret (whsec_...) e cole acima
-8. Clique em "Testar Conexao" para validar
+A assinatura da funcao passa a aceitar um parametro `return_url` opcional para redirect apos pagamento.
 
-**3. Implementacao tecnica**
+### 2. `supabase/functions/bitrix24-payment-handler/index.ts`
 
-- Usar o componente `Collapsible` (ja importado no projeto via radix) ou um simples `details/summary` estilizado com Tailwind
-- Cada passo tera um numero, titulo curto e texto descritivo
-- Links externos abrem em nova aba (`target="_blank"`)
-- Manter o mesmo estilo visual do card Asaas (compacto, text-xs/text-sm)
+Aplicar a mesma migracao para Checkout Sessions na secao Stripe deste handler, substituindo o bloco de Payment Intent (~linhas 237-253) pelo mesmo padrao de Checkout Session.
 
-### Resumo de impacto
+### 3. `supabase/functions/payment-webhook-stripe/index.ts`
 
-- Apenas alteracoes no ficheiro `src/pages/Integracoes.tsx`
-- Adiciona ~40 linhas ao card Stripe existente
-- Sem alteracoes no backend
-- Reutiliza o componente `WebhookUrlDisplay` ja existente
+Verificar que o webhook ja trata o evento `checkout.session.completed` -- caso contrario, adicionar handler para este evento que:
+- Extrai o `payment_intent` da session
+- Atualiza o status da transacao na tabela `payment_transactions`
+
+### Impacto
+
+- **2-3 ficheiros** de Edge Functions alterados
+- **Sem alteracoes de base de dados** -- a tabela `payment_transactions` ja suporta `payment_url`
+- **Sem alteracoes no frontend** -- o fluxo passa a redirecionar para o Checkout hosted do Stripe
+- O Stripe so apresenta os metodos ativados na conta do cliente (ex: se a conta e de Portugal, Multibanco e MB WAY aparecem automaticamente)
 
