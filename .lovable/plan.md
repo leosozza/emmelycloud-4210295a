@@ -1,142 +1,117 @@
 
 
-# Plano: Sistema de Agentes Especialistas com Routing por Intencao
+# Plano: Chat IA estilo ChatGPT (standalone + iframe Bitrix24)
 
-## Conceito
+## Objectivo
 
-Transformar o sistema de agentes numa arquitectura de **orquestrador + especialistas**:
+Criar uma nova pagina `/chat` com interface de conversacao estilo ChatGPT — historico de conversas na sidebar, markdown rendering nas respostas, selecao de agente, e experiencia focada no chat. A mesma interface sera replicada dentro do iframe do Bitrix24 como nova vista "Chat IA".
 
-- **Agente Responder** (padrao): responde ao cliente, detecta intencoes e transfere para especialistas
-- **Agente Acao**: executa um fluxo especifico (agendamento, cobranca, etc.)
-- O agente principal analisa cada mensagem e decide se deve responder ou delegar a um sub-agente
+## O que existe hoje
 
-## Estado Actual
+- **PlaygroundIA** (`/playground`): chat basico com painel de debug e metricas — focado em testes tecnicos, nao em uso diario
+- **PlaygroundView** no Bitrix24: versao simplificada do mesmo
+- Ambos usam a Edge Function `ai-playground` que ja suporta knowledge base (RAG) e multiplos agentes
 
-- `ai_agents` tem campos `sub_agent_ids` (uuid[]) e `routing_rules` (jsonb) -- **nunca usados no backend**
-- `chatbot-reply` chama `ai-playground` diretamente, sem logica de routing
-- `ai-playground` so gera texto, nao detecta intencoes nem delega
+## Diferenca em relacao ao Playground actual
+
+| Aspecto | Playground actual | Novo Chat IA |
+|---------|------------------|-------------|
+| Objectivo | Testar agentes | Usar agentes no dia-a-dia |
+| Historico | Nenhum (perde ao sair) | Persistido na BD, lista na sidebar |
+| Layout | Painel debug + chat | Fullscreen chat, sidebar conversas |
+| Markdown | Texto puro | Rendering com formatacao |
+| Mensagem de boas-vindas | Nao | Sim, usando `welcome_message` do agente |
 
 ## Alteracoes
 
-### 1. Base de Dados: nova coluna `agent_role`
+### 1. Base de Dados: tabela `chat_sessions`
 
-Adicionar coluna `agent_role` (text, default `'responder'`) a `ai_agents` com valores:
-- `responder` -- responde ao cliente com IA
-- `action` -- executa um fluxo quando ativado
-- `router` -- analisa intencao e delega (o orquestrador)
+Nova tabela para persistir conversas do chat IA:
 
-### 2. Estrutura do `routing_rules`
+```sql
+CREATE TABLE public.chat_sessions (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL,
+  agent_id uuid REFERENCES ai_agents(id),
+  title text DEFAULT 'Nova conversa',
+  messages jsonb DEFAULT '[]'::jsonb,
+  created_at timestamptz DEFAULT now(),
+  updated_at timestamptz DEFAULT now()
+);
 
-Definir o formato do jsonb `routing_rules` para cada sub-agente vinculado:
+ALTER TABLE public.chat_sessions ENABLE ROW LEVEL SECURITY;
 
-```json
-{
-  "routes": [
-    {
-      "agent_id": "uuid-do-agente-agendamento",
-      "intent": "agendamento",
-      "keywords": ["agendar", "marcar", "horário", "consulta"],
-      "description": "Cliente quer agendar uma consulta ou reunião"
-    },
-    {
-      "agent_id": "uuid-do-agente-cobranca",
-      "intent": "cobranca",
-      "keywords": ["pagar", "boleto", "fatura", "pagamento"],
-      "description": "Cliente quer informações sobre pagamento"
-    }
-  ]
-}
+CREATE POLICY "Users manage own sessions"
+  ON public.chat_sessions FOR ALL
+  USING (auth.uid() = user_id)
+  WITH CHECK (auth.uid() = user_id);
 ```
 
-### 3. Frontend: `AgentFormDialog` melhorado
+### 2. Nova pagina: `src/pages/ChatIA.tsx`
 
-- Adicionar selector de **Papel** (Responder / Acao / Router) no formulario
-- Quando `role = router` ou `role = responder` com sub-agentes:
-  - Mostrar secao "Regras de Routing" com formulario para cada sub-agente selecionado
-  - Campos: intent (texto), keywords (tags), descricao
-- Quando `role = action`:
-  - Tornar o campo "Fluxo padrao" obrigatorio (o fluxo que sera executado)
-  - Esconder a secao de sub-agentes
+Layout estilo ChatGPT:
 
-### 4. Frontend: `AgentCard` melhorado
-
-- Mostrar badge com o papel do agente (Responder / Acao / Router)
-- Mostrar icones diferenciados por papel
-- Mostrar lista de rotas configuradas no card do router
-
-### 5. Backend: `chatbot-reply` com logica de routing
-
-Apos obter a resposta do agente principal, adicionar uma etapa de **detecao de intencao**:
-
-1. Se o agente tem `sub_agent_ids` e `routing_rules.routes`:
-   - Primeiro, verificar keywords na mensagem do cliente (match rapido, sem custo de IA)
-   - Se nao houver match por keyword, pedir a IA para classificar a intencao usando as descricoes das rotas
-   - Se uma intencao for detectada, delegar para o sub-agente correspondente
-2. Se o sub-agente tem `agent_role = action` e um `default_flow_id`:
-   - Em vez de gerar resposta de texto, chamar o `flow-engine` com o fluxo vinculado
-   - Guardar na conversa qual agente esta activo (`bot_state.active_agent_id`)
-3. Se nenhuma intencao for detectada, o agente principal responde normalmente
-
-### 6. Backend: `ai-playground` -- novo modo `classify_intent`
-
-Adicionar um modo opcional ao `ai-playground` que, em vez de gerar resposta, classifica a intencao:
-
-```json
-// Request
-{
-  "agent_id": "...",
-  "messages": [...],
-  "mode": "classify_intent",
-  "intents": [
-    { "intent": "agendamento", "description": "..." },
-    { "intent": "cobranca", "description": "..." }
-  ]
-}
-
-// Response
-{ "intent": "agendamento", "confidence": 0.92 }
+```
++------------------+-------------------------------+
+| Sidebar          | Area do Chat                  |
+| [+ Nova conversa]|                               |
+|                  |  (welcome ou historico)        |
+| - Conversa 1     |                               |
+| - Conversa 2     |  [mensagens com markdown]     |
+| - Conversa 3     |                               |
+|                  |                               |
+| [Agente: v]      | [input] [enviar]              |
++------------------+-------------------------------+
 ```
 
-O system prompt sera construido automaticamente para pedir ao modelo que classifique.
+Funcionalidades:
+- **Sidebar esquerda**: lista de sessoes anteriores, botao "Nova conversa", selector de agente
+- **Area principal**: mensagens com rendering de markdown (negrito, listas, codigo), welcome message ao iniciar
+- **Persistencia**: cada envio guarda as mensagens na `chat_sessions` via upsert
+- **Titulo auto**: apos a primeira resposta, gerar titulo curto a partir do conteudo (substring da primeira mensagem do user)
+- Usa `ai-playground` como backend (ja suporta RAG/knowledge)
 
-## Fluxo Completo (exemplo)
+### 3. Rota no App.tsx
 
-```text
-Cliente: "Quero marcar uma consulta para a proxima semana"
-          |
-    [chatbot-reply]
-          |
-    agente principal (router/responder)
-          |
-    1. keyword match: "marcar" → intent "agendamento" ✓
-          |
-    2. delega para agente "Agendamento"
-          |
-    3. agente "Agendamento" tem default_flow_id
-          |
-    4. chama flow-engine com o fluxo de agendamento
-          |
-    5. bot_state.active_agent_id = agente-agendamento
-          |
-    [proximas mensagens vao direto para o agente de agendamento
-     ate o fluxo terminar ou o cliente pedir para voltar]
-```
+Adicionar rota `/chat` dentro do AppLayout.
 
-## Ficheiros Alterados
+### 4. Link na navegacao (AppSidebar/AppHeader)
 
-| Ficheiro | Tipo |
-|----------|------|
-| Migracao SQL (nova coluna `agent_role`) | DB |
-| `src/pages/Agentes.tsx` | Frontend |
-| `src/components/agentes/AgentFormDialog.tsx` | Frontend |
-| `src/components/agentes/AgentCard.tsx` | Frontend |
-| `supabase/functions/chatbot-reply/index.ts` | Backend |
-| `supabase/functions/ai-playground/index.ts` | Backend |
+Adicionar item "Chat IA" no menu principal com icone `MessageSquare`.
+
+### 5. Vista no Bitrix24: `ChatIAView` dentro de `Bitrix24App.tsx`
+
+- Adicionar "Chat IA" como nova opcao no menu lateral do iframe (entre "Playground" e "Pagamentos")
+- Replicar a mesma interface mas sem depender de `auth.uid()` — usar `member_id` como identificador alternativo ou chamar a API REST directamente
+- Persistencia opcional no iframe (pode usar `localStorage` como fallback)
+
+### 6. Rendering de Markdown simples
+
+Implementar um componente `MarkdownMessage` que converte:
+- `**negrito**` → `<strong>`
+- `` `codigo` `` → `<code>`
+- `\n` → `<br>`
+- Listas com `-` ou `1.`
+- Blocos de codigo com ` ``` `
+
+Sem dependencias extra — parsing regex simples.
+
+## Ficheiros
+
+| Ficheiro | Accao |
+|----------|-------|
+| Migracao SQL (`chat_sessions`) | Criar |
+| `src/pages/ChatIA.tsx` | Criar |
+| `src/components/chat/MarkdownMessage.tsx` | Criar |
+| `src/components/chat/ChatSidebar.tsx` | Criar |
+| `src/App.tsx` | Adicionar rota `/chat` |
+| `src/components/AppSidebar.tsx` | Adicionar link "Chat IA" |
+| `src/pages/Bitrix24App.tsx` | Adicionar `ChatIAView` + nav item |
 
 ## Impacto
 
-- Retrocompativel: agentes existentes ficam com `role = responder` por defeito
-- Sem quebra de funcionalidade actual
-- O routing por keyword e instantaneo (sem custo de IA)
-- O routing por IA so e usado como fallback quando keywords nao matcham
+- Nao altera o Playground existente (continua disponivel para debug)
+- Reutiliza `ai-playground` Edge Function — zero alteracoes no backend
+- RLS garante que cada utilizador so ve as suas sessoes
+- No iframe Bitrix24, funciona sem autenticacao Supabase (usa fetch directo)
 
