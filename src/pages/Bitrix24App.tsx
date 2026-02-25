@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { AudioRecordButton } from "@/components/chat/AudioRecordButton";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
@@ -1531,6 +1532,12 @@ function ChatIABitrixView() {
         <div className="border-t p-3">
           <div className="max-w-2xl mx-auto flex gap-2">
             <Input value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => e.key === "Enter" && sendMessage()} placeholder="Escreva uma mensagem..." disabled={loading} className="flex-1" />
+            <AudioRecordButton
+              onTranscript={(text) => setInput((prev) => (prev ? prev + " " : "") + text)}
+              disabled={loading}
+              fetchTokenUrl={`${SUPABASE_URL}/functions/v1/elevenlabs-scribe-token`}
+              fetchHeaders={{ Authorization: `Bearer ${SUPABASE_KEY}` }}
+            />
             <Button size="icon" onClick={sendMessage} disabled={!input.trim() || loading}><Send className="h-4 w-4" /></Button>
           </div>
         </div>

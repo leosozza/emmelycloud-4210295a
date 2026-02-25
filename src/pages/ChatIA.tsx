@@ -8,6 +8,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Send, Loader2, Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
+import { AudioRecordButton } from "@/components/chat/AudioRecordButton";
 
 interface Message {
   role: "user" | "assistant";
@@ -278,6 +279,10 @@ export default function ChatIAPage() {
               disabled={!selectedAgentId || isLoading}
               className="min-h-[44px] max-h-32 resize-none"
               rows={1}
+            />
+            <AudioRecordButton
+              onTranscript={(text) => setInput((prev) => (prev ? prev + " " : "") + text)}
+              disabled={!selectedAgentId || isLoading}
             />
             <Button
               size="icon"
