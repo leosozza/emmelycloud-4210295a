@@ -18,6 +18,7 @@ import {
   GitBranch,
   Sparkles,
   Phone,
+  MessageSquare,
   FileCode,
   BookOpen,
 } from "lucide-react";
@@ -56,6 +57,7 @@ const aiNav = [
   { title: "Treino", url: "/training", icon: Brain },
   { title: "Fluxos", url: "/flows", icon: GitBranch },
   { title: "Playground", url: "/playground", icon: Sparkles },
+  { title: "Chat IA", url: "/chat", icon: MessageSquare },
 ];
 
 const secondaryNav = [

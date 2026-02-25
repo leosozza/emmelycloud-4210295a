@@ -40,7 +40,7 @@ const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
 
 const customNodeTypes = { custom: CustomFlowNode };
 
-type AppView = "loading" | "dashboard" | "agentes" | "training" | "flows" | "playground" | "pagamentos" | "relatorios";
+type AppView = "loading" | "dashboard" | "agentes" | "training" | "flows" | "playground" | "chatia" | "pagamentos" | "relatorios";
 
 // ==================== MAIN COMPONENT ====================
 const Bitrix24App = () => {
@@ -152,6 +152,7 @@ const Bitrix24App = () => {
     { id: "training", label: "Treinamento", icon: BookOpen },
     { id: "flows", label: "Fluxos", icon: GitBranch },
     { id: "playground", label: "Playground", icon: MessageSquare },
+    { id: "chatia", label: "Chat IA", icon: Sparkles },
     { id: "pagamentos", label: "Pagamentos", icon: CreditCard },
     { id: "relatorios", label: "Relatórios", icon: BarChart3 },
   ];
@@ -241,6 +242,7 @@ const Bitrix24App = () => {
         {view === "training" && <TrainingView />}
         {view === "flows" && <FlowsView />}
         {view === "playground" && <PlaygroundView />}
+        {view === "chatia" && <ChatIABitrixView />}
         {view === "pagamentos" && <PagamentosView />}
         {view === "relatorios" && <RelatoriosView />}
       </main>
@@ -1343,6 +1345,196 @@ function FlowsView() {
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+// ==================== CHAT IA BITRIX VIEW ====================
+function ChatIABitrixView() {
+  const [agents, setAgents] = useState<any[]>([]);
+  const [selectedAgent, setSelectedAgent] = useState("");
+  const [messages, setMessages] = useState<Array<{ role: string; content: string }>>([]);
+  const [sessions, setSessions] = useState<Array<{ id: string; title: string; messages: any[] }>>([]);
+  const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
+  const [input, setInput] = useState("");
+  const [loading, setLoading] = useState(false);
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    fetch(`${SUPABASE_URL}/rest/v1/ai_agents?select=id,name,is_default,is_active,welcome_message&is_active=eq.true&order=is_default.desc`, {
+      headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` },
+    }).then(r => r.json()).then(data => {
+      setAgents(data || []);
+      if (data?.length > 0) setSelectedAgent(data[0].id);
+    }).catch(console.error);
+
+    // Load from localStorage
+    const saved = localStorage.getItem("chatia_sessions");
+    if (saved) {
+      try { setSessions(JSON.parse(saved)); } catch {}
+    }
+  }, []);
+
+  useEffect(() => {
+    if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+  }, [messages]);
+
+  const saveSessions = (updated: typeof sessions) => {
+    setSessions(updated);
+    localStorage.setItem("chatia_sessions", JSON.stringify(updated));
+  };
+
+  const currentAgent = agents.find((a: any) => a.id === selectedAgent);
+
+  const selectSession = (id: string) => {
+    const s = sessions.find(x => x.id === id);
+    if (s) { setActiveSessionId(id); setMessages(s.messages); }
+  };
+
+  const newSession = () => { setActiveSessionId(null); setMessages([]); };
+
+  const deleteSession = (id: string) => {
+    const updated = sessions.filter(s => s.id !== id);
+    saveSessions(updated);
+    if (activeSessionId === id) { setActiveSessionId(null); setMessages([]); }
+  };
+
+  const sendMessage = async () => {
+    if (!input.trim() || !selectedAgent || loading) return;
+    const userMsg = { role: "user", content: input };
+    const newMessages = [...messages, userMsg];
+    setMessages(newMessages);
+    setInput("");
+    setLoading(true);
+    try {
+      const res = await fetch(`${SUPABASE_URL}/functions/v1/ai-playground`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${SUPABASE_KEY}` },
+        body: JSON.stringify({ agent_id: selectedAgent, messages: newMessages }),
+      });
+      const data = await res.json();
+      const allMsgs = [...newMessages, { role: "assistant", content: data.content || "Erro ao processar." }];
+      setMessages(allMsgs);
+
+      // Persist to localStorage
+      if (activeSessionId) {
+        const updated = sessions.map(s => s.id === activeSessionId ? { ...s, messages: allMsgs } : s);
+        saveSessions(updated);
+      } else {
+        const newId = crypto.randomUUID();
+        const title = input.trim().substring(0, 50);
+        const newSession = { id: newId, title, messages: allMsgs };
+        saveSessions([newSession, ...sessions]);
+        setActiveSessionId(newId);
+      }
+    } catch {
+      setMessages([...newMessages, { role: "assistant", content: "Erro de conexão." }]);
+    }
+    setLoading(false);
+  };
+
+  // Simple markdown render for Bitrix view
+  const renderMd = (text: string) => {
+    let html = text
+      .replace(/```(\w*)\n([\s\S]*?)```/g, '<pre class="bg-muted rounded p-2 text-xs overflow-x-auto my-1"><code>$2</code></pre>')
+      .replace(/`([^`]+)`/g, '<code class="bg-muted px-1 rounded text-xs">$1</code>')
+      .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+      .replace(/\*(.+?)\*/g, '<em>$1</em>')
+      .replace(/^- (.+)$/gm, '<li>$1</li>')
+      .replace(/\n/g, '<br>');
+    return html;
+  };
+
+  return (
+    <div className="flex h-screen">
+      {/* Sidebar */}
+      <div className="w-56 border-r bg-card flex flex-col shrink-0">
+        <div className="p-3 border-b space-y-2">
+          <Button onClick={newSession} size="sm" className="w-full">
+            <Plus className="h-3.5 w-3.5 mr-1" /> Nova conversa
+          </Button>
+          <Select value={selectedAgent} onValueChange={(v) => { setSelectedAgent(v); newSession(); }}>
+            <SelectTrigger className="h-7 text-xs"><SelectValue placeholder="Agente" /></SelectTrigger>
+            <SelectContent>
+              {agents.map((a: any) => <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        </div>
+        <ScrollArea className="flex-1">
+          <div className="p-1.5 space-y-0.5">
+            {sessions.map(s => (
+              <div
+                key={s.id}
+                onClick={() => selectSession(s.id)}
+                className={cn(
+                  "group flex items-center gap-1.5 px-2 py-1.5 rounded text-xs cursor-pointer transition-colors",
+                  s.id === activeSessionId ? "bg-primary/10 text-primary font-medium" : "text-muted-foreground hover:bg-muted"
+                )}
+              >
+                <MessageSquare className="h-3 w-3 shrink-0" />
+                <span className="truncate flex-1">{s.title}</span>
+                <button onClick={(e) => { e.stopPropagation(); deleteSession(s.id); }} className="opacity-0 group-hover:opacity-100 p-0.5">
+                  <Trash2 className="h-2.5 w-2.5" />
+                </button>
+              </div>
+            ))}
+          </div>
+        </ScrollArea>
+      </div>
+
+      {/* Chat */}
+      <div className="flex-1 flex flex-col">
+        <div ref={scrollRef} className="flex-1 overflow-y-auto p-4">
+          {messages.length === 0 ? (
+            <div className="flex items-center justify-center h-full text-center text-muted-foreground">
+              <div>
+                <Sparkles className="h-10 w-10 mx-auto mb-3 opacity-20" />
+                {currentAgent?.welcome_message ? (
+                  <div className="text-sm" dangerouslySetInnerHTML={{ __html: renderMd(currentAgent.welcome_message) }} />
+                ) : (
+                  <p className="text-sm">Envie uma mensagem para conversar com o agente</p>
+                )}
+              </div>
+            </div>
+          ) : (
+            <div className="max-w-2xl mx-auto space-y-4">
+              {messages.map((m, i) => (
+                <div key={i} className={cn("flex gap-2", m.role === "user" ? "justify-end" : "")}>
+                  {m.role === "assistant" && (
+                    <div className="w-6 h-6 rounded-full bg-primary/10 flex items-center justify-center shrink-0 mt-0.5">
+                      <Sparkles className="h-3 w-3 text-primary" />
+                    </div>
+                  )}
+                  <div className={cn(
+                    "max-w-[80%] text-sm",
+                    m.role === "user" ? "bg-primary text-primary-foreground rounded-2xl rounded-br-md px-3 py-2" : ""
+                  )}>
+                    {m.role === "assistant" ? (
+                      <div dangerouslySetInnerHTML={{ __html: renderMd(m.content) }} />
+                    ) : (
+                      <p className="whitespace-pre-wrap">{m.content}</p>
+                    )}
+                  </div>
+                </div>
+              ))}
+              {loading && (
+                <div className="flex gap-2">
+                  <div className="w-6 h-6 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
+                    <Sparkles className="h-3 w-3 text-primary" />
+                  </div>
+                  <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+        <div className="border-t p-3">
+          <div className="max-w-2xl mx-auto flex gap-2">
+            <Input value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => e.key === "Enter" && sendMessage()} placeholder="Escreva uma mensagem..." disabled={loading} className="flex-1" />
+            <Button size="icon" onClick={sendMessage} disabled={!input.trim() || loading}><Send className="h-4 w-4" /></Button>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

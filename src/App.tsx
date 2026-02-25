@@ -27,6 +27,7 @@ import PlaygroundIAPage from "./pages/PlaygroundIA";
 import VoiceAgentsPage from "./pages/VoiceAgents";
 import ApiDocsPage from "./pages/ApiDocs";
 import ManualPage from "./pages/Manual";
+import ChatIAPage from "./pages/ChatIA";
 import Privacy from "./pages/Privacy";
 import Terms from "./pages/Terms";
 import DataDeletion from "./pages/DataDeletion";
@@ -70,6 +71,7 @@ const App = () => (
             <Route path="/voice-agents" element={<VoiceAgentsPage />} />
             <Route path="/api-docs" element={<ApiDocsPage />} />
             <Route path="/manual" element={<ManualPage />} />
+            <Route path="/chat" element={<ChatIAPage />} />
           </Route>
           <Route path="*" element={<NotFound />} />
         </Routes>
