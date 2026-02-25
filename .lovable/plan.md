@@ -1,57 +1,142 @@
 
 
-# Implementar Todos os Metodos de Pagamento Stripe (Checkout Sessions)
+# Plano: Sistema de Agentes Especialistas com Routing por Intencao
 
-## Abordagem
+## Conceito
 
-Migrar de **Payment Intents** (que so suporta `card`) para **Stripe Checkout Sessions** com `payment_method_types` explicitos. Isto permite que o Stripe apresente automaticamente todos os metodos de pagamento disponiveis, incluindo Multibanco, MB WAY, SEPA, Apple Pay, etc.
+Transformar o sistema de agentes numa arquitectura de **orquestrador + especialistas**:
 
-## Metodos de Pagamento a Ativar
+- **Agente Responder** (padrao): responde ao cliente, detecta intencoes e transfere para especialistas
+- **Agente Acao**: executa um fluxo especifico (agendamento, cobranca, etc.)
+- O agente principal analisa cada mensagem e decide se deve responder ou delegar a um sub-agente
 
-| Metodo | Codigo Stripe | Regiao |
-|--------|--------------|--------|
-| Cartao (Visa, MC, Amex) | `card` | Global |
-| SEPA Direct Debit | `sepa_debit` | Europa |
-| Multibanco | `multibanco` | Portugal |
-| MB WAY | `mbway` | Portugal (requer Stripe >= 2023) |
-| iDEAL | `ideal` | Holanda/UE |
-| Bancontact | `bancontact` | Belgica |
-| giropay | `giropay` | Alemanha |
-| Sofort | `sofort` | Alemanha/Europa |
-| Klarna | `klarna` | Europa |
-| Link | `link` | Global |
+## Estado Actual
 
-**Nota:** Apple Pay e Google Pay sao ativados automaticamente quando `card` esta presente no Checkout Sessions -- nao necessitam de tipo separado.
+- `ai_agents` tem campos `sub_agent_ids` (uuid[]) e `routing_rules` (jsonb) -- **nunca usados no backend**
+- `chatbot-reply` chama `ai-playground` diretamente, sem logica de routing
+- `ai-playground` so gera texto, nao detecta intencoes nem delega
 
-## Alteracoes Tecnicas
+## Alteracoes
 
-### 1. `supabase/functions/payment-create/index.ts`
+### 1. Base de Dados: nova coluna `agent_role`
 
-**Substituir** a funcao `createStripePayment` para usar a API de Checkout Sessions:
+Adicionar coluna `agent_role` (text, default `'responder'`) a `ai_agents` com valores:
+- `responder` -- responde ao cliente com IA
+- `action` -- executa um fluxo quando ativado
+- `router` -- analisa intencao e delega (o orquestrador)
 
-- Trocar o endpoint de `/v1/payment_intents` para `/v1/checkout/sessions`
-- Adicionar todos os `payment_method_types[]` listados acima
-- Adicionar `mode=payment` e URLs de `success_url` / `cancel_url`
-- Adicionar `line_items` com o valor e descricao
-- Retornar o `session.url` como `payment_url` (o cliente e redirecionado para a pagina hosted do Stripe)
-- Manter o `gateway_payment_id` como o ID do Payment Intent associado (via `payment_intent` no response)
+### 2. Estrutura do `routing_rules`
 
-A assinatura da funcao passa a aceitar um parametro `return_url` opcional para redirect apos pagamento.
+Definir o formato do jsonb `routing_rules` para cada sub-agente vinculado:
 
-### 2. `supabase/functions/bitrix24-payment-handler/index.ts`
+```json
+{
+  "routes": [
+    {
+      "agent_id": "uuid-do-agente-agendamento",
+      "intent": "agendamento",
+      "keywords": ["agendar", "marcar", "horário", "consulta"],
+      "description": "Cliente quer agendar uma consulta ou reunião"
+    },
+    {
+      "agent_id": "uuid-do-agente-cobranca",
+      "intent": "cobranca",
+      "keywords": ["pagar", "boleto", "fatura", "pagamento"],
+      "description": "Cliente quer informações sobre pagamento"
+    }
+  ]
+}
+```
 
-Aplicar a mesma migracao para Checkout Sessions na secao Stripe deste handler, substituindo o bloco de Payment Intent (~linhas 237-253) pelo mesmo padrao de Checkout Session.
+### 3. Frontend: `AgentFormDialog` melhorado
 
-### 3. `supabase/functions/payment-webhook-stripe/index.ts`
+- Adicionar selector de **Papel** (Responder / Acao / Router) no formulario
+- Quando `role = router` ou `role = responder` com sub-agentes:
+  - Mostrar secao "Regras de Routing" com formulario para cada sub-agente selecionado
+  - Campos: intent (texto), keywords (tags), descricao
+- Quando `role = action`:
+  - Tornar o campo "Fluxo padrao" obrigatorio (o fluxo que sera executado)
+  - Esconder a secao de sub-agentes
 
-Verificar que o webhook ja trata o evento `checkout.session.completed` -- caso contrario, adicionar handler para este evento que:
-- Extrai o `payment_intent` da session
-- Atualiza o status da transacao na tabela `payment_transactions`
+### 4. Frontend: `AgentCard` melhorado
 
-### Impacto
+- Mostrar badge com o papel do agente (Responder / Acao / Router)
+- Mostrar icones diferenciados por papel
+- Mostrar lista de rotas configuradas no card do router
 
-- **2-3 ficheiros** de Edge Functions alterados
-- **Sem alteracoes de base de dados** -- a tabela `payment_transactions` ja suporta `payment_url`
-- **Sem alteracoes no frontend** -- o fluxo passa a redirecionar para o Checkout hosted do Stripe
-- O Stripe so apresenta os metodos ativados na conta do cliente (ex: se a conta e de Portugal, Multibanco e MB WAY aparecem automaticamente)
+### 5. Backend: `chatbot-reply` com logica de routing
+
+Apos obter a resposta do agente principal, adicionar uma etapa de **detecao de intencao**:
+
+1. Se o agente tem `sub_agent_ids` e `routing_rules.routes`:
+   - Primeiro, verificar keywords na mensagem do cliente (match rapido, sem custo de IA)
+   - Se nao houver match por keyword, pedir a IA para classificar a intencao usando as descricoes das rotas
+   - Se uma intencao for detectada, delegar para o sub-agente correspondente
+2. Se o sub-agente tem `agent_role = action` e um `default_flow_id`:
+   - Em vez de gerar resposta de texto, chamar o `flow-engine` com o fluxo vinculado
+   - Guardar na conversa qual agente esta activo (`bot_state.active_agent_id`)
+3. Se nenhuma intencao for detectada, o agente principal responde normalmente
+
+### 6. Backend: `ai-playground` -- novo modo `classify_intent`
+
+Adicionar um modo opcional ao `ai-playground` que, em vez de gerar resposta, classifica a intencao:
+
+```json
+// Request
+{
+  "agent_id": "...",
+  "messages": [...],
+  "mode": "classify_intent",
+  "intents": [
+    { "intent": "agendamento", "description": "..." },
+    { "intent": "cobranca", "description": "..." }
+  ]
+}
+
+// Response
+{ "intent": "agendamento", "confidence": 0.92 }
+```
+
+O system prompt sera construido automaticamente para pedir ao modelo que classifique.
+
+## Fluxo Completo (exemplo)
+
+```text
+Cliente: "Quero marcar uma consulta para a proxima semana"
+          |
+    [chatbot-reply]
+          |
+    agente principal (router/responder)
+          |
+    1. keyword match: "marcar" → intent "agendamento" ✓
+          |
+    2. delega para agente "Agendamento"
+          |
+    3. agente "Agendamento" tem default_flow_id
+          |
+    4. chama flow-engine com o fluxo de agendamento
+          |
+    5. bot_state.active_agent_id = agente-agendamento
+          |
+    [proximas mensagens vao direto para o agente de agendamento
+     ate o fluxo terminar ou o cliente pedir para voltar]
+```
+
+## Ficheiros Alterados
+
+| Ficheiro | Tipo |
+|----------|------|
+| Migracao SQL (nova coluna `agent_role`) | DB |
+| `src/pages/Agentes.tsx` | Frontend |
+| `src/components/agentes/AgentFormDialog.tsx` | Frontend |
+| `src/components/agentes/AgentCard.tsx` | Frontend |
+| `supabase/functions/chatbot-reply/index.ts` | Backend |
+| `supabase/functions/ai-playground/index.ts` | Backend |
+
+## Impacto
+
+- Retrocompativel: agentes existentes ficam com `role = responder` por defeito
+- Sem quebra de funcionalidade actual
+- O routing por keyword e instantaneo (sem custo de IA)
+- O routing por IA so e usado como fallback quando keywords nao matcham
 
