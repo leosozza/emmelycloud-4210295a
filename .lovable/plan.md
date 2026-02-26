@@ -1,72 +1,43 @@
 
 
-# Plano: Botao de Gravacao de Audio com Transcricao Automatica (ElevenLabs Scribe)
+# Plano: Webhook para Atualizar URL do Ollama Remoto
 
-## Objectivo
+## Contexto
 
-Adicionar um botao de microfone no input do Chat IA (e no iframe Bitrix24) que grava audio do utilizador, transcreve automaticamente via ElevenLabs Scribe (realtime), e insere o texto transcrito no campo de mensagem para enviar ao agente IA.
+O túnel Cloudflare para o Ollama remoto (Qwen 2.5:32b) muda de URL a cada reinício. Atualmente a URL é atualizada manualmente na Central de Integrações. Vamos criar um webhook público que recebe a nova URL e atualiza automaticamente a credencial `OLLAMA_BASE_URL` na tabela `integration_credentials`.
 
-## Pre-requisitos
+## Alterações
 
-O projecto ja tem o pacote `@elevenlabs/react` instalado e uma conexao ElevenLabs disponivel no workspace — mas **nao esta vinculada** ao projecto. Sera necessario vincular primeiro para que a `ELEVENLABS_API_KEY` fique disponivel nas Edge Functions.
+### 1. Nova Edge Function: `ollama-url-webhook`
 
-## Alteracoes
+- Endpoint público (sem JWT) que aceita POST com `{ "url": "https://nova-url.trycloudflare.com" }`
+- Valida que o body contém uma URL válida
+- Opcionalmente valida um `secret` no body ou query param para evitar abusos (usará um secret configurável)
+- Faz upsert na `integration_credentials` com `provider=ollama`, `credential_key=OLLAMA_BASE_URL`
+- Retorna `{ ok: true }` em caso de sucesso
 
-### 1. Vincular conector ElevenLabs ao projecto
+### 2. Configuração
 
-Usar o conector ElevenLabs existente (connection_id: `std_01keaadpqqeh1stxyksn6z99zh`) para disponibilizar a `ELEVENLABS_API_KEY` como variavel de ambiente.
+- Adicionar `[functions.ollama-url-webhook] verify_jwt = false` ao config.toml
+- O script no servidor local (que inicia o túnel Cloudflare) pode fazer um simples `curl -X POST` com a nova URL após o túnel estar ativo
 
-### 2. Nova Edge Function: `elevenlabs-scribe-token`
+### Ficheiros
 
-Gera tokens single-use para transcricao realtime (expira em 15 min). Chama `https://api.elevenlabs.io/v1/single-use-token/realtime_scribe` com a `ELEVENLABS_API_KEY`.
+| Ficheiro | Ação |
+|----------|------|
+| `supabase/functions/ollama-url-webhook/index.ts` | Criar |
+| `supabase/config.toml` | Adicionar entrada |
 
-### 3. Novo componente: `src/components/chat/AudioRecordButton.tsx`
+### Exemplo de uso no servidor local
 
-Botao de microfone que usa o hook `useScribe` do `@elevenlabs/react`:
-
-- Ao clicar, obtem token via `elevenlabs-scribe-token` e inicia gravacao
-- Mostra indicador visual de gravacao (icone a pulsar, texto parcial)
-- Ao parar (clique ou VAD), concatena os `committedTranscripts` e insere no campo de input
-- Callback `onTranscript(text: string)` para o componente pai receber o texto
-
-```text
-[Textarea: mensagem...] [🎤] [➤]
-                          ^
-                    AudioRecordButton
+```bash
+# Após iniciar o túnel Cloudflare e obter a URL:
+curl -X POST "https://qohnsluvhyziovfynzlu.supabase.co/functions/v1/ollama-url-webhook" \
+  -H "Content-Type: application/json" \
+  -d '{"url": "https://nova-url.trycloudflare.com", "secret": "MEU_SECRET"}'
 ```
 
-### 4. Integrar no `ChatIA.tsx`
+### Segurança
 
-- Importar `AudioRecordButton`
-- Adicionar entre o Textarea e o botao Send
-- Ao receber transcript, concatenar ao input existente (`setInput(prev => prev + transcript)`)
-
-### 5. Integrar no `Bitrix24App.tsx` (ChatIABitrixView)
-
-- Mesmo botao `AudioRecordButton` na vista de Chat IA do iframe
-- Funciona identicamente (chama a Edge Function directamente com fetch)
-
-## Ficheiros
-
-| Ficheiro | Accao |
-|----------|-------|
-| Conector ElevenLabs | Vincular ao projecto |
-| `supabase/functions/elevenlabs-scribe-token/index.ts` | Criar |
-| `src/components/chat/AudioRecordButton.tsx` | Criar |
-| `src/pages/ChatIA.tsx` | Editar (adicionar botao) |
-| `src/pages/Bitrix24App.tsx` | Editar (adicionar botao na ChatIABitrixView) |
-
-## Detalhes Tecnicos
-
-- **Modelo**: `scribe_v2_realtime` (transcricao streaming com latencia ultra-baixa)
-- **Commit strategy**: `vad` (Voice Activity Detection — segmenta automaticamente por silencio)
-- **Microphone config**: `echoCancellation: true`, `noiseSuppression: true`
-- **Idioma**: auto-detect (sem `language_code` fixo — suporta PT, EN, ES, etc.)
-- **Seguranca**: API key nunca exposta no frontend; token single-use gerado server-side
-
-## Impacto
-
-- Zero alteracao nos agentes ou no `ai-playground` — o audio e transcrito para texto antes de enviar
-- Retrocompativel — o botao e opcional, o input de texto continua a funcionar normalmente
-- Funciona em qualquer browser moderno com suporte a `getUserMedia`
+Um secret partilhado (configurado via variável de ambiente `OLLAMA_WEBHOOK_SECRET`) protege o endpoint contra chamadas não autorizadas. Se não estiver configurado, o webhook funciona sem autenticação (útil para testes iniciais).
 
