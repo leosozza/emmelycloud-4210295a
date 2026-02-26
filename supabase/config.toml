@@ -98,3 +98,6 @@ verify_jwt = false
 
 [functions.bitrix24-payment-tab]
 verify_jwt = false
+
+[functions.ollama-url-webhook]
+verify_jwt = false
