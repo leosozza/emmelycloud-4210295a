@@ -283,6 +283,7 @@ export default function ChatIAPage() {
             <AudioRecordButton
               onTranscript={(text) => setInput((prev) => (prev ? prev + " " : "") + text)}
               disabled={!selectedAgentId || isLoading}
+              showEngineSelector
             />
             <Button
               size="icon"
