@@ -707,7 +707,7 @@ function PagamentosTab() {
           <WebhookUrlDisplay
             label="Webhook URL (configurar no Stripe Dashboard)"
             url={`https://qohnsluvhyziovfynzlu.supabase.co/functions/v1/payment-webhook-stripe`}
-            hint="Eventos: payment_intent.succeeded, payment_intent.payment_failed, payment_intent.canceled, charge.refunded"
+            hint="Eventos: payment_intent.succeeded, payment_intent.payment_failed, payment_intent.canceled, checkout.session.completed, charge.refunded"
           />
 
           <details className="group rounded-md border border-border">
@@ -721,7 +721,7 @@ function PagamentosTab() {
               <li>Copie a <strong>Secret Key</strong> (<code className="text-[10px] bg-muted px-1 rounded">sk_live_…</code> ou <code className="text-[10px] bg-muted px-1 rounded">sk_test_…</code>) e cole acima</li>
               <li>Vá a <strong>Developers → Webhooks → Add endpoint</strong></li>
               <li>Cole o <strong>Webhook URL</strong> acima como Endpoint URL</li>
-              <li>Selecione os eventos: <code className="text-[10px] bg-muted px-1 rounded">payment_intent.succeeded</code>, <code className="text-[10px] bg-muted px-1 rounded">payment_intent.payment_failed</code>, <code className="text-[10px] bg-muted px-1 rounded">payment_intent.canceled</code>, <code className="text-[10px] bg-muted px-1 rounded">charge.refunded</code></li>
+              <li>Selecione os eventos: <code className="text-[10px] bg-muted px-1 rounded">payment_intent.succeeded</code>, <code className="text-[10px] bg-muted px-1 rounded">payment_intent.payment_failed</code>, <code className="text-[10px] bg-muted px-1 rounded">payment_intent.canceled</code>, <code className="text-[10px] bg-muted px-1 rounded">checkout.session.completed</code>, <code className="text-[10px] bg-muted px-1 rounded">charge.refunded</code></li>
               <li>Após criar o endpoint, copie o <strong>Signing Secret</strong> (<code className="text-[10px] bg-muted px-1 rounded">whsec_…</code>) e cole acima</li>
               <li>Clique em <strong>"Testar Conexão"</strong> para validar</li>
             </ol>

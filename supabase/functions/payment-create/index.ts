@@ -33,7 +33,7 @@ async function createStripePayment(apiKey: string, amount: number, currency: str
   params.append("line_items[0][quantity]", "1");
 
   // All payment method types
-  const paymentMethods = ["card", "sepa_debit", "multibanco", "ideal", "bancontact", "sofort", "klarna", "link"];
+  const paymentMethods = ["card", "sepa_debit", "multibanco", "mb_way", "ideal", "bancontact", "sofort", "klarna", "link"];
   for (const pm of paymentMethods) {
     params.append("payment_method_types[]", pm);
   }
