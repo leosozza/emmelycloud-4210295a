@@ -1535,6 +1535,8 @@ function ChatIABitrixView() {
             <AudioRecordButton
               onTranscript={(text) => setInput((prev) => (prev ? prev + " " : "") + text)}
               disabled={loading}
+              preferNative
+              lang="pt-PT"
               fetchTokenUrl={`${SUPABASE_URL}/functions/v1/elevenlabs-scribe-token`}
               fetchHeaders={{ Authorization: `Bearer ${SUPABASE_KEY}` }}
             />
