@@ -1,62 +1,49 @@
 
 
-## Revisão da Integração Stripe — Análise Completa
+## Reconhecimento de Voz — Web Speech API como Fallback Gratuito
 
-### Estado Atual
+### Situação Atual
 
-A integração Stripe está **funcional e bastante completa**, cobrindo:
+O botão de áudio (`AudioRecordButton`) usa **exclusivamente** o ElevenLabs Scribe (modelo `scribe_v2_realtime`), que requer API key paga e token server-side. Não existe fallback nativo do browser.
 
-1. **Criação de pagamentos** (`payment-create`) — Checkout Sessions com 8 métodos de pagamento (card, sepa_debit, multibanco, ideal, bancontact, sofort, klarna, link)
-2. **Webhook** (`payment-webhook-stripe`) — Verificação de assinatura HMAC-SHA256, processa 5 eventos (succeeded, failed, canceled, refunded, checkout.session.completed)
-3. **Consulta de status** (`payment-status`) — Consulta em tempo real à API Stripe
-4. **Handler Bitrix24** (`bitrix24-payment-handler`) — Modo CHECKOUT nativo no CRM
-5. **Notificação Bitrix24** — Atualiza Deal, Timeline, Smart Invoices automaticamente
-6. **UI de configuração** — Credenciais, webhook URL, guia passo-a-passo, teste de conexão
+### Proposta
 
-### Problemas Identificados
+Adicionar suporte à **Web Speech API** (`SpeechRecognition` / `webkitSpeechRecognition`) como alternativa gratuita e sem dependência de API key. O sistema tentará primeiro o ElevenLabs (se configurado) e usará automaticamente a Web Speech API como fallback — ou o utilizador poderá escolher.
 
-#### 1. Sem conversão automática de moeda EUR↔BRL
-O sistema **não converte moedas**. O roteamento é por região:
-- EUR → Stripe (Portugal/Europa)
-- BRL → Asaas (Brasil)
+### Plano de Implementação
 
-Cada gateway processa na moeda nativa. Não há conversão EUR→BRL nem vice-versa. O `LocaleContext` tem uma taxa fixa (`EUR_TO_BRL = 6.10`) mas é apenas para **exibição** no frontend, não afeta pagamentos reais.
+#### 1. Criar hook `useSpeechRecognition`
+Novo ficheiro `src/hooks/useSpeechRecognition.ts`:
+- Wrapper React sobre a Web Speech API nativa do browser
+- Props: `lang`, `continuous`, `interimResults`, callbacks (`onResult`, `onError`, `onEnd`)
+- Retorna: `isAvailable`, `isListening`, `transcript`, `partialTranscript`, `start()`, `stop()`, `toggle()`
+- Deteta suporte via `window.SpeechRecognition || window.webkitSpeechRecognition`
 
-**Isto é correto por design** — cada gateway opera na sua moeda local. Uma conversão real exigiria câmbio no momento da transação, que o Stripe já faz nativamente se a conta suportar múltiplas moedas.
+#### 2. Criar componente `SpeechRecordButton`
+Novo ficheiro `src/components/chat/SpeechRecordButton.tsx`:
+- Mesma interface visual do `AudioRecordButton` (ícone mic, tooltip com texto parcial)
+- Usa o hook `useSpeechRecognition` internamente
+- Sem dependência de ElevenLabs — funciona 100% no browser
+- Mostra badge "Browser" para distinguir do ElevenLabs
 
-#### 2. Evento `checkout.session.completed` falta no hint do webhook
-A UI de configuração (linha 710) lista apenas 4 eventos mas o webhook processa 5. Falta `checkout.session.completed` na instrução ao utilizador.
+#### 3. Atualizar `AudioRecordButton` com fallback inteligente
+- Tenta obter token ElevenLabs; se falhar (sem credenciais), usa automaticamente `SpeechRecognition` nativa
+- Prop opcional `preferNative?: boolean` para forçar Web Speech API
+- Indicador visual de qual engine está ativa
 
-#### 3. `getCredential` sem `.trim()` no webhook Stripe
-O `payment-create` faz `.trim()` nas credenciais (linha 16), mas o `payment-webhook-stripe` e `payment-status` **não fazem** (linha 15 de ambos). Isto pode causar erros de ByteString se houver espaços/quebras de linha invisíveis nas credenciais.
-
-#### 4. Financeiro.tsx hardcoded em EUR
-A página Financeiro formata sempre em EUR (linhas 73, 83) sem usar o `LocaleContext`/`formatCurrency`. Deveria respeitar a moeda da transação (campo `currency` já existe em `payment_transactions`).
-
-#### 5. MB WAY ausente nos métodos de pagamento
-O `payment-create` lista `multibanco` mas não inclui `mb_way` explicitamente (embora o Stripe Checkout Sessions possa apresentá-lo automaticamente dependendo da versão da API e região da conta).
-
-### Plano de Melhorias
-
-#### Passo 1: Adicionar `.trim()` nas Edge Functions de webhook e status
-Corrigir `getCredential` em `payment-webhook-stripe` e `payment-status` para aplicar `.trim()` — prevenção de erros ByteString.
-
-#### Passo 2: Corrigir hint do webhook na UI
-Adicionar `checkout.session.completed` à lista de eventos na página de Integrações.
-
-#### Passo 3: Usar moeda da transação na página Financeiro
-Substituir o hardcode `EUR` por `tx.currency` nos KPIs (já existe o campo).
-
-#### Passo 4: Adicionar `mb_way` aos métodos de pagamento Stripe
-Incluir `mb_way` na lista de `payment_method_types` no `payment-create` e `bitrix24-payment-handler`.
+#### 4. Integrar no ChatIA e Bitrix24
+- `ChatIA.tsx`: Já usa `AudioRecordButton` — funciona automaticamente com fallback
+- `Bitrix24App.tsx` (`ChatIABitrixView`): Beneficia especialmente porque evita chamada à Edge Function no iframe
 
 ### Detalhes Técnicos
 
-Ficheiros a alterar:
-- `supabase/functions/payment-webhook-stripe/index.ts` — `.trim()` no `getCredential`
-- `supabase/functions/payment-status/index.ts` — `.trim()` no `getCredential`
-- `supabase/functions/payment-create/index.ts` — adicionar `mb_way`
-- `supabase/functions/bitrix24-payment-handler/index.ts` — adicionar `mb_way`, `.trim()`
-- `src/pages/Integracoes.tsx` — hint do webhook com `checkout.session.completed`
-- `src/pages/Financeiro.tsx` — usar `tx.currency` em vez de hardcode EUR
+- A Web Speech API é suportada em Chrome, Edge, Safari (parcial) — não em Firefox
+- `webkitSpeechRecognition` é necessário para compatibilidade
+- Idioma padrão: `pt-PT` (com fallback `pt-BR`), configurável via `LocaleContext`
+- Sem alterações de base de dados ou Edge Functions necessárias
+
+### Ficheiros a Criar/Alterar
+- **Criar**: `src/hooks/useSpeechRecognition.ts`
+- **Alterar**: `src/components/chat/AudioRecordButton.tsx` — adicionar fallback nativo
+- **Alterar**: `src/pages/Bitrix24App.tsx` — `ChatIABitrixView` usar fallback nativo
 
