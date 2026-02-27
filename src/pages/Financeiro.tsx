@@ -70,7 +70,7 @@ const FinanceiroPage = () => {
             <TrendingUp className="h-4 w-4 text-emerald-500" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{totalConfirmed.toLocaleString("pt-PT", { style: "currency", currency: "EUR" })}</div>
+            <div className="text-2xl font-bold">{totalConfirmed.toLocaleString("pt-PT", { style: "currency", currency: confirmed[0]?.currency || "EUR" })}</div>
             <p className="text-xs text-muted-foreground">{confirmed.length} pagamento(s) confirmado(s)</p>
           </CardContent>
         </Card>
@@ -80,7 +80,7 @@ const FinanceiroPage = () => {
             <Clock className="h-4 w-4 text-amber-500" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{totalPending.toLocaleString("pt-PT", { style: "currency", currency: "EUR" })}</div>
+            <div className="text-2xl font-bold">{totalPending.toLocaleString("pt-PT", { style: "currency", currency: pending[0]?.currency || "EUR" })}</div>
             <p className="text-xs text-muted-foreground">{pending.length} aguardando baixa</p>
           </CardContent>
         </Card>

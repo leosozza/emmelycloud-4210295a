@@ -12,7 +12,7 @@ async function getCredential(supabase: any, provider: string, key: string): Prom
     .eq("provider", provider)
     .eq("credential_key", key)
     .maybeSingle();
-  return data?.credential_value || null;
+  return data?.credential_value?.trim() || null;
 }
 
 function isValidCpfCnpj(value: string): boolean {
@@ -241,7 +241,7 @@ Deno.serve(async (req) => {
       params.append("line_items[0][price_data][product_data][name]", description);
       params.append("line_items[0][quantity]", "1");
 
-      const paymentMethods = ["card", "sepa_debit", "multibanco", "ideal", "bancontact", "sofort", "klarna", "link"];
+      const paymentMethods = ["card", "sepa_debit", "multibanco", "mb_way", "ideal", "bancontact", "sofort", "klarna", "link"];
       for (const pm of paymentMethods) {
         params.append("payment_method_types[]", pm);
       }
