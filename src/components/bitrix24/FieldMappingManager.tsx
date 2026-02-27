@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
@@ -11,14 +11,16 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import { Switch } from "@/components/ui/switch";
-import { Loader2, Plus, Trash2, RefreshCw, ArrowRight, Save, Search, Link2 } from "lucide-react";
+import {
+  Loader2, Trash2, RefreshCw, ArrowRight, Save, Search, Link2, Filter,
+} from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
 
-// ── Supabase table schemas (from types.ts) ──
+// ── Supabase table schemas ──
 const SUPABASE_TABLES: Record<string, { label: string; columns: { key: string; type: string }[] }> = {
   leads: {
     label: "Leads",
@@ -109,16 +111,13 @@ interface BitrixField {
   isMultiple: boolean;
 }
 
-interface FieldMapping {
-  id?: string;
-  bitrix_entity: string;
-  bitrix_field_key: string;
-  bitrix_field_title: string;
-  supabase_table: string;
-  supabase_column: string;
-  sync_direction: string;
-  is_active: boolean;
-  isNew?: boolean;
+interface RowMapping {
+  supabaseColumn: string;
+  supabaseType: string;
+  bitrixFieldKey: string; // "" = not mapped
+  syncDirection: string;
+  isActive: boolean;
+  dbId?: string; // existing DB row id
 }
 
 interface FieldMappingManagerProps {
@@ -128,12 +127,15 @@ interface FieldMappingManagerProps {
 
 export default function FieldMappingManager({ integrationId, compact }: FieldMappingManagerProps) {
   const [bitrixEntity, setBitrixEntity] = useState<"lead" | "deal">("lead");
+  const [supabaseTable, setSupabaseTable] = useState("leads");
   const [bitrixFields, setBitrixFields] = useState<BitrixField[]>([]);
   const [loadingFields, setLoadingFields] = useState(false);
-  const [mappings, setMappings] = useState<FieldMapping[]>([]);
+  const [rows, setRows] = useState<RowMapping[]>([]);
   const [loadingMappings, setLoadingMappings] = useState(false);
   const [saving, setSaving] = useState(false);
   const [search, setSearch] = useState("");
+  const [showOnlyMapped, setShowOnlyMapped] = useState(false);
+  const [selectedRows, setSelectedRows] = useState<Set<string>>(new Set());
 
   // ── Fetch Bitrix fields ──
   const fetchBitrixFields = useCallback(async (entity: string) => {
@@ -159,14 +161,15 @@ export default function FieldMappingManager({ integrationId, compact }: FieldMap
     }
   }, []);
 
-  // ── Fetch saved mappings ──
-  const fetchMappings = useCallback(async () => {
+  // ── Build rows from Supabase columns + saved mappings ──
+  const buildRows = useCallback(async () => {
     setLoadingMappings(true);
     try {
       let query = supabase
         .from("bitrix24_field_mappings" as any)
         .select("*")
         .eq("bitrix_entity", bitrixEntity)
+        .eq("supabase_table", supabaseTable)
         .order("created_at", { ascending: true });
 
       if (integrationId) {
@@ -175,99 +178,107 @@ export default function FieldMappingManager({ integrationId, compact }: FieldMap
 
       const { data, error } = await query;
       if (error) throw error;
-      setMappings((data as any[] || []).map((m: any) => ({ ...m, isNew: false })));
+
+      const savedMappings = (data as any[] || []);
+      const savedByColumn = new Map<string, any>();
+      for (const m of savedMappings) {
+        savedByColumn.set(m.supabase_column, m);
+      }
+
+      const tableColumns = SUPABASE_TABLES[supabaseTable]?.columns || [];
+      const newRows: RowMapping[] = tableColumns.map((col) => {
+        const saved = savedByColumn.get(col.key);
+        return {
+          supabaseColumn: col.key,
+          supabaseType: col.type,
+          bitrixFieldKey: saved?.bitrix_field_key || "",
+          syncDirection: saved?.sync_direction || "bitrix_to_supabase",
+          isActive: saved?.is_active ?? true,
+          dbId: saved?.id,
+        };
+      });
+
+      setRows(newRows);
     } catch (e) {
-      console.error("Error fetching mappings:", e);
-      setMappings([]);
+      console.error("Error building rows:", e);
+      setRows([]);
     } finally {
       setLoadingMappings(false);
     }
-  }, [bitrixEntity, integrationId]);
+  }, [bitrixEntity, supabaseTable, integrationId]);
 
   useEffect(() => {
     fetchBitrixFields(bitrixEntity);
-    fetchMappings();
-  }, [bitrixEntity, fetchBitrixFields, fetchMappings]);
+  }, [bitrixEntity, fetchBitrixFields]);
 
-  // ── Filtered bitrix fields ──
-  const filteredBitrixFields = useMemo(() => {
-    if (!search) return bitrixFields;
-    const q = search.toLowerCase();
-    return bitrixFields.filter(
-      (f) => f.key.toLowerCase().includes(q) || f.title.toLowerCase().includes(q)
-    );
-  }, [bitrixFields, search]);
+  useEffect(() => {
+    buildRows();
+  }, [buildRows]);
 
-  // ── Add mapping ──
-  const addMapping = (bitrixField: BitrixField) => {
-    // Default supabase table based on entity
-    const defaultTable = bitrixEntity === "lead" ? "leads" : "cases";
-    const exists = mappings.find(
-      (m) => m.bitrix_field_key === bitrixField.key && m.supabase_table === defaultTable
-    );
-    if (exists) {
-      toast.info("Este campo já está mapeado");
-      return;
+  // ── Filtered rows ──
+  const filteredRows = useMemo(() => {
+    let result = rows;
+    if (search) {
+      const q = search.toLowerCase();
+      result = result.filter((r) => r.supabaseColumn.toLowerCase().includes(q));
     }
-    setMappings((prev) => [
-      ...prev,
-      {
-        bitrix_entity: bitrixEntity,
-        bitrix_field_key: bitrixField.key,
-        bitrix_field_title: bitrixField.title,
-        supabase_table: defaultTable,
-        supabase_column: "",
-        sync_direction: "bitrix_to_supabase",
-        is_active: true,
-        isNew: true,
-      },
-    ]);
+    if (showOnlyMapped) {
+      result = result.filter((r) => r.bitrixFieldKey !== "");
+    }
+    return result;
+  }, [rows, search, showOnlyMapped]);
+
+  // ── Stats ──
+  const totalFields = rows.length;
+  const mappedCount = rows.filter((r) => r.bitrixFieldKey !== "").length;
+
+  // ── Update a row ──
+  const updateRow = (colKey: string, patch: Partial<RowMapping>) => {
+    setRows((prev) =>
+      prev.map((r) => (r.supabaseColumn === colKey ? { ...r, ...patch } : r))
+    );
   };
 
-  // ── Update mapping field ──
-  const updateMapping = (index: number, field: Partial<FieldMapping>) => {
-    setMappings((prev) => prev.map((m, i) => (i === index ? { ...m, ...field } : m)));
-  };
-
-  // ── Remove mapping ──
-  const removeMapping = async (index: number) => {
-    const mapping = mappings[index];
-    if (mapping.id) {
+  // ── Clear mapping for a row ──
+  const clearMapping = async (colKey: string) => {
+    const row = rows.find((r) => r.supabaseColumn === colKey);
+    if (row?.dbId) {
       try {
-        await (supabase.from("bitrix24_field_mappings" as any) as any).delete().eq("id", mapping.id);
+        await (supabase.from("bitrix24_field_mappings" as any) as any).delete().eq("id", row.dbId);
       } catch {}
     }
-    setMappings((prev) => prev.filter((_, i) => i !== index));
+    updateRow(colKey, { bitrixFieldKey: "", dbId: undefined });
   };
 
-  // ── Save all mappings ──
+  // ── Save all ──
   const saveAll = async () => {
     setSaving(true);
     try {
-      for (const m of mappings) {
-        if (!m.supabase_column) continue;
+      for (const r of rows) {
+        if (!r.bitrixFieldKey) continue;
+        const bitrixField = bitrixFields.find((f) => f.key === r.bitrixFieldKey);
         const payload: any = {
           integration_id: integrationId || null,
-          bitrix_entity: m.bitrix_entity,
-          bitrix_field_key: m.bitrix_field_key,
-          bitrix_field_title: m.bitrix_field_title,
-          supabase_table: m.supabase_table,
-          supabase_column: m.supabase_column,
-          sync_direction: m.sync_direction,
-          is_active: m.is_active,
+          bitrix_entity: bitrixEntity,
+          bitrix_field_key: r.bitrixFieldKey,
+          bitrix_field_title: bitrixField?.title || r.bitrixFieldKey,
+          supabase_table: supabaseTable,
+          supabase_column: r.supabaseColumn,
+          sync_direction: r.syncDirection,
+          is_active: r.isActive,
         };
 
-        if (m.id) {
+        if (r.dbId) {
           await (supabase.from("bitrix24_field_mappings" as any) as any)
             .update(payload)
-            .eq("id", m.id);
+            .eq("id", r.dbId);
         } else {
           await (supabase.from("bitrix24_field_mappings" as any) as any)
             .insert(payload);
         }
       }
       toast.success("Mapeamentos guardados com sucesso");
-      fetchMappings();
+      buildRows();
     } catch (e) {
       toast.error("Erro ao guardar mapeamentos");
       console.error(e);
@@ -276,185 +287,211 @@ export default function FieldMappingManager({ integrationId, compact }: FieldMap
     }
   };
 
-  // ── Mapped field keys (to highlight in list) ──
-  const mappedKeys = new Set(mappings.map((m) => m.bitrix_field_key));
+  // ── Select all toggle ──
+  const allSelected = filteredRows.length > 0 && filteredRows.every((r) => selectedRows.has(r.supabaseColumn));
+  const toggleSelectAll = () => {
+    if (allSelected) {
+      setSelectedRows(new Set());
+    } else {
+      setSelectedRows(new Set(filteredRows.map((r) => r.supabaseColumn)));
+    }
+  };
+
+  const getBitrixFieldLabel = (key: string) => {
+    const f = bitrixFields.find((b) => b.key === key);
+    if (!f) return key;
+    return `${f.title} — ${f.key}`;
+  };
 
   return (
     <div className="space-y-4">
       {/* Header */}
-      <div className="flex items-center justify-between gap-3 flex-wrap">
-        <div className="flex items-center gap-2">
-          <Link2 className="h-5 w-5 text-primary" />
+      <div className="flex items-center gap-2 mb-1">
+        <Link2 className="h-5 w-5 text-primary" />
+        <div>
           <h3 className="font-semibold text-base">Mapeamento de Campos</h3>
-        </div>
-        <div className="flex items-center gap-2">
-          <Select value={bitrixEntity} onValueChange={(v) => setBitrixEntity(v as any)}>
-            <SelectTrigger className="w-[140px] h-8 text-xs">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="lead">Lead (Bitrix)</SelectItem>
-              <SelectItem value="deal">Deal (Bitrix)</SelectItem>
-            </SelectContent>
-          </Select>
-          <Button variant="outline" size="sm" onClick={() => fetchBitrixFields(bitrixEntity)} disabled={loadingFields}>
-            <RefreshCw className={`h-3.5 w-3.5 ${loadingFields ? "animate-spin" : ""}`} />
-          </Button>
-          <Button size="sm" onClick={saveAll} disabled={saving || mappings.length === 0}>
-            {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" /> : <Save className="h-3.5 w-3.5 mr-1" />}
-            Guardar
-          </Button>
+          <p className="text-xs text-muted-foreground">Configure como os campos são sincronizados entre Bitrix24 e Supabase</p>
         </div>
       </div>
 
-      <div className={`grid gap-4 ${compact ? "grid-cols-1" : "grid-cols-1 lg:grid-cols-2"}`}>
-        {/* ── Left: Bitrix Fields ── */}
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm">
-              Campos Bitrix24 — {bitrixEntity === "lead" ? "crm.lead.fields" : "crm.deal.fields"}
-            </CardTitle>
-            <CardDescription className="text-xs">
-              {bitrixFields.length} campos encontrados. Clique "+" para mapear.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="pt-0">
-            <div className="flex items-center gap-2 mb-2">
-              <Search className="h-3.5 w-3.5 text-muted-foreground" />
-              <Input
-                className="h-7 text-xs"
-                placeholder="Buscar campo..."
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-              />
-            </div>
-            <ScrollArea className="h-[350px]">
-              {loadingFields ? (
-                <div className="flex items-center justify-center py-8 text-muted-foreground text-xs">
-                  <Loader2 className="h-4 w-4 animate-spin mr-2" /> Carregando campos do Bitrix...
-                </div>
-              ) : filteredBitrixFields.length === 0 ? (
-                <div className="py-8 text-center text-xs text-muted-foreground">
-                  {bitrixFields.length === 0 ? "Nenhuma integração ativa ou sem campos" : "Nenhum resultado"}
-                </div>
-              ) : (
-                <div className="space-y-0.5">
-                  {filteredBitrixFields.map((f) => (
-                    <div
-                      key={f.key}
-                      className={`flex items-center justify-between px-2 py-1.5 rounded text-xs hover:bg-accent/50 group ${
-                        mappedKeys.has(f.key) ? "bg-primary/5 border-l-2 border-primary" : ""
-                      }`}
-                    >
-                      <div className="flex-1 min-w-0">
-                        <span className="font-medium truncate block">{f.title}</span>
-                        <span className="text-[10px] text-muted-foreground font-mono">{f.key}</span>
-                      </div>
-                      <div className="flex items-center gap-1 shrink-0">
-                        <Badge variant="outline" className="text-[9px] h-4 px-1">{f.type}</Badge>
-                        {f.isRequired && <Badge variant="destructive" className="text-[9px] h-4 px-1">REQ</Badge>}
-                        {mappedKeys.has(f.key) ? (
-                          <Badge className="text-[9px] h-4 px-1 bg-primary/20 text-primary">Mapeado</Badge>
-                        ) : (
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-5 w-5 opacity-0 group-hover:opacity-100"
-                            onClick={() => addMapping(f)}
-                          >
-                            <Plus className="h-3 w-3" />
-                          </Button>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </ScrollArea>
-          </CardContent>
-        </Card>
+      {/* Toolbar */}
+      <div className="flex flex-wrap items-center gap-2">
+        {/* Entity selector */}
+        <Select value={bitrixEntity} onValueChange={(v) => setBitrixEntity(v as any)}>
+          <SelectTrigger className="w-[130px] h-8 text-xs">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="lead">Lead (Bitrix)</SelectItem>
+            <SelectItem value="deal">Deal (Bitrix)</SelectItem>
+          </SelectContent>
+        </Select>
 
-        {/* ── Right: Mapping Table ── */}
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm">Mapeamentos Configurados</CardTitle>
-            <CardDescription className="text-xs">
-              {mappings.length} mapeamento(s). Selecione tabela e coluna do Supabase para cada campo.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="pt-0">
-            <ScrollArea className="h-[350px]">
-              {loadingMappings ? (
-                <div className="flex items-center justify-center py-8 text-muted-foreground text-xs">
-                  <Loader2 className="h-4 w-4 animate-spin mr-2" /> Carregando mapeamentos...
-                </div>
-              ) : mappings.length === 0 ? (
-                <div className="py-8 text-center text-xs text-muted-foreground">
-                  Nenhum mapeamento. Clique "+" nos campos Bitrix para adicionar.
-                </div>
-              ) : (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="text-[10px] py-1">Campo Bitrix</TableHead>
-                      <TableHead className="text-[10px] py-1 w-5"><ArrowRight className="h-3 w-3" /></TableHead>
-                      <TableHead className="text-[10px] py-1">Tabela</TableHead>
-                      <TableHead className="text-[10px] py-1">Coluna</TableHead>
-                      <TableHead className="text-[10px] py-1">Dir.</TableHead>
-                      <TableHead className="text-[10px] py-1 w-8">On</TableHead>
-                      <TableHead className="text-[10px] py-1 w-6"></TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {mappings.map((m, i) => (
-                      <TableRow key={m.id || `new-${i}`}>
-                        <TableCell className="py-1 text-[10px]">
-                          <div>
-                            <span className="font-medium">{m.bitrix_field_title}</span>
-                            <span className="block text-muted-foreground font-mono text-[9px]">{m.bitrix_field_key}</span>
-                          </div>
+        {/* Table selector */}
+        <Select value={supabaseTable} onValueChange={setSupabaseTable}>
+          <SelectTrigger className="w-[140px] h-8 text-xs">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {Object.entries(SUPABASE_TABLES).map(([k, v]) => (
+              <SelectItem key={k} value={k} className="text-xs">{v.label}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
+        {/* Search */}
+        <div className="relative flex-1 min-w-[160px] max-w-[260px]">
+          <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+          <Input
+            className="h-8 text-xs pl-7"
+            placeholder="Buscar campo..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+        </div>
+
+        {/* Filter toggle */}
+        <Button
+          variant={showOnlyMapped ? "default" : "outline"}
+          size="sm"
+          className="h-8 text-xs gap-1"
+          onClick={() => setShowOnlyMapped(!showOnlyMapped)}
+        >
+          <Filter className="h-3 w-3" />
+          Apenas mapeados
+        </Button>
+
+        <div className="flex-1" />
+
+        {/* Counters */}
+        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+          <span>Total: <strong className="text-foreground">{totalFields}</strong></span>
+          <span>Mapeados: <strong className="text-primary">{mappedCount}</strong></span>
+        </div>
+
+        {/* Actions */}
+        <Button variant="outline" size="sm" className="h-8" onClick={() => fetchBitrixFields(bitrixEntity)} disabled={loadingFields}>
+          <RefreshCw className={`h-3.5 w-3.5 ${loadingFields ? "animate-spin" : ""}`} />
+        </Button>
+        <Button size="sm" className="h-8 text-xs gap-1" onClick={saveAll} disabled={saving || mappedCount === 0}>
+          {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
+          Guardar
+        </Button>
+      </div>
+
+      {/* Main Table */}
+      <div className="border rounded-lg overflow-hidden">
+        <ScrollArea className="h-[460px]">
+          {loadingMappings || loadingFields ? (
+            <div className="flex items-center justify-center py-16 text-muted-foreground text-sm">
+              <Loader2 className="h-5 w-5 animate-spin mr-2" />
+              {loadingFields ? "Carregando campos do Bitrix..." : "Carregando mapeamentos..."}
+            </div>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow className="bg-muted/50">
+                  <TableHead className="w-8 py-2">
+                    <Checkbox
+                      checked={allSelected}
+                      onCheckedChange={toggleSelectAll}
+                    />
+                  </TableHead>
+                  <TableHead className="text-xs py-2 font-semibold">Campo Supabase</TableHead>
+                  <TableHead className="text-xs py-2 font-semibold w-[70px]">Tipo</TableHead>
+                  <TableHead className="text-xs py-2 w-6"></TableHead>
+                  <TableHead className="text-xs py-2 font-semibold">Campo Bitrix24</TableHead>
+                  <TableHead className="text-xs py-2 font-semibold w-[80px]">Direção</TableHead>
+                  <TableHead className="text-xs py-2 font-semibold w-[90px]">Status</TableHead>
+                  <TableHead className="text-xs py-2 w-8"></TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {filteredRows.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={8} className="text-center py-12 text-sm text-muted-foreground">
+                      {rows.length === 0
+                        ? "Selecione uma tabela para ver os campos"
+                        : "Nenhum campo encontrado com os filtros atuais"}
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  filteredRows.map((row) => {
+                    const isMapped = row.bitrixFieldKey !== "";
+                    return (
+                      <TableRow
+                        key={row.supabaseColumn}
+                        className={isMapped ? "bg-primary/[0.03]" : ""}
+                      >
+                        {/* Checkbox */}
+                        <TableCell className="py-1.5">
+                          <Checkbox
+                            checked={selectedRows.has(row.supabaseColumn)}
+                            onCheckedChange={(checked) => {
+                              setSelectedRows((prev) => {
+                                const next = new Set(prev);
+                                if (checked) next.add(row.supabaseColumn);
+                                else next.delete(row.supabaseColumn);
+                                return next;
+                              });
+                            }}
+                          />
                         </TableCell>
-                        <TableCell className="py-1">
-                          <ArrowRight className="h-3 w-3 text-muted-foreground" />
+
+                        {/* Supabase column */}
+                        <TableCell className="py-1.5">
+                          <span className="font-mono text-xs font-medium">{row.supabaseColumn}</span>
                         </TableCell>
-                        <TableCell className="py-1">
+
+                        {/* Type */}
+                        <TableCell className="py-1.5">
+                          <Badge variant="outline" className="text-[10px] h-5 px-1.5 font-mono">
+                            {row.supabaseType}
+                          </Badge>
+                        </TableCell>
+
+                        {/* Arrow */}
+                        <TableCell className="py-1.5 px-1">
+                          <ArrowRight className="h-3.5 w-3.5 text-muted-foreground" />
+                        </TableCell>
+
+                        {/* Bitrix field dropdown */}
+                        <TableCell className="py-1.5">
                           <Select
-                            value={m.supabase_table}
-                            onValueChange={(v) => updateMapping(i, { supabase_table: v, supabase_column: "" })}
+                            value={row.bitrixFieldKey || "__none__"}
+                            onValueChange={(v) =>
+                              updateRow(row.supabaseColumn, {
+                                bitrixFieldKey: v === "__none__" ? "" : v,
+                              })
+                            }
                           >
-                            <SelectTrigger className="h-6 text-[10px] w-[100px]">
-                              <SelectValue />
+                            <SelectTrigger className="h-7 text-xs w-full max-w-[280px]">
+                              <SelectValue placeholder="Nenhum" />
                             </SelectTrigger>
-                            <SelectContent>
-                              {Object.entries(SUPABASE_TABLES).map(([k, v]) => (
-                                <SelectItem key={k} value={k} className="text-xs">{v.label}</SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </TableCell>
-                        <TableCell className="py-1">
-                          <Select
-                            value={m.supabase_column}
-                            onValueChange={(v) => updateMapping(i, { supabase_column: v })}
-                          >
-                            <SelectTrigger className="h-6 text-[10px] w-[110px]">
-                              <SelectValue placeholder="Coluna..." />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {SUPABASE_TABLES[m.supabase_table]?.columns.map((col) => (
-                                <SelectItem key={col.key} value={col.key} className="text-xs">
-                                  {col.key} <span className="text-muted-foreground ml-1">({col.type})</span>
+                            <SelectContent className="max-h-[300px]">
+                              <SelectItem value="__none__" className="text-xs text-muted-foreground">
+                                Nenhum
+                              </SelectItem>
+                              {bitrixFields.map((f) => (
+                                <SelectItem key={f.key} value={f.key} className="text-xs">
+                                  <span className="font-medium">{f.title}</span>
+                                  <span className="text-muted-foreground ml-1">— {f.key}</span>
+                                  <span className="text-muted-foreground ml-1 text-[10px]">({f.type})</span>
                                 </SelectItem>
                               ))}
                             </SelectContent>
                           </Select>
                         </TableCell>
-                        <TableCell className="py-1">
+
+                        {/* Sync direction */}
+                        <TableCell className="py-1.5">
                           <Select
-                            value={m.sync_direction}
-                            onValueChange={(v) => updateMapping(i, { sync_direction: v })}
+                            value={row.syncDirection}
+                            onValueChange={(v) =>
+                              updateRow(row.supabaseColumn, { syncDirection: v })
+                            }
                           >
-                            <SelectTrigger className="h-6 text-[10px] w-[70px]">
+                            <SelectTrigger className="h-7 text-[10px] w-[68px]">
                               <SelectValue />
                             </SelectTrigger>
                             <SelectContent>
@@ -464,31 +501,41 @@ export default function FieldMappingManager({ integrationId, compact }: FieldMap
                             </SelectContent>
                           </Select>
                         </TableCell>
-                        <TableCell className="py-1">
-                          <Switch
-                            checked={m.is_active}
-                            onCheckedChange={(v) => updateMapping(i, { is_active: v })}
-                            className="scale-75"
-                          />
+
+                        {/* Status */}
+                        <TableCell className="py-1.5">
+                          {isMapped ? (
+                            <Badge className="text-[10px] h-5 px-1.5 bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border-emerald-500/20">
+                              Mapeado
+                            </Badge>
+                          ) : (
+                            <Badge variant="secondary" className="text-[10px] h-5 px-1.5">
+                              Não mapeado
+                            </Badge>
+                          )}
                         </TableCell>
-                        <TableCell className="py-1">
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-5 w-5 text-destructive"
-                            onClick={() => removeMapping(i)}
-                          >
-                            <Trash2 className="h-3 w-3" />
-                          </Button>
+
+                        {/* Remove */}
+                        <TableCell className="py-1.5">
+                          {isMapped && (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-6 w-6 text-destructive hover:text-destructive"
+                              onClick={() => clearMapping(row.supabaseColumn)}
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          )}
                         </TableCell>
                       </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              )}
-            </ScrollArea>
-          </CardContent>
-        </Card>
+                    );
+                  })
+                )}
+              </TableBody>
+            </Table>
+          )}
+        </ScrollArea>
       </div>
     </div>
   );
