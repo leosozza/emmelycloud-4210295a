@@ -1,43 +1,62 @@
 
 
-# Plano: Webhook para Atualizar URL do Ollama Remoto
+## Revisão da Integração Stripe — Análise Completa
 
-## Contexto
+### Estado Atual
 
-O túnel Cloudflare para o Ollama remoto (Qwen 2.5:32b) muda de URL a cada reinício. Atualmente a URL é atualizada manualmente na Central de Integrações. Vamos criar um webhook público que recebe a nova URL e atualiza automaticamente a credencial `OLLAMA_BASE_URL` na tabela `integration_credentials`.
+A integração Stripe está **funcional e bastante completa**, cobrindo:
 
-## Alterações
+1. **Criação de pagamentos** (`payment-create`) — Checkout Sessions com 8 métodos de pagamento (card, sepa_debit, multibanco, ideal, bancontact, sofort, klarna, link)
+2. **Webhook** (`payment-webhook-stripe`) — Verificação de assinatura HMAC-SHA256, processa 5 eventos (succeeded, failed, canceled, refunded, checkout.session.completed)
+3. **Consulta de status** (`payment-status`) — Consulta em tempo real à API Stripe
+4. **Handler Bitrix24** (`bitrix24-payment-handler`) — Modo CHECKOUT nativo no CRM
+5. **Notificação Bitrix24** — Atualiza Deal, Timeline, Smart Invoices automaticamente
+6. **UI de configuração** — Credenciais, webhook URL, guia passo-a-passo, teste de conexão
 
-### 1. Nova Edge Function: `ollama-url-webhook`
+### Problemas Identificados
 
-- Endpoint público (sem JWT) que aceita POST com `{ "url": "https://nova-url.trycloudflare.com" }`
-- Valida que o body contém uma URL válida
-- Opcionalmente valida um `secret` no body ou query param para evitar abusos (usará um secret configurável)
-- Faz upsert na `integration_credentials` com `provider=ollama`, `credential_key=OLLAMA_BASE_URL`
-- Retorna `{ ok: true }` em caso de sucesso
+#### 1. Sem conversão automática de moeda EUR↔BRL
+O sistema **não converte moedas**. O roteamento é por região:
+- EUR → Stripe (Portugal/Europa)
+- BRL → Asaas (Brasil)
 
-### 2. Configuração
+Cada gateway processa na moeda nativa. Não há conversão EUR→BRL nem vice-versa. O `LocaleContext` tem uma taxa fixa (`EUR_TO_BRL = 6.10`) mas é apenas para **exibição** no frontend, não afeta pagamentos reais.
 
-- Adicionar `[functions.ollama-url-webhook] verify_jwt = false` ao config.toml
-- O script no servidor local (que inicia o túnel Cloudflare) pode fazer um simples `curl -X POST` com a nova URL após o túnel estar ativo
+**Isto é correto por design** — cada gateway opera na sua moeda local. Uma conversão real exigiria câmbio no momento da transação, que o Stripe já faz nativamente se a conta suportar múltiplas moedas.
 
-### Ficheiros
+#### 2. Evento `checkout.session.completed` falta no hint do webhook
+A UI de configuração (linha 710) lista apenas 4 eventos mas o webhook processa 5. Falta `checkout.session.completed` na instrução ao utilizador.
 
-| Ficheiro | Ação |
-|----------|------|
-| `supabase/functions/ollama-url-webhook/index.ts` | Criar |
-| `supabase/config.toml` | Adicionar entrada |
+#### 3. `getCredential` sem `.trim()` no webhook Stripe
+O `payment-create` faz `.trim()` nas credenciais (linha 16), mas o `payment-webhook-stripe` e `payment-status` **não fazem** (linha 15 de ambos). Isto pode causar erros de ByteString se houver espaços/quebras de linha invisíveis nas credenciais.
 
-### Exemplo de uso no servidor local
+#### 4. Financeiro.tsx hardcoded em EUR
+A página Financeiro formata sempre em EUR (linhas 73, 83) sem usar o `LocaleContext`/`formatCurrency`. Deveria respeitar a moeda da transação (campo `currency` já existe em `payment_transactions`).
 
-```bash
-# Após iniciar o túnel Cloudflare e obter a URL:
-curl -X POST "https://qohnsluvhyziovfynzlu.supabase.co/functions/v1/ollama-url-webhook" \
-  -H "Content-Type: application/json" \
-  -d '{"url": "https://nova-url.trycloudflare.com", "secret": "MEU_SECRET"}'
-```
+#### 5. MB WAY ausente nos métodos de pagamento
+O `payment-create` lista `multibanco` mas não inclui `mb_way` explicitamente (embora o Stripe Checkout Sessions possa apresentá-lo automaticamente dependendo da versão da API e região da conta).
 
-### Segurança
+### Plano de Melhorias
 
-Um secret partilhado (configurado via variável de ambiente `OLLAMA_WEBHOOK_SECRET`) protege o endpoint contra chamadas não autorizadas. Se não estiver configurado, o webhook funciona sem autenticação (útil para testes iniciais).
+#### Passo 1: Adicionar `.trim()` nas Edge Functions de webhook e status
+Corrigir `getCredential` em `payment-webhook-stripe` e `payment-status` para aplicar `.trim()` — prevenção de erros ByteString.
+
+#### Passo 2: Corrigir hint do webhook na UI
+Adicionar `checkout.session.completed` à lista de eventos na página de Integrações.
+
+#### Passo 3: Usar moeda da transação na página Financeiro
+Substituir o hardcode `EUR` por `tx.currency` nos KPIs (já existe o campo).
+
+#### Passo 4: Adicionar `mb_way` aos métodos de pagamento Stripe
+Incluir `mb_way` na lista de `payment_method_types` no `payment-create` e `bitrix24-payment-handler`.
+
+### Detalhes Técnicos
+
+Ficheiros a alterar:
+- `supabase/functions/payment-webhook-stripe/index.ts` — `.trim()` no `getCredential`
+- `supabase/functions/payment-status/index.ts` — `.trim()` no `getCredential`
+- `supabase/functions/payment-create/index.ts` — adicionar `mb_way`
+- `supabase/functions/bitrix24-payment-handler/index.ts` — adicionar `mb_way`, `.trim()`
+- `src/pages/Integracoes.tsx` — hint do webhook com `checkout.session.completed`
+- `src/pages/Financeiro.tsx` — usar `tx.currency` em vez de hardcode EUR
 
