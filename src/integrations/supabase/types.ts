@@ -346,6 +346,59 @@ export type Database = {
           },
         ]
       }
+      bitrix24_field_mappings: {
+        Row: {
+          bitrix_entity: string
+          bitrix_field_key: string
+          bitrix_field_title: string | null
+          created_at: string
+          id: string
+          integration_id: string | null
+          is_active: boolean
+          supabase_column: string
+          supabase_table: string
+          sync_direction: string
+          transform_rule: string | null
+          updated_at: string
+        }
+        Insert: {
+          bitrix_entity?: string
+          bitrix_field_key: string
+          bitrix_field_title?: string | null
+          created_at?: string
+          id?: string
+          integration_id?: string | null
+          is_active?: boolean
+          supabase_column: string
+          supabase_table?: string
+          sync_direction?: string
+          transform_rule?: string | null
+          updated_at?: string
+        }
+        Update: {
+          bitrix_entity?: string
+          bitrix_field_key?: string
+          bitrix_field_title?: string | null
+          created_at?: string
+          id?: string
+          integration_id?: string | null
+          is_active?: boolean
+          supabase_column?: string
+          supabase_table?: string
+          sync_direction?: string
+          transform_rule?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "bitrix24_field_mappings_integration_id_fkey"
+            columns: ["integration_id"]
+            isOneToOne: false
+            referencedRelation: "bitrix24_integrations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       bitrix24_integrations: {
         Row: {
           access_token: string | null

@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, lazy, Suspense } from "react";
 import { PageHeader } from "@/components/PageHeader";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -41,6 +41,7 @@ import {
   Check,
   Link,
   ChevronDown,
+  Loader2,
 } from "lucide-react";
 import {
   Dialog,
@@ -1621,6 +1622,17 @@ function IATab() {
   );
 }
 
+// ─── Mapeamento Tab ──────────────────────────────────────────────────────────
+
+function MapeamentoTab() {
+  const FieldMappingManager = lazy(() => import("@/components/bitrix24/FieldMappingManager"));
+  return (
+    <Suspense fallback={<div className="flex items-center justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-primary" /></div>}>
+      <FieldMappingManager />
+    </Suspense>
+  );
+}
+
 // ─── Main Page ───────────────────────────────────────────────────────────────
 
 export default function IntegracoesPage() {
@@ -1629,7 +1641,7 @@ export default function IntegracoesPage() {
       <PageHeader title="Central de Integrações" description="Gerencie todas as integrações e conectores do sistema" />
 
       <Tabs defaultValue="instancias" className="w-full">
-        <TabsList className="grid w-full grid-cols-6">
+        <TabsList className="grid w-full grid-cols-7">
           <TabsTrigger value="instancias" className="flex items-center gap-2">
             <Server className="h-4 w-4" />
             Instâncias
@@ -1637,6 +1649,10 @@ export default function IntegracoesPage() {
           <TabsTrigger value="crm" className="flex items-center gap-2">
             <Plug className="h-4 w-4" />
             CRM
+          </TabsTrigger>
+          <TabsTrigger value="mapeamento" className="flex items-center gap-2">
+            <Link className="h-4 w-4" />
+            Mapeamento
           </TabsTrigger>
           <TabsTrigger value="omnichannel" className="flex items-center gap-2">
             <MessageCircle className="h-4 w-4" />
@@ -1658,6 +1674,7 @@ export default function IntegracoesPage() {
 
         <TabsContent value="instancias"><InstancesTab /></TabsContent>
         <TabsContent value="crm"><CRMTab /></TabsContent>
+        <TabsContent value="mapeamento"><MapeamentoTab /></TabsContent>
         <TabsContent value="omnichannel"><OmniChannelTab /></TabsContent>
         <TabsContent value="chatbot"><ChatbotTab /></TabsContent>
         <TabsContent value="pagamentos"><PagamentosTab /></TabsContent>

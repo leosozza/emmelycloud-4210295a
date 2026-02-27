@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useRef } from "react";
+import { useEffect, useState, useCallback, useRef, lazy, Suspense } from "react";
 import { useBitrix24Theme } from "@/hooks/useBitrix24Theme";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -28,7 +28,7 @@ import {
   Undo2, Redo2, LayoutDashboard, Plug, BookOpen, GitBranch,
   Settings, CreditCard, Zap, CheckCircle, XCircle, Activity,
   Power, ExternalLink, AlertCircle, MessageSquare, BarChart3,
-  DollarSign, Clock, AlertTriangle, TrendingUp,
+  DollarSign, Clock, AlertTriangle, TrendingUp, Link,
 } from "lucide-react";
 import {
   BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis,
@@ -41,7 +41,7 @@ const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
 
 const customNodeTypes = { custom: CustomFlowNode };
 
-type AppView = "loading" | "dashboard" | "agentes" | "training" | "flows" | "playground" | "chatia" | "pagamentos" | "relatorios";
+type AppView = "loading" | "dashboard" | "agentes" | "training" | "flows" | "playground" | "chatia" | "pagamentos" | "relatorios" | "mapeamento";
 
 // ==================== MAIN COMPONENT ====================
 const Bitrix24App = () => {
@@ -154,6 +154,7 @@ const Bitrix24App = () => {
     { id: "flows", label: "Fluxos", icon: GitBranch },
     { id: "playground", label: "Playground", icon: MessageSquare },
     { id: "chatia", label: "Chat IA", icon: Sparkles },
+    { id: "mapeamento", label: "Mapeamento", icon: Link },
     { id: "pagamentos", label: "Pagamentos", icon: CreditCard },
     { id: "relatorios", label: "Relatórios", icon: BarChart3 },
   ];
@@ -244,6 +245,7 @@ const Bitrix24App = () => {
         {view === "flows" && <FlowsView />}
         {view === "playground" && <PlaygroundView />}
         {view === "chatia" && <ChatIABitrixView />}
+        {view === "mapeamento" && <MapeamentoView integrationId={integration?.id} />}
         {view === "pagamentos" && <PagamentosView />}
         {view === "relatorios" && <RelatoriosView />}
       </main>
@@ -2115,6 +2117,16 @@ function RelatoriosView() {
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+// ==================== MAPEAMENTO VIEW ====================
+function MapeamentoView({ integrationId }: { integrationId?: string }) {
+  const FieldMappingManager = lazy(() => import("@/components/bitrix24/FieldMappingManager"));
+  return (
+    <Suspense fallback={<div className="flex items-center justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-primary" /></div>}>
+      <FieldMappingManager integrationId={integrationId} compact />
+    </Suspense>
   );
 }
 
