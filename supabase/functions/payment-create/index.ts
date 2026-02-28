@@ -230,7 +230,7 @@ Deno.serve(async (req) => {
     );
 
     const body = await req.json();
-    const { contract_id, client_id, financial_record_id, amount, currency = "EUR", payment_method = "card", customer_data, description = "Pagamento Emmely Cloud", metadata: extraMetadata, due_date, installment_number, total_installments, installment_group_id, is_down_payment } = body;
+    const { contract_id, client_id, financial_record_id, amount, currency = "EUR", payment_method = "card", customer_data, description = "Pagamento Emmely Cloud", metadata: extraMetadata, due_date, installment_number, total_installments, installment_group_id, is_down_payment, force_gateway } = body;
 
     if (!amount || amount <= 0) {
       return new Response(JSON.stringify({ error: "amount is required and must be > 0" }), {
@@ -238,18 +238,36 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Determine gateway from client country or currency
-    let clientCountry = customer_data?.country || null;
-    if (!clientCountry && client_id) {
-      const { data: client } = await supabase.from("clients").select("country").eq("id", client_id).maybeSingle();
-      clientCountry = client?.country || null;
-    }
+    // Determine gateway: force_gateway overrides auto-detection
+    let gateway: "stripe" | "asaas";
+    let stripeRegion: "pt" | "br" | null = null;
 
-    const gateway = getGateway(clientCountry, currency);
+    if (force_gateway) {
+      if (force_gateway === "stripe_pt") {
+        gateway = "stripe";
+        stripeRegion = "pt";
+      } else if (force_gateway === "stripe_br") {
+        gateway = "stripe";
+        stripeRegion = "br";
+      } else if (force_gateway === "asaas") {
+        gateway = "asaas";
+      } else if (force_gateway === "direto") {
+        gateway = "stripe"; // won't be used, handled below
+      } else {
+        gateway = "stripe";
+      }
+    } else {
+      let clientCountry = customer_data?.country || null;
+      if (!clientCountry && client_id) {
+        const { data: client } = await supabase.from("clients").select("country").eq("id", client_id).maybeSingle();
+        clientCountry = client?.country || null;
+      }
+      gateway = getGateway(clientCountry, currency);
+    }
 
     let result: any;
 
-    if (payment_method === "direto") {
+    if (payment_method === "direto" || force_gateway === "direto") {
       // Direct payment - no gateway call, just record the transaction
       result = {
         gateway_payment_id: `direto_${crypto.randomUUID()}`,
@@ -261,9 +279,15 @@ Deno.serve(async (req) => {
         pix_code: null,
       };
     } else if (gateway === "stripe") {
-      const stripeKey = await getCredential(supabase, "stripe", "STRIPE_SECRET_KEY");
+      // Determine which Stripe key to use based on region
+      const stripeKeyName = stripeRegion === "br" ? "STRIPE_SECRET_KEY_BR" : (stripeRegion === "pt" ? "STRIPE_SECRET_KEY_PT" : "STRIPE_SECRET_KEY");
+      let stripeKey = await getCredential(supabase, "stripe", stripeKeyName);
+      // Fallback to generic key if region-specific not found
+      if (!stripeKey && stripeRegion) {
+        stripeKey = await getCredential(supabase, "stripe", "STRIPE_SECRET_KEY");
+      }
       if (!stripeKey) {
-        return new Response(JSON.stringify({ error: "Stripe API key not configured" }), {
+        return new Response(JSON.stringify({ error: `Stripe API key not configured (${stripeKeyName})` }), {
           status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
@@ -287,7 +311,7 @@ Deno.serve(async (req) => {
       result = await createAsaasPayment(asaasKey, amount, payment_method, customer_data, description, asaasEnv, due_date);
     }
 
-    const effectiveGateway = payment_method === "direto" ? "direto" : gateway;
+    const effectiveGateway = (payment_method === "direto" || force_gateway === "direto") ? "direto" : (force_gateway || gateway);
 
     // Save transaction
     const { data: tx, error: txError } = await supabase.from("payment_transactions").insert({

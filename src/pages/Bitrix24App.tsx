@@ -275,7 +275,7 @@ const Bitrix24App = () => {
         {view === "playground" && <PlaygroundView />}
         {view === "chatia" && <ChatIABitrixView />}
         {view === "mapeamento" && <MapeamentoView integrationId={integration?.id} />}
-        {view === "pagamentos" && <PagamentosView />}
+        {view === "pagamentos" && <PagamentosView integration={integration} onRefresh={() => memberId && fetchData(memberId)} />}
         {view === "relatorios" && <RelatoriosView />}
       </main>
     </div>
@@ -1682,15 +1682,37 @@ function PlaygroundView() {
 }
 
 // ==================== PAGAMENTOS VIEW ====================
-function PagamentosView() {
+function PagamentosView({ integration, onRefresh }: { integration: any; onRefresh: () => void }) {
   const [transactions, setTransactions] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
   const [showForm, setShowForm] = useState(false);
+  const [savingConfig, setSavingConfig] = useState(false);
   const [form, setForm] = useState({
     amount: "", currency: "EUR", payment_method: "card",
     customer_name: "", customer_email: "", description: ""
   });
+
+  // Gateway config from integration.config
+  const config = (integration?.config as any) || {};
+  const [gwConfig, setGwConfig] = useState({
+    deal_gateway_field: config.deal_gateway_field || "",
+    deal_won_stage: config.deal_won_stage || "WON",
+    deal_amount_field: config.deal_amount_field || "OPPORTUNITY",
+    deal_currency_field: config.deal_currency_field || "CURRENCY_ID",
+    auto_charge_on_close: config.auto_charge_on_close ?? false,
+  });
+
+  useEffect(() => {
+    const c = (integration?.config as any) || {};
+    setGwConfig({
+      deal_gateway_field: c.deal_gateway_field || "",
+      deal_won_stage: c.deal_won_stage || "WON",
+      deal_amount_field: c.deal_amount_field || "OPPORTUNITY",
+      deal_currency_field: c.deal_currency_field || "CURRENCY_ID",
+      auto_charge_on_close: c.auto_charge_on_close ?? false,
+    });
+  }, [integration?.config]);
 
   useEffect(() => { fetchTransactions(); }, []);
 
@@ -1725,6 +1747,21 @@ function PagamentosView() {
     setCreating(false);
   };
 
+  const handleSaveGwConfig = async () => {
+    if (!integration?.id) return;
+    setSavingConfig(true);
+    try {
+      const mergedConfig = { ...config, ...gwConfig };
+      await fetch(`${SUPABASE_URL}/rest/v1/bitrix24_integrations?id=eq.${integration.id}`, {
+        method: "PATCH",
+        headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}`, "Content-Type": "application/json", Prefer: "return=minimal" },
+        body: JSON.stringify({ config: mergedConfig }),
+      });
+      onRefresh();
+    } catch (e) { console.error(e); }
+    setSavingConfig(false);
+  };
+
   const statusColors: Record<string, string> = {
     pending: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400",
     confirmed: "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400",
@@ -1743,6 +1780,74 @@ function PagamentosView() {
           {showForm ? "✕ Cancelar" : <><Plus className="h-4 w-4 mr-2" />Nova Cobrança</>}
         </Button>
       </div>
+
+      {/* Gateway Config for Bitrix24 Deals */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base flex items-center gap-2"><Settings className="h-4 w-4" /> Cobrança Automática ao Fechar Negócio</CardTitle>
+          <CardDescription className="text-xs">Configure os campos do Bitrix24 para criar cobranças automaticamente quando um negócio for fechado.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex items-center gap-3">
+            <input
+              type="checkbox"
+              checked={gwConfig.auto_charge_on_close}
+              onChange={(e) => setGwConfig({ ...gwConfig, auto_charge_on_close: e.target.checked })}
+              className="h-4 w-4 rounded border-input"
+              id="auto_charge"
+            />
+            <Label htmlFor="auto_charge" className="cursor-pointer">Ativar cobrança automática</Label>
+          </div>
+
+          {gwConfig.auto_charge_on_close && (
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label className="text-xs">Campo Gateway (UF_CRM_...)</Label>
+                <Input
+                  value={gwConfig.deal_gateway_field}
+                  onChange={(e) => setGwConfig({ ...gwConfig, deal_gateway_field: e.target.value })}
+                  className="mt-1"
+                  placeholder="UF_CRM_1234567890"
+                />
+                <p className="text-[10px] text-muted-foreground mt-1">
+                  Valores aceites: stripe_pt, stripe_br, asaas, direto
+                </p>
+              </div>
+              <div>
+                <Label className="text-xs">Stage ID "Ganho"</Label>
+                <Input
+                  value={gwConfig.deal_won_stage}
+                  onChange={(e) => setGwConfig({ ...gwConfig, deal_won_stage: e.target.value })}
+                  className="mt-1"
+                  placeholder="WON"
+                />
+              </div>
+              <div>
+                <Label className="text-xs">Campo Valor</Label>
+                <Input
+                  value={gwConfig.deal_amount_field}
+                  onChange={(e) => setGwConfig({ ...gwConfig, deal_amount_field: e.target.value })}
+                  className="mt-1"
+                  placeholder="OPPORTUNITY"
+                />
+              </div>
+              <div>
+                <Label className="text-xs">Campo Moeda</Label>
+                <Input
+                  value={gwConfig.deal_currency_field}
+                  onChange={(e) => setGwConfig({ ...gwConfig, deal_currency_field: e.target.value })}
+                  className="mt-1"
+                  placeholder="CURRENCY_ID"
+                />
+              </div>
+            </div>
+          )}
+
+          <Button onClick={handleSaveGwConfig} disabled={savingConfig || !integration?.id} size="sm">
+            {savingConfig ? <><Loader2 className="h-3 w-3 mr-1 animate-spin" />Guardando...</> : <><Save className="h-3 w-3 mr-1" />Guardar Configuração</>}
+          </Button>
+        </CardContent>
+      </Card>
 
       {showForm && (
         <Card>
