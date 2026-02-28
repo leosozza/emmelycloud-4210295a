@@ -35,14 +35,10 @@ import {
   CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, Legend,
 } from "recharts";
 import { cn } from "@/lib/utils";
+import { ChevronDown } from "lucide-react";
 import {
-  DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors,
-  type DragEndEvent,
-} from "@dnd-kit/core";
-import {
-  SortableContext, verticalListSortingStrategy, arrayMove,
-} from "@dnd-kit/sortable";
-import { SortableNavItem } from "@/components/bitrix24/SortableNavItem";
+  Collapsible, CollapsibleContent, CollapsibleTrigger,
+} from "@/components/ui/collapsible";
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
@@ -155,51 +151,32 @@ const Bitrix24App = () => {
     }
   };
 
-  const navItems = [
-    { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
-    { id: "agentes", label: "Personas", icon: Bot },
-    { id: "training", label: "Treinamento", icon: BookOpen },
-    { id: "flows", label: "Fluxos", icon: GitBranch },
-    { id: "playground", label: "Playground", icon: MessageSquare },
-    { id: "chatia", label: "Chat IA", icon: Sparkles },
-    { id: "mapeamento", label: "Mapeamento", icon: Link },
-    { id: "pagamentos", label: "Pagamentos", icon: CreditCard },
-    { id: "relatorios", label: "Relatórios", icon: BarChart3 },
+  const navCategories = [
+    {
+      label: "Emmely IO",
+      items: [
+        { id: "chatia", label: "Chat IA", icon: Sparkles },
+        { id: "agentes", label: "Persona", icon: Bot },
+        { id: "training", label: "Treinamento", icon: BookOpen },
+        { id: "playground", label: "Playground", icon: MessageSquare },
+      ],
+    },
+    {
+      label: "Emmely CRM",
+      items: [
+        { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
+        { id: "flows", label: "Fluxos", icon: GitBranch },
+        { id: "mapeamento", label: "Mapeamento", icon: Link },
+      ],
+    },
+    {
+      label: "Emmely Pay",
+      items: [
+        { id: "pagamentos", label: "Pagamentos", icon: CreditCard },
+        { id: "relatorios", label: "Relatórios", icon: BarChart3 },
+      ],
+    },
   ];
-
-  const NAV_STORAGE_KEY = "bitrix24_nav_order";
-
-  const [navOrder, setNavOrder] = useState<string[]>(() => {
-    try {
-      const saved = localStorage.getItem(NAV_STORAGE_KEY);
-      if (saved) return JSON.parse(saved);
-    } catch {}
-    return navItems.map((i) => i.id);
-  });
-
-  const orderedNavItems = useMemo(() => {
-    const map = new Map(navItems.map((i) => [i.id, i]));
-    const ordered = navOrder.filter((id) => map.has(id)).map((id) => map.get(id)!);
-    // Add any new items not in saved order
-    navItems.forEach((i) => { if (!navOrder.includes(i.id)) ordered.push(i); });
-    return ordered;
-  }, [navOrder]);
-
-  const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
-    useSensor(KeyboardSensor)
-  );
-
-  const handleDragEnd = (event: DragEndEvent) => {
-    const { active, over } = event;
-    if (over && active.id !== over.id) {
-      const oldIndex = navOrder.indexOf(String(active.id));
-      const newIndex = navOrder.indexOf(String(over.id));
-      const newOrder = arrayMove(navOrder, oldIndex, newIndex);
-      setNavOrder(newOrder);
-      localStorage.setItem(NAV_STORAGE_KEY, JSON.stringify(newOrder));
-    }
-  };
 
   if (view === "loading") {
     return (
@@ -236,20 +213,31 @@ const Bitrix24App = () => {
 
         {/* Nav */}
         <nav className="flex-1 p-2 space-y-0.5">
-          <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-            <SortableContext items={orderedNavItems.map((i) => i.id)} strategy={verticalListSortingStrategy}>
-              {orderedNavItems.map((item) => (
-                <SortableNavItem
-                  key={item.id}
-                  id={item.id}
-                  label={item.label}
-                  icon={item.icon}
-                  isActive={view === item.id}
-                  onClick={() => setView(item.id as AppView)}
-                />
-              ))}
-            </SortableContext>
-          </DndContext>
+          {navCategories.map((cat) => (
+            <Collapsible key={cat.label} defaultOpen className="mb-1">
+              <CollapsibleTrigger className="flex w-full items-center justify-between px-3 py-2 text-[11px] uppercase tracking-widest font-semibold text-muted-foreground hover:text-foreground transition-colors">
+                {cat.label}
+                <ChevronDown className="h-3.5 w-3.5 transition-transform duration-200 [&[data-state=open]]:rotate-180" />
+              </CollapsibleTrigger>
+              <CollapsibleContent className="space-y-0.5">
+                {cat.items.map((item) => (
+                  <button
+                    key={item.id}
+                    onClick={() => setView(item.id as AppView)}
+                    className={cn(
+                      "w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors text-left",
+                      view === item.id
+                        ? "bg-primary/10 text-primary font-semibold"
+                        : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                    )}
+                  >
+                    <item.icon className="h-4 w-4 shrink-0" />
+                    {item.label}
+                  </button>
+                ))}
+              </CollapsibleContent>
+            </Collapsible>
+          ))}
         </nav>
 
         {/* Footer */}
