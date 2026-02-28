@@ -54,6 +54,10 @@ export default function TrainingPage() {
   const [editContent, setEditContent] = useState("");
   const [editSourceUrl, setEditSourceUrl] = useState("");
   const [editSaving, setEditSaving] = useState(false);
+  const [editFiles, setEditFiles] = useState<File[]>([]);
+  const [editMode, setEditMode] = useState<"add" | "replace">("add");
+  const [editIsDragging, setEditIsDragging] = useState(false);
+  const editFileInputRef = useRef<HTMLInputElement>(null);
 
   // Conversation training state
   const [convDateFrom, setConvDateFrom] = useState("");
@@ -240,6 +244,31 @@ export default function TrainingPage() {
     setEditTitle(doc.title);
     setEditContent(doc.content || "");
     setEditSourceUrl(doc.source_url || "");
+    setEditFiles([]);
+    setEditMode("add");
+  };
+
+  const addEditFiles = (files: FileList | null) => {
+    if (!files) return;
+    const newFiles = Array.from(files);
+    const valid: File[] = [];
+    const rejected: string[] = [];
+    for (const f of newFiles) {
+      if (f.size > MAX_FILE_SIZE) {
+        rejected.push(`${f.name} (${(f.size / 1024 / 1024).toFixed(1)}MB)`);
+      } else {
+        valid.push(f);
+      }
+    }
+    if (rejected.length > 0) toast.error(`Ficheiros rejeitados (>50MB): ${rejected.join(", ")}`);
+    setEditFiles(prev => {
+      const combined = [...prev, ...valid];
+      if (combined.length > MAX_FILES) {
+        toast.error(`Máximo de ${MAX_FILES} ficheiros por lote`);
+        return combined.slice(0, MAX_FILES);
+      }
+      return combined;
+    });
   };
 
   const handleEditSave = async () => {
@@ -247,33 +276,93 @@ export default function TrainingPage() {
     if (!editTitle.trim()) { toast.error("Título é obrigatório"); return; }
     setEditSaving(true);
     try {
-      const contentChanged = editContent !== (editDoc.content || "");
-      const updateData: Record<string, any> = { title: editTitle };
+      // Handle file-type documents
+      if (editDoc.source_type === "file") {
+        // If replacing, delete the old document's file, chunks
+        if (editMode === "replace" && editFiles.length > 0) {
+          if (editDoc.file_path) {
+            await supabase.storage.from("knowledge-files").remove([editDoc.file_path]);
+          }
+          await supabase.from("knowledge_chunks").delete().eq("document_id", editDoc.id);
+          await supabase.from("knowledge_documents").delete().eq("id", editDoc.id);
 
-      if (editDoc.source_type !== "file") {
+          // Upload all new files as new documents
+          let successCount = 0;
+          for (const file of editFiles) {
+            try {
+              const ext = file.name.split('.').pop() || '';
+              const filePath = `${crypto.randomUUID()}.${ext}`;
+              const title = file.name.replace(/\.[^.]+$/, '');
+              const { error: uploadError } = await supabase.storage.from("knowledge-files").upload(filePath, file);
+              if (uploadError) throw uploadError;
+              let textContent = "";
+              if (['txt', 'md', 'csv', 'json', 'xml'].includes(ext.toLowerCase())) {
+                textContent = await file.text();
+              }
+              await createDocWithChunks(title, textContent, "file", { file_path: filePath, file_type: ext });
+              successCount++;
+            } catch (err) {
+              console.error(`Error uploading ${file.name}:`, err);
+            }
+          }
+          toast.success(`Treinamento substituído com ${successCount} ficheiro(s)`);
+        } else if (editMode === "add" && editFiles.length > 0) {
+          // Add more files as new documents
+          // Update current doc title
+          await supabase.from("knowledge_documents").update({ title: editTitle } as any).eq("id", editDoc.id);
+
+          let successCount = 0;
+          for (const file of editFiles) {
+            try {
+              const ext = file.name.split('.').pop() || '';
+              const filePath = `${crypto.randomUUID()}.${ext}`;
+              const title = file.name.replace(/\.[^.]+$/, '');
+              const { error: uploadError } = await supabase.storage.from("knowledge-files").upload(filePath, file);
+              if (uploadError) throw uploadError;
+              let textContent = "";
+              if (['txt', 'md', 'csv', 'json', 'xml'].includes(ext.toLowerCase())) {
+                textContent = await file.text();
+              }
+              await createDocWithChunks(title, textContent, "file", { file_path: filePath, file_type: ext });
+              successCount++;
+            } catch (err) {
+              console.error(`Error uploading ${file.name}:`, err);
+            }
+          }
+          toast.success(`${successCount} ficheiro(s) adicionado(s) ao treinamento`);
+        } else {
+          // Just update title
+          const { error } = await supabase.from("knowledge_documents").update({ title: editTitle } as any).eq("id", editDoc.id);
+          if (error) throw error;
+          toast.success("Título atualizado");
+        }
+      } else {
+        // Text/URL/FAQ types
+        const contentChanged = editContent !== (editDoc.content || "");
+        const updateData: Record<string, any> = { title: editTitle };
         updateData.content = editContent || null;
         updateData.source_url = editSourceUrl || null;
+
+        const { error } = await supabase.from("knowledge_documents").update(updateData as any).eq("id", editDoc.id);
+        if (error) throw error;
+
+        if (contentChanged && editContent) {
+          await supabase.from("knowledge_chunks").delete().eq("document_id", editDoc.id);
+          const chunks = chunkText(editContent, 1000);
+          const chunkInserts = chunks.map((chunk, i) => ({
+            document_id: editDoc.id,
+            chunk_index: i,
+            content: chunk,
+            tokens_count: Math.ceil(chunk.length / 4),
+          }));
+          await supabase.from("knowledge_chunks").insert(chunkInserts as any);
+          await supabase.from("knowledge_documents").update({ chunks_count: chunks.length } as any).eq("id", editDoc.id);
+        }
+        toast.success("Documento atualizado");
       }
 
-      const { error } = await supabase.from("knowledge_documents").update(updateData as any).eq("id", editDoc.id);
-      if (error) throw error;
-
-      // Re-chunk if content changed (not for files)
-      if (contentChanged && editDoc.source_type !== "file" && editContent) {
-        await supabase.from("knowledge_chunks").delete().eq("document_id", editDoc.id);
-        const chunks = chunkText(editContent, 1000);
-        const chunkInserts = chunks.map((chunk, i) => ({
-          document_id: editDoc.id,
-          chunk_index: i,
-          content: chunk,
-          tokens_count: Math.ceil(chunk.length / 4),
-        }));
-        await supabase.from("knowledge_chunks").insert(chunkInserts as any);
-        await supabase.from("knowledge_documents").update({ chunks_count: chunks.length } as any).eq("id", editDoc.id);
-      }
-
-      toast.success("Documento atualizado");
       setEditDoc(null);
+      setEditFiles([]);
       loadDocuments();
     } catch (e: any) {
       console.error("Error editing document:", e);
@@ -700,12 +789,14 @@ export default function TrainingPage() {
       </Dialog>
 
       {/* Edit Dialog */}
-      <Dialog open={!!editDoc} onOpenChange={() => setEditDoc(null)}>
+      <Dialog open={!!editDoc} onOpenChange={(open) => { if (!open) { setEditDoc(null); setEditFiles([]); } }}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
             <DialogTitle>Editar Documento</DialogTitle>
             <DialogDescription>
-              {editDoc?.source_type === "file" ? "Para ficheiros, apenas o título pode ser editado." : "Edite o título e conteúdo do documento."}
+              {editDoc?.source_type === "file"
+                ? "Edite o título, adicione mais ficheiros ou substitua o treinamento."
+                : "Edite o título e conteúdo do documento."}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
@@ -713,6 +804,82 @@ export default function TrainingPage() {
               <Label>Título *</Label>
               <Input value={editTitle} onChange={(e) => setEditTitle(e.target.value)} />
             </div>
+
+            {editDoc?.source_type === "file" && (
+              <>
+                {/* Mode selector */}
+                <div className="flex gap-2">
+                  <Button
+                    variant={editMode === "add" ? "default" : "outline"}
+                    size="sm"
+                    className="flex-1"
+                    onClick={() => setEditMode("add")}
+                  >
+                    <Plus className="h-3 w-3 mr-1" /> Adicionar ficheiros
+                  </Button>
+                  <Button
+                    variant={editMode === "replace" ? "destructive" : "outline"}
+                    size="sm"
+                    className="flex-1"
+                    onClick={() => setEditMode("replace")}
+                  >
+                    <Upload className="h-3 w-3 mr-1" /> Substituir treinamento
+                  </Button>
+                </div>
+
+                {editMode === "replace" && (
+                  <p className="text-xs text-destructive">⚠ O documento atual será eliminado e substituído pelos novos ficheiros.</p>
+                )}
+
+                {/* File drop zone */}
+                <input
+                  ref={editFileInputRef}
+                  type="file"
+                  multiple
+                  className="hidden"
+                  accept=".txt,.md,.csv,.json,.xml,.pdf,.docx,.doc"
+                  onChange={(e) => { addEditFiles(e.target.files); e.target.value = ""; }}
+                />
+                <div
+                  className={`border-2 border-dashed rounded-lg p-4 text-center cursor-pointer transition-colors ${
+                    editIsDragging ? "border-primary bg-primary/5" : "hover:border-primary/50"
+                  }`}
+                  onClick={() => editFileInputRef.current?.click()}
+                  onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setEditIsDragging(true); }}
+                  onDragEnter={(e) => { e.preventDefault(); e.stopPropagation(); setEditIsDragging(true); }}
+                  onDragLeave={(e) => { e.preventDefault(); e.stopPropagation(); setEditIsDragging(false); }}
+                  onDrop={(e) => { e.preventDefault(); e.stopPropagation(); setEditIsDragging(false); addEditFiles(e.dataTransfer.files); }}
+                >
+                  <Upload className="h-6 w-6 text-muted-foreground mx-auto mb-1" />
+                  <p className="text-sm text-muted-foreground">
+                    {editIsDragging ? "Solte os ficheiros aqui" : "Arraste ou clique para selecionar"}
+                  </p>
+                  <p className="text-[10px] text-muted-foreground mt-1">TXT, MD, CSV, JSON, XML, PDF, DOCX (máx. 50MB)</p>
+                </div>
+
+                {editFiles.length > 0 && (
+                  <div className="space-y-1 max-h-36 overflow-y-auto">
+                    {editFiles.map((file, idx) => (
+                      <div key={idx} className="flex items-center justify-between gap-2 px-3 py-1.5 bg-muted rounded-md text-sm">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <FileText className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                          <span className="truncate">{file.name}</span>
+                          <span className="inline-flex items-center rounded-full bg-secondary text-secondary-foreground px-2 py-0.5 text-[10px] font-semibold shrink-0">
+                            {file.size < 1024 * 1024
+                              ? `${(file.size / 1024).toFixed(0)} KB`
+                              : `${(file.size / 1024 / 1024).toFixed(1)} MB`}
+                          </span>
+                        </div>
+                        <Button variant="ghost" size="icon" className="h-6 w-6 shrink-0" onClick={(e) => { e.stopPropagation(); setEditFiles(prev => prev.filter((_, i) => i !== idx)); }}>
+                          <X className="h-3 w-3" />
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </>
+            )}
+
             {editDoc?.source_type !== "file" && (
               <>
                 <div>
@@ -729,10 +896,12 @@ export default function TrainingPage() {
             )}
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setEditDoc(null)}>Cancelar</Button>
+            <Button variant="outline" onClick={() => { setEditDoc(null); setEditFiles([]); }}>Cancelar</Button>
             <Button onClick={handleEditSave} disabled={editSaving}>
               {editSaving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-              Guardar
+              {editDoc?.source_type === "file" && editFiles.length > 0
+                ? editMode === "replace" ? "Substituir" : `Adicionar ${editFiles.length} ficheiro(s)`
+                : "Guardar"}
             </Button>
           </DialogFooter>
         </DialogContent>
