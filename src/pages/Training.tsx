@@ -16,7 +16,8 @@ import {
 } from "@/components/ui/alert-dialog";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
-import { Plus, Upload, Globe, FileText, Trash2, Search, Brain, BookOpen, Loader2, Eye, MessageSquare } from "lucide-react";
+import { Plus, Upload, Globe, FileText, Trash2, Search, Brain, BookOpen, Loader2, Eye, MessageSquare, X } from "lucide-react";
+import { Progress } from "@/components/ui/progress";
 
 interface KnowledgeDocument {
   id: string;
@@ -42,7 +43,8 @@ export default function TrainingPage() {
   const [searchTerm, setSearchTerm] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploadingFile, setUploadingFile] = useState(false);
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+  const [uploadProgress, setUploadProgress] = useState({ current: 0, total: 0 });
 
   // Conversation training state
   const [convDateFrom, setConvDateFrom] = useState("");
@@ -132,42 +134,85 @@ export default function TrainingPage() {
     }
   };
 
-  // ─── File Upload ───
+  const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
+  const MAX_FILES = 20;
+
+  const addFiles = (files: FileList | null) => {
+    if (!files) return;
+    const newFiles = Array.from(files);
+    const valid: File[] = [];
+    const rejected: string[] = [];
+
+    for (const f of newFiles) {
+      if (f.size > MAX_FILE_SIZE) {
+        rejected.push(`${f.name} (${(f.size / 1024 / 1024).toFixed(1)}MB)`);
+      } else {
+        valid.push(f);
+      }
+    }
+
+    if (rejected.length > 0) {
+      toast.error(`Ficheiros rejeitados (>50MB): ${rejected.join(", ")}`);
+    }
+
+    setSelectedFiles(prev => {
+      const combined = [...prev, ...valid];
+      if (combined.length > MAX_FILES) {
+        toast.error(`Máximo de ${MAX_FILES} ficheiros por lote`);
+        return combined.slice(0, MAX_FILES);
+      }
+      return combined;
+    });
+  };
+
+  const removeFile = (index: number) => {
+    setSelectedFiles(prev => prev.filter((_, i) => i !== index));
+  };
+
+  // ─── File Upload (Batch) ───
   const handleFileUpload = async () => {
-    if (!selectedFile) { toast.error("Selecione um ficheiro"); return; }
-    if (!newDoc.title.trim()) { toast.error("Título é obrigatório"); return; }
+    if (selectedFiles.length === 0) { toast.error("Selecione ficheiros"); return; }
     setUploadingFile(true);
+    setUploadProgress({ current: 0, total: selectedFiles.length });
+    let successCount = 0;
+    let errorCount = 0;
+
     try {
-      const ext = selectedFile.name.split('.').pop() || '';
-      const filePath = `${crypto.randomUUID()}.${ext}`;
+      for (let i = 0; i < selectedFiles.length; i++) {
+        const file = selectedFiles[i];
+        setUploadProgress({ current: i + 1, total: selectedFiles.length });
+        try {
+          const ext = file.name.split('.').pop() || '';
+          const filePath = `${crypto.randomUUID()}.${ext}`;
+          const title = file.name.replace(/\.[^.]+$/, '');
 
-      const { error: uploadError } = await supabase.storage
-        .from("knowledge-files")
-        .upload(filePath, selectedFile);
-      if (uploadError) throw uploadError;
+          const { error: uploadError } = await supabase.storage
+            .from("knowledge-files")
+            .upload(filePath, file);
+          if (uploadError) throw uploadError;
 
-      // Read text content from supported file types
-      let textContent = "";
-      if (['txt', 'md', 'csv', 'json', 'xml'].includes(ext.toLowerCase())) {
-        textContent = await selectedFile.text();
+          let textContent = "";
+          if (['txt', 'md', 'csv', 'json', 'xml'].includes(ext.toLowerCase())) {
+            textContent = await file.text();
+          }
+
+          await createDocWithChunks(title, textContent, "file", { file_path: filePath, file_type: ext });
+          successCount++;
+        } catch {
+          errorCount++;
+        }
       }
 
-      await createDocWithChunks(
-        newDoc.title,
-        textContent,
-        "file",
-        { file_path: filePath, file_type: ext }
-      );
+      if (successCount > 0) toast.success(`${successCount} ficheiro(s) enviado(s) com sucesso`);
+      if (errorCount > 0) toast.error(`${errorCount} ficheiro(s) falharam`);
 
-      toast.success("Ficheiro enviado e processado");
       setDialogOpen(false);
-      setSelectedFile(null);
+      setSelectedFiles([]);
       setNewDoc({ title: "", content: "", source_type: "text", source_url: "" });
       loadDocuments();
-    } catch (e: any) {
-      toast.error(e.message);
     } finally {
       setUploadingFile(false);
+      setUploadProgress({ current: 0, total: 0 });
     }
   };
 
@@ -390,8 +435,8 @@ export default function TrainingPage() {
       {/* Create Dialog */}
       <Dialog open={dialogOpen} onOpenChange={(open) => {
         setDialogOpen(open);
-        if (!open) {
-          setSelectedFile(null);
+      if (!open) {
+          setSelectedFiles([]);
           setConvPreview(null);
         }
       }}>
@@ -403,7 +448,7 @@ export default function TrainingPage() {
 
           <Tabs value={newDoc.source_type} onValueChange={(v) => {
             setNewDoc(prev => ({ ...prev, source_type: v }));
-            setSelectedFile(null);
+            setSelectedFiles([]);
             setConvPreview(null);
           }}>
             <TabsList className="grid grid-cols-5">
@@ -415,8 +460,8 @@ export default function TrainingPage() {
             </TabsList>
 
             <div className="mt-4 space-y-3">
-              {/* Title (not for conversations) */}
-              {newDoc.source_type !== "conversation" && (
+              {/* Title (not for conversations or file batch) */}
+              {newDoc.source_type !== "conversation" && newDoc.source_type !== "file" && (
                 <div>
                   <Label>Título *</Label>
                   <Input value={newDoc.title} onChange={(e) => setNewDoc(prev => ({ ...prev, title: e.target.value }))} placeholder="Ex: Guia de Cidadania Portuguesa" />
@@ -436,41 +481,58 @@ export default function TrainingPage() {
 
               <TabsContent value="file" className="mt-0 space-y-3">
                 <div>
-                  <Label>Ficheiro</Label>
+                  <Label>Ficheiros (máx. {MAX_FILES}, até 50MB cada)</Label>
                   <input
                     ref={fileInputRef}
                     type="file"
+                    multiple
                     className="hidden"
                     accept=".txt,.md,.csv,.json,.xml,.pdf,.docx,.doc"
                     onChange={(e) => {
-                      const file = e.target.files?.[0];
-                      if (file) {
-                        setSelectedFile(file);
-                        if (!newDoc.title) {
-                          setNewDoc(prev => ({ ...prev, title: file.name.replace(/\.[^.]+$/, '') }));
-                        }
-                      }
+                      addFiles(e.target.files);
+                      e.target.value = "";
                     }}
                   />
                   <div
-                    className="border-2 border-dashed rounded-lg p-6 text-center cursor-pointer hover:border-primary/50 transition-colors"
+                    className="border-2 border-dashed rounded-lg p-4 text-center cursor-pointer hover:border-primary/50 transition-colors"
                     onClick={() => fileInputRef.current?.click()}
                   >
-                    {selectedFile ? (
-                      <div className="flex items-center justify-center gap-2">
-                        <FileText className="h-5 w-5 text-primary" />
-                        <span className="text-sm font-medium">{selectedFile.name}</span>
-                        <Badge variant="secondary" className="text-[10px]">{(selectedFile.size / 1024).toFixed(0)} KB</Badge>
-                      </div>
-                    ) : (
-                      <>
-                        <Upload className="h-8 w-8 text-muted-foreground mx-auto mb-2" />
-                        <p className="text-sm text-muted-foreground">Clique para selecionar um ficheiro</p>
-                        <p className="text-[10px] text-muted-foreground mt-1">TXT, MD, CSV, JSON, XML, PDF, DOCX</p>
-                      </>
-                    )}
+                    <Upload className="h-8 w-8 text-muted-foreground mx-auto mb-2" />
+                    <p className="text-sm text-muted-foreground">Clique para selecionar ficheiros</p>
+                    <p className="text-[10px] text-muted-foreground mt-1">TXT, MD, CSV, JSON, XML, PDF, DOCX</p>
                   </div>
                 </div>
+
+                {selectedFiles.length > 0 && (
+                  <div className="space-y-1 max-h-48 overflow-y-auto">
+                    {selectedFiles.map((file, idx) => (
+                      <div key={idx} className="flex items-center justify-between gap-2 px-3 py-1.5 bg-muted rounded-md text-sm">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <FileText className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                          <span className="truncate">{file.name}</span>
+                          <Badge variant="secondary" className="text-[10px] shrink-0">
+                            {file.size < 1024 * 1024
+                              ? `${(file.size / 1024).toFixed(0)} KB`
+                              : `${(file.size / 1024 / 1024).toFixed(1)} MB`}
+                          </Badge>
+                        </div>
+                        <Button variant="ghost" size="icon" className="h-6 w-6 shrink-0" onClick={(e) => { e.stopPropagation(); removeFile(idx); }}>
+                          <X className="h-3 w-3" />
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {uploadingFile && uploadProgress.total > 0 && (
+                  <div className="space-y-1">
+                    <div className="flex justify-between text-xs text-muted-foreground">
+                      <span>Enviando {uploadProgress.current}/{uploadProgress.total}...</span>
+                      <span>{Math.round((uploadProgress.current / uploadProgress.total) * 100)}%</span>
+                    </div>
+                    <Progress value={(uploadProgress.current / uploadProgress.total) * 100} />
+                  </div>
+                )}
               </TabsContent>
 
               <TabsContent value="faq" className="mt-0">
@@ -511,9 +573,9 @@ export default function TrainingPage() {
           <DialogFooter>
             <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancelar</Button>
             {newDoc.source_type === "file" ? (
-              <Button onClick={handleFileUpload} disabled={uploadingFile || !selectedFile}>
+              <Button onClick={handleFileUpload} disabled={uploadingFile || selectedFiles.length === 0}>
                 {uploadingFile && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-                Enviar Ficheiro
+                Enviar {selectedFiles.length || ""} Ficheiro{selectedFiles.length !== 1 ? "s" : ""}
               </Button>
             ) : newDoc.source_type === "conversation" ? (
               <Button onClick={importConversations} disabled={saving || !convPreview || convPreview.count === 0}>
