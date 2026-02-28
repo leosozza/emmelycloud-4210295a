@@ -1,58 +1,46 @@
 
 
-## Integrar Seletor de Gateway de Pagamento no Fechamento de Negócio Bitrix24
+## Upload em Lote de Ficheiros na Pagina de Treinamento
 
-Quando um negócio (deal) for fechado no Bitrix24, o sistema lerá automaticamente o campo personalizado de gateway de pagamento e criará a cobrança no gateway correto.
+Permitir selecionar e enviar multiplos ficheiros de uma vez na aba "Ficheiro" do dialog de criacao de documentos, com limite de tamanho por ficheiro.
 
-### Gateways Suportados
+### Alteracoes
 
-| Gateway | Região | Moeda |
-|---------|--------|-------|
-| Stripe PT | Portugal | EUR |
-| Stripe BR | Brasil | BRL |
-| Asaas | Brasil | BRL |
-| Financiamento Próprio | Ambas | EUR/BRL |
+**Ficheiro: `src/pages/Training.tsx`**
 
-### Plano de Implementação
+1. **Estado** -- Substituir `selectedFile: File | null` por `selectedFiles: File[]` e adicionar estado de progresso (`uploadProgress: number` para tracking visual).
 
-#### 1. Adicionar evento `ONCRMDEALUPDATE` ao pipeline de eventos
-- Adicionar `ONCRMDEALUPDATE` à lista `SUPPORTED_EVENTS` em `bitrix24-events/index.ts`
-- O evento será enfileirado na `bitrix_event_queue` como os outros
+2. **Input de ficheiro** -- Alterar o `<input type="file">` para aceitar `multiple`. No `onChange`, acumular ficheiros validando:
+   - Tamanho maximo por ficheiro: **50MB** (limite do Supabase Storage)
+   - Ficheiros que excedam o limite serao rejeitados com toast de erro
+   - Maximo de 20 ficheiros por lote
 
-#### 2. Criar handler de deal no worker (`bitrix24-worker`)
-- Quando o evento `ONCRMDEALUPDATE` chegar, o worker:
-  - Busca os dados completos do deal via API Bitrix (`crm.deal.get`)
-  - Verifica se o deal foi movido para o stage "WON" (ganho/fechado)
-  - Lê o campo personalizado de gateway (ex: `UF_CRM_GATEWAY_PAGAMENTO`)
-  - Lê os campos de valor, moeda, dados do cliente
-  - Chama `payment-create` com o gateway especificado
+3. **Area de drop** -- Quando houver ficheiros selecionados, mostrar lista com nome + tamanho + botao para remover individualmente, em vez de mostrar apenas um ficheiro.
 
-#### 3. Adicionar configuração do campo no sidebar Emmely Pay
-- Na view de Pagamentos do Bitrix24App, adicionar secção de configuração:
-  - Campo para informar o ID do campo personalizado do Bitrix (ex: `UF_CRM_1234567890`)
-  - Campo para o stage ID de "fechado/ganho"
-  - Guardar na tabela `bitrix24_integrations.config` (JSON)
+4. **Titulo** -- Como serao multiplos ficheiros, o campo titulo sera preenchido automaticamente com o nome de cada ficheiro (sem extensao). O campo titulo manual sera removido para uploads em lote, pois cada ficheiro tera o seu proprio titulo.
 
-#### 4. Atualizar `payment-create` para suportar gateway explícito
-- Adicionar parâmetro `force_gateway` que permite forçar `stripe_pt`, `stripe_br`, `asaas` ou `direto`
-- Manter o roteamento automático como fallback quando não especificado
+5. **Funcao `handleFileUpload`** -- Refatorar para iterar sobre `selectedFiles`, fazendo upload de cada um sequencialmente:
+   - Upload para storage `knowledge-files`
+   - Criar documento + chunks para cada ficheiro
+   - Atualizar barra de progresso (`Progress` component)
+   - Toast final com contagem de sucesso/erro
 
-### Detalhes Técnicos
+6. **Barra de progresso** -- Adicionar componente `Progress` (ja existe em `ui/progress.tsx`) durante o upload em lote, mostrando "Enviando 3/10...".
 
-**Ficheiros a alterar:**
-- `supabase/functions/bitrix24-events/index.ts` -- adicionar `ONCRMDEALUPDATE`
-- `supabase/functions/bitrix24-worker/index.ts` -- handler para processar deal update
-- `supabase/functions/payment-create/index.ts` -- suporte a `force_gateway`
-- `src/pages/Bitrix24App.tsx` -- UI de configuração do campo gateway na secção Pagamentos
+7. **Botao de enviar** -- Texto atualizado para refletir quantidade: "Enviar X Ficheiros".
 
-**Tabela `bitrix24_integrations.config`** (campo JSON existente) guardará:
-```json
-{
-  "deal_gateway_field": "UF_CRM_1234567890",
-  "deal_won_stage": "WON",
-  "deal_amount_field": "OPPORTUNITY",
-  "deal_currency_field": "CURRENCY_ID",
-  "auto_charge_on_close": true
-}
-```
+### Limites aplicados
+
+| Restricao | Valor |
+|-----------|-------|
+| Tamanho maximo por ficheiro | 50 MB |
+| Ficheiros por lote | 20 |
+| Tipos aceites | TXT, MD, CSV, JSON, XML, PDF, DOCX, DOC |
+
+### Detalhes Tecnicos
+
+- Sem alteracoes no backend ou base de dados -- reutiliza `createDocWithChunks` e storage existente
+- Progresso visual usando `Progress` de `@/components/ui/progress`
+- Validacao client-side antes de iniciar uploads
+- Ficheiros invalidos (tamanho) sao filtrados com feedback imediato
 
