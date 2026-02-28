@@ -35,10 +35,16 @@ import {
   CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, Legend,
 } from "recharts";
 import { cn } from "@/lib/utils";
-import { ChevronDown } from "lucide-react";
+import { ChevronDown, Star, Edit, Volume2, Users, GitBranch as GitBranchIcon2 } from "lucide-react";
 import {
   Collapsible, CollapsibleContent, CollapsibleTrigger,
 } from "@/components/ui/collapsible";
+import { AgentFormDialog } from "@/components/agentes/AgentFormDialog";
+import { Switch } from "@/components/ui/switch";
+import { Slider } from "@/components/ui/slider";
+import { Separator } from "@/components/ui/separator";
+import type { AIAgent, AIProvider, FlowOption, DocOption } from "@/pages/Agentes";
+import { defaultAgent } from "@/pages/Agentes";
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
@@ -703,45 +709,57 @@ function DashboardView({ integration, botId, domain, loading, onResync, onRefres
 
 // ==================== AGENTES / PERSONAS VIEW ====================
 function AgentesView({ botId, integrationId }: { botId: string | null; integrationId?: string }) {
-  const [agents, setAgents] = useState<any[]>([]);
+  const [agents, setAgents] = useState<AIAgent[]>([]);
+  const [providers, setProviders] = useState<AIProvider[]>([]);
+  const [flows, setFlows] = useState<FlowOption[]>([]);
+  const [docs, setDocs] = useState<DocOption[]>([]);
   const [loading, setLoading] = useState(true);
-  const [editing, setEditing] = useState<any | null>(null);
-  const [form, setForm] = useState({
-    name: "", system_prompt: "", ai_model: "google/gemini-3-flash-preview",
-    temperature: 0.7, welcome_message: "", fallback_message: "Desculpe, não consegui processar a sua mensagem."
-  });
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [editingAgent, setEditingAgent] = useState<Partial<AIAgent>>({ ...defaultAgent });
   const [saving, setSaving] = useState(false);
   const [republishing, setRepublishing] = useState<string | null>(null);
 
-  const fetchAgents = async () => {
+  const loadData = async () => {
     setLoading(true);
     try {
-      const res = await fetch(`${SUPABASE_URL}/rest/v1/ai_agents?select=*&order=created_at.desc`, {
-        headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` },
-      });
-      if (res.ok) setAgents(await res.json());
+      const [agentsRes, providersRes, flowsRes, docsRes] = await Promise.all([
+        fetch(`${SUPABASE_URL}/rest/v1/ai_agents?select=*&order=created_at.desc`, {
+          headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` },
+        }),
+        fetch(`${SUPABASE_URL}/rest/v1/ai_providers?select=*&order=name.asc`, {
+          headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` },
+        }),
+        fetch(`${SUPABASE_URL}/rest/v1/flows?select=id,name&order=name.asc`, {
+          headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` },
+        }),
+        fetch(`${SUPABASE_URL}/rest/v1/knowledge_documents?select=id,title&order=title.asc`, {
+          headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` },
+        }),
+      ]);
+      if (agentsRes.ok) setAgents(await agentsRes.json());
+      if (providersRes.ok) setProviders(await providersRes.json());
+      if (flowsRes.ok) setFlows(await flowsRes.json());
+      if (docsRes.ok) setDocs(await docsRes.json());
     } catch (e) { console.error(e); }
     setLoading(false);
   };
 
-  useEffect(() => { fetchAgents(); }, []);
+  useEffect(() => { loadData(); }, []);
 
   const handleSave = async () => {
+    if (!editingAgent.name?.trim()) return;
     setSaving(true);
     try {
-      const body = {
-        name: form.name, system_prompt: form.system_prompt, ai_model: form.ai_model,
-        temperature: form.temperature, welcome_message: form.welcome_message,
-        fallback_message: form.fallback_message, ai_provider: "lovable", agent_type: "text"
-      };
-      const url = editing?.id ? `${SUPABASE_URL}/rest/v1/ai_agents?id=eq.${editing.id}` : `${SUPABASE_URL}/rest/v1/ai_agents`;
+      const url = editingAgent.id
+        ? `${SUPABASE_URL}/rest/v1/ai_agents?id=eq.${editingAgent.id}`
+        : `${SUPABASE_URL}/rest/v1/ai_agents`;
       await fetch(url, {
-        method: editing?.id ? "PATCH" : "POST",
+        method: editingAgent.id ? "PATCH" : "POST",
         headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}`, "Content-Type": "application/json", Prefer: "return=minimal" },
-        body: JSON.stringify(body),
+        body: JSON.stringify(editingAgent),
       });
-      setEditing(null);
-      fetchAgents();
+      setDialogOpen(false);
+      loadData();
     } catch (e) { console.error(e); }
     setSaving(false);
   };
@@ -757,12 +775,11 @@ function AgentesView({ botId, integrationId }: { botId: string | null; integrati
       headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}`, "Content-Type": "application/json", Prefer: "return=minimal" },
       body: JSON.stringify({ is_default: true }),
     });
-    fetchAgents();
+    loadData();
   };
 
   const handleRepublish = async (id: string) => {
     setRepublishing(id);
-    // Link this agent as the active bot agent in the integration
     if (integrationId) {
       await fetch(`${SUPABASE_URL}/rest/v1/bitrix24_integrations?id=eq.${integrationId}`, {
         method: "PATCH",
@@ -780,76 +797,32 @@ function AgentesView({ botId, integrationId }: { botId: string | null; integrati
       method: "DELETE",
       headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` },
     });
-    fetchAgents();
+    loadData();
   };
 
-  const startEdit = (agent: any) => {
-    setEditing(agent);
-    setForm({
-      name: agent.name || "", system_prompt: agent.system_prompt || "",
-      ai_model: agent.ai_model || "google/gemini-3-flash-preview",
-      temperature: agent.temperature || 0.7, welcome_message: agent.welcome_message || "",
-      fallback_message: agent.fallback_message || ""
-    });
+  const openEdit = (agent: AIAgent) => {
+    setEditingAgent({ ...agent });
+    setDialogOpen(true);
   };
+
+  const openCreate = () => {
+    setEditingAgent({ ...defaultAgent });
+    setDialogOpen(true);
+  };
+
+  const providerName = (slug: string) => providers.find(p => p.slug === slug)?.name || slug;
 
   return (
     <div className="p-6 space-y-6">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold">Personas</h1>
-          <p className="text-muted-foreground text-sm">Configure a personalidade do seu bot</p>
+          <p className="text-muted-foreground text-sm">Configure a personalidade, modelo de IA, treinamento e fluxos</p>
         </div>
-        <Button onClick={() => { setEditing({}); setForm({ name: "", system_prompt: "", ai_model: "google/gemini-3-flash-preview", temperature: 0.7, welcome_message: "", fallback_message: "Desculpe, não consegui processar a sua mensagem." }); }}>
+        <Button onClick={openCreate}>
           <Plus className="h-4 w-4 mr-2" /> Nova Persona
         </Button>
       </div>
-
-      {editing && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">{editing.id ? "✏️ Editar Persona" : "✨ Nova Persona"}</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div>
-              <Label>Nome da Persona</Label>
-              <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Ex: Emmely AI" className="mt-1" />
-            </div>
-            <div>
-              <Label>Prompt do Sistema</Label>
-              <Textarea
-                value={form.system_prompt}
-                onChange={(e) => setForm({ ...form, system_prompt: e.target.value })}
-                rows={4}
-                placeholder="Você é uma assistente virtual..."
-                className="mt-1"
-              />
-            </div>
-            <div>
-              <Label>Mensagem de Boas-vindas</Label>
-              <Textarea value={form.welcome_message} onChange={(e) => setForm({ ...form, welcome_message: e.target.value })} rows={2} className="mt-1" placeholder="Olá! Como posso ajudar?" />
-            </div>
-            <div>
-              <Label>Modelo IA</Label>
-              <Select value={form.ai_model} onValueChange={(v) => setForm({ ...form, ai_model: v })}>
-                <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="google/gemini-3-flash-preview">Gemini Flash (rápido)</SelectItem>
-                  <SelectItem value="google/gemini-2.5-flash">Gemini 2.5 Flash</SelectItem>
-                  <SelectItem value="google/gemini-2.5-pro">Gemini 2.5 Pro</SelectItem>
-                  <SelectItem value="openai/gpt-5-mini">GPT-5 Mini</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="flex gap-2 pt-2">
-              <Button onClick={handleSave} disabled={saving} className="flex-1">
-                {saving ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Salvando...</> : <><Save className="h-4 w-4 mr-2" />Salvar</>}
-              </Button>
-              <Button variant="outline" onClick={() => setEditing(null)} className="flex-1">Cancelar</Button>
-            </div>
-          </CardContent>
-        </Card>
-      )}
 
       {loading ? (
         <div className="flex justify-center py-12"><Loader2 className="h-8 w-8 animate-spin text-muted-foreground" /></div>
@@ -858,6 +831,7 @@ function AgentesView({ botId, integrationId }: { botId: string | null; integrati
           <CardContent className="py-12 text-center text-muted-foreground">
             <Bot className="h-12 w-12 mx-auto mb-4 opacity-30" />
             <p>Nenhuma persona criada</p>
+            <Button className="mt-4" onClick={openCreate}><Plus className="h-4 w-4 mr-2" /> Criar Primeira Persona</Button>
           </CardContent>
         </Card>
       ) : (
@@ -881,10 +855,20 @@ function AgentesView({ botId, integrationId }: { botId: string | null; integrati
                         {agent.is_default && !botId && (
                           <Badge variant="secondary" className="text-[10px]">Padrão</Badge>
                         )}
+                        <Badge variant="outline" className="text-[10px]">{agent.agent_type}</Badge>
                       </div>
                       <p className="text-sm text-muted-foreground mt-0.5 truncate">{agent.description || "Sem descrição"}</p>
-                      <div className="flex gap-3 mt-2 text-xs text-muted-foreground">
-                        <span>{agent.ai_model?.split("/")[1] || agent.ai_model}</span>
+                      <div className="flex gap-3 mt-2 text-xs text-muted-foreground flex-wrap">
+                        <span>{providerName(agent.ai_provider)} • {agent.ai_model?.split("/")[1] || agent.ai_model}</span>
+                        {(agent.training_collection_ids?.length || 0) > 0 && (
+                          <span className="flex items-center gap-1"><BookOpen className="h-3 w-3" />{agent.training_collection_ids.length} docs</span>
+                        )}
+                        {(agent.sub_agent_ids?.length || 0) > 0 && (
+                          <span className="flex items-center gap-1"><Users className="h-3 w-3" />{agent.sub_agent_ids.length} sub-agentes</span>
+                        )}
+                        {agent.default_flow_id && (
+                          <span className="flex items-center gap-1"><GitBranch className="h-3 w-3" />Fluxo</span>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -898,8 +882,8 @@ function AgentesView({ botId, integrationId }: { botId: string | null; integrati
                     >
                       {republishing === agent.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <><Power className="h-3 w-3 mr-1.5" />Republicar</>}
                     </Button>
-                    <Button size="sm" variant="outline" className="h-8 text-xs" onClick={() => startEdit(agent)}>
-                      Editar
+                    <Button size="sm" variant="outline" className="h-8 text-xs" onClick={() => openEdit(agent)}>
+                      <Edit className="h-3 w-3 mr-1.5" />Editar
                     </Button>
                     <Button size="sm" variant="ghost" className="h-8 text-xs text-destructive hover:text-destructive" onClick={() => handleDelete(agent.id)}>
                       <Trash2 className="h-3 w-3 mr-1.5" />Remover
@@ -911,6 +895,19 @@ function AgentesView({ botId, integrationId }: { botId: string | null; integrati
           ))}
         </div>
       )}
+
+      <AgentFormDialog
+        open={dialogOpen}
+        onOpenChange={setDialogOpen}
+        editingAgent={editingAgent}
+        setEditingAgent={setEditingAgent}
+        providers={providers}
+        flows={flows}
+        docs={docs}
+        agents={agents}
+        saving={saving}
+        onSave={handleSave}
+      />
     </div>
   );
 }
