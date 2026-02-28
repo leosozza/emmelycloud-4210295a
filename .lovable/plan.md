@@ -1,49 +1,70 @@
 
 
-## Melhorias na Pagina de Treinamento
+## Treinamento Unificado - Coleções de Conhecimento
 
-Corrigir o erro de tela branca no upload, adicionar drag-and-drop de ficheiros e permitir edicao de documentos existentes.
+Reestruturar a página de Treinamento para que cada "treinamento" seja uma coleção que agrupa texto, ficheiros e URLs sob um único título temático.
 
-### 1. Corrigir tela branca no upload de ficheiros
+### Conceito
 
-A zona de drop nao tem handlers de drag/drop, e o componente pode crashar se um erro nao tratado ocorrer durante o upload (ex: bucket nao acessivel, erro de RLS). A correcao inclui:
-- Envolver o `handleFileUpload` com try/catch robusto e logging
-- Adicionar `onError` handler no upload para evitar que erros nao capturados propaguem e derrubem o componente
-- Adicionar um error boundary basico ou state de erro para evitar tela branca
+Atualmente, cada documento é criado isoladamente (só texto, OU só ficheiro, OU só URL). A nova abordagem permite criar um "Treinamento de Vendas" que inclui tudo junto:
+- Um texto descritivo sobre vendas
+- 5 PDFs com materiais de apoio
+- 2 URLs de referência
 
-### 2. Adicionar drag-and-drop de ficheiros
+Tudo agrupado visualmente como um único treinamento.
 
-Na area pontilhada de upload ("Clique para selecionar ficheiros"), adicionar:
-- Handlers `onDragOver`, `onDragEnter`, `onDragLeave`, `onDrop`
-- Estado visual de highlight quando ficheiros sao arrastados sobre a area
-- Reutilizar a funcao `addFiles()` existente para validacao
+### Alterações na Base de Dados
 
-### 3. Adicionar edicao de documentos existentes
+Adicionar coluna `collection_id` e `collection_name` à tabela `knowledge_documents`:
+- `collection_id` (UUID, nullable) -- agrupa documentos da mesma coleção
+- `collection_name` (text, nullable) -- nome do treinamento/coleção
 
-Permitir que o utilizador edite titulo e conteudo de documentos ja criados:
-- Adicionar botao de edicao (icone `Pencil`) ao lado do botao de visualizacao em cada card
-- Criar dialog de edicao que carrega os dados do documento selecionado
-- Campos editaveis: titulo, conteudo (texto), source_url (se tipo URL)
-- Ao salvar, atualizar o documento na base de dados e regenerar chunks se o conteudo mudar
-- Para ficheiros, permitir apenas a edicao do titulo (o ficheiro em si nao e editavel inline)
+Documentos com o mesmo `collection_id` pertencem ao mesmo treinamento.
 
-### Detalhes Tecnicos
+### Novo Diálogo de Criação
+
+Substituir as tabs de tipo único por um formulário unificado com 3 secções visíveis simultaneamente:
+
+1. **Título do Treinamento** (obrigatório) -- ex: "Treinamento de Vendas"
+2. **Texto** (opcional) -- textarea para colar/escrever conteúdo
+3. **Ficheiros** (opcional) -- zona de drag-and-drop para upload múltiplo (mantém os limites actuais de 50MB/ficheiro e 20 ficheiros)
+4. **URLs** (opcional) -- campo para adicionar uma ou mais URLs
+
+O utilizador preenche o que quiser e ao guardar, cada tipo vira um `knowledge_document` separado mas todos partilham o mesmo `collection_id`.
+
+### Listagem Agrupada
+
+Na lista principal, os documentos com o mesmo `collection_id` aparecem agrupados num card expansível:
+- Card principal mostra o título do treinamento, quantidade total de documentos e chunks
+- Ao expandir, mostra os itens individuais (texto, ficheiros, URLs) com ações de visualizar/eliminar
+- Documentos sem `collection_id` (legados) aparecem normalmente como cards individuais
+
+### Edição de Treinamento
+
+O botão de edição numa coleção abre o diálogo unificado preenchido com os dados existentes:
+- O texto existente aparece no textarea
+- Os ficheiros carregados são listados (com opção de remover individualmente)
+- As URLs são listadas (com opção de remover)
+- Pode adicionar mais texto, ficheiros ou URLs ao treinamento existente
+
+### Detalhes Técnicos
+
+**Migração SQL:**
+```text
+ALTER TABLE knowledge_documents
+  ADD COLUMN collection_id UUID DEFAULT NULL,
+  ADD COLUMN collection_name TEXT DEFAULT NULL;
+```
 
 **Ficheiro a alterar: `src/pages/Training.tsx`**
 
-**Drag-and-drop:**
-- Adicionar estado `isDragging: boolean` para controlar o visual
-- Na `div` da area de drop, adicionar `onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}`, `onDragLeave`, e `onDrop={(e) => { e.preventDefault(); addFiles(e.dataTransfer.files); setIsDragging(false); }}`
-- Aplicar classe condicional `border-primary bg-primary/5` quando `isDragging`
+- Novo estado `newTraining` com campos: `title`, `content`, `urls: string[]`, `files: File[]`
+- Função `handleCreateTraining` que gera um `collection_id`, cria documento de texto (se houver), faz upload dos ficheiros, cria documentos de URL -- todos com o mesmo `collection_id` e `collection_name`
+- Agrupamento na listagem: `Map<string, KnowledgeDocument[]>` agrupando por `collection_id`
+- Componente de card expansível usando `Collapsible` (já disponível no projecto)
+- Manter o diálogo de Conversas como tab separada (esse fluxo é diferente)
 
-**Edicao:**
-- Novo estado `editDoc: KnowledgeDocument | null`
-- Novo dialog com campos de titulo + conteudo (textarea) + source_url
-- Funcao `handleEdit` que faz `update` na tabela `knowledge_documents`, deleta chunks antigos e recria se o conteudo mudar
-- Botao `Pencil` em cada card de documento
-
-**Correcao tela branca:**
-- Envolver o render do componente com tratamento de erro
-- Garantir que `createDocWithChunks` nao lanca excecoes nao tratadas no loop de upload
-- Adicionar `console.error` no catch interno para diagnostico
+**Compatibilidade:**
+- Documentos existentes (sem `collection_id`) continuam a funcionar normalmente, mostrados como cards individuais
+- A eliminação de uma coleção elimina todos os documentos e ficheiros associados
 
