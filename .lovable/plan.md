@@ -1,70 +1,111 @@
 
 
-## Treinamento Unificado - Coleções de Conhecimento
+## Sistema de Propostas com Link de Aceite e Fluxo Automatizado
 
-Reestruturar a página de Treinamento para que cada "treinamento" seja uma coleção que agrupa texto, ficheiros e URLs sob um único título temático.
+Criar um sistema completo de geração de propostas baseado nos modelos PDF enviados, com link público de aceite pelo cliente, geração de PDF e integração com o fluxo proposta -> contrato -> pagamento.
 
-### Conceito
+### 1. Alterações na Base de Dados
 
-Atualmente, cada documento é criado isoladamente (só texto, OU só ficheiro, OU só URL). A nova abordagem permite criar um "Treinamento de Vendas" que inclui tudo junto:
-- Um texto descritivo sobre vendas
-- 5 PDFs com materiais de apoio
-- 2 URLs de referência
+Adicionar campos à tabela `proposals` para suportar o link público e dados do modelo:
 
-Tudo agrupado visualmente como um único treinamento.
+- `accept_token` (UUID, unique) -- token único para o link público de aceite
+- `accepted_at` (timestamptz) -- data/hora do aceite pelo cliente
+- `client_name` (text) -- nome do cliente na proposta
+- `client_email` (text) -- email para envio
+- `client_phone` (text) -- telefone do cliente
+- `client_document` (text) -- NIF/CC do cliente
+- `client_address` (text) -- morada do cliente
+- `service_id` (UUID, nullable) -- serviço associado (puxa budget_details, contract_intro, etc.)
+- `description` (text) -- descrição detalhada do serviço/proposta
+- `pdf_url` (text) -- URL do PDF gerado e guardado no storage
 
-### Alterações na Base de Dados
+Criar bucket de storage `proposal-files` (público) para guardar os PDFs gerados.
 
-Adicionar coluna `collection_id` e `collection_name` à tabela `knowledge_documents`:
-- `collection_id` (UUID, nullable) -- agrupa documentos da mesma coleção
-- `collection_name` (text, nullable) -- nome do treinamento/coleção
+Criar política RLS para leitura pública por token (sem autenticação) na tabela proposals: permite SELECT quando `accept_token` é fornecido como filtro.
 
-Documentos com o mesmo `collection_id` pertencem ao mesmo treinamento.
+### 2. Copiar os PDFs de Modelo
 
-### Novo Diálogo de Criação
+Copiar os 2 PDFs enviados para `public/templates/` para referência visual. Estes servem como modelo para o layout HTML da proposta.
 
-Substituir as tabs de tipo único por um formulário unificado com 3 secções visíveis simultaneamente:
+### 3. Formulário de Proposta Melhorado
 
-1. **Título do Treinamento** (obrigatório) -- ex: "Treinamento de Vendas"
-2. **Texto** (opcional) -- textarea para colar/escrever conteúdo
-3. **Ficheiros** (opcional) -- zona de drag-and-drop para upload múltiplo (mantém os limites actuais de 50MB/ficheiro e 20 ficheiros)
-4. **URLs** (opcional) -- campo para adicionar uma ou mais URLs
+Reformular o `PropostaForm` para incluir:
+- Dados do cliente (nome, email, telefone, documento, morada) -- com opção de puxar de um cliente existente ou do lead associado ao caso
+- Seleção de serviço (puxa automaticamente o valor e detalhes do orçamento)
+- Descrição livre do serviço
+- Tipo de pagamento, parcelas, valor, condições e validade (campos existentes)
+- Ao guardar, gera automaticamente o `accept_token` (UUID)
 
-O utilizador preenche o que quiser e ao guardar, cada tipo vira um `knowledge_document` separado mas todos partilham o mesmo `collection_id`.
+### 4. Página Pública de Proposta (`/proposta/:token`)
 
-### Listagem Agrupada
+Nova rota pública (fora do AppLayout, sem autenticação) que:
+- Carrega a proposta pelo `accept_token`
+- Renderiza a proposta no formato dos PDFs modelo (cabeçalho com logo, dados do escritório, dados do cliente, descrição do serviço, valores, condições de pagamento)
+- Mostra botão "Aceitar Proposta" (verde, destaque)
+- Ao clicar em aceitar: atualiza status para "aceita", regista `accepted_at`, cria contrato automaticamente, atualiza o funil do lead
+- Mostra confirmação de aceite com próximos passos
 
-Na lista principal, os documentos com o mesmo `collection_id` aparecem agrupados num card expansível:
-- Card principal mostra o título do treinamento, quantidade total de documentos e chunks
-- Ao expandir, mostra os itens individuais (texto, ficheiros, URLs) com ações de visualizar/eliminar
-- Documentos sem `collection_id` (legados) aparecem normalmente como cards individuais
+### 5. Geração de PDF
 
-### Edição de Treinamento
+Criar Edge Function `proposal-pdf` que:
+- Recebe o `proposal_id`
+- Gera HTML da proposta seguindo o modelo dos PDFs enviados (cabeçalho, dados cliente, serviço, valores, condições)
+- Converte para PDF (usando HTML renderizado)
+- Guarda no bucket `proposal-files`
+- Retorna a URL do PDF
 
-O botão de edição numa coleção abre o diálogo unificado preenchido com os dados existentes:
-- O texto existente aparece no textarea
-- Os ficheiros carregados são listados (com opção de remover individualmente)
-- As URLs são listadas (com opção de remover)
-- Pode adicionar mais texto, ficheiros ou URLs ao treinamento existente
+### 6. Ações na Listagem de Propostas
+
+Adicionar botões na tabela de propostas:
+- **Copiar Link** -- copia o URL público `/proposta/:token` para a clipboard
+- **Enviar** -- marca como enviada (fluxo existente)
+- **Descarregar PDF** -- chama a edge function e descarrega o PDF
+- **Pré-visualizar** -- abre a página pública numa nova aba
+
+### 7. Fluxo Automatizado de Aceite
+
+Quando o cliente aceita a proposta (via link público):
+1. Proposta -> status "aceita", `accepted_at` registado
+2. Contrato criado automaticamente (vinculado à proposta e ao caso)
+3. Lead atualizado para fase "contrato"
+4. (Futuro) Parcelas de pagamento geradas automaticamente no financeiro
 
 ### Detalhes Técnicos
 
 **Migração SQL:**
 ```text
-ALTER TABLE knowledge_documents
-  ADD COLUMN collection_id UUID DEFAULT NULL,
-  ADD COLUMN collection_name TEXT DEFAULT NULL;
+ALTER TABLE proposals ADD COLUMN accept_token UUID DEFAULT gen_random_uuid() UNIQUE;
+ALTER TABLE proposals ADD COLUMN accepted_at TIMESTAMPTZ;
+ALTER TABLE proposals ADD COLUMN client_name TEXT;
+ALTER TABLE proposals ADD COLUMN client_email TEXT;
+ALTER TABLE proposals ADD COLUMN client_phone TEXT;
+ALTER TABLE proposals ADD COLUMN client_document TEXT;
+ALTER TABLE proposals ADD COLUMN client_address TEXT;
+ALTER TABLE proposals ADD COLUMN service_id UUID REFERENCES services(id);
+ALTER TABLE proposals ADD COLUMN description TEXT;
+ALTER TABLE proposals ADD COLUMN pdf_url TEXT;
+
+-- RLS para acesso público por token
+CREATE POLICY "Public can read proposal by token"
+  ON proposals FOR SELECT
+  USING (true);
+
+-- Storage bucket
+INSERT INTO storage.buckets (id, name, public) VALUES ('proposal-files', 'proposal-files', true);
 ```
 
-**Ficheiro a alterar: `src/pages/Training.tsx`**
+**Ficheiros a criar:**
+- `src/pages/PropostaPublica.tsx` -- página pública de visualização/aceite
+- `supabase/functions/proposal-pdf/index.ts` -- edge function para gerar PDF
 
-- Novo estado `newTraining` com campos: `title`, `content`, `urls: string[]`, `files: File[]`
-- Função `handleCreateTraining` que gera um `collection_id`, cria documento de texto (se houver), faz upload dos ficheiros, cria documentos de URL -- todos com o mesmo `collection_id` e `collection_name`
-- Agrupamento na listagem: `Map<string, KnowledgeDocument[]>` agrupando por `collection_id`
-- Componente de card expansível usando `Collapsible` (já disponível no projecto)
-- Manter o diálogo de Conversas como tab separada (esse fluxo é diferente)
+**Ficheiros a alterar:**
+- `src/App.tsx` -- adicionar rota `/proposta/:token`
+- `src/pages/Propostas.tsx` -- botões de copiar link, pré-visualizar, descarregar PDF
+- `src/components/propostas/PropostaForm.tsx` -- campos de cliente, serviço, descrição
+- `src/integrations/supabase/types.ts` -- NÃO editar (auto-gerado)
 
-**Compatibilidade:**
-- Documentos existentes (sem `collection_id`) continuam a funcionar normalmente, mostrados como cards individuais
-- A eliminação de uma coleção elimina todos os documentos e ficheiros associados
+**Fluxo completo:**
+```text
+Criar Proposta -> Enviar Link ao Cliente -> Cliente Aceita -> Contrato Criado -> Pagamentos
+```
 
