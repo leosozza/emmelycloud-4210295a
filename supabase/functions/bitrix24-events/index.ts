@@ -75,7 +75,8 @@ const SUPPORTED_EVENTS = [
   "ONIMBOTMESSAGEADD",
   "ONIMBOTJOINOPEN",
   "ONIMBOTWELCOMEMESSAGE",
-  "ONIMBOTJOINCHAT",   // NOVO — Open Lines join event
+  "ONIMBOTJOINCHAT",   // Open Lines join event
+  "ONCRMDEALUPDATE",   // Deal update — auto-charge on close
 ];
 
 Deno.serve(async (req) => {

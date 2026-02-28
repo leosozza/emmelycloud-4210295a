@@ -547,6 +547,139 @@ async function handleBotJoinChat(supabase: any, integration: any, payload: any) 
   });
 }
 
+// ─── Deal Update Handler (auto-charge on close) ───
+
+async function handleDealUpdate(supabase: any, integration: any, payload: any) {
+  const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+  const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+
+  const eventData = payload.data || {};
+  const params = eventData.FIELDS || eventData.PARAMS || eventData;
+  const dealId = params.ID || params.id || "";
+
+  if (!dealId) {
+    console.log("[WORKER] ONCRMDEALUPDATE: No deal ID in payload");
+    return;
+  }
+
+  // Read config from integration
+  const config = (integration.config as any) || {};
+  if (!config.auto_charge_on_close) {
+    console.log("[WORKER] auto_charge_on_close disabled, skipping");
+    return;
+  }
+
+  const wonStage = config.deal_won_stage || "WON";
+  const gatewayField = config.deal_gateway_field || "";
+  const amountField = config.deal_amount_field || "OPPORTUNITY";
+  const currencyField = config.deal_currency_field || "CURRENCY_ID";
+
+  if (!gatewayField) {
+    console.log("[WORKER] No deal_gateway_field configured, skipping");
+    return;
+  }
+
+  try {
+    const accessToken = await ensureValidToken(supabase, integration);
+
+    // Fetch full deal data
+    const dealResult = await callBitrix(integration.client_endpoint, accessToken, "crm.deal.get", { ID: dealId });
+    const deal = dealResult.result;
+
+    if (!deal) {
+      console.log("[WORKER] Deal not found:", dealId);
+      return;
+    }
+
+    // Check if deal is in WON stage
+    const currentStage = deal.STAGE_ID || "";
+    if (currentStage !== wonStage) {
+      console.log("[WORKER] Deal not in WON stage:", currentStage, "expected:", wonStage);
+      return;
+    }
+
+    // Read gateway from custom field
+    const gatewayValue = (deal[gatewayField] || "").toString().toLowerCase().trim();
+    if (!gatewayValue) {
+      console.log("[WORKER] No gateway value in field:", gatewayField);
+      return;
+    }
+
+    // Map Bitrix field value to force_gateway
+    const gatewayMap: Record<string, string> = {
+      stripe_pt: "stripe_pt",
+      stripe_br: "stripe_br",
+      asaas: "asaas",
+      direto: "direto",
+      financiamento: "direto",
+      // Accept Portuguese labels too
+      "stripe portugal": "stripe_pt",
+      "stripe brasil": "stripe_br",
+    };
+
+    const forceGateway = gatewayMap[gatewayValue] || gatewayValue;
+
+    const amount = parseFloat(deal[amountField] || "0");
+    const currency = deal[currencyField] || "EUR";
+
+    if (amount <= 0) {
+      console.log("[WORKER] Deal amount is 0 or invalid:", amount);
+      return;
+    }
+
+    // Get contact info
+    const contactId = deal.CONTACT_ID;
+    let customerData: any = { name: deal.TITLE || "Cliente Bitrix24" };
+
+    if (contactId) {
+      const contactResult = await callBitrix(integration.client_endpoint, accessToken, "crm.contact.get", { ID: contactId });
+      const contact = contactResult.result;
+      if (contact) {
+        customerData = {
+          name: `${contact.NAME || ""} ${contact.LAST_NAME || ""}`.trim() || "Cliente",
+          email: contact.EMAIL?.[0]?.VALUE || "",
+          phone: contact.PHONE?.[0]?.VALUE || "",
+        };
+      }
+    }
+
+    console.log("[WORKER] Creating payment for deal:", dealId, "gateway:", forceGateway, "amount:", amount, currency);
+
+    // Call payment-create with force_gateway
+    const paymentRes = await fetch(`${supabaseUrl}/functions/v1/payment-create`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${serviceKey}`,
+      },
+      body: JSON.stringify({
+        amount,
+        currency,
+        force_gateway: forceGateway,
+        payment_method: forceGateway === "asaas" ? "pix" : (forceGateway === "direto" ? "direto" : "card"),
+        description: `Deal #${dealId} - ${deal.TITLE || ""}`,
+        customer_data: customerData,
+        metadata: {
+          bitrix_deal_id: dealId,
+          bitrix_member_id: integration.member_id,
+        },
+      }),
+    });
+
+    const paymentResult = await paymentRes.json();
+    console.log("[WORKER] Payment result:", JSON.stringify(paymentResult).substring(0, 300));
+
+    await debugLog(supabase, integration.id, "deal_payment_created", "outbound", {
+      dealId, forceGateway, amount, currency,
+      paymentOk: paymentResult.ok || false,
+      transactionId: paymentResult.transaction?.id,
+    });
+  } catch (e) {
+    console.error("[WORKER] Deal update error:", e);
+    await debugLog(supabase, integration.id, "deal_payment_error", "outbound", { dealId }, String(e));
+  }
+}
+
 // ─── Main Worker ───
 
 Deno.serve(async (req) => {
@@ -679,8 +812,10 @@ Deno.serve(async (req) => {
             await handleStatusDelete(supabase, integration, event.payload);
             break;
           case "ONIMBOTJOINCHAT":
-            // Bot adicionado a uma Open Line via Contact Center
             await handleBotJoinChat(supabase, integration, event.payload);
+            break;
+          case "ONCRMDEALUPDATE":
+            await handleDealUpdate(supabase, integration, event.payload);
             break;
           default:
             console.log("[WORKER] Unknown event type:", eventType);
