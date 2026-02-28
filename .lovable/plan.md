@@ -1,46 +1,49 @@
 
 
-## Upload em Lote de Ficheiros na Pagina de Treinamento
+## Melhorias na Pagina de Treinamento
 
-Permitir selecionar e enviar multiplos ficheiros de uma vez na aba "Ficheiro" do dialog de criacao de documentos, com limite de tamanho por ficheiro.
+Corrigir o erro de tela branca no upload, adicionar drag-and-drop de ficheiros e permitir edicao de documentos existentes.
 
-### Alteracoes
+### 1. Corrigir tela branca no upload de ficheiros
 
-**Ficheiro: `src/pages/Training.tsx`**
+A zona de drop nao tem handlers de drag/drop, e o componente pode crashar se um erro nao tratado ocorrer durante o upload (ex: bucket nao acessivel, erro de RLS). A correcao inclui:
+- Envolver o `handleFileUpload` com try/catch robusto e logging
+- Adicionar `onError` handler no upload para evitar que erros nao capturados propaguem e derrubem o componente
+- Adicionar um error boundary basico ou state de erro para evitar tela branca
 
-1. **Estado** -- Substituir `selectedFile: File | null` por `selectedFiles: File[]` e adicionar estado de progresso (`uploadProgress: number` para tracking visual).
+### 2. Adicionar drag-and-drop de ficheiros
 
-2. **Input de ficheiro** -- Alterar o `<input type="file">` para aceitar `multiple`. No `onChange`, acumular ficheiros validando:
-   - Tamanho maximo por ficheiro: **50MB** (limite do Supabase Storage)
-   - Ficheiros que excedam o limite serao rejeitados com toast de erro
-   - Maximo de 20 ficheiros por lote
+Na area pontilhada de upload ("Clique para selecionar ficheiros"), adicionar:
+- Handlers `onDragOver`, `onDragEnter`, `onDragLeave`, `onDrop`
+- Estado visual de highlight quando ficheiros sao arrastados sobre a area
+- Reutilizar a funcao `addFiles()` existente para validacao
 
-3. **Area de drop** -- Quando houver ficheiros selecionados, mostrar lista com nome + tamanho + botao para remover individualmente, em vez de mostrar apenas um ficheiro.
+### 3. Adicionar edicao de documentos existentes
 
-4. **Titulo** -- Como serao multiplos ficheiros, o campo titulo sera preenchido automaticamente com o nome de cada ficheiro (sem extensao). O campo titulo manual sera removido para uploads em lote, pois cada ficheiro tera o seu proprio titulo.
-
-5. **Funcao `handleFileUpload`** -- Refatorar para iterar sobre `selectedFiles`, fazendo upload de cada um sequencialmente:
-   - Upload para storage `knowledge-files`
-   - Criar documento + chunks para cada ficheiro
-   - Atualizar barra de progresso (`Progress` component)
-   - Toast final com contagem de sucesso/erro
-
-6. **Barra de progresso** -- Adicionar componente `Progress` (ja existe em `ui/progress.tsx`) durante o upload em lote, mostrando "Enviando 3/10...".
-
-7. **Botao de enviar** -- Texto atualizado para refletir quantidade: "Enviar X Ficheiros".
-
-### Limites aplicados
-
-| Restricao | Valor |
-|-----------|-------|
-| Tamanho maximo por ficheiro | 50 MB |
-| Ficheiros por lote | 20 |
-| Tipos aceites | TXT, MD, CSV, JSON, XML, PDF, DOCX, DOC |
+Permitir que o utilizador edite titulo e conteudo de documentos ja criados:
+- Adicionar botao de edicao (icone `Pencil`) ao lado do botao de visualizacao em cada card
+- Criar dialog de edicao que carrega os dados do documento selecionado
+- Campos editaveis: titulo, conteudo (texto), source_url (se tipo URL)
+- Ao salvar, atualizar o documento na base de dados e regenerar chunks se o conteudo mudar
+- Para ficheiros, permitir apenas a edicao do titulo (o ficheiro em si nao e editavel inline)
 
 ### Detalhes Tecnicos
 
-- Sem alteracoes no backend ou base de dados -- reutiliza `createDocWithChunks` e storage existente
-- Progresso visual usando `Progress` de `@/components/ui/progress`
-- Validacao client-side antes de iniciar uploads
-- Ficheiros invalidos (tamanho) sao filtrados com feedback imediato
+**Ficheiro a alterar: `src/pages/Training.tsx`**
+
+**Drag-and-drop:**
+- Adicionar estado `isDragging: boolean` para controlar o visual
+- Na `div` da area de drop, adicionar `onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}`, `onDragLeave`, e `onDrop={(e) => { e.preventDefault(); addFiles(e.dataTransfer.files); setIsDragging(false); }}`
+- Aplicar classe condicional `border-primary bg-primary/5` quando `isDragging`
+
+**Edicao:**
+- Novo estado `editDoc: KnowledgeDocument | null`
+- Novo dialog com campos de titulo + conteudo (textarea) + source_url
+- Funcao `handleEdit` que faz `update` na tabela `knowledge_documents`, deleta chunks antigos e recria se o conteudo mudar
+- Botao `Pencil` em cada card de documento
+
+**Correcao tela branca:**
+- Envolver o render do componente com tratamento de erro
+- Garantir que `createDocWithChunks` nao lanca excecoes nao tratadas no loop de upload
+- Adicionar `console.error` no catch interno para diagnostico
 
