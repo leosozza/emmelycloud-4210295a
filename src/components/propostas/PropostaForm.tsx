@@ -9,7 +9,11 @@ import {
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
+import { Separator } from "@/components/ui/separator";
 import { Constants, Tables, TablesInsert } from "@/integrations/supabase/types";
+import { supabase } from "@/integrations/supabase/client";
+import { useQuery } from "@tanstack/react-query";
+import { User, FileText } from "lucide-react";
 
 type Proposal = Tables<"proposals">;
 
@@ -25,7 +29,7 @@ interface PropostaFormProps {
   onOpenChange: (open: boolean) => void;
   proposta?: Proposal | null;
   cases: { id: string; title: string }[];
-  onSave: (data: TablesInsert<"proposals">) => void;
+  onSave: (data: any) => void;
   saving?: boolean;
   preselectedCaseId?: string | null;
 }
@@ -39,6 +43,35 @@ export function PropostaForm({ open, onOpenChange, proposta, cases, onSave, savi
   const [conditions, setConditions] = useState("");
   const [validUntil, setValidUntil] = useState("");
   const [status, setStatus] = useState<string>("rascunho");
+  // New fields
+  const [clientName, setClientName] = useState("");
+  const [clientEmail, setClientEmail] = useState("");
+  const [clientPhone, setClientPhone] = useState("");
+  const [clientDocument, setClientDocument] = useState("");
+  const [clientAddress, setClientAddress] = useState("");
+  const [serviceId, setServiceId] = useState<string>("");
+  const [description, setDescription] = useState("");
+
+  const { data: services = [] } = useQuery({
+    queryKey: ["services-select"],
+    queryFn: async () => {
+      const { data, error } = await supabase.from("services").select("id, name, value, budget_details").order("name");
+      if (error) throw error;
+      return data;
+    },
+  });
+
+  // Load lead data when case changes
+  const { data: caseLeadData } = useQuery({
+    queryKey: ["case-lead", caseId],
+    enabled: !!caseId,
+    queryFn: async () => {
+      const { data: caseData } = await supabase.from("cases").select("lead_id").eq("id", caseId).single();
+      if (!caseData?.lead_id) return null;
+      const { data: lead } = await supabase.from("leads").select("name, email, phone").eq("id", caseData.lead_id).single();
+      return lead;
+    },
+  });
 
   useEffect(() => {
     if (open) {
@@ -50,12 +83,36 @@ export function PropostaForm({ open, onOpenChange, proposta, cases, onSave, savi
       setConditions(proposta?.conditions || "");
       setValidUntil(proposta?.valid_until?.slice(0, 10) || "");
       setStatus(proposta?.status || "rascunho");
+      setClientName((proposta as any)?.client_name || "");
+      setClientEmail((proposta as any)?.client_email || "");
+      setClientPhone((proposta as any)?.client_phone || "");
+      setClientDocument((proposta as any)?.client_document || "");
+      setClientAddress((proposta as any)?.client_address || "");
+      setServiceId((proposta as any)?.service_id || "");
+      setDescription((proposta as any)?.description || "");
     }
-  }, [proposta, open]);
+  }, [proposta, open, preselectedCaseId]);
+
+  const handleLoadFromLead = () => {
+    if (caseLeadData) {
+      setClientName(caseLeadData.name || "");
+      setClientEmail(caseLeadData.email || "");
+      setClientPhone(caseLeadData.phone || "");
+    }
+  };
+
+  const handleServiceChange = (id: string) => {
+    setServiceId(id);
+    const svc = services.find((s) => s.id === id);
+    if (svc) {
+      setValue(svc.value?.toString() || "0");
+      if (svc.budget_details) setDescription(svc.budget_details);
+    }
+  };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{proposta ? "Editar Proposta" : "Nova Proposta"}</DialogTitle>
         </DialogHeader>
@@ -71,25 +128,93 @@ export function PropostaForm({ open, onOpenChange, proposta, cases, onSave, savi
               conditions: conditions || null,
               valid_until: validUntil || null,
               status: status as any,
+              client_name: clientName || null,
+              client_email: clientEmail || null,
+              client_phone: clientPhone || null,
+              client_document: clientDocument || null,
+              client_address: clientAddress || null,
+              service_id: serviceId || null,
+              description: description || null,
             });
           }}
-          className="space-y-4"
+          className="space-y-5"
         >
-          <div>
-            <Label>Título *</Label>
-            <Input value={title} onChange={(e) => setTitle(e.target.value)} required />
+          {/* Basic */}
+          <div className="grid grid-cols-2 gap-4">
+            <div className="col-span-2">
+              <Label>Título *</Label>
+              <Input value={title} onChange={(e) => setTitle(e.target.value)} required />
+            </div>
+            <div>
+              <Label>Caso Associado *</Label>
+              <Select value={caseId} onValueChange={setCaseId}>
+                <SelectTrigger><SelectValue placeholder="Selecionar caso" /></SelectTrigger>
+                <SelectContent>
+                  {cases.map((c) => (
+                    <SelectItem key={c.id} value={c.id}>{c.title}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>Serviço</Label>
+              <Select value={serviceId} onValueChange={handleServiceChange}>
+                <SelectTrigger><SelectValue placeholder="Selecionar serviço" /></SelectTrigger>
+                <SelectContent>
+                  {services.map((s) => (
+                    <SelectItem key={s.id} value={s.id}>
+                      <span className="flex items-center gap-2"><FileText className="h-3 w-3" />{s.name} — €{s.value}</span>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
           </div>
-          <div>
-            <Label>Caso Associado *</Label>
-            <Select value={caseId} onValueChange={setCaseId}>
-              <SelectTrigger><SelectValue placeholder="Selecionar caso" /></SelectTrigger>
-              <SelectContent>
-                {cases.map((c) => (
-                  <SelectItem key={c.id} value={c.id}>{c.title}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+
+          {/* Client data */}
+          <Separator />
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <h4 className="text-sm font-semibold flex items-center gap-2"><User className="h-4 w-4" /> Dados do Cliente</h4>
+              {caseLeadData && (
+                <Button type="button" variant="outline" size="sm" onClick={handleLoadFromLead}>
+                  Preencher do Lead
+                </Button>
+              )}
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label>Nome</Label>
+                <Input value={clientName} onChange={(e) => setClientName(e.target.value)} placeholder="Nome completo" />
+              </div>
+              <div>
+                <Label>Email</Label>
+                <Input type="email" value={clientEmail} onChange={(e) => setClientEmail(e.target.value)} placeholder="email@exemplo.com" />
+              </div>
+              <div>
+                <Label>Telefone</Label>
+                <Input value={clientPhone} onChange={(e) => setClientPhone(e.target.value)} placeholder="+351..." />
+              </div>
+              <div>
+                <Label>NIF / CC</Label>
+                <Input value={clientDocument} onChange={(e) => setClientDocument(e.target.value)} placeholder="Documento" />
+              </div>
+              <div className="col-span-2">
+                <Label>Morada</Label>
+                <Input value={clientAddress} onChange={(e) => setClientAddress(e.target.value)} placeholder="Morada completa" />
+              </div>
+            </div>
           </div>
+
+          {/* Service description */}
+          <Separator />
+          <div>
+            <Label>Descrição do Serviço</Label>
+            <Textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={4} placeholder="Detalhes do serviço incluído na proposta..." />
+          </div>
+
+          {/* Payment */}
+          <Separator />
           <div className="grid grid-cols-2 gap-4">
             <div>
               <Label>Valor (€)</Label>

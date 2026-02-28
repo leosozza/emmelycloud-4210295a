@@ -11,7 +11,7 @@ import {
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
-import { Plus, Search, Pencil, Trash2, Send, Check, X } from "lucide-react";
+import { Plus, Search, Pencil, Trash2, Send, Check, X, Copy, ExternalLink, Download } from "lucide-react";
 
 import { useToast } from "@/hooks/use-toast";
 import { Tables, Constants } from "@/integrations/supabase/types";
@@ -19,7 +19,6 @@ import { PropostaForm } from "@/components/propostas/PropostaForm";
 import { useLocale } from "@/contexts/LocaleContext";
 import { format, parseISO } from "date-fns";
 import { PageHeader } from "@/components/PageHeader";
-import { EntityBreadcrumb } from "@/components/EntityBreadcrumb";
 
 type Proposal = Tables<"proposals">;
 
@@ -49,14 +48,13 @@ const PropostasPage = () => {
   const queryClient = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
 
-  // Auto-open form if case_id query param is present
   useEffect(() => {
     const caseIdParam = searchParams.get("case_id");
     if (caseIdParam) {
       setPreselectedCaseId(caseIdParam);
       setEditingProposta(null);
       setFormOpen(true);
-      setSearchParams({}, { replace: true }); // clean URL
+      setSearchParams({}, { replace: true });
     }
   }, [searchParams, setSearchParams]);
 
@@ -104,30 +102,19 @@ const PropostasPage = () => {
   const updateStatusMutation = useMutation({
     mutationFn: async ({ id, status }: { id: string; status: string }) => {
       const updateData: any = { status };
-      // If accepting, also create a contract
       const { error } = await supabase.from("proposals").update(updateData).eq("id", id);
       if (error) throw error;
       if (status === "aceita") {
         const proposal = proposals.find((p) => p.id === id);
         if (proposal) {
-          // Create contract
           const { error: contractError } = await supabase.from("contracts").insert({
             proposal_id: id,
             case_id: proposal.case_id,
           });
           if (contractError) throw contractError;
-
-          // Update lead stage to "contrato" if linked via case
-          const { data: caseData } = await supabase
-            .from("cases")
-            .select("lead_id")
-            .eq("id", proposal.case_id)
-            .single();
+          const { data: caseData } = await supabase.from("cases").select("lead_id").eq("id", proposal.case_id).single();
           if (caseData?.lead_id) {
-            await supabase
-              .from("leads")
-              .update({ funnel_stage: "contrato" as any })
-              .eq("id", caseData.lead_id);
+            await supabase.from("leads").update({ funnel_stage: "contrato" as any }).eq("id", caseData.lead_id);
           }
         }
       }
@@ -153,11 +140,40 @@ const PropostasPage = () => {
     },
   });
 
+  const handleCopyLink = (p: any) => {
+    const token = p.accept_token;
+    if (!token) {
+      toast({ title: "Token não disponível", variant: "destructive" });
+      return;
+    }
+    const url = `${window.location.origin}/proposta/${token}`;
+    navigator.clipboard.writeText(url);
+    toast({ title: "Link copiado!" });
+  };
+
+  const handlePreview = (p: any) => {
+    const token = p.accept_token;
+    if (token) window.open(`/proposta/${token}`, "_blank");
+  };
+
+  const handleDownloadPdf = async (p: any) => {
+    toast({ title: "A gerar PDF...", description: "Aguarde um momento." });
+    try {
+      const { data, error } = await supabase.functions.invoke("proposal-pdf", {
+        body: { proposal_id: p.id },
+      });
+      if (error) throw error;
+      if (data?.pdf_url) {
+        window.open(data.pdf_url, "_blank");
+      }
+    } catch (e: any) {
+      toast({ title: "Erro ao gerar PDF", description: e.message, variant: "destructive" });
+    }
+  };
+
   const filtered = proposals
     .filter((p) => statusFilter === "all" || p.status === statusFilter)
     .filter((p) => p.title.toLowerCase().includes(search.toLowerCase()));
-
-  // formatCurrency now comes from useLocale()
 
   return (
     <div className="space-y-4">
@@ -193,7 +209,7 @@ const PropostasPage = () => {
               <TableHead>Pagamento</TableHead>
               <TableHead>Status</TableHead>
               <TableHead>Validade</TableHead>
-              <TableHead className="w-36">Ações</TableHead>
+              <TableHead className="w-48">Ações</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -218,7 +234,16 @@ const PropostasPage = () => {
                   {p.valid_until ? format(parseISO(p.valid_until), "dd/MM/yyyy") : "—"}
                 </TableCell>
                 <TableCell>
-                  <div className="flex gap-1">
+                  <div className="flex gap-1 flex-wrap">
+                    <Button variant="ghost" size="icon" title="Copiar Link" onClick={() => handleCopyLink(p)}>
+                      <Copy className="h-4 w-4" />
+                    </Button>
+                    <Button variant="ghost" size="icon" title="Pré-visualizar" onClick={() => handlePreview(p)}>
+                      <ExternalLink className="h-4 w-4" />
+                    </Button>
+                    <Button variant="ghost" size="icon" title="Descarregar PDF" onClick={() => handleDownloadPdf(p)}>
+                      <Download className="h-4 w-4" />
+                    </Button>
                     {p.status === "rascunho" && (
                       <Button variant="ghost" size="icon" title="Enviar" onClick={() => updateStatusMutation.mutate({ id: p.id, status: "enviada" })}>
                         <Send className="h-4 w-4" />
