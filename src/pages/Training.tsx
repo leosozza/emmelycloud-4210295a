@@ -16,7 +16,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
-import { Plus, Upload, Globe, FileText, Trash2, Search, Brain, BookOpen, Loader2, Eye, MessageSquare, X } from "lucide-react";
+import { Plus, Upload, Globe, FileText, Trash2, Search, Brain, BookOpen, Loader2, Eye, MessageSquare, X, Pencil } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
 
 interface KnowledgeDocument {
@@ -45,6 +45,15 @@ export default function TrainingPage() {
   const [uploadingFile, setUploadingFile] = useState(false);
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [uploadProgress, setUploadProgress] = useState({ current: 0, total: 0 });
+  const [isDragging, setIsDragging] = useState(false);
+  const [componentError, setComponentError] = useState<string | null>(null);
+
+  // Edit state
+  const [editDoc, setEditDoc] = useState<KnowledgeDocument | null>(null);
+  const [editTitle, setEditTitle] = useState("");
+  const [editContent, setEditContent] = useState("");
+  const [editSourceUrl, setEditSourceUrl] = useState("");
+  const [editSaving, setEditSaving] = useState(false);
 
   // Conversation training state
   const [convDateFrom, setConvDateFrom] = useState("");
@@ -63,11 +72,15 @@ export default function TrainingPage() {
 
   const loadDocuments = async () => {
     setLoading(true);
-    const { data } = await supabase
-      .from("knowledge_documents")
-      .select("*")
-      .order("created_at", { ascending: false });
-    if (data) setDocuments(data as unknown as KnowledgeDocument[]);
+    try {
+      const { data } = await supabase
+        .from("knowledge_documents")
+        .select("*")
+        .order("created_at", { ascending: false });
+      if (data) setDocuments(data as unknown as KnowledgeDocument[]);
+    } catch (e) {
+      console.error("Error loading documents:", e);
+    }
     setLoading(false);
   };
 
@@ -128,7 +141,8 @@ export default function TrainingPage() {
       setNewDoc({ title: "", content: "", source_type: "text", source_url: "" });
       loadDocuments();
     } catch (e: any) {
-      toast.error(e.message);
+      console.error("Error creating document:", e);
+      toast.error(e.message || "Erro ao criar documento");
     } finally {
       setSaving(false);
     }
@@ -198,7 +212,8 @@ export default function TrainingPage() {
 
           await createDocWithChunks(title, textContent, "file", { file_path: filePath, file_type: ext });
           successCount++;
-        } catch {
+        } catch (fileErr) {
+          console.error(`Error uploading file ${file.name}:`, fileErr);
           errorCount++;
         }
       }
@@ -210,9 +225,61 @@ export default function TrainingPage() {
       setSelectedFiles([]);
       setNewDoc({ title: "", content: "", source_type: "text", source_url: "" });
       loadDocuments();
+    } catch (e: any) {
+      console.error("Error in batch upload:", e);
+      toast.error(e.message || "Erro no upload em lote");
     } finally {
       setUploadingFile(false);
       setUploadProgress({ current: 0, total: 0 });
+    }
+  };
+
+  // ─── Edit Document ───
+  const openEdit = (doc: KnowledgeDocument) => {
+    setEditDoc(doc);
+    setEditTitle(doc.title);
+    setEditContent(doc.content || "");
+    setEditSourceUrl(doc.source_url || "");
+  };
+
+  const handleEditSave = async () => {
+    if (!editDoc) return;
+    if (!editTitle.trim()) { toast.error("Título é obrigatório"); return; }
+    setEditSaving(true);
+    try {
+      const contentChanged = editContent !== (editDoc.content || "");
+      const updateData: Record<string, any> = { title: editTitle };
+
+      if (editDoc.source_type !== "file") {
+        updateData.content = editContent || null;
+        updateData.source_url = editSourceUrl || null;
+      }
+
+      const { error } = await supabase.from("knowledge_documents").update(updateData as any).eq("id", editDoc.id);
+      if (error) throw error;
+
+      // Re-chunk if content changed (not for files)
+      if (contentChanged && editDoc.source_type !== "file" && editContent) {
+        await supabase.from("knowledge_chunks").delete().eq("document_id", editDoc.id);
+        const chunks = chunkText(editContent, 1000);
+        const chunkInserts = chunks.map((chunk, i) => ({
+          document_id: editDoc.id,
+          chunk_index: i,
+          content: chunk,
+          tokens_count: Math.ceil(chunk.length / 4),
+        }));
+        await supabase.from("knowledge_chunks").insert(chunkInserts as any);
+        await supabase.from("knowledge_documents").update({ chunks_count: chunks.length } as any).eq("id", editDoc.id);
+      }
+
+      toast.success("Documento atualizado");
+      setEditDoc(null);
+      loadDocuments();
+    } catch (e: any) {
+      console.error("Error editing document:", e);
+      toast.error(e.message || "Erro ao editar documento");
+    } finally {
+      setEditSaving(false);
     }
   };
 
@@ -306,7 +373,6 @@ export default function TrainingPage() {
 
   const handleDelete = async () => {
     if (!deleteId) return;
-    // Also delete from storage if it's a file
     const doc = documents.find(d => d.id === deleteId);
     if (doc?.file_path) {
       await supabase.storage.from("knowledge-files").remove([doc.file_path]);
@@ -329,6 +395,16 @@ export default function TrainingPage() {
     faq: Brain,
     conversation: MessageSquare,
   };
+
+  // Error boundary fallback
+  if (componentError) {
+    return (
+      <div className="p-8 text-center">
+        <p className="text-destructive mb-4">Ocorreu um erro: {componentError}</p>
+        <Button onClick={() => { setComponentError(null); loadDocuments(); }}>Tentar novamente</Button>
+      </div>
+    );
+  }
 
   return (
     <div>
@@ -410,14 +486,17 @@ export default function TrainingPage() {
                     <div className="min-w-0">
                       <p className="font-medium text-sm truncate">{doc.title}</p>
                       <div className="flex items-center gap-2 mt-0.5">
-                        <Badge variant="outline" className="text-[10px]">{doc.source_type}</Badge>
-                        <Badge variant={doc.status === "ready" ? "default" : "secondary"} className="text-[10px]">{doc.status}</Badge>
+                        <span className="inline-flex items-center rounded-full border px-2.5 py-0.5 text-[10px] font-semibold">{doc.source_type}</span>
+                        <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-[10px] font-semibold ${doc.status === "ready" ? "bg-primary text-primary-foreground" : "bg-secondary text-secondary-foreground"}`}>{doc.status}</span>
                         <span className="text-[10px] text-muted-foreground">{doc.chunks_count} chunks</span>
                         {doc.file_type && <span className="text-[10px] text-muted-foreground uppercase">{doc.file_type}</span>}
                       </div>
                     </div>
                   </div>
                   <div className="flex items-center gap-1 ml-2">
+                    <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEdit(doc)}>
+                      <Pencil className="h-3 w-3" />
+                    </Button>
                     <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setViewDoc(doc)}>
                       <Eye className="h-3 w-3" />
                     </Button>
@@ -494,11 +573,26 @@ export default function TrainingPage() {
                     }}
                   />
                   <div
-                    className="border-2 border-dashed rounded-lg p-4 text-center cursor-pointer hover:border-primary/50 transition-colors"
+                    className={`border-2 border-dashed rounded-lg p-4 text-center cursor-pointer transition-colors ${
+                      isDragging
+                        ? "border-primary bg-primary/5"
+                        : "hover:border-primary/50"
+                    }`}
                     onClick={() => fileInputRef.current?.click()}
+                    onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setIsDragging(true); }}
+                    onDragEnter={(e) => { e.preventDefault(); e.stopPropagation(); setIsDragging(true); }}
+                    onDragLeave={(e) => { e.preventDefault(); e.stopPropagation(); setIsDragging(false); }}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setIsDragging(false);
+                      addFiles(e.dataTransfer.files);
+                    }}
                   >
                     <Upload className="h-8 w-8 text-muted-foreground mx-auto mb-2" />
-                    <p className="text-sm text-muted-foreground">Clique para selecionar ficheiros</p>
+                    <p className="text-sm text-muted-foreground">
+                      {isDragging ? "Solte os ficheiros aqui" : "Arraste ficheiros ou clique para selecionar"}
+                    </p>
                     <p className="text-[10px] text-muted-foreground mt-1">TXT, MD, CSV, JSON, XML, PDF, DOCX</p>
                   </div>
                 </div>
@@ -510,11 +604,11 @@ export default function TrainingPage() {
                         <div className="flex items-center gap-2 min-w-0">
                           <FileText className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
                           <span className="truncate">{file.name}</span>
-                          <Badge variant="secondary" className="text-[10px] shrink-0">
+                          <span className="inline-flex items-center rounded-full bg-secondary text-secondary-foreground px-2 py-0.5 text-[10px] font-semibold shrink-0">
                             {file.size < 1024 * 1024
                               ? `${(file.size / 1024).toFixed(0)} KB`
                               : `${(file.size / 1024 / 1024).toFixed(1)} MB`}
-                          </Badge>
+                          </span>
                         </div>
                         <Button variant="ghost" size="icon" className="h-6 w-6 shrink-0" onClick={(e) => { e.stopPropagation(); removeFile(idx); }}>
                           <X className="h-3 w-3" />
@@ -602,6 +696,45 @@ export default function TrainingPage() {
           <div className="text-sm whitespace-pre-wrap bg-muted p-4 rounded-lg max-h-[40vh] overflow-y-auto">
             {viewDoc?.content || "Sem conteúdo de texto."}
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Dialog */}
+      <Dialog open={!!editDoc} onOpenChange={() => setEditDoc(null)}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Editar Documento</DialogTitle>
+            <DialogDescription>
+              {editDoc?.source_type === "file" ? "Para ficheiros, apenas o título pode ser editado." : "Edite o título e conteúdo do documento."}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div>
+              <Label>Título *</Label>
+              <Input value={editTitle} onChange={(e) => setEditTitle(e.target.value)} />
+            </div>
+            {editDoc?.source_type !== "file" && (
+              <>
+                <div>
+                  <Label>Conteúdo</Label>
+                  <Textarea value={editContent} onChange={(e) => setEditContent(e.target.value)} rows={8} />
+                </div>
+                {editDoc?.source_type === "url" && (
+                  <div>
+                    <Label>URL</Label>
+                    <Input value={editSourceUrl} onChange={(e) => setEditSourceUrl(e.target.value)} />
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditDoc(null)}>Cancelar</Button>
+            <Button onClick={handleEditSave} disabled={editSaving}>
+              {editSaving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              Guardar
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 
