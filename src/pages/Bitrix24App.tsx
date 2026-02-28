@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useRef, lazy, Suspense } from "react";
+import { useEffect, useState, useCallback, useRef, lazy, Suspense, useMemo } from "react";
 import { useBitrix24Theme } from "@/hooks/useBitrix24Theme";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -35,6 +35,14 @@ import {
   CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, Legend,
 } from "recharts";
 import { cn } from "@/lib/utils";
+import {
+  DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors,
+  type DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  SortableContext, verticalListSortingStrategy, arrayMove,
+} from "@dnd-kit/sortable";
+import { SortableNavItem } from "@/components/bitrix24/SortableNavItem";
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
@@ -159,6 +167,40 @@ const Bitrix24App = () => {
     { id: "relatorios", label: "Relatórios", icon: BarChart3 },
   ];
 
+  const NAV_STORAGE_KEY = "bitrix24_nav_order";
+
+  const [navOrder, setNavOrder] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem(NAV_STORAGE_KEY);
+      if (saved) return JSON.parse(saved);
+    } catch {}
+    return navItems.map((i) => i.id);
+  });
+
+  const orderedNavItems = useMemo(() => {
+    const map = new Map(navItems.map((i) => [i.id, i]));
+    const ordered = navOrder.filter((id) => map.has(id)).map((id) => map.get(id)!);
+    // Add any new items not in saved order
+    navItems.forEach((i) => { if (!navOrder.includes(i.id)) ordered.push(i); });
+    return ordered;
+  }, [navOrder]);
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(KeyboardSensor)
+  );
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (over && active.id !== over.id) {
+      const oldIndex = navOrder.indexOf(String(active.id));
+      const newIndex = navOrder.indexOf(String(over.id));
+      const newOrder = arrayMove(navOrder, oldIndex, newIndex);
+      setNavOrder(newOrder);
+      localStorage.setItem(NAV_STORAGE_KEY, JSON.stringify(newOrder));
+    }
+  };
+
   if (view === "loading") {
     return (
       <div className={cn("min-h-screen bg-background flex items-center justify-center", isDark && "dark")}>
@@ -194,21 +236,20 @@ const Bitrix24App = () => {
 
         {/* Nav */}
         <nav className="flex-1 p-2 space-y-0.5">
-          {navItems.map((item) => (
-            <button
-              key={item.id}
-              onClick={() => setView(item.id as AppView)}
-              className={cn(
-                "w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors text-left",
-                view === item.id
-                  ? "bg-primary/10 text-primary font-semibold"
-                  : "text-muted-foreground hover:bg-muted hover:text-foreground"
-              )}
-            >
-              <item.icon className="h-4 w-4 shrink-0" />
-              {item.label}
-            </button>
-          ))}
+          <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+            <SortableContext items={orderedNavItems.map((i) => i.id)} strategy={verticalListSortingStrategy}>
+              {orderedNavItems.map((item) => (
+                <SortableNavItem
+                  key={item.id}
+                  id={item.id}
+                  label={item.label}
+                  icon={item.icon}
+                  isActive={view === item.id}
+                  onClick={() => setView(item.id as AppView)}
+                />
+              ))}
+            </SortableContext>
+          </DndContext>
         </nav>
 
         {/* Footer */}
