@@ -1063,6 +1063,8 @@ export type Database = {
       knowledge_documents: {
         Row: {
           chunks_count: number | null
+          collection_id: string | null
+          collection_name: string | null
           content: string | null
           created_at: string
           file_path: string | null
@@ -1077,6 +1079,8 @@ export type Database = {
         }
         Insert: {
           chunks_count?: number | null
+          collection_id?: string | null
+          collection_name?: string | null
           content?: string | null
           created_at?: string
           file_path?: string | null
@@ -1091,6 +1095,8 @@ export type Database = {
         }
         Update: {
           chunks_count?: number | null
+          collection_id?: string | null
+          collection_name?: string | null
           content?: string | null
           created_at?: string
           file_path?: string | null
