@@ -44,6 +44,10 @@ import { AgentFormDialog } from "@/components/agentes/AgentFormDialog";
 import { Switch } from "@/components/ui/switch";
 import { Slider } from "@/components/ui/slider";
 import { Separator } from "@/components/ui/separator";
+import { ChatBubble, ChatBubbleAvatar, ChatBubbleMessage, ChatBubbleAction, ChatBubbleActionWrapper } from "@/components/ui/chat-bubble";
+import { ChatInput } from "@/components/ui/chat-input";
+import { ChatMessageList } from "@/components/ui/chat-message-list";
+import { Copy } from "lucide-react";
 import type { AIAgent, AIProvider, FlowOption, DocOption } from "@/pages/Agentes";
 import { defaultAgent } from "@/pages/Agentes";
 
@@ -1333,8 +1337,6 @@ function ChatIABitrixView() {
   const [messages, setMessages] = useState<Array<{ role: string; content: string }>>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [sessions, setSessions] = useState<Array<{ id: string; title: string; messages: Array<{ role: string; content: string }> }>>([]);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
 
@@ -1350,15 +1352,6 @@ function ChatIABitrixView() {
       try { setSessions(JSON.parse(saved)); } catch {}
     }
   }, []);
-
-  useEffect(() => {
-    if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-  }, [messages]);
-
-  const autoResize = () => {
-    const el = textareaRef.current;
-    if (el) { el.style.height = "auto"; el.style.height = Math.min(el.scrollHeight, 120) + "px"; }
-  };
 
   const saveSessions = (updated: typeof sessions) => {
     setSessions(updated);
@@ -1386,7 +1379,6 @@ function ChatIABitrixView() {
     const newMessages = [...messages, userMsg];
     setMessages(newMessages);
     setInput("");
-    if (textareaRef.current) { textareaRef.current.style.height = "auto"; }
     setLoading(true);
     try {
       const res = await fetch(`${SUPABASE_URL}/functions/v1/ai-playground`, {
@@ -1435,7 +1427,7 @@ function ChatIABitrixView() {
 
   return (
     <div className="flex h-screen bg-background">
-      {/* Sidebar - b24ui style */}
+      {/* Sidebar */}
       <div className="w-60 flex flex-col shrink-0 border-r border-border bg-card">
         <div className="p-3 space-y-2.5 border-b border-border">
           <Button onClick={newSession} size="sm" className="w-full rounded-lg gap-1.5 h-9 text-xs font-medium">
@@ -1490,120 +1482,86 @@ function ChatIABitrixView() {
         </ScrollArea>
       </div>
 
-      {/* Chat area - b24ui ChatPalette pattern */}
+      {/* Chat area */}
       <div className="flex-1 flex flex-col min-w-0">
-        {/* Messages area */}
-        <div ref={scrollRef} className="flex-1 overflow-y-auto">
-          {messages.length === 0 ? (
-            <div className="b24-chat-empty">
-              <Sparkles className="b24-chat-empty-icon" />
+        {/* Messages */}
+        {messages.length === 0 ? (
+          <div className="flex-1 flex items-center justify-center">
+            <div className="text-center text-muted-foreground">
+              <Sparkles className="h-12 w-12 mx-auto mb-3 opacity-30" />
               <h3 className="text-sm font-semibold text-foreground mb-1">
                 {currentAgent?.name || "Emmely AI"}
               </h3>
               {currentAgent?.welcome_message ? (
                 <div className="text-xs max-w-sm leading-relaxed" dangerouslySetInnerHTML={{ __html: renderMd(currentAgent.welcome_message) }} />
               ) : (
-                <p className="text-xs max-w-sm">
-                  Envie uma mensagem para iniciar a conversa
-                </p>
+                <p className="text-xs max-w-sm">Envie uma mensagem para iniciar a conversa</p>
               )}
             </div>
-          ) : (
-            <div className="max-w-2xl mx-auto px-4 pt-4 pb-2">
+          </div>
+        ) : (
+          <ChatMessageList className="flex-1" smooth>
+            <div className="max-w-2xl mx-auto w-full">
               {messages.map((m, i) => (
-                <div key={i} className="b24-chat-message">
-                  <div className={cn(
-                    "b24-chat-msg-container",
-                    m.role === "user" && "justify-end"
-                  )}>
-                    {m.role === "assistant" && (
-                      <div className="b24-chat-avatar assistant">
-                        <Sparkles className="h-4 w-4" />
-                      </div>
-                    )}
-                    <div className={cn("b24-chat-msg-content", m.role)}>
-                      {m.role === "assistant" ? (
-                        <div dangerouslySetInnerHTML={{ __html: renderMd(m.content) }} />
-                      ) : (
-                        <span>{m.content}</span>
-                      )}
-                    </div>
-                  </div>
-                  {/* Actions on hover - b24ui pattern */}
+                <ChatBubble key={i} variant={m.role === "user" ? "sent" : "received"} layout="ai">
                   {m.role === "assistant" && (
-                    <div className="b24-chat-actions" style={{ left: 44 }}>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-6 w-6 rounded-md text-muted-foreground hover:text-foreground"
-                        onClick={() => copyMessage(m.content)}
-                      >
-                        <FileText className="h-3 w-3" />
-                      </Button>
-                    </div>
+                    <ChatBubbleAvatar fallback="✨" className="bg-primary/10 text-primary" />
                   )}
-                </div>
+                  <ChatBubbleMessage variant={m.role === "user" ? "sent" : "received"}>
+                    {m.role === "assistant" ? (
+                      <div dangerouslySetInnerHTML={{ __html: renderMd(m.content) }} />
+                    ) : (
+                      <span>{m.content}</span>
+                    )}
+                  </ChatBubbleMessage>
+                  {m.role === "assistant" && (
+                    <ChatBubbleActionWrapper>
+                      <ChatBubbleAction
+                        icon={<Copy className="h-3 w-3" />}
+                        onClick={() => copyMessage(m.content)}
+                        className="text-muted-foreground hover:text-foreground"
+                      />
+                    </ChatBubbleActionWrapper>
+                  )}
+                </ChatBubble>
               ))}
               {loading && (
-                <div className="b24-chat-message">
-                  <div className="b24-chat-msg-container">
-                    <div className="b24-chat-avatar assistant">
-                      <Sparkles className="h-4 w-4" />
-                    </div>
-                    <div className="b24-chat-msg-content assistant">
-                      <div className="b24-typing-dots">
-                        <span /><span /><span />
-                      </div>
-                    </div>
-                  </div>
-                </div>
+                <ChatBubble variant="received" layout="ai">
+                  <ChatBubbleAvatar fallback="✨" className="bg-primary/10 text-primary" />
+                  <ChatBubbleMessage variant="received" isLoading />
+                </ChatBubble>
               )}
             </div>
-          )}
-        </div>
+          </ChatMessageList>
+        )}
 
-        {/* Input area - b24ui ChatPrompt pattern */}
+        {/* Input */}
         <div className="border-t border-border bg-card/50 backdrop-blur-sm p-3">
-          <div className="max-w-2xl mx-auto">
-            <div className="b24-chat-prompt">
-              <textarea
-                ref={textareaRef}
-                value={input}
-                onChange={(e) => { setInput(e.target.value); autoResize(); }}
-                onKeyDown={handleKeyDown}
-                placeholder="Escreva a sua mensagem..."
-                disabled={loading}
-                rows={1}
-              />
-              <div className="b24-prompt-footer">
-                <AudioRecordButton
-                  onTranscript={(text) => setInput((prev) => (prev ? prev + " " : "") + text)}
-                  disabled={loading}
-                  preferNative
-                  lang="pt-PT"
-                  fetchTokenUrl={`${SUPABASE_URL}/functions/v1/elevenlabs-scribe-token`}
-                  fetchHeaders={{ Authorization: `Bearer ${SUPABASE_KEY}` }}
-                />
-                {loading ? (
-                  <button
-                    className="b24-prompt-submit loading"
-                    onClick={() => {}}
-                    title="A processar..."
-                  >
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  </button>
-                ) : (
-                  <button
-                    className="b24-prompt-submit"
-                    onClick={sendMessage}
-                    disabled={!input.trim()}
-                    title="Enviar"
-                  >
-                    <Send className="h-4 w-4" />
-                  </button>
-                )}
-              </div>
-            </div>
+          <div className="max-w-2xl mx-auto flex items-end gap-2">
+            <AudioRecordButton
+              onTranscript={(text) => setInput((prev) => (prev ? prev + " " : "") + text)}
+              disabled={loading}
+              preferNative
+              lang="pt-PT"
+              fetchTokenUrl={`${SUPABASE_URL}/functions/v1/elevenlabs-scribe-token`}
+              fetchHeaders={{ Authorization: `Bearer ${SUPABASE_KEY}` }}
+            />
+            <ChatInput
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder="Escreva a sua mensagem..."
+              disabled={loading}
+              className="flex-1"
+            />
+            <Button
+              size="icon"
+              onClick={sendMessage}
+              disabled={!input.trim() || loading}
+              className="shrink-0 rounded-full h-10 w-10"
+            >
+              {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+            </Button>
           </div>
         </div>
       </div>
@@ -1618,8 +1576,6 @@ function PlaygroundView() {
   const [messages, setMessages] = useState<Array<{ role: string; content: string }>>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     fetch(`${SUPABASE_URL}/rest/v1/ai_agents?select=id,name,is_default,is_active&is_active=eq.true&order=is_default.desc`, {
@@ -1630,22 +1586,12 @@ function PlaygroundView() {
     }).catch(console.error);
   }, []);
 
-  useEffect(() => {
-    if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-  }, [messages]);
-
-  const autoResize = () => {
-    const el = textareaRef.current;
-    if (el) { el.style.height = "auto"; el.style.height = Math.min(el.scrollHeight, 120) + "px"; }
-  };
-
   const sendMessage = async () => {
     if (!input.trim() || !selectedAgent || loading) return;
     const userMsg = { role: "user", content: input };
     const newMessages = [...messages, userMsg];
     setMessages(newMessages);
     setInput("");
-    if (textareaRef.current) textareaRef.current.style.height = "auto";
     setLoading(true);
     try {
       const res = await fetch(`${SUPABASE_URL}/functions/v1/ai-playground`, {
@@ -1703,90 +1649,66 @@ function PlaygroundView() {
         </div>
       </div>
 
-      {/* Chat card - b24ui ChatPalette style */}
-      <div className="flex-1 flex flex-col overflow-hidden mx-4 mb-4 b24-card bg-card">
-        <div ref={scrollRef} className="flex-1 overflow-y-auto">
-          {messages.length === 0 ? (
-            <div className="b24-chat-empty">
-              <Sparkles className="b24-chat-empty-icon" />
+      {/* Chat card */}
+      <div className="flex-1 flex flex-col overflow-hidden mx-4 mb-4 rounded-xl border border-border bg-card">
+        {messages.length === 0 ? (
+          <div className="flex-1 flex items-center justify-center">
+            <div className="text-center text-muted-foreground">
+              <Sparkles className="h-12 w-12 mx-auto mb-3 opacity-30" />
               <p className="text-xs">Envie uma mensagem para testar o agente...</p>
             </div>
-          ) : (
-            <div className="max-w-xl mx-auto px-4 pt-4 pb-2">
+          </div>
+        ) : (
+          <ChatMessageList className="flex-1" smooth>
+            <div className="max-w-xl mx-auto w-full">
               {messages.map((m, i) => (
-                <div key={i} className="b24-chat-message">
-                  <div className={cn(
-                    "b24-chat-msg-container",
-                    m.role === "user" && "justify-end"
-                  )}>
-                    {m.role === "assistant" && (
-                      <div className="b24-chat-avatar assistant">
-                        <Bot className="h-4 w-4" />
-                      </div>
+                <ChatBubble key={i} variant={m.role === "user" ? "sent" : "received"} layout="ai">
+                  {m.role === "assistant" && (
+                    <ChatBubbleAvatar fallback="🤖" className="bg-primary/10 text-primary" />
+                  )}
+                  <ChatBubbleMessage variant={m.role === "user" ? "sent" : "received"}>
+                    {m.role === "assistant" ? (
+                      <div dangerouslySetInnerHTML={{ __html: renderMd(m.content) }} />
+                    ) : (
+                      <span>{m.content}</span>
                     )}
-                    <div className={cn("b24-chat-msg-content", m.role)}>
-                      {m.role === "assistant" ? (
-                        <div dangerouslySetInnerHTML={{ __html: renderMd(m.content) }} />
-                      ) : (
-                        <span>{m.content}</span>
-                      )}
-                    </div>
-                  </div>
-                </div>
+                  </ChatBubbleMessage>
+                </ChatBubble>
               ))}
               {loading && (
-                <div className="b24-chat-message">
-                  <div className="b24-chat-msg-container">
-                    <div className="b24-chat-avatar assistant">
-                      <Bot className="h-4 w-4" />
-                    </div>
-                    <div className="b24-chat-msg-content assistant">
-                      <div className="b24-typing-dots">
-                        <span /><span /><span />
-                      </div>
-                    </div>
-                  </div>
-                </div>
+                <ChatBubble variant="received" layout="ai">
+                  <ChatBubbleAvatar fallback="🤖" className="bg-primary/10 text-primary" />
+                  <ChatBubbleMessage variant="received" isLoading />
+                </ChatBubble>
               )}
             </div>
-          )}
-        </div>
+          </ChatMessageList>
+        )}
 
-        {/* Input - b24ui ChatPrompt */}
+        {/* Input */}
         <div className="border-t border-border p-3">
-          <div className="b24-chat-prompt">
-            <textarea
-              ref={textareaRef}
+          <div className="flex items-end gap-2">
+            {messages.length > 0 && (
+              <Button variant="ghost" size="icon" className="h-10 w-10 shrink-0 rounded-full text-muted-foreground" onClick={() => setMessages([])}>
+                <RotateCcw className="h-4 w-4" />
+              </Button>
+            )}
+            <ChatInput
               value={input}
-              onChange={(e) => { setInput(e.target.value); autoResize(); }}
+              onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
               placeholder="Digite uma mensagem..."
               disabled={loading}
-              rows={1}
+              className="flex-1"
             />
-            <div className="b24-prompt-footer">
-              {loading ? (
-                <button className="b24-prompt-submit loading" title="A processar...">
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                </button>
-              ) : (
-                <>
-                  {messages.length > 0 && (
-                    <Button variant="ghost" size="icon" className="h-7 w-7 rounded-md text-muted-foreground" onClick={() => setMessages([])}>
-                      <RotateCcw className="h-3.5 w-3.5" />
-                    </Button>
-                  )}
-                  <button
-                    className="b24-prompt-submit"
-                    onClick={sendMessage}
-                    disabled={!input.trim()}
-                    title="Enviar"
-                  >
-                    <Send className="h-4 w-4" />
-                  </button>
-                </>
-              )}
-            </div>
+            <Button
+              size="icon"
+              onClick={sendMessage}
+              disabled={!input.trim() || loading}
+              className="shrink-0 rounded-full h-10 w-10"
+            >
+              {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+            </Button>
           </div>
         </div>
       </div>
