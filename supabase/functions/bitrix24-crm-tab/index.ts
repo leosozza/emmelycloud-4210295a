@@ -165,6 +165,23 @@ async function findConversationByName(supabase: any, name: string): Promise<any>
   return null;
 }
 
+// SVG icons (Bitrix24 b24icons style)
+const B24_ICONS = {
+  message: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>`,
+  robot: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="10" rx="2"/><circle cx="12" cy="5" r="2"/><line x1="12" y1="7" x2="12" y2="11"/><line x1="1" y1="16" x2="3" y2="16"/><line x1="21" y1="16" x2="23" y2="16"/><circle cx="8.5" cy="15.5" r="1"/><circle cx="15.5" cy="15.5" r="1"/></svg>`,
+  clipboard: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1"/></svg>`,
+  list: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>`,
+  lightbulb: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6"/><path d="M10 22h4"/><path d="M12 2a7 7 0 0 0-4 12.7V17h8v-2.3A7 7 0 0 0 12 2z"/></svg>`,
+  smile: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg>`,
+  send: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>`,
+  search: `<svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>`,
+  phone: `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6A19.79 19.79 0 0 1 2.12 4.18 2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/></svg>`,
+  mail: `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>`,
+  botBadge: `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="10" rx="2"/><circle cx="12" cy="5" r="2"/><line x1="12" y1="7" x2="12" y2="11"/></svg>`,
+  user: `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>`,
+  notepad: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>`,
+};
+
 function renderHtml(opts: {
   entityId: string;
   entityType: string;
@@ -189,21 +206,23 @@ function renderHtml(opts: {
 
   const isBot = attendanceMode === "bot";
   const modeColor = isBot ? "#22c55e" : "#f59e0b";
-  const modeLabel = isBot ? "🤖 Bot Ativo" : "👤 Atendimento Humano";
-  const channelIcon = channel === "whatsapp" ? "💬" : channel === "instagram" ? "📷" : "💌";
+  const modeIcon = isBot ? B24_ICONS.botBadge : B24_ICONS.user;
+  const modeLabel = isBot ? "Bot Ativo" : "Atendimento Humano";
+  const channelLabel = channel === "whatsapp" ? "WhatsApp" : channel === "instagram" ? "Instagram" : channel || "canal";
 
   const messagesHtml = messages.length === 0
-    ? `<p style="color:#999;text-align:center;padding:24px 0;font-size:13px">Sem mensagens registadas</p>`
+    ? `<p style="color:#959ca4;text-align:center;padding:24px 0;font-size:13px">Sem mensagens registadas</p>`
     : messages.map(m => {
         const isOut = m.direction === "outbound";
-        const bubbleColor = isOut ? "#722F37" : "#f0f0f0";
-        const textColor = isOut ? "#fff" : "#222";
+        const bubbleColor = isOut ? "#2283d8" : "#ffffff";
+        const textColor = isOut ? "#fff" : "#333840";
         const align = isOut ? "flex-end" : "flex-start";
+        const border = isOut ? "" : "border: 1px solid #dfe0e3;";
         const sender = isOut ? (m.sender_name || "Emmely AI") : (contactName || "Cliente");
         return `
           <div style="display:flex;flex-direction:column;align-items:${align};margin-bottom:10px">
-            <div style="font-size:10px;color:#999;margin-bottom:2px;padding:0 4px">${sender} · ${formatTime(m.created_at)}</div>
-            <div style="background:${bubbleColor};color:${textColor};padding:8px 12px;border-radius:12px;max-width:80%;font-size:13px;line-height:1.4;word-break:break-word">
+            <div style="font-size:10px;color:#959ca4;margin-bottom:2px;padding:0 4px">${sender} · ${formatTime(m.created_at)}</div>
+            <div style="background:${bubbleColor};color:${textColor};${border}padding:8px 12px;border-radius:12px;max-width:80%;font-size:13px;line-height:1.4;word-break:break-word">
               ${(m.content || "").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\n/g, "<br>")}
             </div>
           </div>`;
@@ -211,10 +230,11 @@ function renderHtml(opts: {
 
   const returnToBotBtn = conversationId && !isBot ? `
     <button onclick="returnToBot()" style="
-      background:#722F37;color:#fff;border:none;padding:10px 20px;border-radius:8px;
+      background:#2283d8;color:#fff;border:none;padding:10px 20px;border-radius:8px;
       cursor:pointer;font-size:13px;font-weight:600;width:100%;margin-top:8px;
-      transition:opacity 0.2s" onmouseover="this.style.opacity='0.85'" onmouseout="this.style.opacity='1'">
-      🤖 Devolver ao Bot
+      display:flex;align-items:center;justify-content:center;gap:6px;
+      transition:background 0.15s" onmouseover="this.style.background='#1b6cb8'" onmouseout="this.style.background='#2283d8'">
+      ${B24_ICONS.botBadge} Devolver ao Bot
     </button>` : "";
 
   // Build "Start Conversation" UI when no conversation found
@@ -230,7 +250,7 @@ function renderHtml(opts: {
           background:#25D366;color:#fff;border:none;padding:10px 16px;border-radius:8px;
           cursor:pointer;font-size:13px;font-weight:600;width:100%;margin-top:8px;
           transition:opacity 0.2s" onmouseover="this.style.opacity='0.85'" onmouseout="this.style.opacity='1'">
-          💬 Iniciar Conversa no WhatsApp${primaryPhone ? " (" + primaryPhone.slice(-9) + ")" : ""}
+          ${B24_ICONS.message} Iniciar Conversa no WhatsApp${primaryPhone ? " (" + primaryPhone.slice(-9) + ")" : ""}
         </button>`;
     }
     if (canStartInstagram) {
@@ -239,7 +259,7 @@ function renderHtml(opts: {
           background:#E1306C;color:#fff;border:none;padding:10px 16px;border-radius:8px;
           cursor:pointer;font-size:13px;font-weight:600;width:100%;margin-top:8px;
           transition:opacity 0.2s" onmouseover="this.style.opacity='0.85'" onmouseout="this.style.opacity='1'">
-          📷 Iniciar Conversa no Instagram
+          ${B24_ICONS.message} Iniciar Conversa no Instagram
         </button>`;
     }
     return btns;
@@ -247,13 +267,13 @@ function renderHtml(opts: {
 
   const noConvHtml = `
     <div style="text-align:center;padding:32px 16px">
-      <div style="font-size:40px;margin-bottom:12px">🔍</div>
-      <h3 style="color:#555;margin:0 0 6px;font-size:14px">Nenhuma conversa ativa encontrada</h3>
-      <p style="color:#999;font-size:12px;margin:0 0 12px">
+      <div style="margin-bottom:12px;color:#c4cdd5">${B24_ICONS.search}</div>
+      <h3 style="color:#333840;margin:0 0 6px;font-size:14px">Nenhuma conversa ativa encontrada</h3>
+      <p style="color:#959ca4;font-size:12px;margin:0 0 12px">
         Pesquisa por telefone, email e nome não encontrou resultados.
       </p>
-      ${phones.length ? `<p style="color:#666;font-size:12px;margin:0 0 4px">📞 ${phones.map(p => "+" + p).join(", ")}</p>` : ""}
-      ${emails.length ? `<p style="color:#666;font-size:12px;margin:0">✉️ ${emails.join(", ")}</p>` : ""}
+      ${phones.length ? `<p style="color:#333840;font-size:12px;margin:0 0 4px;display:flex;align-items:center;justify-content:center;gap:4px">${B24_ICONS.phone} ${phones.map(p => "+" + p).join(", ")}</p>` : ""}
+      ${emails.length ? `<p style="color:#333840;font-size:12px;margin:0;display:flex;align-items:center;justify-content:center;gap:4px">${B24_ICONS.mail} ${emails.join(", ")}</p>` : ""}
     </div>`;
 
   // Build conversation history summary for AI context
@@ -271,58 +291,58 @@ function renderHtml(opts: {
   <script src="https://api.bitrix24.com/api/v1/"></script>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f8f8f8; color: #222; }
+    body { font-family: "Helvetica Neue", Helvetica, Arial, sans-serif; background: #f5f7fa; color: #333840; }
     #app { display: flex; flex-direction: column; height: 100vh; }
 
     /* Tab bar */
-    .tab-bar { display: flex; background: #fff; border-bottom: 1px solid #e8e8e8; padding: 0 16px; gap: 0; }
-    .tab { padding: 10px 16px; font-size: 13px; font-weight: 600; color: #888; cursor: pointer; border-bottom: 2px solid transparent; transition: all .2s; user-select: none; }
-    .tab:hover { color: #555; }
-    .tab.active { color: #722F37; border-bottom-color: #722F37; }
+    .tab-bar { display: flex; background: #fff; border-bottom: 1px solid #dfe0e3; padding: 0 16px; gap: 0; }
+    .tab { padding: 10px 16px; font-size: 13px; font-weight: 600; color: #959ca4; cursor: pointer; border-bottom: 2px solid transparent; transition: all .2s; user-select: none; display: flex; align-items: center; gap: 6px; }
+    .tab:hover { color: #333840; }
+    .tab.active { color: #2283d8; border-bottom-color: #2283d8; }
     .tab-content { display: none; flex: 1; flex-direction: column; overflow: hidden; }
     .tab-content.active { display: flex; }
 
     /* Existing conversation styles */
-    #header { background: #fff; border-bottom: 1px solid #e8e8e8; padding: 12px 16px; }
+    #header { background: #fff; border-bottom: 1px solid #dfe0e3; padding: 12px 16px; }
     #header-top { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
-    #avatar { width: 36px; height: 36px; border-radius: 50%; background: #722F37; display: flex; align-items: center; justify-content: center; font-weight: 700; color: #fff; font-size: 15px; flex-shrink: 0; }
+    #avatar { width: 36px; height: 36px; border-radius: 50%; background: linear-gradient(135deg, #2283d8, #7b5ea7); display: flex; align-items: center; justify-content: center; font-weight: 700; color: #fff; font-size: 15px; flex-shrink: 0; }
     #contact-info { flex: 1; }
-    #contact-name { font-weight: 600; font-size: 15px; color: #111; }
-    #contact-meta { font-size: 12px; color: #888; margin-top: 2px; }
-    #mode-badge { display: inline-block; background: ${modeColor}22; color: ${modeColor}; border: 1px solid ${modeColor}44; border-radius: 20px; padding: 3px 10px; font-size: 11px; font-weight: 600; }
+    #contact-name { font-weight: 600; font-size: 15px; color: #333840; }
+    #contact-meta { font-size: 12px; color: #959ca4; margin-top: 2px; display: flex; align-items: center; gap: 4px; }
+    #mode-badge { display: inline-flex; align-items: center; gap: 4px; background: ${modeColor}15; color: ${modeColor}; border: 1px solid ${modeColor}33; border-radius: 20px; padding: 3px 10px; font-size: 11px; font-weight: 600; }
     #messages { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; }
-    #footer { background: #fff; border-top: 1px solid #e8e8e8; padding: 12px 16px; }
-    #status-msg { font-size: 12px; color: #888; text-align: center; margin-top: 6px; min-height: 16px; }
+    #footer { background: #fff; border-top: 1px solid #dfe0e3; padding: 12px 16px; }
+    #status-msg { font-size: 12px; color: #959ca4; text-align: center; margin-top: 6px; min-height: 16px; }
 
     /* AI Chat tab styles */
     .ai-panel { display: flex; flex-direction: column; flex: 1; overflow: hidden; }
-    .ai-suggestions { display: flex; flex-wrap: wrap; gap: 6px; padding: 12px 16px; background: #fff; border-bottom: 1px solid #e8e8e8; }
-    .ai-suggestions button { background: #f3f0f1; color: #722F37; border: 1px solid #e8e0e2; padding: 6px 12px; border-radius: 16px; font-size: 12px; font-weight: 500; cursor: pointer; transition: all .2s; white-space: nowrap; }
-    .ai-suggestions button:hover { background: #722F37; color: #fff; border-color: #722F37; }
+    .ai-suggestions { display: flex; flex-wrap: wrap; gap: 6px; padding: 12px 16px; background: #fff; border-bottom: 1px solid #dfe0e3; }
+    .ai-suggestions button { background: #f5f7fa; color: #333840; border: 1px solid #dfe0e3; padding: 6px 12px; border-radius: 6px; font-size: 12px; font-weight: 500; cursor: pointer; transition: all .15s; white-space: nowrap; display: flex; align-items: center; gap: 4px; }
+    .ai-suggestions button:hover { background: #e8f4fd; color: #2283d8; border-color: #2283d8; }
     .ai-messages { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 10px; }
     .ai-msg { max-width: 88%; padding: 10px 14px; border-radius: 12px; font-size: 13px; line-height: 1.5; word-break: break-word; white-space: pre-wrap; }
-    .ai-msg.user { align-self: flex-end; background: #722F37; color: #fff; }
-    .ai-msg.assistant { align-self: flex-start; background: #fff; color: #222; border: 1px solid #e8e8e8; }
+    .ai-msg.user { align-self: flex-end; background: #2283d8; color: #fff; }
+    .ai-msg.assistant { align-self: flex-start; background: #fff; color: #333840; border: 1px solid #dfe0e3; }
     .ai-msg.assistant .typing-dots { display: inline-block; }
     .ai-msg.assistant .typing-dots::after { content: '...'; animation: dots 1.2s steps(4,end) infinite; }
     @keyframes dots { 0%,20%{content:'.'} 40%{content:'..'} 60%,100%{content:'...'} }
-    .ai-input-area { display: flex; gap: 8px; padding: 12px 16px; background: #fff; border-top: 1px solid #e8e8e8; }
-    .ai-input-area input { flex: 1; border: 1px solid #ddd; border-radius: 8px; padding: 8px 12px; font-size: 13px; outline: none; }
-    .ai-input-area input:focus { border-color: #722F37; }
-    .ai-input-area button { background: #722F37; color: #fff; border: none; border-radius: 8px; padding: 8px 16px; font-size: 13px; font-weight: 600; cursor: pointer; transition: opacity .2s; white-space: nowrap; }
-    .ai-input-area button:hover { opacity: .85; }
+    .ai-input-area { display: flex; gap: 8px; padding: 12px 16px; background: #fff; border-top: 1px solid #dfe0e3; align-items: flex-end; }
+    .ai-input-area input { flex: 1; border: 1px solid #dfe0e3; border-radius: 8px; padding: 8px 12px; font-size: 13px; outline: none; color: #333840; font-family: inherit; }
+    .ai-input-area input:focus { border-color: #2283d8; }
+    .ai-input-area button { background: #2283d8; color: #fff; border: none; border-radius: 8px; padding: 8px 14px; font-size: 13px; font-weight: 600; cursor: pointer; transition: background .15s; white-space: nowrap; display: flex; align-items: center; gap: 4px; }
+    .ai-input-area button:hover { background: #1b6cb8; }
     .ai-input-area button:disabled { opacity: .5; cursor: not-allowed; }
-    .ai-context-banner { background: #fef9c3; color: #854d0e; padding: 8px 16px; font-size: 11px; border-bottom: 1px solid #fde68a; }
+    .ai-context-banner { background: #e8f4fd; color: #2283d8; padding: 8px 16px; font-size: 11px; border-bottom: 1px solid #c4dff0; display: flex; align-items: center; gap: 6px; }
 
-    ::-webkit-scrollbar { width: 4px; } ::-webkit-scrollbar-thumb { background: #ddd; border-radius: 4px; }
+    ::-webkit-scrollbar { width: 4px; } ::-webkit-scrollbar-thumb { background: #dfe0e3; border-radius: 4px; }
   </style>
 </head>
 <body>
 <div id="app">
   <!-- Tab Bar -->
   <div class="tab-bar">
-    <div class="tab active" onclick="switchTab('conversa')">💬 Conversa</div>
-    <div class="tab" onclick="switchTab('ia')">🤖 Consultar IA</div>
+    <div class="tab active" onclick="switchTab('conversa')">${B24_ICONS.message} Conversa</div>
+    <div class="tab" onclick="switchTab('ia')">${B24_ICONS.robot} Consultar IA</div>
   </div>
 
   <!-- Tab 1: Conversa (existing) -->
@@ -332,9 +352,9 @@ function renderHtml(opts: {
         <div id="avatar">${(contactName || "?").charAt(0).toUpperCase()}</div>
         <div id="contact-info">
           <div id="contact-name">${(contactName || "Cliente").replace(/</g, "&lt;")}</div>
-          <div id="contact-meta">${conversationId ? (channelIcon + " " + (channel || "canal")) : (phones.length ? "📞 " + phones[0] : "sem contacto")}</div>
+          <div id="contact-meta">${conversationId ? (channelLabel) : (phones.length ? phones[0] : "sem contacto")}</div>
         </div>
-        ${conversationId ? `<span id="mode-badge">${modeLabel}</span>` : ""}
+        ${conversationId ? `<span id="mode-badge">${modeIcon} ${modeLabel}</span>` : ""}
       </div>
     </div>
     <div id="messages">
@@ -349,20 +369,20 @@ function renderHtml(opts: {
   <!-- Tab 2: Consultar IA -->
   <div class="tab-content" id="tab-ia">
     <div class="ai-context-banner">
-      📋 Contexto: <strong>${(contactName || "Cliente").replace(/</g, "&lt;")}</strong>
-      ${channel ? " · " + channelIcon + " " + channel : ""}
+      ${B24_ICONS.notepad} Contexto: <strong>${(contactName || "Cliente").replace(/</g, "&lt;")}</strong>
+      ${channel ? " · " + channelLabel : ""}
       ${messages.length ? " · " + messages.length + " msgs" : ""}
     </div>
     <div class="ai-suggestions">
-      <button onclick="quickAsk('Faz um resumo desta conversa com o cliente')">📝 Resumir</button>
-      <button onclick="quickAsk('Qual é o procedimento recomendado para este caso?')">📋 Procedimento</button>
-      <button onclick="quickAsk('Sugere uma resposta profissional para enviar ao cliente')">💡 Sugerir Resposta</button>
-      <button onclick="quickAsk('Analisa o sentimento do cliente nesta conversa')">🎭 Sentimento</button>
+      <button onclick="quickAsk('Faz um resumo desta conversa com o cliente')">${B24_ICONS.clipboard} Resumir</button>
+      <button onclick="quickAsk('Qual é o procedimento recomendado para este caso?')">${B24_ICONS.list} Procedimento</button>
+      <button onclick="quickAsk('Sugere uma resposta profissional para enviar ao cliente')">${B24_ICONS.lightbulb} Sugerir Resposta</button>
+      <button onclick="quickAsk('Analisa o sentimento do cliente nesta conversa')">${B24_ICONS.smile} Sentimento</button>
     </div>
     <div class="ai-messages" id="ai-messages"></div>
     <div class="ai-input-area">
       <input type="text" id="ai-input" placeholder="Pergunte à Emmely AI..." onkeydown="if(event.key==='Enter')sendAiMessage()">
-      <button id="ai-send-btn" onclick="sendAiMessage()">Enviar</button>
+      <button id="ai-send-btn" onclick="sendAiMessage()">${B24_ICONS.send} Enviar</button>
     </div>
   </div>
 </div>
@@ -461,7 +481,7 @@ function renderHtml(opts: {
     })
     .catch(function(e) {
       typingDiv.remove();
-      appendAiMsg('assistant', '❌ Erro: ' + e.message);
+      appendAiMsg('assistant', 'Erro: ' + e.message);
     })
     .finally(function() {
       aiSending = false;
@@ -485,9 +505,9 @@ function renderHtml(opts: {
     })
     .then(function(r) { return r.text(); })
     .then(function() {
-      setStatus('✅ Emmely AI retomou o atendimento!', '#22c55e');
+      setStatus('Emmely AI retomou o atendimento!', '#22c55e');
       var badge = document.getElementById('mode-badge');
-      if (badge) { badge.textContent = '🤖 Bot Ativo'; badge.style.color = '#22c55e'; badge.style.borderColor = '#22c55e44'; badge.style.background = '#22c55e22'; }
+      if (badge) { badge.textContent = 'Bot Ativo'; badge.style.color = '#22c55e'; badge.style.borderColor = '#22c55e33'; badge.style.background = '#22c55e15'; }
       var btn = document.querySelector('#footer button');
       if (btn) btn.style.display = 'none';
     })
