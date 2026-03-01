@@ -1,45 +1,19 @@
 
 
-## Configurar Pagamentos: Stripe BR, Stripe PT e Asaas BR
+## Corrigir dessincronia entre webhook e teste de conexao Ollama
 
-Atualmente a aba Pagamentos mostra apenas 2 cards: **Stripe** (genérico) e **Asaas**. O plano e reorganizar em **3 cards** distintos com credenciais separadas.
+### Problema
 
-### Mudancas na UI (`src/pages/Integracoes.tsx`)
+O webhook (`ollama-url-webhook`) guarda a URL com `provider: "ollama"`, mas a funcao de teste (`ollama-test-connection`) procura com `provider: "qwen-local"`. Como os valores nao coincidem, a URL atualizada nunca e encontrada.
 
-**Card 1 — Stripe Portugal (EUR)**
-- Provider: `stripe_pt`
-- Credenciais: `STRIPE_SECRET_KEY_PT`, `STRIPE_WEBHOOK_SECRET_PT`
-- Descricao: "Portugal / Europa (EUR)"
-- Metodos: Cartao, Multibanco, MB WAY, SEPA, etc.
-- Teste de conexao usando currency EUR
+### Solucao
 
-**Card 2 — Stripe Brasil (BRL)**
-- Provider: `stripe_br`
-- Credenciais: `STRIPE_SECRET_KEY_BR`, `STRIPE_WEBHOOK_SECRET_BR`
-- Descricao: "Brasil (BRL) — Cartao"
-- Teste de conexao usando currency BRL + force_gateway stripe
-- Layout em grid de 3 colunas (md:grid-cols-3)
+Alinhar ambas as funcoes para usar o mesmo provider. A correcao mais simples e alterar o webhook para usar `provider: "qwen-local"` (que e o valor que o teste e o frontend ja usam).
 
-**Card 3 — Asaas Brasil (BRL)**
-- Mantem como esta (provider `asaas`)
-- Credenciais: `ASAAS_API_KEY`, `ASAAS_WEBHOOK_TOKEN`, `ASAAS_ENVIRONMENT`
-- Descricao: "Brasil (BRL) — PIX, Boleto, Cartao"
+### Alteracao
 
-### Mudancas no estado
+**Ficheiro:** `supabase/functions/ollama-url-webhook/index.ts`
+- Linha 59: alterar `provider: "ollama"` para `provider: "qwen-local"`
 
-- Adicionar estados de teste separados para cada gateway (`testingStripePT`, `testingStripeBR`, `testingAsaas`)
-- Adicionar resultados separados (`stripePtResult`, `stripeBrResult`, `asaasResult`)
-- Calcular totais separados por gateway (filtrar transactions por metadata ou credential key)
-- Verificar status configurado para cada um individualmente
-
-### Mudancas no Backend (`supabase/functions/payment-create/index.ts`)
-
-- Verificar se ja suporta as chaves regionais `STRIPE_SECRET_KEY_PT` e `STRIPE_SECRET_KEY_BR`
-- Se necessario, atualizar para buscar a chave correta baseado no parametro `force_gateway` ou `currency`
-
-### Detalhes Tecnicos
-
-- As credenciais serao guardadas na tabela `integration_credentials` com providers distintos: `stripe_pt`, `stripe_br`, `asaas`
-- O card de resumo "Emmely Pay" continua a mostrar todas as transacoes consolidadas
-- Nenhuma migracao de base de dados necessaria — apenas novos registos na tabela de credenciais
+Apenas 1 linha a mudar. Nenhuma migracao de base de dados necessaria.
 
