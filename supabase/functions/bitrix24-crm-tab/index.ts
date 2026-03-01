@@ -256,6 +256,12 @@ function renderHtml(opts: {
       ${emails.length ? `<p style="color:#666;font-size:12px;margin:0">✉️ ${emails.join(", ")}</p>` : ""}
     </div>`;
 
+  // Build conversation history summary for AI context
+  const convSummary = messages.slice(-10).map(m => {
+    const role = m.direction === "inbound" ? "Cliente" : "Bot";
+    return `${role}: ${(m.content || "").substring(0, 150)}`;
+  }).join("\\n");
+
   return `<!DOCTYPE html>
 <html lang="pt">
 <head>
@@ -267,6 +273,16 @@ function renderHtml(opts: {
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f8f8f8; color: #222; }
     #app { display: flex; flex-direction: column; height: 100vh; }
+
+    /* Tab bar */
+    .tab-bar { display: flex; background: #fff; border-bottom: 1px solid #e8e8e8; padding: 0 16px; gap: 0; }
+    .tab { padding: 10px 16px; font-size: 13px; font-weight: 600; color: #888; cursor: pointer; border-bottom: 2px solid transparent; transition: all .2s; user-select: none; }
+    .tab:hover { color: #555; }
+    .tab.active { color: #722F37; border-bottom-color: #722F37; }
+    .tab-content { display: none; flex: 1; flex-direction: column; overflow: hidden; }
+    .tab-content.active { display: flex; }
+
+    /* Existing conversation styles */
     #header { background: #fff; border-bottom: 1px solid #e8e8e8; padding: 12px 16px; }
     #header-top { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
     #avatar { width: 36px; height: 36px; border-radius: 50%; background: #722F37; display: flex; align-items: center; justify-content: center; font-weight: 700; color: #fff; font-size: 15px; flex-shrink: 0; }
@@ -277,29 +293,77 @@ function renderHtml(opts: {
     #messages { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; }
     #footer { background: #fff; border-top: 1px solid #e8e8e8; padding: 12px 16px; }
     #status-msg { font-size: 12px; color: #888; text-align: center; margin-top: 6px; min-height: 16px; }
+
+    /* AI Chat tab styles */
+    .ai-panel { display: flex; flex-direction: column; flex: 1; overflow: hidden; }
+    .ai-suggestions { display: flex; flex-wrap: wrap; gap: 6px; padding: 12px 16px; background: #fff; border-bottom: 1px solid #e8e8e8; }
+    .ai-suggestions button { background: #f3f0f1; color: #722F37; border: 1px solid #e8e0e2; padding: 6px 12px; border-radius: 16px; font-size: 12px; font-weight: 500; cursor: pointer; transition: all .2s; white-space: nowrap; }
+    .ai-suggestions button:hover { background: #722F37; color: #fff; border-color: #722F37; }
+    .ai-messages { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 10px; }
+    .ai-msg { max-width: 88%; padding: 10px 14px; border-radius: 12px; font-size: 13px; line-height: 1.5; word-break: break-word; white-space: pre-wrap; }
+    .ai-msg.user { align-self: flex-end; background: #722F37; color: #fff; }
+    .ai-msg.assistant { align-self: flex-start; background: #fff; color: #222; border: 1px solid #e8e8e8; }
+    .ai-msg.assistant .typing-dots { display: inline-block; }
+    .ai-msg.assistant .typing-dots::after { content: '...'; animation: dots 1.2s steps(4,end) infinite; }
+    @keyframes dots { 0%,20%{content:'.'} 40%{content:'..'} 60%,100%{content:'...'} }
+    .ai-input-area { display: flex; gap: 8px; padding: 12px 16px; background: #fff; border-top: 1px solid #e8e8e8; }
+    .ai-input-area input { flex: 1; border: 1px solid #ddd; border-radius: 8px; padding: 8px 12px; font-size: 13px; outline: none; }
+    .ai-input-area input:focus { border-color: #722F37; }
+    .ai-input-area button { background: #722F37; color: #fff; border: none; border-radius: 8px; padding: 8px 16px; font-size: 13px; font-weight: 600; cursor: pointer; transition: opacity .2s; white-space: nowrap; }
+    .ai-input-area button:hover { opacity: .85; }
+    .ai-input-area button:disabled { opacity: .5; cursor: not-allowed; }
+    .ai-context-banner { background: #fef9c3; color: #854d0e; padding: 8px 16px; font-size: 11px; border-bottom: 1px solid #fde68a; }
+
     ::-webkit-scrollbar { width: 4px; } ::-webkit-scrollbar-thumb { background: #ddd; border-radius: 4px; }
   </style>
 </head>
 <body>
 <div id="app">
-  <div id="header">
-    <div id="header-top">
-      <div id="avatar">${(contactName || "?").charAt(0).toUpperCase()}</div>
-      <div id="contact-info">
-        <div id="contact-name">${(contactName || "Cliente").replace(/</g, "&lt;")}</div>
-        <div id="contact-meta">${conversationId ? (channelIcon + " " + (channel || "canal")) : (phones.length ? "📞 " + phones[0] : "sem contacto")}</div>
+  <!-- Tab Bar -->
+  <div class="tab-bar">
+    <div class="tab active" onclick="switchTab('conversa')">💬 Conversa</div>
+    <div class="tab" onclick="switchTab('ia')">🤖 Consultar IA</div>
+  </div>
+
+  <!-- Tab 1: Conversa (existing) -->
+  <div class="tab-content active" id="tab-conversa">
+    <div id="header">
+      <div id="header-top">
+        <div id="avatar">${(contactName || "?").charAt(0).toUpperCase()}</div>
+        <div id="contact-info">
+          <div id="contact-name">${(contactName || "Cliente").replace(/</g, "&lt;")}</div>
+          <div id="contact-meta">${conversationId ? (channelIcon + " " + (channel || "canal")) : (phones.length ? "📞 " + phones[0] : "sem contacto")}</div>
+        </div>
+        ${conversationId ? `<span id="mode-badge">${modeLabel}</span>` : ""}
       </div>
-      ${conversationId ? `<span id="mode-badge">${modeLabel}</span>` : ""}
+    </div>
+    <div id="messages">
+      ${conversationId ? messagesHtml : noConvHtml}
+    </div>
+    <div id="footer">
+      ${conversationId ? returnToBotBtn : startBtns}
+      <div id="status-msg"></div>
     </div>
   </div>
 
-  <div id="messages">
-    ${conversationId ? messagesHtml : noConvHtml}
-  </div>
-
-  <div id="footer">
-    ${conversationId ? returnToBotBtn : startBtns}
-    <div id="status-msg"></div>
+  <!-- Tab 2: Consultar IA -->
+  <div class="tab-content" id="tab-ia">
+    <div class="ai-context-banner">
+      📋 Contexto: <strong>${(contactName || "Cliente").replace(/</g, "&lt;")}</strong>
+      ${channel ? " · " + channelIcon + " " + channel : ""}
+      ${messages.length ? " · " + messages.length + " msgs" : ""}
+    </div>
+    <div class="ai-suggestions">
+      <button onclick="quickAsk('Faz um resumo desta conversa com o cliente')">📝 Resumir</button>
+      <button onclick="quickAsk('Qual é o procedimento recomendado para este caso?')">📋 Procedimento</button>
+      <button onclick="quickAsk('Sugere uma resposta profissional para enviar ao cliente')">💡 Sugerir Resposta</button>
+      <button onclick="quickAsk('Analisa o sentimento do cliente nesta conversa')">🎭 Sentimento</button>
+    </div>
+    <div class="ai-messages" id="ai-messages"></div>
+    <div class="ai-input-area">
+      <input type="text" id="ai-input" placeholder="Pergunte à Emmely AI..." onkeydown="if(event.key==='Enter')sendAiMessage()">
+      <button id="ai-send-btn" onclick="sendAiMessage()">Enviar</button>
+    </div>
   </div>
 </div>
 
@@ -309,9 +373,102 @@ function renderHtml(opts: {
   var CONVERSATION_ID = "${conversationId || ""}";
   var MEMBER_ID = "${memberId}";
   var INTEGRATION_ID = "${integrationId}";
+  var CONTACT_NAME = "${(contactName || "Cliente").replace(/'/g, "\\'")}";
+  var CHANNEL = "${channel || ""}";
+  var CONV_SUMMARY = ${JSON.stringify(convSummary)};
 
   var msgBox = document.getElementById('messages');
   if (msgBox) msgBox.scrollTop = msgBox.scrollHeight;
+
+  // ── Tab switching ──
+  function switchTab(tab) {
+    document.querySelectorAll('.tab').forEach(function(t,i) {
+      t.classList.toggle('active', (tab === 'conversa' ? i === 0 : i === 1));
+    });
+    document.getElementById('tab-conversa').classList.toggle('active', tab === 'conversa');
+    document.getElementById('tab-ia').classList.toggle('active', tab === 'ia');
+    if (tab === 'ia') {
+      var inp = document.getElementById('ai-input');
+      if (inp) setTimeout(function(){ inp.focus(); }, 100);
+    }
+  }
+
+  // ── AI Chat ──
+  var aiHistory = [];
+  var aiSending = false;
+
+  function appendAiMsg(role, text) {
+    var container = document.getElementById('ai-messages');
+    var div = document.createElement('div');
+    div.className = 'ai-msg ' + role;
+    div.textContent = text;
+    container.appendChild(div);
+    container.scrollTop = container.scrollHeight;
+    return div;
+  }
+
+  function quickAsk(text) {
+    document.getElementById('ai-input').value = text;
+    sendAiMessage();
+  }
+
+  function sendAiMessage() {
+    if (aiSending) return;
+    var input = document.getElementById('ai-input');
+    var text = (input.value || '').trim();
+    if (!text) return;
+
+    input.value = '';
+    aiSending = true;
+    document.getElementById('ai-send-btn').disabled = true;
+
+    appendAiMsg('user', text);
+
+    // Add context prefix for first message
+    var contextPrefix = '';
+    if (aiHistory.length === 0) {
+      contextPrefix = '[CONTEXTO INTERNO - NÃO ENVIAR AO CLIENTE]\\n';
+      contextPrefix += 'Cliente: ' + CONTACT_NAME + '\\n';
+      if (CHANNEL) contextPrefix += 'Canal: ' + CHANNEL + '\\n';
+      if (CONV_SUMMARY) contextPrefix += 'Histórico recente:\\n' + CONV_SUMMARY + '\\n';
+      contextPrefix += '---\\nPergunta do operador: ';
+    }
+
+    var fullText = contextPrefix + text;
+    aiHistory.push({ role: 'user', content: fullText });
+
+    // Show typing indicator
+    var typingDiv = appendAiMsg('assistant', '');
+    typingDiv.innerHTML = '<span class="typing-dots"></span>';
+
+    var payload = {
+      message_text: fullText,
+      skip_send: true
+    };
+    if (CONVERSATION_ID) payload.conversation_id = CONVERSATION_ID;
+
+    fetch(SUPABASE_URL + '/functions/v1/ai-process-message', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + SUPABASE_KEY },
+      body: JSON.stringify(payload)
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      typingDiv.remove();
+      var reply = d.reply || d.error || 'Sem resposta da IA';
+      appendAiMsg('assistant', reply);
+      aiHistory.push({ role: 'assistant', content: reply });
+    })
+    .catch(function(e) {
+      typingDiv.remove();
+      appendAiMsg('assistant', '❌ Erro: ' + e.message);
+    })
+    .finally(function() {
+      aiSending = false;
+      document.getElementById('ai-send-btn').disabled = false;
+      document.getElementById('ai-input').focus();
+    });
+  }
 
   function setStatus(msg, color) {
     var el = document.getElementById('status-msg');
