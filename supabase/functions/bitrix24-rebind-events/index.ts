@@ -178,6 +178,62 @@ Deno.serve(async (req) => {
       console.error("[REBIND] placement.bind CRM_LEAD_DETAIL_TAB error:", crmTabErr);
     }
 
+    // --- Register IM_SIDEBAR placement (Emmely AI Assistant sidebar in messenger) ---
+    const imSidebarUrl = `${supabaseUrl}/functions/v1/bitrix24-im-sidebar`;
+    try {
+      await callBitrix(integration.client_endpoint, accessToken, "placement.unbind", {
+        PLACEMENT: "IM_SIDEBAR",
+        HANDLER: imSidebarUrl,
+      });
+      const sidebarResult = await callBitrix(integration.client_endpoint, accessToken, "placement.bind", {
+        PLACEMENT: "IM_SIDEBAR",
+        HANDLER: imSidebarUrl,
+        TITLE: "Emmely AI Assistant",
+        DESCRIPTION: "Consultar a IA antes de responder ao cliente",
+        LANG_ALL: {
+          pt: { TITLE: "Emmely AI Assistant", DESCRIPTION: "Consultar a IA antes de responder" },
+          en: { TITLE: "Emmely AI Assistant", DESCRIPTION: "Consult AI before replying" },
+          es: { TITLE: "Emmely AI Assistant", DESCRIPTION: "Consultar la IA antes de responder" },
+          ru: { TITLE: "Emmely AI Assistant", DESCRIPTION: "Консультация ИИ перед ответом" },
+        },
+      });
+      results["placement_IM_SIDEBAR"] = sidebarResult.error
+        ? `ERROR: ${sidebarResult.error}`
+        : "OK";
+      console.log("[REBIND] placement.bind IM_SIDEBAR:", JSON.stringify(sidebarResult));
+    } catch (sidebarErr) {
+      results["placement_IM_SIDEBAR"] = `ERROR: ${sidebarErr}`;
+      console.error("[REBIND] placement.bind IM_SIDEBAR error:", sidebarErr);
+    }
+
+    // --- Register IM_CONTEXT_MENU placement (Analyze with Emmely on messages) ---
+    const imContextMenuUrl = `${supabaseUrl}/functions/v1/bitrix24-im-context-menu`;
+    try {
+      await callBitrix(integration.client_endpoint, accessToken, "placement.unbind", {
+        PLACEMENT: "IM_CONTEXT_MENU",
+        HANDLER: imContextMenuUrl,
+      });
+      const ctxMenuResult = await callBitrix(integration.client_endpoint, accessToken, "placement.bind", {
+        PLACEMENT: "IM_CONTEXT_MENU",
+        HANDLER: imContextMenuUrl,
+        TITLE: "Analisar com Emmely",
+        DESCRIPTION: "Resumir, traduzir ou sugerir resposta",
+        LANG_ALL: {
+          pt: { TITLE: "Analisar com Emmely", DESCRIPTION: "Resumir, traduzir ou sugerir resposta" },
+          en: { TITLE: "Analyze with Emmely", DESCRIPTION: "Summarize, translate or suggest reply" },
+          es: { TITLE: "Analizar con Emmely", DESCRIPTION: "Resumir, traducir o sugerir respuesta" },
+          ru: { TITLE: "Анализ с Emmely", DESCRIPTION: "Резюме, перевод или предложение ответа" },
+        },
+      });
+      results["placement_IM_CONTEXT_MENU"] = ctxMenuResult.error
+        ? `ERROR: ${ctxMenuResult.error}`
+        : "OK";
+      console.log("[REBIND] placement.bind IM_CONTEXT_MENU:", JSON.stringify(ctxMenuResult));
+    } catch (ctxMenuErr) {
+      results["placement_IM_CONTEXT_MENU"] = `ERROR: ${ctxMenuErr}`;
+      console.error("[REBIND] placement.bind IM_CONTEXT_MENU error:", ctxMenuErr);
+    }
+
     // Also verify event.get to confirm bindings
     const boundEvents = await callBitrix(integration.client_endpoint, accessToken, "event.get", {});
     console.log("[REBIND] Current bindings:", JSON.stringify(boundEvents).substring(0, 500));
