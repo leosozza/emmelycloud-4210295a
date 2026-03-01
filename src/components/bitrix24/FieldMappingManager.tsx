@@ -318,7 +318,7 @@ export default function FieldMappingManager({ integrationId, compact }: FieldMap
       <div className="flex flex-wrap items-center gap-2">
         {/* Entity selector */}
         <Select value={bitrixEntity} onValueChange={(v) => setBitrixEntity(v as any)}>
-          <SelectTrigger className="w-[130px] h-8 text-xs">
+          <SelectTrigger className="w-[130px] h-8 text-xs text-foreground">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -329,7 +329,7 @@ export default function FieldMappingManager({ integrationId, compact }: FieldMap
 
         {/* Table selector */}
         <Select value={supabaseTable} onValueChange={setSupabaseTable}>
-          <SelectTrigger className="w-[140px] h-8 text-xs">
+          <SelectTrigger className="w-[140px] h-8 text-xs text-foreground">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -440,12 +440,12 @@ export default function FieldMappingManager({ integrationId, compact }: FieldMap
 
                         {/* Supabase column */}
                         <TableCell className="py-1.5">
-                          <span className="font-mono text-xs font-medium">{row.supabaseColumn}</span>
+                          <span className="font-mono text-xs font-medium text-foreground">{row.supabaseColumn}</span>
                         </TableCell>
 
                         {/* Type */}
                         <TableCell className="py-1.5">
-                          <Badge variant="outline" className="text-[10px] h-5 px-1.5 font-mono">
+                          <Badge variant="outline" className="text-[10px] h-5 px-1.5 font-mono text-foreground border-border">
                             {row.supabaseType}
                           </Badge>
                         </TableCell>
