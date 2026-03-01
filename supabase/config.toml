@@ -99,5 +99,11 @@ verify_jwt = false
 [functions.bitrix24-payment-tab]
 verify_jwt = false
 
+[functions.bitrix24-im-sidebar]
+verify_jwt = false
+
+[functions.bitrix24-im-context-menu]
+verify_jwt = false
+
 [functions.ollama-url-webhook]
 verify_jwt = false
