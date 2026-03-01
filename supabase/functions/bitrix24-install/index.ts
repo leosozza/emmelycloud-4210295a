@@ -692,6 +692,78 @@ Deno.serve(async (req) => {
       await debugLog(supabase, integrationId, "placement_bind_error", "outbound", null, String(placementError));
     }
 
+    // --- Register IM_SIDEBAR placement (Emmely AI Assistant sidebar in messenger) ---
+    try {
+      const imSidebarUrl = `${supabaseUrl}/functions/v1/bitrix24-im-sidebar`;
+
+      await callBitrix(clientEndpoint, accessToken, "placement.unbind", {
+        PLACEMENT: "IM_SIDEBAR",
+        HANDLER: imSidebarUrl,
+      });
+
+      const sidebarResult = await callBitrix(clientEndpoint, accessToken, "placement.bind", {
+        PLACEMENT: "IM_SIDEBAR",
+        HANDLER: imSidebarUrl,
+        TITLE: "Emmely AI Assistant",
+        DESCRIPTION: "Consultar a IA antes de responder ao cliente",
+        LANG_ALL: {
+          pt: { TITLE: "Emmely AI Assistant", DESCRIPTION: "Consultar a IA antes de responder" },
+          en: { TITLE: "Emmely AI Assistant", DESCRIPTION: "Consult AI before replying" },
+          es: { TITLE: "Emmely AI Assistant", DESCRIPTION: "Consultar la IA antes de responder" },
+          ru: { TITLE: "Emmely AI Assistant", DESCRIPTION: "Консультация ИИ перед ответом" },
+        },
+        OPTIONS: {
+          iconName: "fa-robot",
+          context: "ALL",
+          role: "USER",
+          extranet: "N",
+        },
+      });
+
+      const sidebarErr = sidebarResult.error || "";
+      if (sidebarErr && !String(sidebarErr).toLowerCase().includes("already")) {
+        console.error("[INSTALL] placement.bind IM_SIDEBAR error:", sidebarErr);
+      } else {
+        console.log("[INSTALL] placement.bind IM_SIDEBAR: OK");
+        installSummary.placements_registered.push("IM_SIDEBAR");
+      }
+    } catch (sidebarError) {
+      console.error("[INSTALL] IM_SIDEBAR placement error:", sidebarError);
+    }
+
+    // --- Register IM_CONTEXT_MENU placement (Analyze with Emmely on messages) ---
+    try {
+      const imContextMenuUrl = `${supabaseUrl}/functions/v1/bitrix24-im-context-menu`;
+
+      await callBitrix(clientEndpoint, accessToken, "placement.unbind", {
+        PLACEMENT: "IM_CONTEXT_MENU",
+        HANDLER: imContextMenuUrl,
+      });
+
+      const ctxMenuResult = await callBitrix(clientEndpoint, accessToken, "placement.bind", {
+        PLACEMENT: "IM_CONTEXT_MENU",
+        HANDLER: imContextMenuUrl,
+        TITLE: "Analisar com Emmely",
+        DESCRIPTION: "Resumir, traduzir ou sugerir resposta",
+        LANG_ALL: {
+          pt: { TITLE: "Analisar com Emmely", DESCRIPTION: "Resumir, traduzir ou sugerir resposta" },
+          en: { TITLE: "Analyze with Emmely", DESCRIPTION: "Summarize, translate or suggest reply" },
+          es: { TITLE: "Analizar con Emmely", DESCRIPTION: "Resumir, traducir o sugerir respuesta" },
+          ru: { TITLE: "Анализ с Emmely", DESCRIPTION: "Резюме, перевод или предложение ответа" },
+        },
+      });
+
+      const ctxMenuErr = ctxMenuResult.error || "";
+      if (ctxMenuErr && !String(ctxMenuErr).toLowerCase().includes("already")) {
+        console.error("[INSTALL] placement.bind IM_CONTEXT_MENU error:", ctxMenuErr);
+      } else {
+        console.log("[INSTALL] placement.bind IM_CONTEXT_MENU: OK");
+        installSummary.placements_registered.push("IM_CONTEXT_MENU");
+      }
+    } catch (ctxMenuError) {
+      console.error("[INSTALL] IM_CONTEXT_MENU placement error:", ctxMenuError);
+    }
+
     // --- Register CRM Detail Tab placements (Lead, Contact, Deal, SPA) ---
     try {
       const crmTabUrl = `${supabaseUrl}/functions/v1/bitrix24-crm-tab`;

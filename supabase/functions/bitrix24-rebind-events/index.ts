@@ -196,6 +196,12 @@ Deno.serve(async (req) => {
           es: { TITLE: "Emmely AI Assistant", DESCRIPTION: "Consultar la IA antes de responder" },
           ru: { TITLE: "Emmely AI Assistant", DESCRIPTION: "Консультация ИИ перед ответом" },
         },
+        OPTIONS: {
+          iconName: "fa-robot",
+          context: "ALL",
+          role: "USER",
+          extranet: "N",
+        },
       });
       results["placement_IM_SIDEBAR"] = sidebarResult.error
         ? `ERROR: ${sidebarResult.error}`
