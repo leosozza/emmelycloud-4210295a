@@ -1259,6 +1259,42 @@ export type Database = {
           },
         ]
       }
+      ollama_url_audit: {
+        Row: {
+          created_at: string
+          error_message: string | null
+          id: string
+          previous_url: string | null
+          raw_payload: Json | null
+          received_url: string | null
+          secret_valid: boolean | null
+          source_ip: string | null
+          status: string
+        }
+        Insert: {
+          created_at?: string
+          error_message?: string | null
+          id?: string
+          previous_url?: string | null
+          raw_payload?: Json | null
+          received_url?: string | null
+          secret_valid?: boolean | null
+          source_ip?: string | null
+          status?: string
+        }
+        Update: {
+          created_at?: string
+          error_message?: string | null
+          id?: string
+          previous_url?: string | null
+          raw_payload?: Json | null
+          received_url?: string | null
+          secret_valid?: boolean | null
+          source_ip?: string | null
+          status?: string
+        }
+        Relationships: []
+      }
       payment_gateway_config: {
         Row: {
           config: Json | null
