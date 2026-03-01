@@ -1,40 +1,45 @@
 
 
-## Corrigir Contraste de Cores no /bitrix24 (Dark Mode)
+## Configurar Pagamentos: Stripe BR, Stripe PT e Asaas BR
 
-O problema principal e que no modo escuro, varios elementos (botoes, selects, badges, texto de tabelas) tem cores de texto muito proximas da cor de fundo, tornando-os invisiveis ou dificeis de ler.
+Atualmente a aba Pagamentos mostra apenas 2 cards: **Stripe** (genérico) e **Asaas**. O plano e reorganizar em **3 cards** distintos com credenciais separadas.
 
-### Problemas Identificados
+### Mudancas na UI (`src/pages/Integracoes.tsx`)
 
-1. **Botoes `outline` e `ghost`**: O texto usa `foreground` que no dark mode pode ficar com baixo contraste sobre `bg-card`
-2. **Select triggers** (Lead/Leads no Mapeamento): Texto quase invisivel no fundo escuro
-3. **Badges `variant="outline"`**: Borda e texto com contraste insuficiente
-4. **Texto `text-muted-foreground`**: No dark mode, o valor `220 9% 55%` e demasiado escuro sobre fundos escuros
-5. **Tabela do Mapeamento**: Celulas com `font-mono text-xs` dificeis de ler
-6. **Sidebar do Chat IA**: Items da lista de conversas com texto que se confunde com o fundo
+**Card 1 — Stripe Portugal (EUR)**
+- Provider: `stripe_pt`
+- Credenciais: `STRIPE_SECRET_KEY_PT`, `STRIPE_WEBHOOK_SECRET_PT`
+- Descricao: "Portugal / Europa (EUR)"
+- Metodos: Cartao, Multibanco, MB WAY, SEPA, etc.
+- Teste de conexao usando currency EUR
 
-### Solucao
+**Card 2 — Stripe Brasil (BRL)**
+- Provider: `stripe_br`
+- Credenciais: `STRIPE_SECRET_KEY_BR`, `STRIPE_WEBHOOK_SECRET_BR`
+- Descricao: "Brasil (BRL) — Cartao"
+- Teste de conexao usando currency BRL + force_gateway stripe
+- Layout em grid de 3 colunas (md:grid-cols-3)
 
-Ajustar as variaveis CSS do dark mode em `src/index.css` para melhorar o contraste global, sem alterar o light mode:
+**Card 3 — Asaas Brasil (BRL)**
+- Mantem como esta (provider `asaas`)
+- Credenciais: `ASAAS_API_KEY`, `ASAAS_WEBHOOK_TOKEN`, `ASAAS_ENVIRONMENT`
+- Descricao: "Brasil (BRL) — PIX, Boleto, Cartao"
 
-- `--muted-foreground`: Aumentar luminosidade de 55% para 65% (texto secundario mais legivel)
-- `--border` e `--input`: Aumentar luminosidade de 18% para 22% (bordas mais visiveis nos selects/inputs)
-- `--muted`: Aumentar de 14% para 17% (fundos de hover/muted mais distinguiveis)
-- `--secondary`: Aumentar de 16% para 20% (botoes secundarios mais visiveis)
+### Mudancas no estado
 
-Adicionalmente, ajustes pontuais em `src/pages/Bitrix24App.tsx`:
+- Adicionar estados de teste separados para cada gateway (`testingStripePT`, `testingStripeBR`, `testingAsaas`)
+- Adicionar resultados separados (`stripePtResult`, `stripeBrResult`, `asaasResult`)
+- Calcular totais separados por gateway (filtrar transactions por metadata ou credential key)
+- Verificar status configurado para cada um individualmente
 
-- Adicionar classes explicitas de cor nos botoes do toolbar do Mapeamento
-- Usar `text-foreground` em vez de herdar cores implicitas nos Select triggers
-- Melhorar contraste dos badges de tipo na tabela de mapeamento
-- Adicionar `border` explicito nos cards da sidebar de conversas
+### Mudancas no Backend (`supabase/functions/payment-create/index.ts`)
 
-### Ficheiros a alterar
+- Verificar se ja suporta as chaves regionais `STRIPE_SECRET_KEY_PT` e `STRIPE_SECRET_KEY_BR`
+- Se necessario, atualizar para buscar a chave correta baseado no parametro `force_gateway` ou `currency`
 
-- `src/index.css` -- ajustar variaveis dark mode para melhor contraste
-- `src/pages/Bitrix24App.tsx` -- ajustes pontuais de classes de cor em elementos especificos
-- `src/components/bitrix24/FieldMappingManager.tsx` -- melhorar contraste na tabela de mapeamento
+### Detalhes Tecnicos
 
-### Impacto
+- As credenciais serao guardadas na tabela `integration_credentials` com providers distintos: `stripe_pt`, `stripe_br`, `asaas`
+- O card de resumo "Emmely Pay" continua a mostrar todas as transacoes consolidadas
+- Nenhuma migracao de base de dados necessaria — apenas novos registos na tabela de credenciais
 
-As alteracoes nas variaveis CSS afetam toda a app em dark mode (melhoria global), enquanto os ajustes pontuais corrigem problemas especificos do iframe Bitrix24.
