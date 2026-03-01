@@ -256,20 +256,61 @@ export default function TrainingPage() {
           const { error: uploadError } = await supabase.storage.from("knowledge-files").upload(filePath, file);
           if (uploadError) throw uploadError;
 
-          let textContent = "";
-          if (['txt', 'md', 'csv', 'json', 'xml'].includes(ext.toLowerCase())) {
-            textContent = await file.text();
-          }
+          const isBinaryFile = ['pdf', 'docx', 'doc'].includes(ext.toLowerCase());
+          const isTextFile = ['txt', 'md', 'csv', 'json', 'xml'].includes(ext.toLowerCase());
 
-          await createDocWithChunks(title, textContent, "file", {
-            file_path: filePath,
-            file_type: ext,
-            collection_id: collectionId,
-            collection_name: trainingTitle,
-          });
-          successCount++;
-        } catch (err) {
+          if (isBinaryFile) {
+            // Create doc first, then call edge function to extract text
+            const { data: docData, error: docError } = await supabase.from("knowledge_documents").insert({
+              title,
+              content: null,
+              source_type: "file",
+              status: "processing",
+              file_path: filePath,
+              file_type: ext,
+              collection_id: collectionId,
+              collection_name: trainingTitle,
+            } as any).select().single();
+            if (docError) throw docError;
+
+            // Call parse-document edge function (non-blocking toast)
+            toast.info(`A extrair texto de "${file.name}"...`);
+            try {
+              const { data: parseResult, error: parseError } = await supabase.functions.invoke("parse-document", {
+                body: { file_path: filePath, document_id: (docData as any).id },
+              });
+              if (parseError) {
+                console.error(`Parse error for ${file.name}:`, parseError);
+                toast.warning(`Não foi possível extrair texto de "${file.name}"`);
+              } else {
+                toast.success(`"${file.name}": ${parseResult?.chunks || 0} chunks extraídos`);
+              }
+            } catch (parseErr) {
+              console.error(`Parse-document call failed for ${file.name}:`, parseErr);
+              // Mark as ready even if parse fails
+              await supabase.from("knowledge_documents").update({ status: "ready" } as any).eq("id", (docData as any).id);
+            }
+            successCount++;
+          } else {
+            let textContent = "";
+            if (isTextFile) {
+              try {
+                textContent = await file.text();
+              } catch (textErr) {
+                console.error(`Error reading text from ${file.name}:`, textErr);
+              }
+            }
+            await createDocWithChunks(title, textContent, "file", {
+              file_path: filePath,
+              file_type: ext,
+              collection_id: collectionId,
+              collection_name: trainingTitle,
+            });
+            successCount++;
+          }
+        } catch (err: any) {
           console.error(`Error uploading ${file.name}:`, err);
+          toast.error(`Erro ao enviar "${file.name}": ${err?.message || 'erro desconhecido'}`);
         }
       }
 
@@ -391,9 +432,32 @@ export default function TrainingPage() {
             const title = file.name.replace(/\.[^.]+$/, '');
             const { error: uploadError } = await supabase.storage.from("knowledge-files").upload(filePath, file);
             if (uploadError) throw uploadError;
-            let textContent = "";
-            if (['txt', 'md', 'csv', 'json', 'xml'].includes(ext.toLowerCase())) textContent = await file.text();
-            await createDocWithChunks(title, textContent, "file", { file_path: filePath, file_type: ext, collection_id: collId, collection_name: editTitle });
+
+            const isBinaryFile = ['pdf', 'docx', 'doc'].includes(ext.toLowerCase());
+            const isTextFile = ['txt', 'md', 'csv', 'json', 'xml'].includes(ext.toLowerCase());
+
+            if (isBinaryFile) {
+              const { data: docData, error: docError } = await supabase.from("knowledge_documents").insert({
+                title, content: null, source_type: "file", status: "processing",
+                file_path: filePath, file_type: ext, collection_id: collId, collection_name: editTitle,
+              } as any).select().single();
+              if (docError) throw docError;
+
+              try {
+                await supabase.functions.invoke("parse-document", {
+                  body: { file_path: filePath, document_id: (docData as any).id },
+                });
+              } catch (parseErr) {
+                console.error(`Parse failed for ${file.name}:`, parseErr);
+                await supabase.from("knowledge_documents").update({ status: "ready" } as any).eq("id", (docData as any).id);
+              }
+            } else {
+              let textContent = "";
+              if (isTextFile) {
+                try { textContent = await file.text(); } catch { /* ignore */ }
+              }
+              await createDocWithChunks(title, textContent, "file", { file_path: filePath, file_type: ext, collection_id: collId, collection_name: editTitle });
+            }
           } catch (err) {
             console.error(`Error uploading ${file.name}:`, err);
           }
