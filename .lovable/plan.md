@@ -1,77 +1,57 @@
 
 
-## Redesign dos Widgets Bitrix24 com UI Nativa
+## Corrigir tela branca e adicionar extracção de texto de PDFs no Training
 
-Substituir emojis e estilo generico por icones SVG inline e design system alinhado com o Bitrix24 UI Kit nos 3 ficheiros de placement (CRM Tab, IM Sidebar, IM Context Menu).
+### Problema identificado
 
-### Problema Atual
+A pagina `/training` aceita ficheiros PDF no input (`.pdf` esta no `accept`), mas o codigo **nunca extrai o texto** dos PDFs. Na linha 260, apenas ficheiros de texto simples (`txt, md, csv, json, xml`) sao processados. PDFs sao enviados ao storage mas ficam com 0 chunks e conteudo vazio.
 
-Os 3 widgets usam emojis como icones (e.g. `&#128736;`, `&#128203;`, `&#128172;`) e cores personalizadas (indigo `#6366f1`, roxo `#8b5cf6`) que nao seguem a identidade visual do Bitrix24.
+A tela branca pode ser causada por:
+- Um erro nao capturado durante o upload de PDFs grandes
+- O componente re-renderiza apos criar o documento e algo falha silenciosamente
 
-### Abordagem
+### Solucao
 
-Como os widgets correm em iframes isolados (nao herdam CSS do portal Bitrix24) e a biblioteca `@bitrix24/b24icons` e para Vue/Nuxt (nao aplicavel a HTML puro), a solucao e:
+**1. Criar edge function `parse-document` para extrair texto de PDFs**
 
-1. **Usar SVG inline** que replicam os icones do `ui-icon-set` do Bitrix24 (mesmo estilo de outline, 24px, strokeWidth 1.5)
-2. **Adoptar a paleta Bitrix24**: azul primario `#2fc6f6` -> `#2283d8`, gradiente header `linear-gradient(135deg, #2283d8, #7b5ea7)`, e cores neutras do design system
-3. **Tipografia**: usar a fonte do sistema Bitrix24 (`"Helvetica Neue", Helvetica, Arial, sans-serif`)
-4. **Botoes e Cards**: border-radius 6-8px, sombras subtis, hover states consistentes com b24ui
+Novo ficheiro: `supabase/functions/parse-document/index.ts`
 
-### Ficheiros a Editar
+- Recebe `file_path` (caminho no bucket `knowledge-files`) e `document_id`
+- Faz download do ficheiro do storage
+- Usa uma biblioteca Deno para extrair texto do PDF (ex: `pdf-parse` via esm.sh ou extracção basica de text streams)
+- Actualiza o documento com o conteudo extraido e cria os chunks
+- Retorna o texto extraido
 
-**1. `supabase/functions/bitrix24-im-sidebar/index.ts`**
-- Substituir header indigo por gradiente Bitrix24 (`#2283d8` -> `#7b5ea7`)
-- Substituir emojis por SVGs inline: robot (header), chat-bubble (contexto), clipboard (resumir), target (procedimento), message (sugerir), smile (sentimento), lightbulb (empty state), send (botao enviar)
-- Actualizar cores dos botoes de sugestao para azul Bitrix24
-- Spinner com cor Bitrix24
+**2. Modificar `src/pages/Training.tsx`**
 
-**2. `supabase/functions/bitrix24-im-context-menu/index.ts`**
-- Substituir emojis por SVGs inline: search (header), clipboard (resumir), globe (traduzir), message-circle (sugerir), smile (sentimento), copy (copiar)
-- Hover e active states com azul Bitrix24 em vez de indigo
-- Spinner com cor Bitrix24
-- Copy button com estilo Bitrix24
+- Apos upload de ficheiros PDF/DOCX ao storage, chamar a edge function `parse-document` para extrair o texto
+- Adicionar try/catch mais robusto no loop de upload de ficheiros (linhas 248-274) para evitar crashes
+- Tratar o caso de ficheiros binarios que nao podem ser lidos com `file.text()`
+- Mostrar feedback visual durante a extracção (ex: status "A processar PDF...")
 
-**3. `supabase/functions/bitrix24-crm-tab/index.ts`**
-- Tabs: substituir emojis por SVGs inline (message-circle para Conversa, robot/ai para Consultar IA)
-- Header avatar: manter estilo mas com gradiente Bitrix24
-- Botoes de sugestao IA: SVGs inline (clipboard, list, lightbulb, drama-masks)
-- Botao "Devolver ao Bot": cor alinhada com Bitrix24
-- Botoes de iniciar conversa: manter cores de canal (verde WhatsApp, rosa Instagram)
-- Context banner da IA: cores Bitrix24
-- Substituir todos os emojis restantes nos templates de HTML
-
-### Iconografia SVG
-
-Definir um bloco de constantes SVG reutilizaveis no topo de cada funcao HTML:
+**3. Fluxo actualizado**
 
 ```text
-icone-robot:     path M12 2a2 2 0 012 2v1h3a2 2 0 012 2v...  (bot/AI)
-icone-message:   path M21 15a2 2 0 01-2 2H7l-4 4V5a2...     (conversa)
-icone-clipboard: path M9 5H7a2 2 0 00-2 2v12a2 2 0...        (resumir)
-icone-globe:     circle + paths                                (traduzir)
-icone-smile:     circle + paths                                (sentimento)
-icone-target:    circles concentricos                          (procedimento)
-icone-send:      path M22 2L11 13 M22 2l-7 20-4-9-9-4z       (enviar)
-icone-copy:      rects sobrepostos                             (copiar)
-icone-search:    circle + line                                 (pesquisa)
-icone-lightbulb: path bulb                                     (sugestao/empty)
+Upload PDF -> Storage -> Chamar parse-document -> Extrair texto -> Criar chunks -> Status "ready"
 ```
 
-Cada SVG tera `width="18" height="18"` (ou 20 para headers), `stroke="currentColor"`, `fill="none"`, `stroke-width="1.5"` -- alinhado com o estilo outline do b24icons.
+Para ficheiros de texto simples (txt, md, csv, json, xml), o fluxo actual mantem-se (leitura directa no browser).
 
-### Paleta de Cores
+### Detalhes tecnicos
 
-```text
-Primario:     #2283d8 (azul Bitrix24)
-Secundario:   #7b5ea7 (roxo)
-Acento:       #d4728b (rosa)
-Gradiente:    linear-gradient(135deg, #2283d8, #7b5ea7)
-Hover btn:    #1b6cb8
-Active state: #2283d8 com 10% opacity background
-Texto:        #333840 (primario), #959ca4 (secundario)
-Borders:      #dfe0e3
-Background:   #f5f7fa (fundo), #ffffff (cards)
-```
+**Edge function `parse-document`:**
+- Usa `pdf-parse` via `https://esm.sh/pdf-parse` para PDFs
+- Para DOCX, extrai XML interno e limpa tags
+- Fallback: se a extracção falhar, marca o documento como "ready" com 0 chunks mas sem crash
+- Endpoint: POST com `{ file_path, document_id }`
 
-Nenhuma nova dependencia. Nenhuma migracao de BD. Apenas alteracoes cosmeticas nos 3 ficheiros de edge functions.
+**Alteracoes no Training.tsx:**
+- Linha 259-263: Apos upload, verificar se o ficheiro e PDF/DOCX e chamar a edge function em vez de `file.text()`
+- Adicionar estado `processingFiles` para mostrar que a extracção esta em curso
+- Envolver todo o bloco de upload em try/catch para evitar tela branca
 
+### Ficheiros a criar/editar
+
+1. **Criar**: `supabase/functions/parse-document/index.ts` — edge function de extracção de texto
+2. **Editar**: `src/pages/Training.tsx` — integrar chamada a edge function para PDFs e melhorar tratamento de erros
+3. **Editar**: `supabase/config.toml` — NAO (configurado automaticamente)
