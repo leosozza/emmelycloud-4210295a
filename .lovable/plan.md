@@ -1,76 +1,40 @@
 
 
-## Robot Bitrix24 para Gerar Propostas Automaticamente
+## Corrigir Contraste de Cores no /bitrix24 (Dark Mode)
 
-Criar um novo robot BizProc (`emmely_generate_proposal`) que recebe um ID de negocio/lead do Bitrix24, busca os dados do CRM, gera a proposta com PDF e devolve o link publico e URL do PDF ao Bitrix24.
+O problema principal e que no modo escuro, varios elementos (botoes, selects, badges, texto de tabelas) tem cores de texto muito proximas da cor de fundo, tornando-os invisiveis ou dificeis de ler.
 
-### Fluxo
+### Problemas Identificados
 
-```text
-Bitrix24 BizProc -> robot-handler (emmely_generate_proposal)
-  -> Busca dados do Lead/Deal no Bitrix24 (nome, email, telefone, documento, morada)
-  -> Busca servico associado (pelo titulo do deal ou campo personalizado)
-  -> Cria proposta na tabela proposals (com accept_token)
-  -> Chama proposal-pdf para gerar o HTML/PDF
-  -> Devolve ao Bitrix24: proposal_url, pdf_url, proposal_id
-  -> Bitrix24 grava o link no campo do negocio automaticamente
-```
+1. **Botoes `outline` e `ghost`**: O texto usa `foreground` que no dark mode pode ficar com baixo contraste sobre `bg-card`
+2. **Select triggers** (Lead/Leads no Mapeamento): Texto quase invisivel no fundo escuro
+3. **Badges `variant="outline"`**: Borda e texto com contraste insuficiente
+4. **Texto `text-muted-foreground`**: No dark mode, o valor `220 9% 55%` e demasiado escuro sobre fundos escuros
+5. **Tabela do Mapeamento**: Celulas com `font-mono text-xs` dificeis de ler
+6. **Sidebar do Chat IA**: Items da lista de conversas com texto que se confunde com o fundo
 
-### 1. Novo Robot no Handler
+### Solucao
 
-Adicionar case `emmely_generate_proposal` em `supabase/functions/bitrix24-robot-handler/index.ts` com propriedades de entrada:
+Ajustar as variaveis CSS do dark mode em `src/index.css` para melhorar o contraste global, sem alterar o light mode:
 
-- `deal_id` ou `lead_id` -- ID da entidade no Bitrix24
-- `entity_type` -- "deal" ou "lead" (default: "deal")
-- `title` -- titulo da proposta (opcional, usa titulo do deal se vazio)
-- `service_name` -- nome do servico para puxar valor/descricao (opcional)
-- `payment_type` -- fixo/exito/hibrido/parcelado (default: fixo)
-- `installments` -- numero de parcelas (default: 1)
-- `value` -- valor manual (opcional, senao usa o do servico ou OPPORTUNITY do deal)
-- `description` -- descricao manual (opcional)
-- `conditions` -- condicoes (opcional)
-- `valid_days` -- dias de validade (default: 30)
+- `--muted-foreground`: Aumentar luminosidade de 55% para 65% (texto secundario mais legivel)
+- `--border` e `--input`: Aumentar luminosidade de 18% para 22% (bordas mais visiveis nos selects/inputs)
+- `--muted`: Aumentar de 14% para 17% (fundos de hover/muted mais distinguiveis)
+- `--secondary`: Aumentar de 16% para 20% (botoes secundarios mais visiveis)
 
-Valores de retorno ao Bitrix24:
-- `proposal_url` -- link publico de aceite
-- `pdf_url` -- URL do ficheiro HTML/PDF
-- `proposal_id` -- ID interno da proposta
-- `status` -- "created" ou "error"
-- `error` -- mensagem de erro
+Adicionalmente, ajustes pontuais em `src/pages/Bitrix24App.tsx`:
 
-### 2. Logica do Handler `handleGenerateProposal`
-
-1. Buscar integracao Bitrix24 pelo `member_id`
-2. Chamar API Bitrix24 (`crm.deal.get` ou `crm.lead.get`) para obter dados do cliente:
-   - TITLE, OPPORTUNITY, CURRENCY_ID
-   - CONTACT_ID -> `crm.contact.get` para nome, email, telefone, morada
-3. Se `service_name` fornecido, buscar na tabela `services` para puxar valor e descricao
-4. Criar caso (case) se nao existir, para vincular a proposta
-5. Inserir na tabela `proposals` com todos os dados e `accept_token` gerado
-6. Chamar a edge function `proposal-pdf` para gerar o ficheiro
-7. Devolver `proposal_url`, `pdf_url` e `proposal_id` via `bizproc.event.send`
-
-### 3. Registo do Robot no Install
-
-Adicionar o robot `emmely_generate_proposal` no fluxo de instalacao (`bitrix24-install`) com os campos de propriedades adequados para que apareca no BizProc do Bitrix24.
+- Adicionar classes explicitas de cor nos botoes do toolbar do Mapeamento
+- Usar `text-foreground` em vez de herdar cores implicitas nos Select triggers
+- Melhorar contraste dos badges de tipo na tabela de mapeamento
+- Adicionar `border` explicito nos cards da sidebar de conversas
 
 ### Ficheiros a alterar
 
-- `supabase/functions/bitrix24-robot-handler/index.ts` -- adicionar handler `handleGenerateProposal` e case no switch
-- `supabase/functions/bitrix24-install/index.ts` -- registar o novo robot com propriedades
+- `src/index.css` -- ajustar variaveis dark mode para melhor contraste
+- `src/pages/Bitrix24App.tsx` -- ajustes pontuais de classes de cor em elementos especificos
+- `src/components/bitrix24/FieldMappingManager.tsx` -- melhorar contraste na tabela de mapeamento
 
-### Sem alteracoes na base de dados
+### Impacto
 
-A tabela `proposals` ja tem todos os campos necessarios (accept_token, client_name, client_email, etc.). Nao e necessaria migracao.
-
-### Detalhes Tecnicos
-
-O handler faz chamadas encadeadas ao Bitrix24:
-1. `crm.deal.get` com `ID` para obter dados do negocio
-2. `crm.contact.get` com `ID` do contacto associado para nome/email/telefone
-3. Insere proposta localmente
-4. Chama `proposal-pdf` internamente via fetch
-5. Retorna resultados ao BizProc
-
-O link publico sera: `https://emmelycloud.lovable.app/proposta/{accept_token}`
-
+As alteracoes nas variaveis CSS afetam toda a app em dark mode (melhoria global), enquanto os ajustes pontuais corrigem problemas especificos do iframe Bitrix24.
