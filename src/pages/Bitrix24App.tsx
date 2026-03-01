@@ -29,6 +29,7 @@ import {
   Settings, CreditCard, Zap, CheckCircle, XCircle, Activity,
   Power, ExternalLink, AlertCircle, MessageSquare, BarChart3,
   DollarSign, Clock, AlertTriangle, TrendingUp, Link,
+  ArrowDownLeft, ArrowUpRight,
 } from "lucide-react";
 import {
   BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis,
@@ -196,34 +197,34 @@ const Bitrix24App = () => {
   }
 
   return (
-    <div className={cn("min-h-screen bg-background flex", isDark && "dark")}>
-      {/* ── Sidebar ── */}
-      <aside className="w-56 border-r bg-card flex flex-col shrink-0">
-        {/* Logo */}
-        <div className="p-4 border-b">
+    <div className={cn("min-h-screen flex", isDark && "dark")} style={{ background: isDark ? '#111827' : '#f5f7fa' }}>
+      {/* ── Sidebar b24ui ── */}
+      <aside className="w-56 flex flex-col shrink-0 border-r" style={{ background: isDark ? '#1f2937' : '#ffffff', borderColor: isDark ? 'hsl(222, 30%, 22%)' : '#dfe0e3' }}>
+        {/* Logo - Gradient Header */}
+        <div className="b24-sidebar-header p-4">
           <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-lg flex items-center justify-center font-extrabold text-primary-foreground text-sm bg-primary">
+            <div className="w-8 h-8 rounded-lg flex items-center justify-center font-extrabold text-sm" style={{ background: 'rgba(255,255,255,0.15)', color: 'white' }}>
               E
             </div>
             <div>
-              <p className="font-bold text-sm leading-tight">Emmely Cloud</p>
-              <p className="text-[10px] text-muted-foreground">for Bitrix24</p>
+              <p className="font-bold text-sm leading-tight text-white">Emmely Cloud</p>
+              <p className="text-[10px]" style={{ color: 'rgba(255,255,255,0.6)' }}>for Bitrix24</p>
             </div>
           </div>
           {domain && (
-            <Badge variant="secondary" className="mt-2.5 text-[10px] w-full justify-center truncate">
+            <div className="mt-2.5 text-[10px] text-center truncate px-2 py-1 rounded-md" style={{ background: 'rgba(255,255,255,0.12)', color: 'rgba(255,255,255,0.8)' }}>
               {domain}
-            </Badge>
+            </div>
           )}
         </div>
 
         {/* Nav */}
-        <nav className="flex-1 p-2 space-y-0.5">
+        <nav className="flex-1 p-2 space-y-0.5 overflow-y-auto">
           {navCategories.map((cat) => (
             <Collapsible key={cat.label} defaultOpen className="mb-1">
-              <CollapsibleTrigger className="flex w-full items-center justify-between px-3 py-2 text-[11px] uppercase tracking-widest font-semibold text-muted-foreground hover:text-foreground transition-colors">
+              <CollapsibleTrigger className="flex w-full items-center justify-between px-3 py-2 text-[10px] uppercase tracking-[0.1em] font-semibold transition-colors" style={{ color: isDark ? '#9ca3af' : '#525c69' }}>
                 {cat.label}
-                <ChevronDown className="h-3.5 w-3.5 transition-transform duration-200 [&[data-state=open]]:rotate-180" />
+                <ChevronDown className="h-3 w-3 transition-transform duration-200 [&[data-state=open]]:rotate-180" />
               </CollapsibleTrigger>
               <CollapsibleContent className="space-y-0.5">
                 {cat.items.map((item) => (
@@ -231,11 +232,15 @@ const Bitrix24App = () => {
                     key={item.id}
                     onClick={() => setView(item.id as AppView)}
                     className={cn(
-                      "w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors text-left",
-                      view === item.id
-                        ? "bg-primary/10 text-primary font-semibold"
-                        : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                      "w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-[13px] transition-all text-left",
+                      view === item.id && "font-semibold"
                     )}
+                    style={view === item.id ? {
+                      background: isDark ? 'rgba(34,131,216,0.15)' : 'rgba(34,131,216,0.08)',
+                      color: '#2283d8',
+                    } : {
+                      color: isDark ? '#d1d5db' : '#525c69',
+                    }}
                   >
                     <item.icon className="h-4 w-4 shrink-0" />
                     {item.label}
@@ -247,17 +252,17 @@ const Bitrix24App = () => {
         </nav>
 
         {/* Footer */}
-        <div className="p-3 border-t space-y-2">
+        <div className="p-3 space-y-2" style={{ borderTop: `1px solid ${isDark ? 'hsl(222, 30%, 22%)' : '#dfe0e3'}` }}>
           <div className="flex items-center gap-2">
-            <div className={cn("w-2 h-2 rounded-full shrink-0", integration ? "bg-green-500" : "bg-red-500")} />
-            <span className="text-xs text-muted-foreground truncate">
+            <div className={cn("w-2.5 h-2.5 rounded-full shrink-0", integration ? "bg-[#589731] b24-pulse" : "bg-[#df532d]")} />
+            <span className="text-xs" style={{ color: isDark ? '#9ca3af' : '#525c69' }}>
               {integration ? "Conectado" : "Desconectado"}
             </span>
           </div>
           {botId && (
             <div className="flex items-center gap-2">
-              <Bot className="h-3 w-3 text-muted-foreground shrink-0" />
-              <span className="text-[10px] text-muted-foreground truncate">Bot ID: {botId}</span>
+              <Bot className="h-3 w-3 shrink-0" style={{ color: isDark ? '#9ca3af' : '#525c69' }} />
+              <span className="text-[10px]" style={{ color: isDark ? '#9ca3af' : '#525c69' }}>Bot ID: {botId}</span>
             </div>
           )}
         </div>
@@ -398,125 +403,112 @@ function DashboardView({ integration, botId, domain, loading, onResync, onRefres
 
   return (
     <div className="p-6 space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold">Dashboard</h1>
-        <p className="text-muted-foreground text-sm">Portal: {domain || integration?.domain || "—"}</p>
+      {/* b24ui View Header */}
+      <div className="b24-view-header">
+        <h1 className="text-xl font-bold text-white">Dashboard</h1>
+        <p className="text-white/60 text-sm mt-0.5">Portal: {domain || integration?.domain || "—"}</p>
       </div>
 
-      {/* Status Cards */}
+      {/* Status Cards - b24ui style with left border */}
       <div className="grid grid-cols-2 gap-4">
-        <Card>
+        <Card className={cn("b24-card", integration ? "b24-status-success" : "b24-status-danger")}>
           <CardContent className="pt-5">
             <div className="flex items-center gap-3">
-              {integration ? (
-                <CheckCircle className="h-8 w-8 text-green-500" />
-              ) : (
-                <XCircle className="h-8 w-8 text-red-500" />
-              )}
+              <div className={cn("w-10 h-10 rounded-full flex items-center justify-center", integration ? "bg-[#589731]/10" : "bg-[#df532d]/10")}>
+                {integration ? <CheckCircle className="h-5 w-5 text-[#589731]" /> : <XCircle className="h-5 w-5 text-[#df532d]" />}
+              </div>
               <div>
-                <p className="text-sm font-semibold">Integração</p>
-                <p className="text-xs text-muted-foreground">{integration ? "Conectado" : "Desconectado"}</p>
+                <p className="text-sm font-semibold" style={{ color: '#333840' }}>Integração</p>
+                <p className="text-xs" style={{ color: '#525c69' }}>{integration ? "Conectado" : "Desconectado"}</p>
               </div>
             </div>
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className={cn("b24-card", botId ? "b24-status-info" : "b24-status-warning")}>
           <CardContent className="pt-5">
             <div className="flex items-center gap-3">
-              {botId ? (
-                <Bot className="h-8 w-8 text-primary" />
-              ) : (
-                <Bot className="h-8 w-8 text-muted-foreground" />
-              )}
+              <div className={cn("w-10 h-10 rounded-full flex items-center justify-center", botId ? "bg-[#2283d8]/10" : "bg-[#c49c00]/10")}>
+                <Bot className={cn("h-5 w-5", botId ? "text-[#2283d8]" : "text-[#c49c00]")} />
+              </div>
               <div>
-                <p className="text-sm font-semibold">Bot IA</p>
-                <p className="text-xs text-muted-foreground">{botId ? `ID: ${botId}` : "Não registado"}</p>
+                <p className="text-sm font-semibold" style={{ color: '#333840' }}>Bot IA</p>
+                <p className="text-xs" style={{ color: '#525c69' }}>{botId ? `ID: ${botId}` : "Não registado"}</p>
               </div>
             </div>
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className={cn("b24-card", integration?.connector_registered ? "b24-status-success" : "b24-status-warning")}>
           <CardContent className="pt-5">
             <div className="flex items-center gap-3">
-              {integration?.connector_registered ? (
-                <Plug className="h-8 w-8 text-green-500" />
-              ) : (
-                <Plug className="h-8 w-8 text-muted-foreground" />
-              )}
+              <div className={cn("w-10 h-10 rounded-full flex items-center justify-center", integration?.connector_registered ? "bg-[#589731]/10" : "bg-[#c49c00]/10")}>
+                <Plug className={cn("h-5 w-5", integration?.connector_registered ? "text-[#589731]" : "text-[#c49c00]")} />
+              </div>
               <div>
-                <p className="text-sm font-semibold">Conector</p>
-                <p className="text-xs text-muted-foreground">{integration?.connector_registered ? "Registado" : "Não registado"}</p>
+                <p className="text-sm font-semibold" style={{ color: '#333840' }}>Conector</p>
+                <p className="text-xs" style={{ color: '#525c69' }}>{integration?.connector_registered ? "Registado" : "Não registado"}</p>
               </div>
             </div>
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="b24-card b24-status-info">
           <CardContent className="pt-5">
             <div className="flex items-center gap-3">
-              <Activity className="h-8 w-8 text-primary" />
+              <div className="w-10 h-10 rounded-full flex items-center justify-center bg-[#2283d8]/10">
+                <Activity className="h-5 w-5 text-[#2283d8]" />
+              </div>
               <div>
-                <p className="text-sm font-semibold">Últimos eventos</p>
-                <p className="text-xs text-muted-foreground">{logs.length} registos</p>
+                <p className="text-sm font-semibold" style={{ color: '#333840' }}>Últimos eventos</p>
+                <p className="text-xs" style={{ color: '#525c69' }}>{logs.length} registos</p>
               </div>
             </div>
           </CardContent>
         </Card>
       </div>
 
-      {/* Início Rápido */}
-      <Card>
+      {/* Início Rápido - b24ui stepper */}
+      <Card className="b24-card">
         <CardHeader>
-          <CardTitle className="text-base">Início Rápido</CardTitle>
+          <CardTitle className="text-sm font-semibold" style={{ color: '#333840' }}>Início Rápido</CardTitle>
           <CardDescription>Configure o bot para responder automaticamente</CardDescription>
         </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="space-y-1">
-            <div className="flex items-center gap-3 p-3 rounded-lg bg-muted/50">
-              <div className={cn("w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold", integration ? "bg-green-500 text-white" : "bg-muted-foreground/30 text-muted-foreground")}>1</div>
-              <div>
-                <p className="text-sm font-medium">Instalar o App</p>
-                <p className="text-xs text-muted-foreground">App instalado no Bitrix24 {integration ? "✅" : "⏳"}</p>
+        <CardContent>
+          <div className="b24-stepper">
+            {[
+              { done: !!integration, label: "Instalar o App", desc: `App instalado no Bitrix24${integration ? "" : " — pendente"}` },
+              { done: !!botId, label: "Registar Bot IA", desc: botId ? `Bot Emmely AI registado (ID: ${botId})` : "Bot Emmely AI não encontrado" },
+              { done: false, label: "Configurar Persona", desc: "Acesse a aba Personas e selecione um agente IA" },
+              { done: false, label: "Vinculação ao Contact Center", desc: "No Bitrix24 → Contact Center → Emmely Messages" },
+            ].map((step, i) => (
+              <div key={i} className="b24-step">
+                <div className={cn("b24-step-dot", step.done ? "done" : "pending")}>
+                  {step.done ? <CheckCircle className="h-3 w-3" /> : (i + 1)}
+                </div>
+                <p className="text-sm font-medium" style={{ color: '#333840' }}>{step.label}</p>
+                <p className="text-xs mt-0.5 flex items-center gap-1" style={{ color: '#525c69' }}>
+                  {step.done && <CheckCircle className="h-3 w-3 text-[#589731]" />}
+                  {!step.done && i < 2 && <AlertCircle className="h-3 w-3 text-[#c49c00]" />}
+                  {step.desc}
+                </p>
               </div>
-            </div>
-            <div className="flex items-center gap-3 p-3 rounded-lg bg-muted/50">
-              <div className={cn("w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold", botId ? "bg-green-500 text-white" : "bg-muted-foreground/30 text-muted-foreground")}>2</div>
-              <div>
-                <p className="text-sm font-medium">Registar Bot IA</p>
-                <p className="text-xs text-muted-foreground">Bot Emmely AI {botId ? `registado (ID: ${botId}) ✅` : "não encontrado ❌"}</p>
-              </div>
-            </div>
-            <div className="flex items-center gap-3 p-3 rounded-lg bg-muted/50">
-              <div className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold bg-muted-foreground/30 text-muted-foreground">3</div>
-              <div>
-                <p className="text-sm font-medium">Configurar Persona</p>
-                <p className="text-xs text-muted-foreground">Acesse a aba Personas e selecione um agente IA</p>
-              </div>
-            </div>
-            <div className="flex items-center gap-3 p-3 rounded-lg bg-muted/50">
-              <div className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold bg-muted-foreground/30 text-muted-foreground">4</div>
-              <div>
-                <p className="text-sm font-medium">Vinculação ao Contact Center</p>
-                <p className="text-xs text-muted-foreground">No Bitrix24 → Contact Center → Emmely Messages</p>
-              </div>
-            </div>
+            ))}
           </div>
         </CardContent>
       </Card>
 
       {/* Agente do Canal Aberto */}
-      <Card>
+      <Card className="b24-card">
         <CardHeader>
-          <CardTitle className="text-base flex items-center gap-2">
-            <Bot className="h-4 w-4" /> Agente do Canal Aberto
+          <CardTitle className="text-sm font-semibold flex items-center gap-2" style={{ color: '#333840' }}>
+            <Bot className="h-4 w-4 text-[#2283d8]" /> Agente do Canal Aberto
           </CardTitle>
           <CardDescription>Selecione qual agente IA responde automaticamente no Open Channel</CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
           <Select value={selectedAgent} onValueChange={setSelectedAgent}>
-            <SelectTrigger>
+            <SelectTrigger className="rounded-md">
               <SelectValue placeholder="Selecionar agente..." />
             </SelectTrigger>
             <SelectContent>
@@ -530,7 +522,7 @@ function DashboardView({ integration, botId, domain, loading, onResync, onRefres
           <Button
             onClick={handleSaveAgent}
             disabled={savingAgent || selectedAgent === (integration?.bitrix_agent_id || "")}
-            className="w-full"
+            className="w-full rounded-md bg-[#2283d8] hover:bg-[#1b6cb8] text-white"
             size="sm"
           >
             {savingAgent ? <><Loader2 className="h-3.5 w-3.5 mr-2 animate-spin" />Salvando...</> : <><Save className="h-3.5 w-3.5 mr-2" />Salvar Agente</>}
@@ -538,7 +530,7 @@ function DashboardView({ integration, botId, domain, loading, onResync, onRefres
         </CardContent>
       </Card>
 
-      {/* Bot + Events buttons */}
+      {/* Bot + Events buttons - b24ui style */}
       <div className="space-y-2">
         <Button
           onClick={async () => {
@@ -547,7 +539,7 @@ function DashboardView({ integration, botId, domain, loading, onResync, onRefres
             try {
               const auth = (window as any).BX24?.getAuth?.();
               if (!auth && !integration?.member_id) {
-                setReregisterBotResult("❌ Sem sessão BX24 disponível. Abra o app dentro do Bitrix24.");
+                setReregisterBotResult("Sem sessão BX24 disponível. Abra o app dentro do Bitrix24.");
                 return;
               }
               const res = await fetch(`${SUPABASE_URL}/functions/v1/bitrix24-install`, {
@@ -573,60 +565,68 @@ function DashboardView({ integration, botId, domain, loading, onResync, onRefres
               });
               const data = await res.json();
               if (data.success || res.ok) {
-                setReregisterBotResult("✅ Bot re-registado com EVENT_JOIN_CHAT! Verifique o Contact Center → Chatbot → Emmely AI.");
+                setReregisterBotResult("Bot re-registado com EVENT_JOIN_CHAT! Verifique o Contact Center → Chatbot → Emmely AI.");
                 if (integration?.member_id) {
-                  // reload integration to get new bot_id
                   setTimeout(() => onRefresh(), 1500);
                 }
               } else {
-                setReregisterBotResult(`❌ Erro: ${data.error || res.status}`);
+                setReregisterBotResult(`Erro: ${data.error || res.status}`);
               }
             } catch (e) {
-              setReregisterBotResult(`❌ Erro de rede: ${e}`);
+              setReregisterBotResult(`Erro de rede: ${e}`);
             } finally {
               setReregisteringBot(false);
             }
           }}
           disabled={reregisteringBot}
-          className="w-full"
-          variant="default"
+          className="w-full rounded-md bg-[#2283d8] hover:bg-[#1b6cb8] text-white"
         >
           {reregisteringBot
             ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Re-registando Bot...</>
             : <><Bot className="h-4 w-4 mr-2" />Re-registar Bot (EVENT_JOIN_CHAT)</>}
         </Button>
         {reregisterBotResult && (
-          <p className="text-xs text-center text-muted-foreground">{reregisterBotResult}</p>
+          <div className={cn("text-xs text-center px-3 py-2 rounded-lg flex items-center justify-center gap-1.5", reregisterBotResult.includes("Erro") ? "bg-[#df532d]/10 text-[#df532d]" : "bg-[#589731]/10 text-[#589731]")}>
+            {reregisterBotResult.includes("Erro") ? <XCircle className="h-3 w-3" /> : <CheckCircle className="h-3 w-3" />}
+            {reregisterBotResult}
+          </div>
         )}
 
-        <Button onClick={handleRebindEvents} disabled={rebinding} className="w-full" variant="outline">
+        <Button onClick={handleRebindEvents} disabled={rebinding} className="w-full rounded-md" variant="outline">
           {rebinding ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Registando webhooks...</> : <><Zap className="h-4 w-4 mr-2" />Re-registar Webhooks de Eventos</>}
         </Button>
         {rebindResult && (
-          <p className="text-xs text-center text-muted-foreground">{rebindResult}</p>
+          <div className={cn("text-xs text-center px-3 py-2 rounded-lg flex items-center justify-center gap-1.5", rebindResult.includes("Erro") ? "bg-[#df532d]/10 text-[#df532d]" : "bg-[#589731]/10 text-[#589731]")}>
+            {rebindResult.includes("Erro") ? <XCircle className="h-3 w-3" /> : <CheckCircle className="h-3 w-3" />}
+            {rebindResult}
+          </div>
         )}
-        <Button onClick={onResync} disabled={loading} className="w-full" variant="outline">
+        <Button onClick={onResync} disabled={loading} className="w-full rounded-md" variant="outline">
           {loading ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Sincronizando...</> : <><RefreshCw className="h-4 w-4 mr-2" />Re-sincronizar Conector</>}
         </Button>
       </div>
 
-      {/* Logs */}
+      {/* Logs - b24ui with icons instead of emojis */}
       {logs.length > 0 && (
-        <Card>
+        <Card className="b24-card">
           <CardHeader>
-            <CardTitle className="text-base">Últimos Eventos</CardTitle>
+            <CardTitle className="text-sm font-semibold" style={{ color: '#333840' }}>Últimos Eventos</CardTitle>
           </CardHeader>
           <CardContent>
             <ScrollArea className="h-48">
               <div className="space-y-1">
                 {logs.map((log, i) => (
-                  <div key={i} className="flex items-center justify-between py-2 border-b border-border/50 last:border-0 text-xs">
+                  <div key={i} className="flex items-center justify-between py-2 last:border-0 text-xs" style={{ borderBottom: '1px solid #dfe0e3' }}>
                     <div className="flex items-center gap-2">
-                      <span>{log.direction === "inbound" ? "📥" : "📤"}</span>
-                      <span className="font-medium">{log.event_type}</span>
-                      {log.error && <span className="text-destructive text-[10px]">⚠️</span>}
+                      {log.direction === "inbound" ? (
+                        <ArrowDownLeft className="h-3.5 w-3.5 text-[#2283d8]" />
+                      ) : (
+                        <ArrowUpRight className="h-3.5 w-3.5 text-[#7b5ea7]" />
+                      )}
+                      <span className="font-medium" style={{ color: '#333840' }}>{log.event_type}</span>
+                      {log.error && <AlertCircle className="h-3 w-3 text-[#df532d]" />}
                     </div>
-                    <span className="text-muted-foreground">{new Date(log.created_at).toLocaleTimeString()}</span>
+                    <span style={{ color: '#525c69' }}>{new Date(log.created_at).toLocaleTimeString()}</span>
                   </div>
                 ))}
               </div>
@@ -635,30 +635,29 @@ function DashboardView({ integration, botId, domain, loading, onResync, onRefres
         </Card>
       )}
 
-      {/* ── Devolver ao Bot ── */}
-      <Card className="border-primary/30">
+      {/* ── Devolver ao Bot - b24ui accent card ── */}
+      <Card className="b24-card" style={{ borderLeft: '4px solid #7b5ea7' }}>
         <CardHeader>
-          <CardTitle className="text-base flex items-center gap-2">
-            <Bot className="h-4 w-4 text-primary" /> Devolver ao Bot
+          <CardTitle className="text-sm font-semibold flex items-center gap-2" style={{ color: '#333840' }}>
+            <Bot className="h-4 w-4 text-[#7b5ea7]" /> Devolver ao Bot
           </CardTitle>
           <CardDescription>Devolva manualmente uma conversa ao controlo do bot IA</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          {/* Open conversations list */}
           {openConversations.length > 0 && (
             <div className="space-y-2">
-              <p className="text-xs font-medium text-muted-foreground">Conversas abertas ({openConversations.length})</p>
+              <p className="text-xs font-medium" style={{ color: '#525c69' }}>Conversas abertas ({openConversations.length})</p>
               <div className="space-y-1.5 max-h-48 overflow-y-auto">
                 {openConversations.map((conv) => (
-                  <div key={conv.id} className="flex items-center justify-between gap-2 p-2.5 rounded-lg bg-muted/50 hover:bg-muted transition-colors">
+                  <div key={conv.id} className="flex items-center justify-between gap-2 p-2.5 rounded-lg transition-colors" style={{ background: 'rgba(0,0,0,0.02)' }}>
                     <div className="flex items-center gap-2 flex-1 min-w-0">
                       <div className={cn(
-                        "w-2 h-2 rounded-full shrink-0",
-                        conv.attendance_mode === "bot" ? "bg-green-500" : "bg-yellow-500"
+                        "w-2.5 h-2.5 rounded-full shrink-0",
+                        conv.attendance_mode === "bot" ? "bg-[#589731] b24-pulse" : "bg-[#c49c00]"
                       )} />
                       <div className="flex-1 min-w-0">
-                        <p className="text-xs font-medium truncate">{conv.contact_name}</p>
-                        <p className="text-[10px] text-muted-foreground">
+                        <p className="text-xs font-medium truncate" style={{ color: '#333840' }}>{conv.contact_name}</p>
+                        <p className="text-[10px]" style={{ color: '#525c69' }}>
                           {conv.channel} • {conv.attendance_mode === "bot" ? "Bot ativo" : "Humano/Aguardando"}
                         </p>
                       </div>
@@ -666,11 +665,11 @@ function DashboardView({ integration, botId, domain, loading, onResync, onRefres
                     <Button
                       size="sm"
                       variant="outline"
-                      className="h-7 text-xs shrink-0"
+                      className="h-7 text-xs shrink-0 rounded-md"
                       disabled={returningToBot || conv.attendance_mode === "bot"}
                       onClick={() => handleReturnToBot(conv.id)}
                     >
-                      {conv.attendance_mode === "bot" ? "✅ Bot" : <><Bot className="h-3 w-3 mr-1" />Devolver</>}
+                      {conv.attendance_mode === "bot" ? <><CheckCircle className="h-3 w-3 mr-1 text-[#589731]" />Bot</> : <><Bot className="h-3 w-3 mr-1" />Devolver</>}
                     </Button>
                   </div>
                 ))}
@@ -678,19 +677,18 @@ function DashboardView({ integration, botId, domain, loading, onResync, onRefres
             </div>
           )}
 
-          {/* Manual ID input */}
           <div className="space-y-2">
-            <p className="text-xs font-medium text-muted-foreground">Ou inserir ID manualmente</p>
+            <p className="text-xs font-medium" style={{ color: '#525c69' }}>Ou inserir ID manualmente</p>
             <div className="flex gap-2">
               <Input
                 value={returnToBotDialogId}
                 onChange={(e) => setReturnToBotDialogId(e.target.value)}
                 placeholder="ID da conversa..."
-                className="text-xs h-9 flex-1"
+                className="text-xs h-9 flex-1 rounded-md"
               />
               <Button
                 size="sm"
-                className="h-9 shrink-0"
+                className="h-9 shrink-0 rounded-md bg-[#2283d8] hover:bg-[#1b6cb8] text-white"
                 onClick={() => handleReturnToBot()}
                 disabled={returningToBot || !returnToBotDialogId.trim()}
               >
@@ -699,7 +697,10 @@ function DashboardView({ integration, botId, domain, loading, onResync, onRefres
             </div>
           </div>
           {returnToBotResult && (
-            <p className="text-xs text-center text-muted-foreground">{returnToBotResult}</p>
+            <div className={cn("text-xs text-center px-3 py-2 rounded-lg flex items-center justify-center gap-1.5", returnToBotResult.includes("Erro") ? "bg-[#df532d]/10 text-[#df532d]" : "bg-[#589731]/10 text-[#589731]")}>
+              {returnToBotResult.includes("Erro") ? <XCircle className="h-3 w-3" /> : <CheckCircle className="h-3 w-3" />}
+              {returnToBotResult}
+            </div>
           )}
         </CardContent>
       </Card>
@@ -814,12 +815,12 @@ function AgentesView({ botId, integrationId }: { botId: string | null; integrati
 
   return (
     <div className="p-6 space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="b24-view-header flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold">Personas</h1>
-          <p className="text-muted-foreground text-sm">Configure a personalidade, modelo de IA, treinamento e fluxos</p>
+          <h1 className="text-xl font-bold text-white">Personas</h1>
+          <p className="text-white/60 text-sm mt-0.5">Configure a personalidade, modelo de IA, treinamento e fluxos</p>
         </div>
-        <Button onClick={openCreate}>
+        <Button onClick={openCreate} className="rounded-md bg-white/15 hover:bg-white/25 text-white border-0">
           <Plus className="h-4 w-4 mr-2" /> Nova Persona
         </Button>
       </div>
@@ -837,18 +838,18 @@ function AgentesView({ botId, integrationId }: { botId: string | null; integrati
       ) : (
         <div className="grid gap-4">
           {agents.map((agent) => (
-            <Card key={agent.id} className={cn("transition-all", agent.is_default && "border-primary/50 shadow-sm")}>
+            <Card key={agent.id} className={cn("b24-card transition-all", agent.is_default && "b24-status-info")}>
               <CardContent className="pt-5">
                 <div className="flex items-start justify-between gap-4">
                   <div className="flex items-start gap-3 flex-1 min-w-0">
-                    <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
-                      <Bot className="h-5 w-5 text-primary" />
+                    <div className="w-10 h-10 rounded-full flex items-center justify-center shrink-0 bg-bitrix-gradient">
+                      <Bot className="h-5 w-5 text-white" />
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
                         <p className="font-semibold text-base">{agent.name}</p>
                         {agent.is_default && botId && (
-                          <Badge className="text-[10px] bg-green-500/10 text-green-700 border-green-200 dark:text-green-400 dark:border-green-800">
+                          <Badge className="text-[10px] bg-[#589731]/10 text-[#589731] border-[#589731]/20">
                             Bot Ativo
                           </Badge>
                         )}
@@ -959,14 +960,12 @@ function TrainingView() {
 
   return (
     <div className="p-6 space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold">Treinamento do Bot</h1>
-          <p className="text-muted-foreground text-sm">Adicione conhecimento para o seu bot</p>
-        </div>
+      <div className="b24-view-header">
+        <h1 className="text-xl font-bold text-white">Treinamento do Bot</h1>
+        <p className="text-white/60 text-sm mt-0.5">Adicione conhecimento para o seu bot</p>
       </div>
 
-      <Card>
+      <Card className="b24-card">
         <CardHeader>
           <CardTitle className="text-base flex items-center gap-2">
             <FileText className="h-4 w-4" /> Novo Documento
@@ -1222,19 +1221,19 @@ function FlowsView() {
 
   return (
     <div className="p-6 space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="b24-view-header flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold">Fluxos de Automação</h1>
-          <p className="text-muted-foreground text-sm">Configure automações integradas ao Bitrix24</p>
+          <h1 className="text-xl font-bold text-white">Fluxos de Automação</h1>
+          <p className="text-white/60 text-sm mt-0.5">Configure automações integradas ao Bitrix24</p>
         </div>
-        <Button onClick={() => setShowCreateForm(!showCreateForm)} variant={showCreateForm ? "secondary" : "default"}>
+        <Button onClick={() => setShowCreateForm(!showCreateForm)} variant={showCreateForm ? "secondary" : "default"} className={showCreateForm ? "" : "rounded-md bg-white/15 hover:bg-white/25 text-white border-0"}>
           {showCreateForm ? "✕ Cancelar" : <><Plus className="h-4 w-4 mr-2" />Novo Fluxo</>}
         </Button>
       </div>
 
       {/* Create Flow Form */}
       {showCreateForm && (
-        <Card>
+        <Card className="b24-card">
           <CardHeader>
             <CardTitle className="text-base flex items-center gap-2">
               <GitBranch className="h-4 w-4" /> Novo Fluxo
@@ -1331,7 +1330,7 @@ function FlowsView() {
       ) : (
         <div className="space-y-3">
           {flows.map((f) => (
-            <Card key={f.id} className="cursor-pointer hover:shadow-sm transition-shadow" onClick={() => openFlow(f)}>
+            <Card key={f.id} className="b24-card cursor-pointer" onClick={() => openFlow(f)}>
               <CardContent className="pt-4 pb-4">
                 <div className="flex items-center justify-between gap-3">
                   <div className="flex items-center gap-3 flex-1 min-w-0">
@@ -1354,10 +1353,10 @@ function FlowsView() {
                     <Button
                       variant={f.is_active ? "default" : "secondary"}
                       size="sm"
-                      className="h-7 text-xs"
+                      className={cn("h-7 text-xs rounded-md", f.is_active && "bg-[#589731] hover:bg-[#4a7f2a]")}
                       onClick={(e) => { e.stopPropagation(); toggleActive(f.id, f.is_active); }}
                     >
-                      {f.is_active ? "✅ Ativo" : "❌ Inativo"}
+                      {f.is_active ? <><CheckCircle className="h-3 w-3 mr-1" />Ativo</> : <><XCircle className="h-3 w-3 mr-1" />Inativo</>}
                     </Button>
                     <Button
                       variant="ghost"
@@ -1476,14 +1475,14 @@ function ChatIABitrixView() {
 
   return (
     <div className="flex h-screen">
-      {/* Sidebar */}
-      <div className="w-56 border-r bg-card flex flex-col shrink-0">
-        <div className="p-3 border-b space-y-2">
-          <Button onClick={newSession} size="sm" className="w-full">
+      {/* Sidebar - b24ui style */}
+      <div className="w-56 flex flex-col shrink-0" style={{ borderRight: '1px solid #dfe0e3', background: '#fff' }}>
+        <div className="p-3 space-y-2" style={{ borderBottom: '1px solid #dfe0e3' }}>
+          <Button onClick={newSession} size="sm" className="w-full rounded-md bg-[#2283d8] hover:bg-[#1b6cb8] text-white">
             <Plus className="h-3.5 w-3.5 mr-1" /> Nova conversa
           </Button>
           <Select value={selectedAgent} onValueChange={(v) => { setSelectedAgent(v); newSession(); }}>
-            <SelectTrigger className="h-7 text-xs"><SelectValue placeholder="Agente" /></SelectTrigger>
+            <SelectTrigger className="h-7 text-xs rounded-md"><SelectValue placeholder="Agente" /></SelectTrigger>
             <SelectContent>
               {agents.map((a: any) => <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>)}
             </SelectContent>
@@ -1496,9 +1495,10 @@ function ChatIABitrixView() {
                 key={s.id}
                 onClick={() => selectSession(s.id)}
                 className={cn(
-                  "group flex items-center gap-1.5 px-2 py-1.5 rounded text-xs cursor-pointer transition-colors",
-                  s.id === activeSessionId ? "bg-primary/10 text-primary font-medium" : "text-muted-foreground hover:bg-muted"
+                  "group flex items-center gap-1.5 px-2 py-1.5 rounded-lg text-xs cursor-pointer transition-all",
+                  s.id === activeSessionId ? "font-medium" : ""
                 )}
+                style={s.id === activeSessionId ? { background: 'rgba(34,131,216,0.08)', color: '#2283d8' } : { color: '#525c69' }}
               >
                 <MessageSquare className="h-3 w-3 shrink-0" />
                 <span className="truncate flex-1">{s.title}</span>
@@ -1536,7 +1536,7 @@ function ChatIABitrixView() {
                   )}
                   <div className={cn(
                     "max-w-[80%] text-sm",
-                    m.role === "user" ? "bg-primary text-primary-foreground rounded-2xl rounded-br-md px-3 py-2" : ""
+                    m.role === "user" ? "bg-[#2283d8] text-white b24-msg-user px-3 py-2" : ""
                   )}>
                     {m.role === "assistant" ? (
                       <div dangerouslySetInnerHTML={{ __html: renderMd(m.content) }} />
@@ -1557,9 +1557,9 @@ function ChatIABitrixView() {
             </div>
           )}
         </div>
-        <div className="border-t p-3">
+        <div className="p-3" style={{ borderTop: '1px solid #dfe0e3' }}>
           <div className="max-w-2xl mx-auto flex gap-2">
-            <Input value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => e.key === "Enter" && sendMessage()} placeholder="Escreva uma mensagem..." disabled={loading} className="flex-1" />
+            <Input value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => e.key === "Enter" && sendMessage()} placeholder="Escreva uma mensagem..." disabled={loading} className="flex-1 rounded-xl shadow-sm" />
             <AudioRecordButton
               onTranscript={(text) => setInput((prev) => (prev ? prev + " " : "") + text)}
               disabled={loading}
@@ -1568,7 +1568,7 @@ function ChatIABitrixView() {
               fetchTokenUrl={`${SUPABASE_URL}/functions/v1/elevenlabs-scribe-token`}
               fetchHeaders={{ Authorization: `Bearer ${SUPABASE_KEY}` }}
             />
-            <Button size="icon" onClick={sendMessage} disabled={!input.trim() || loading}><Send className="h-4 w-4" /></Button>
+            <Button size="icon" onClick={sendMessage} disabled={!input.trim() || loading} className="rounded-xl bg-[#2283d8] hover:bg-[#1b6cb8]"><Send className="h-4 w-4" /></Button>
           </div>
         </div>
       </div>
@@ -1621,9 +1621,9 @@ function PlaygroundView() {
 
   return (
     <div className="p-6 flex flex-col h-screen">
-      <div className="mb-4">
-        <h1 className="text-2xl font-bold">Playground</h1>
-        <p className="text-muted-foreground text-sm">Teste o seu agente IA em tempo real</p>
+      <div className="b24-view-header mb-4">
+        <h1 className="text-xl font-bold text-white">Playground</h1>
+        <p className="text-white/60 text-sm mt-0.5">Teste o seu agente IA em tempo real</p>
       </div>
 
       <div className="mb-4">
@@ -1631,12 +1631,12 @@ function PlaygroundView() {
         <Select value={selectedAgent} onValueChange={(v) => { setSelectedAgent(v); setMessages([]); }}>
           <SelectTrigger className="mt-1"><SelectValue placeholder="Selecionar agente" /></SelectTrigger>
           <SelectContent>
-            {agents.map(a => <SelectItem key={a.id} value={a.id}>{a.name} {a.is_default ? "⭐" : ""}</SelectItem>)}
+            {agents.map(a => <SelectItem key={a.id} value={a.id}>{a.name} {a.is_default ? "★" : ""}</SelectItem>)}
           </SelectContent>
         </Select>
       </div>
 
-      <Card className="flex-1 flex flex-col overflow-hidden">
+      <Card className="flex-1 flex flex-col overflow-hidden b24-card">
         <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-3">
           {messages.length === 0 && (
             <div className="flex items-center justify-center h-full">
@@ -1649,8 +1649,8 @@ function PlaygroundView() {
           {messages.map((m, i) => (
             <div key={i} className={cn("flex", m.role === "user" ? "justify-end" : "justify-start")}>
               <div className={cn(
-                "max-w-[80%] rounded-2xl px-4 py-2.5 text-sm",
-                m.role === "user" ? "bg-primary text-primary-foreground rounded-br-md" : "bg-muted text-foreground rounded-bl-md"
+                "max-w-[80%] px-4 py-2.5 text-sm",
+                m.role === "user" ? "bg-[#2283d8] text-white b24-msg-user" : "bg-muted text-foreground b24-msg-bot"
               )}>
                 <p className="whitespace-pre-wrap">{m.content}</p>
               </div>
@@ -1658,8 +1658,8 @@ function PlaygroundView() {
           ))}
           {loading && (
             <div className="flex justify-start">
-              <div className="bg-muted rounded-2xl rounded-bl-md px-4 py-3">
-                <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+              <div className="bg-muted b24-msg-bot px-4 py-3">
+                <Loader2 className="h-4 w-4 animate-spin" style={{ color: '#525c69' }} />
               </div>
             </div>
           )}
@@ -1768,20 +1768,20 @@ function PagamentosView({ integration, onRefresh }: { integration: any; onRefres
 
   return (
     <div className="p-6 space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="b24-view-header flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold">Pagamentos</h1>
-          <p className="text-muted-foreground text-sm">Gerir cobranças e transações</p>
+          <h1 className="text-xl font-bold text-white">Pagamentos</h1>
+          <p className="text-white/60 text-sm mt-0.5">Gerir cobranças e transações</p>
         </div>
-        <Button onClick={() => setShowForm(!showForm)} variant={showForm ? "secondary" : "default"}>
+        <Button onClick={() => setShowForm(!showForm)} variant={showForm ? "secondary" : "default"} className={showForm ? "" : "rounded-md bg-white/15 hover:bg-white/25 text-white border-0"}>
           {showForm ? "✕ Cancelar" : <><Plus className="h-4 w-4 mr-2" />Nova Cobrança</>}
         </Button>
       </div>
 
       {/* Gateway Config for Bitrix24 Deals */}
-      <Card>
+      <Card className="b24-card">
         <CardHeader>
-          <CardTitle className="text-base flex items-center gap-2"><Settings className="h-4 w-4" /> Cobrança Automática ao Fechar Negócio</CardTitle>
+          <CardTitle className="text-sm font-semibold flex items-center gap-2" style={{ color: '#333840' }}><Settings className="h-4 w-4 text-[#2283d8]" /> Cobrança Automática ao Fechar Negócio</CardTitle>
           <CardDescription className="text-xs">Configure os campos do Bitrix24 para criar cobranças automaticamente quando um negócio for fechado.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -1847,8 +1847,8 @@ function PagamentosView({ integration, onRefresh }: { integration: any; onRefres
       </Card>
 
       {showForm && (
-        <Card>
-          <CardHeader><CardTitle className="text-base">💳 Nova Cobrança</CardTitle></CardHeader>
+        <Card className="b24-card">
+          <CardHeader><CardTitle className="text-sm font-semibold flex items-center gap-2"><CreditCard className="h-4 w-4 text-[#2283d8]" /> Nova Cobrança</CardTitle></CardHeader>
           <CardContent className="space-y-4">
             <div className="grid grid-cols-2 gap-4">
               <div><Label>Nome</Label><Input value={form.customer_name} onChange={(e) => setForm({ ...form, customer_name: e.target.value })} className="mt-1" /></div>
@@ -2038,23 +2038,23 @@ function RelatoriosView() {
   return (
     <div className="p-6 space-y-5">
       {/* Header + Period Filter */}
-      <div className="flex items-center justify-between flex-wrap gap-3">
+      <div className="b24-view-header flex items-center justify-between flex-wrap gap-3">
         <div>
-          <h1 className="text-2xl font-bold">Relatórios Financeiros</h1>
-          <p className="text-muted-foreground text-sm">{filtered.length} transações no período</p>
+          <h1 className="text-xl font-bold text-white">Relatórios Financeiros</h1>
+          <p className="text-white/60 text-sm mt-0.5">{filtered.length} transações no período</p>
         </div>
         <div className="flex items-center gap-3 flex-wrap">
-          {/* Period pills */}
-          <div className="flex gap-1">
+          {/* Period pills - b24ui style */}
+          <div className="flex gap-1 bg-white/10 rounded-lg p-0.5">
             {PERIOD_OPTIONS.map((p) => (
               <button
                 key={p.key}
                 onClick={() => setPeriod(p.key)}
                 className={cn(
-                  "px-3 py-1.5 rounded-lg text-xs font-medium transition-colors",
+                  "px-3 py-1.5 rounded-md text-xs font-medium transition-all",
                   period === p.key
-                    ? "bg-primary text-primary-foreground"
-                    : "bg-muted text-muted-foreground hover:bg-muted/80"
+                    ? "bg-white text-[#2283d8] shadow-sm"
+                    : "text-white/70 hover:text-white hover:bg-white/10"
                 )}
               >
                 {p.label}
@@ -2088,22 +2088,24 @@ function RelatoriosView() {
         </div>
       </div>
 
-      {/* KPI Cards */}
+      {/* KPI Cards - b24ui with colored icon circles */}
       <div className="grid grid-cols-5 gap-3">
         {[
-          { label: "Total Receita", value: fmt(totalRevenue), icon: DollarSign, accent: "text-green-500" },
-          { label: "Em Aberto", value: fmt(openAmount), icon: Clock, accent: "text-yellow-500" },
-          { label: "Em Atraso", value: fmt(overdueAmount), icon: AlertTriangle, accent: "text-red-500" },
-          { label: "Pagos", value: String(confirmed.length), icon: CheckCircle, accent: "text-green-500" },
-          { label: "Taxa Pgto", value: `${paymentRate}%`, icon: TrendingUp, accent: "text-blue-500" },
+          { label: "Total Receita", value: fmt(totalRevenue), icon: DollarSign, bg: "bg-[#589731]/10", color: "text-[#589731]" },
+          { label: "Em Aberto", value: fmt(openAmount), icon: Clock, bg: "bg-[#c49c00]/10", color: "text-[#c49c00]" },
+          { label: "Em Atraso", value: fmt(overdueAmount), icon: AlertTriangle, bg: "bg-[#df532d]/10", color: "text-[#df532d]" },
+          { label: "Pagos", value: String(confirmed.length), icon: CheckCircle, bg: "bg-[#589731]/10", color: "text-[#589731]" },
+          { label: "Taxa Pgto", value: `${paymentRate}%`, icon: TrendingUp, bg: "bg-[#2283d8]/10", color: "text-[#2283d8]" },
         ].map((kpi) => (
-          <Card key={kpi.label}>
+          <Card key={kpi.label} className="b24-card">
             <CardContent className="pt-4 pb-3 px-4">
-              <div className="flex items-center gap-2 mb-1">
-                <kpi.icon className={cn("h-4 w-4", kpi.accent)} />
-                <span className="text-[11px] text-muted-foreground">{kpi.label}</span>
+              <div className="flex items-center gap-2.5 mb-1.5">
+                <div className={cn("w-8 h-8 rounded-full flex items-center justify-center", kpi.bg)}>
+                  <kpi.icon className={cn("h-4 w-4", kpi.color)} />
+                </div>
+                <span className="text-[11px]" style={{ color: '#525c69' }}>{kpi.label}</span>
               </div>
-              <p className="text-lg font-bold">{kpi.value}</p>
+              <p className="text-lg font-bold" style={{ color: '#333840' }}>{kpi.value}</p>
             </CardContent>
           </Card>
         ))}
@@ -2111,7 +2113,7 @@ function RelatoriosView() {
 
       {/* Charts Row 1: Monthly + Status Donut */}
       <div className="grid grid-cols-2 gap-4">
-        <Card>
+        <Card className="b24-card">
           <CardHeader className="pb-2 pt-4 px-4">
             <CardTitle className="text-sm">Receitas por Mês</CardTitle>
           </CardHeader>
@@ -2133,7 +2135,7 @@ function RelatoriosView() {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="b24-card">
           <CardHeader className="pb-2 pt-4 px-4">
             <CardTitle className="text-sm">Por Status</CardTitle>
           </CardHeader>
@@ -2154,7 +2156,7 @@ function RelatoriosView() {
 
       {/* Charts Row 2: Method + Client */}
       <div className="grid grid-cols-2 gap-4">
-        <Card>
+        <Card className="b24-card">
           <CardHeader className="pb-2 pt-4 px-4">
             <CardTitle className="text-sm">Por Método de Pagamento</CardTitle>
           </CardHeader>
@@ -2171,7 +2173,7 @@ function RelatoriosView() {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="b24-card">
           <CardHeader className="pb-2 pt-4 px-4">
             <CardTitle className="text-sm">Top 5 Clientes</CardTitle>
           </CardHeader>
@@ -2194,15 +2196,15 @@ function RelatoriosView() {
       </div>
 
       {/* Detailed Table */}
-      <Card>
+      <Card className="b24-card">
         <CardHeader className="pb-2 pt-4 px-4">
           <CardTitle className="text-sm">Transações Detalhadas</CardTitle>
         </CardHeader>
         <CardContent className="px-0 pb-2">
           <div className="overflow-auto max-h-[400px]">
-            <table className="w-full text-xs">
-              <thead className="sticky top-0 bg-card">
-                <tr className="border-b">
+            <table className="w-full text-xs b24-table">
+              <thead className="sticky top-0">
+                <tr>
                   <th className="text-left px-4 py-2 font-medium text-muted-foreground">Data</th>
                   <th className="text-left px-4 py-2 font-medium text-muted-foreground">Cliente</th>
                   <th className="text-right px-4 py-2 font-medium text-muted-foreground">Valor</th>
