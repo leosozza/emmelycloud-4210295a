@@ -10,10 +10,7 @@ import { useState, useEffect } from "react";
  * Camada 3: BX24 SDK bind (quando disponível — legado)
  */
 export function useBitrix24Theme() {
-  const [isDark, setIsDark] = useState<boolean>(() => {
-    if (typeof window === "undefined") return false;
-    return window.matchMedia("(prefers-color-scheme: dark)").matches;
-  });
+  const [isDark, setIsDark] = useState<boolean>(false);
 
   useEffect(() => {
     // Camada 1: prefers-color-scheme — base de fallback
