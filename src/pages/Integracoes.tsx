@@ -1524,33 +1524,19 @@ function IATab() {
     setTesting(true);
     setTestResult(null);
     try {
-      // Try to call the Ollama API to list models
-      const urlToTest = ollamaUrl.trim().replace(/\/+$/, "") || "";
-      if (!urlToTest && !currentUrl) {
-        setTestResult({ ok: false, error: "Nenhuma URL configurada" });
-        setTesting(false);
-        return;
-      }
-      // We test by calling the ai-playground with a minimal agent that uses qwen-local
-      // Instead, let's just verify we can reach the Ollama /api/tags endpoint
-      const baseUrl = urlToTest || currentUrl.replace(/•/g, "");
-      // Can't test masked URL, inform user
-      if (!urlToTest && currentUrl.includes("•")) {
-        setTestResult({ ok: false, error: "Insira a URL novamente para testar a conexão" });
-        setTesting(false);
-        return;
-      }
-      const cleanUrl = baseUrl.replace(/\/v1\/chat\/completions$/, "").replace(/\/+$/, "");
-      const resp = await fetch(`${cleanUrl}/api/tags`);
-      if (resp.ok) {
-        const data = await resp.json();
-        const modelNames = (data.models || []).map((m: any) => m.name).join(", ");
-        setTestResult({ ok: true, message: `Conexão OK! Modelos: ${modelNames || "nenhum encontrado"}` });
+      // Test server-side — the edge function reads the real URL from the DB
+      const { data, error } = await supabase.functions.invoke("ollama-test-connection");
+      if (error) {
+        setTestResult({ ok: false, error: `Erro ao chamar teste: ${error.message}` });
+      } else if (data?.ok) {
+        setTestResult({ ok: true, message: data.message });
+        // Update the displayed URL if returned
+        if (data.url) setCurrentUrl(data.url);
       } else {
-        setTestResult({ ok: false, error: `Erro HTTP ${resp.status}` });
+        setTestResult({ ok: false, error: data?.error || "Falha desconhecida" });
       }
     } catch (e: any) {
-      setTestResult({ ok: false, error: e.message || "Não foi possível conectar ao servidor Ollama" });
+      setTestResult({ ok: false, error: e.message || "Erro de rede" });
     }
     setTesting(false);
   };
@@ -1590,7 +1576,7 @@ function IATab() {
               </Button>
             </div>
             {currentUrl && (
-              <p className="text-xs text-green-600">✓ URL atual: {currentUrl}</p>
+              <p className="text-xs text-green-600 break-all">✓ URL atual: {currentUrl}</p>
             )}
             {loading && <p className="text-xs text-muted-foreground">A carregar…</p>}
           </div>
