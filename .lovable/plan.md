@@ -1,60 +1,70 @@
 
 
-## Integrar componentes de chat (chat-bubble, chat-input, chat-message-list) na view Chat IA do Bitrix24
+## Integrar sidebar animada (Aceternity-style) no Bitrix24App
 
-### O que sera feito
+### Resumo
 
-Criar os componentes de chat reutilizaveis e refazer as views Chat IA e Playground para os usar, resultando numa UI mais limpa e profissional com auto-scroll, loading animation SVG, e layout consistente.
+Substituir a sidebar estatica actual do `/bitrix24` por uma sidebar animada com hover-to-expand, usando framer-motion. A sidebar colapsa para mostrar apenas icones e expande ao passar o rato, seguindo o padrao Aceternity UI.
 
-### Novos ficheiros a criar
+### Dependencia nova
+
+- `framer-motion` - necessario para as animacoes de expand/collapse
+
+### Novos ficheiros
 
 | Ficheiro | Descricao |
 |---|---|
-| `src/components/hooks/use-auto-scroll.ts` | Hook de auto-scroll com detecao de posicao e scroll-to-bottom |
-| `src/components/ui/message-loading.tsx` | Animacao SVG de 3 pontos para loading |
-| `src/components/ui/chat-bubble.tsx` | ChatBubble, ChatBubbleMessage, ChatBubbleAvatar, ChatBubbleAction |
-| `src/components/ui/chat-input.tsx` | Input de chat baseado em Textarea com estilo proprio |
-| `src/components/ui/chat-message-list.tsx` | Lista de mensagens com auto-scroll e botao "scroll to bottom" |
-| `src/components/ui/expandable-chat.tsx` | Chat expansivel (floating) - disponivel para uso futuro |
+| `src/components/bitrix24/AnimatedSidebar.tsx` | Sidebar animada adaptada para React (sem Next.js). Inclui SidebarProvider, SidebarBody, DesktopSidebar, MobileSidebar e SidebarLink adaptados para navegacao por estado (onClick + setView) em vez de rotas |
 
-### Ficheiros a editar
+**Nota**: NAO vou sobrescrever `src/components/ui/sidebar.tsx` que ja existe e e o sidebar shadcn usado no resto da app. O componente Aceternity sera criado separadamente em `src/components/bitrix24/`.
 
-**`src/pages/Bitrix24App.tsx`** - Refazer `ChatIABitrixView` (linhas 1329-1612) e `PlaygroundView` (linhas 1614-1780):
+### Adaptacoes do componente original
 
-- Substituir o `div ref={scrollRef}` manual por `ChatMessageList` com auto-scroll nativo
-- Substituir os divs de mensagem manuais (`b24-chat-msg-content`, `b24-chat-avatar`) por `ChatBubble` + `ChatBubbleAvatar` + `ChatBubbleMessage`
-- Substituir o loading de `b24-typing-dots` pelo `MessageLoading` SVG animado
-- Substituir o `textarea` manual pelo `ChatInput` com auto-resize
-- Manter toda a logica de negocio (fetch agentes, sessoes, localStorage, sendMessage, markdown render)
-- Manter o AudioRecordButton existente no footer
+O componente fornecido usa Next.js (`Link`, `Image`) e precisa de adaptacao:
 
-**`src/index.css`** - Nenhuma alteracao necessaria nas classes b24, os novos componentes usam Tailwind classes directamente.
+- `Link` do Next.js sera substituido por `<button>` com `onClick` (a navegacao do Bitrix24App e baseada em estado, nao em rotas)
+- `Image` do Next.js sera substituido por `<img>` standard
+- O `SidebarLink` sera adaptado para aceitar `onClick` e `isActive` em vez de `href`
+- A interface `Links` sera estendida com `id` para mapear ao `AppView`
 
-### Estrutura visual resultante
+### Ficheiro a editar
+
+**`src/pages/Bitrix24App.tsx`** (linhas 202-267 - sidebar actual):
+
+- Importar `AnimatedSidebar` e os sub-componentes
+- Substituir o `<aside>` estatico pelo novo componente animado
+- Manter o header com logo gradient, as categorias de navegacao (Emmely IO, Emmely CRM, Emmely Pay), e o footer com status de conexao
+- A sidebar ira:
+  - Mostrar apenas icones quando colapsada (hover out)
+  - Expandir suavemente ao hover mostrando labels
+  - No mobile, usar um menu hamburger com overlay
+
+### Estrutura visual
 
 ```text
-ChatIABitrixView
-+------------------+----------------------------+
-| Sidebar (w-60)   | ChatMessageList            |
-| - Nova conversa  |   ChatBubble (received)    |
-| - Agent selector |     ChatBubbleAvatar       |
-| - Session list   |     ChatBubbleMessage      |
-|                  |   ChatBubble (sent)        |
-|                  |     ChatBubbleMessage      |
-|                  |   [scroll-to-bottom btn]   |
-|                  +----------------------------+
-|                  | Footer                     |
-|                  |   ChatInput + Send btn     |
-+------------------+----------------------------+
+Colapsada (w-14)     Expandida (w-56, on hover)
++------+             +------------------------+
+| [E]  |             | [E] Emmely Cloud       |
++------+             |      for Bitrix24      |
+| [*]  |    hover    |      domain.com        |
+| [B]  |   ------>   +------------------------+
+| [B]  |             | EMMELY IO              |
+| [P]  |             |  * Chat IA             |
++------+             |  B Persona             |
+| [.]  |             |  B Treinamento         |
++------+             |  P Playground          |
+                     | EMMELY CRM             |
+                     |  ...                   |
+                     +------------------------+
+                     | . Conectado            |
+                     +------------------------+
 ```
 
 ### Detalhes tecnicos
 
-- `ChatBubble` tem variantes `sent` e `received` com layout `ai` que posiciona o avatar ao lado
-- `ChatBubbleMessage` com `isLoading` renderiza o `MessageLoading` SVG automaticamente
-- `ChatMessageList` usa `useAutoScroll` que detecta se o utilizador fez scroll para cima e mostra um botao flutuante para voltar ao fundo
-- `ChatInput` e um wrapper de `Textarea` com classe de altura fixa e auto-complete off
-- O `expandable-chat.tsx` fica disponivel para uso futuro (chat flutuante) mas nao sera usado directamente nas views actuais
-
-Nenhuma nova dependencia NPM (todas ja estao instaladas). Nenhuma migracao de BD.
-
+- `framer-motion` `animate` prop controla a largura: `w-14` (60px) colapsado, `w-56` (224px) expandido
+- `AnimatePresence` para mostrar/esconder labels com fade
+- `motion.span` para animar o texto dos links com opacity e display
+- Estado `open` controlado por `onMouseEnter`/`onMouseLeave` no desktop
+- Mobile: botao hamburger com overlay fullscreen animado
+- As categorias de navegacao continuam a usar `Collapsible` quando expandido, e mostram apenas o icone quando colapsado
