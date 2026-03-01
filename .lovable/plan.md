@@ -1,111 +1,76 @@
 
 
-## Sistema de Propostas com Link de Aceite e Fluxo Automatizado
+## Robot Bitrix24 para Gerar Propostas Automaticamente
 
-Criar um sistema completo de geração de propostas baseado nos modelos PDF enviados, com link público de aceite pelo cliente, geração de PDF e integração com o fluxo proposta -> contrato -> pagamento.
+Criar um novo robot BizProc (`emmely_generate_proposal`) que recebe um ID de negocio/lead do Bitrix24, busca os dados do CRM, gera a proposta com PDF e devolve o link publico e URL do PDF ao Bitrix24.
 
-### 1. Alterações na Base de Dados
+### Fluxo
 
-Adicionar campos à tabela `proposals` para suportar o link público e dados do modelo:
-
-- `accept_token` (UUID, unique) -- token único para o link público de aceite
-- `accepted_at` (timestamptz) -- data/hora do aceite pelo cliente
-- `client_name` (text) -- nome do cliente na proposta
-- `client_email` (text) -- email para envio
-- `client_phone` (text) -- telefone do cliente
-- `client_document` (text) -- NIF/CC do cliente
-- `client_address` (text) -- morada do cliente
-- `service_id` (UUID, nullable) -- serviço associado (puxa budget_details, contract_intro, etc.)
-- `description` (text) -- descrição detalhada do serviço/proposta
-- `pdf_url` (text) -- URL do PDF gerado e guardado no storage
-
-Criar bucket de storage `proposal-files` (público) para guardar os PDFs gerados.
-
-Criar política RLS para leitura pública por token (sem autenticação) na tabela proposals: permite SELECT quando `accept_token` é fornecido como filtro.
-
-### 2. Copiar os PDFs de Modelo
-
-Copiar os 2 PDFs enviados para `public/templates/` para referência visual. Estes servem como modelo para o layout HTML da proposta.
-
-### 3. Formulário de Proposta Melhorado
-
-Reformular o `PropostaForm` para incluir:
-- Dados do cliente (nome, email, telefone, documento, morada) -- com opção de puxar de um cliente existente ou do lead associado ao caso
-- Seleção de serviço (puxa automaticamente o valor e detalhes do orçamento)
-- Descrição livre do serviço
-- Tipo de pagamento, parcelas, valor, condições e validade (campos existentes)
-- Ao guardar, gera automaticamente o `accept_token` (UUID)
-
-### 4. Página Pública de Proposta (`/proposta/:token`)
-
-Nova rota pública (fora do AppLayout, sem autenticação) que:
-- Carrega a proposta pelo `accept_token`
-- Renderiza a proposta no formato dos PDFs modelo (cabeçalho com logo, dados do escritório, dados do cliente, descrição do serviço, valores, condições de pagamento)
-- Mostra botão "Aceitar Proposta" (verde, destaque)
-- Ao clicar em aceitar: atualiza status para "aceita", regista `accepted_at`, cria contrato automaticamente, atualiza o funil do lead
-- Mostra confirmação de aceite com próximos passos
-
-### 5. Geração de PDF
-
-Criar Edge Function `proposal-pdf` que:
-- Recebe o `proposal_id`
-- Gera HTML da proposta seguindo o modelo dos PDFs enviados (cabeçalho, dados cliente, serviço, valores, condições)
-- Converte para PDF (usando HTML renderizado)
-- Guarda no bucket `proposal-files`
-- Retorna a URL do PDF
-
-### 6. Ações na Listagem de Propostas
-
-Adicionar botões na tabela de propostas:
-- **Copiar Link** -- copia o URL público `/proposta/:token` para a clipboard
-- **Enviar** -- marca como enviada (fluxo existente)
-- **Descarregar PDF** -- chama a edge function e descarrega o PDF
-- **Pré-visualizar** -- abre a página pública numa nova aba
-
-### 7. Fluxo Automatizado de Aceite
-
-Quando o cliente aceita a proposta (via link público):
-1. Proposta -> status "aceita", `accepted_at` registado
-2. Contrato criado automaticamente (vinculado à proposta e ao caso)
-3. Lead atualizado para fase "contrato"
-4. (Futuro) Parcelas de pagamento geradas automaticamente no financeiro
-
-### Detalhes Técnicos
-
-**Migração SQL:**
 ```text
-ALTER TABLE proposals ADD COLUMN accept_token UUID DEFAULT gen_random_uuid() UNIQUE;
-ALTER TABLE proposals ADD COLUMN accepted_at TIMESTAMPTZ;
-ALTER TABLE proposals ADD COLUMN client_name TEXT;
-ALTER TABLE proposals ADD COLUMN client_email TEXT;
-ALTER TABLE proposals ADD COLUMN client_phone TEXT;
-ALTER TABLE proposals ADD COLUMN client_document TEXT;
-ALTER TABLE proposals ADD COLUMN client_address TEXT;
-ALTER TABLE proposals ADD COLUMN service_id UUID REFERENCES services(id);
-ALTER TABLE proposals ADD COLUMN description TEXT;
-ALTER TABLE proposals ADD COLUMN pdf_url TEXT;
-
--- RLS para acesso público por token
-CREATE POLICY "Public can read proposal by token"
-  ON proposals FOR SELECT
-  USING (true);
-
--- Storage bucket
-INSERT INTO storage.buckets (id, name, public) VALUES ('proposal-files', 'proposal-files', true);
+Bitrix24 BizProc -> robot-handler (emmely_generate_proposal)
+  -> Busca dados do Lead/Deal no Bitrix24 (nome, email, telefone, documento, morada)
+  -> Busca servico associado (pelo titulo do deal ou campo personalizado)
+  -> Cria proposta na tabela proposals (com accept_token)
+  -> Chama proposal-pdf para gerar o HTML/PDF
+  -> Devolve ao Bitrix24: proposal_url, pdf_url, proposal_id
+  -> Bitrix24 grava o link no campo do negocio automaticamente
 ```
 
-**Ficheiros a criar:**
-- `src/pages/PropostaPublica.tsx` -- página pública de visualização/aceite
-- `supabase/functions/proposal-pdf/index.ts` -- edge function para gerar PDF
+### 1. Novo Robot no Handler
 
-**Ficheiros a alterar:**
-- `src/App.tsx` -- adicionar rota `/proposta/:token`
-- `src/pages/Propostas.tsx` -- botões de copiar link, pré-visualizar, descarregar PDF
-- `src/components/propostas/PropostaForm.tsx` -- campos de cliente, serviço, descrição
-- `src/integrations/supabase/types.ts` -- NÃO editar (auto-gerado)
+Adicionar case `emmely_generate_proposal` em `supabase/functions/bitrix24-robot-handler/index.ts` com propriedades de entrada:
 
-**Fluxo completo:**
-```text
-Criar Proposta -> Enviar Link ao Cliente -> Cliente Aceita -> Contrato Criado -> Pagamentos
-```
+- `deal_id` ou `lead_id` -- ID da entidade no Bitrix24
+- `entity_type` -- "deal" ou "lead" (default: "deal")
+- `title` -- titulo da proposta (opcional, usa titulo do deal se vazio)
+- `service_name` -- nome do servico para puxar valor/descricao (opcional)
+- `payment_type` -- fixo/exito/hibrido/parcelado (default: fixo)
+- `installments` -- numero de parcelas (default: 1)
+- `value` -- valor manual (opcional, senao usa o do servico ou OPPORTUNITY do deal)
+- `description` -- descricao manual (opcional)
+- `conditions` -- condicoes (opcional)
+- `valid_days` -- dias de validade (default: 30)
+
+Valores de retorno ao Bitrix24:
+- `proposal_url` -- link publico de aceite
+- `pdf_url` -- URL do ficheiro HTML/PDF
+- `proposal_id` -- ID interno da proposta
+- `status` -- "created" ou "error"
+- `error` -- mensagem de erro
+
+### 2. Logica do Handler `handleGenerateProposal`
+
+1. Buscar integracao Bitrix24 pelo `member_id`
+2. Chamar API Bitrix24 (`crm.deal.get` ou `crm.lead.get`) para obter dados do cliente:
+   - TITLE, OPPORTUNITY, CURRENCY_ID
+   - CONTACT_ID -> `crm.contact.get` para nome, email, telefone, morada
+3. Se `service_name` fornecido, buscar na tabela `services` para puxar valor e descricao
+4. Criar caso (case) se nao existir, para vincular a proposta
+5. Inserir na tabela `proposals` com todos os dados e `accept_token` gerado
+6. Chamar a edge function `proposal-pdf` para gerar o ficheiro
+7. Devolver `proposal_url`, `pdf_url` e `proposal_id` via `bizproc.event.send`
+
+### 3. Registo do Robot no Install
+
+Adicionar o robot `emmely_generate_proposal` no fluxo de instalacao (`bitrix24-install`) com os campos de propriedades adequados para que apareca no BizProc do Bitrix24.
+
+### Ficheiros a alterar
+
+- `supabase/functions/bitrix24-robot-handler/index.ts` -- adicionar handler `handleGenerateProposal` e case no switch
+- `supabase/functions/bitrix24-install/index.ts` -- registar o novo robot com propriedades
+
+### Sem alteracoes na base de dados
+
+A tabela `proposals` ja tem todos os campos necessarios (accept_token, client_name, client_email, etc.). Nao e necessaria migracao.
+
+### Detalhes Tecnicos
+
+O handler faz chamadas encadeadas ao Bitrix24:
+1. `crm.deal.get` com `ID` para obter dados do negocio
+2. `crm.contact.get` com `ID` do contacto associado para nome/email/telefone
+3. Insere proposta localmente
+4. Chama `proposal-pdf` internamente via fetch
+5. Retorna resultados ao BizProc
+
+O link publico sera: `https://emmelycloud.lovable.app/proposta/{accept_token}`
 
