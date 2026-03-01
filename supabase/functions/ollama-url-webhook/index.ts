@@ -56,7 +56,7 @@ Deno.serve(async (req) => {
       .from("integration_credentials")
       .upsert(
         {
-          provider: "ollama",
+          provider: "qwen-local",
           credential_key: "OLLAMA_BASE_URL",
           credential_value: url.trim(),
         },
