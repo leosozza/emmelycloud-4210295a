@@ -52,6 +52,16 @@ serve(async (req) => {
     // Clean up
     extractedText = extractedText.replace(/\r\n/g, "\n").replace(/\n{3,}/g, "\n\n").trim();
 
+    // AI fallback: if local parsing got very little text, use Gemini vision
+    if ((ext === "pdf" || ext === "docx") && extractedText.length <= 100) {
+      console.log(`Local parsing got ${extractedText.length} chars, trying AI fallback...`);
+      const aiText = await extractWithAI(fileData, ext);
+      if (aiText && aiText.length > extractedText.length) {
+        extractedText = aiText.replace(/\r\n/g, "\n").replace(/\n{3,}/g, "\n\n").trim();
+        console.log(`AI fallback extracted ${extractedText.length} chars`);
+      }
+    }
+
     if (!extractedText) {
       await supabase.from("knowledge_documents").update({ status: "ready", chunks_count: 0 }).eq("id", document_id);
       return new Response(JSON.stringify({ text: "", chunks: 0 }), {
@@ -255,7 +265,74 @@ async function findFileInZip(zipBytes: Uint8Array, targetName: string): Promise<
           } catch (e) {
             console.error("Decompression error:", e);
             return null;
-          }
+}
+
+async function extractWithAI(blob: Blob, ext: string): Promise<string> {
+  try {
+    const apiKey = Deno.env.get("LOVABLE_API_KEY");
+    if (!apiKey) {
+      console.error("LOVABLE_API_KEY not configured, skipping AI extraction");
+      return "";
+    }
+
+    // Limit to 10MB
+    if (blob.size > 10 * 1024 * 1024) {
+      console.log("File too large for AI extraction (>10MB)");
+      return "";
+    }
+
+    const arrayBuffer = await blob.arrayBuffer();
+    const base64 = btoa(String.fromCharCode(...new Uint8Array(arrayBuffer)));
+    const mimeType = ext === "pdf" ? "application/pdf" : "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 60000);
+
+    const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: "google/gemini-2.5-flash",
+        messages: [
+          {
+            role: "user",
+            content: [
+              {
+                type: "text",
+                text: "Extract ALL text from this document. Describe any images, charts, graphics and tables in detail. Return only the extracted content, no commentary.",
+              },
+              {
+                type: "image_url",
+                image_url: { url: `data:${mimeType};base64,${base64}` },
+              },
+            ],
+          },
+        ],
+      }),
+      signal: controller.signal,
+    });
+
+    clearTimeout(timeout);
+
+    if (!response.ok) {
+      const status = response.status;
+      if (status === 429) console.error("AI rate limit exceeded");
+      else if (status === 402) console.error("AI credits exhausted");
+      else console.error(`AI gateway error: ${status}`);
+      return "";
+    }
+
+    const data = await response.json();
+    return data.choices?.[0]?.message?.content || "";
+  } catch (e) {
+    if (e.name === "AbortError") console.error("AI extraction timed out (60s)");
+    else console.error("AI extraction error:", e);
+    return "";
+  }
+}
         }
       }
 
