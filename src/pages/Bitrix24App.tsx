@@ -40,6 +40,11 @@ import { ChevronDown, Star, Edit, Volume2, Users, GitBranch as GitBranchIcon2 } 
 import {
   Collapsible, CollapsibleContent, CollapsibleTrigger,
 } from "@/components/ui/collapsible";
+import {
+  AnimatedSidebar, AnimatedSidebarBody, AnimatedSidebarLink,
+  useAnimatedSidebar, type AnimatedSidebarLinkItem,
+} from "@/components/bitrix24/AnimatedSidebar";
+import { AnimatePresence, motion } from "framer-motion";
 import { AgentFormDialog } from "@/components/agentes/AgentFormDialog";
 import { Switch } from "@/components/ui/switch";
 import { Slider } from "@/components/ui/slider";
@@ -187,6 +192,123 @@ const Bitrix24App = () => {
     },
   ];
 
+  const SidebarInner = () => {
+    const { open } = useAnimatedSidebar();
+    return (
+      <>
+        {/* Logo Header */}
+        <div className="b24-sidebar-header p-4">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-lg flex items-center justify-center font-extrabold text-sm bg-white/15 text-white shrink-0">
+              E
+            </div>
+            <AnimatePresence>
+              {open && (
+                <motion.div
+                  initial={{ opacity: 0, width: 0 }}
+                  animate={{ opacity: 1, width: "auto" }}
+                  exit={{ opacity: 0, width: 0 }}
+                  transition={{ duration: 0.2 }}
+                  className="overflow-hidden"
+                >
+                  <p className="font-bold text-sm leading-tight text-white whitespace-nowrap">Emmely Cloud</p>
+                  <p className="text-[10px] text-white/60 whitespace-nowrap">for Bitrix24</p>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+          <AnimatePresence>
+            {open && domain && (
+              <motion.div
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: "auto" }}
+                exit={{ opacity: 0, height: 0 }}
+                transition={{ duration: 0.2 }}
+                className="overflow-hidden"
+              >
+                <div className="mt-2.5 text-[10px] text-center truncate px-2 py-1 rounded-md bg-white/10 text-white/80">
+                  {domain}
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+
+        {/* Nav */}
+        <nav className="flex-1 p-2 space-y-0.5 overflow-y-auto">
+          {navCategories.map((cat) => (
+            <div key={cat.label} className="mb-1">
+              <AnimatePresence>
+                {open && (
+                  <motion.div
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: "auto" }}
+                    exit={{ opacity: 0, height: 0 }}
+                    transition={{ duration: 0.2 }}
+                    className="overflow-hidden"
+                  >
+                    <div className="px-3 py-2 text-[10px] uppercase tracking-[0.1em] font-semibold text-muted-foreground">
+                      {cat.label}
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+              <div className="space-y-0.5">
+                {cat.items.map((item) => (
+                  <AnimatedSidebarLink
+                    key={item.id}
+                    link={{
+                      id: item.id,
+                      label: item.label,
+                      icon: <item.icon className="h-4 w-4" />,
+                    }}
+                    isActive={view === item.id}
+                    onClick={() => setView(item.id as AppView)}
+                  />
+                ))}
+              </div>
+            </div>
+          ))}
+        </nav>
+
+        {/* Footer */}
+        <div className="p-3 space-y-2 border-t border-border">
+          <div className="flex items-center gap-2">
+            <div className={cn("w-2.5 h-2.5 rounded-full shrink-0", integration ? "bg-success b24-pulse" : "bg-destructive")} />
+            <AnimatePresence>
+              {open && (
+                <motion.span
+                  initial={{ opacity: 0, width: 0 }}
+                  animate={{ opacity: 1, width: "auto" }}
+                  exit={{ opacity: 0, width: 0 }}
+                  transition={{ duration: 0.2 }}
+                  className="text-xs text-muted-foreground whitespace-nowrap overflow-hidden"
+                >
+                  {integration ? "Conectado" : "Desconectado"}
+                </motion.span>
+              )}
+            </AnimatePresence>
+          </div>
+          <AnimatePresence>
+            {open && botId && (
+              <motion.div
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: "auto" }}
+                exit={{ opacity: 0, height: 0 }}
+                transition={{ duration: 0.2 }}
+                className="overflow-hidden"
+              >
+                <div className="flex items-center gap-2">
+                  <Bot className="h-3 w-3 shrink-0 text-muted-foreground" />
+                  <span className="text-[10px] text-muted-foreground">Bot ID: {botId}</span>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+      </>
+    );
+  };
   if (view === "loading") {
     return (
       <div className={cn("min-h-screen bg-background flex items-center justify-center", isDark && "dark")}>
@@ -201,70 +323,11 @@ const Bitrix24App = () => {
   return (
     <div className={cn("min-h-screen flex bg-background", isDark && "dark")}>
       {/* ── Sidebar ── */}
-      <aside className="w-56 flex flex-col shrink-0 border-r border-border bg-card">
-        {/* Logo - Gradient Header */}
-        <div className="b24-sidebar-header p-4">
-          <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-lg flex items-center justify-center font-extrabold text-sm bg-white/15 text-white">
-              E
-            </div>
-            <div>
-              <p className="font-bold text-sm leading-tight text-white">Emmely Cloud</p>
-              <p className="text-[10px] text-white/60">for Bitrix24</p>
-            </div>
-          </div>
-          {domain && (
-            <div className="mt-2.5 text-[10px] text-center truncate px-2 py-1 rounded-md bg-white/10 text-white/80">
-              {domain}
-            </div>
-          )}
-        </div>
-
-        {/* Nav */}
-        <nav className="flex-1 p-2 space-y-0.5 overflow-y-auto">
-          {navCategories.map((cat) => (
-            <Collapsible key={cat.label} defaultOpen className="mb-1">
-              <CollapsibleTrigger className="flex w-full items-center justify-between px-3 py-2 text-[10px] uppercase tracking-[0.1em] font-semibold text-muted-foreground transition-colors">
-                {cat.label}
-                <ChevronDown className="h-3 w-3 transition-transform duration-200 [&[data-state=open]]:rotate-180" />
-              </CollapsibleTrigger>
-              <CollapsibleContent className="space-y-0.5">
-                {cat.items.map((item) => (
-                  <button
-                    key={item.id}
-                    onClick={() => setView(item.id as AppView)}
-                    className={cn(
-                      "w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-[13px] transition-all text-left",
-                      view === item.id
-                        ? "bg-primary/10 text-primary font-semibold"
-                        : "text-muted-foreground hover:bg-muted hover:text-foreground"
-                    )}
-                  >
-                    <item.icon className="h-4 w-4 shrink-0" />
-                    {item.label}
-                  </button>
-                ))}
-              </CollapsibleContent>
-            </Collapsible>
-          ))}
-        </nav>
-
-        {/* Footer */}
-        <div className="p-3 space-y-2 border-t border-border">
-          <div className="flex items-center gap-2">
-            <div className={cn("w-2.5 h-2.5 rounded-full shrink-0", integration ? "bg-success b24-pulse" : "bg-destructive")} />
-            <span className="text-xs text-muted-foreground">
-              {integration ? "Conectado" : "Desconectado"}
-            </span>
-          </div>
-          {botId && (
-            <div className="flex items-center gap-2">
-              <Bot className="h-3 w-3 shrink-0 text-muted-foreground" />
-              <span className="text-[10px] text-muted-foreground">Bot ID: {botId}</span>
-            </div>
-          )}
-        </div>
-      </aside>
+      <AnimatedSidebar>
+        <AnimatedSidebarBody>
+          <SidebarInner />
+        </AnimatedSidebarBody>
+      </AnimatedSidebar>
 
       {/* ── Main Content ── */}
       <main className="flex-1 overflow-auto">
