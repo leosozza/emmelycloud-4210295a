@@ -1519,6 +1519,17 @@ function InstancesTab() {
 
 // ─── IA Tab (Ollama Remote) ──────────────────────────────────────────────────
 
+interface AuditEntry {
+  id: string;
+  created_at: string;
+  source_ip: string | null;
+  received_url: string | null;
+  previous_url: string | null;
+  status: string;
+  error_message: string | null;
+  secret_valid: boolean;
+}
+
 function IATab() {
   const [ollamaUrl, setOllamaUrl] = useState("");
   const [currentUrl, setCurrentUrl] = useState("");
@@ -1526,16 +1537,16 @@ function IATab() {
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<{ ok: boolean; message?: string; error?: string } | null>(null);
   const [loading, setLoading] = useState(true);
+  const [auditLogs, setAuditLogs] = useState<AuditEntry[]>([]);
+  const [auditLoading, setAuditLoading] = useState(true);
 
   const loadUrl = useCallback(async () => {
     setLoading(true);
     try {
-      // Fetch real URL via the test endpoint (reads from DB server-side)
       const { data, error } = await supabase.functions.invoke("ollama-test-connection");
       if (!error && data?.url) {
         setCurrentUrl(data.url);
       } else {
-        // Fallback to masked value
         const { data: credData } = await supabase.functions.invoke("manage-credentials", { method: "GET" });
         if (credData?.credentials) {
           const cred = credData.credentials.find((c: any) => c.provider === "qwen-local" && c.credential_key === "OLLAMA_BASE_URL");
@@ -1546,7 +1557,20 @@ function IATab() {
     setLoading(false);
   }, []);
 
-  useEffect(() => { loadUrl(); }, [loadUrl]);
+  const loadAudit = useCallback(async () => {
+    setAuditLoading(true);
+    try {
+      const { data } = await supabase
+        .from("ollama_url_audit")
+        .select("id, created_at, source_ip, received_url, previous_url, status, error_message, secret_valid")
+        .order("created_at", { ascending: false })
+        .limit(20);
+      if (data) setAuditLogs(data as AuditEntry[]);
+    } catch {}
+    setAuditLoading(false);
+  }, []);
+
+  useEffect(() => { loadUrl(); loadAudit(); }, [loadUrl, loadAudit]);
 
   const handleSave = async () => {
     if (!ollamaUrl.trim()) return;
@@ -1573,13 +1597,11 @@ function IATab() {
     setTesting(true);
     setTestResult(null);
     try {
-      // Test server-side — the edge function reads the real URL from the DB
       const { data, error } = await supabase.functions.invoke("ollama-test-connection");
       if (error) {
         setTestResult({ ok: false, error: `Erro ao chamar teste: ${error.message}` });
       } else if (data?.ok) {
         setTestResult({ ok: true, message: data.message });
-        // Update the displayed URL if returned
         if (data.url) setCurrentUrl(data.url);
       } else {
         setTestResult({ ok: false, error: data?.error || "Falha desconhecida" });
@@ -1590,9 +1612,24 @@ function IATab() {
     setTesting(false);
   };
 
+  const statusColor = (s: string) => {
+    if (s === "updated") return "text-green-700 bg-green-50";
+    if (s === "unchanged") return "text-blue-700 bg-blue-50";
+    if (s === "rejected") return "text-orange-700 bg-orange-50";
+    return "text-red-700 bg-red-50";
+  };
+
+  const statusIcon = (s: string) => {
+    if (s === "updated") return <CheckCircle2 className="h-3.5 w-3.5 text-green-500" />;
+    if (s === "unchanged") return <Clock className="h-3.5 w-3.5 text-blue-500" />;
+    if (s === "rejected") return <XCircle className="h-3.5 w-3.5 text-orange-500" />;
+    return <AlertCircle className="h-3.5 w-3.5 text-red-500" />;
+  };
+
   return (
     <div className="grid gap-4 md:grid-cols-2">
-      <Card className="md:col-span-2">
+      {/* Config card */}
+      <Card>
         <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-2">
           <div className="flex items-center gap-3">
             <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-violet-100">
@@ -1608,7 +1645,7 @@ function IATab() {
         <CardContent className="space-y-4 text-sm">
           <div className="rounded-md border border-violet-200 bg-violet-50 px-4 py-3 text-xs text-violet-800 space-y-1">
             <p className="font-semibold">ℹ️ URLs de túneis Cloudflare são temporárias</p>
-            <p>Cada vez que reiniciar o túnel, a URL muda. Atualize aqui a nova URL do seu servidor Ollama.</p>
+            <p>Cada vez que reiniciar o túnel, a URL muda. Atualize aqui ou configure o webhook automático.</p>
           </div>
 
           <div className="space-y-2">
@@ -1650,6 +1687,62 @@ function IATab() {
               ))}
             </div>
             <p className="text-[10px] text-muted-foreground">Selecione estes modelos ao criar/editar agentes com o provedor "Qwen Local".</p>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Audit Monitor card */}
+      <Card>
+        <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-2">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-amber-100">
+              <Radio className="h-5 w-5 text-amber-600" />
+            </div>
+            <div>
+              <CardTitle className="text-base">Monitor do Webhook</CardTitle>
+              <CardDescription>Últimos recebimentos e mudanças de URL</CardDescription>
+            </div>
+          </div>
+          <Button size="sm" variant="ghost" onClick={() => loadAudit()} className="h-8 px-2">
+            <RefreshCw className="h-3.5 w-3.5" />
+          </Button>
+        </CardHeader>
+        <CardContent className="space-y-2 text-sm">
+          {auditLoading && <p className="text-xs text-muted-foreground">A carregar…</p>}
+          {!auditLoading && auditLogs.length === 0 && (
+            <div className="text-center py-6 text-muted-foreground">
+              <Radio className="h-8 w-8 mx-auto mb-2 opacity-30" />
+              <p className="text-xs">Nenhum webhook recebido ainda.</p>
+              <p className="text-[10px] mt-1">O script do túnel deve enviar POST para o endpoint ollama-url-webhook.</p>
+            </div>
+          )}
+          <div className="max-h-80 overflow-y-auto space-y-1.5">
+            {auditLogs.map((log) => (
+              <div key={log.id} className={`rounded-md px-3 py-2 ${statusColor(log.status)}`}>
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-1.5">
+                    {statusIcon(log.status)}
+                    <span className="text-xs font-medium capitalize">{log.status}</span>
+                    {!log.secret_valid && <Badge variant="outline" className="text-[9px] px-1 py-0 border-orange-300 text-orange-700">secret inválido</Badge>}
+                  </div>
+                  <span className="text-[10px] opacity-70 whitespace-nowrap">
+                    {new Date(log.created_at).toLocaleString("pt-PT", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit" })}
+                  </span>
+                </div>
+                {log.received_url && (
+                  <p className="text-[10px] mt-1 break-all opacity-80 font-mono">→ {log.received_url}</p>
+                )}
+                {log.previous_url && log.status === "updated" && (
+                  <p className="text-[10px] break-all opacity-60 font-mono line-through">← {log.previous_url}</p>
+                )}
+                {log.error_message && (
+                  <p className="text-[10px] mt-0.5 opacity-80">⚠ {log.error_message}</p>
+                )}
+                {log.source_ip && log.source_ip !== "unknown" && (
+                  <p className="text-[10px] opacity-50">IP: {log.source_ip}</p>
+                )}
+              </div>
+            ))}
           </div>
         </CardContent>
       </Card>
