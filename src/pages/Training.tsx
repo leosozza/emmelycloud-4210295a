@@ -329,7 +329,27 @@ export default function TrainingPage() {
         }
       }
 
-      if (successCount > 0) toast.success(`Treinamento "${trainingTitle}" criado com ${successCount} documento(s)`);
+      if (successCount > 0) {
+        toast.success(`Treinamento "${trainingTitle}" criado com ${successCount} documento(s)`);
+
+        // Auto-generate summary from all uploaded content
+        if (hasFiles || hasUrls) {
+          toast.info("A gerar resumo automático do treinamento...");
+          try {
+            const { data: summaryResult, error: summaryError } = await supabase.functions.invoke("summarize-training", {
+              body: { collection_id: collectionId, collection_name: trainingTitle },
+            });
+            if (summaryError) {
+              console.error("Summary generation error:", summaryError);
+              toast.warning("Não foi possível gerar resumo automático");
+            } else if (summaryResult?.summary) {
+              toast.success("Resumo do treinamento gerado com sucesso!");
+            }
+          } catch (sumErr) {
+            console.error("Summary call failed:", sumErr);
+          }
+        }
+      }
       resetCreateForm();
       setDialogOpen(false);
       loadDocuments();
