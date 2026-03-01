@@ -1334,6 +1334,7 @@ function ChatIABitrixView() {
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [sessions, setSessions] = useState<Array<{ id: string; title: string; messages: Array<{ role: string; content: string }> }>>([]);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
 
@@ -1353,6 +1354,11 @@ function ChatIABitrixView() {
   useEffect(() => {
     if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
   }, [messages]);
+
+  const autoResize = () => {
+    const el = textareaRef.current;
+    if (el) { el.style.height = "auto"; el.style.height = Math.min(el.scrollHeight, 120) + "px"; }
+  };
 
   const saveSessions = (updated: typeof sessions) => {
     setSessions(updated);
@@ -1380,6 +1386,7 @@ function ChatIABitrixView() {
     const newMessages = [...messages, userMsg];
     setMessages(newMessages);
     setInput("");
+    if (textareaRef.current) { textareaRef.current.style.height = "auto"; }
     setLoading(true);
     try {
       const res = await fetch(`${SUPABASE_URL}/functions/v1/ai-playground`, {
@@ -1409,47 +1416,73 @@ function ChatIABitrixView() {
 
   const renderMd = (text: string) => {
     let html = text
-      .replace(/```(\w*)\n([\s\S]*?)```/g, '<pre class="bg-muted rounded p-2 text-xs overflow-x-auto my-1"><code>$2</code></pre>')
-      .replace(/`([^`]+)`/g, '<code class="bg-muted px-1 rounded text-xs">$1</code>')
+      .replace(/```(\w*)\n([\s\S]*?)```/g, '<pre class="bg-muted rounded-md p-3 text-xs overflow-x-auto my-2 border border-border"><code>$2</code></pre>')
+      .replace(/`([^`]+)`/g, '<code class="bg-muted px-1.5 py-0.5 rounded text-xs border border-border/50">$1</code>')
       .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
       .replace(/\*(.+?)\*/g, '<em>$1</em>')
-      .replace(/^- (.+)$/gm, '<li>$1</li>')
+      .replace(/^- (.+)$/gm, '<li class="ml-3">$1</li>')
       .replace(/\n/g, '<br>');
     return html;
   };
 
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); }
+  };
+
+  const copyMessage = (content: string) => {
+    navigator.clipboard.writeText(content);
+  };
+
   return (
-    <div className="flex h-screen">
-      {/* Sidebar */}
-      <div className="w-56 flex flex-col shrink-0 border-r border-border bg-card">
-        <div className="p-3 space-y-2 border-b border-border">
-          <Button onClick={newSession} size="sm" className="w-full rounded-md">
-            <Plus className="h-3.5 w-3.5 mr-1" /> Nova conversa
+    <div className="flex h-screen bg-background">
+      {/* Sidebar - b24ui style */}
+      <div className="w-60 flex flex-col shrink-0 border-r border-border bg-card">
+        <div className="p-3 space-y-2.5 border-b border-border">
+          <Button onClick={newSession} size="sm" className="w-full rounded-lg gap-1.5 h-9 text-xs font-medium">
+            <Plus className="h-3.5 w-3.5" /> Nova conversa
           </Button>
           <Select value={selectedAgent} onValueChange={(v) => { setSelectedAgent(v); newSession(); }}>
-            <SelectTrigger className="h-7 text-xs rounded-md"><SelectValue placeholder="Agente" /></SelectTrigger>
+            <SelectTrigger className="h-8 text-xs rounded-lg border-border">
+              <SelectValue placeholder="Selecionar agente" />
+            </SelectTrigger>
             <SelectContent>
-              {agents.map((a: any) => <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>)}
+              {agents.map((a: any) => (
+                <SelectItem key={a.id} value={a.id}>
+                  <span className="flex items-center gap-1.5">
+                    <Bot className="h-3 w-3 text-primary" />
+                    {a.name}
+                    {a.is_default && <Star className="h-2.5 w-2.5 text-warning fill-warning" />}
+                  </span>
+                </SelectItem>
+              ))}
             </SelectContent>
           </Select>
         </div>
         <ScrollArea className="flex-1">
-          <div className="p-1.5 space-y-0.5">
+          <div className="p-2 space-y-0.5">
+            {sessions.length === 0 && (
+              <p className="text-[11px] text-muted-foreground text-center py-6 px-2">
+                As suas conversas aparecerão aqui
+              </p>
+            )}
             {sessions.map(s => (
               <div
                 key={s.id}
                 onClick={() => selectSession(s.id)}
                 className={cn(
-                  "group flex items-center gap-1.5 px-2 py-1.5 rounded-lg text-xs cursor-pointer transition-all",
+                  "group flex items-center gap-2 px-2.5 py-2 rounded-lg text-xs cursor-pointer transition-all",
                   s.id === activeSessionId
                     ? "bg-primary/10 text-primary font-medium"
-                    : "text-muted-foreground hover:bg-muted"
+                    : "text-muted-foreground hover:bg-muted/60"
                 )}
               >
-                <MessageSquare className="h-3 w-3 shrink-0" />
+                <MessageSquare className="h-3.5 w-3.5 shrink-0 opacity-60" />
                 <span className="truncate flex-1">{s.title}</span>
-                <button onClick={(e) => { e.stopPropagation(); deleteSession(s.id); }} className="opacity-0 group-hover:opacity-100 p-0.5">
-                  <Trash2 className="h-2.5 w-2.5" />
+                <button
+                  onClick={(e) => { e.stopPropagation(); deleteSession(s.id); }}
+                  className="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-destructive/10 transition-opacity"
+                >
+                  <Trash2 className="h-3 w-3 text-destructive" />
                 </button>
               </div>
             ))}
@@ -1457,64 +1490,120 @@ function ChatIABitrixView() {
         </ScrollArea>
       </div>
 
-      {/* Chat */}
-      <div className="flex-1 flex flex-col">
-        <div ref={scrollRef} className="flex-1 overflow-y-auto p-4">
+      {/* Chat area - b24ui ChatPalette pattern */}
+      <div className="flex-1 flex flex-col min-w-0">
+        {/* Messages area */}
+        <div ref={scrollRef} className="flex-1 overflow-y-auto">
           {messages.length === 0 ? (
-            <div className="flex items-center justify-center h-full text-center text-muted-foreground">
-              <div>
-                <Sparkles className="h-10 w-10 mx-auto mb-3 opacity-20" />
-                {currentAgent?.welcome_message ? (
-                  <div className="text-sm" dangerouslySetInnerHTML={{ __html: renderMd(currentAgent.welcome_message) }} />
-                ) : (
-                  <p className="text-sm">Envie uma mensagem para conversar com o agente</p>
-                )}
-              </div>
+            <div className="b24-chat-empty">
+              <Sparkles className="b24-chat-empty-icon" />
+              <h3 className="text-sm font-semibold text-foreground mb-1">
+                {currentAgent?.name || "Emmely AI"}
+              </h3>
+              {currentAgent?.welcome_message ? (
+                <div className="text-xs max-w-sm leading-relaxed" dangerouslySetInnerHTML={{ __html: renderMd(currentAgent.welcome_message) }} />
+              ) : (
+                <p className="text-xs max-w-sm">
+                  Envie uma mensagem para iniciar a conversa
+                </p>
+              )}
             </div>
           ) : (
-            <div className="max-w-2xl mx-auto space-y-4">
+            <div className="max-w-2xl mx-auto px-4 pt-4 pb-2">
               {messages.map((m, i) => (
-                <div key={i} className={cn("flex gap-2", m.role === "user" ? "justify-end" : "")}>
+                <div key={i} className="b24-chat-message">
+                  <div className={cn(
+                    "b24-chat-msg-container",
+                    m.role === "user" && "justify-end"
+                  )}>
+                    {m.role === "assistant" && (
+                      <div className="b24-chat-avatar assistant">
+                        <Sparkles className="h-4 w-4" />
+                      </div>
+                    )}
+                    <div className={cn("b24-chat-msg-content", m.role)}>
+                      {m.role === "assistant" ? (
+                        <div dangerouslySetInnerHTML={{ __html: renderMd(m.content) }} />
+                      ) : (
+                        <span>{m.content}</span>
+                      )}
+                    </div>
+                  </div>
+                  {/* Actions on hover - b24ui pattern */}
                   {m.role === "assistant" && (
-                    <div className="w-6 h-6 rounded-full bg-primary/10 flex items-center justify-center shrink-0 mt-0.5">
-                      <Sparkles className="h-3 w-3 text-primary" />
+                    <div className="b24-chat-actions" style={{ left: 44 }}>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-6 w-6 rounded-md text-muted-foreground hover:text-foreground"
+                        onClick={() => copyMessage(m.content)}
+                      >
+                        <FileText className="h-3 w-3" />
+                      </Button>
                     </div>
                   )}
-                  <div className={cn(
-                    "max-w-[80%] text-sm",
-                    m.role === "user" ? "bg-primary text-primary-foreground b24-msg-user px-3 py-2" : ""
-                  )}>
-                    {m.role === "assistant" ? (
-                      <div dangerouslySetInnerHTML={{ __html: renderMd(m.content) }} />
-                    ) : (
-                      <p className="whitespace-pre-wrap">{m.content}</p>
-                    )}
-                  </div>
                 </div>
               ))}
               {loading && (
-                <div className="flex gap-2">
-                  <div className="w-6 h-6 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
-                    <Sparkles className="h-3 w-3 text-primary" />
+                <div className="b24-chat-message">
+                  <div className="b24-chat-msg-container">
+                    <div className="b24-chat-avatar assistant">
+                      <Sparkles className="h-4 w-4" />
+                    </div>
+                    <div className="b24-chat-msg-content assistant">
+                      <div className="b24-typing-dots">
+                        <span /><span /><span />
+                      </div>
+                    </div>
                   </div>
-                  <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
                 </div>
               )}
             </div>
           )}
         </div>
-        <div className="p-3 border-t border-border">
-          <div className="max-w-2xl mx-auto flex gap-2">
-            <Input value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => e.key === "Enter" && sendMessage()} placeholder="Escreva uma mensagem..." disabled={loading} className="flex-1 rounded-xl shadow-sm" />
-            <AudioRecordButton
-              onTranscript={(text) => setInput((prev) => (prev ? prev + " " : "") + text)}
-              disabled={loading}
-              preferNative
-              lang="pt-PT"
-              fetchTokenUrl={`${SUPABASE_URL}/functions/v1/elevenlabs-scribe-token`}
-              fetchHeaders={{ Authorization: `Bearer ${SUPABASE_KEY}` }}
-            />
-            <Button size="icon" onClick={sendMessage} disabled={!input.trim() || loading} className="rounded-xl"><Send className="h-4 w-4" /></Button>
+
+        {/* Input area - b24ui ChatPrompt pattern */}
+        <div className="border-t border-border bg-card/50 backdrop-blur-sm p-3">
+          <div className="max-w-2xl mx-auto">
+            <div className="b24-chat-prompt">
+              <textarea
+                ref={textareaRef}
+                value={input}
+                onChange={(e) => { setInput(e.target.value); autoResize(); }}
+                onKeyDown={handleKeyDown}
+                placeholder="Escreva a sua mensagem..."
+                disabled={loading}
+                rows={1}
+              />
+              <div className="b24-prompt-footer">
+                <AudioRecordButton
+                  onTranscript={(text) => setInput((prev) => (prev ? prev + " " : "") + text)}
+                  disabled={loading}
+                  preferNative
+                  lang="pt-PT"
+                  fetchTokenUrl={`${SUPABASE_URL}/functions/v1/elevenlabs-scribe-token`}
+                  fetchHeaders={{ Authorization: `Bearer ${SUPABASE_KEY}` }}
+                />
+                {loading ? (
+                  <button
+                    className="b24-prompt-submit loading"
+                    onClick={() => {}}
+                    title="A processar..."
+                  >
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  </button>
+                ) : (
+                  <button
+                    className="b24-prompt-submit"
+                    onClick={sendMessage}
+                    disabled={!input.trim()}
+                    title="Enviar"
+                  >
+                    <Send className="h-4 w-4" />
+                  </button>
+                )}
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -1530,6 +1619,7 @@ function PlaygroundView() {
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     fetch(`${SUPABASE_URL}/rest/v1/ai_agents?select=id,name,is_default,is_active&is_active=eq.true&order=is_default.desc`, {
@@ -1544,12 +1634,18 @@ function PlaygroundView() {
     if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
   }, [messages]);
 
+  const autoResize = () => {
+    const el = textareaRef.current;
+    if (el) { el.style.height = "auto"; el.style.height = Math.min(el.scrollHeight, 120) + "px"; }
+  };
+
   const sendMessage = async () => {
     if (!input.trim() || !selectedAgent || loading) return;
     const userMsg = { role: "user", content: input };
     const newMessages = [...messages, userMsg];
     setMessages(newMessages);
     setInput("");
+    if (textareaRef.current) textareaRef.current.style.height = "auto";
     setLoading(true);
     try {
       const res = await fetch(`${SUPABASE_URL}/functions/v1/ai-playground`, {
@@ -1565,61 +1661,135 @@ function PlaygroundView() {
     setLoading(false);
   };
 
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); }
+  };
+
+  const renderMd = (text: string) => {
+    let html = text
+      .replace(/```(\w*)\n([\s\S]*?)```/g, '<pre class="bg-muted rounded-md p-3 text-xs overflow-x-auto my-2 border border-border"><code>$2</code></pre>')
+      .replace(/`([^`]+)`/g, '<code class="bg-muted px-1.5 py-0.5 rounded text-xs border border-border/50">$1</code>')
+      .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+      .replace(/\*(.+?)\*/g, '<em>$1</em>')
+      .replace(/^- (.+)$/gm, '<li class="ml-3">$1</li>')
+      .replace(/\n/g, '<br>');
+    return html;
+  };
+
   return (
-    <div className="p-6 flex flex-col h-screen">
-      <div className="b24-view-header mb-4">
-        <h1 className="text-xl font-bold text-white">Playground</h1>
-        <p className="text-white/60 text-sm mt-0.5">Teste o seu agente IA em tempo real</p>
+    <div className="flex flex-col h-screen bg-background">
+      {/* Header */}
+      <div className="p-4 pb-0">
+        <div className="b24-view-header mb-4">
+          <h1 className="text-lg font-bold text-white">Playground</h1>
+          <p className="text-white/60 text-xs mt-0.5">Teste o seu agente IA em tempo real</p>
+        </div>
+        <div className="mb-3">
+          <Select value={selectedAgent} onValueChange={(v) => { setSelectedAgent(v); setMessages([]); }}>
+            <SelectTrigger className="h-9 rounded-lg border-border">
+              <SelectValue placeholder="Selecionar agente" />
+            </SelectTrigger>
+            <SelectContent>
+              {agents.map(a => (
+                <SelectItem key={a.id} value={a.id}>
+                  <span className="flex items-center gap-1.5">
+                    <Bot className="h-3.5 w-3.5 text-primary" />
+                    {a.name} {a.is_default && <Star className="h-2.5 w-2.5 text-warning fill-warning" />}
+                  </span>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
       </div>
 
-      <div className="mb-4">
-        <Label className="text-sm">Agente</Label>
-        <Select value={selectedAgent} onValueChange={(v) => { setSelectedAgent(v); setMessages([]); }}>
-          <SelectTrigger className="mt-1"><SelectValue placeholder="Selecionar agente" /></SelectTrigger>
-          <SelectContent>
-            {agents.map(a => <SelectItem key={a.id} value={a.id}>{a.name} {a.is_default ? "★" : ""}</SelectItem>)}
-          </SelectContent>
-        </Select>
-      </div>
-
-      <Card className="flex-1 flex flex-col overflow-hidden b24-card">
-        <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-3">
-          {messages.length === 0 && (
-            <div className="flex items-center justify-center h-full">
-              <div className="text-center text-muted-foreground">
-                <Sparkles className="h-12 w-12 mx-auto mb-3 opacity-20" />
-                <p className="text-sm">Envie uma mensagem para testar o agente...</p>
-              </div>
+      {/* Chat card - b24ui ChatPalette style */}
+      <div className="flex-1 flex flex-col overflow-hidden mx-4 mb-4 b24-card bg-card">
+        <div ref={scrollRef} className="flex-1 overflow-y-auto">
+          {messages.length === 0 ? (
+            <div className="b24-chat-empty">
+              <Sparkles className="b24-chat-empty-icon" />
+              <p className="text-xs">Envie uma mensagem para testar o agente...</p>
             </div>
-          )}
-          {messages.map((m, i) => (
-            <div key={i} className={cn("flex", m.role === "user" ? "justify-end" : "justify-start")}>
-              <div className={cn(
-                "max-w-[80%] px-4 py-2.5 text-sm",
-                m.role === "user" ? "bg-primary text-primary-foreground b24-msg-user" : "bg-muted text-foreground b24-msg-bot"
-              )}>
-                <p className="whitespace-pre-wrap">{m.content}</p>
-              </div>
-            </div>
-          ))}
-          {loading && (
-            <div className="flex justify-start">
-              <div className="bg-muted b24-msg-bot px-4 py-3">
-                <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-              </div>
+          ) : (
+            <div className="max-w-xl mx-auto px-4 pt-4 pb-2">
+              {messages.map((m, i) => (
+                <div key={i} className="b24-chat-message">
+                  <div className={cn(
+                    "b24-chat-msg-container",
+                    m.role === "user" && "justify-end"
+                  )}>
+                    {m.role === "assistant" && (
+                      <div className="b24-chat-avatar assistant">
+                        <Bot className="h-4 w-4" />
+                      </div>
+                    )}
+                    <div className={cn("b24-chat-msg-content", m.role)}>
+                      {m.role === "assistant" ? (
+                        <div dangerouslySetInnerHTML={{ __html: renderMd(m.content) }} />
+                      ) : (
+                        <span>{m.content}</span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ))}
+              {loading && (
+                <div className="b24-chat-message">
+                  <div className="b24-chat-msg-container">
+                    <div className="b24-chat-avatar assistant">
+                      <Bot className="h-4 w-4" />
+                    </div>
+                    <div className="b24-chat-msg-content assistant">
+                      <div className="b24-typing-dots">
+                        <span /><span /><span />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>
+
+        {/* Input - b24ui ChatPrompt */}
         <div className="border-t border-border p-3">
-          <div className="flex gap-2">
-            <Input value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => e.key === "Enter" && sendMessage()} placeholder="Digite uma mensagem..." disabled={loading} className="flex-1" />
-            <Button size="icon" onClick={sendMessage} disabled={!input.trim() || loading}><Send className="h-4 w-4" /></Button>
-            {messages.length > 0 && (
-              <Button variant="ghost" size="icon" onClick={() => setMessages([])}><RotateCcw className="h-4 w-4" /></Button>
-            )}
+          <div className="b24-chat-prompt">
+            <textarea
+              ref={textareaRef}
+              value={input}
+              onChange={(e) => { setInput(e.target.value); autoResize(); }}
+              onKeyDown={handleKeyDown}
+              placeholder="Digite uma mensagem..."
+              disabled={loading}
+              rows={1}
+            />
+            <div className="b24-prompt-footer">
+              {loading ? (
+                <button className="b24-prompt-submit loading" title="A processar...">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                </button>
+              ) : (
+                <>
+                  {messages.length > 0 && (
+                    <Button variant="ghost" size="icon" className="h-7 w-7 rounded-md text-muted-foreground" onClick={() => setMessages([])}>
+                      <RotateCcw className="h-3.5 w-3.5" />
+                    </Button>
+                  )}
+                  <button
+                    className="b24-prompt-submit"
+                    onClick={sendMessage}
+                    disabled={!input.trim()}
+                    title="Enviar"
+                  >
+                    <Send className="h-4 w-4" />
+                  </button>
+                </>
+              )}
+            </div>
           </div>
         </div>
-      </Card>
+      </div>
     </div>
   );
 }
