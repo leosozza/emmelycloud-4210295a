@@ -565,9 +565,11 @@ function PagamentosTab() {
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState<string | null>(null);
   const [transactions, setTransactions] = useState<PaymentTransaction[]>([]);
-  const [testingStripe, setTestingStripe] = useState(false);
+  const [testingStripePT, setTestingStripePT] = useState(false);
+  const [testingStripeBR, setTestingStripeBR] = useState(false);
   const [testingAsaas, setTestingAsaas] = useState(false);
-  const [stripeResult, setStripeResult] = useState<{ ok: boolean; message?: string; error?: string } | null>(null);
+  const [stripePtResult, setStripePtResult] = useState<{ ok: boolean; message?: string; error?: string } | null>(null);
+  const [stripeBrResult, setStripeBrResult] = useState<{ ok: boolean; message?: string; error?: string } | null>(null);
   const [asaasResult, setAsaasResult] = useState<{ ok: boolean; message?: string; error?: string } | null>(null);
 
   const loadCredentials = useCallback(async () => {
@@ -609,7 +611,6 @@ function PagamentosTab() {
 
   useEffect(() => {
     loadCredentials();
-    // Load recent transactions
     supabase
       .from("payment_transactions")
       .select("id, gateway, amount, currency, status, payment_method, created_at")
@@ -622,26 +623,44 @@ function PagamentosTab() {
 
   const credProps = { credentials, drafts, setDrafts, onSave: handleSaveCredential, saving };
 
-  const stripeConfigured = credentials["stripe::STRIPE_SECRET_KEY"]?.has_value;
+  const stripePtConfigured = credentials["stripe_pt::STRIPE_SECRET_KEY_PT"]?.has_value;
+  const stripeBrConfigured = credentials["stripe_br::STRIPE_SECRET_KEY_BR"]?.has_value;
   const asaasConfigured = credentials["asaas::ASAAS_API_KEY"]?.has_value;
 
-  const handleTestStripe = async () => {
-    setTestingStripe(true);
-    setStripeResult(null);
+  const handleTestStripePT = async () => {
+    setTestingStripePT(true);
+    setStripePtResult(null);
     try {
-      // Test Stripe by fetching account info
       const { data, error } = await supabase.functions.invoke("payment-create", {
-        body: { amount: 0.01, currency: "EUR", payment_method: "card", customer_data: { country: "Portugal", email: "test@test.com" }, description: "Teste de conexão" },
+        body: { amount: 0.01, currency: "EUR", payment_method: "card", force_gateway: "stripe_pt", customer_data: { country: "Portugal", email: "test@test.com" }, description: "Teste Stripe PT" },
       });
       if (error || data?.error) {
-        setStripeResult({ ok: false, error: data?.error || "Erro ao contactar Stripe" });
+        setStripePtResult({ ok: false, error: data?.error || "Erro ao contactar Stripe PT" });
       } else {
-        setStripeResult({ ok: true, message: "Conexão Stripe válida! Transação de teste criada." });
+        setStripePtResult({ ok: true, message: "Conexão Stripe PT válida!" });
       }
     } catch {
-      setStripeResult({ ok: false, error: "Erro de rede" });
+      setStripePtResult({ ok: false, error: "Erro de rede" });
     }
-    setTestingStripe(false);
+    setTestingStripePT(false);
+  };
+
+  const handleTestStripeBR = async () => {
+    setTestingStripeBR(true);
+    setStripeBrResult(null);
+    try {
+      const { data, error } = await supabase.functions.invoke("payment-create", {
+        body: { amount: 0.01, currency: "BRL", payment_method: "card", force_gateway: "stripe_br", customer_data: { country: "Brasil", email: "test@test.com" }, description: "Teste Stripe BR" },
+      });
+      if (error || data?.error) {
+        setStripeBrResult({ ok: false, error: data?.error || "Erro ao contactar Stripe BR" });
+      } else {
+        setStripeBrResult({ ok: true, message: "Conexão Stripe BR válida!" });
+      }
+    } catch {
+      setStripeBrResult({ ok: false, error: "Erro de rede" });
+    }
+    setTestingStripeBR(false);
   };
 
   const handleTestAsaas = async () => {
@@ -654,7 +673,7 @@ function PagamentosTab() {
       if (error || data?.error) {
         setAsaasResult({ ok: false, error: data?.error || "Erro ao contactar Asaas" });
       } else {
-        setAsaasResult({ ok: true, message: "Conexão Asaas válida! Transação de teste criada." });
+        setAsaasResult({ ok: true, message: "Conexão Asaas válida!" });
       }
     } catch {
       setAsaasResult({ ok: false, error: "Erro de rede" });
@@ -662,7 +681,8 @@ function PagamentosTab() {
     setTestingAsaas(false);
   };
 
-  const totalStripe = transactions.filter(t => t.gateway === "stripe" && (t.status === "confirmed" || t.status === "received")).reduce((s, t) => s + Number(t.amount), 0);
+  const totalStripePT = transactions.filter(t => (t.gateway === "stripe_pt" || (t.gateway === "stripe" && t.currency === "EUR")) && (t.status === "confirmed" || t.status === "received")).reduce((s, t) => s + Number(t.amount), 0);
+  const totalStripeBR = transactions.filter(t => (t.gateway === "stripe_br" || (t.gateway === "stripe" && t.currency === "BRL")) && (t.status === "confirmed" || t.status === "received")).reduce((s, t) => s + Number(t.amount), 0);
   const totalAsaas = transactions.filter(t => t.gateway === "asaas" && (t.status === "confirmed" || t.status === "received")).reduce((s, t) => s + Number(t.amount), 0);
 
   const statusLabels: Record<string, string> = {
@@ -686,8 +706,8 @@ function PagamentosTab() {
   };
 
   return (
-    <div className="grid gap-4 md:grid-cols-2">
-      {/* Stripe Card */}
+    <div className="grid gap-4 md:grid-cols-3">
+      {/* Stripe PT Card */}
       <Card>
         <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-2">
           <div className="flex items-center gap-3">
@@ -695,52 +715,77 @@ function PagamentosTab() {
               <CreditCard className="h-5 w-5 text-indigo-600" />
             </div>
             <div>
-              <CardTitle className="text-base">Stripe</CardTitle>
-              <CardDescription>Portugal / Europa (EUR)</CardDescription>
+              <CardTitle className="text-base">Stripe Portugal</CardTitle>
+              <CardDescription>Europa (EUR) — Cartão, Multibanco, MB WAY, SEPA</CardDescription>
             </div>
           </div>
-          <StatusBadge status={stripeConfigured ? "active" : "inactive"} />
+          <StatusBadge status={stripePtConfigured ? "active" : "inactive"} />
         </CardHeader>
         <CardContent className="space-y-3 text-sm">
-          <CredentialInput provider="stripe" credentialKey="STRIPE_SECRET_KEY" label="Secret Key (sk_...)" {...credProps} />
-          <CredentialInput provider="stripe" credentialKey="STRIPE_WEBHOOK_SECRET" label="Webhook Secret (whsec_...)" {...credProps} />
+          <CredentialInput provider="stripe_pt" credentialKey="STRIPE_SECRET_KEY_PT" label="Secret Key (sk_...)" {...credProps} />
+          <CredentialInput provider="stripe_pt" credentialKey="STRIPE_WEBHOOK_SECRET_PT" label="Webhook Secret (whsec_...)" {...credProps} />
 
           <WebhookUrlDisplay
-            label="Webhook URL (configurar no Stripe Dashboard)"
+            label="Webhook URL"
             url={`https://qohnsluvhyziovfynzlu.supabase.co/functions/v1/payment-webhook-stripe`}
-            hint="Eventos: payment_intent.succeeded, payment_intent.payment_failed, payment_intent.canceled, checkout.session.completed, charge.refunded"
+            hint="Eventos: payment_intent.succeeded, checkout.session.completed, charge.refunded"
           />
-
-          <details className="group rounded-md border border-border">
-            <summary className="flex cursor-pointer items-center justify-between px-3 py-2 text-xs font-medium text-muted-foreground hover:text-foreground">
-              <span>📋 Como configurar</span>
-              <ChevronDown className="h-3.5 w-3.5 transition-transform group-open:rotate-180" />
-            </summary>
-            <ol className="space-y-2 px-3 pb-3 pt-1 text-xs text-muted-foreground list-decimal list-inside">
-              <li>Aceda ao <a href="https://dashboard.stripe.com" target="_blank" rel="noopener noreferrer" className="underline text-primary">Stripe Dashboard</a></li>
-              <li>Vá a <strong>Developers → API Keys</strong></li>
-              <li>Copie a <strong>Secret Key</strong> (<code className="text-[10px] bg-muted px-1 rounded">sk_live_…</code> ou <code className="text-[10px] bg-muted px-1 rounded">sk_test_…</code>) e cole acima</li>
-              <li>Vá a <strong>Developers → Webhooks → Add endpoint</strong></li>
-              <li>Cole o <strong>Webhook URL</strong> acima como Endpoint URL</li>
-              <li>Selecione os eventos: <code className="text-[10px] bg-muted px-1 rounded">payment_intent.succeeded</code>, <code className="text-[10px] bg-muted px-1 rounded">payment_intent.payment_failed</code>, <code className="text-[10px] bg-muted px-1 rounded">payment_intent.canceled</code>, <code className="text-[10px] bg-muted px-1 rounded">checkout.session.completed</code>, <code className="text-[10px] bg-muted px-1 rounded">charge.refunded</code></li>
-              <li>Após criar o endpoint, copie o <strong>Signing Secret</strong> (<code className="text-[10px] bg-muted px-1 rounded">whsec_…</code>) e cole acima</li>
-              <li>Clique em <strong>"Testar Conexão"</strong> para validar</li>
-            </ol>
-          </details>
 
           <div className="flex justify-between text-xs text-muted-foreground">
             <span>Total processado</span>
-            <span className="font-medium text-foreground">€{totalStripe.toFixed(2)}</span>
+            <span className="font-medium text-foreground">€{totalStripePT.toFixed(2)}</span>
           </div>
 
-          <Button size="sm" variant="outline" className="w-full" onClick={handleTestStripe} disabled={testingStripe || !stripeConfigured}>
-            {testingStripe ? <RefreshCw className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <Activity className="h-3.5 w-3.5 mr-1.5" />}
-            {testingStripe ? "A testar…" : "Testar Conexão"}
+          <Button size="sm" variant="outline" className="w-full" onClick={handleTestStripePT} disabled={testingStripePT || !stripePtConfigured}>
+            {testingStripePT ? <RefreshCw className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <Activity className="h-3.5 w-3.5 mr-1.5" />}
+            {testingStripePT ? "A testar…" : "Testar Conexão"}
           </Button>
-          {stripeResult && (
-            <div className={`flex items-center gap-2 rounded-md px-3 py-2 ${stripeResult.ok ? "bg-green-50 text-green-800" : "bg-red-50 text-red-800"}`}>
-              {stripeResult.ok ? <CheckCircle2 className="h-4 w-4 shrink-0" /> : <AlertCircle className="h-4 w-4 shrink-0" />}
-              <span className="text-xs">{stripeResult.ok ? stripeResult.message : stripeResult.error}</span>
+          {stripePtResult && (
+            <div className={`flex items-center gap-2 rounded-md px-3 py-2 ${stripePtResult.ok ? "bg-green-50 text-green-800" : "bg-red-50 text-red-800"}`}>
+              {stripePtResult.ok ? <CheckCircle2 className="h-4 w-4 shrink-0" /> : <AlertCircle className="h-4 w-4 shrink-0" />}
+              <span className="text-xs">{stripePtResult.ok ? stripePtResult.message : stripePtResult.error}</span>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Stripe BR Card */}
+      <Card>
+        <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-2">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-violet-100">
+              <CreditCard className="h-5 w-5 text-violet-600" />
+            </div>
+            <div>
+              <CardTitle className="text-base">Stripe Brasil</CardTitle>
+              <CardDescription>Brasil (BRL) — Cartão</CardDescription>
+            </div>
+          </div>
+          <StatusBadge status={stripeBrConfigured ? "active" : "inactive"} />
+        </CardHeader>
+        <CardContent className="space-y-3 text-sm">
+          <CredentialInput provider="stripe_br" credentialKey="STRIPE_SECRET_KEY_BR" label="Secret Key (sk_...)" {...credProps} />
+          <CredentialInput provider="stripe_br" credentialKey="STRIPE_WEBHOOK_SECRET_BR" label="Webhook Secret (whsec_...)" {...credProps} />
+
+          <WebhookUrlDisplay
+            label="Webhook URL"
+            url={`https://qohnsluvhyziovfynzlu.supabase.co/functions/v1/payment-webhook-stripe`}
+            hint="Eventos: payment_intent.succeeded, checkout.session.completed, charge.refunded"
+          />
+
+          <div className="flex justify-between text-xs text-muted-foreground">
+            <span>Total processado</span>
+            <span className="font-medium text-foreground">R${totalStripeBR.toFixed(2)}</span>
+          </div>
+
+          <Button size="sm" variant="outline" className="w-full" onClick={handleTestStripeBR} disabled={testingStripeBR || !stripeBrConfigured}>
+            {testingStripeBR ? <RefreshCw className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <Activity className="h-3.5 w-3.5 mr-1.5" />}
+            {testingStripeBR ? "A testar…" : "Testar Conexão"}
+          </Button>
+          {stripeBrResult && (
+            <div className={`flex items-center gap-2 rounded-md px-3 py-2 ${stripeBrResult.ok ? "bg-green-50 text-green-800" : "bg-red-50 text-red-800"}`}>
+              {stripeBrResult.ok ? <CheckCircle2 className="h-4 w-4 shrink-0" /> : <AlertCircle className="h-4 w-4 shrink-0" />}
+              <span className="text-xs">{stripeBrResult.ok ? stripeBrResult.message : stripeBrResult.error}</span>
             </div>
           )}
         </CardContent>
@@ -754,7 +799,7 @@ function PagamentosTab() {
               <DollarSign className="h-5 w-5 text-teal-600" />
             </div>
             <div>
-              <CardTitle className="text-base">Asaas</CardTitle>
+              <CardTitle className="text-base">Asaas Brasil</CardTitle>
               <CardDescription>Brasil (BRL) — PIX, Boleto, Cartão</CardDescription>
             </div>
           </div>
@@ -764,7 +809,6 @@ function PagamentosTab() {
           <CredentialInput provider="asaas" credentialKey="ASAAS_API_KEY" label="API Key" {...credProps} />
           <CredentialInput provider="asaas" credentialKey="ASAAS_WEBHOOK_TOKEN" label="Webhook Token" {...credProps} />
 
-          {/* Ambiente Selector */}
           <div className="space-y-1">
             <label className="text-xs text-muted-foreground">Ambiente</label>
             <div className="flex gap-2">
@@ -794,9 +838,9 @@ function PagamentosTab() {
           </div>
 
           <WebhookUrlDisplay
-            label="Webhook URL (configurar no painel Asaas)"
+            label="Webhook URL"
             url={`https://qohnsluvhyziovfynzlu.supabase.co/functions/v1/payment-webhook-asaas`}
-            hint="Eventos: PAYMENT_CONFIRMED, PAYMENT_RECEIVED, PAYMENT_OVERDUE, PAYMENT_DELETED, PAYMENT_RESTORED, PAYMENT_REFUNDED, PAYMENT_UPDATED, PAYMENT_CREATED"
+            hint="Eventos: PAYMENT_CONFIRMED, PAYMENT_RECEIVED, PAYMENT_OVERDUE, etc."
           />
 
           <div className="flex justify-between text-xs text-muted-foreground">
@@ -818,7 +862,7 @@ function PagamentosTab() {
       </Card>
 
       {/* Emmely Pay Summary */}
-      <Card className="md:col-span-2">
+      <Card className="md:col-span-3">
         <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-2">
           <div className="flex items-center gap-3">
             <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-emerald-100">

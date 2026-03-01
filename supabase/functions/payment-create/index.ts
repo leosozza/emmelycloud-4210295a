@@ -281,9 +281,16 @@ Deno.serve(async (req) => {
     } else if (gateway === "stripe") {
       // Determine which Stripe key to use based on region
       const stripeKeyName = stripeRegion === "br" ? "STRIPE_SECRET_KEY_BR" : (stripeRegion === "pt" ? "STRIPE_SECRET_KEY_PT" : "STRIPE_SECRET_KEY");
-      let stripeKey = await getCredential(supabase, "stripe", stripeKeyName);
-      // Fallback to generic key if region-specific not found
+      const stripeProvider = stripeRegion === "br" ? "stripe_br" : (stripeRegion === "pt" ? "stripe_pt" : "stripe");
+      let stripeKey = await getCredential(supabase, stripeProvider, stripeKeyName);
+      // Fallback: try regional provider with generic key name, then generic provider
       if (!stripeKey && stripeRegion) {
+        stripeKey = await getCredential(supabase, stripeProvider, "STRIPE_SECRET_KEY");
+      }
+      if (!stripeKey) {
+        stripeKey = await getCredential(supabase, "stripe", stripeKeyName);
+      }
+      if (!stripeKey) {
         stripeKey = await getCredential(supabase, "stripe", "STRIPE_SECRET_KEY");
       }
       if (!stripeKey) {
