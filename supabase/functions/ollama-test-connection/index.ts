@@ -35,7 +35,23 @@ Deno.serve(async (req) => {
     const baseUrl = data.credential_value.replace(/\/v1\/chat\/completions$/, "").replace(/\/+$/, "");
 
     // Test connectivity by calling /api/tags
-    const resp = await fetch(`${baseUrl}/api/tags`, { signal: AbortSignal.timeout(10000) });
+    let resp;
+    try {
+      resp = await fetch(`${baseUrl}/api/tags`, { signal: AbortSignal.timeout(10000) });
+    } catch (fetchErr: any) {
+      const msg = fetchErr.message || String(fetchErr);
+      const isDns = msg.includes("dns") || msg.includes("lookup");
+      return new Response(
+        JSON.stringify({
+          ok: false,
+          url: baseUrl,
+          error: isDns
+            ? "Servidor Ollama inacessível — o túnel Cloudflare pode ter expirado."
+            : `Erro de conexão: ${msg}`,
+        }),
+        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
 
     if (!resp.ok) {
       return new Response(
