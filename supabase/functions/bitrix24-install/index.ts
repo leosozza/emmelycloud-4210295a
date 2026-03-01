@@ -587,6 +587,30 @@ Deno.serve(async (req) => {
             error: { Name: "Erro", Type: "string" },
           },
         },
+        {
+          CODE: "emmely_generate_proposal",
+          NAME: "Emmely: Gerar Proposta",
+          PROPERTIES: {
+            deal_id: { Name: "ID do Negócio", Type: "string", Description: "ID do Deal no Bitrix24" },
+            lead_id: { Name: "ID do Lead", Type: "string", Description: "ID do Lead no Bitrix24" },
+            entity_type: { Name: "Tipo de Entidade", Type: "select", Options: { deal: "Negócio", lead: "Lead" }, Default: "deal" },
+            title: { Name: "Título da Proposta", Type: "string", Description: "Opcional — usa título do negócio se vazio" },
+            service_name: { Name: "Nome do Serviço", Type: "string", Description: "Busca valor/descrição na tabela de serviços" },
+            payment_type: { Name: "Tipo de Pagamento", Type: "select", Options: { fixo: "Fixo", exito: "Êxito", hibrido: "Híbrido", parcelado: "Parcelado" }, Default: "fixo" },
+            installments: { Name: "Parcelas", Type: "int", Default: "1" },
+            value: { Name: "Valor", Type: "double", Description: "Valor manual (senão usa serviço ou OPPORTUNITY)" },
+            description: { Name: "Descrição", Type: "text", Description: "Descrição manual da proposta" },
+            conditions: { Name: "Condições", Type: "text" },
+            valid_days: { Name: "Dias de Validade", Type: "int", Default: "30" },
+          },
+          RETURN_PROPERTIES: {
+            proposal_url: { Name: "URL da Proposta", Type: "string" },
+            pdf_url: { Name: "URL do PDF", Type: "string" },
+            proposal_id: { Name: "ID da Proposta", Type: "string" },
+            status: { Name: "Status", Type: "string" },
+            error: { Name: "Erro", Type: "string" },
+          },
+        },
       ];
 
       for (const robot of robots) {
