@@ -1,70 +1,69 @@
 
 
-## Integrar sidebar animada (Aceternity-style) no Bitrix24App
+## Substituir menu de navegacao por Dock flutuante (estilo macOS)
 
-### Resumo
+### Conceito
 
-Substituir a sidebar estatica actual do `/bitrix24` por uma sidebar animada com hover-to-expand, usando framer-motion. A sidebar colapsa para mostrar apenas icones e expande ao passar o rato, seguindo o padrao Aceternity UI.
-
-### Dependencia nova
-
-- `framer-motion` - necessario para as animacoes de expand/collapse
+Remover a barra de navegacao (pills) do header e colocar um Dock flutuante no fundo do ecra com efeito de magnificacao ao hover. O header fica minimalista (apenas logo, pesquisa, notificacoes, perfil).
 
 ### Novos ficheiros
 
 | Ficheiro | Descricao |
 |---|---|
-| `src/components/bitrix24/AnimatedSidebar.tsx` | Sidebar animada adaptada para React (sem Next.js). Inclui SidebarProvider, SidebarBody, DesktopSidebar, MobileSidebar e SidebarLink adaptados para navegacao por estado (onClick + setView) em vez de rotas |
+| `src/components/ui/dock.tsx` | Componente Dock com magnificacao (Dock, DockItem, DockLabel, DockIcon) usando framer-motion |
 
-**Nota**: NAO vou sobrescrever `src/components/ui/sidebar.tsx` que ja existe e e o sidebar shadcn usado no resto da app. O componente Aceternity sera criado separadamente em `src/components/bitrix24/`.
+### Ficheiros a editar
 
-### Adaptacoes do componente original
+**`src/components/AppHeader.tsx`**
+- Remover a secao `<nav>` de desktop (linhas 206-246) com os pills e dropdowns
+- Manter o top bar intacto (logo, pesquisa, notificacoes, perfil)
+- Remover a navegacao mobile grid (linhas 248-265) -- sera substituida pelo Dock
+- Simplificar: o header fica apenas com a barra superior (h-14)
 
-O componente fornecido usa Next.js (`Link`, `Image`) e precisa de adaptacao:
+**`src/components/AppLayout.tsx`**
+- Adicionar o componente `AppDock` no fundo, fixo (`fixed bottom-4 left-1/2 -translate-x-1/2 z-30`)
+- O Dock tera todos os itens de navegacao flat (sem grupos/dropdowns -- cada item e directo)
+- Clicar num item do Dock navega para a rota correspondente via `useNavigate`
 
-- `Link` do Next.js sera substituido por `<button>` com `onClick` (a navegacao do Bitrix24App e baseada em estado, nao em rotas)
-- `Image` do Next.js sera substituido por `<img>` standard
-- O `SidebarLink` sera adaptado para aceitar `onClick` e `isActive` em vez de `href`
-- A interface `Links` sera estendida com `id` para mapear ao `AppView`
+### Itens do Dock
 
-### Ficheiro a editar
+Todos os itens de navegacao actuais, flattened para acesso directo:
 
-**`src/pages/Bitrix24App.tsx`** (linhas 202-267 - sidebar actual):
+```text
+Dashboard | Atendimento | Leads | Propostas | Contratos | Casos | Carteira | Financeiro | Automacoes | Relatorios | Integracoes | Agentes | Fluxos | Roadmap
+```
 
-- Importar `AnimatedSidebar` e os sub-componentes
-- Substituir o `<aside>` estatico pelo novo componente animado
-- Manter o header com logo gradient, as categorias de navegacao (Emmely IO, Emmely CRM, Emmely Pay), e o footer com status de conexao
-- A sidebar ira:
-  - Mostrar apenas icones quando colapsada (hover out)
-  - Expandir suavemente ao hover mostrando labels
-  - No mobile, usar um menu hamburger com overlay
+Cada item tem icone lucide-react + label tooltip que aparece ao hover com animacao.
 
 ### Estrutura visual
 
 ```text
-Colapsada (w-14)     Expandida (w-56, on hover)
-+------+             +------------------------+
-| [E]  |             | [E] Emmely Cloud       |
-+------+             |      for Bitrix24      |
-| [*]  |    hover    |      domain.com        |
-| [B]  |   ------>   +------------------------+
-| [B]  |             | EMMELY IO              |
-| [P]  |             |  * Chat IA             |
-+------+             |  B Persona             |
-| [.]  |             |  B Treinamento         |
-+------+             |  P Playground          |
-                     | EMMELY CRM             |
-                     |  ...                   |
-                     +------------------------+
-                     | . Conectado            |
-                     +------------------------+
++--------------------------------------------------+
+| [E] Emmely Cloud   [Pesquisar...]   🔔 [Avatar]  |  <- header slim
++--------------------------------------------------+
+|                                                    |
+|              Conteudo da pagina                    |
+|                                                    |
+|                                                    |
++--------------------------------------------------+
+      [icon][icon][icon][icon][icon][icon]            <- Dock flutuante
+              (magnifica ao hover)
 ```
 
 ### Detalhes tecnicos
 
-- `framer-motion` `animate` prop controla a largura: `w-14` (60px) colapsado, `w-56` (224px) expandido
-- `AnimatePresence` para mostrar/esconder labels com fade
-- `motion.span` para animar o texto dos links com opacity e display
-- Estado `open` controlado por `onMouseEnter`/`onMouseLeave` no desktop
-- Mobile: botao hamburger com overlay fullscreen animado
-- As categorias de navegacao continuam a usar `Collapsible` quando expandido, e mostram apenas o icone quando colapsado
+- `framer-motion` ja esta instalado no projecto
+- O Dock usa `useMotionValue` e `useSpring` para o efeito de magnificacao dos icones
+- `DockLabel` aparece como tooltip acima do icone ao hover
+- O Dock tera `panelHeight={56}` e `magnification={68}` para nao ser demasiado grande
+- Background do dock: `bg-background/80 backdrop-blur-xl border border-border shadow-lg` para se integrar com o tema
+- No mobile, o dock fica com scroll horizontal e magnification reduzida
+- A pagina actual sera indicada visualmente com o icone do Dock em cor primaria
+
+### Responsividade
+
+- Desktop: Dock centrado no fundo com magnificacao completa
+- Mobile: Dock com scroll horizontal, `magnification={52}`, items mais compactos
+- O menu hamburger mobile do header sera removido (o Dock substitui)
+
+Nenhuma dependencia nova. Nenhuma migracao de BD.
