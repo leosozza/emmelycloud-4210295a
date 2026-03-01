@@ -65,7 +65,6 @@ const Bitrix24App = () => {
   const [loadingData, setLoadingData] = useState(false);
 
   useEffect(() => {
-    // Get URL params (for testing outside Bitrix24)
     const params = new URLSearchParams(window.location.search);
     const midParam = params.get("member_id");
     const domainParam = params.get("DOMAIN");
@@ -118,7 +117,6 @@ const Bitrix24App = () => {
         const data = await res.json();
         const int = data.integration || null;
         setIntegration(int);
-        // Extract bot_id from config (stored as numeric string)
         const cfg = int?.config || {};
         setBotId(cfg.bot_id ? String(cfg.bot_id) : null);
       }
@@ -197,22 +195,22 @@ const Bitrix24App = () => {
   }
 
   return (
-    <div className={cn("min-h-screen flex", isDark && "dark")} style={{ background: isDark ? '#111827' : '#f5f7fa' }}>
-      {/* ── Sidebar b24ui ── */}
-      <aside className="w-56 flex flex-col shrink-0 border-r" style={{ background: isDark ? '#1f2937' : '#ffffff', borderColor: isDark ? 'hsl(222, 30%, 22%)' : '#dfe0e3' }}>
+    <div className={cn("min-h-screen flex bg-background", isDark && "dark")}>
+      {/* ── Sidebar ── */}
+      <aside className="w-56 flex flex-col shrink-0 border-r border-border bg-card">
         {/* Logo - Gradient Header */}
         <div className="b24-sidebar-header p-4">
           <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-lg flex items-center justify-center font-extrabold text-sm" style={{ background: 'rgba(255,255,255,0.15)', color: 'white' }}>
+            <div className="w-8 h-8 rounded-lg flex items-center justify-center font-extrabold text-sm bg-white/15 text-white">
               E
             </div>
             <div>
               <p className="font-bold text-sm leading-tight text-white">Emmely Cloud</p>
-              <p className="text-[10px]" style={{ color: 'rgba(255,255,255,0.6)' }}>for Bitrix24</p>
+              <p className="text-[10px] text-white/60">for Bitrix24</p>
             </div>
           </div>
           {domain && (
-            <div className="mt-2.5 text-[10px] text-center truncate px-2 py-1 rounded-md" style={{ background: 'rgba(255,255,255,0.12)', color: 'rgba(255,255,255,0.8)' }}>
+            <div className="mt-2.5 text-[10px] text-center truncate px-2 py-1 rounded-md bg-white/10 text-white/80">
               {domain}
             </div>
           )}
@@ -222,7 +220,7 @@ const Bitrix24App = () => {
         <nav className="flex-1 p-2 space-y-0.5 overflow-y-auto">
           {navCategories.map((cat) => (
             <Collapsible key={cat.label} defaultOpen className="mb-1">
-              <CollapsibleTrigger className="flex w-full items-center justify-between px-3 py-2 text-[10px] uppercase tracking-[0.1em] font-semibold transition-colors" style={{ color: isDark ? '#9ca3af' : '#525c69' }}>
+              <CollapsibleTrigger className="flex w-full items-center justify-between px-3 py-2 text-[10px] uppercase tracking-[0.1em] font-semibold text-muted-foreground transition-colors">
                 {cat.label}
                 <ChevronDown className="h-3 w-3 transition-transform duration-200 [&[data-state=open]]:rotate-180" />
               </CollapsibleTrigger>
@@ -233,14 +231,10 @@ const Bitrix24App = () => {
                     onClick={() => setView(item.id as AppView)}
                     className={cn(
                       "w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-[13px] transition-all text-left",
-                      view === item.id && "font-semibold"
+                      view === item.id
+                        ? "bg-primary/10 text-primary font-semibold"
+                        : "text-muted-foreground hover:bg-muted hover:text-foreground"
                     )}
-                    style={view === item.id ? {
-                      background: isDark ? 'rgba(34,131,216,0.15)' : 'rgba(34,131,216,0.08)',
-                      color: '#2283d8',
-                    } : {
-                      color: isDark ? '#d1d5db' : '#525c69',
-                    }}
                   >
                     <item.icon className="h-4 w-4 shrink-0" />
                     {item.label}
@@ -252,17 +246,17 @@ const Bitrix24App = () => {
         </nav>
 
         {/* Footer */}
-        <div className="p-3 space-y-2" style={{ borderTop: `1px solid ${isDark ? 'hsl(222, 30%, 22%)' : '#dfe0e3'}` }}>
+        <div className="p-3 space-y-2 border-t border-border">
           <div className="flex items-center gap-2">
-            <div className={cn("w-2.5 h-2.5 rounded-full shrink-0", integration ? "bg-[#589731] b24-pulse" : "bg-[#df532d]")} />
-            <span className="text-xs" style={{ color: isDark ? '#9ca3af' : '#525c69' }}>
+            <div className={cn("w-2.5 h-2.5 rounded-full shrink-0", integration ? "bg-success b24-pulse" : "bg-destructive")} />
+            <span className="text-xs text-muted-foreground">
               {integration ? "Conectado" : "Desconectado"}
             </span>
           </div>
           {botId && (
             <div className="flex items-center gap-2">
-              <Bot className="h-3 w-3 shrink-0" style={{ color: isDark ? '#9ca3af' : '#525c69' }} />
-              <span className="text-[10px]" style={{ color: isDark ? '#9ca3af' : '#525c69' }}>Bot ID: {botId}</span>
+              <Bot className="h-3 w-3 shrink-0 text-muted-foreground" />
+              <span className="text-[10px] text-muted-foreground">Bot ID: {botId}</span>
             </div>
           )}
         </div>
@@ -324,7 +318,6 @@ function DashboardView({ integration, botId, domain, loading, onResync, onRefres
       headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` },
     }).then(r => r.json()).then(setLogs).catch(console.error);
 
-    // Load open conversations for "Devolver ao Bot"
     fetch(`${SUPABASE_URL}/rest/v1/conversations?select=id,contact_name,contact_phone,channel,attendance_mode&status=in.(aberta,em_atendimento,aguardando)&order=last_message_at.desc&limit=20`, {
       headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` },
     }).then(r => r.json()).then(setOpenConversations).catch(console.error);
@@ -403,23 +396,23 @@ function DashboardView({ integration, botId, domain, loading, onResync, onRefres
 
   return (
     <div className="p-6 space-y-6">
-      {/* b24ui View Header */}
+      {/* View Header */}
       <div className="b24-view-header">
         <h1 className="text-xl font-bold text-white">Dashboard</h1>
         <p className="text-white/60 text-sm mt-0.5">Portal: {domain || integration?.domain || "—"}</p>
       </div>
 
-      {/* Status Cards - b24ui style with left border */}
+      {/* Status Cards */}
       <div className="grid grid-cols-2 gap-4">
         <Card className={cn("b24-card", integration ? "b24-status-success" : "b24-status-danger")}>
           <CardContent className="pt-5">
             <div className="flex items-center gap-3">
-              <div className={cn("w-10 h-10 rounded-full flex items-center justify-center", integration ? "bg-[#589731]/10" : "bg-[#df532d]/10")}>
-                {integration ? <CheckCircle className="h-5 w-5 text-[#589731]" /> : <XCircle className="h-5 w-5 text-[#df532d]" />}
+              <div className={cn("w-10 h-10 rounded-full flex items-center justify-center", integration ? "bg-success/10" : "bg-destructive/10")}>
+                {integration ? <CheckCircle className="h-5 w-5 text-success" /> : <XCircle className="h-5 w-5 text-destructive" />}
               </div>
               <div>
-                <p className="text-sm font-semibold" style={{ color: '#333840' }}>Integração</p>
-                <p className="text-xs" style={{ color: '#525c69' }}>{integration ? "Conectado" : "Desconectado"}</p>
+                <p className="text-sm font-semibold text-foreground">Integração</p>
+                <p className="text-xs text-muted-foreground">{integration ? "Conectado" : "Desconectado"}</p>
               </div>
             </div>
           </CardContent>
@@ -428,12 +421,12 @@ function DashboardView({ integration, botId, domain, loading, onResync, onRefres
         <Card className={cn("b24-card", botId ? "b24-status-info" : "b24-status-warning")}>
           <CardContent className="pt-5">
             <div className="flex items-center gap-3">
-              <div className={cn("w-10 h-10 rounded-full flex items-center justify-center", botId ? "bg-[#2283d8]/10" : "bg-[#c49c00]/10")}>
-                <Bot className={cn("h-5 w-5", botId ? "text-[#2283d8]" : "text-[#c49c00]")} />
+              <div className={cn("w-10 h-10 rounded-full flex items-center justify-center", botId ? "bg-primary/10" : "bg-warning/10")}>
+                <Bot className={cn("h-5 w-5", botId ? "text-primary" : "text-warning")} />
               </div>
               <div>
-                <p className="text-sm font-semibold" style={{ color: '#333840' }}>Bot IA</p>
-                <p className="text-xs" style={{ color: '#525c69' }}>{botId ? `ID: ${botId}` : "Não registado"}</p>
+                <p className="text-sm font-semibold text-foreground">Bot IA</p>
+                <p className="text-xs text-muted-foreground">{botId ? `ID: ${botId}` : "Não registado"}</p>
               </div>
             </div>
           </CardContent>
@@ -442,12 +435,12 @@ function DashboardView({ integration, botId, domain, loading, onResync, onRefres
         <Card className={cn("b24-card", integration?.connector_registered ? "b24-status-success" : "b24-status-warning")}>
           <CardContent className="pt-5">
             <div className="flex items-center gap-3">
-              <div className={cn("w-10 h-10 rounded-full flex items-center justify-center", integration?.connector_registered ? "bg-[#589731]/10" : "bg-[#c49c00]/10")}>
-                <Plug className={cn("h-5 w-5", integration?.connector_registered ? "text-[#589731]" : "text-[#c49c00]")} />
+              <div className={cn("w-10 h-10 rounded-full flex items-center justify-center", integration?.connector_registered ? "bg-success/10" : "bg-warning/10")}>
+                <Plug className={cn("h-5 w-5", integration?.connector_registered ? "text-success" : "text-warning")} />
               </div>
               <div>
-                <p className="text-sm font-semibold" style={{ color: '#333840' }}>Conector</p>
-                <p className="text-xs" style={{ color: '#525c69' }}>{integration?.connector_registered ? "Registado" : "Não registado"}</p>
+                <p className="text-sm font-semibold text-foreground">Conector</p>
+                <p className="text-xs text-muted-foreground">{integration?.connector_registered ? "Registado" : "Não registado"}</p>
               </div>
             </div>
           </CardContent>
@@ -456,22 +449,22 @@ function DashboardView({ integration, botId, domain, loading, onResync, onRefres
         <Card className="b24-card b24-status-info">
           <CardContent className="pt-5">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-full flex items-center justify-center bg-[#2283d8]/10">
-                <Activity className="h-5 w-5 text-[#2283d8]" />
+              <div className="w-10 h-10 rounded-full flex items-center justify-center bg-primary/10">
+                <Activity className="h-5 w-5 text-primary" />
               </div>
               <div>
-                <p className="text-sm font-semibold" style={{ color: '#333840' }}>Últimos eventos</p>
-                <p className="text-xs" style={{ color: '#525c69' }}>{logs.length} registos</p>
+                <p className="text-sm font-semibold text-foreground">Últimos eventos</p>
+                <p className="text-xs text-muted-foreground">{logs.length} registos</p>
               </div>
             </div>
           </CardContent>
         </Card>
       </div>
 
-      {/* Início Rápido - b24ui stepper */}
+      {/* Início Rápido - stepper */}
       <Card className="b24-card">
         <CardHeader>
-          <CardTitle className="text-sm font-semibold" style={{ color: '#333840' }}>Início Rápido</CardTitle>
+          <CardTitle className="text-sm font-semibold text-foreground">Início Rápido</CardTitle>
           <CardDescription>Configure o bot para responder automaticamente</CardDescription>
         </CardHeader>
         <CardContent>
@@ -486,10 +479,10 @@ function DashboardView({ integration, botId, domain, loading, onResync, onRefres
                 <div className={cn("b24-step-dot", step.done ? "done" : "pending")}>
                   {step.done ? <CheckCircle className="h-3 w-3" /> : (i + 1)}
                 </div>
-                <p className="text-sm font-medium" style={{ color: '#333840' }}>{step.label}</p>
-                <p className="text-xs mt-0.5 flex items-center gap-1" style={{ color: '#525c69' }}>
-                  {step.done && <CheckCircle className="h-3 w-3 text-[#589731]" />}
-                  {!step.done && i < 2 && <AlertCircle className="h-3 w-3 text-[#c49c00]" />}
+                <p className="text-sm font-medium text-foreground">{step.label}</p>
+                <p className="text-xs mt-0.5 flex items-center gap-1 text-muted-foreground">
+                  {step.done && <CheckCircle className="h-3 w-3 text-success" />}
+                  {!step.done && i < 2 && <AlertCircle className="h-3 w-3 text-warning" />}
                   {step.desc}
                 </p>
               </div>
@@ -501,8 +494,8 @@ function DashboardView({ integration, botId, domain, loading, onResync, onRefres
       {/* Agente do Canal Aberto */}
       <Card className="b24-card">
         <CardHeader>
-          <CardTitle className="text-sm font-semibold flex items-center gap-2" style={{ color: '#333840' }}>
-            <Bot className="h-4 w-4 text-[#2283d8]" /> Agente do Canal Aberto
+          <CardTitle className="text-sm font-semibold flex items-center gap-2 text-foreground">
+            <Bot className="h-4 w-4 text-primary" /> Agente do Canal Aberto
           </CardTitle>
           <CardDescription>Selecione qual agente IA responde automaticamente no Open Channel</CardDescription>
         </CardHeader>
@@ -522,7 +515,7 @@ function DashboardView({ integration, botId, domain, loading, onResync, onRefres
           <Button
             onClick={handleSaveAgent}
             disabled={savingAgent || selectedAgent === (integration?.bitrix_agent_id || "")}
-            className="w-full rounded-md bg-[#2283d8] hover:bg-[#1b6cb8] text-white"
+            className="w-full rounded-md"
             size="sm"
           >
             {savingAgent ? <><Loader2 className="h-3.5 w-3.5 mr-2 animate-spin" />Salvando...</> : <><Save className="h-3.5 w-3.5 mr-2" />Salvar Agente</>}
@@ -530,7 +523,7 @@ function DashboardView({ integration, botId, domain, loading, onResync, onRefres
         </CardContent>
       </Card>
 
-      {/* Bot + Events buttons - b24ui style */}
+      {/* Bot + Events buttons */}
       <div className="space-y-2">
         <Button
           onClick={async () => {
@@ -579,14 +572,14 @@ function DashboardView({ integration, botId, domain, loading, onResync, onRefres
             }
           }}
           disabled={reregisteringBot}
-          className="w-full rounded-md bg-[#2283d8] hover:bg-[#1b6cb8] text-white"
+          className="w-full rounded-md"
         >
           {reregisteringBot
             ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Re-registando Bot...</>
             : <><Bot className="h-4 w-4 mr-2" />Re-registar Bot (EVENT_JOIN_CHAT)</>}
         </Button>
         {reregisterBotResult && (
-          <div className={cn("text-xs text-center px-3 py-2 rounded-lg flex items-center justify-center gap-1.5", reregisterBotResult.includes("Erro") ? "bg-[#df532d]/10 text-[#df532d]" : "bg-[#589731]/10 text-[#589731]")}>
+          <div className={cn("text-xs text-center px-3 py-2 rounded-lg flex items-center justify-center gap-1.5", reregisterBotResult.includes("Erro") ? "bg-destructive/10 text-destructive" : "bg-success/10 text-success")}>
             {reregisterBotResult.includes("Erro") ? <XCircle className="h-3 w-3" /> : <CheckCircle className="h-3 w-3" />}
             {reregisterBotResult}
           </div>
@@ -596,7 +589,7 @@ function DashboardView({ integration, botId, domain, loading, onResync, onRefres
           {rebinding ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Registando webhooks...</> : <><Zap className="h-4 w-4 mr-2" />Re-registar Webhooks de Eventos</>}
         </Button>
         {rebindResult && (
-          <div className={cn("text-xs text-center px-3 py-2 rounded-lg flex items-center justify-center gap-1.5", rebindResult.includes("Erro") ? "bg-[#df532d]/10 text-[#df532d]" : "bg-[#589731]/10 text-[#589731]")}>
+          <div className={cn("text-xs text-center px-3 py-2 rounded-lg flex items-center justify-center gap-1.5", rebindResult.includes("Erro") ? "bg-destructive/10 text-destructive" : "bg-success/10 text-success")}>
             {rebindResult.includes("Erro") ? <XCircle className="h-3 w-3" /> : <CheckCircle className="h-3 w-3" />}
             {rebindResult}
           </div>
@@ -606,27 +599,27 @@ function DashboardView({ integration, botId, domain, loading, onResync, onRefres
         </Button>
       </div>
 
-      {/* Logs - b24ui with icons instead of emojis */}
+      {/* Logs */}
       {logs.length > 0 && (
         <Card className="b24-card">
           <CardHeader>
-            <CardTitle className="text-sm font-semibold" style={{ color: '#333840' }}>Últimos Eventos</CardTitle>
+            <CardTitle className="text-sm font-semibold text-foreground">Últimos Eventos</CardTitle>
           </CardHeader>
           <CardContent>
             <ScrollArea className="h-48">
               <div className="space-y-1">
                 {logs.map((log, i) => (
-                  <div key={i} className="flex items-center justify-between py-2 last:border-0 text-xs" style={{ borderBottom: '1px solid #dfe0e3' }}>
+                  <div key={i} className="flex items-center justify-between py-2 last:border-0 text-xs border-b border-border">
                     <div className="flex items-center gap-2">
                       {log.direction === "inbound" ? (
-                        <ArrowDownLeft className="h-3.5 w-3.5 text-[#2283d8]" />
+                        <ArrowDownLeft className="h-3.5 w-3.5 text-primary" />
                       ) : (
-                        <ArrowUpRight className="h-3.5 w-3.5 text-[#7b5ea7]" />
+                        <ArrowUpRight className="h-3.5 w-3.5 text-accent" />
                       )}
-                      <span className="font-medium" style={{ color: '#333840' }}>{log.event_type}</span>
-                      {log.error && <AlertCircle className="h-3 w-3 text-[#df532d]" />}
+                      <span className="font-medium text-foreground">{log.event_type}</span>
+                      {log.error && <AlertCircle className="h-3 w-3 text-destructive" />}
                     </div>
-                    <span style={{ color: '#525c69' }}>{new Date(log.created_at).toLocaleTimeString()}</span>
+                    <span className="text-muted-foreground">{new Date(log.created_at).toLocaleTimeString()}</span>
                   </div>
                 ))}
               </div>
@@ -635,29 +628,29 @@ function DashboardView({ integration, botId, domain, loading, onResync, onRefres
         </Card>
       )}
 
-      {/* ── Devolver ao Bot - b24ui accent card ── */}
-      <Card className="b24-card" style={{ borderLeft: '4px solid #7b5ea7' }}>
+      {/* Devolver ao Bot */}
+      <Card className="b24-card border-l-4 border-l-accent">
         <CardHeader>
-          <CardTitle className="text-sm font-semibold flex items-center gap-2" style={{ color: '#333840' }}>
-            <Bot className="h-4 w-4 text-[#7b5ea7]" /> Devolver ao Bot
+          <CardTitle className="text-sm font-semibold flex items-center gap-2 text-foreground">
+            <Bot className="h-4 w-4 text-accent" /> Devolver ao Bot
           </CardTitle>
           <CardDescription>Devolva manualmente uma conversa ao controlo do bot IA</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           {openConversations.length > 0 && (
             <div className="space-y-2">
-              <p className="text-xs font-medium" style={{ color: '#525c69' }}>Conversas abertas ({openConversations.length})</p>
+              <p className="text-xs font-medium text-muted-foreground">Conversas abertas ({openConversations.length})</p>
               <div className="space-y-1.5 max-h-48 overflow-y-auto">
                 {openConversations.map((conv) => (
-                  <div key={conv.id} className="flex items-center justify-between gap-2 p-2.5 rounded-lg transition-colors" style={{ background: 'rgba(0,0,0,0.02)' }}>
+                  <div key={conv.id} className="flex items-center justify-between gap-2 p-2.5 rounded-lg transition-colors bg-muted/30">
                     <div className="flex items-center gap-2 flex-1 min-w-0">
                       <div className={cn(
                         "w-2.5 h-2.5 rounded-full shrink-0",
-                        conv.attendance_mode === "bot" ? "bg-[#589731] b24-pulse" : "bg-[#c49c00]"
+                        conv.attendance_mode === "bot" ? "bg-success b24-pulse" : "bg-warning"
                       )} />
                       <div className="flex-1 min-w-0">
-                        <p className="text-xs font-medium truncate" style={{ color: '#333840' }}>{conv.contact_name}</p>
-                        <p className="text-[10px]" style={{ color: '#525c69' }}>
+                        <p className="text-xs font-medium truncate text-foreground">{conv.contact_name}</p>
+                        <p className="text-[10px] text-muted-foreground">
                           {conv.channel} • {conv.attendance_mode === "bot" ? "Bot ativo" : "Humano/Aguardando"}
                         </p>
                       </div>
@@ -669,7 +662,7 @@ function DashboardView({ integration, botId, domain, loading, onResync, onRefres
                       disabled={returningToBot || conv.attendance_mode === "bot"}
                       onClick={() => handleReturnToBot(conv.id)}
                     >
-                      {conv.attendance_mode === "bot" ? <><CheckCircle className="h-3 w-3 mr-1 text-[#589731]" />Bot</> : <><Bot className="h-3 w-3 mr-1" />Devolver</>}
+                      {conv.attendance_mode === "bot" ? <><CheckCircle className="h-3 w-3 mr-1 text-success" />Bot</> : <><Bot className="h-3 w-3 mr-1" />Devolver</>}
                     </Button>
                   </div>
                 ))}
@@ -678,7 +671,7 @@ function DashboardView({ integration, botId, domain, loading, onResync, onRefres
           )}
 
           <div className="space-y-2">
-            <p className="text-xs font-medium" style={{ color: '#525c69' }}>Ou inserir ID manualmente</p>
+            <p className="text-xs font-medium text-muted-foreground">Ou inserir ID manualmente</p>
             <div className="flex gap-2">
               <Input
                 value={returnToBotDialogId}
@@ -688,7 +681,7 @@ function DashboardView({ integration, botId, domain, loading, onResync, onRefres
               />
               <Button
                 size="sm"
-                className="h-9 shrink-0 rounded-md bg-[#2283d8] hover:bg-[#1b6cb8] text-white"
+                className="h-9 shrink-0 rounded-md"
                 onClick={() => handleReturnToBot()}
                 disabled={returningToBot || !returnToBotDialogId.trim()}
               >
@@ -697,7 +690,7 @@ function DashboardView({ integration, botId, domain, loading, onResync, onRefres
             </div>
           </div>
           {returnToBotResult && (
-            <div className={cn("text-xs text-center px-3 py-2 rounded-lg flex items-center justify-center gap-1.5", returnToBotResult.includes("Erro") ? "bg-[#df532d]/10 text-[#df532d]" : "bg-[#589731]/10 text-[#589731]")}>
+            <div className={cn("text-xs text-center px-3 py-2 rounded-lg flex items-center justify-center gap-1.5", returnToBotResult.includes("Erro") ? "bg-destructive/10 text-destructive" : "bg-success/10 text-success")}>
               {returnToBotResult.includes("Erro") ? <XCircle className="h-3 w-3" /> : <CheckCircle className="h-3 w-3" />}
               {returnToBotResult}
             </div>
@@ -779,21 +772,17 @@ function AgentesView({ botId, integrationId }: { botId: string | null; integrati
     loadData();
   };
 
-  const handleRepublish = async (id: string) => {
-    setRepublishing(id);
-    if (integrationId) {
-      await fetch(`${SUPABASE_URL}/rest/v1/bitrix24_integrations?id=eq.${integrationId}`, {
-        method: "PATCH",
-        headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}`, "Content-Type": "application/json", Prefer: "return=minimal" },
-        body: JSON.stringify({ bitrix_agent_id: id }),
-      });
-    }
-    await handleSetDefault(id);
-    setRepublishing(null);
+  const handleToggleActive = async (id: string, current: boolean) => {
+    await fetch(`${SUPABASE_URL}/rest/v1/ai_agents?id=eq.${id}`, {
+      method: "PATCH",
+      headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}`, "Content-Type": "application/json", Prefer: "return=minimal" },
+      body: JSON.stringify({ is_active: !current }),
+    });
+    loadData();
   };
 
-  const handleDelete = async (id: string) => {
-    if (!confirm("Remover esta persona?")) return;
+  const handleDeleteAgent = async (id: string) => {
+    if (!confirm("Remover este agente?")) return;
     await fetch(`${SUPABASE_URL}/rest/v1/ai_agents?id=eq.${id}`, {
       method: "DELETE",
       headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` },
@@ -801,93 +790,91 @@ function AgentesView({ botId, integrationId }: { botId: string | null; integrati
     loadData();
   };
 
-  const openEdit = (agent: AIAgent) => {
-    setEditingAgent({ ...agent });
-    setDialogOpen(true);
+  const handleRepublishBot = async (agent: AIAgent) => {
+    if (!integrationId) return;
+    setRepublishing(agent.id);
+    try {
+      const res = await fetch(`${SUPABASE_URL}/functions/v1/bitrix24-reregister-bot`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` },
+        body: JSON.stringify({ integration_id: integrationId, agent_id: agent.id }),
+      });
+      const data = await res.json();
+      if (!data.success) console.error("Republish failed:", data.error);
+    } catch (e) { console.error(e); }
+    setRepublishing(null);
   };
-
-  const openCreate = () => {
-    setEditingAgent({ ...defaultAgent });
-    setDialogOpen(true);
-  };
-
-  const providerName = (slug: string) => providers.find(p => p.slug === slug)?.name || slug;
 
   return (
     <div className="p-6 space-y-6">
       <div className="b24-view-header flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-bold text-white">Personas</h1>
-          <p className="text-white/60 text-sm mt-0.5">Configure a personalidade, modelo de IA, treinamento e fluxos</p>
+          <h1 className="text-xl font-bold text-white">Personas / Agentes IA</h1>
+          <p className="text-white/60 text-sm mt-0.5">Configure o comportamento do bot</p>
         </div>
-        <Button onClick={openCreate} className="rounded-md bg-white/15 hover:bg-white/25 text-white border-0">
-          <Plus className="h-4 w-4 mr-2" /> Nova Persona
+        <Button
+          onClick={() => { setEditingAgent({ ...defaultAgent }); setDialogOpen(true); }}
+          className="rounded-md bg-white/15 hover:bg-white/25 text-white border-0"
+        >
+          <Plus className="h-4 w-4 mr-2" /> Novo Agente
         </Button>
       </div>
 
       {loading ? (
-        <div className="flex justify-center py-12"><Loader2 className="h-8 w-8 animate-spin text-muted-foreground" /></div>
+        <div className="flex justify-center py-12"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>
       ) : agents.length === 0 ? (
-        <Card>
-          <CardContent className="py-12 text-center text-muted-foreground">
-            <Bot className="h-12 w-12 mx-auto mb-4 opacity-30" />
-            <p>Nenhuma persona criada</p>
-            <Button className="mt-4" onClick={openCreate}><Plus className="h-4 w-4 mr-2" /> Criar Primeira Persona</Button>
+        <Card className="b24-card">
+          <CardContent className="py-12 text-center">
+            <Bot className="h-12 w-12 mx-auto mb-3 text-muted-foreground opacity-30" />
+            <p className="text-muted-foreground">Nenhum agente configurado</p>
+            <Button onClick={() => { setEditingAgent({ ...defaultAgent }); setDialogOpen(true); }} className="mt-4">
+              <Plus className="h-4 w-4 mr-2" /> Criar Primeiro Agente
+            </Button>
           </CardContent>
         </Card>
       ) : (
         <div className="grid gap-4">
           {agents.map((agent) => (
-            <Card key={agent.id} className={cn("b24-card transition-all", agent.is_default && "b24-status-info")}>
-              <CardContent className="pt-5">
-                <div className="flex items-start justify-between gap-4">
-                  <div className="flex items-start gap-3 flex-1 min-w-0">
-                    <div className="w-10 h-10 rounded-full flex items-center justify-center shrink-0 bg-bitrix-gradient">
-                      <Bot className="h-5 w-5 text-white" />
+            <Card key={agent.id} className="b24-card">
+              <CardContent className="pt-5 pb-4">
+                <div className="flex items-start gap-4">
+                  <div className="w-12 h-12 rounded-xl bg-bitrix-gradient flex items-center justify-center text-white font-bold text-lg shrink-0">
+                    {agent.name.charAt(0)}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-1">
+                      <h3 className="font-semibold text-foreground">{agent.name}</h3>
+                      {agent.is_default && <Badge variant="secondary" className="text-[10px]">Padrão</Badge>}
+                      <Badge variant={agent.is_active ? "default" : "outline"} className="text-[10px]">
+                        {agent.is_active ? "Ativo" : "Inativo"}
+                      </Badge>
                     </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <p className="font-semibold text-base">{agent.name}</p>
-                        {agent.is_default && botId && (
-                          <Badge className="text-[10px] bg-[#589731]/10 text-[#589731] border-[#589731]/20">
-                            Bot Ativo
-                          </Badge>
-                        )}
-                        {agent.is_default && !botId && (
-                          <Badge variant="secondary" className="text-[10px]">Padrão</Badge>
-                        )}
-                        <Badge variant="outline" className="text-[10px]">{agent.agent_type}</Badge>
-                      </div>
-                      <p className="text-sm text-muted-foreground mt-0.5 truncate">{agent.description || "Sem descrição"}</p>
-                      <div className="flex gap-3 mt-2 text-xs text-muted-foreground flex-wrap">
-                        <span>{providerName(agent.ai_provider)} • {agent.ai_model?.split("/")[1] || agent.ai_model}</span>
-                        {(agent.training_collection_ids?.length || 0) > 0 && (
-                          <span className="flex items-center gap-1"><BookOpen className="h-3 w-3" />{agent.training_collection_ids.length} docs</span>
-                        )}
-                        {(agent.sub_agent_ids?.length || 0) > 0 && (
-                          <span className="flex items-center gap-1"><Users className="h-3 w-3" />{agent.sub_agent_ids.length} sub-agentes</span>
-                        )}
-                        {agent.default_flow_id && (
-                          <span className="flex items-center gap-1"><GitBranch className="h-3 w-3" />Fluxo</span>
-                        )}
-                      </div>
+                    <p className="text-xs text-muted-foreground line-clamp-2">{agent.description || "Sem descrição"}</p>
+                    <div className="flex items-center gap-1 mt-2 text-[10px] text-muted-foreground">
+                      <span>{agent.ai_provider}/{agent.ai_model}</span>
+                      <span>•</span>
+                      <span>Temp: {agent.temperature}</span>
                     </div>
                   </div>
-                  <div className="flex flex-col gap-2 shrink-0">
-                    <Button
-                      size="sm"
-                      variant={agent.is_default ? "default" : "outline"}
-                      className="h-8 text-xs"
-                      onClick={() => handleRepublish(agent.id)}
-                      disabled={republishing === agent.id}
-                    >
-                      {republishing === agent.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <><Power className="h-3 w-3 mr-1.5" />Republicar</>}
+                  <div className="flex items-center gap-1 shrink-0">
+                    {!agent.is_default && (
+                      <Button variant="ghost" size="sm" className="h-8 text-xs" onClick={() => handleSetDefault(agent.id)}>
+                        <Star className="h-3.5 w-3.5 mr-1" /> Padrão
+                      </Button>
+                    )}
+                    <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => { setEditingAgent(agent); setDialogOpen(true); }}>
+                      <Edit className="h-3.5 w-3.5" />
                     </Button>
-                    <Button size="sm" variant="outline" className="h-8 text-xs" onClick={() => openEdit(agent)}>
-                      <Edit className="h-3 w-3 mr-1.5" />Editar
+                    <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handleToggleActive(agent.id, agent.is_active)}>
+                      <Power className={cn("h-3.5 w-3.5", agent.is_active ? "text-success" : "text-muted-foreground")} />
                     </Button>
-                    <Button size="sm" variant="ghost" className="h-8 text-xs text-destructive hover:text-destructive" onClick={() => handleDelete(agent.id)}>
-                      <Trash2 className="h-3 w-3 mr-1.5" />Remover
+                    {integrationId && (
+                      <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handleRepublishBot(agent)} disabled={republishing === agent.id}>
+                        {republishing === agent.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ExternalLink className="h-3.5 w-3.5" />}
+                      </Button>
+                    )}
+                    <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:text-destructive" onClick={() => handleDeleteAgent(agent.id)}>
+                      <Trash2 className="h-3.5 w-3.5" />
                     </Button>
                   </div>
                 </div>
@@ -987,11 +974,11 @@ function TrainingView() {
       </Card>
 
       <div>
-        <h2 className="text-lg font-semibold mb-3">Base de Conhecimento</h2>
+        <h2 className="text-lg font-semibold mb-3 text-foreground">Base de Conhecimento</h2>
         {loading ? (
           <div className="flex justify-center py-8"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
         ) : docs.length === 0 ? (
-          <Card>
+          <Card className="b24-card">
             <CardContent className="py-12 text-center text-muted-foreground">
               <BookOpen className="h-12 w-12 mx-auto mb-4 opacity-30" />
               <p>Nenhum documento adicionado</p>
@@ -1000,7 +987,7 @@ function TrainingView() {
         ) : (
           <div className="space-y-3">
             {docs.map((d) => (
-              <Card key={d.id}>
+              <Card key={d.id} className="b24-card">
                 <CardContent className="pt-4 pb-4">
                   <div className="flex items-center justify-between gap-3">
                     <div className="flex items-center gap-3 flex-1 min-w-0">
@@ -1008,7 +995,7 @@ function TrainingView() {
                         <FileText className="h-4 w-4 text-primary" />
                       </div>
                       <div className="flex-1 min-w-0">
-                        <p className="font-medium text-sm truncate">{d.title}</p>
+                        <p className="font-medium text-sm truncate text-foreground">{d.title}</p>
                         <p className="text-xs text-muted-foreground mt-0.5">
                           {d.source_type} • {d.chunks_count || 0} chunks
                         </p>
@@ -1184,13 +1171,13 @@ function FlowsView() {
   if (selectedFlow) {
     return (
       <div className="flex flex-col h-screen">
-        <div className="flex items-center justify-between p-3 border-b bg-card shrink-0">
+        <div className="flex items-center justify-between p-3 border-b border-border bg-card shrink-0">
           <div className="flex items-center gap-2">
             <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => { setSelectedFlow(null); setSelectedNodeId(null); fetchFlows(); }}>
               <ArrowLeft className="h-4 w-4" />
             </Button>
             <div>
-              <h3 className="text-sm font-semibold">{selectedFlow.name}</h3>
+              <h3 className="text-sm font-semibold text-foreground">{selectedFlow.name}</h3>
               <p className="text-xs text-muted-foreground">{selectedFlow.description || "Sem descrição"}</p>
             </div>
           </div>
@@ -1243,21 +1230,11 @@ function FlowsView() {
           <CardContent className="space-y-4">
             <div>
               <Label>Nome do Fluxo *</Label>
-              <Input
-                value={newFlowForm.name}
-                onChange={(e) => setNewFlowForm({ ...newFlowForm, name: e.target.value })}
-                placeholder="Ex: Atendimento Inicial"
-                className="mt-1"
-              />
+              <Input value={newFlowForm.name} onChange={(e) => setNewFlowForm({ ...newFlowForm, name: e.target.value })} placeholder="Ex: Atendimento Inicial" className="mt-1" />
             </div>
             <div>
               <Label>Descrição</Label>
-              <Input
-                value={newFlowForm.description}
-                onChange={(e) => setNewFlowForm({ ...newFlowForm, description: e.target.value })}
-                placeholder="Breve descrição do fluxo..."
-                className="mt-1"
-              />
+              <Input value={newFlowForm.description} onChange={(e) => setNewFlowForm({ ...newFlowForm, description: e.target.value })} placeholder="Breve descrição do fluxo..." className="mt-1" />
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div>
@@ -1287,50 +1264,34 @@ function FlowsView() {
             {newFlowForm.trigger_type === "keyword" && (
               <div>
                 <Label>Palavras-chave (separadas por vírgula)</Label>
-                <Input
-                  value={newFlowForm.keywords}
-                  onChange={(e) => setNewFlowForm({ ...newFlowForm, keywords: e.target.value })}
-                  placeholder="Ex: oi, olá, menu, ajuda"
-                  className="mt-1"
-                />
+                <Input value={newFlowForm.keywords} onChange={(e) => setNewFlowForm({ ...newFlowForm, keywords: e.target.value })} placeholder="Ex: oi, olá, menu, ajuda" className="mt-1" />
               </div>
             )}
             <div>
               <Label>Prioridade (maior = primeiro)</Label>
-              <Input
-                type="number"
-                value={newFlowForm.priority}
-                onChange={(e) => setNewFlowForm({ ...newFlowForm, priority: e.target.value })}
-                placeholder="0"
-                className="mt-1"
-              />
+              <Input type="number" value={newFlowForm.priority} onChange={(e) => setNewFlowForm({ ...newFlowForm, priority: e.target.value })} className="mt-1" />
             </div>
-            <div className="flex gap-2 pt-2">
-              <Button onClick={handleCreateFlow} disabled={creating || !newFlowForm.name.trim()} className="flex-1">
-                {creating ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Criando...</> : <><GitBranch className="h-4 w-4 mr-2" />Criar e Editar Fluxo</>}
-              </Button>
-              <Button variant="outline" onClick={() => setShowCreateForm(false)}>Cancelar</Button>
-            </div>
+            <Button onClick={handleCreateFlow} disabled={creating || !newFlowForm.name.trim()} className="w-full">
+              {creating ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Criando...</> : <><Plus className="h-4 w-4 mr-2" />Criar Fluxo</>}
+            </Button>
           </CardContent>
         </Card>
       )}
 
+      {/* Flow List */}
       {loading ? (
-        <div className="flex justify-center py-12"><Loader2 className="h-8 w-8 animate-spin text-muted-foreground" /></div>
+        <div className="flex justify-center py-8"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
       ) : flows.length === 0 ? (
-        <Card>
+        <Card className="b24-card">
           <CardContent className="py-12 text-center text-muted-foreground">
             <GitBranch className="h-12 w-12 mx-auto mb-4 opacity-30" />
-            <p className="text-sm mb-3">Nenhum fluxo criado</p>
-            <Button size="sm" onClick={() => setShowCreateForm(true)}>
-              <Plus className="h-4 w-4 mr-2" />Criar primeiro fluxo
-            </Button>
+            <p>Nenhum fluxo criado</p>
           </CardContent>
         </Card>
       ) : (
         <div className="space-y-3">
-          {flows.map((f) => (
-            <Card key={f.id} className="b24-card cursor-pointer" onClick={() => openFlow(f)}>
+          {flows.map((flow) => (
+            <Card key={flow.id} className="b24-card cursor-pointer" onClick={() => openFlow(flow)}>
               <CardContent className="pt-4 pb-4">
                 <div className="flex items-center justify-between gap-3">
                   <div className="flex items-center gap-3 flex-1 min-w-0">
@@ -1338,33 +1299,21 @@ function FlowsView() {
                       <GitBranch className="h-4 w-4 text-primary" />
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="font-semibold text-sm">{f.name}</p>
-                      <p className="text-xs text-muted-foreground truncate">{f.description || "Sem descrição"}</p>
-                      <div className="flex gap-1.5 mt-1 flex-wrap">
-                        <Badge variant="outline" className="text-[10px]">{f.trigger_type}</Badge>
-                        <Badge variant="outline" className="text-[10px]">{f.flow_type}</Badge>
-                        {f.keywords?.length > 0 && (
-                          <Badge variant="secondary" className="text-[10px]">{f.keywords.slice(0, 2).join(", ")}{f.keywords.length > 2 ? "..." : ""}</Badge>
-                        )}
+                      <div className="flex items-center gap-2">
+                        <p className="font-medium text-sm truncate text-foreground">{flow.name}</p>
+                        <Badge variant={flow.is_active ? "default" : "outline"} className="text-[10px]">
+                          {flow.is_active ? "Ativo" : "Inativo"}
+                        </Badge>
                       </div>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        {flow.trigger_type} • {flow.flow_type} • {(flow.nodes || []).length} nós
+                      </p>
                     </div>
                   </div>
-                  <div className="flex flex-col gap-1.5 shrink-0">
-                    <Button
-                      variant={f.is_active ? "default" : "secondary"}
-                      size="sm"
-                      className={cn("h-7 text-xs rounded-md", f.is_active && "bg-[#589731] hover:bg-[#4a7f2a]")}
-                      onClick={(e) => { e.stopPropagation(); toggleActive(f.id, f.is_active); }}
-                    >
-                      {f.is_active ? <><CheckCircle className="h-3 w-3 mr-1" />Ativo</> : <><XCircle className="h-3 w-3 mr-1" />Inativo</>}
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-7 text-xs text-destructive hover:text-destructive"
-                      onClick={(e) => handleDeleteFlow(f.id, e)}
-                    >
-                      <Trash2 className="h-3 w-3 mr-1" />Remover
+                  <div className="flex items-center gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
+                    <Switch checked={flow.is_active} onCheckedChange={() => toggleActive(flow.id, flow.is_active)} />
+                    <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:text-destructive" onClick={(e) => handleDeleteFlow(flow.id, e)}>
+                      <Trash2 className="h-4 w-4" />
                     </Button>
                   </div>
                 </div>
@@ -1377,16 +1326,16 @@ function FlowsView() {
   );
 }
 
-// ==================== CHAT IA BITRIX VIEW ====================
+// ==================== CHAT IA VIEW ====================
 function ChatIABitrixView() {
   const [agents, setAgents] = useState<any[]>([]);
   const [selectedAgent, setSelectedAgent] = useState("");
   const [messages, setMessages] = useState<Array<{ role: string; content: string }>>([]);
-  const [sessions, setSessions] = useState<Array<{ id: string; title: string; messages: any[] }>>([]);
-  const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const [sessions, setSessions] = useState<Array<{ id: string; title: string; messages: Array<{ role: string; content: string }> }>>([]);
+  const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
 
   useEffect(() => {
     fetch(`${SUPABASE_URL}/rest/v1/ai_agents?select=id,name,is_default,is_active,welcome_message&is_active=eq.true&order=is_default.desc`, {
@@ -1395,8 +1344,6 @@ function ChatIABitrixView() {
       setAgents(data || []);
       if (data?.length > 0) setSelectedAgent(data[0].id);
     }).catch(console.error);
-
-    // Load from localStorage
     const saved = localStorage.getItem("chatia_sessions");
     if (saved) {
       try { setSessions(JSON.parse(saved)); } catch {}
@@ -1444,15 +1391,14 @@ function ChatIABitrixView() {
       const allMsgs = [...newMessages, { role: "assistant", content: data.content || "Erro ao processar." }];
       setMessages(allMsgs);
 
-      // Persist to localStorage
       if (activeSessionId) {
         const updated = sessions.map(s => s.id === activeSessionId ? { ...s, messages: allMsgs } : s);
         saveSessions(updated);
       } else {
         const newId = crypto.randomUUID();
         const title = input.trim().substring(0, 50);
-        const newSession = { id: newId, title, messages: allMsgs };
-        saveSessions([newSession, ...sessions]);
+        const newSess = { id: newId, title, messages: allMsgs };
+        saveSessions([newSess, ...sessions]);
         setActiveSessionId(newId);
       }
     } catch {
@@ -1461,7 +1407,6 @@ function ChatIABitrixView() {
     setLoading(false);
   };
 
-  // Simple markdown render for Bitrix view
   const renderMd = (text: string) => {
     let html = text
       .replace(/```(\w*)\n([\s\S]*?)```/g, '<pre class="bg-muted rounded p-2 text-xs overflow-x-auto my-1"><code>$2</code></pre>')
@@ -1475,10 +1420,10 @@ function ChatIABitrixView() {
 
   return (
     <div className="flex h-screen">
-      {/* Sidebar - b24ui style */}
-      <div className="w-56 flex flex-col shrink-0" style={{ borderRight: '1px solid #dfe0e3', background: '#fff' }}>
-        <div className="p-3 space-y-2" style={{ borderBottom: '1px solid #dfe0e3' }}>
-          <Button onClick={newSession} size="sm" className="w-full rounded-md bg-[#2283d8] hover:bg-[#1b6cb8] text-white">
+      {/* Sidebar */}
+      <div className="w-56 flex flex-col shrink-0 border-r border-border bg-card">
+        <div className="p-3 space-y-2 border-b border-border">
+          <Button onClick={newSession} size="sm" className="w-full rounded-md">
             <Plus className="h-3.5 w-3.5 mr-1" /> Nova conversa
           </Button>
           <Select value={selectedAgent} onValueChange={(v) => { setSelectedAgent(v); newSession(); }}>
@@ -1496,9 +1441,10 @@ function ChatIABitrixView() {
                 onClick={() => selectSession(s.id)}
                 className={cn(
                   "group flex items-center gap-1.5 px-2 py-1.5 rounded-lg text-xs cursor-pointer transition-all",
-                  s.id === activeSessionId ? "font-medium" : ""
+                  s.id === activeSessionId
+                    ? "bg-primary/10 text-primary font-medium"
+                    : "text-muted-foreground hover:bg-muted"
                 )}
-                style={s.id === activeSessionId ? { background: 'rgba(34,131,216,0.08)', color: '#2283d8' } : { color: '#525c69' }}
               >
                 <MessageSquare className="h-3 w-3 shrink-0" />
                 <span className="truncate flex-1">{s.title}</span>
@@ -1536,7 +1482,7 @@ function ChatIABitrixView() {
                   )}
                   <div className={cn(
                     "max-w-[80%] text-sm",
-                    m.role === "user" ? "bg-[#2283d8] text-white b24-msg-user px-3 py-2" : ""
+                    m.role === "user" ? "bg-primary text-primary-foreground b24-msg-user px-3 py-2" : ""
                   )}>
                     {m.role === "assistant" ? (
                       <div dangerouslySetInnerHTML={{ __html: renderMd(m.content) }} />
@@ -1557,7 +1503,7 @@ function ChatIABitrixView() {
             </div>
           )}
         </div>
-        <div className="p-3" style={{ borderTop: '1px solid #dfe0e3' }}>
+        <div className="p-3 border-t border-border">
           <div className="max-w-2xl mx-auto flex gap-2">
             <Input value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => e.key === "Enter" && sendMessage()} placeholder="Escreva uma mensagem..." disabled={loading} className="flex-1 rounded-xl shadow-sm" />
             <AudioRecordButton
@@ -1568,7 +1514,7 @@ function ChatIABitrixView() {
               fetchTokenUrl={`${SUPABASE_URL}/functions/v1/elevenlabs-scribe-token`}
               fetchHeaders={{ Authorization: `Bearer ${SUPABASE_KEY}` }}
             />
-            <Button size="icon" onClick={sendMessage} disabled={!input.trim() || loading} className="rounded-xl bg-[#2283d8] hover:bg-[#1b6cb8]"><Send className="h-4 w-4" /></Button>
+            <Button size="icon" onClick={sendMessage} disabled={!input.trim() || loading} className="rounded-xl"><Send className="h-4 w-4" /></Button>
           </div>
         </div>
       </div>
@@ -1650,7 +1596,7 @@ function PlaygroundView() {
             <div key={i} className={cn("flex", m.role === "user" ? "justify-end" : "justify-start")}>
               <div className={cn(
                 "max-w-[80%] px-4 py-2.5 text-sm",
-                m.role === "user" ? "bg-[#2283d8] text-white b24-msg-user" : "bg-muted text-foreground b24-msg-bot"
+                m.role === "user" ? "bg-primary text-primary-foreground b24-msg-user" : "bg-muted text-foreground b24-msg-bot"
               )}>
                 <p className="whitespace-pre-wrap">{m.content}</p>
               </div>
@@ -1659,12 +1605,12 @@ function PlaygroundView() {
           {loading && (
             <div className="flex justify-start">
               <div className="bg-muted b24-msg-bot px-4 py-3">
-                <Loader2 className="h-4 w-4 animate-spin" style={{ color: '#525c69' }} />
+                <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
               </div>
             </div>
           )}
         </div>
-        <div className="border-t p-3">
+        <div className="border-t border-border p-3">
           <div className="flex gap-2">
             <Input value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => e.key === "Enter" && sendMessage()} placeholder="Digite uma mensagem..." disabled={loading} className="flex-1" />
             <Button size="icon" onClick={sendMessage} disabled={!input.trim() || loading}><Send className="h-4 w-4" /></Button>
@@ -1690,7 +1636,6 @@ function PagamentosView({ integration, onRefresh }: { integration: any; onRefres
     customer_name: "", customer_email: "", description: ""
   });
 
-  // Gateway config from integration.config
   const config = (integration?.config as any) || {};
   const [gwConfig, setGwConfig] = useState({
     deal_gateway_field: config.deal_gateway_field || "",
@@ -1760,10 +1705,10 @@ function PagamentosView({ integration, onRefresh }: { integration: any; onRefres
   };
 
   const statusColors: Record<string, string> = {
-    pending: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400",
-    confirmed: "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400",
-    received: "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400",
-    failed: "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400",
+    pending: "bg-warning/10 text-warning",
+    confirmed: "bg-success/10 text-success",
+    received: "bg-success/10 text-success",
+    failed: "bg-destructive/10 text-destructive",
   };
 
   return (
@@ -1781,7 +1726,7 @@ function PagamentosView({ integration, onRefresh }: { integration: any; onRefres
       {/* Gateway Config for Bitrix24 Deals */}
       <Card className="b24-card">
         <CardHeader>
-          <CardTitle className="text-sm font-semibold flex items-center gap-2" style={{ color: '#333840' }}><Settings className="h-4 w-4 text-[#2283d8]" /> Cobrança Automática ao Fechar Negócio</CardTitle>
+          <CardTitle className="text-sm font-semibold flex items-center gap-2 text-foreground"><Settings className="h-4 w-4 text-primary" /> Cobrança Automática ao Fechar Negócio</CardTitle>
           <CardDescription className="text-xs">Configure os campos do Bitrix24 para criar cobranças automaticamente quando um negócio for fechado.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -1790,95 +1735,99 @@ function PagamentosView({ integration, onRefresh }: { integration: any; onRefres
               type="checkbox"
               checked={gwConfig.auto_charge_on_close}
               onChange={(e) => setGwConfig({ ...gwConfig, auto_charge_on_close: e.target.checked })}
-              className="h-4 w-4 rounded border-input"
-              id="auto_charge"
+              className="rounded"
             />
-            <Label htmlFor="auto_charge" className="cursor-pointer">Ativar cobrança automática</Label>
+            <Label className="text-sm">Ativar cobrança automática</Label>
           </div>
-
-          {gwConfig.auto_charge_on_close && (
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <Label className="text-xs">Campo Gateway (UF_CRM_...)</Label>
-                <Input
-                  value={gwConfig.deal_gateway_field}
-                  onChange={(e) => setGwConfig({ ...gwConfig, deal_gateway_field: e.target.value })}
-                  className="mt-1"
-                  placeholder="UF_CRM_1234567890"
-                />
-                <p className="text-[10px] text-muted-foreground mt-1">
-                  Valores aceites: stripe_pt, stripe_br, asaas, direto
-                </p>
-              </div>
-              <div>
-                <Label className="text-xs">Stage ID "Ganho"</Label>
-                <Input
-                  value={gwConfig.deal_won_stage}
-                  onChange={(e) => setGwConfig({ ...gwConfig, deal_won_stage: e.target.value })}
-                  className="mt-1"
-                  placeholder="WON"
-                />
-              </div>
-              <div>
-                <Label className="text-xs">Campo Valor</Label>
-                <Input
-                  value={gwConfig.deal_amount_field}
-                  onChange={(e) => setGwConfig({ ...gwConfig, deal_amount_field: e.target.value })}
-                  className="mt-1"
-                  placeholder="OPPORTUNITY"
-                />
-              </div>
-              <div>
-                <Label className="text-xs">Campo Moeda</Label>
-                <Input
-                  value={gwConfig.deal_currency_field}
-                  onChange={(e) => setGwConfig({ ...gwConfig, deal_currency_field: e.target.value })}
-                  className="mt-1"
-                  placeholder="CURRENCY_ID"
-                />
-              </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <Label className="text-xs">Campo Gateway (Deal)</Label>
+              <Input value={gwConfig.deal_gateway_field} onChange={(e) => setGwConfig({ ...gwConfig, deal_gateway_field: e.target.value })} placeholder="Ex: UF_CRM_GATEWAY" className="mt-1 text-xs" />
             </div>
-          )}
-
-          <Button onClick={handleSaveGwConfig} disabled={savingConfig || !integration?.id} size="sm">
-            {savingConfig ? <><Loader2 className="h-3 w-3 mr-1 animate-spin" />Guardando...</> : <><Save className="h-3 w-3 mr-1" />Guardar Configuração</>}
+            <div>
+              <Label className="text-xs">Stage Won</Label>
+              <Input value={gwConfig.deal_won_stage} onChange={(e) => setGwConfig({ ...gwConfig, deal_won_stage: e.target.value })} className="mt-1 text-xs" />
+            </div>
+            <div>
+              <Label className="text-xs">Campo Valor</Label>
+              <Input value={gwConfig.deal_amount_field} onChange={(e) => setGwConfig({ ...gwConfig, deal_amount_field: e.target.value })} className="mt-1 text-xs" />
+            </div>
+            <div>
+              <Label className="text-xs">Campo Moeda</Label>
+              <Input value={gwConfig.deal_currency_field} onChange={(e) => setGwConfig({ ...gwConfig, deal_currency_field: e.target.value })} className="mt-1 text-xs" />
+            </div>
+          </div>
+          <Button onClick={handleSaveGwConfig} disabled={savingConfig} size="sm" className="w-full">
+            {savingConfig ? <><Loader2 className="h-3.5 w-3.5 mr-2 animate-spin" />Salvando...</> : <><Save className="h-3.5 w-3.5 mr-2" />Salvar Configuração</>}
           </Button>
         </CardContent>
       </Card>
 
+      {/* Create Payment Form */}
       {showForm && (
         <Card className="b24-card">
-          <CardHeader><CardTitle className="text-sm font-semibold flex items-center gap-2"><CreditCard className="h-4 w-4 text-[#2283d8]" /> Nova Cobrança</CardTitle></CardHeader>
-          <CardContent className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
-              <div><Label>Nome</Label><Input value={form.customer_name} onChange={(e) => setForm({ ...form, customer_name: e.target.value })} className="mt-1" /></div>
-              <div><Label>Email</Label><Input value={form.customer_email} onChange={(e) => setForm({ ...form, customer_email: e.target.value })} className="mt-1" /></div>
-              <div><Label>Valor</Label><Input type="number" step="0.01" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} className="mt-1" /></div>
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2">
+              <CreditCard className="h-4 w-4" /> Nova Cobrança
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="grid grid-cols-2 gap-3">
               <div>
-                <Label>Moeda</Label>
-                <Select value={form.currency} onValueChange={(v) => setForm({ ...form, currency: v, payment_method: v === "BRL" ? "pix" : "card" })}>
+                <Label className="text-xs">Valor *</Label>
+                <Input type="number" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} placeholder="0.00" className="mt-1" />
+              </div>
+              <div>
+                <Label className="text-xs">Moeda</Label>
+                <Select value={form.currency} onValueChange={(v) => setForm({ ...form, currency: v })}>
                   <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="EUR">🇪🇺 EUR</SelectItem>
-                    <SelectItem value="BRL">🇧🇷 BRL</SelectItem>
+                    <SelectItem value="EUR">EUR</SelectItem>
+                    <SelectItem value="BRL">BRL</SelectItem>
+                    <SelectItem value="USD">USD</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
             </div>
-            <div><Label>Descrição</Label><Input value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} className="mt-1" placeholder="Ex: Honorários advocatícios" /></div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label className="text-xs">Nome do Cliente</Label>
+                <Input value={form.customer_name} onChange={(e) => setForm({ ...form, customer_name: e.target.value })} className="mt-1" />
+              </div>
+              <div>
+                <Label className="text-xs">Email</Label>
+                <Input type="email" value={form.customer_email} onChange={(e) => setForm({ ...form, customer_email: e.target.value })} className="mt-1" />
+              </div>
+            </div>
+            <div>
+              <Label className="text-xs">Método</Label>
+              <Select value={form.payment_method} onValueChange={(v) => setForm({ ...form, payment_method: v })}>
+                <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="card">Cartão</SelectItem>
+                  <SelectItem value="pix">PIX</SelectItem>
+                  <SelectItem value="boleto">Boleto</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label className="text-xs">Descrição</Label>
+              <Input value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} className="mt-1" />
+            </div>
             <Button onClick={handleCreate} disabled={creating || !form.amount} className="w-full">
-              {creating ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Criando...</> : "Criar Cobrança"}
+              {creating ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Criando...</> : <><CreditCard className="h-4 w-4 mr-2" />Criar Cobrança</>}
             </Button>
           </CardContent>
         </Card>
       )}
 
+      {/* Transactions */}
       <div>
-        <h2 className="text-lg font-semibold mb-3">Transações Recentes</h2>
+        <h2 className="text-lg font-semibold mb-3 text-foreground">Transações Recentes</h2>
         {loading ? (
           <div className="flex justify-center py-8"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
         ) : transactions.length === 0 ? (
-          <Card>
+          <Card className="b24-card">
             <CardContent className="py-12 text-center text-muted-foreground">
               <CreditCard className="h-12 w-12 mx-auto mb-4 opacity-30" />
               <p>Nenhuma transação encontrada</p>
@@ -1887,17 +1836,27 @@ function PagamentosView({ integration, onRefresh }: { integration: any; onRefres
         ) : (
           <div className="space-y-3">
             {transactions.map((t) => (
-              <Card key={t.id}>
+              <Card key={t.id} className="b24-card">
                 <CardContent className="pt-4 pb-4">
                   <div className="flex items-center justify-between gap-3">
-                    <div>
-                      <p className="font-semibold text-sm">{t.metadata?.customer_name || "Cliente"}</p>
-                      <p className="text-xs text-muted-foreground mt-0.5">
-                        {new Date(t.created_at).toLocaleDateString()} • {t.gateway}
-                      </p>
+                    <div className="flex items-center gap-3 flex-1 min-w-0">
+                      <div className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
+                        <DollarSign className="h-4 w-4 text-primary" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="font-medium text-sm truncate text-foreground">{t.gateway} • {t.payment_method}</p>
+                        <p className="text-xs text-muted-foreground mt-0.5">
+                          {new Date(t.created_at).toLocaleDateString("pt-PT")}
+                          {t.payment_url && (
+                            <a href={t.payment_url} target="_blank" rel="noopener noreferrer" className="ml-2 text-primary hover:underline inline-flex items-center gap-0.5">
+                              Link <ExternalLink className="h-2.5 w-2.5" />
+                            </a>
+                          )}
+                        </p>
+                      </div>
                     </div>
-                    <div className="text-right">
-                      <p className="font-bold">{t.currency} {Number(t.amount).toFixed(2)}</p>
+                    <div className="text-right shrink-0">
+                      <p className="font-bold text-foreground">{t.currency} {Number(t.amount).toFixed(2)}</p>
                       <span className={cn("text-[10px] px-2 py-0.5 rounded-full font-medium", statusColors[t.status] || "bg-muted text-muted-foreground")}>
                         {t.status}
                       </span>
@@ -1927,7 +1886,6 @@ const PERIOD_OPTIONS: { key: PeriodKey; label: string }[] = [
 ];
 
 function RelatoriosView() {
-  const { isDark } = useBitrix24Theme();
   const [transactions, setTransactions] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [period, setPeriod] = useState<PeriodKey>("30d");
@@ -1946,11 +1904,9 @@ function RelatoriosView() {
       .finally(() => setLoading(false));
   }, []);
 
-  // Unique gateways and clients for filters
   const gateways = Array.from(new Set(transactions.map((t) => t.gateway).filter(Boolean))).sort();
   const clients = Array.from(new Set(transactions.map((t) => t.clients?.name).filter(Boolean))).sort() as string[];
 
-  // Filter by period, gateway, client
   const filtered = (() => {
     let data = transactions;
     if (period !== "all") {
@@ -1983,7 +1939,6 @@ function RelatoriosView() {
   const fmt = (v: number) =>
     new Intl.NumberFormat("pt-PT", { style: "currency", currency: "EUR", minimumFractionDigits: 0 }).format(v);
 
-  // Monthly chart data
   const monthlyData = (() => {
     const months: Record<string, { month: string; pago: number; pendente: number }> = {};
     const monthNames = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
@@ -1997,14 +1952,12 @@ function RelatoriosView() {
     return Object.entries(months).sort(([a], [b]) => a.localeCompare(b)).map(([, v]) => v);
   })();
 
-  // Status donut data
   const statusData = [
     { name: "Pago", value: confirmed.length, color: COLORS_STATUS.confirmed },
     { name: "Pendente", value: pending.length, color: COLORS_STATUS.pending },
     { name: "Atrasado", value: overdue.length, color: COLORS_STATUS.overdue },
   ].filter((d) => d.value > 0);
 
-  // By method
   const methodData = (() => {
     const map: Record<string, number> = {};
     filtered.forEach((t) => {
@@ -2014,7 +1967,6 @@ function RelatoriosView() {
     return Object.entries(map).map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value);
   })();
 
-  // Top 5 clients
   const clientData = (() => {
     const map: Record<string, number> = {};
     filtered.forEach((t) => {
@@ -2024,8 +1976,8 @@ function RelatoriosView() {
     return Object.entries(map).map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value).slice(0, 5);
   })();
 
-  const textColor = isDark ? "#e5e7eb" : "#374151";
-  const gridColor = isDark ? "#374151" : "#e5e7eb";
+  const textColor = "#374151";
+  const gridColor = "#e5e7eb";
 
   if (loading) {
     return (
@@ -2044,7 +1996,7 @@ function RelatoriosView() {
           <p className="text-white/60 text-sm mt-0.5">{filtered.length} transações no período</p>
         </div>
         <div className="flex items-center gap-3 flex-wrap">
-          {/* Period pills - b24ui style */}
+          {/* Period pills */}
           <div className="flex gap-1 bg-white/10 rounded-lg p-0.5">
             {PERIOD_OPTIONS.map((p) => (
               <button
@@ -2053,7 +2005,7 @@ function RelatoriosView() {
                 className={cn(
                   "px-3 py-1.5 rounded-md text-xs font-medium transition-all",
                   period === p.key
-                    ? "bg-white text-[#2283d8] shadow-sm"
+                    ? "bg-white text-primary shadow-sm"
                     : "text-white/70 hover:text-white hover:bg-white/10"
                 )}
               >
@@ -2061,7 +2013,6 @@ function RelatoriosView() {
               </button>
             ))}
           </div>
-          {/* Gateway filter */}
           <Select value={gatewayFilter} onValueChange={setGatewayFilter}>
             <SelectTrigger className="h-8 w-[130px] text-xs">
               <SelectValue placeholder="Gateway" />
@@ -2073,7 +2024,6 @@ function RelatoriosView() {
               ))}
             </SelectContent>
           </Select>
-          {/* Client filter */}
           <Select value={clientFilter} onValueChange={setClientFilter}>
             <SelectTrigger className="h-8 w-[160px] text-xs">
               <SelectValue placeholder="Cliente" />
@@ -2088,14 +2038,14 @@ function RelatoriosView() {
         </div>
       </div>
 
-      {/* KPI Cards - b24ui with colored icon circles */}
+      {/* KPI Cards */}
       <div className="grid grid-cols-5 gap-3">
         {[
-          { label: "Total Receita", value: fmt(totalRevenue), icon: DollarSign, bg: "bg-[#589731]/10", color: "text-[#589731]" },
-          { label: "Em Aberto", value: fmt(openAmount), icon: Clock, bg: "bg-[#c49c00]/10", color: "text-[#c49c00]" },
-          { label: "Em Atraso", value: fmt(overdueAmount), icon: AlertTriangle, bg: "bg-[#df532d]/10", color: "text-[#df532d]" },
-          { label: "Pagos", value: String(confirmed.length), icon: CheckCircle, bg: "bg-[#589731]/10", color: "text-[#589731]" },
-          { label: "Taxa Pgto", value: `${paymentRate}%`, icon: TrendingUp, bg: "bg-[#2283d8]/10", color: "text-[#2283d8]" },
+          { label: "Total Receita", value: fmt(totalRevenue), icon: DollarSign, bg: "bg-success/10", color: "text-success" },
+          { label: "Em Aberto", value: fmt(openAmount), icon: Clock, bg: "bg-warning/10", color: "text-warning" },
+          { label: "Em Atraso", value: fmt(overdueAmount), icon: AlertTriangle, bg: "bg-destructive/10", color: "text-destructive" },
+          { label: "Pagos", value: String(confirmed.length), icon: CheckCircle, bg: "bg-success/10", color: "text-success" },
+          { label: "Taxa Pgto", value: `${paymentRate}%`, icon: TrendingUp, bg: "bg-primary/10", color: "text-primary" },
         ].map((kpi) => (
           <Card key={kpi.label} className="b24-card">
             <CardContent className="pt-4 pb-3 px-4">
@@ -2103,15 +2053,15 @@ function RelatoriosView() {
                 <div className={cn("w-8 h-8 rounded-full flex items-center justify-center", kpi.bg)}>
                   <kpi.icon className={cn("h-4 w-4", kpi.color)} />
                 </div>
-                <span className="text-[11px]" style={{ color: '#525c69' }}>{kpi.label}</span>
+                <span className="text-[11px] text-muted-foreground">{kpi.label}</span>
               </div>
-              <p className="text-lg font-bold" style={{ color: '#333840' }}>{kpi.value}</p>
+              <p className="text-lg font-bold text-foreground">{kpi.value}</p>
             </CardContent>
           </Card>
         ))}
       </div>
 
-      {/* Charts Row 1: Monthly + Status Donut */}
+      {/* Charts Row 1 */}
       <div className="grid grid-cols-2 gap-4">
         <Card className="b24-card">
           <CardHeader className="pb-2 pt-4 px-4">
@@ -2124,7 +2074,7 @@ function RelatoriosView() {
                 <XAxis dataKey="month" tick={{ fill: textColor, fontSize: 10 }} />
                 <YAxis tick={{ fill: textColor, fontSize: 10 }} />
                 <RechartsTooltip
-                  contentStyle={{ backgroundColor: isDark ? "#1f2937" : "#fff", border: "1px solid " + gridColor, borderRadius: 8, fontSize: 12 }}
+                  contentStyle={{ backgroundColor: "#fff", border: "1px solid " + gridColor, borderRadius: 8, fontSize: 12 }}
                   labelStyle={{ color: textColor }}
                 />
                 <Legend wrapperStyle={{ fontSize: 11 }} />
@@ -2147,14 +2097,14 @@ function RelatoriosView() {
                     <Cell key={i} fill={entry.color} />
                   ))}
                 </Pie>
-                <RechartsTooltip contentStyle={{ backgroundColor: isDark ? "#1f2937" : "#fff", border: "1px solid " + gridColor, borderRadius: 8, fontSize: 12 }} />
+                <RechartsTooltip contentStyle={{ backgroundColor: "#fff", border: "1px solid " + gridColor, borderRadius: 8, fontSize: 12 }} />
               </PieChart>
             </ResponsiveContainer>
           </CardContent>
         </Card>
       </div>
 
-      {/* Charts Row 2: Method + Client */}
+      {/* Charts Row 2 */}
       <div className="grid grid-cols-2 gap-4">
         <Card className="b24-card">
           <CardHeader className="pb-2 pt-4 px-4">
@@ -2166,7 +2116,7 @@ function RelatoriosView() {
                 <CartesianGrid strokeDasharray="3 3" stroke={gridColor} />
                 <XAxis type="number" tick={{ fill: textColor, fontSize: 10 }} />
                 <YAxis type="category" dataKey="name" tick={{ fill: textColor, fontSize: 10 }} width={80} />
-                <RechartsTooltip contentStyle={{ backgroundColor: isDark ? "#1f2937" : "#fff", border: "1px solid " + gridColor, borderRadius: 8, fontSize: 12 }} />
+                <RechartsTooltip contentStyle={{ backgroundColor: "#fff", border: "1px solid " + gridColor, borderRadius: 8, fontSize: 12 }} />
                 <Bar dataKey="value" name="Valor" fill="#2fc6f6" radius={[0, 4, 4, 0]} />
               </BarChart>
             </ResponsiveContainer>
@@ -2183,7 +2133,7 @@ function RelatoriosView() {
                 <CartesianGrid strokeDasharray="3 3" stroke={gridColor} />
                 <XAxis type="number" tick={{ fill: textColor, fontSize: 10 }} />
                 <YAxis type="category" dataKey="name" tick={{ fill: textColor, fontSize: 10 }} width={100} />
-                <RechartsTooltip contentStyle={{ backgroundColor: isDark ? "#1f2937" : "#fff", border: "1px solid " + gridColor, borderRadius: 8, fontSize: 12 }} />
+                <RechartsTooltip contentStyle={{ backgroundColor: "#fff", border: "1px solid " + gridColor, borderRadius: 8, fontSize: 12 }} />
                 <Bar dataKey="value" name="Valor" radius={[0, 4, 4, 0]}>
                   {clientData.map((_, i) => (
                     <Cell key={i} fill={COLORS_CHART[i % COLORS_CHART.length]} />
@@ -2218,13 +2168,13 @@ function RelatoriosView() {
                 {filtered.map((t) => {
                   const cls = classify(t);
                   const statusBadge: Record<string, string> = {
-                    confirmed: "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400",
-                    pending: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400",
-                    overdue: "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400",
+                    confirmed: "bg-success/10 text-success",
+                    pending: "bg-warning/10 text-warning",
+                    overdue: "bg-destructive/10 text-destructive",
                   };
                   const statusLabel: Record<string, string> = { confirmed: "Pago", pending: "Pendente", overdue: "Atrasado" };
                   return (
-                    <tr key={t.id} className="border-b hover:bg-muted/30 transition-colors">
+                    <tr key={t.id} className="border-b border-border hover:bg-muted/30 transition-colors">
                       <td className="px-4 py-2">{new Date(t.created_at).toLocaleDateString("pt-PT")}</td>
                       <td className="px-4 py-2">{t.clients?.name || "—"}</td>
                       <td className="px-4 py-2 text-right font-medium">{fmt(Number(t.amount || 0))}</td>
