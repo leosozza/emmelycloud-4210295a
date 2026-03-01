@@ -74,9 +74,9 @@ const navItems: NavItem[] = [
       { title: "Financeiro", url: "/financeiro", icon: DollarSign },
       { title: "Automações", url: "/automacoes", icon: Zap },
       { title: "Relatórios", url: "/relatorios", icon: BarChart3 },
-      { title: "Integrações", url: "/integracoes", icon: Plug },
     ],
   },
+  { type: "link", title: "Integrações", url: "/integracoes", icon: Plug },
   {
     type: "group",
     title: "IA",
