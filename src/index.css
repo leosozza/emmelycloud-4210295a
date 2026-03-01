@@ -268,10 +268,190 @@
   margin-bottom: 1.5rem;
 }
 
-/* b24ui message bubbles */
+/* b24ui ChatMessage styles */
+.b24-chat-message {
+  position: relative;
+  width: 100%;
+}
+.b24-chat-message .b24-chat-msg-container {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding-bottom: 1.25rem;
+}
+.b24-chat-msg-content {
+  position: relative;
+  min-width: 0;
+  padding: 10px 14px;
+  border-radius: 8px;
+  min-height: 42px;
+  font-size: 0.8125rem;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
+.b24-chat-msg-content.assistant {
+  background: hsl(var(--card));
+  border: 1px solid hsl(var(--border));
+  color: hsl(var(--foreground));
+}
+.b24-chat-msg-content.user {
+  background: hsl(var(--primary));
+  color: hsl(var(--primary-foreground));
+  margin-left: auto;
+  max-width: 85%;
+  border-radius: 12px 12px 4px 12px;
+}
+.b24-chat-msg-content.system {
+  background: linear-gradient(135deg, rgba(34,131,216,0.06), rgba(123,94,167,0.04));
+  border: 1px solid rgba(34,131,216,0.15);
+  color: hsl(var(--muted-foreground));
+  text-align: center;
+  width: 100%;
+  font-size: 0.75rem;
+}
+
+/* b24ui ChatMessage actions on hover */
+.b24-chat-message .b24-chat-actions {
+  opacity: 0;
+  position: absolute;
+  bottom: 4px;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  transition: opacity 0.15s ease;
+}
+.b24-chat-message:hover .b24-chat-actions {
+  opacity: 1;
+}
+
+/* b24ui ChatPrompt */
+.b24-chat-prompt {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 2px;
+  padding: 8px 8px 8px 12px;
+  width: 100%;
+  border-radius: 12px;
+  background: hsl(var(--card));
+  border: 1px solid hsl(var(--border));
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.b24-chat-prompt:focus-within {
+  border-color: hsl(var(--primary));
+  box-shadow: 0 0 0 2px hsl(var(--primary) / 0.1);
+}
+.b24-chat-prompt textarea {
+  border: none;
+  outline: none;
+  background: transparent;
+  resize: none;
+  font-size: 0.875rem;
+  line-height: 1.5;
+  color: hsl(var(--foreground));
+  padding: 4px 0;
+  min-height: 24px;
+  max-height: 120px;
+  font-family: inherit;
+}
+.b24-chat-prompt textarea::placeholder {
+  color: hsl(var(--muted-foreground));
+}
+.b24-chat-prompt .b24-prompt-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+/* b24ui ChatPromptSubmit */
+.b24-prompt-submit {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  border: none;
+  cursor: pointer;
+  transition: background 0.15s ease, opacity 0.15s ease;
+  background: hsl(var(--primary));
+  color: hsl(var(--primary-foreground));
+  flex-shrink: 0;
+}
+.b24-prompt-submit:hover:not(:disabled) {
+  opacity: 0.9;
+}
+.b24-prompt-submit:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.b24-prompt-submit.loading {
+  background: hsl(var(--destructive));
+}
+
+/* b24ui ChatMessages empty state */
+.b24-chat-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  text-align: center;
+  color: hsl(var(--muted-foreground));
+  padding: 2rem;
+}
+.b24-chat-empty .b24-chat-empty-icon {
+  width: 48px;
+  height: 48px;
+  margin-bottom: 1rem;
+  opacity: 0.15;
+}
+
+/* b24ui ChatMessage avatar */
+.b24-chat-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+.b24-chat-avatar.assistant {
+  background: linear-gradient(135deg, hsl(var(--primary) / 0.12), hsl(var(--accent) / 0.08));
+  color: hsl(var(--primary));
+}
+
+/* b24ui Chat loading dots */
+.b24-typing-dots {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  padding: 8px 0;
+}
+.b24-typing-dots span {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: hsl(var(--muted-foreground));
+  animation: b24typing 1.4s infinite;
+}
+.b24-typing-dots span:nth-child(2) { animation-delay: 0.2s; }
+.b24-typing-dots span:nth-child(3) { animation-delay: 0.4s; }
+@keyframes b24typing {
+  0%, 60%, 100% { opacity: 0.3; transform: scale(0.8); }
+  30% { opacity: 1; transform: scale(1); }
+}
+
+/* Legacy compat */
 .b24-msg-user {
-  border-radius: 18px 18px 4px 18px;
+  border-radius: 12px 12px 4px 12px;
 }
 .b24-msg-bot {
-  border-radius: 18px 18px 18px 4px;
+  border-radius: 4px 12px 12px 12px;
 }
