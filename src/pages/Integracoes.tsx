@@ -1486,11 +1486,16 @@ function IATab() {
   const loadUrl = useCallback(async () => {
     setLoading(true);
     try {
-      const { data, error } = await supabase.functions.invoke("manage-credentials", { method: "GET" });
-      if (!error && data?.credentials) {
-        const cred = data.credentials.find((c: any) => c.provider === "qwen-local" && c.credential_key === "OLLAMA_BASE_URL");
-        if (cred?.has_value) {
-          setCurrentUrl(cred.credential_value_masked || "");
+      // Fetch real URL via the test endpoint (reads from DB server-side)
+      const { data, error } = await supabase.functions.invoke("ollama-test-connection");
+      if (!error && data?.url) {
+        setCurrentUrl(data.url);
+      } else {
+        // Fallback to masked value
+        const { data: credData } = await supabase.functions.invoke("manage-credentials", { method: "GET" });
+        if (credData?.credentials) {
+          const cred = credData.credentials.find((c: any) => c.provider === "qwen-local" && c.credential_key === "OLLAMA_BASE_URL");
+          if (cred?.has_value) setCurrentUrl(cred.credential_value_masked || "");
         }
       }
     } catch {}
