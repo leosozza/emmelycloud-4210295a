@@ -66,17 +66,20 @@ Deno.serve(async (req) => {
     if (!resolvedUserToken) {
       console.log("[WUZAPI-TEST] No user token found, auto-creating user via admin API...");
       try {
+        const generatedToken = crypto.randomUUID().replace(/-/g, "");
         const createRes = await fetch(`${resolvedBaseUrl}/admin/users`, {
           method: "POST",
           headers: { "Content-Type": "application/json", "Authorization": resolvedAdminToken },
-          body: JSON.stringify({ name: "emmely" }),
+          body: JSON.stringify({ name: "emmely", token: generatedToken }),
         });
 
         const createBody = await createRes.json().catch(() => ({}));
         console.log("[WUZAPI-TEST] Create user response:", createRes.status, JSON.stringify(createBody));
 
-        if (createRes.ok && createBody.token) {
-          resolvedUserToken = createBody.token.trim();
+        // Token can be in createBody.data.token, createBody.token, or use the generated one
+        const returnedToken = (createBody?.data?.token || createBody?.token || "").trim();
+        if (createRes.ok && (returnedToken || generatedToken)) {
+          resolvedUserToken = returnedToken || generatedToken;
           // Save the auto-created user token
           await supabase.from("integration_credentials").upsert(
             { provider: "wuzapi", credential_key: "WUZAPI_USER_TOKEN", credential_value: resolvedUserToken },
@@ -93,10 +96,12 @@ Deno.serve(async (req) => {
           const listBody = await listRes.json().catch(() => ([]));
           console.log("[WUZAPI-TEST] User list response:", listRes.status, JSON.stringify(listBody).slice(0, 500));
 
-          const users = Array.isArray(listBody) ? listBody : listBody.users || listBody.data || [];
+          const rawList = Array.isArray(listBody) ? listBody : listBody.data || listBody.users || [];
+          const users = Array.isArray(rawList) ? rawList : [];
           const emmelyUser = users.find((u: any) => u.name === "emmely" || u.Name === "emmely");
           if (emmelyUser) {
-            resolvedUserToken = (emmelyUser.token || emmelyUser.Token || "").trim();
+            // Token can be in .token or .Token field; if empty, use .id as fallback
+            resolvedUserToken = (emmelyUser.token || emmelyUser.Token || emmelyUser.id || "").trim();
             if (resolvedUserToken) {
               await supabase.from("integration_credentials").upsert(
                 { provider: "wuzapi", credential_key: "WUZAPI_USER_TOKEN", credential_value: resolvedUserToken },
