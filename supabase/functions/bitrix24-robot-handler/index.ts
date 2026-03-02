@@ -178,8 +178,12 @@ async function handleSendInstagram(properties: Record<string, any>, supabaseUrl:
   }
 }
 
-async function handleCreateCharge(properties: Record<string, any>, supabaseUrl: string): Promise<Record<string, string>> {
-  const amount = parseFloat(properties.amount || properties.AMOUNT || "0");
+async function handleCreateCharge(
+  properties: Record<string, any>,
+  supabaseUrl: string,
+  integration?: { client_endpoint: string; access_token: string; id: string } | null
+): Promise<Record<string, string>> {
+  const totalAmount = parseFloat(properties.amount || properties.AMOUNT || "0");
   const currency = properties.currency || properties.CURRENCY || "EUR";
   const gateway = properties.gateway || properties.GATEWAY || "auto";
   const paymentMethod = properties.payment_method || properties.PAYMENT_METHOD || "card";
@@ -187,48 +191,148 @@ async function handleCreateCharge(properties: Record<string, any>, supabaseUrl: 
   const customerEmail = properties.customer_email || properties.CUSTOMER_EMAIL || "";
   const customerCpf = properties.customer_cpf || properties.CUSTOMER_CPF || "";
   const description = properties.description || properties.DESCRIPTION || "Cobrança Emmely via Bitrix24";
+  const numInstallments = parseInt(properties.installments || properties.INSTALLMENTS || "1") || 1;
+  const downPayment = parseFloat(properties.down_payment || properties.DOWN_PAYMENT || "0");
+  const firstDueDate = properties.first_due_date || properties.FIRST_DUE_DATE || "";
+  const dealId = properties.deal_id || properties.DEAL_ID || "";
+  const contactId = properties.contact_id || properties.CONTACT_ID || "";
 
-  if (!amount || amount <= 0) {
-    return { charge_id: "", charge_status: "error", payment_url: "", pix_code: "", gateway_used: "", error: "amount must be > 0" };
+  if (!totalAmount || totalAmount <= 0) {
+    return { charge_id: "", charge_status: "error", payment_url: "", pix_code: "", gateway_used: "", invoices_created: "0", error: "amount must be > 0" };
   }
 
-  // Determine country based on gateway selection
   let country = currency === "BRL" ? "Brasil" : "Portugal";
   if (gateway === "stripe") country = "Portugal";
   else if (gateway === "asaas") country = "Brasil";
 
   try {
-    const res = await fetch(`${supabaseUrl}/functions/v1/payment-create`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        amount,
-        currency,
-        payment_method: paymentMethod,
-        customer_data: {
-          name: customerName,
-          email: customerEmail,
-          cpf_cnpj: customerCpf || undefined,
-          country,
-        },
-        description,
-      }),
-    });
-    const data = await res.json();
-    if (data.error) {
-      return { charge_id: "", charge_status: "error", payment_url: "", pix_code: "", gateway_used: "", error: data.error };
+    // Calculate installment plan
+    const hasDown = downPayment > 0;
+    const remaining = totalAmount - downPayment;
+    const instValue = numInstallments > 0 ? Math.floor(remaining * 100 / numInstallments) / 100 : 0;
+    const lastInstValue = remaining - (instValue * (numInstallments - 1));
+    const totalCount = (hasDown ? 1 : 0) + numInstallments;
+
+    // Build parcels array
+    const parcels: { amount: number; due_date: string; number: number; is_down: boolean }[] = [];
+    const today = new Date().toISOString().split("T")[0];
+    const baseDueDate = firstDueDate || (() => {
+      const d = new Date();
+      d.setDate(d.getDate() + 30);
+      return d.toISOString().split("T")[0];
+    })();
+
+    if (hasDown) {
+      parcels.push({ amount: downPayment, due_date: today, number: 0, is_down: true });
     }
-    const tx = data.transaction || {};
+    for (let i = 0; i < numInstallments; i++) {
+      const d = new Date(baseDueDate);
+      d.setDate(d.getDate() + (30 * i));
+      const val = i === numInstallments - 1 ? lastInstValue : instValue;
+      parcels.push({ amount: val, due_date: d.toISOString().split("T")[0], number: i + 1, is_down: false });
+    }
+
+    const groupId = crypto.randomUUID();
+    let firstChargeId = "";
+    let firstGateway = "";
+    let invoicesCreated = 0;
+
+    for (const parcel of parcels) {
+      const label = parcel.is_down ? "Entrada" : `Parcela ${parcel.number}/${numInstallments}`;
+
+      // 1. Create payment transaction
+      const res = await fetch(`${supabaseUrl}/functions/v1/payment-create`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          amount: parcel.amount,
+          currency,
+          payment_method: paymentMethod,
+          customer_data: {
+            name: customerName,
+            email: customerEmail,
+            cpf_cnpj: customerCpf || undefined,
+            country,
+          },
+          description: `${description} (${label})`,
+          due_date: parcel.due_date,
+          installment_number: parcel.number,
+          total_installments: totalCount,
+          installment_group_id: groupId,
+          is_down_payment: parcel.is_down,
+          metadata: {
+            bitrix_deal_id: dealId,
+            bitrix_contact_id: contactId,
+            source: "bitrix24_robot",
+          },
+        }),
+      });
+      const data = await res.json();
+      const tx = data.transaction || {};
+
+      if (!firstChargeId && tx.id) firstChargeId = tx.id;
+      if (!firstGateway && tx.gateway) firstGateway = tx.gateway;
+
+      // 2. Create Invoice (old API) in Bitrix24
+      if (integration?.client_endpoint && integration?.access_token && dealId) {
+        try {
+          const invoiceResult = await callBitrix(
+            integration.client_endpoint,
+            integration.access_token,
+            "crm.invoice.add",
+            {
+              fields: {
+                ORDER_TOPIC: `${label} - ${description}`,
+                STATUS_ID: "N",
+                DATE_BILL: today,
+                DATE_PAY_BEFORE: parcel.due_date,
+                UF_DEAL_ID: parseInt(dealId) || 0,
+                UF_CONTACT_ID: parseInt(contactId) || 0,
+                RESPONSIBLE_ID: 1,
+                PERSON_TYPE_ID: 1,
+                PRODUCT_ROWS: [{
+                  PRODUCT_NAME: label,
+                  QUANTITY: 1,
+                  PRICE: parcel.amount,
+                }],
+              },
+            }
+          );
+          const invoiceId = invoiceResult.result;
+          if (invoiceId) {
+            invoicesCreated++;
+            console.log(`[ROBOT-HANDLER] Invoice created: ${invoiceId} for ${label}`);
+            // Update transaction metadata with old invoice ID
+            if (tx.id) {
+              await fetch(`${supabaseUrl}/functions/v1/payment-create`, {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  transaction_id: tx.id,
+                  metadata_update: { bitrix_old_invoice_id: invoiceId },
+                }),
+              });
+            }
+          } else {
+            console.error("[ROBOT-HANDLER] Invoice creation failed:", JSON.stringify(invoiceResult));
+          }
+        } catch (invErr) {
+          console.error("[ROBOT-HANDLER] Invoice error:", invErr);
+        }
+      }
+    }
+
     return {
-      charge_id: tx.id || tx.gateway_payment_id || "",
-      charge_status: tx.status || "pending",
-      payment_url: tx.payment_url || "",
-      pix_code: tx.pix_code || "",
-      gateway_used: tx.gateway || "",
+      charge_id: firstChargeId,
+      charge_status: "pending",
+      payment_url: "",
+      pix_code: "",
+      gateway_used: firstGateway,
+      invoices_created: String(invoicesCreated),
       error: "",
     };
   } catch (e) {
-    return { charge_id: "", charge_status: "error", payment_url: "", pix_code: "", gateway_used: "", error: String(e) };
+    return { charge_id: "", charge_status: "error", payment_url: "", pix_code: "", gateway_used: "", invoices_created: "0", error: String(e) };
   }
 }
 
@@ -566,8 +670,20 @@ Deno.serve(async (req) => {
       case "emmely_send_instagram":
         returnValues = await handleSendInstagram(properties, supabaseUrl, serviceKey);
         break;
-      case "emmely_create_charge":
-        returnValues = await handleCreateCharge(properties, supabaseUrl);
+      case "emmely_create_charge": {
+        // Get integration to pass to handleCreateCharge for Bitrix API calls
+        let chargeIntegration: any = null;
+        if (memberId) {
+          const { data: intData } = await supabase
+            .from("bitrix24_integrations")
+            .select("*")
+            .eq("member_id", memberId)
+            .maybeSingle();
+          chargeIntegration = intData;
+        }
+        returnValues = await handleCreateCharge(properties, supabaseUrl, chargeIntegration);
+        break;
+      }
         break;
       case "emmely_check_payment":
         returnValues = await handleCheckPayment(properties, supabaseUrl);

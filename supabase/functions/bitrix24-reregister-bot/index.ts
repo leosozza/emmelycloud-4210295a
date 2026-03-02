@@ -194,6 +194,45 @@ Deno.serve(async (req) => {
     console.log("[BOT] Verification — bot in list:", JSON.stringify(registeredBot));
     console.log("[BOT] All bots after registration:", verifyArray.map((b: any) => `ID:${b.ID} CODE:${b.CODE} NAME:${b.NAME} TYPE:${b.TYPE} OPENLINE:${b.OPENLINE}`).join(", "));
 
+    // ── Step 6: Register/update robots with new payment fields ──
+    console.log("[BOT] Updating robot emmely_create_charge with installment fields...");
+    try {
+      // First try to update existing robot, then register if not found
+      const robotUpdateResult = await callBitrix(endpoint, accessToken, "bizproc.robot.update", {
+        CODE: "emmely_create_charge",
+        HANDLER: `${supabaseUrl}/functions/v1/bitrix24-robot-handler`,
+        AUTH_USER_ID: 1,
+        NAME: "Emmely: Criar Cobrança",
+        PROPERTIES: {
+          amount: { Name: "Valor Total", Type: "double", Required: "Y", Default: "0" },
+          currency: { Name: "Moeda", Type: "string", Required: "N", Default: "EUR" },
+          gateway: { Name: "Gateway", Type: "select", Required: "N", Default: "auto", Options: { auto: "Automático", stripe: "Stripe", asaas: "Asaas", direto: "Crediário Próprio" } },
+          payment_method: { Name: "Método de Pagamento", Type: "select", Required: "N", Default: "card", Options: { card: "Cartão", pix: "PIX", boleto: "Boleto", direto: "Direto" } },
+          installments: { Name: "Número de Parcelas", Type: "int", Required: "N", Default: "1" },
+          first_due_date: { Name: "Data 1º Vencimento", Type: "date", Required: "N" },
+          down_payment: { Name: "Valor de Entrada", Type: "double", Required: "N", Default: "0" },
+          deal_id: { Name: "ID do Negócio", Type: "int", Required: "N" },
+          contact_id: { Name: "ID do Contacto", Type: "int", Required: "N" },
+          customer_name: { Name: "Nome do Cliente", Type: "string", Required: "N" },
+          customer_email: { Name: "Email do Cliente", Type: "string", Required: "N" },
+          customer_cpf: { Name: "CPF/CNPJ", Type: "string", Required: "N" },
+          description: { Name: "Descrição", Type: "string", Required: "N", Default: "Cobrança Emmely" },
+        },
+        RETURN_PROPERTIES: {
+          charge_id: { Name: "ID da Cobrança", Type: "string" },
+          charge_status: { Name: "Status", Type: "string" },
+          gateway_used: { Name: "Gateway Utilizado", Type: "string" },
+          invoices_created: { Name: "Faturas Criadas", Type: "int" },
+          payment_url: { Name: "URL de Pagamento", Type: "string" },
+          error: { Name: "Erro", Type: "string" },
+        },
+        USE_SUBSCRIPTION: "Y",
+      });
+      console.log("[BOT] Robot update result:", JSON.stringify(robotUpdateResult).substring(0, 300));
+    } catch (robotErr) {
+      console.error("[BOT] Robot update error:", robotErr);
+    }
+
     return new Response(JSON.stringify({
       success: true,
       bot_id: botId,
