@@ -1,37 +1,44 @@
 
 
-## Corrigir Bug Critico no message-send + Alinhar com API WUZAPI
+## Trocar Sidebar Lateral por Menu Superior no Bitrix24
 
-### Bug Encontrado
+O iframe Bitrix24 atualmente usa uma sidebar animada lateral (`AnimatedSidebar`). Vamos substituir por um menu horizontal superior usando o componente `ExpandableTabs` (framer-motion + usehooks-ts).
 
-No `message-send/index.ts`, o bloco WUZAPI (linha 282) e **inalcancavel**. A condicao `else if (conv.channel === "whatsapp" && resolvedProvider === "wuzapi")` nunca executa porque o bloco anterior (linha 195) ja captura `conv.channel === "whatsapp"` sem verificar o provider. Resultado: mensagens enviadas por WhatsApp QRCode tentam sempre a Meta Cloud API e falham.
+### Ficheiros a Criar
 
-### Correcao
+**1. `src/components/ui/expandable-tabs.tsx`**
+- Copiar o componente ExpandableTabs conforme fornecido
+- Dependencia nova: `usehooks-ts` (precisa instalar)
 
-**1. Editar `supabase/functions/message-send/index.ts`**
-- Mover a logica WUZAPI para DENTRO do bloco `conv.channel === "whatsapp"`, verificando `resolvedProvider` antes de escolher Meta ou WUZAPI
-- Estrutura corrigida:
+### Ficheiros a Editar
+
+**2. `src/pages/Bitrix24App.tsx`**
+- Remover imports de `AnimatedSidebar`, `AnimatedSidebarBody`, `AnimatedSidebarLink`, `useAnimatedSidebar`
+- Remover `SidebarInner` component e todo o bloco `<AnimatedSidebar>` no return
+- Substituir layout `flex` (sidebar + main) por layout `flex-col` (header + main)
+- Criar header com:
+  - Logo "E" + "Emmely Cloud for Bitrix24" + dominio badge (esquerda)
+  - `ExpandableTabs` com os 9 items de navegacao das 3 categorias, usando separators entre categorias (centro)
+  - Status (conectado/desconectado) + Bot ID (direita)
+- Tabs array:
+  ```
+  [Chat IA, Persona, Treinamento, Playground] | separator | [Dashboard, Fluxos, Mapeamento] | separator | [Pagamentos, Relatórios]
+  ```
+- `onChange` do ExpandableTabs mapeia o index para o `setView()` correspondente
+- Main content permanece igual, apenas sem sidebar ao lado
+
+### Estrutura Final
+
 ```text
-if (conv.channel === "whatsapp") {
-  if (resolvedProvider === "wuzapi") {
-    → enviar via WUZAPI endpoints
-  } else {
-    → enviar via Meta Cloud API (existente)
-  }
-}
+┌──────────────────────────────────────────────────┐
+│ [E] Emmely Cloud  [tabs expandiveis...]  ● Online│  ← header fixo
+├──────────────────────────────────────────────────┤
+│                                                  │
+│              View content (igual)                │
+│                                                  │
+└──────────────────────────────────────────────────┘
 ```
 
-**2. Verificar endpoints WUZAPI contra API docs**
-- Os endpoints `/chat/send/text`, `/chat/send/image`, `/chat/send/audio`, `/chat/send/document`, `/chat/send/video` estao correctos conforme a API
-- Header de autenticacao `token` esta correcto (user token)
-- A API tambem suporta `/chat/send/sticker`, `/chat/send/location`, `/chat/send/contact`, `/chat/send/buttons`, `/chat/send/list` — adicionar suporte a buttons e list
-
-**3. Editar `supabase/config.toml`**
-- Adicionar entradas em falta para `wuzapi-webhook` e `wuzapi-test-connection` (se ainda nao existirem)
-
-### Resumo
-| Ficheiro | Accao |
-|---|---|
-| `supabase/functions/message-send/index.ts` | Corrigir branch unreachable do WUZAPI |
-| `supabase/config.toml` | Verificar/adicionar funcoes wuzapi |
+### Dependencia NPM
+- `usehooks-ts` — necessaria para `useOnClickOutside` no ExpandableTabs
 
