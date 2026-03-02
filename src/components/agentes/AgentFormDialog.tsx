@@ -128,7 +128,7 @@ export function AgentFormDialog({
             </div>
           </div>
 
-          {!selectedTextProvider?.is_native && selectedTextProvider?.credential_key && (
+          {!selectedTextProvider?.is_native && selectedTextProvider?.credential_key && selectedTextProvider.credential_key !== "base_url" && (
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <Label>URL Base da API</Label>
@@ -139,6 +139,9 @@ export function AgentFormDialog({
                 <Input value={editingAgent.ai_api_key_credential || ""} onChange={(e) => setEditingAgent(prev => ({ ...prev, ai_api_key_credential: e.target.value }))} placeholder={`Nome na Central de Integrações`} />
               </div>
             </div>
+          )}
+          {!selectedTextProvider?.is_native && selectedTextProvider?.credential_key === "base_url" && (
+            <p className="text-xs text-muted-foreground">✓ URL e credenciais geridas automaticamente via Central de Integrações.</p>
           )}
 
           {/* Voice Provider + Model (conditional) */}
