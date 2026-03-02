@@ -679,28 +679,23 @@ function renderPaymentTab(opts: {
       var data = await res.json();
       if (data.error) throw new Error(data.error);
 
-      // Close Smart Invoice in Bitrix24 if exists
+      // Close Invoice (old API) via crm.invoice.update if bitrix_old_invoice_id exists
       if (invoiceId && typeof BX24 !== 'undefined') {
         setStatus('A concluir fatura no Bitrix24...', 'var(--text-secondary)');
         await new Promise(function(resolve) {
-          // Move invoice to paid/closed stage
-          BX24.callMethod('crm.item.update', {
-            entityTypeId: 31,
-            id: invoiceId,
-            fields: {
-              stageId: 'DT31_6:P',
-              moved: 'Y'
-            }
+          BX24.callMethod('crm.invoice.update', {
+            ID: invoiceId,
+            fields: { STATUS_ID: 'P' }
           }, function(result) {
             if (result.error()) {
-              console.error('Invoice close error:', result.error());
-              // Try alternative stage IDs
+              console.error('Invoice old close error:', result.error());
+              // Fallback: try Smart Invoice (entityTypeId 31)
               BX24.callMethod('crm.item.update', {
                 entityTypeId: 31,
                 id: invoiceId,
-                fields: { stageId: 'DT31_6:WON' }
+                fields: { stageId: 'DT31_6:P', moved: 'Y' }
               }, function(r2) {
-                if (r2.error()) console.error('Invoice close fallback error:', r2.error());
+                if (r2.error()) console.error('Smart Invoice fallback error:', r2.error());
                 resolve(null);
               });
             } else {
@@ -764,13 +759,12 @@ function renderPaymentTab(opts: {
     }
   });
 
-  // Open Smart Invoice in Bitrix24
+  // Open Invoice — try old API path first, then Smart Invoice
   function openInvoice(invoiceId) {
     try {
-      BX24.openPath('/crm/type/31/details/' + invoiceId + '/');
+      BX24.openPath('/crm/invoice/show/' + invoiceId + '/');
     } catch(e) {
-      // Fallback: try to open via navigation
-      try { BX24.openApplication({ bx24_label: { bgColor: 'transparent' } }); } catch(e2) {}
+      try { BX24.openPath('/crm/type/31/details/' + invoiceId + '/'); } catch(e2) {}
       setStatus('Fatura #' + invoiceId, 'var(--link-color)');
     }
   }
@@ -970,7 +964,7 @@ Deno.serve(async (req) => {
           transaction_id: tx.id,
           payment_url: tx.payment_url,
           is_down_payment: isDown,
-          invoice_id: meta.bitrix_invoice_id || null,
+          invoice_id: meta.bitrix_old_invoice_id || meta.bitrix_invoice_id || null,
           is_direct: tx.gateway === "direto" || tx.payment_method === "parcelado_direto",
         };
       });
