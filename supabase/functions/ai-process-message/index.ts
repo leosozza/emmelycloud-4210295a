@@ -201,10 +201,28 @@ Deno.serve(async (req) => {
     } else {
       const { data: provider } = await supabase.from("ai_providers").select("*").eq("slug", agent.ai_provider).single();
       apiUrl = agent.ai_base_url || provider?.base_url || "";
-      authHeader = provider?.auth_header || "Authorization";
-      authPrefix = provider?.auth_prefix || "Bearer";
+      authHeader = provider?.auth_header || null;
+      authPrefix = provider?.auth_prefix || null;
 
-      const credKey = agent.ai_api_key_credential || provider?.credential_key;
+      // Check for dynamic base_url override (Ollama/Qwen local providers)
+      if (provider?.credential_key === "base_url" || !authHeader) {
+        const { data: urlOverride } = await supabase
+          .from("integration_credentials")
+          .select("credential_value")
+          .eq("provider", agent.ai_provider)
+          .eq("credential_key", "OLLAMA_BASE_URL")
+          .single();
+        if (urlOverride?.credential_value) {
+          let baseUrl = urlOverride.credential_value.replace(/\/+$/, "");
+          if (!baseUrl.endsWith("/v1/chat/completions")) {
+            baseUrl += "/v1/chat/completions";
+          }
+          apiUrl = baseUrl;
+        }
+      }
+
+      // Get API key from integration_credentials
+      const credKey = agent.ai_api_key_credential || (provider?.credential_key !== "base_url" ? provider?.credential_key : null);
       if (credKey) {
         const { data: cred } = await supabase
           .from("integration_credentials")
@@ -224,9 +242,15 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ reply: fallbackReply, fallback: true }), { headers: jsonHeaders });
     }
 
+    // Build request headers — skip auth for providers without auth_header (e.g. Ollama)
+    const fetchHeaders: Record<string, string> = { "Content-Type": "application/json" };
+    if (authHeader && apiKey) {
+      fetchHeaders[authHeader] = `${authPrefix || ""} ${apiKey}`.trim();
+    }
+
     const aiResponse = await fetch(apiUrl, {
       method: "POST",
-      headers: { [authHeader]: `${authPrefix} ${apiKey}`, "Content-Type": "application/json" },
+      headers: fetchHeaders,
       body: JSON.stringify({
         model: agent.ai_model,
         messages: [

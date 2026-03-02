@@ -65,6 +65,7 @@ export interface AIAgent {
 
 export interface FlowOption { id: string; name: string; }
 export interface DocOption { id: string; title: string; }
+export interface CollectionOption { collection_id: string; collection_name: string; doc_count: number; }
 
 export const defaultAgent: Partial<AIAgent> = {
   name: "",
@@ -92,6 +93,7 @@ export default function AgentesPage() {
   const [providers, setProviders] = useState<AIProvider[]>([]);
   const [flows, setFlows] = useState<FlowOption[]>([]);
   const [docs, setDocs] = useState<DocOption[]>([]);
+  const [collections, setCollections] = useState<CollectionOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [deleteId, setDeleteId] = useState<string | null>(null);
@@ -106,28 +108,65 @@ export default function AgentesPage() {
       supabase.from("ai_agents").select("*").order("created_at", { ascending: false }),
       supabase.from("ai_providers").select("*").order("name"),
       supabase.from("flows").select("id, name").order("name"),
-      supabase.from("knowledge_documents").select("id, title").order("title"),
+      supabase.from("knowledge_documents").select("id, title, collection_id, collection_name").order("title"),
     ]);
     if (agentsRes.data) setAgents(agentsRes.data as unknown as AIAgent[]);
     if (providersRes.data) setProviders(providersRes.data as unknown as AIProvider[]);
     if (flowsRes.data) setFlows(flowsRes.data as FlowOption[]);
-    if (docsRes.data) setDocs(docsRes.data as DocOption[]);
+    if (docsRes.data) {
+      setDocs(docsRes.data as DocOption[]);
+      // Group by collection_id for the selector
+      const collMap = new Map<string, CollectionOption>();
+      for (const doc of docsRes.data) {
+        const cid = (doc as any).collection_id;
+        const cname = (doc as any).collection_name;
+        if (cid && cname) {
+          const existing = collMap.get(cid);
+          if (existing) {
+            existing.doc_count++;
+          } else {
+            collMap.set(cid, { collection_id: cid, collection_name: cname, doc_count: 1 });
+          }
+        }
+      }
+      setCollections(Array.from(collMap.values()));
+    }
     setLoading(false);
+  };
+
+  const syncKnowledgeDocuments = async (agentId: string, collectionIds: string[]) => {
+    // Delete existing links
+    await supabase.from("agent_knowledge_documents").delete().eq("agent_id", agentId);
+    if (collectionIds.length === 0) return;
+    // Get all document IDs for selected collections
+    const { data: collectionDocs } = await supabase
+      .from("knowledge_documents")
+      .select("id")
+      .in("collection_id", collectionIds);
+    if (collectionDocs && collectionDocs.length > 0) {
+      await supabase.from("agent_knowledge_documents").insert(
+        collectionDocs.map((d: any) => ({ agent_id: agentId, document_id: d.id }))
+      );
+    }
   };
 
   const handleSave = async () => {
     if (!editingAgent.name?.trim()) { toast.error("Nome é obrigatório"); return; }
     setSaving(true);
     try {
-      if (editingAgent.id) {
-        const { error } = await supabase.from("ai_agents").update(editingAgent as any).eq("id", editingAgent.id);
+      let agentId = editingAgent.id;
+      if (agentId) {
+        const { error } = await supabase.from("ai_agents").update(editingAgent as any).eq("id", agentId);
         if (error) throw error;
         toast.success("Agente atualizado");
       } else {
-        const { error } = await supabase.from("ai_agents").insert(editingAgent as any);
+        const { data, error } = await supabase.from("ai_agents").insert(editingAgent as any).select("id").single();
         if (error) throw error;
+        agentId = data.id;
         toast.success("Agente criado");
       }
+      // Sync agent_knowledge_documents N:N table
+      await syncKnowledgeDocuments(agentId!, editingAgent.training_collection_ids || []);
       setDialogOpen(false);
       loadData();
     } catch (e: any) { toast.error(e.message); }
@@ -194,6 +233,7 @@ export default function AgentesPage() {
         providers={providers}
         flows={flows}
         docs={docs}
+        collections={collections}
         agents={agents}
         saving={saving}
         onSave={handleSave}

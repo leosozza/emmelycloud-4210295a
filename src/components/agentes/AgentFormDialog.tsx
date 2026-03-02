@@ -13,7 +13,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { Loader2, GitBranch, BookOpen, Users, Volume2 } from "lucide-react";
-import type { AIAgent, AIProvider, FlowOption, DocOption } from "@/pages/Agentes";
+import type { AIAgent, AIProvider, FlowOption, DocOption, CollectionOption } from "@/pages/Agentes";
 
 interface AgentFormDialogProps {
   open: boolean;
@@ -23,6 +23,7 @@ interface AgentFormDialogProps {
   providers: AIProvider[];
   flows: FlowOption[];
   docs: DocOption[];
+  collections: CollectionOption[];
   agents: AIAgent[];
   saving: boolean;
   onSave: () => void;
@@ -30,7 +31,7 @@ interface AgentFormDialogProps {
 
 export function AgentFormDialog({
   open, onOpenChange, editingAgent, setEditingAgent,
-  providers, flows, docs, agents, saving, onSave,
+  providers, flows, docs, collections, agents, saving, onSave,
 }: AgentFormDialogProps) {
   const textProviders = providers.filter(p => p.provider_type === 'text' || p.provider_type === 'multimodal');
   const voiceProviders = providers.filter(p => p.provider_type === 'voice' || p.provider_type === 'multimodal');
@@ -236,16 +237,16 @@ export function AgentFormDialog({
             </div>
 
             <div className="space-y-1 mb-4">
-              <Label className="text-xs flex items-center gap-1"><BookOpen className="h-3 w-3" /> Base de conhecimento</Label>
-              {docs.length === 0 ? (
-                <p className="text-[10px] text-muted-foreground">Nenhum documento disponível. Adicione em Treinamento.</p>
+              <Label className="text-xs flex items-center gap-1"><BookOpen className="h-3 w-3" /> Base de conhecimento (Coleções)</Label>
+              {collections.length === 0 ? (
+                <p className="text-[10px] text-muted-foreground">Nenhuma coleção disponível. Adicione em Treinamento.</p>
               ) : (
                 <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto">
-                  {docs.map(d => {
-                    const selected = (editingAgent.training_collection_ids || []).includes(d.id);
+                  {collections.map(c => {
+                    const selected = (editingAgent.training_collection_ids || []).includes(c.collection_id);
                     return (
-                      <Badge key={d.id} variant={selected ? "default" : "outline"} className="text-[10px] cursor-pointer" onClick={() => toggleTrainingDoc(d.id)}>
-                        {selected ? "✓ " : ""}{d.title}
+                      <Badge key={c.collection_id} variant={selected ? "default" : "outline"} className="text-[10px] cursor-pointer" onClick={() => toggleTrainingDoc(c.collection_id)}>
+                        {selected ? "✓ " : ""}{c.collection_name} ({c.doc_count} doc{c.doc_count > 1 ? "s" : ""})
                       </Badge>
                     );
                   })}
