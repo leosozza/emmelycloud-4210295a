@@ -4,61 +4,43 @@ import {
 import { useLocale } from "@/contexts/LocaleContext";
 import { useDashboardKPIs } from "@/hooks/useDashboardData";
 import { Skeleton } from "@/components/ui/skeleton";
-import { AnimatedGradient } from "@/components/ui/animated-gradient-with-svg";
+import { Card } from "@/components/ui/card";
 import { motion } from "framer-motion";
 
-interface BentoKPIProps {
+interface KPICardProps {
   title: string;
   value: string;
   change?: string;
   up?: boolean;
   icon: React.ElementType;
   description: string;
-  colors: string[];
+  accentClass: string;
   delay: number;
 }
 
-function BentoKPI({ title, value, change, up, icon: Icon, description, colors, delay }: BentoKPIProps) {
-  const container = {
-    hidden: { opacity: 0 },
-    show: {
-      opacity: 1,
-      transition: { staggerChildren: 0.1, delayChildren: delay + 0.3 },
-    },
-  };
-
-  const item = {
-    hidden: { opacity: 0 },
-    show: { opacity: 1, transition: { duration: 0.5 } },
-  };
-
+function KPICard({ title, value, change, up, icon: Icon, description, accentClass, delay }: KPICardProps) {
   return (
     <motion.div
-      className="relative overflow-hidden rounded-xl border-0 shadow-lg hover:shadow-xl transition-shadow"
-      initial={{ opacity: 0, y: 20 }}
+      initial={{ opacity: 0, y: 16 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.4, delay }}
+      transition={{ duration: 0.35, delay }}
     >
-      <AnimatedGradient colors={colors} speed={12} blur="medium" />
-      <motion.div
-        className="relative z-10 p-5 text-white"
-        variants={container}
-        initial="hidden"
-        animate="show"
-      >
-        <motion.div variants={item} className="flex items-center justify-between mb-3">
-          <Icon className="h-6 w-6 opacity-80" />
+      <Card className={`relative overflow-hidden p-4 border-l-4 ${accentClass} hover:shadow-md transition-shadow`}>
+        <div className="flex items-start justify-between mb-3">
+          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/8">
+            <Icon className="h-4.5 w-4.5 text-primary" />
+          </div>
           {change && (
-            <div className="flex items-center gap-0.5">
-              {up ? <ArrowUpRight className="h-3 w-3 opacity-80" /> : <ArrowDownRight className="h-3 w-3 opacity-80" />}
-              <span className="text-xs font-bold opacity-90">{change}</span>
+            <div className={`flex items-center gap-0.5 text-xs font-semibold ${up ? "text-success" : "text-destructive"}`}>
+              {up ? <ArrowUpRight className="h-3 w-3" /> : <ArrowDownRight className="h-3 w-3" />}
+              {change}
             </div>
           )}
-        </motion.div>
-        <motion.div variants={item} className="text-2xl font-extrabold">{value}</motion.div>
-        <motion.div variants={item} className="text-xs font-medium opacity-75 mt-1">{title}</motion.div>
-        <motion.div variants={item} className="text-[11px] opacity-60 mt-0.5">{description}</motion.div>
-      </motion.div>
+        </div>
+        <div className="text-2xl font-extrabold text-foreground">{value}</div>
+        <div className="text-xs font-medium text-muted-foreground mt-1">{title}</div>
+        <div className="text-[11px] text-muted-foreground/70 mt-0.5">{description}</div>
+      </Card>
     </motion.div>
   );
 }
@@ -71,11 +53,11 @@ export function DashboardKPIs() {
     return (
       <div className="grid gap-4 grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
         {[1, 2, 3, 4, 5, 6].map((i) => (
-          <div key={i} className="rounded-xl bg-muted/50 p-5 space-y-3">
-            <Skeleton className="h-6 w-6 rounded" />
+          <Card key={i} className="p-4 space-y-3">
+            <Skeleton className="h-9 w-9 rounded-lg" />
             <Skeleton className="h-8 w-20" />
             <Skeleton className="h-3 w-24" />
-          </div>
+          </Card>
         ))}
       </div>
     );
@@ -89,7 +71,7 @@ export function DashboardKPIs() {
       up: (data?.leadsChange ?? 0) >= 0,
       icon: Users,
       description: "Últimos 30 dias",
-      colors: ["#9b2c2c", "#b91c1c", "#7f1d1d", "#9b2c2c"],
+      accentClass: "border-l-primary",
     },
     {
       title: "SLA Expirando",
@@ -98,7 +80,7 @@ export function DashboardKPIs() {
       up: false,
       icon: Clock,
       description: "Nas próximas 4h",
-      colors: ["#b45309", "#92400e", "#d97706", "#b45309"],
+      accentClass: "border-l-warning",
     },
     {
       title: "Receita do Mês",
@@ -107,7 +89,7 @@ export function DashboardKPIs() {
       up: (data?.revenueChange ?? 0) >= 0,
       icon: DollarSign,
       description: "vs. mês anterior",
-      colors: ["#7f1d1d", "#991b1b", "#9b2c2c", "#7f1d1d"],
+      accentClass: "border-l-success",
     },
     {
       title: "Taxa de Conversão",
@@ -116,7 +98,7 @@ export function DashboardKPIs() {
       up: true,
       icon: TrendingUp,
       description: "Lead → Contrato",
-      colors: ["#fbbf24", "#f59e0b", "#d97706", "#fbbf24"],
+      accentClass: "border-l-info",
     },
     {
       title: "Casos Ativos",
@@ -125,7 +107,7 @@ export function DashboardKPIs() {
       up: true,
       icon: Briefcase,
       description: "Em andamento",
-      colors: ["#ef4444", "#dc2626", "#b91c1c", "#ef4444"],
+      accentClass: "border-l-accent-foreground",
     },
     {
       title: "Contratos Pendentes",
@@ -134,18 +116,18 @@ export function DashboardKPIs() {
       up: false,
       icon: FileSignature,
       description: "Aguardando assinatura",
-      colors: ["#92400e", "#b45309", "#78350f", "#92400e"],
+      accentClass: "border-l-muted-foreground",
     },
   ];
 
   return (
     <div className="grid gap-4 grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
       {metrics.map((metric, i) => (
-        <BentoKPI
+        <KPICard
           key={metric.title}
           {...metric}
           change={metric.change || undefined}
-          delay={i * 0.1}
+          delay={i * 0.08}
         />
       ))}
     </div>

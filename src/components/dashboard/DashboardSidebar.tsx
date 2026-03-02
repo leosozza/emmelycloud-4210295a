@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Progress } from "@/components/ui/progress";
 
 const legalAreaLabels: Record<string, string> = {
   previdencia: "Previdência", cidadania: "Cidadania", vistos: "Vistos",
@@ -20,10 +21,12 @@ export function DashboardSidebar() {
         const area = l.legal_area || "outro";
         counts[area] = (counts[area] || 0) + 1;
       });
-      return Object.entries(counts)
+      const entries = Object.entries(counts)
         .map(([area, count]) => ({ area, count }))
         .sort((a, b) => b.count - a.count)
         .slice(0, 5);
+      const max = entries[0]?.count || 1;
+      return entries.map((e) => ({ ...e, pct: Math.round((e.count / max) * 100) }));
     },
   });
 
@@ -53,28 +56,28 @@ export function DashboardSidebar() {
 
   return (
     <div className="space-y-4">
-      {/* Top Areas */}
-      <Card className="shadow-sm">
+      <Card className="rounded-2xl shadow-sm hover:shadow-md transition-shadow">
         <CardHeader className="pb-3">
           <CardTitle className="text-sm font-bold">Top Áreas Jurídicas</CardTitle>
         </CardHeader>
-        <CardContent className="space-y-2.5">
+        <CardContent className="space-y-3">
           {areaStats.length === 0 ? (
             <p className="text-xs text-muted-foreground">Sem dados</p>
           ) : areaStats.map((item, i) => (
-            <div key={item.area} className="flex items-center justify-between text-sm">
-              <span className="text-muted-foreground">
-                <span className="font-semibold text-foreground mr-1.5">{i + 1}.</span>
-                {legalAreaLabels[item.area] || item.area}
-              </span>
-              <span className="text-xs font-bold text-primary">{item.count} leads</span>
+            <div key={item.area} className="space-y-1">
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-muted-foreground">
+                  {legalAreaLabels[item.area] || item.area}
+                </span>
+                <span className="font-semibold text-foreground">{item.count}</span>
+              </div>
+              <Progress value={item.pct} className="h-1.5" />
             </div>
           ))}
         </CardContent>
       </Card>
 
-      {/* Top Team Members */}
-      <Card className="shadow-sm">
+      <Card className="rounded-2xl shadow-sm hover:shadow-md transition-shadow">
         <CardHeader className="pb-3">
           <CardTitle className="text-sm font-bold">Top Equipa</CardTitle>
         </CardHeader>
@@ -83,13 +86,13 @@ export function DashboardSidebar() {
             <p className="text-xs text-muted-foreground">Sem dados</p>
           ) : teamStats.map((member) => (
             <div key={member.name} className="flex items-center gap-2.5">
-              <Avatar className="h-7 w-7">
+              <Avatar className="h-7 w-7 ring-2 ring-primary/20">
                 <AvatarFallback className="text-[10px] bg-primary/10 text-primary font-semibold">
                   {member.name.split(" ").map((n: string) => n[0]).join("").slice(0, 2).toUpperCase()}
                 </AvatarFallback>
               </Avatar>
               <span className="text-sm flex-1 truncate">{member.name}</span>
-              <span className="text-xs font-bold text-primary">{member.count} leads</span>
+              <span className="text-xs font-bold text-primary">{member.count}</span>
             </div>
           ))}
         </CardContent>

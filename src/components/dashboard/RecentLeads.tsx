@@ -14,12 +14,12 @@ const stageLabels: Record<string, string> = {
   contrato: "Contrato", financeiro: "Financeiro", fechado: "Fechado",
 };
 const stageColors: Record<string, string> = {
-  lead: "bg-info text-info-foreground",
-  triagem: "bg-warning text-warning-foreground",
+  lead: "bg-info/15 text-info border-info/20",
+  triagem: "bg-warning/15 text-warning border-warning/20",
   proposta: "bg-accent text-accent-foreground",
-  analise: "bg-primary text-primary-foreground",
-  contrato: "bg-success text-success-foreground",
-  financeiro: "bg-success text-success-foreground",
+  analise: "bg-primary/10 text-primary",
+  contrato: "bg-success/15 text-success border-success/20",
+  financeiro: "bg-success/15 text-success border-success/20",
   fechado: "bg-muted text-muted-foreground",
 };
 const originLabels: Record<string, string> = {
@@ -33,7 +33,7 @@ function ScoreStars({ score }: { score: number | null }) {
   return (
     <div className="flex gap-0.5">
       {[1, 2, 3, 4, 5].map((i) => (
-        <Star key={i} className={`h-3 w-3 ${i <= stars ? "text-warning fill-warning" : "text-muted-foreground/30"}`} />
+        <Star key={i} className={`h-3 w-3 ${i <= stars ? "text-warning fill-warning" : "text-muted-foreground/20"}`} />
       ))}
     </div>
   );
@@ -57,19 +57,19 @@ export function RecentLeads() {
   });
 
   return (
-    <Card className="shadow-sm">
+    <Card className="rounded-2xl shadow-sm">
       <CardHeader className="flex flex-row items-center justify-between pb-3">
         <CardTitle className="text-base font-bold">Últimos Leads</CardTitle>
-        <Button variant="outline" size="sm" className="text-xs" onClick={() => navigate("/leads")}>
+        <Button variant="outline" size="sm" className="text-xs rounded-lg" onClick={() => navigate("/leads")}>
           Ver todos
         </Button>
       </CardHeader>
       <CardContent className="p-0">
-        <div className="divide-y">
+        <div className="divide-y divide-border/50">
           {leads.length === 0 ? (
             <p className="text-sm text-muted-foreground p-6 text-center">Nenhum lead encontrado</p>
           ) : leads.map((lead) => (
-            <div key={lead.id} className="flex items-center gap-3 px-6 py-3 hover:bg-muted/50 transition-colors cursor-pointer" onClick={() => navigate("/leads")}>
+            <div key={lead.id} className="flex items-center gap-3 px-6 py-3.5 hover:bg-muted/50 transition-colors cursor-pointer" onClick={() => navigate("/leads")}>
               <Avatar className="h-9 w-9 shrink-0">
                 <AvatarFallback className="text-xs bg-primary/10 text-primary font-semibold">
                   {lead.name.split(" ").map((n) => n[0]).join("").slice(0, 2).toUpperCase()}
@@ -78,7 +78,7 @@ export function RecentLeads() {
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2">
                   <span className="text-sm font-semibold truncate">{lead.name}</span>
-                  <Badge className={`text-[10px] shrink-0 ${stageColors[lead.funnel_stage]}`}>
+                  <Badge variant="outline" className={`text-[10px] shrink-0 rounded-full px-2 ${stageColors[lead.funnel_stage]}`}>
                     {stageLabels[lead.funnel_stage]}
                   </Badge>
                 </div>
