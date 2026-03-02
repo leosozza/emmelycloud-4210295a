@@ -454,7 +454,7 @@ function WhatsAppQRCodeCard({ credProps }: { credProps: any }) {
             <QrCode className="h-5 w-5 text-green-600" />
           </div>
           <div>
-            <CardTitle className="text-base">WhatsApp QRCode</CardTitle>
+        <CardTitle className="text-base">WhatsApp QR Code</CardTitle>
             <CardDescription>Conexão via QR Code</CardDescription>
           </div>
         </div>
@@ -465,7 +465,7 @@ function WhatsAppQRCodeCard({ credProps }: { credProps: any }) {
           <p className="font-medium text-xs uppercase text-muted-foreground tracking-wide">Credenciais do Servidor</p>
           <CredentialInput provider="wuzapi" credentialKey="WUZAPI_BASE_URL" label="URL do Servidor" {...credProps} />
           <CredentialInput provider="wuzapi" credentialKey="WUZAPI_ADMIN_TOKEN" label="Admin Token" {...credProps} />
-          <CredentialInput provider="wuzapi" credentialKey="WUZAPI_SECRET_KEY" label="Secret Key (HMAC)" {...credProps} />
+          <CredentialInput provider="wuzapi" credentialKey="WUZAPI_SECRET_KEY" label="Chave Secreta (HMAC)" {...credProps} />
         </div>
 
         <div className="flex gap-2">
@@ -1295,6 +1295,112 @@ interface ChannelInstance {
   updated_at: string;
 }
 
+// ─── QR Code Dialog ──────────────────────────────────────────────────────────
+
+function QRCodeDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
+  const [loading, setLoading] = useState(false);
+  const [result, setResult] = useState<any>(null);
+
+  const fetchStatus = async () => {
+    setLoading(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("wuzapi-test-connection", { body: {} });
+      if (error) {
+        setResult({ ok: false, error: "Erro ao contactar o servidor." });
+      } else {
+        setResult(data);
+      }
+    } catch {
+      setResult({ ok: false, error: "Erro de rede." });
+    }
+    setLoading(false);
+  };
+
+  const handleConnect = async () => {
+    setLoading(true);
+    try {
+      const { data } = await supabase.functions.invoke("wuzapi-test-connection", { body: { action: "connect" } });
+      if (data?.ok) {
+        toast.success("Sessão iniciada! A obter QR Code...");
+        setTimeout(fetchStatus, 2000);
+      } else {
+        toast.error(data?.message || "Erro ao iniciar sessão");
+        setLoading(false);
+      }
+    } catch {
+      toast.error("Erro de rede");
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (open) {
+      handleConnect();
+    } else {
+      setResult(null);
+    }
+  }, [open]);
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-sm">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <QrCode className="h-5 w-5 text-green-600" />
+            WhatsApp QR Code
+          </DialogTitle>
+          <DialogDescription>Leia o QR Code abaixo com o WhatsApp no seu telemóvel.</DialogDescription>
+        </DialogHeader>
+
+        <div className="flex flex-col items-center gap-4 py-2">
+          {loading && !result?.qr_code && (
+            <div className="flex flex-col items-center gap-2 py-8">
+              <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+              <p className="text-xs text-muted-foreground">A preparar sessão…</p>
+            </div>
+          )}
+
+          {result?.qr_code && (
+            <div className="flex flex-col items-center gap-3">
+              <img src={result.qr_code} alt="QR Code WhatsApp" className="w-56 h-56 object-contain rounded-lg border p-2" />
+              <p className="text-xs text-muted-foreground text-center">Abra o WhatsApp → Menu → Dispositivos conectados → Conectar dispositivo</p>
+            </div>
+          )}
+
+          {result?.connected && (
+            <div className="flex items-center gap-2 rounded-md px-4 py-3 bg-green-50 text-green-800 w-full">
+              <CheckCircle2 className="h-5 w-5 shrink-0" />
+              <div>
+                <p className="text-sm font-medium">WhatsApp conectado!</p>
+                {result.webhook_configured && <p className="text-xs">Webhook configurado automaticamente.</p>}
+              </div>
+            </div>
+          )}
+
+          {result && !result.ok && !result.connected && (
+            <div className="flex items-center gap-2 rounded-md px-4 py-3 bg-red-50 text-red-800 w-full">
+              <AlertCircle className="h-4 w-4 shrink-0" />
+              <span className="text-xs">{result.error || result.message || "Erro desconhecido"}</span>
+            </div>
+          )}
+        </div>
+
+        <DialogFooter className="gap-2">
+          <Button size="sm" variant="outline" onClick={fetchStatus} disabled={loading}>
+            <RefreshCw className={`h-3.5 w-3.5 mr-1.5 ${loading ? "animate-spin" : ""}`} />
+            Atualizar QR Code
+          </Button>
+          <Button size="sm" variant="outline" onClick={() => onOpenChange(false)}>
+            Fechar
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ─── Instances Tab ───────────────────────────────────────────────────────────
+
 function InstancesTab() {
   const [instances, setInstances] = useState<ChannelInstance[]>([]);
   const [loading, setLoading] = useState(true);
@@ -1310,6 +1416,7 @@ function InstancesTab() {
   const [deleting, setDeleting] = useState<string | null>(null);
   const [bitrixMappings, setBitrixMappings] = useState<ChannelMapping[]>([]);
   const [linkingInstance, setLinkingInstance] = useState<string | null>(null);
+  const [qrDialogOpen, setQrDialogOpen] = useState(false);
 
   const loadInstances = useCallback(async () => {
     setLoading(true);
@@ -1341,6 +1448,9 @@ function InstancesTab() {
       setNewName("");
       setDialogOpen(false);
       await loadInstances();
+      if (newType === "whatsapp_qrcode") {
+        setQrDialogOpen(true);
+      }
     }
     setCreating(false);
   };
@@ -1416,9 +1526,7 @@ function InstancesTab() {
 
   const getConfigFields = (type: string, config?: Record<string, any>): { key: string; label: string }[] => {
     if (type === "whatsapp" && config?.provider === "wuzapi") {
-      return [
-        { key: "provider", label: "Provider (wuzapi)" },
-      ];
+      return [];
     }
     if (type === "whatsapp") {
       return [
@@ -1494,7 +1602,7 @@ function InstancesTab() {
                     <SelectItem value="whatsapp_qrcode">
                       <div className="flex items-center gap-2">
                         <QrCode className="h-4 w-4 text-green-600" />
-                        WhatsApp — QR Code (WUZAPI)
+                        WhatsApp — QR Code
                       </div>
                     </SelectItem>
                     <SelectItem value="instagram">
@@ -1549,7 +1657,7 @@ function InstancesTab() {
                   <div>
                     <CardTitle className="text-base">{inst.name}</CardTitle>
                     <CardDescription>
-                      {isWuzapi ? "WhatsApp QR Code (WUZAPI)" : isWhatsapp ? "WhatsApp Business API" : "Instagram Graph API"}
+                      {isWuzapi ? "WhatsApp QR Code" : isWhatsapp ? "WhatsApp Business API" : "Instagram Graph API"}
                       {inst.config.bitrix24_mapping_id && bitrixMappings.length > 0 && (
                         <span className="text-[10px] text-blue-600 flex items-center gap-0.5 mt-0.5">
                           <Plug className="h-2.5 w-2.5" />
@@ -1564,7 +1672,8 @@ function InstancesTab() {
                 </div>
               </CardHeader>
               <CardContent className="space-y-3 text-sm">
-                {/* Config summary */}
+                {/* Config summary (hidden for QR Code instances) */}
+                {!isWuzapi && fields.length > 0 && (
                 <div className="space-y-1">
                   {fields.map((f) => (
                     <div key={f.key} className="flex justify-between text-xs">
@@ -1575,6 +1684,7 @@ function InstancesTab() {
                     </div>
                   ))}
                 </div>
+                )}
 
                 {/* Bitrix24 Link */}
                 {bitrixMappings.length > 0 && (
@@ -1609,7 +1719,7 @@ function InstancesTab() {
                 )}
 
                 {/* Editing config */}
-                {isEditing && (
+                {isEditing && !isWuzapi && (
                   <div className="space-y-2 border-t pt-3">
                     <div className="flex items-center justify-between">
                       <p className="text-xs font-medium uppercase text-muted-foreground tracking-wide">Credenciais</p>
@@ -1655,11 +1765,16 @@ function InstancesTab() {
 
                 {/* Action buttons */}
                 <div className="flex gap-2 pt-1">
-                  {!isEditing && (
+                  {isWuzapi ? (
+                    <Button size="sm" variant="outline" className="flex-1 gap-1.5" onClick={() => setQrDialogOpen(true)}>
+                      <QrCode className="h-3.5 w-3.5" />
+                      Ler QR Code
+                    </Button>
+                  ) : !isEditing ? (
                     <Button size="sm" variant="outline" className="flex-1" onClick={() => setEditingId(inst.id)}>
                       Configurar
                     </Button>
-                  )}
+                  ) : null}
                   <Button
                     size="sm"
                     variant={inst.status === "active" ? "destructive" : "default"}
@@ -1696,6 +1811,9 @@ function InstancesTab() {
           );
         })}
       </div>
+
+      {/* QR Code Dialog */}
+      <QRCodeDialog open={qrDialogOpen} onOpenChange={setQrDialogOpen} />
     </div>
   );
 }
