@@ -107,13 +107,20 @@ const Index = () => {
   const todayFormatted = format(new Date(), "EEEE, d 'de' MMMM 'de' yyyy", { locale: pt });
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between flex-wrap gap-3">
+    <div className="space-y-8">
+      {/* Header */}
+      <div className="flex items-center justify-between flex-wrap gap-4">
         <div>
           <h1 className="text-2xl font-bold text-foreground">
             {getGreeting()}{userName ? `, ${userName}` : ""} 👋
           </h1>
-          <p className="text-sm text-muted-foreground capitalize">{todayFormatted}</p>
+          <div className="flex items-center gap-2 mt-1">
+            <p className="text-sm text-muted-foreground capitalize">{todayFormatted}</p>
+            <div className="flex items-center gap-1.5 text-xs text-success font-medium">
+              <div className="h-1.5 w-1.5 rounded-full bg-success animate-live-pulse" />
+              live
+            </div>
+          </div>
         </div>
         <div className="flex items-center gap-2">
           <PeriodFilter value={period} onChange={setPeriod} />
@@ -139,7 +146,7 @@ const Index = () => {
             })}
 
             {chartWidgets.length > 0 && (
-              <div className="grid gap-4 md:grid-cols-2">
+              <div className="grid gap-5 md:grid-cols-2">
                 {chartWidgets.map((id) => {
                   const Component = WIDGET_COMPONENTS[id];
                   return (

@@ -4,7 +4,7 @@ import { useLeadsByOrigin, useRevenueByArea, useMonthlyRevenue, useFunnelData } 
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-  PieChart, Pie, Cell, LineChart, Line, FunnelChart, Funnel, LabelList,
+  PieChart, Pie, Cell, AreaChart, Area,
 } from "recharts";
 
 const COLORS = [
@@ -12,15 +12,23 @@ const COLORS = [
   "hsl(var(--chart-4))", "hsl(var(--chart-5))",
 ];
 
+const tooltipStyle = {
+  backgroundColor: "hsl(var(--card))",
+  border: "1px solid hsl(var(--border))",
+  borderRadius: "8px",
+  fontSize: "12px",
+  boxShadow: "0 4px 12px rgba(0,0,0,0.08)",
+};
+
 function ChartSkeleton() {
-  return <Skeleton className="h-[250px] w-full rounded-lg" />;
+  return <Skeleton className="h-[250px] w-full rounded-xl" />;
 }
 
 export function LeadsByOriginChart() {
   const { data, isLoading } = useLeadsByOrigin();
 
   return (
-    <Card className="shadow-sm">
+    <Card className="rounded-2xl shadow-sm hover:shadow-md transition-shadow">
       <CardHeader>
         <CardTitle className="text-base font-bold">Leads por Origem</CardTitle>
         <CardDescription>Distribuição dos canais de aquisição</CardDescription>
@@ -31,21 +39,21 @@ export function LeadsByOriginChart() {
             <div className="h-[220px]">
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
-                  <Pie data={data} cx="50%" cy="50%" innerRadius={50} outerRadius={80} paddingAngle={4} dataKey="value">
+                  <Pie data={data} cx="50%" cy="50%" innerRadius={55} outerRadius={85} paddingAngle={3} dataKey="value" strokeWidth={0}>
                     {(data || []).map((_, index) => (
                       <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                     ))}
                   </Pie>
-                  <Tooltip />
+                  <Tooltip contentStyle={tooltipStyle} />
                 </PieChart>
               </ResponsiveContainer>
             </div>
-            <div className="mt-2 grid grid-cols-2 gap-2">
+            <div className="mt-3 grid grid-cols-2 gap-2">
               {(data || []).map((item, i) => (
                 <div key={item.name} className="flex items-center gap-2 text-xs">
-                  <div className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: COLORS[i % COLORS.length] }} />
-                  <span className="text-muted-foreground">{item.name}</span>
-                  <span className="ml-auto font-semibold">{item.value}</span>
+                  <div className="h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: COLORS[i % COLORS.length] }} />
+                  <span className="text-muted-foreground truncate">{item.name}</span>
+                  <span className="ml-auto font-semibold text-foreground">{item.value}</span>
                 </div>
               ))}
             </div>
@@ -61,7 +69,7 @@ export function RevenueByAreaChart() {
   const { data, isLoading } = useRevenueByArea();
 
   return (
-    <Card className="shadow-sm">
+    <Card className="rounded-2xl shadow-sm hover:shadow-md transition-shadow">
       <CardHeader>
         <CardTitle className="text-base font-bold">Receita por Área</CardTitle>
         <CardDescription>Faturamento por área jurídica</CardDescription>
@@ -71,11 +79,11 @@ export function RevenueByAreaChart() {
           <div className="h-[280px]">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={data} layout="vertical" margin={{ left: 20 }}>
-                <CartesianGrid strokeDasharray="3 3" horizontal={false} />
-                <XAxis type="number" tickFormatter={(v) => `${currencySymbol}${(v / 1000).toFixed(0)}k`} fontSize={12} />
-                <YAxis type="category" dataKey="area" fontSize={12} width={80} />
-                <Tooltip formatter={(v: number) => formatCurrency(v)} />
-                <Bar dataKey="receita" fill="hsl(var(--chart-1))" radius={[0, 6, 6, 0]} />
+                <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="hsl(var(--border))" strokeOpacity={0.5} />
+                <XAxis type="number" tickFormatter={(v) => `${currencySymbol}${(v / 1000).toFixed(0)}k`} fontSize={12} stroke="hsl(var(--muted-foreground))" />
+                <YAxis type="category" dataKey="area" fontSize={12} width={80} stroke="hsl(var(--muted-foreground))" />
+                <Tooltip formatter={(v: number) => formatCurrency(v)} contentStyle={tooltipStyle} />
+                <Bar dataKey="receita" fill="hsl(var(--chart-1))" radius={[0, 8, 8, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </div>
@@ -90,7 +98,7 @@ export function MonthlyRevenueChart() {
   const { data, isLoading } = useMonthlyRevenue();
 
   return (
-    <Card className="shadow-sm">
+    <Card className="rounded-2xl shadow-sm hover:shadow-md transition-shadow">
       <CardHeader>
         <CardTitle className="text-base font-bold">Tendência de Receita</CardTitle>
         <CardDescription>Evolução mensal do faturamento</CardDescription>
@@ -99,13 +107,19 @@ export function MonthlyRevenueChart() {
         {isLoading ? <ChartSkeleton /> : (
           <div className="h-[280px]">
             <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={data}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="month" fontSize={12} />
-                <YAxis tickFormatter={(v) => `${currencySymbol}${(v / 1000).toFixed(0)}k`} fontSize={12} />
-                <Tooltip formatter={(v: number) => formatCurrency(v)} />
-                <Line type="monotone" dataKey="receita" stroke="hsl(var(--chart-1))" strokeWidth={2.5} dot={{ fill: "hsl(var(--chart-1))", r: 4 }} />
-              </LineChart>
+              <AreaChart data={data}>
+                <defs>
+                  <linearGradient id="revenueGradient" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="hsl(var(--chart-1))" stopOpacity={0.2} />
+                    <stop offset="95%" stopColor="hsl(var(--chart-1))" stopOpacity={0} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" strokeOpacity={0.5} />
+                <XAxis dataKey="month" fontSize={12} stroke="hsl(var(--muted-foreground))" />
+                <YAxis tickFormatter={(v) => `${currencySymbol}${(v / 1000).toFixed(0)}k`} fontSize={12} stroke="hsl(var(--muted-foreground))" />
+                <Tooltip formatter={(v: number) => formatCurrency(v)} contentStyle={tooltipStyle} />
+                <Area type="monotone" dataKey="receita" stroke="hsl(var(--chart-1))" strokeWidth={2.5} fill="url(#revenueGradient)" dot={{ fill: "hsl(var(--chart-1))", r: 4, strokeWidth: 0 }} />
+              </AreaChart>
             </ResponsiveContainer>
           </div>
         )}
@@ -118,7 +132,7 @@ export function FunnelChartWidget() {
   const { data, isLoading } = useFunnelData();
 
   return (
-    <Card className="shadow-sm">
+    <Card className="rounded-2xl shadow-sm hover:shadow-md transition-shadow">
       <CardHeader>
         <CardTitle className="text-base font-bold">Funil de Vendas</CardTitle>
         <CardDescription>Distribuição por etapa do funil</CardDescription>
@@ -128,11 +142,11 @@ export function FunnelChartWidget() {
           <div className="h-[280px]">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={data} layout="vertical" margin={{ left: 10 }}>
-                <CartesianGrid strokeDasharray="3 3" horizontal={false} />
-                <XAxis type="number" fontSize={12} />
-                <YAxis type="category" dataKey="name" fontSize={11} width={70} />
-                <Tooltip />
-                <Bar dataKey="value" radius={[0, 6, 6, 0]}>
+                <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="hsl(var(--border))" strokeOpacity={0.5} />
+                <XAxis type="number" fontSize={12} stroke="hsl(var(--muted-foreground))" />
+                <YAxis type="category" dataKey="name" fontSize={11} width={70} stroke="hsl(var(--muted-foreground))" />
+                <Tooltip contentStyle={tooltipStyle} />
+                <Bar dataKey="value" radius={[0, 8, 8, 0]}>
                   {(data || []).map((_, index) => (
                     <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                   ))}
