@@ -43,6 +43,7 @@ import {
   ChevronDown,
   Loader2,
   QrCode,
+  Wifi,
 } from "lucide-react";
 import {
   Dialog,
@@ -1424,6 +1425,39 @@ function InstancesTab() {
   const [bitrixMappings, setBitrixMappings] = useState<ChannelMapping[]>([]);
   const [linkingInstance, setLinkingInstance] = useState<string | null>(null);
   const [qrDialogOpen, setQrDialogOpen] = useState(false);
+  const [wuzapiStatus, setWuzapiStatus] = useState<Record<string, any>>({});
+  const [testingConnection, setTestingConnection] = useState<string | null>(null);
+  const [testLog, setTestLog] = useState<string | null>(null);
+  const [testLogDialogOpen, setTestLogDialogOpen] = useState(false);
+
+  const checkWuzapiStatus = useCallback(async () => {
+    try {
+      const { data } = await supabase.functions.invoke("wuzapi-test-connection", { body: {} });
+      if (data) setWuzapiStatus((prev) => ({ ...prev, _global: data }));
+    } catch {}
+  }, []);
+
+  const handleTestConnection = async (instId: string) => {
+    setTestingConnection(instId);
+    try {
+      const { data, error } = await supabase.functions.invoke("wuzapi-test-connection", { body: {} });
+      const log = JSON.stringify(data || { error: error?.message }, null, 2);
+      setTestLog(log);
+      setTestLogDialogOpen(true);
+      if (data) setWuzapiStatus((prev) => ({ ...prev, _global: data }));
+      if (data?.connected) {
+        toast.success("WhatsApp conectado!");
+      } else {
+        toast.info(data?.message || "Desconectado");
+      }
+    } catch (e: any) {
+      const log = JSON.stringify({ error: e.message }, null, 2);
+      setTestLog(log);
+      setTestLogDialogOpen(true);
+      toast.error("Erro ao testar conexão");
+    }
+    setTestingConnection(null);
+  };
 
   const loadInstances = useCallback(async () => {
     setLoading(true);
@@ -1436,7 +1470,7 @@ function InstancesTab() {
     setLoading(false);
   }, []);
 
-  useEffect(() => { loadInstances(); }, [loadInstances]);
+  useEffect(() => { loadInstances(); checkWuzapiStatus(); }, [loadInstances, checkWuzapiStatus]);
 
   const handleCreate = async () => {
     if (!newName.trim()) return;
@@ -1770,13 +1804,42 @@ function InstancesTab() {
                   </div>
                 )}
 
+                {/* Wuzapi connection status */}
+                {isWuzapi && (
+                  <div className="flex items-center gap-2 py-1">
+                    {wuzapiStatus._global?.connected ? (
+                      <span className="inline-flex items-center gap-1.5 text-xs font-medium text-green-700 bg-green-50 px-2.5 py-1 rounded-full">
+                        <CheckCircle2 className="h-3.5 w-3.5" /> Conectado
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1.5 text-xs font-medium text-amber-700 bg-amber-50 px-2.5 py-1 rounded-full">
+                        <AlertCircle className="h-3.5 w-3.5" /> Desconectado
+                      </span>
+                    )}
+                  </div>
+                )}
+
                 {/* Action buttons */}
                 <div className="flex gap-2 pt-1">
                   {isWuzapi ? (
-                    <Button size="sm" variant="outline" className="flex-1 gap-1.5" onClick={() => setQrDialogOpen(true)}>
-                      <QrCode className="h-3.5 w-3.5" />
-                      Ler QR Code
-                    </Button>
+                    <>
+                      {!wuzapiStatus._global?.connected && (
+                        <Button size="sm" variant="outline" className="flex-1 gap-1.5" onClick={() => setQrDialogOpen(true)}>
+                          <QrCode className="h-3.5 w-3.5" />
+                          Ler QR Code
+                        </Button>
+                      )}
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="flex-1 gap-1.5"
+                        onClick={() => handleTestConnection(inst.id)}
+                        disabled={testingConnection === inst.id}
+                      >
+                        {testingConnection === inst.id ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <Wifi className="h-3.5 w-3.5" />}
+                        Testar Conexão
+                      </Button>
+                    </>
                   ) : !isEditing ? (
                     <Button size="sm" variant="outline" className="flex-1" onClick={() => setEditingId(inst.id)}>
                       Configurar
@@ -1821,6 +1884,38 @@ function InstancesTab() {
 
       {/* QR Code Dialog */}
       <QRCodeDialog open={qrDialogOpen} onOpenChange={setQrDialogOpen} />
+
+      {/* Test Connection Log Dialog */}
+      <Dialog open={testLogDialogOpen} onOpenChange={setTestLogDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Wifi className="h-5 w-5" /> Log do Teste de Conexão
+            </DialogTitle>
+          </DialogHeader>
+          <div className="relative">
+            <pre className="bg-muted text-xs p-3 rounded-lg overflow-auto max-h-64 whitespace-pre-wrap break-all font-mono">
+              {testLog}
+            </pre>
+            <Button
+              size="sm"
+              variant="outline"
+              className="absolute top-2 right-2 h-7 w-7 p-0"
+              onClick={() => {
+                if (testLog) {
+                  navigator.clipboard.writeText(testLog);
+                  toast.success("Log copiado!");
+                }
+              }}
+            >
+              <Copy className="h-3.5 w-3.5" />
+            </Button>
+          </div>
+          <DialogFooter>
+            <Button size="sm" variant="outline" onClick={() => setTestLogDialogOpen(false)}>Fechar</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
