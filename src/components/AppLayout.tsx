@@ -76,6 +76,9 @@ export function AppLayout() {
         <div className="flex flex-col items-center gap-3">
           <LumaSpin />
           <p className="text-sm text-muted-foreground">A carregar...</p>
+          <span className="absolute text-6xl md:text-8xl font-bold text-foreground/[0.03] rotate-[-30deg] whitespace-nowrap pointer-events-none select-none">
+            Emmely Fernandes
+          </span>
         </div>
       </div>
     );
@@ -88,14 +91,9 @@ export function AppLayout() {
   return (
     <div className="flex min-h-screen w-full flex-col">
       <AppHeader onSearchClick={() => setCmdOpen(true)} />
-      <main className="flex-1 p-6 pb-24 bg-background relative">
+      <main className="flex-1 p-6 pb-24 bg-background">
         <Outlet />
       </main>
-      <div className="fixed inset-0 z-0 flex items-center justify-center pointer-events-none select-none overflow-hidden">
-        <span className="text-6xl md:text-8xl font-bold text-foreground/[0.03] rotate-[-30deg] whitespace-nowrap">
-          Emmely Fernandes
-        </span>
-      </div>
       <AppDock />
       <CommandPalette open={cmdOpen} onOpenChange={setCmdOpen} />
     </div>
