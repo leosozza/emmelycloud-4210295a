@@ -44,6 +44,7 @@ import {
   Loader2,
   QrCode,
   Wifi,
+  LogOut,
 } from "lucide-react";
 import {
   Dialog,
@@ -1459,6 +1460,23 @@ function InstancesTab() {
     setTestingConnection(null);
   };
 
+  const [disconnecting, setDisconnecting] = useState(false);
+  const handleDisconnect = async () => {
+    setDisconnecting(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("wuzapi-test-connection", { body: { action: "disconnect" } });
+      if (data?.ok) {
+        toast.success("WhatsApp desconectado com sucesso");
+        setWuzapiStatus((prev) => ({ ...prev, _global: { ...prev._global, connected: false, phone_number: null, status: "disconnected" } }));
+      } else {
+        toast.error(data?.error || error?.message || "Erro ao desconectar");
+      }
+    } catch (e: any) {
+      toast.error("Erro ao desconectar: " + e.message);
+    }
+    setDisconnecting(false);
+  };
+
   const loadInstances = useCallback(async () => {
     setLoading(true);
     const [instRes, mappingsRes] = await Promise.all([
@@ -1846,6 +1864,18 @@ function InstancesTab() {
                         {testingConnection === inst.id ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <Wifi className="h-3.5 w-3.5" />}
                         Testar Conexão
                       </Button>
+                      {wuzapiStatus._global?.connected && (
+                        <Button
+                          size="sm"
+                          variant="destructive"
+                          className="flex-1 gap-1.5"
+                          onClick={handleDisconnect}
+                          disabled={disconnecting}
+                        >
+                          {disconnecting ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <LogOut className="h-3.5 w-3.5" />}
+                          Desconectar
+                        </Button>
+                      )}
                     </>
                   ) : !isEditing ? (
                     <Button size="sm" variant="outline" className="flex-1" onClick={() => setEditingId(inst.id)}>
