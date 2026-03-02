@@ -1,61 +1,38 @@
 
 
-## Melhorar a Pagina Inicial (Dashboard)
+## Aplicar Novo Tema de Cores
 
-### Objectivo
+O utilizador forneceu um novo esquema de cores (lilás/rosa) para substituir o actual (azul). Vou converter os valores hex para HSL (formato usado pelo projecto) e actualizar o `src/index.css`.
 
-Modernizar visualmente o dashboard com cards KPI estilo bento usando gradientes animados, melhor hierarquia visual e saudacao personalizada.
+### Alteracoes
 
-### Novos ficheiros
+**`src/index.css`** — Substituir todas as variaveis CSS `:root` e `.dark` pelos novos valores:
 
-| Ficheiro | Descricao |
+| Variavel | Light (hex → hsl) | Dark (hex → hsl) |
+|---|---|---|
+| --background | #f8f7fa → 260 18% 97% | #1a1823 → 256 18% 12% |
+| --foreground | #3d3c4f → 244 14% 27% | #e0ddef → 249 41% 90% |
+| --card | #ffffff → 0 0% 100% | #232030 → 249 20% 16% |
+| --primary | #8a79ab → 263 23% 57% | #a995c9 → 263 34% 69% |
+| --secondary | #dfd9ec → 260 30% 89% | #5a5370 → 255 14% 38% |
+| --muted | #dcd9e3 → 252 14% 87% | #242031 → 256 22% 16% |
+| --accent | #e6a5b8 → 343 52% 77% | #372e3f → 268 15% 21% |
+| --destructive | #d95c5c → 0 60% 60% | #e57373 → 0 68% 67% |
+| --border | #cec9d9 → 258 14% 82% | #302c40 → 252 18% 21% |
+| --input | #eae7f0 → 260 22% 93% | #2a273a → 252 18% 19% |
+| --ring | #8a79ab → 263 23% 57% | #a995c9 → 263 34% 69% |
+| --sidebar-* | Converter correspondentes | Converter correspondentes |
+| --chart-1..5 | Converter correspondentes | Converter correspondentes |
+
+Tambem actualizar:
+- `font-family` para `Geist, sans-serif` conforme `--font-sans`
+- `--radius` para `0.5rem`
+
+Os gradientes Bitrix (`.bg-bitrix-gradient`, `.b24-sidebar-header`) serao actualizados para usar tons lilas/rosa em vez de azul.
+
+### Ficheiros
+
+| Ficheiro | Accao |
 |---|---|
-| `src/components/ui/animated-gradient-with-svg.tsx` | Componente de gradiente animado com SVG circles |
-| `src/components/hooks/use-debounced-dimensions.ts` | Hook para medir dimensoes com debounce (dependencia do gradiente) |
-
-### Ficheiros a editar
-
-**`tailwind.config.ts`**
-- Adicionar keyframe `background-gradient` e animacao correspondente para o efeito de gradiente animado
-
-**`src/components/dashboard/DashboardKPIs.tsx`**
-- Substituir os cards simples por BentoCards com `AnimatedGradient` como fundo
-- Cada KPI tera um gradiente animado unico com cores alinhadas ao tema (azul para leads, verde para receita, etc.)
-- Adicionar animacao de entrada escalonada com `framer-motion` (staggerChildren)
-- Manter os mesmos dados e logica existente
-
-**`src/pages/Index.tsx`**
-- Substituir o `PageHeader` por uma saudacao personalizada com hora do dia ("Bom dia", "Boa tarde", "Boa noite") e nome do utilizador do perfil
-- Adicionar data actual formatada
-- Layout mais respiravel com spacing ajustado
-
-**`src/components/PageHeader.tsx`**
-- Sem alteracoes (usado por outras paginas)
-
-### Estrutura visual
-
-```text
-+--------------------------------------------------+
-| Bom dia, João                           [filtro]  |
-| Terça-feira, 2 de Março de 2026        [config]   |
-+--------------------------------------------------+
-| [Leads ████] [SLA ████] [Receita ████]           |
-| [Conv. ████] [Casos ████] [Contratos ████]       |
-|  (cada card com gradiente animado de fundo)       |
-+--------------------------------------------------+
-| [Funil]        [Leads/Origem]                     |
-| [Receita/Area] [Tendencia]                        |
-+--------------------------------------------------+
-| [Ultimos Leads]              [Sidebar]            |
-+--------------------------------------------------+
-```
-
-### Detalhes tecnicos
-
-- `AnimatedGradient` usa SVG circles com CSS animation `background-gradient` que se movem lentamente
-- Cada KPI card recebe array de 4 cores (ex: `["#2283d8", "#4a9fe5", "#7b5ea7", "#2283d8"]`)
-- Cards usam `motion.div` com `staggerChildren: 0.1` para entrada sequencial
-- O gradiente fica como fundo absoluto com `blur-2xl` e `overflow-hidden rounded-xl`
-- A saudacao usa `new Date().getHours()` para determinar periodo do dia
-- Nome do utilizador vem do `useAuthContext` (session.user) ou perfil
+| `src/index.css` | Substituir variaveis `:root` e `.dark`, actualizar gradientes |
 
