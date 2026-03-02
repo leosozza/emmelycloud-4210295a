@@ -150,6 +150,26 @@ Deno.serve(async (req) => {
       });
     }
 
+    // ── Action: disconnect/logout session ──
+    if (action === "disconnect") {
+      try {
+        const logoutRes = await fetch(`${resolvedBaseUrl}/session/logout`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "token": resolvedUserToken },
+        });
+        const logoutBody = await logoutRes.text();
+        console.log("[WUZAPI-TEST] Logout response:", logoutRes.status, logoutBody);
+        return new Response(JSON.stringify({ ok: logoutRes.ok, message: logoutRes.ok ? "Sessão desconectada com sucesso" : logoutBody }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      } catch (e) {
+        console.error("[WUZAPI-TEST] Logout failed:", e);
+        return new Response(JSON.stringify({ ok: false, error: "Falha ao desconectar sessão" }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+    }
+
     // ── Action: connect session ──
     if (action === "connect") {
       const connectRes = await fetch(`${resolvedBaseUrl}/session/connect`, {
