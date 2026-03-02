@@ -117,6 +117,32 @@ Deno.serve(async (req) => {
 
     let externalMessageId: string | null = null;
 
+    // ── Resolve instance for WhatsApp to check provider ──
+    let resolvedProvider = "meta"; // default
+    if (conv.channel === "whatsapp" && !instance_id) {
+      // Check if there's a wuzapi instance active
+      const { data: wuzapiInstances } = await supabase
+        .from("channel_instances")
+        .select("id, config")
+        .eq("channel_type", "whatsapp")
+        .eq("status", "active")
+        .order("created_at", { ascending: false });
+      
+      const wuzapiInst = wuzapiInstances?.find((i: any) => (i.config as any)?.provider === "wuzapi");
+      if (wuzapiInst) {
+        resolvedProvider = "wuzapi";
+      }
+    } else if (instance_id) {
+      const { data: inst } = await supabase
+        .from("channel_instances")
+        .select("config")
+        .eq("id", instance_id)
+        .single();
+      if (inst?.config && (inst.config as any)?.provider === "wuzapi") {
+        resolvedProvider = "wuzapi";
+      }
+    }
+
     // ── Instagram: send via Meta Graph API ──
     if (conv.channel === "instagram") {
       const creds = await resolveCredentials(supabase, "instagram", instance_id);
@@ -251,6 +277,90 @@ Deno.serve(async (req) => {
         });
       }
       externalMessageId = waResult.messages?.[0]?.id ?? null;
+
+    // ── WhatsApp via WUZAPI ──
+    } else if (conv.channel === "whatsapp" && resolvedProvider === "wuzapi") {
+      // Get WUZAPI credentials from channel_instances or integration_credentials
+      let wuzapiBaseUrl = "";
+      let wuzapiToken = "";
+
+      // Try channel_instances first
+      const { data: wuzapiInstances } = await supabase
+        .from("channel_instances")
+        .select("config")
+        .eq("channel_type", "whatsapp")
+        .eq("status", "active");
+
+      const wuzapiInst = wuzapiInstances?.find((i: any) => (i.config as any)?.provider === "wuzapi");
+      if (wuzapiInst?.config) {
+        const cfg = wuzapiInst.config as any;
+        wuzapiBaseUrl = (cfg.base_url || "").trim();
+        wuzapiToken = (cfg.user_token || "").trim();
+      }
+
+      // Fallback to integration_credentials
+      if (!wuzapiBaseUrl || !wuzapiToken) {
+        const { data: creds } = await supabase
+          .from("integration_credentials")
+          .select("credential_key, credential_value")
+          .eq("provider", "wuzapi");
+
+        if (creds) {
+          for (const c of creds) {
+            if (c.credential_key === "WUZAPI_BASE_URL" && !wuzapiBaseUrl) wuzapiBaseUrl = c.credential_value?.trim() || "";
+            if (c.credential_key === "WUZAPI_USER_TOKEN" && !wuzapiToken) wuzapiToken = c.credential_value?.trim() || "";
+          }
+        }
+      }
+
+      if (!wuzapiBaseUrl || !wuzapiToken) {
+        return new Response(JSON.stringify({ error: "Credenciais WhatsApp QRCode não configuradas." }), {
+          status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      if (!conv.contact_phone) {
+        return new Response(JSON.stringify({ error: "Sem número de telefone para o contacto" }), {
+          status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      const phone = conv.contact_phone.replace(/[^0-9]/g, "");
+      wuzapiBaseUrl = wuzapiBaseUrl.replace(/\/+$/, "");
+
+      // Determine WUZAPI endpoint based on message type
+      let wuzapiEndpoint = "/chat/send/text";
+      let wuzapiPayload: any = { Phone: phone, Body: content };
+
+      if (message_type === "image" && interactive_data) {
+        wuzapiEndpoint = "/chat/send/image";
+        wuzapiPayload = { Phone: phone, Image: interactive_data.url || interactive_data, Caption: content };
+      } else if (message_type === "document" && interactive_data) {
+        wuzapiEndpoint = "/chat/send/document";
+        wuzapiPayload = { Phone: phone, Document: interactive_data.url || interactive_data, FileName: interactive_data.filename || "documento", Caption: content };
+      } else if (message_type === "audio" && interactive_data) {
+        wuzapiEndpoint = "/chat/send/audio";
+        wuzapiPayload = { Phone: phone, Audio: interactive_data.url || interactive_data };
+      } else if (message_type === "video" && interactive_data) {
+        wuzapiEndpoint = "/chat/send/video";
+        wuzapiPayload = { Phone: phone, Video: interactive_data.url || interactive_data, Caption: content };
+      }
+
+      const wuzapiRes = await fetch(`${wuzapiBaseUrl}${wuzapiEndpoint}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "token": wuzapiToken },
+        body: JSON.stringify(wuzapiPayload),
+      });
+
+      const wuzapiResult = await wuzapiRes.json().catch(() => ({}));
+      if (!wuzapiRes.ok) {
+        console.error("[MESSAGE-SEND] WUZAPI error:", JSON.stringify(wuzapiResult));
+        return new Response(JSON.stringify({ error: "Falha ao enviar via WhatsApp QRCode", details: wuzapiResult }), {
+          status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      externalMessageId = wuzapiResult.MessageID || wuzapiResult.Id || null;
     }
     // email/webchat: just DB insert (no external send)
 
