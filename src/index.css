@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Figtree:wght@300;400;500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700;800&display=swap');
 
 @tailwind base;
 @tailwind components;
@@ -6,118 +6,118 @@
 
 @layer base {
   :root {
-    --background: 220 20% 97%;
-    --foreground: 222 47% 11%;
+    --background: 260 18% 97%;
+    --foreground: 244 14% 27%;
 
     --card: 0 0% 100%;
-    --card-foreground: 222 47% 11%;
+    --card-foreground: 244 14% 27%;
 
     --popover: 0 0% 100%;
-    --popover-foreground: 222 47% 11%;
+    --popover-foreground: 244 14% 27%;
 
-    --primary: 218 72% 50%;
-    --primary-foreground: 0 0% 100%;
+    --primary: 263 23% 57%;
+    --primary-foreground: 260 18% 97%;
 
-    --secondary: 220 16% 93%;
-    --secondary-foreground: 222 47% 11%;
+    --secondary: 260 30% 89%;
+    --secondary-foreground: 244 14% 27%;
 
-    --muted: 220 16% 95%;
-    --muted-foreground: 220 9% 46%;
+    --muted: 252 14% 87%;
+    --muted-foreground: 252 10% 46%;
 
-    --accent: 270 30% 52%;
-    --accent-foreground: 0 0% 100%;
+    --accent: 343 52% 77%;
+    --accent-foreground: 343 25% 25%;
 
-    --destructive: 0 84% 60%;
-    --destructive-foreground: 0 0% 100%;
+    --destructive: 0 60% 60%;
+    --destructive-foreground: 260 18% 97%;
 
-    --success: 152 69% 46%;
+    --success: 152 30% 55%;
     --success-foreground: 0 0% 100%;
 
-    --warning: 38 92% 50%;
-    --warning-foreground: 0 0% 100%;
+    --warning: 38 60% 65%;
+    --warning-foreground: 38 40% 20%;
 
-    --info: 199 89% 48%;
-    --info-foreground: 0 0% 100%;
+    --info: 216 45% 70%;
+    --info-foreground: 216 30% 20%;
 
-    --border: 215 20% 92%;
-    --input: 215 20% 92%;
-    --ring: 218 72% 50%;
+    --border: 258 14% 82%;
+    --input: 260 22% 93%;
+    --ring: 263 23% 57%;
 
-    --radius: 0.75rem;
+    --radius: 0.5rem;
 
-    --sidebar-background: 0 0% 100%;
-    --sidebar-foreground: 222 47% 11%;
-    --sidebar-primary: 218 72% 50%;
-    --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 218 80% 96%;
-    --sidebar-accent-foreground: 218 72% 50%;
-    --sidebar-border: 215 20% 92%;
-    --sidebar-ring: 218 72% 50%;
-    --sidebar-muted-foreground: 220 9% 46%;
+    --sidebar-background: 260 15% 95%;
+    --sidebar-foreground: 244 14% 27%;
+    --sidebar-primary: 263 23% 57%;
+    --sidebar-primary-foreground: 260 18% 97%;
+    --sidebar-accent: 343 52% 77%;
+    --sidebar-accent-foreground: 343 25% 25%;
+    --sidebar-border: 258 12% 86%;
+    --sidebar-ring: 263 23% 57%;
+    --sidebar-muted-foreground: 252 10% 46%;
 
-    --chart-1: 218 72% 50%;
-    --chart-2: 270 30% 52%;
-    --chart-3: 152 69% 46%;
-    --chart-4: 38 92% 50%;
-    --chart-5: 0 84% 60%;
+    --chart-1: 263 23% 57%;
+    --chart-2: 343 52% 77%;
+    --chart-3: 152 30% 55%;
+    --chart-4: 38 60% 72%;
+    --chart-5: 216 45% 70%;
 
-    /* Bitrix24 gradient stops */
-    --gradient-start: 218 72% 50%;
-    --gradient-mid: 270 30% 52%;
-    --gradient-end: 340 50% 60%;
+    /* Gradient stops */
+    --gradient-start: 263 23% 57%;
+    --gradient-mid: 343 52% 77%;
+    --gradient-end: 300 20% 65%;
   }
 
   .dark {
-    --background: 222 47% 6%;
-    --foreground: 210 40% 96%;
+    --background: 256 18% 12%;
+    --foreground: 249 41% 90%;
 
-    --card: 222 47% 9%;
-    --card-foreground: 210 40% 96%;
+    --card: 249 20% 16%;
+    --card-foreground: 249 41% 90%;
 
-    --popover: 222 47% 9%;
-    --popover-foreground: 210 40% 96%;
+    --popover: 249 20% 16%;
+    --popover-foreground: 249 41% 90%;
 
-    --primary: 218 72% 55%;
-    --primary-foreground: 0 0% 100%;
+    --primary: 263 34% 69%;
+    --primary-foreground: 256 18% 12%;
 
-    --secondary: 222 30% 20%;
-    --secondary-foreground: 210 40% 96%;
+    --secondary: 255 14% 38%;
+    --secondary-foreground: 249 41% 90%;
 
-    --muted: 222 30% 17%;
-    --muted-foreground: 220 9% 65%;
+    --muted: 256 22% 16%;
+    --muted-foreground: 255 8% 65%;
 
-    --accent: 270 30% 55%;
-    --accent-foreground: 0 0% 100%;
+    --accent: 268 15% 21%;
+    --accent-foreground: 343 60% 83%;
 
-    --destructive: 0 62% 30%;
-    --destructive-foreground: 210 40% 98%;
+    --destructive: 0 68% 67%;
+    --destructive-foreground: 256 18% 12%;
 
-    --success: 152 69% 46%;
+    --success: 152 30% 55%;
     --success-foreground: 0 0% 100%;
 
-    --warning: 38 92% 50%;
-    --warning-foreground: 0 0% 100%;
+    --warning: 38 60% 65%;
+    --warning-foreground: 38 40% 20%;
 
-    --info: 199 89% 48%;
-    --info-foreground: 0 0% 100%;
+    --info: 216 45% 70%;
+    --info-foreground: 216 30% 20%;
 
-    --border: 222 30% 22%;
-    --input: 222 30% 22%;
-    --ring: 218 72% 55%;
+    --border: 252 18% 21%;
+    --input: 252 18% 19%;
+    --ring: 263 34% 69%;
 
-    --sidebar-background: 222 47% 7%;
-    --sidebar-foreground: 210 40% 96%;
-    --sidebar-primary: 218 72% 55%;
-    --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 222 40% 12%;
-    --sidebar-accent-foreground: 218 72% 55%;
-    --sidebar-border: 222 30% 14%;
-    --sidebar-ring: 218 72% 55%;
-    --sidebar-muted-foreground: 220 9% 62%;
+    --sidebar-background: 260 20% 9%;
+    --sidebar-foreground: 249 41% 90%;
+    --sidebar-primary: 263 34% 69%;
+    --sidebar-primary-foreground: 256 18% 12%;
+    --sidebar-accent: 268 15% 21%;
+    --sidebar-accent-foreground: 343 60% 83%;
+    --sidebar-border: 252 18% 19%;
+    --sidebar-ring: 263 34% 69%;
+    --sidebar-muted-foreground: 255 8% 62%;
 
-    --gradient-start: 218 72% 55%;
-    --gradient-mid: 270 30% 55%;
-    --gradient-end: 340 50% 55%;
+    --gradient-start: 263 34% 69%;
+    --gradient-mid: 343 40% 65%;
+    --gradient-end: 300 20% 55%;
   }
 }
 
@@ -128,22 +128,22 @@
 
   body {
     @apply bg-background text-foreground;
-    font-family: 'Figtree', sans-serif;
+    font-family: 'Geist', sans-serif;
   }
 
   h1, h2, h3, h4, h5, h6 {
-    font-family: 'Figtree', sans-serif;
+    font-family: 'Geist', sans-serif;
     font-weight: 700;
   }
 }
 
-/* Bitrix24-style gradient utilities */
+/* Gradient utilities */
 .bg-bitrix-gradient {
-  background: linear-gradient(135deg, #2283d8, #7b5ea7, #d4728b);
+  background: linear-gradient(135deg, #8a79ab, #e6a5b8, #c49ab0);
 }
 
 .bg-bitrix-gradient-subtle {
-  background: linear-gradient(135deg, rgba(34, 131, 216, 0.08), rgba(123, 94, 167, 0.05));
+  background: linear-gradient(135deg, rgba(138, 121, 171, 0.08), rgba(230, 165, 184, 0.05));
 }
 
 /* b24ui Card hover */
@@ -248,7 +248,7 @@
 
 /* b24ui Sidebar */
 .b24-sidebar-header {
-  background: linear-gradient(135deg, #2283d8, #7b5ea7);
+  background: linear-gradient(135deg, #8a79ab, #e6a5b8);
 }
 
 /* b24ui Status dot pulse */
@@ -262,7 +262,7 @@
 
 /* b24ui View header */
 .b24-view-header {
-  background: linear-gradient(135deg, #2283d8, #7b5ea7);
+  background: linear-gradient(135deg, #8a79ab, #e6a5b8);
   border-radius: 12px;
   padding: 1.25rem 1.5rem;
   margin-bottom: 1.5rem;
@@ -304,8 +304,8 @@
   border-radius: 12px 12px 4px 12px;
 }
 .b24-chat-msg-content.system {
-  background: linear-gradient(135deg, rgba(34,131,216,0.06), rgba(123,94,167,0.04));
-  border: 1px solid rgba(34,131,216,0.15);
+  background: linear-gradient(135deg, rgba(138,121,171,0.06), rgba(230,165,184,0.04));
+  border: 1px solid rgba(138,121,171,0.15);
   color: hsl(var(--muted-foreground));
   text-align: center;
   width: 100%;

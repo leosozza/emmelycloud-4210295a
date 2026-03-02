@@ -14,8 +14,8 @@ export default {
     },
     extend: {
       fontFamily: {
-        sans: ["Figtree", "sans-serif"],
-        display: ["Figtree", "sans-serif"],
+        sans: ["Geist", "sans-serif"],
+        display: ["Geist", "sans-serif"],
       },
       colors: {
         border: "hsl(var(--border))",
