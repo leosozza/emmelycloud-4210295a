@@ -1,38 +1,49 @@
 
 
-## Aplicar Novo Tema de Cores
-
-O utilizador forneceu um novo esquema de cores (lilás/rosa) para substituir o actual (azul). Vou converter os valores hex para HSL (formato usado pelo projecto) e actualizar o `src/index.css`.
+## Aplicar Novo Tema Vermelho/Dourado + Componente EvervaultCard
 
 ### Alteracoes
 
-**`src/index.css`** — Substituir todas as variaveis CSS `:root` e `.dark` pelos novos valores:
+**1. `src/index.css`** — Substituir completamente as variaveis CSS e gradientes:
 
 | Variavel | Light (hex → hsl) | Dark (hex → hsl) |
 |---|---|---|
-| --background | #f8f7fa → 260 18% 97% | #1a1823 → 256 18% 12% |
-| --foreground | #3d3c4f → 244 14% 27% | #e0ddef → 249 41% 90% |
-| --card | #ffffff → 0 0% 100% | #232030 → 249 20% 16% |
-| --primary | #8a79ab → 263 23% 57% | #a995c9 → 263 34% 69% |
-| --secondary | #dfd9ec → 260 30% 89% | #5a5370 → 255 14% 38% |
-| --muted | #dcd9e3 → 252 14% 87% | #242031 → 256 22% 16% |
-| --accent | #e6a5b8 → 343 52% 77% | #372e3f → 268 15% 21% |
-| --destructive | #d95c5c → 0 60% 60% | #e57373 → 0 68% 67% |
-| --border | #cec9d9 → 258 14% 82% | #302c40 → 252 18% 21% |
-| --input | #eae7f0 → 260 22% 93% | #2a273a → 252 18% 19% |
-| --ring | #8a79ab → 263 23% 57% | #a995c9 → 263 34% 69% |
-| --sidebar-* | Converter correspondentes | Converter correspondentes |
-| --chart-1..5 | Converter correspondentes | Converter correspondentes |
+| --background | #faf7f5 → 25 33% 97% | #1c1917 → 24 12% 10% |
+| --foreground | #1a1a1a → 0 0% 10% | #f5f5f4 → 40 20% 96% |
+| --card | #faf7f5 → 25 33% 97% | #292524 → 12 10% 15% |
+| --primary | #9b2c2c → 0 56% 39% | #b91c1c → 0 73% 42% |
+| --secondary | #fdf2d6 → 43 93% 91% | #92400e → 30 83% 31% |
+| --muted | #f0ebe8 → 22 20% 93% | #292524 → 12 10% 15% |
+| --accent | #fef3c7 → 48 96% 89% | #b45309 → 32 91% 37% |
+| --destructive | #991b1b → 0 68% 35% | #ef4444 → 0 84% 60% |
+| --border | #f5e8d2 → 37 68% 89% | #44403c → 33 7% 25% |
+| --input | #f5e8d2 → 37 68% 89% | #44403c → 33 7% 25% |
+| --ring | #9b2c2c → 0 56% 39% | #b91c1c → 0 73% 42% |
+| + todas sidebar-*, chart-*, gradient-* | Converter correspondentes | Converter correspondentes |
 
-Tambem actualizar:
-- `font-family` para `Geist, sans-serif` conforme `--font-sans`
-- `--radius` para `0.5rem`
+- Actualizar font-family para `Poppins, sans-serif`
+- Actualizar Google Fonts import para Poppins
+- Actualizar gradientes `.bg-bitrix-gradient` para tons vermelhos/dourados (`#9b2c2c`, `#b45309`, `#7f1d1d`)
+- `--radius` para `0.375rem`
 
-Os gradientes Bitrix (`.bg-bitrix-gradient`, `.b24-sidebar-header`) serao actualizados para usar tons lilas/rosa em vez de azul.
+**2. `src/components/dashboard/DashboardKPIs.tsx`** — Actualizar cores dos gradientes dos BentoCards para paleta vermelha/dourada:
+- Leads: vermelhos (`#9b2c2c`, `#b91c1c`)
+- SLA: dourados (`#b45309`, `#92400e`)
+- Receita: vermelhos escuros (`#7f1d1d`)
+- Conversao: ambar (`#fbbf24`, `#f59e0b`)
+- Casos: vermelho medio (`#ef4444`, `#dc2626`)
+- Contratos: castanho/terracota (`#92400e`, `#b45309`)
+
+**3. `src/components/ui/evervault-card.tsx`** — Criar novo componente (copiar do codigo fornecido). Framer-motion ja esta instalado.
+
+**4. `tailwind.config.ts`** — Actualizar font-family para Poppins.
 
 ### Ficheiros
 
 | Ficheiro | Accao |
 |---|---|
-| `src/index.css` | Substituir variaveis `:root` e `.dark`, actualizar gradientes |
+| `src/index.css` | Reescrever variaveis `:root` e `.dark`, gradientes, font imports |
+| `src/components/dashboard/DashboardKPIs.tsx` | Actualizar arrays de cores dos BentoCards |
+| `src/components/ui/evervault-card.tsx` | Criar componente |
+| `tailwind.config.ts` | Actualizar fontFamily para Poppins |
 
