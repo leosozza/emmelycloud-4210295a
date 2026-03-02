@@ -920,13 +920,16 @@ Deno.serve(async (req) => {
         const instTotal = meta.total_installments || dealTransactions.length;
         const isDown = meta.is_down_payment === true;
 
+        // Use due_date from metadata if available, fallback to created_at
+        const dueDate = meta.due_date || tx.created_at;
+
         return {
           id: tx.id,
           number: isDown ? 0 : instNum,
           total: instTotal,
           value: tx.amount || 0,
           status,
-          due_date: tx.created_at,
+          due_date: dueDate,
           paid_at: status === "paga" ? tx.updated_at : null,
           currency: tx.currency || currency,
           description: "",

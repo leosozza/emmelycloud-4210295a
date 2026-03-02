@@ -113,3 +113,6 @@ verify_jwt = false
 
 [functions.wuzapi-test-connection]
 verify_jwt = false
+
+[functions.bitrix24-payment-webhook]
+verify_jwt = false
