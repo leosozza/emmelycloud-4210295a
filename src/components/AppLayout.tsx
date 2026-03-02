@@ -3,7 +3,7 @@ import { Outlet, Navigate, useNavigate, useLocation } from "react-router-dom";
 import { AppHeader } from "@/components/AppHeader";
 import { CommandPalette } from "@/components/CommandPalette";
 import { useAuthContext } from "@/contexts/AuthContext";
-import { Scale } from "lucide-react";
+import { LumaSpin } from "@/components/ui/luma-spin";
 import {
   LayoutDashboard, Users, Briefcase, FileText, FileSignature,
   DollarSign, Zap, BarChart3, Contact, MessageCircle, Map, Plug, Bot, Workflow,
@@ -74,9 +74,7 @@ export function AppLayout() {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background">
         <div className="flex flex-col items-center gap-3">
-          <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary animate-pulse">
-            <Scale className="h-6 w-6 text-primary-foreground" />
-          </div>
+          <LumaSpin />
           <p className="text-sm text-muted-foreground">A carregar...</p>
         </div>
       </div>
@@ -90,9 +88,14 @@ export function AppLayout() {
   return (
     <div className="flex min-h-screen w-full flex-col">
       <AppHeader onSearchClick={() => setCmdOpen(true)} />
-      <main className="flex-1 p-6 pb-24 bg-background">
+      <main className="flex-1 p-6 pb-24 bg-background relative">
         <Outlet />
       </main>
+      <div className="fixed inset-0 z-0 flex items-center justify-center pointer-events-none select-none overflow-hidden">
+        <span className="text-6xl md:text-8xl font-bold text-foreground/[0.03] rotate-[-30deg] whitespace-nowrap">
+          Emmely Fernandes
+        </span>
+      </div>
       <AppDock />
       <CommandPalette open={cmdOpen} onOpenChange={setCmdOpen} />
     </div>
