@@ -204,31 +204,15 @@ Deno.serve(async (req) => {
         let wuzapiBaseUrl = "";
         let wuzapiToken = "";
 
-        // Try channel_instances first
-        const { data: wuzapiInstances } = await supabase
-          .from("channel_instances")
-          .select("config")
-          .eq("channel_type", "whatsapp")
-          .eq("status", "active");
-
-        const wuzapiInst = wuzapiInstances?.find((i: any) => (i.config as any)?.provider === "wuzapi");
-        if (wuzapiInst?.config) {
-          const cfg = wuzapiInst.config as any;
-          wuzapiBaseUrl = (cfg.base_url || "").trim();
-          wuzapiToken = (cfg.user_token || "").trim();
-        }
-
-        // Fallback to integration_credentials
-        if (!wuzapiBaseUrl || !wuzapiToken) {
-          const { data: creds } = await supabase
-            .from("integration_credentials")
-            .select("credential_key, credential_value")
-            .eq("provider", "wuzapi");
-          if (creds) {
-            for (const c of creds) {
-              if (c.credential_key === "WUZAPI_BASE_URL" && !wuzapiBaseUrl) wuzapiBaseUrl = c.credential_value?.trim() || "";
-              if (c.credential_key === "WUZAPI_USER_TOKEN" && !wuzapiToken) wuzapiToken = c.credential_value?.trim() || "";
-            }
+        // Resolve from integration_credentials (user token is auto-created by wuzapi-test-connection)
+        const { data: creds } = await supabase
+          .from("integration_credentials")
+          .select("credential_key, credential_value")
+          .eq("provider", "wuzapi");
+        if (creds) {
+          for (const c of creds) {
+            if (c.credential_key === "WUZAPI_BASE_URL" && !wuzapiBaseUrl) wuzapiBaseUrl = c.credential_value?.trim() || "";
+            if (c.credential_key === "WUZAPI_USER_TOKEN" && !wuzapiToken) wuzapiToken = c.credential_value?.trim() || "";
           }
         }
 

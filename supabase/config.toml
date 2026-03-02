@@ -107,3 +107,9 @@ verify_jwt = false
 
 [functions.ollama-url-webhook]
 verify_jwt = false
+
+[functions.wuzapi-webhook]
+verify_jwt = false
+
+[functions.wuzapi-test-connection]
+verify_jwt = false
