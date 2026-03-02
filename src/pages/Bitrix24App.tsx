@@ -18,6 +18,7 @@ import {
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import CustomFlowNode from "@/components/flows/CustomFlowNode";
+import BitrixFieldSelector from "@/components/flows/BitrixFieldSelector";
 import FlowNodePalette from "@/components/flows/FlowNodePalette";
 import NodeConfigPanel from "@/components/flows/NodeConfigPanel";
 import { type FlowNodeType, type FlowNodeData, getDefaultData } from "@/components/flows/FlowNodeTypes";
@@ -1759,6 +1760,13 @@ function PagamentosView({ integration, onRefresh }: { integration: any; onRefres
     deal_amount_field: config.deal_amount_field || "OPPORTUNITY",
     deal_currency_field: config.deal_currency_field || "CURRENCY_ID",
     auto_charge_on_close: config.auto_charge_on_close ?? false,
+    deal_installments_field: config.deal_installments_field || "",
+    deal_down_payment_field: config.deal_down_payment_field || "",
+    deal_first_due_date_field: config.deal_first_due_date_field || "",
+    deal_interval_days_field: config.deal_interval_days_field || "",
+    deal_customer_name_field: config.deal_customer_name_field || "",
+    deal_customer_email_field: config.deal_customer_email_field || "",
+    deal_customer_cpf_field: config.deal_customer_cpf_field || "",
   });
 
   useEffect(() => {
@@ -1769,6 +1777,13 @@ function PagamentosView({ integration, onRefresh }: { integration: any; onRefres
       deal_amount_field: c.deal_amount_field || "OPPORTUNITY",
       deal_currency_field: c.deal_currency_field || "CURRENCY_ID",
       auto_charge_on_close: c.auto_charge_on_close ?? false,
+      deal_installments_field: c.deal_installments_field || "",
+      deal_down_payment_field: c.deal_down_payment_field || "",
+      deal_first_due_date_field: c.deal_first_due_date_field || "",
+      deal_interval_days_field: c.deal_interval_days_field || "",
+      deal_customer_name_field: c.deal_customer_name_field || "",
+      deal_customer_email_field: c.deal_customer_email_field || "",
+      deal_customer_cpf_field: c.deal_customer_cpf_field || "",
     });
   }, [integration?.config]);
 
@@ -1858,7 +1873,7 @@ function PagamentosView({ integration, onRefresh }: { integration: any; onRefres
           <div className="grid grid-cols-2 gap-3">
             <div>
               <Label className="text-xs">Campo Gateway (Deal)</Label>
-              <Input value={gwConfig.deal_gateway_field} onChange={(e) => setGwConfig({ ...gwConfig, deal_gateway_field: e.target.value })} placeholder="Ex: UF_CRM_GATEWAY" className="mt-1 text-xs" />
+              <BitrixFieldSelector entity="deal" value={gwConfig.deal_gateway_field || ""} onChange={(v) => setGwConfig({ ...gwConfig, deal_gateway_field: v })} placeholder="Ex: UF_CRM_GATEWAY" />
             </div>
             <div>
               <Label className="text-xs">Stage Won</Label>
@@ -1866,11 +1881,39 @@ function PagamentosView({ integration, onRefresh }: { integration: any; onRefres
             </div>
             <div>
               <Label className="text-xs">Campo Valor</Label>
-              <Input value={gwConfig.deal_amount_field} onChange={(e) => setGwConfig({ ...gwConfig, deal_amount_field: e.target.value })} className="mt-1 text-xs" />
+              <BitrixFieldSelector entity="deal" value={gwConfig.deal_amount_field || "OPPORTUNITY"} onChange={(v) => setGwConfig({ ...gwConfig, deal_amount_field: v })} placeholder="OPPORTUNITY" />
             </div>
             <div>
               <Label className="text-xs">Campo Moeda</Label>
-              <Input value={gwConfig.deal_currency_field} onChange={(e) => setGwConfig({ ...gwConfig, deal_currency_field: e.target.value })} className="mt-1 text-xs" />
+              <BitrixFieldSelector entity="deal" value={gwConfig.deal_currency_field || "CURRENCY_ID"} onChange={(v) => setGwConfig({ ...gwConfig, deal_currency_field: v })} placeholder="CURRENCY_ID" />
+            </div>
+            <div>
+              <Label className="text-xs">Nº Parcelas</Label>
+              <BitrixFieldSelector entity="deal" value={gwConfig.deal_installments_field || ""} onChange={(v) => setGwConfig({ ...gwConfig, deal_installments_field: v })} placeholder="Campo com nº parcelas" />
+            </div>
+            <div>
+              <Label className="text-xs">Valor Entrada</Label>
+              <BitrixFieldSelector entity="deal" value={gwConfig.deal_down_payment_field || ""} onChange={(v) => setGwConfig({ ...gwConfig, deal_down_payment_field: v })} placeholder="Campo com valor de entrada" />
+            </div>
+            <div>
+              <Label className="text-xs">Data 1º Vencimento</Label>
+              <BitrixFieldSelector entity="deal" value={gwConfig.deal_first_due_date_field || ""} onChange={(v) => setGwConfig({ ...gwConfig, deal_first_due_date_field: v })} placeholder="Campo com data 1º venc." />
+            </div>
+            <div>
+              <Label className="text-xs">Intervalo (dias)</Label>
+              <BitrixFieldSelector entity="deal" value={gwConfig.deal_interval_days_field || ""} onChange={(v) => setGwConfig({ ...gwConfig, deal_interval_days_field: v })} placeholder="Campo com intervalo (default 30)" />
+            </div>
+            <div>
+              <Label className="text-xs">Nome Cliente</Label>
+              <BitrixFieldSelector entity="deal" value={gwConfig.deal_customer_name_field || ""} onChange={(v) => setGwConfig({ ...gwConfig, deal_customer_name_field: v })} placeholder="Ou busca do contacto" />
+            </div>
+            <div>
+              <Label className="text-xs">Email Cliente</Label>
+              <BitrixFieldSelector entity="deal" value={gwConfig.deal_customer_email_field || ""} onChange={(v) => setGwConfig({ ...gwConfig, deal_customer_email_field: v })} placeholder="Ou busca do contacto" />
+            </div>
+            <div>
+              <Label className="text-xs">CPF/CNPJ</Label>
+              <BitrixFieldSelector entity="deal" value={gwConfig.deal_customer_cpf_field || ""} onChange={(v) => setGwConfig({ ...gwConfig, deal_customer_cpf_field: v })} placeholder="Campo com CPF/CNPJ" />
             </div>
           </div>
           <Button onClick={handleSaveGwConfig} disabled={savingConfig} size="sm" className="w-full">

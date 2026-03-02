@@ -570,14 +570,6 @@ async function handleDealUpdate(supabase: any, integration: any, payload: any) {
   }
 
   const wonStage = config.deal_won_stage || "WON";
-  const gatewayField = config.deal_gateway_field || "";
-  const amountField = config.deal_amount_field || "OPPORTUNITY";
-  const currencyField = config.deal_currency_field || "CURRENCY_ID";
-
-  if (!gatewayField) {
-    console.log("[WORKER] No deal_gateway_field configured, skipping");
-    return;
-  }
 
   try {
     const accessToken = await ensureValidToken(supabase, integration);
@@ -598,81 +590,26 @@ async function handleDealUpdate(supabase: any, integration: any, payload: any) {
       return;
     }
 
-    // Read gateway from custom field
-    const gatewayValue = (deal[gatewayField] || "").toString().toLowerCase().trim();
-    if (!gatewayValue) {
-      console.log("[WORKER] No gateway value in field:", gatewayField);
-      return;
-    }
+    console.log("[WORKER] Deal is WON, delegating to bitrix24-payment-webhook for deal:", dealId);
 
-    // Map Bitrix field value to force_gateway
-    const gatewayMap: Record<string, string> = {
-      stripe_pt: "stripe_pt",
-      stripe_br: "stripe_br",
-      asaas: "asaas",
-      direto: "direto",
-      financiamento: "direto",
-      // Accept Portuguese labels too
-      "stripe portugal": "stripe_pt",
-      "stripe brasil": "stripe_br",
-    };
-
-    const forceGateway = gatewayMap[gatewayValue] || gatewayValue;
-
-    const amount = parseFloat(deal[amountField] || "0");
-    const currency = deal[currencyField] || "EUR";
-
-    if (amount <= 0) {
-      console.log("[WORKER] Deal amount is 0 or invalid:", amount);
-      return;
-    }
-
-    // Get contact info
-    const contactId = deal.CONTACT_ID;
-    let customerData: any = { name: deal.TITLE || "Cliente Bitrix24" };
-
-    if (contactId) {
-      const contactResult = await callBitrix(integration.client_endpoint, accessToken, "crm.contact.get", { ID: contactId });
-      const contact = contactResult.result;
-      if (contact) {
-        customerData = {
-          name: `${contact.NAME || ""} ${contact.LAST_NAME || ""}`.trim() || "Cliente",
-          email: contact.EMAIL?.[0]?.VALUE || "",
-          phone: contact.PHONE?.[0]?.VALUE || "",
-        };
-      }
-    }
-
-    console.log("[WORKER] Creating payment for deal:", dealId, "gateway:", forceGateway, "amount:", amount, currency);
-
-    // Call payment-create with force_gateway
-    const paymentRes = await fetch(`${supabaseUrl}/functions/v1/payment-create`, {
+    // Delegate to the payment webhook which handles all installment logic
+    const webhookRes = await fetch(`${supabaseUrl}/functions/v1/bitrix24-payment-webhook`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         "Authorization": `Bearer ${serviceKey}`,
       },
-      body: JSON.stringify({
-        amount,
-        currency,
-        force_gateway: forceGateway,
-        payment_method: forceGateway === "asaas" ? "pix" : (forceGateway === "direto" ? "direto" : "card"),
-        description: `Deal #${dealId} - ${deal.TITLE || ""}`,
-        customer_data: customerData,
-        metadata: {
-          bitrix_deal_id: dealId,
-          bitrix_member_id: integration.member_id,
-        },
-      }),
+      body: JSON.stringify({ deal_id: dealId }),
     });
 
-    const paymentResult = await paymentRes.json();
-    console.log("[WORKER] Payment result:", JSON.stringify(paymentResult).substring(0, 300));
+    const webhookResult = await webhookRes.json();
+    console.log("[WORKER] Payment webhook result:", JSON.stringify(webhookResult).substring(0, 300));
 
     await debugLog(supabase, integration.id, "deal_payment_created", "outbound", {
-      dealId, forceGateway, amount, currency,
-      paymentOk: paymentResult.ok || false,
-      transactionId: paymentResult.transaction?.id,
+      dealId,
+      transactionsCreated: webhookResult.transactions_created || 0,
+      groupId: webhookResult.group_id,
+      errors: webhookResult.errors,
     });
   } catch (e) {
     console.error("[WORKER] Deal update error:", e);
