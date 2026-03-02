@@ -1,63 +1,41 @@
 
 
-## Conferencia WUZAPI vs Documentacao + Simplificacao de Credenciais
+## Reformular fluxo WhatsApp QR Code nas Instâncias
 
-### Analise da API WUZAPI (docs em wazapi.ybrasil.com.br/api)
+O utilizador quer que ao criar uma instância "WhatsApp QR Code", o fluxo seja:
+1. Criar instância (apenas nome + tipo)
+2. Imediatamente após criar, abrir um painel/dialog com QR Code para leitura
+3. Sem campos de credenciais visíveis no card da instância (as credenciais do servidor ficam apenas na aba Omni Channel)
+4. Sem mencionar "WUZAPI" em lado nenhum da UI
 
-A API usa **dois tipos de autenticacao**:
-- **Admin endpoints** (`/admin/users`, etc): header `Authorization` com `WUZAPI_ADMIN_TOKEN`
-- **Standard endpoints** (session, chat, webhook): header `token` com **user token** (criado via admin)
+### Alterações em `src/pages/Integracoes.tsx`
 
-O fluxo correcto e: usar o admin token para **criar automaticamente um user** via `POST /admin/users`, guardar o user token retornado, e usar esse token para session/chat/webhook.
+**1. Remover referências a "WUZAPI" na UI**
+- SelectItem `whatsapp_qrcode`: mudar label de "WhatsApp — QR Code (WUZAPI)" para "WhatsApp — QR Code"
+- CardDescription: mudar de "WhatsApp QR Code (WUZAPI)" para "WhatsApp QR Code"
+- `WhatsAppQRCodeCard`: mudar titulo de "WhatsApp QRCode" para "WhatsApp QR Code" e remover menções a WUZAPI nos labels
 
-### Problemas Actuais
+**2. Instância QR Code: após criar, abrir QR dialog automaticamente**
+- Adicionar estado `qrDialogInstanceId` no `InstancesTab`
+- No `handleCreate`, quando `newType === "whatsapp_qrcode"`, após inserir com sucesso, abrir automaticamente um dialog/sheet de QR Code para essa instância
+- O dialog chama `wuzapi-test-connection` com action `connect` e depois mostra o QR code (reutilizando a lógica do `WhatsAppQRCodeCard`)
 
-1. O card pede 4 campos incluindo `WUZAPI_USER_TOKEN` manualmente — o utilizador quer apenas 3 (URL, Admin Token, Secret Key)
-2. O `wuzapi-test-connection` usa `user_token` nos headers — mas sem user criado, nao funciona
-3. O `message-send` tambem tenta resolver `WUZAPI_USER_TOKEN` que nao existira
-4. O `config.toml` nao tem entradas para `wuzapi-webhook` e `wuzapi-test-connection`
+**3. Card da instância QR Code: sem campos de config, com botão "Ler QR Code"**
+- Quando `isWuzapi`, não mostrar campos de configuração (`getConfigFields` retorna `[]`)
+- Não mostrar botão "Configurar"
+- Em vez disso, mostrar botão "Ler QR Code" que abre o dialog de QR
+- Mostrar status de conexão (conectado/desconectado) obtido do backend
 
-### Plano de Correcao
+**4. QR Code Dialog**
+- Novo componente inline `QRCodeDialog` com:
+  - Chamada a `wuzapi-test-connection` (connect + status/qr)
+  - Exibição do QR code image
+  - Botão "Atualizar QR Code"
+  - Status de conexão e webhook
 
-**1. Editar `src/pages/Integracoes.tsx`**
-- Remover campo `WUZAPI_USER_TOKEN` do card (linha 486)
-- Manter apenas: `WUZAPI_BASE_URL`, `WUZAPI_ADMIN_TOKEN`, `WUZAPI_SECRET_KEY`
+### Ficheiros afectados
 
-**2. Editar `supabase/functions/wuzapi-test-connection/index.ts`**
-- Ao resolver credenciais, usar `WUZAPI_ADMIN_TOKEN` em vez de `WUZAPI_USER_TOKEN`
-- Adicionar logica de auto-criacao de user: ao primeiro uso, chamar `POST /admin/users` com o admin token para criar um user "emmely", guardar o user token retornado em `integration_credentials` como `WUZAPI_USER_TOKEN`
-- Usar o user token criado para session/qr/webhook endpoints
-- Header admin: `Authorization: <admin_token>` | Header user: `token: <user_token>`
-
-**3. Editar `supabase/functions/message-send/index.ts`**
-- Na resolucao de credenciais WUZAPI (linhas 222-233), resolver `WUZAPI_USER_TOKEN` do `integration_credentials` (que foi auto-criado pelo test-connection)
-- Tambem verificar `cfg.user_token` no config da channel_instance
-
-**4. Editar `supabase/config.toml`**
-- Adicionar:
-```toml
-[functions.wuzapi-webhook]
-verify_jwt = false
-
-[functions.wuzapi-test-connection]
-verify_jwt = false
-```
-
-### Fluxo do Utilizador Simplificado
-
-```text
-1. Preencher: URL do Servidor, Admin Token, Secret Key
-2. Clicar "Ativar Instância"
-3. Backend auto-cria user via /admin/users (usando admin token)
-4. Backend guarda user_token internamente
-5. Testar Conexão → mostra QR code (usando user token)
-6. Configurar Webhook → regista URL (usando user token)
-```
-
-| Ficheiro | Accao |
+| Ficheiro | Alteração |
 |---|---|
-| `src/pages/Integracoes.tsx` | Remover campo WUZAPI_USER_TOKEN |
-| `supabase/functions/wuzapi-test-connection/index.ts` | Auto-criar user com admin token, guardar user token |
-| `supabase/functions/message-send/index.ts` | Resolver user_token auto-criado |
-| `supabase/config.toml` | Adicionar wuzapi-webhook e wuzapi-test-connection |
+| `src/pages/Integracoes.tsx` | Reformular card QR Code, adicionar QR dialog, remover "WUZAPI" da UI |
 
