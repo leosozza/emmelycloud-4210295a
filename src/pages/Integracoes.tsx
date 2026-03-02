@@ -42,6 +42,7 @@ import {
   Link,
   ChevronDown,
   Loader2,
+  QrCode,
 } from "lucide-react";
 import {
   Dialog,
@@ -356,6 +357,188 @@ function WebhookUrlDisplay({ label, url, hint }: { label: string; url: string; h
   );
 }
 
+// ─── WhatsApp QRCode Card ────────────────────────────────────────────────────
+
+function WhatsAppQRCodeCard({ credProps }: { credProps: any }) {
+  const [testing, setTesting] = useState(false);
+  const [result, setResult] = useState<any>(null);
+  const [configuringWebhook, setConfiguringWebhook] = useState(false);
+
+  const projectId = import.meta.env.VITE_SUPABASE_PROJECT_ID || "qohnsluvhyziovfynzlu";
+  const webhookUrl = `https://${projectId}.supabase.co/functions/v1/wuzapi-webhook`;
+
+  const handleTest = async () => {
+    setTesting(true);
+    setResult(null);
+    try {
+      const { data, error } = await supabase.functions.invoke("wuzapi-test-connection", {
+        body: {},
+      });
+      if (error) {
+        setResult({ ok: false, error: "Erro ao contactar o servidor." });
+      } else {
+        setResult(data);
+      }
+    } catch {
+      setResult({ ok: false, error: "Erro de rede." });
+    }
+    setTesting(false);
+  };
+
+  const handleConnect = async () => {
+    setTesting(true);
+    try {
+      const { data } = await supabase.functions.invoke("wuzapi-test-connection", {
+        body: { action: "connect" },
+      });
+      if (data?.ok) {
+        toast.success("Sessão iniciada! A obter QR Code...");
+        setTimeout(handleTest, 2000);
+      } else {
+        toast.error(data?.message || "Erro ao iniciar sessão");
+      }
+    } catch {
+      toast.error("Erro de rede");
+    }
+    setTesting(false);
+  };
+
+  const handleConfigureWebhook = async () => {
+    setConfiguringWebhook(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("wuzapi-test-connection", {
+        body: { action: "configure_webhook", webhook_url: webhookUrl },
+      });
+      if (error || !data?.ok) {
+        toast.error(data?.error || "Erro ao configurar webhook");
+      } else {
+        toast.success("Webhook configurado com sucesso!");
+      }
+    } catch {
+      toast.error("Erro de rede");
+    }
+    setConfiguringWebhook(false);
+  };
+
+  const handleSaveInstance = async () => {
+    try {
+      // Get credentials to build config
+      const { data: credsData } = await supabase.functions.invoke("manage-credentials", { method: "GET" });
+      let baseUrl = "";
+      let userToken = "";
+      if (credsData?.credentials) {
+        for (const c of credsData.credentials) {
+          if (c.provider === "wuzapi" && c.credential_key === "WUZAPI_BASE_URL") baseUrl = c.credential_value_masked ? "configured" : "";
+          if (c.provider === "wuzapi" && c.credential_key === "WUZAPI_USER_TOKEN") userToken = c.credential_value_masked ? "configured" : "";
+        }
+      }
+
+      // Upsert channel instance
+      const { data: existing } = await supabase
+        .from("channel_instances")
+        .select("id")
+        .eq("channel_type", "whatsapp")
+        .eq("name", "WhatsApp QRCode")
+        .maybeSingle();
+
+      if (existing) {
+        await supabase.from("channel_instances").update({
+          status: "active",
+          config: { provider: "wuzapi" },
+          updated_at: new Date().toISOString(),
+        }).eq("id", existing.id);
+      } else {
+        await supabase.from("channel_instances").insert({
+          channel_type: "whatsapp",
+          name: "WhatsApp QRCode",
+          status: "active",
+          config: { provider: "wuzapi" },
+        });
+      }
+      toast.success("Instância WhatsApp QRCode ativada!");
+    } catch {
+      toast.error("Erro ao salvar instância");
+    }
+  };
+
+  const statusLabel = result?.connected ? "Conectado" : result?.status === "disconnected" ? "Desconectado" : result?.status === "error" ? "Erro" : "Pendente";
+  const statusType = result?.connected ? "active" : result?.status === "error" ? "inactive" : "pending";
+
+  return (
+    <Card>
+      <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-2">
+        <div className="flex items-center gap-3">
+          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-green-100">
+            <QrCode className="h-5 w-5 text-green-600" />
+          </div>
+          <div>
+            <CardTitle className="text-base">WhatsApp QRCode</CardTitle>
+            <CardDescription>Conexão via QR Code</CardDescription>
+          </div>
+        </div>
+        <StatusBadge status={statusType as any} />
+      </CardHeader>
+      <CardContent className="space-y-3 text-sm">
+        <div className="space-y-2">
+          <p className="font-medium text-xs uppercase text-muted-foreground tracking-wide">Credenciais do Servidor</p>
+          <CredentialInput provider="wuzapi" credentialKey="WUZAPI_BASE_URL" label="URL do Servidor" {...credProps} />
+          <CredentialInput provider="wuzapi" credentialKey="WUZAPI_ADMIN_TOKEN" label="Admin Token" {...credProps} />
+          <CredentialInput provider="wuzapi" credentialKey="WUZAPI_USER_TOKEN" label="User Token" {...credProps} />
+          <CredentialInput provider="wuzapi" credentialKey="WUZAPI_SECRET_KEY" label="Secret Key (HMAC)" {...credProps} />
+        </div>
+
+        <div className="flex gap-2">
+          <Button size="sm" variant="outline" className="flex-1" onClick={handleTest} disabled={testing}>
+            {testing ? <RefreshCw className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <Activity className="h-3.5 w-3.5 mr-1.5" />}
+            {testing ? "A verificar…" : "Testar Conexão"}
+          </Button>
+          <Button size="sm" variant="outline" onClick={handleConnect} disabled={testing}>
+            <Power className="h-3.5 w-3.5 mr-1.5" />
+            Conectar
+          </Button>
+        </div>
+
+        {/* QR Code Display */}
+        {result?.qr_code && (
+          <div className="flex flex-col items-center gap-2 rounded-md border p-3">
+            <p className="text-xs font-medium text-muted-foreground">Leia o QR Code com o WhatsApp</p>
+            <img src={result.qr_code} alt="QR Code WhatsApp" className="w-48 h-48 object-contain" />
+            <Button size="sm" variant="ghost" onClick={handleTest} className="text-xs">
+              <RefreshCw className="h-3 w-3 mr-1" /> Atualizar QR Code
+            </Button>
+          </div>
+        )}
+
+        {/* Status Result */}
+        {result && (
+          <div className={`flex items-center gap-2 rounded-md px-3 py-2 ${result.connected ? "bg-green-50 text-green-800" : result.ok === false ? "bg-red-50 text-red-800" : "bg-yellow-50 text-yellow-800"}`}>
+            {result.connected ? <CheckCircle2 className="h-4 w-4 shrink-0" /> : <AlertCircle className="h-4 w-4 shrink-0" />}
+            <span className="text-xs">{result.message || result.error || statusLabel}</span>
+          </div>
+        )}
+
+        {/* Webhook URL */}
+        <WebhookUrlDisplay
+          label="Webhook URL (receber mensagens)"
+          url={webhookUrl}
+          hint="Configure automaticamente ou copie e cole no servidor."
+        />
+
+        <div className="flex gap-2">
+          <Button size="sm" variant="outline" className="flex-1" onClick={handleConfigureWebhook} disabled={configuringWebhook}>
+            {configuringWebhook ? <RefreshCw className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <Link className="h-3.5 w-3.5 mr-1.5" />}
+            {configuringWebhook ? "A configurar…" : "Configurar Webhook"}
+          </Button>
+          <Button size="sm" variant="default" onClick={handleSaveInstance}>
+            <Save className="h-3.5 w-3.5 mr-1.5" />
+            Ativar Instância
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 // ─── Omni Channel Tab ────────────────────────────────────────────────────────
 
 function OmniChannelTab() {
@@ -460,6 +643,9 @@ function OmniChannelTab() {
           </div>
         </CardContent>
       </Card>
+
+      {/* WhatsApp QRCode */}
+      <WhatsAppQRCodeCard credProps={credProps} />
 
       {/* Instagram — Direct Meta API */}
       <Card>
