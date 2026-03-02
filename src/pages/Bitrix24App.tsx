@@ -40,10 +40,7 @@ import { ChevronDown, Star, Edit, Volume2, Users, GitBranch as GitBranchIcon2 } 
 import {
   Collapsible, CollapsibleContent, CollapsibleTrigger,
 } from "@/components/ui/collapsible";
-import {
-  AnimatedSidebar, AnimatedSidebarBody, AnimatedSidebarLink,
-  useAnimatedSidebar, type AnimatedSidebarLinkItem,
-} from "@/components/bitrix24/AnimatedSidebar";
+import { ExpandableTabs, type TabItem } from "@/components/ui/expandable-tabs";
 import { AnimatePresence, motion } from "framer-motion";
 import { AgentFormDialog } from "@/components/agentes/AgentFormDialog";
 import { Switch } from "@/components/ui/switch";
@@ -192,122 +189,37 @@ const Bitrix24App = () => {
     },
   ];
 
-  const SidebarInner = () => {
-    const { open } = useAnimatedSidebar();
-    return (
-      <>
-        {/* Logo Header */}
-        <div className="b24-sidebar-header p-4">
-          <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-lg flex items-center justify-center font-extrabold text-sm bg-white/15 text-white shrink-0">
-              E
-            </div>
-            <AnimatePresence>
-              {open && (
-                <motion.div
-                  initial={{ opacity: 0, width: 0 }}
-                  animate={{ opacity: 1, width: "auto" }}
-                  exit={{ opacity: 0, width: 0 }}
-                  transition={{ duration: 0.2 }}
-                  className="overflow-hidden"
-                >
-                  <p className="font-bold text-sm leading-tight text-white whitespace-nowrap">Emmely Cloud</p>
-                  <p className="text-[10px] text-white/60 whitespace-nowrap">for Bitrix24</p>
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </div>
-          <AnimatePresence>
-            {open && domain && (
-              <motion.div
-                initial={{ opacity: 0, height: 0 }}
-                animate={{ opacity: 1, height: "auto" }}
-                exit={{ opacity: 0, height: 0 }}
-                transition={{ duration: 0.2 }}
-                className="overflow-hidden"
-              >
-                <div className="mt-2.5 text-[10px] text-center truncate px-2 py-1 rounded-md bg-white/10 text-white/80">
-                  {domain}
-                </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </div>
+  // Build flat tabs array with separators between categories
+  const { tabs: expandableTabs, indexToView } = useMemo(() => {
+    const tabs: TabItem[] = [];
+    const indexToView: Record<number, AppView> = {};
+    let idx = 0;
+    navCategories.forEach((cat, catIdx) => {
+      if (catIdx > 0) {
+        tabs.push({ type: "separator" as const });
+        idx++;
+      }
+      cat.items.forEach((item) => {
+        tabs.push({ title: item.label, icon: item.icon });
+        indexToView[idx] = item.id as AppView;
+        idx++;
+      });
+    });
+    return { tabs, indexToView };
+  }, []);
 
-        {/* Nav */}
-        <nav className="flex-1 p-2 space-y-0.5 overflow-y-auto">
-          {navCategories.map((cat) => (
-            <div key={cat.label} className="mb-1">
-              <AnimatePresence>
-                {open && (
-                  <motion.div
-                    initial={{ opacity: 0, height: 0 }}
-                    animate={{ opacity: 1, height: "auto" }}
-                    exit={{ opacity: 0, height: 0 }}
-                    transition={{ duration: 0.2 }}
-                    className="overflow-hidden"
-                  >
-                    <div className="px-3 py-2 text-[10px] uppercase tracking-[0.1em] font-semibold text-muted-foreground">
-                      {cat.label}
-                    </div>
-                  </motion.div>
-                )}
-              </AnimatePresence>
-              <div className="space-y-0.5">
-                {cat.items.map((item) => (
-                  <AnimatedSidebarLink
-                    key={item.id}
-                    link={{
-                      id: item.id,
-                      label: item.label,
-                      icon: <item.icon className="h-4 w-4" />,
-                    }}
-                    isActive={view === item.id}
-                    onClick={() => setView(item.id as AppView)}
-                  />
-                ))}
-              </div>
-            </div>
-          ))}
-        </nav>
+  // Find active tab index from current view
+  const activeTabIndex = useMemo(() => {
+    for (const [idx, v] of Object.entries(indexToView)) {
+      if (v === view) return Number(idx);
+    }
+    return null;
+  }, [view, indexToView]);
 
-        {/* Footer */}
-        <div className="p-3 space-y-2 border-t border-border">
-          <div className="flex items-center gap-2">
-            <div className={cn("w-2.5 h-2.5 rounded-full shrink-0", integration ? "bg-success b24-pulse" : "bg-destructive")} />
-            <AnimatePresence>
-              {open && (
-                <motion.span
-                  initial={{ opacity: 0, width: 0 }}
-                  animate={{ opacity: 1, width: "auto" }}
-                  exit={{ opacity: 0, width: 0 }}
-                  transition={{ duration: 0.2 }}
-                  className="text-xs text-muted-foreground whitespace-nowrap overflow-hidden"
-                >
-                  {integration ? "Conectado" : "Desconectado"}
-                </motion.span>
-              )}
-            </AnimatePresence>
-          </div>
-          <AnimatePresence>
-            {open && botId && (
-              <motion.div
-                initial={{ opacity: 0, height: 0 }}
-                animate={{ opacity: 1, height: "auto" }}
-                exit={{ opacity: 0, height: 0 }}
-                transition={{ duration: 0.2 }}
-                className="overflow-hidden"
-              >
-                <div className="flex items-center gap-2">
-                  <Bot className="h-3 w-3 shrink-0 text-muted-foreground" />
-                  <span className="text-[10px] text-muted-foreground">Bot ID: {botId}</span>
-                </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </div>
-      </>
-    );
+  const handleTabChange = (index: number | null) => {
+    if (index !== null && indexToView[index]) {
+      setView(indexToView[index]);
+    }
   };
   if (view === "loading") {
     return (
@@ -321,13 +233,48 @@ const Bitrix24App = () => {
   }
 
   return (
-    <div className={cn("min-h-screen flex bg-background", isDark && "dark")}>
-      {/* ── Sidebar ── */}
-      <AnimatedSidebar>
-        <AnimatedSidebarBody>
-          <SidebarInner />
-        </AnimatedSidebarBody>
-      </AnimatedSidebar>
+    <div className={cn("min-h-screen flex flex-col bg-background", isDark && "dark")}>
+      {/* ── Top Header ── */}
+      <header className="sticky top-0 z-30 flex items-center gap-3 border-b border-border bg-card px-4 py-2">
+        {/* Logo */}
+        <div className="flex items-center gap-2 shrink-0">
+          <div className="w-7 h-7 rounded-lg flex items-center justify-center font-extrabold text-xs bg-primary text-primary-foreground">
+            E
+          </div>
+          <div className="hidden sm:block">
+            <p className="font-bold text-sm leading-tight text-foreground">Emmely Cloud</p>
+          </div>
+        </div>
+
+        {domain && (
+          <Badge variant="outline" className="hidden md:inline-flex text-[10px] shrink-0">
+            {domain}
+          </Badge>
+        )}
+
+        {/* Tabs */}
+        <div className="flex-1 flex justify-center overflow-x-auto">
+          <ExpandableTabs
+            tabs={expandableTabs}
+            activeIndex={activeTabIndex}
+            onChange={handleTabChange}
+            className="border-none shadow-none bg-transparent p-0"
+          />
+        </div>
+
+        {/* Status */}
+        <div className="flex items-center gap-2 shrink-0">
+          <div className={cn("w-2 h-2 rounded-full", integration ? "bg-success b24-pulse" : "bg-destructive")} />
+          <span className="hidden sm:inline text-xs text-muted-foreground">
+            {integration ? "Online" : "Offline"}
+          </span>
+          {botId && (
+            <span className="hidden lg:inline text-[10px] text-muted-foreground">
+              Bot {botId}
+            </span>
+          )}
+        </div>
+      </header>
 
       {/* ── Main Content ── */}
       <main className="flex-1 overflow-auto">
