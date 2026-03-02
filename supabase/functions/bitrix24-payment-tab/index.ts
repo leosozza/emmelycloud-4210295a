@@ -120,6 +120,7 @@ function renderPaymentTab(opts: {
     const s = getStatusColor(inst.status);
     const flowOptions = flows.map(f => `<option value="${f.id}">${f.name}</option>`).join("");
     const label = inst.is_down_payment ? "Entrada" : `Parcela ${inst.number}/${inst.total}`;
+    const totalLabel = inst.total > 1 ? `<span class="b24-item-total">Total: ${formatCurrency(inst.value * inst.total, inst.currency)}</span>` : "";
 
     return `
       <div class="b24-item">
@@ -133,13 +134,14 @@ function renderPaymentTab(opts: {
         <div class="b24-item-meta">
           <span>Vence: ${formatDate(inst.due_date)}</span>
           ${inst.paid_at ? `<span>Pago: ${formatDate(inst.paid_at)}</span>` : ""}
+          ${totalLabel}
         </div>
         ${inst.description ? `<div class="b24-item-desc">${inst.description}</div>` : ""}
         ${inst.payment_url && inst.status !== "paga" ? `<div class="b24-link-row"><a href="${inst.payment_url}" target="_blank" class="b24-link">Link de pagamento</a><button class="b24-btn-copy" onclick="copyLink(this,'${inst.payment_url.replace(/'/g, "\\'")}')" title="Copiar link"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button></div>` : ""}
         ${inst.invoice_id ? `<div class="b24-link-row"><a href="javascript:void(0)" onclick="openInvoice(${inst.invoice_id})" class="b24-link">📄 Ver Fatura #${inst.invoice_id}</a></div>` : ""}
-        ${inst.status !== "paga" && inst.is_direct ? `
+        ${inst.status !== "paga" && inst.transaction_id ? `
           <div class="b24-item-actions">
-            <button onclick="markAsPaid('${inst.transaction_id}')" class="b24-btn-primary" style="background:#589731">✓ Dar Baixa</button>
+            <button onclick="markAsPaid('${inst.transaction_id}', ${inst.invoice_id || 'null'})" class="b24-btn-primary" style="background:#589731">✓ Dar Baixa</button>
           </div>
         ` : ""}
         ${inst.status !== "paga" && contactPhone && flows.length > 0 ? `
@@ -230,8 +232,8 @@ function renderPaymentTab(opts: {
       background: var(--badge-bg-dark);
       color: var(--badge-text-dark);
     }
-    .b24-item-meta { display: flex; gap: 16px; font-size: 12px; color: var(--text-secondary); margin-bottom: 4px; }
-    .b24-item-desc { font-size: 12px; color: var(--text-secondary); margin-bottom: 6px; }
+    .b24-item-meta { display: flex; gap: 16px; font-size: 12px; color: var(--text-secondary); margin-bottom: 4px; flex-wrap: wrap; }
+    .b24-item-total { font-weight: 600; color: var(--text-primary); font-size: 11px; }
     .b24-link-row { display: flex; align-items: center; gap: 6px; margin-bottom: 2px; }
     .b24-link { font-size: 12px; color: var(--link-color); text-decoration: none; font-weight: 600; }
     .b24-link:hover { text-decoration: underline; }
@@ -665,7 +667,7 @@ function renderPaymentTab(opts: {
     el.style.color = isError ? 'var(--value-open)' : 'var(--value-paid)';
   }
 
-  async function markAsPaid(txId) {
+  async function markAsPaid(txId, invoiceId) {
     if (!confirm('Confirmar baixa manual deste pagamento?')) return;
     setStatus('A dar baixa...', 'var(--text-secondary)');
     try {
@@ -676,6 +678,38 @@ function renderPaymentTab(opts: {
       });
       var data = await res.json();
       if (data.error) throw new Error(data.error);
+
+      // Close Smart Invoice in Bitrix24 if exists
+      if (invoiceId && typeof BX24 !== 'undefined') {
+        setStatus('A concluir fatura no Bitrix24...', 'var(--text-secondary)');
+        await new Promise(function(resolve) {
+          // Move invoice to paid/closed stage
+          BX24.callMethod('crm.item.update', {
+            entityTypeId: 31,
+            id: invoiceId,
+            fields: {
+              stageId: 'DT31_6:P',
+              moved: 'Y'
+            }
+          }, function(result) {
+            if (result.error()) {
+              console.error('Invoice close error:', result.error());
+              // Try alternative stage IDs
+              BX24.callMethod('crm.item.update', {
+                entityTypeId: 31,
+                id: invoiceId,
+                fields: { stageId: 'DT31_6:WON' }
+              }, function(r2) {
+                if (r2.error()) console.error('Invoice close fallback error:', r2.error());
+                resolve(null);
+              });
+            } else {
+              resolve(null);
+            }
+          });
+        });
+      }
+
       setStatus('Baixa registada com sucesso!', 'var(--value-paid)');
       setTimeout(function() { location.reload(); }, 1500);
     } catch(e) {
