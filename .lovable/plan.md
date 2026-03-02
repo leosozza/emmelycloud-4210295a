@@ -1,69 +1,103 @@
 
 
-## Substituir menu de navegacao por Dock flutuante (estilo macOS)
+## Auditoria Completa: Pipeline de Agentes IA
 
-### Conceito
+### Problemas Identificados
 
-Remover a barra de navegacao (pills) do header e colocar um Dock flutuante no fundo do ecra com efeito de magnificacao ao hover. O header fica minimalista (apenas logo, pesquisa, notificacoes, perfil).
+Encontrei **5 problemas criticos** na ligacao entre a criacao de agentes e a sua execucao no backend.
 
-### Novos ficheiros
+---
 
-| Ficheiro | Descricao |
-|---|---|
-| `src/components/ui/dock.tsx` | Componente Dock com magnificacao (Dock, DockItem, DockLabel, DockIcon) usando framer-motion |
+### BUG 1: Vinculo do treinamento esta partido (CRITICO)
 
-### Ficheiros a editar
+O formulario de agente guarda `training_collection_ids` (IDs de documentos) directamente na tabela `ai_agents`. Porem, o backend (`ai-process-message` e `ai-playground`) leem a tabela **`agent_knowledge_documents`** (tabela N:N) para buscar os chunks de conhecimento.
 
-**`src/components/AppHeader.tsx`**
-- Remover a secao `<nav>` de desktop (linhas 206-246) com os pills e dropdowns
-- Manter o top bar intacto (logo, pesquisa, notificacoes, perfil)
-- Remover a navegacao mobile grid (linhas 248-265) -- sera substituida pelo Dock
-- Simplificar: o header fica apenas com a barra superior (h-14)
+**Resultado**: Os documentos de treinamento selecionados no formulario **nunca chegam ao agente** porque ninguem popula a tabela `agent_knowledge_documents`.
 
-**`src/components/AppLayout.tsx`**
-- Adicionar o componente `AppDock` no fundo, fixo (`fixed bottom-4 left-1/2 -translate-x-1/2 z-30`)
-- O Dock tera todos os itens de navegacao flat (sem grupos/dropdowns -- cada item e directo)
-- Clicar num item do Dock navega para a rota correspondente via `useNavigate`
+**Correcao**: No `handleSave` de `Agentes.tsx`, apos guardar o agente, sincronizar a tabela `agent_knowledge_documents`:
+- Apagar registos existentes para o `agent_id`
+- Inserir um registo por cada ID em `training_collection_ids`
 
-### Itens do Dock
+---
 
-Todos os itens de navegacao actuais, flattened para acesso directo:
+### BUG 2: `ai-process-message` nao resolve URL para providers locais (Qwen/Ollama)
+
+O `ai-playground` tem logica para buscar `OLLAMA_BASE_URL` da tabela `integration_credentials` quando `credential_key === "base_url"`. O `ai-process-message` **nao tem essa logica** — apenas faz `agent.ai_base_url || provider?.base_url`, que pode estar vazio para providers locais.
+
+**Resultado**: Agentes configurados com Qwen/Ollama funcionam no Playground (ChatIA) mas **falham no atendimento automatico** (chatbot-reply/flow-engine).
+
+**Correcao**: Alinhar a logica de resolucao de URL e auth em `ai-process-message` com a do `ai-playground`:
+- Adicionar verificacao de `credential_key === "base_url"`
+- Buscar `OLLAMA_BASE_URL` de `integration_credentials`
+- Respeitar `auth_header` nulo (Ollama nao usa auth)
+
+---
+
+### BUG 3: `ai-process-message` nao respeita `training_collection_ids` (campo do agente)
+
+Mesmo depois de corrigir o Bug 1, o `ai-process-message` busca KB via `agent_knowledge_documents`, o que esta correcto. Mas existe uma inconsistencia: o agente tem dois mecanismos de vinculo (campo array `training_collection_ids` e tabela N:N `agent_knowledge_documents`). Devemos usar apenas um: a tabela N:N, que e o que o backend le.
+
+**Correcao**: Manter o campo `training_collection_ids` como UI-only e sincronizar com `agent_knowledge_documents` no save (ja coberto pelo Bug 1).
+
+---
+
+### BUG 4: Fluxo padrao do agente nao e verificado no `ai-process-message`
+
+Quando uma mensagem chega via `ai-process-message` (caminho directo, sem passar pelo `flow-engine`), o `default_flow_id` do agente e **completamente ignorado**. O agente simplesmente responde com IA livre.
+
+O `flow-engine` verifica o `default_flow_id` apenas no `matchFlow`, mas se a mensagem for encaminhada directamente para `ai-process-message` (ex: via `chatbot-reply`), o fluxo nunca e executado.
+
+**Resultado**: Um agente com fluxo vinculado ignora o fluxo quando chamado via `chatbot-reply`.
+
+**Correcao**: Modificar `chatbot-reply` para chamar `flow-engine` em vez de `ai-playground` directamente. O `flow-engine` ja faz fallback para `ai-process-message` quando nenhum fluxo corresponde. Pipeline correcto:
 
 ```text
-Dashboard | Atendimento | Leads | Propostas | Contratos | Casos | Carteira | Financeiro | Automacoes | Relatorios | Integracoes | Agentes | Fluxos | Roadmap
+Webhook → flow-engine → (match flow? execute : fallback → ai-process-message)
 ```
 
-Cada item tem icone lucide-react + label tooltip que aparece ao hover com animacao.
-
-### Estrutura visual
-
+Actualmente `chatbot-reply` faz:
 ```text
-+--------------------------------------------------+
-| [E] Emmely Cloud   [Pesquisar...]   🔔 [Avatar]  |  <- header slim
-+--------------------------------------------------+
-|                                                    |
-|              Conteudo da pagina                    |
-|                                                    |
-|                                                    |
-+--------------------------------------------------+
-      [icon][icon][icon][icon][icon][icon]            <- Dock flutuante
-              (magnifica ao hover)
+Webhook → chatbot-reply → ai-playground (ignora fluxos)
 ```
+
+---
+
+### BUG 5: Docs listados no formulario sao documentos individuais, nao colecoes
+
+O formulario carrega `knowledge_documents` e mostra cada documento individual. Mas o sistema de treinamento organiza por **colecoes** (`collection_id`). Quando um utilizador cria um treinamento "Metodo Prime" com 7 ficheiros, aparecem 7+ documentos individuais no selector (incluindo o resumo auto-gerado), em vez de 1 colecao.
+
+**Correcao**: Agrupar por `collection_id` no formulario. Carregar colecoes distintas em vez de documentos individuais. Quando uma colecao e selecionada, vincular todos os documentos dessa colecao.
+
+---
+
+### Plano de Correcao
+
+| # | Ficheiro | Alteracao |
+|---|---|---|
+| 1 | `src/pages/Agentes.tsx` | No `handleSave`, sincronizar `agent_knowledge_documents` apos save |
+| 2 | `src/pages/Agentes.tsx` | Carregar colecoes (distinct `collection_id`/`collection_name`) em vez de docs individuais |
+| 3 | `src/components/agentes/AgentFormDialog.tsx` | Mostrar colecoes agrupadas no selector de KB |
+| 4 | `supabase/functions/ai-process-message/index.ts` | Alinhar logica de provider (URL + auth) com `ai-playground` |
+| 5 | `supabase/functions/chatbot-reply/index.ts` | Chamar `flow-engine` em vez de `ai-playground` para respeitar fluxos |
 
 ### Detalhes tecnicos
 
-- `framer-motion` ja esta instalado no projecto
-- O Dock usa `useMotionValue` e `useSpring` para o efeito de magnificacao dos icones
-- `DockLabel` aparece como tooltip acima do icone ao hover
-- O Dock tera `panelHeight={56}` e `magnification={68}` para nao ser demasiado grande
-- Background do dock: `bg-background/80 backdrop-blur-xl border border-border shadow-lg` para se integrar com o tema
-- No mobile, o dock fica com scroll horizontal e magnification reduzida
-- A pagina actual sera indicada visualmente com o icone do Dock em cor primaria
+**Sincronizacao de KB (Bug 1)**:
+```
+// Apos save do agente:
+await supabase.from("agent_knowledge_documents").delete().eq("agent_id", agentId);
+// Para cada collection_id selecionado, buscar os document_ids e inserir
+const { data: collectionDocs } = await supabase
+  .from("knowledge_documents")
+  .select("id")
+  .in("collection_id", training_collection_ids);
+await supabase.from("agent_knowledge_documents").insert(
+  collectionDocs.map(d => ({ agent_id: agentId, document_id: d.id }))
+);
+```
 
-### Responsividade
+**chatbot-reply corrigido (Bug 4)**:
+Substituir a chamada a `ai-playground` por chamada a `flow-engine`. O flow-engine ja faz: match de fluxo → execucao → fallback para ai-process-message. Isto garante que o `default_flow_id` do agente e respeitado.
 
-- Desktop: Dock centrado no fundo com magnificacao completa
-- Mobile: Dock com scroll horizontal, `magnification={52}`, items mais compactos
-- O menu hamburger mobile do header sera removido (o Dock substitui)
+Nenhuma migracao de BD necessaria. Todos os bugs sao corrigidos com alteracoes de codigo.
 
-Nenhuma dependencia nova. Nenhuma migracao de BD.
