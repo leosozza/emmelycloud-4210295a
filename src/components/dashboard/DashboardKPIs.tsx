@@ -1,10 +1,67 @@
 import {
   Users, Clock, DollarSign, TrendingUp, ArrowUpRight, ArrowDownRight, Briefcase, FileSignature,
 } from "lucide-react";
-import { Card, CardContent } from "@/components/ui/card";
 import { useLocale } from "@/contexts/LocaleContext";
 import { useDashboardKPIs } from "@/hooks/useDashboardData";
 import { Skeleton } from "@/components/ui/skeleton";
+import { AnimatedGradient } from "@/components/ui/animated-gradient-with-svg";
+import { motion } from "framer-motion";
+
+interface BentoKPIProps {
+  title: string;
+  value: string;
+  change?: string;
+  up?: boolean;
+  icon: React.ElementType;
+  description: string;
+  colors: string[];
+  delay: number;
+}
+
+function BentoKPI({ title, value, change, up, icon: Icon, description, colors, delay }: BentoKPIProps) {
+  const container = {
+    hidden: { opacity: 0 },
+    show: {
+      opacity: 1,
+      transition: { staggerChildren: 0.1, delayChildren: delay + 0.3 },
+    },
+  };
+
+  const item = {
+    hidden: { opacity: 0 },
+    show: { opacity: 1, transition: { duration: 0.5 } },
+  };
+
+  return (
+    <motion.div
+      className="relative overflow-hidden rounded-xl border-0 shadow-lg hover:shadow-xl transition-shadow"
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.4, delay }}
+    >
+      <AnimatedGradient colors={colors} speed={12} blur="medium" />
+      <motion.div
+        className="relative z-10 p-5 text-white"
+        variants={container}
+        initial="hidden"
+        animate="show"
+      >
+        <motion.div variants={item} className="flex items-center justify-between mb-3">
+          <Icon className="h-6 w-6 opacity-80" />
+          {change && (
+            <div className="flex items-center gap-0.5">
+              {up ? <ArrowUpRight className="h-3 w-3 opacity-80" /> : <ArrowDownRight className="h-3 w-3 opacity-80" />}
+              <span className="text-xs font-bold opacity-90">{change}</span>
+            </div>
+          )}
+        </motion.div>
+        <motion.div variants={item} className="text-2xl font-extrabold">{value}</motion.div>
+        <motion.div variants={item} className="text-xs font-medium opacity-75 mt-1">{title}</motion.div>
+        <motion.div variants={item} className="text-[11px] opacity-60 mt-0.5">{description}</motion.div>
+      </motion.div>
+    </motion.div>
+  );
+}
 
 export function DashboardKPIs() {
   const { formatCurrency } = useLocale();
@@ -12,15 +69,13 @@ export function DashboardKPIs() {
 
   if (isLoading) {
     return (
-      <div className="grid gap-4 grid-cols-2 lg:grid-cols-4">
-        {[1, 2, 3, 4].map((i) => (
-          <Card key={i} className="border-0 shadow-lg">
-            <CardContent className="p-5 space-y-3">
-              <Skeleton className="h-6 w-6 rounded" />
-              <Skeleton className="h-8 w-20" />
-              <Skeleton className="h-3 w-24" />
-            </CardContent>
-          </Card>
+      <div className="grid gap-4 grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+        {[1, 2, 3, 4, 5, 6].map((i) => (
+          <div key={i} className="rounded-xl bg-muted/50 p-5 space-y-3">
+            <Skeleton className="h-6 w-6 rounded" />
+            <Skeleton className="h-8 w-20" />
+            <Skeleton className="h-3 w-24" />
+          </div>
         ))}
       </div>
     );
@@ -34,7 +89,7 @@ export function DashboardKPIs() {
       up: (data?.leadsChange ?? 0) >= 0,
       icon: Users,
       description: "Últimos 30 dias",
-      gradient: "from-[hsl(218,72%,50%)] to-[hsl(218,72%,62%)]",
+      colors: ["#2283d8", "#4a9fe5", "#7b5ea7", "#2283d8"],
     },
     {
       title: "SLA Expirando",
@@ -43,7 +98,7 @@ export function DashboardKPIs() {
       up: false,
       icon: Clock,
       description: "Nas próximas 4h",
-      gradient: "from-[hsl(38,92%,50%)] to-[hsl(38,92%,62%)]",
+      colors: ["#e8a838", "#f0c060", "#d4903c", "#e8a838"],
     },
     {
       title: "Receita do Mês",
@@ -52,7 +107,7 @@ export function DashboardKPIs() {
       up: (data?.revenueChange ?? 0) >= 0,
       icon: DollarSign,
       description: "vs. mês anterior",
-      gradient: "from-[hsl(152,69%,46%)] to-[hsl(152,69%,58%)]",
+      colors: ["#34a853", "#5dc576", "#2d8f47", "#34a853"],
     },
     {
       title: "Taxa de Conversão",
@@ -61,7 +116,7 @@ export function DashboardKPIs() {
       up: true,
       icon: TrendingUp,
       description: "Lead → Contrato",
-      gradient: "from-[hsl(270,30%,52%)] to-[hsl(270,30%,64%)]",
+      colors: ["#7b5ea7", "#9b7ec8", "#5e4287", "#7b5ea7"],
     },
     {
       title: "Casos Ativos",
@@ -70,7 +125,7 @@ export function DashboardKPIs() {
       up: true,
       icon: Briefcase,
       description: "Em andamento",
-      gradient: "from-[hsl(200,60%,50%)] to-[hsl(200,60%,62%)]",
+      colors: ["#3b82b8", "#5a9fd0", "#2d6a9f", "#3b82b8"],
     },
     {
       title: "Contratos Pendentes",
@@ -79,29 +134,19 @@ export function DashboardKPIs() {
       up: false,
       icon: FileSignature,
       description: "Aguardando assinatura",
-      gradient: "from-[hsl(340,60%,50%)] to-[hsl(340,60%,62%)]",
+      colors: ["#d44060", "#e06080", "#b83050", "#d44060"],
     },
   ];
 
   return (
     <div className="grid gap-4 grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
-      {metrics.map((metric) => (
-        <Card key={metric.title} className={`bg-gradient-to-br ${metric.gradient} text-white border-0 shadow-lg hover:shadow-xl transition-shadow`}>
-          <CardContent className="p-5">
-            <div className="flex items-center justify-between mb-3">
-              <metric.icon className="h-6 w-6 opacity-80" />
-              {metric.change && (
-                <div className="flex items-center gap-0.5">
-                  {metric.up ? <ArrowUpRight className="h-3 w-3 opacity-80" /> : <ArrowDownRight className="h-3 w-3 opacity-80" />}
-                  <span className="text-xs font-bold opacity-90">{metric.change}</span>
-                </div>
-              )}
-            </div>
-            <div className="text-2xl font-extrabold">{metric.value}</div>
-            <div className="text-xs font-medium opacity-75 mt-1">{metric.title}</div>
-            <div className="text-[11px] opacity-60 mt-0.5">{metric.description}</div>
-          </CardContent>
-        </Card>
+      {metrics.map((metric, i) => (
+        <BentoKPI
+          key={metric.title}
+          {...metric}
+          change={metric.change || undefined}
+          delay={i * 0.1}
+        />
       ))}
     </div>
   );

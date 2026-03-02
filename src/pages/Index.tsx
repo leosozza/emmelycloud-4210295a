@@ -1,5 +1,4 @@
-import { useState } from "react";
-import { PageHeader } from "@/components/PageHeader";
+import { useState, useEffect } from "react";
 import { DashboardKPIs } from "@/components/dashboard/DashboardKPIs";
 import { LeadsByOriginChart, RevenueByAreaChart, MonthlyRevenueChart, FunnelChartWidget } from "@/components/dashboard/DashboardChartsLive";
 import { RecentLeads } from "@/components/dashboard/RecentLeads";
@@ -7,6 +6,8 @@ import { DashboardSidebar } from "@/components/dashboard/DashboardSidebar";
 import { DashboardCustomizer } from "@/components/dashboard/DashboardCustomizer";
 import { PeriodFilter } from "@/components/dashboard/PeriodFilter";
 import { useDashboardLayout, type WidgetId } from "@/hooks/useDashboardLayout";
+import { useAuthContext } from "@/contexts/AuthContext";
+import { supabase } from "@/integrations/supabase/client";
 import {
   DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, type DragEndEvent,
 } from "@dnd-kit/core";
@@ -15,6 +16,15 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { GripVertical } from "lucide-react";
+import { format } from "date-fns";
+import { pt } from "date-fns/locale";
+
+function getGreeting(): string {
+  const h = new Date().getHours();
+  if (h < 12) return "Bom dia";
+  if (h < 18) return "Boa tarde";
+  return "Boa noite";
+}
 
 function SortableWidget({ id, children }: { id: string; children: React.ReactNode }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
@@ -49,17 +59,31 @@ const WIDGET_COMPONENTS: Record<WidgetId, React.FC> = {
   sidebar: DashboardSidebar,
 };
 
-// Widgets that should go in the chart grid (medium-sized)
 const CHART_WIDGETS: WidgetId[] = ["funnel", "leadsByOrigin", "revenueByArea", "monthlyRevenue"];
-// Full-width widgets
 const FULL_WIDGETS: WidgetId[] = ["kpis"];
-// Bottom section widgets
 const BOTTOM_LEFT: WidgetId[] = ["recentLeads"];
 const BOTTOM_RIGHT: WidgetId[] = ["sidebar"];
 
 const Index = () => {
   const { widgets, visibleWidgets, hiddenWidgets, toggleWidget, reorderWidgets, resetLayout } = useDashboardLayout();
   const [period, setPeriod] = useState("30d");
+  const { user } = useAuthContext();
+  const [userName, setUserName] = useState("");
+
+  useEffect(() => {
+    if (!user) return;
+    supabase
+      .from("profiles")
+      .select("full_name")
+      .eq("user_id", user.id)
+      .limit(1)
+      .single()
+      .then(({ data }) => {
+        if (data?.full_name) {
+          setUserName(data.full_name.split(" ")[0]);
+        }
+      });
+  }, [user]);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
@@ -80,10 +104,17 @@ const Index = () => {
   const bottomLeft = visibleWidgets.filter((w) => BOTTOM_LEFT.includes(w));
   const bottomRight = visibleWidgets.filter((w) => BOTTOM_RIGHT.includes(w));
 
+  const todayFormatted = format(new Date(), "EEEE, d 'de' MMMM 'de' yyyy", { locale: pt });
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between flex-wrap gap-3">
-        <PageHeader title="Dashboard" description="Visão geral do escritório" />
+        <div>
+          <h1 className="text-2xl font-bold text-foreground">
+            {getGreeting()}{userName ? `, ${userName}` : ""} 👋
+          </h1>
+          <p className="text-sm text-muted-foreground capitalize">{todayFormatted}</p>
+        </div>
         <div className="flex items-center gap-2">
           <PeriodFilter value={period} onChange={setPeriod} />
           <DashboardCustomizer
@@ -98,7 +129,6 @@ const Index = () => {
       <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
         <SortableContext items={visibleWidgets} strategy={verticalListSortingStrategy}>
           <div className="space-y-6">
-            {/* Full-width widgets (KPIs) */}
             {fullWidgets.map((id) => {
               const Component = WIDGET_COMPONENTS[id];
               return (
@@ -108,7 +138,6 @@ const Index = () => {
               );
             })}
 
-            {/* Chart grid */}
             {chartWidgets.length > 0 && (
               <div className="grid gap-4 md:grid-cols-2">
                 {chartWidgets.map((id) => {
@@ -122,7 +151,6 @@ const Index = () => {
               </div>
             )}
 
-            {/* Bottom section */}
             {(bottomLeft.length > 0 || bottomRight.length > 0) && (
               <div className="grid gap-6 lg:grid-cols-[1fr_300px]">
                 <div className="space-y-6">
