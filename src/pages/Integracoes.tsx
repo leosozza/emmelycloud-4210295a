@@ -362,7 +362,7 @@ function WebhookUrlDisplay({ label, url, hint }: { label: string; url: string; h
 function WhatsAppQRCodeCard({ credProps }: { credProps: any }) {
   const [testing, setTesting] = useState(false);
   const [result, setResult] = useState<any>(null);
-  const [configuringWebhook, setConfiguringWebhook] = useState(false);
+  
 
   const projectId = import.meta.env.VITE_SUPABASE_PROJECT_ID || "qohnsluvhyziovfynzlu";
   const webhookUrl = `https://${projectId}.supabase.co/functions/v1/wuzapi-webhook`;
@@ -403,22 +403,6 @@ function WhatsAppQRCodeCard({ credProps }: { credProps: any }) {
     setTesting(false);
   };
 
-  const handleConfigureWebhook = async () => {
-    setConfiguringWebhook(true);
-    try {
-      const { data, error } = await supabase.functions.invoke("wuzapi-test-connection", {
-        body: { action: "configure_webhook", webhook_url: webhookUrl },
-      });
-      if (error || !data?.ok) {
-        toast.error(data?.error || "Erro ao configurar webhook");
-      } else {
-        toast.success("Webhook configurado com sucesso!");
-      }
-    } catch {
-      toast.error("Erro de rede");
-    }
-    setConfiguringWebhook(false);
-  };
 
   const handleSaveInstance = async () => {
     try {
@@ -514,19 +498,22 @@ function WhatsAppQRCodeCard({ credProps }: { credProps: any }) {
           </div>
         )}
 
-        {/* Webhook URL */}
+        {/* Webhook URL - auto-configured */}
+        {result?.webhook_configured && (
+          <div className="flex items-center gap-2 rounded-md px-3 py-2 bg-blue-50 text-blue-800">
+            <CheckCircle2 className="h-4 w-4 shrink-0" />
+            <span className="text-xs">Webhook configurado automaticamente</span>
+          </div>
+        )}
+
         <WebhookUrlDisplay
           label="Webhook URL (receber mensagens)"
           url={webhookUrl}
-          hint="Configure automaticamente ou copie e cole no servidor."
+          hint="Configurado automaticamente ao conectar."
         />
 
         <div className="flex gap-2">
-          <Button size="sm" variant="outline" className="flex-1" onClick={handleConfigureWebhook} disabled={configuringWebhook}>
-            {configuringWebhook ? <RefreshCw className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <Link className="h-3.5 w-3.5 mr-1.5" />}
-            {configuringWebhook ? "A configurar…" : "Configurar Webhook"}
-          </Button>
-          <Button size="sm" variant="default" onClick={handleSaveInstance}>
+          <Button size="sm" variant="default" className="flex-1" onClick={handleSaveInstance}>
             <Save className="h-3.5 w-3.5 mr-1.5" />
             Ativar Instância
           </Button>

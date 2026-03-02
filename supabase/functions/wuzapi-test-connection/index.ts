@@ -217,12 +217,37 @@ Deno.serve(async (req) => {
       }
     }
 
+    // ── Auto-configure webhook when connected ──
+    let webhookConfigured = false;
+    if (connected) {
+      try {
+        const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+        const autoWebhookUrl = `${supabaseUrl}/functions/v1/wuzapi-webhook`;
+        console.log("[WUZAPI-TEST] Auto-configuring webhook:", autoWebhookUrl);
+        const whRes = await fetch(`${resolvedBaseUrl}/webhook`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "token": resolvedUserToken },
+          body: JSON.stringify({ WebhookURL: autoWebhookUrl }),
+        });
+        if (whRes.ok) {
+          webhookConfigured = true;
+          console.log("[WUZAPI-TEST] Webhook auto-configured successfully");
+        } else {
+          const whErr = await whRes.text();
+          console.error("[WUZAPI-TEST] Webhook auto-configure failed:", whErr);
+        }
+      } catch (e) {
+        console.error("[WUZAPI-TEST] Webhook auto-configure error:", e);
+      }
+    }
+
     return new Response(JSON.stringify({
       ok: true,
       status: sessionStatus,
       connected,
       qr_code: qrCode,
-      message: connected ? "WhatsApp conectado" : (qrCode ? "Leia o QR Code para conectar" : "Sessão desconectada"),
+      webhook_configured: webhookConfigured,
+      message: connected ? "WhatsApp conectado" + (webhookConfigured ? " e webhook configurado" : "") : (qrCode ? "Leia o QR Code para conectar" : "Sessão desconectada"),
     }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
