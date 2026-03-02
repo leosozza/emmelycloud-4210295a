@@ -1,49 +1,104 @@
 
 
-## Aplicar Novo Tema Vermelho/Dourado + Componente EvervaultCard
+## Redesenho Completo da Interface
 
-### Alteracoes
+O problema e que as alteracoes anteriores so mudaram variaveis de cor mas nao redesenharam os componentes visuais. Vou fazer um redesenho completo: header, KPIs, graficos, cards, layout do dashboard — tudo com visual moderno e coerente com a paleta vermelha/dourada.
 
-**1. `src/index.css`** — Substituir completamente as variaveis CSS e gradientes:
+### Ficheiros a alterar
 
-| Variavel | Light (hex → hsl) | Dark (hex → hsl) |
-|---|---|---|
-| --background | #faf7f5 → 25 33% 97% | #1c1917 → 24 12% 10% |
-| --foreground | #1a1a1a → 0 0% 10% | #f5f5f4 → 40 20% 96% |
-| --card | #faf7f5 → 25 33% 97% | #292524 → 12 10% 15% |
-| --primary | #9b2c2c → 0 56% 39% | #b91c1c → 0 73% 42% |
-| --secondary | #fdf2d6 → 43 93% 91% | #92400e → 30 83% 31% |
-| --muted | #f0ebe8 → 22 20% 93% | #292524 → 12 10% 15% |
-| --accent | #fef3c7 → 48 96% 89% | #b45309 → 32 91% 37% |
-| --destructive | #991b1b → 0 68% 35% | #ef4444 → 0 84% 60% |
-| --border | #f5e8d2 → 37 68% 89% | #44403c → 33 7% 25% |
-| --input | #f5e8d2 → 37 68% 89% | #44403c → 33 7% 25% |
-| --ring | #9b2c2c → 0 56% 39% | #b91c1c → 0 73% 42% |
-| + todas sidebar-*, chart-*, gradient-* | Converter correspondentes | Converter correspondentes |
+**1. `src/index.css`** — Reescrever completamente:
+- Variaveis CSS `:root` e `.dark` com os valores exactos fornecidos (hex directo, sem HSL)
+- Remover TODOS os estilos legacy `.b24-*` (stepper, table, chat, etc.) — simplificar drasticamente
+- Manter apenas gradientes actualizados e estilos base
+- Font import Poppins
 
-- Actualizar font-family para `Poppins, sans-serif`
-- Actualizar Google Fonts import para Poppins
-- Actualizar gradientes `.bg-bitrix-gradient` para tons vermelhos/dourados (`#9b2c2c`, `#b45309`, `#7f1d1d`)
-- `--radius` para `0.375rem`
+**2. `src/components/AppHeader.tsx`** — Redesenhar header:
+- Fundo glassmorphism (`bg-card/80 backdrop-blur-lg`) em vez do gradiente solido
+- Logo com icone em fundo gradient pill
+- Barra de pesquisa com estilo card/input em vez de branco transparente
+- Acoes com estilo mais limpo e moderno
+- Remover classe `bg-bitrix-gradient` e texto branco hardcoded
 
-**2. `src/components/dashboard/DashboardKPIs.tsx`** — Actualizar cores dos gradientes dos BentoCards para paleta vermelha/dourada:
-- Leads: vermelhos (`#9b2c2c`, `#b91c1c`)
-- SLA: dourados (`#b45309`, `#92400e`)
-- Receita: vermelhos escuros (`#7f1d1d`)
-- Conversao: ambar (`#fbbf24`, `#f59e0b`)
-- Casos: vermelho medio (`#ef4444`, `#dc2626`)
-- Contratos: castanho/terracota (`#92400e`, `#b45309`)
+**3. `src/components/dashboard/DashboardKPIs.tsx`** — Redesenhar KPIs:
+- Substituir BentoCards com gradiente animado por cards limpos com fundo `card`, icone colorido em circulo, valor grande e indicador de mudanca
+- Estilo "flat modern" — sem gradientes pesados nos KPIs
+- Cada KPI com borda esquerda colorida ou icone em circulo com cor tematica
+- Layout responsivo 2→3→6 colunas mantido
 
-**3. `src/components/ui/evervault-card.tsx`** — Criar novo componente (copiar do codigo fornecido). Framer-motion ja esta instalado.
+**4. `src/components/dashboard/DashboardChartsLive.tsx`** — Modernizar graficos:
+- Cards com `rounded-2xl` e sombra suave
+- Tooltips estilizados com `contentStyle` customizado
+- Cores dos graficos alinhadas com `--chart-1..5` do novo tema
+- Grids mais subtis (opacidade reduzida)
+- Adicionar area preenchida no LineChart (AreaChart)
 
-**4. `tailwind.config.ts`** — Actualizar font-family para Poppins.
+**5. `src/components/dashboard/RecentLeads.tsx`** — Redesenhar lista:
+- Avatares com gradiente suave em vez de cor solida
+- Hover states mais pronunciados
+- Badge com cantos mais arredondados
+- Separadores mais subtis
 
-### Ficheiros
+**6. `src/components/dashboard/DashboardSidebar.tsx`** — Modernizar sidebar:
+- Progress bars coloridas em vez de texto simples para "Top Areas"
+- Avatares de equipa com anel de cor
+- Cards com hover lift effect
 
-| Ficheiro | Accao |
-|---|---|
-| `src/index.css` | Reescrever variaveis `:root` e `.dark`, gradientes, font imports |
-| `src/components/dashboard/DashboardKPIs.tsx` | Actualizar arrays de cores dos BentoCards |
-| `src/components/ui/evervault-card.tsx` | Criar componente |
-| `tailwind.config.ts` | Actualizar fontFamily para Poppins |
+**7. `src/pages/Index.tsx`** — Refinar layout:
+- Saudacao com emoji animado (wave)
+- Subtitle com badge de "live" a piscar
+- Spacing e gap mais generosos
+- Grid dos graficos com 2 colunas equilibradas
+
+**8. `src/components/PageHeader.tsx`** — Modernizar:
+- Substituir gradiente solido por fundo `card` com borda e icone decorativo
+- Texto em `foreground` em vez de branco forcado
+
+**9. `src/components/AppLayout.tsx`** — Refinar Dock:
+- Fundo glassmorphism no dock
+- Indicador activo com dot em vez de cor
+
+### Componentes novos
+
+Nenhum ficheiro novo — apenas redesenho dos existentes.
+
+### Resultado esperado
+
+```text
++----------------------------------------------------------+
+| [logo] Emmely Cloud    [pesquisa...]    🇧🇷 🔔 [avatar] |  ← header glassmorphism
++----------------------------------------------------------+
+| Bom dia, João 👋                        [7d▼] [⚙️]      |
+| segunda-feira, 2 de março de 2026  🟢 live               |
++----------------------------------------------------------+
+| ┌─────┐ ┌─────┐ ┌─────┐ ┌─────┐ ┌─────┐ ┌─────┐       |
+| │ 12  │ │  3  │ │R$8k │ │ 24% │ │  7  │ │  4  │       |
+| │Leads│ │ SLA │ │Rec. │ │Conv.│ │Casos│ │Cont.│       |
+| └─────┘ └─────┘ └─────┘ └─────┘ └─────┘ └─────┘       |  ← cards flat com icone colorido
++----------------------------------------------------------+
+| ┌──────────────┐  ┌──────────────┐                       |
+| │  Funil       │  │ Leads/Origem │                       |
+| │  ████████    │  │    🍩        │                       |
+| └──────────────┘  └──────────────┘                       |  ← charts modernos
+| ┌──────────────┐  ┌──────────────┐                       |
+| │  Receita/Area│  │  Tendência   │                       |
+| │  ═══════     │  │  📈          │                       |
+| └──────────────┘  └──────────────┘                       |
++----------------------------------------------------------+
+| ┌──────────────────────┐  ┌───────────┐                  |
+| │  Últimos Leads       │  │ Top Áreas │                  |
+| │  ──────────────      │  │ ████ 40%  │                  |
+| │  ──────────────      │  │ ███  30%  │                  |
+| └──────────────────────┘  │ ██   20%  │                  |
+|                           └───────────┘                  |
++---------------------------[●●●● dock ●●●●]---------------+
+```
+
+### Detalhes tecnicos
+
+- Header usa `backdrop-blur-lg` e `bg-card/80` para efeito glass
+- KPIs usam `Card` com `border-l-4` colorido por metrica + icone em circulo com bg tematico
+- Graficos usam `rounded-2xl`, tooltips com `bg-card border shadow-lg`, grid com `stroke-dasharray` e opacidade baixa
+- PageHeader muda de gradiente para `bg-card border` com texto normal
+- Dock recebe `bg-card/80 backdrop-blur-md border shadow-xl`
+- Todas as cores hardcoded (`#9b2c2c`, etc.) sao removidas dos componentes e substituidas por tokens CSS
 
