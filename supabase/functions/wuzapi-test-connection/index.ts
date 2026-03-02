@@ -155,6 +155,7 @@ Deno.serve(async (req) => {
       const connectRes = await fetch(`${resolvedBaseUrl}/session/connect`, {
         method: "POST",
         headers: { "Content-Type": "application/json", "token": resolvedUserToken },
+        body: JSON.stringify({ Subscribe: ["Message"], Immediate: true }),
       });
 
       const connectBody = await connectRes.text();
