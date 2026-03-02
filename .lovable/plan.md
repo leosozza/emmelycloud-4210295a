@@ -1,80 +1,37 @@
 
 
-## Integrar WhatsApp QRCode (via WUZAPI)
+## Corrigir Bug Critico no message-send + Alinhar com API WUZAPI
 
-O nome visivel ao utilizador sera sempre **"WhatsApp QRCode"** — nunca "WUZAPI" ou "Wuzapi". Internamente, o provider nos dados sera `wuzapi` mas toda a UI mostra "WhatsApp QRCode".
+### Bug Encontrado
 
-### Ficheiros a Criar
+No `message-send/index.ts`, o bloco WUZAPI (linha 282) e **inalcancavel**. A condicao `else if (conv.channel === "whatsapp" && resolvedProvider === "wuzapi")` nunca executa porque o bloco anterior (linha 195) ja captura `conv.channel === "whatsapp"` sem verificar o provider. Resultado: mensagens enviadas por WhatsApp QRCode tentam sempre a Meta Cloud API e falham.
 
-**1. `supabase/functions/wuzapi-webhook/index.ts`**
-- Recebe webhooks do servidor WUZAPI (mensagens recebidas)
-- Valida HMAC com SECRET_KEY
-- Upsert conversation + insert message (direction=inbound)
-- Dispara chatbot-reply se bot activo
+### Correcao
 
-**2. `supabase/functions/wuzapi-test-connection/index.ts`**
-- Chama `GET /session/status` e `GET /session/qr` no servidor WUZAPI
-- Retorna estado (connected/disconnected) e QR code se disponivel
-- Credenciais lidas de `integration_credentials` (provider=wuzapi)
-
-### Ficheiros a Editar
-
-**3. `supabase/functions/message-send/index.ts`**
-- Em `resolveCredentials`, detectar instancias com `config.provider === "wuzapi"`
-- Quando wuzapi: enviar via `POST {base_url}/chat/send/text` com header `token`
-- Formato telefone: numero puro (WUZAPI aceita sem @s.whatsapp.net no endpoint REST)
-- Suporte a media: image, document, audio, video via endpoints respectivos
-
-**4. `src/pages/Integracoes.tsx`**
-- Adicionar card **"WhatsApp QRCode"** na OmniChannelTab (ao lado do WhatsApp Meta existente)
-- Icone: `QrCode` do lucide-react, fundo verde
-- Campos: URL do Servidor, Admin Token, User Token
-- Botao "Testar Conexao" → chama `wuzapi-test-connection`
-- Display de QR Code quando sessao desconectada (imagem base64)
-- Botao "Configurar Webhook" → auto-configura callback URL
-- Status: Conectado / Desconectado / A ler QR Code
-
-**5. `supabase/config.toml`**
-- Adicionar `[functions.wuzapi-webhook]` e `[functions.wuzapi-test-connection]` com `verify_jwt = false`
-
-### Credenciais (integration_credentials)
-
-| provider | credential_key | valor |
-|---|---|---|
-| wuzapi | WUZAPI_BASE_URL | `https://wazapi.ybrasil.com.br` |
-| wuzapi | WUZAPI_ADMIN_TOKEN | `4059539e1c60f8c77daab20591e1cdbf` |
-| wuzapi | WUZAPI_SECRET_KEY | `6c9c4fed1fc71aba1153a40d81de9b24` |
-| wuzapi | WUZAPI_USER_TOKEN | (token do user, configuravel na UI) |
-
-### channel_instances
-
-Ao configurar, cria-se uma `channel_instance` com:
-- `channel_type: "whatsapp"`, `name: "WhatsApp QRCode"`, `status: "active"`
-- `config: { provider: "wuzapi", base_url, user_token }`
-
-### Fluxo de Envio
-
+**1. Editar `supabase/functions/message-send/index.ts`**
+- Mover a logica WUZAPI para DENTRO do bloco `conv.channel === "whatsapp"`, verificando `resolvedProvider` antes de escolher Meta ou WUZAPI
+- Estrutura corrigida:
 ```text
-message-send → resolve instancia
-  → config.provider === "wuzapi"?
-    → POST {base_url}/chat/send/text { Phone: "5511...", Body: "msg" }
-  → senao: Meta Cloud API (existente)
+if (conv.channel === "whatsapp") {
+  if (resolvedProvider === "wuzapi") {
+    → enviar via WUZAPI endpoints
+  } else {
+    → enviar via Meta Cloud API (existente)
+  }
+}
 ```
 
-### Fluxo de Recepcao
+**2. Verificar endpoints WUZAPI contra API docs**
+- Os endpoints `/chat/send/text`, `/chat/send/image`, `/chat/send/audio`, `/chat/send/document`, `/chat/send/video` estao correctos conforme a API
+- Header de autenticacao `token` esta correcto (user token)
+- A API tambem suporta `/chat/send/sticker`, `/chat/send/location`, `/chat/send/contact`, `/chat/send/buttons`, `/chat/send/list` — adicionar suporte a buttons e list
 
-```text
-WUZAPI POST → wuzapi-webhook
-  → Valida HMAC
-  → Upsert conversation (channel=whatsapp)
-  → Insert message (direction=inbound)
-  → Trigger chatbot-reply
-```
+**3. Editar `supabase/config.toml`**
+- Adicionar entradas em falta para `wuzapi-webhook` e `wuzapi-test-connection` (se ainda nao existirem)
 
-### UI — Card "WhatsApp QRCode"
-
-- Titulo: "WhatsApp QRCode"
-- Subtitulo: "Conexao via QR Code (sem API oficial)"
-- Icone: QrCode (lucide) em fundo verde
-- Seccoes: credenciais, status da sessao, QR code, webhook URL
+### Resumo
+| Ficheiro | Accao |
+|---|---|
+| `supabase/functions/message-send/index.ts` | Corrigir branch unreachable do WUZAPI |
+| `supabase/config.toml` | Verificar/adicionar funcoes wuzapi |
 
