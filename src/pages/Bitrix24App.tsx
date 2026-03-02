@@ -53,7 +53,7 @@ import { ChatBubble, ChatBubbleAvatar, ChatBubbleMessage, ChatBubbleAction, Chat
 import { ChatInput } from "@/components/ui/chat-input";
 import { ChatMessageList } from "@/components/ui/chat-message-list";
 import { Copy } from "lucide-react";
-import type { AIAgent, AIProvider, FlowOption, DocOption } from "@/pages/Agentes";
+import type { AIAgent, AIProvider, FlowOption, DocOption, CollectionOption } from "@/pages/Agentes";
 import { defaultAgent } from "@/pages/Agentes";
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
@@ -774,6 +774,7 @@ function AgentesView({ botId, integrationId }: { botId: string | null; integrati
   const [providers, setProviders] = useState<AIProvider[]>([]);
   const [flows, setFlows] = useState<FlowOption[]>([]);
   const [docs, setDocs] = useState<DocOption[]>([]);
+  const [collections, setCollections] = useState<CollectionOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingAgent, setEditingAgent] = useState<Partial<AIAgent>>({ ...defaultAgent });
@@ -793,14 +794,26 @@ function AgentesView({ botId, integrationId }: { botId: string | null; integrati
         fetch(`${SUPABASE_URL}/rest/v1/flows?select=id,name&order=name.asc`, {
           headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` },
         }),
-        fetch(`${SUPABASE_URL}/rest/v1/knowledge_documents?select=id,title&order=title.asc`, {
+        fetch(`${SUPABASE_URL}/rest/v1/knowledge_documents?select=id,title,collection_id,collection_name&order=title.asc`, {
           headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` },
         }),
       ]);
       if (agentsRes.ok) setAgents(await agentsRes.json());
       if (providersRes.ok) setProviders(await providersRes.json());
       if (flowsRes.ok) setFlows(await flowsRes.json());
-      if (docsRes.ok) setDocs(await docsRes.json());
+      if (docsRes.ok) {
+        const docsData = await docsRes.json();
+        setDocs(docsData);
+        const collMap = new Map<string, CollectionOption>();
+        for (const doc of docsData) {
+          if (doc.collection_id && doc.collection_name) {
+            const existing = collMap.get(doc.collection_id);
+            if (existing) existing.doc_count++;
+            else collMap.set(doc.collection_id, { collection_id: doc.collection_id, collection_name: doc.collection_name, doc_count: 1 });
+          }
+        }
+        setCollections(Array.from(collMap.values()));
+      }
     } catch (e) { console.error(e); }
     setLoading(false);
   };
@@ -959,6 +972,7 @@ function AgentesView({ botId, integrationId }: { botId: string | null; integrati
         providers={providers}
         flows={flows}
         docs={docs}
+        collections={collections}
         agents={agents}
         saving={saving}
         onSave={handleSave}

@@ -89,70 +89,40 @@ Deno.serve(async (req) => {
       });
     }
 
-    // 5. Get last 10 messages for context
-    const { data: history } = await supabase
-      .from("messages")
-      .select("direction, content, sender_name, created_at")
-      .eq("conversation_id", conversation_id)
-      .order("created_at", { ascending: false })
-      .limit(10);
-
-    const messages = (history || []).reverse().map((m: any) => ({
-      role: m.direction === "inbound" ? "user" : "assistant",
-      content: m.content,
-    }));
-
-    // 6. Call ai-playground to generate response
-    const aiRes = await fetch(`${supabaseUrl}/functions/v1/ai-playground`, {
+    // 5. Route through flow-engine (respects default_flow_id + keyword flows + fallback to ai-process-message)
+    const flowRes = await fetch(`${supabaseUrl}/functions/v1/flow-engine`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         "Authorization": `Bearer ${serviceKey}`,
       },
       body: JSON.stringify({
+        conversation_id,
+        message_text,
         agent_id: agent.id,
-        messages,
       }),
     });
 
-    if (!aiRes.ok) {
-      const errText = await aiRes.text();
-      console.error("[CHATBOT] AI playground error:", aiRes.status, errText);
+    if (!flowRes.ok) {
+      const errText = await flowRes.text();
+      console.error("[CHATBOT] flow-engine error:", flowRes.status, errText);
       return new Response(JSON.stringify({ error: "AI generation failed" }), {
         status: 500,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    const aiResult = await aiRes.json();
-    const replyText = aiResult.content;
+    const flowResult = await flowRes.json();
+    const replyText = flowResult.reply || flowResult.content;
 
     if (!replyText) {
-      console.log("[CHATBOT] Empty AI response, skipping");
+      console.log("[CHATBOT] Empty response from flow-engine, skipping");
       return new Response(JSON.stringify({ skipped: "empty_response" }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    // 7. Save outbound message
-    await supabase.from("messages").insert({
-      conversation_id,
-      direction: "outbound",
-      content: replyText,
-      sender_name: agent.name || "EmmelyAI",
-      delivery_status: "sent",
-    });
-
-    // Update conversation preview
-    await supabase
-      .from("conversations")
-      .update({
-        last_message_at: new Date().toISOString(),
-        last_message_preview: replyText.slice(0, 100),
-      })
-      .eq("id", conversation_id);
-
-    // 8. Send reply to the external channel via message-send (fire and forget)
+    // 6. Send reply to the external channel via message-send (fire and forget)
     if (conversation.channel === "instagram" || conversation.channel === "whatsapp") {
       fetch(`${supabaseUrl}/functions/v1/message-send`, {
         method: "POST",
@@ -168,7 +138,7 @@ Deno.serve(async (req) => {
       }).catch((e) => console.error("[CHATBOT] message-send error:", e));
     }
 
-    // 9. Forward to Bitrix24 as bot message (fire and forget)
+    // 7. Forward to Bitrix24 as bot message (fire and forget)
     const botMessage = `[b]${agent.name || "EmmelyAI"}[/b] - ${replyText}`;
     fetch(`${supabaseUrl}/functions/v1/bitrix24-send`, {
       method: "POST",
@@ -185,7 +155,7 @@ Deno.serve(async (req) => {
       }),
     }).catch((e) => console.error("[CHATBOT] Bitrix24 forward error:", e));
 
-    // 10. Create Bitrix24 badge activity (fire and forget)
+    // 8. Create Bitrix24 badge activity (fire and forget)
     try {
       fetch(`${supabaseUrl}/functions/v1/bitrix24-worker`, {
         method: "POST",
