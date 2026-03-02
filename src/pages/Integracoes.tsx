@@ -1806,11 +1806,18 @@ function InstancesTab() {
 
                 {/* Wuzapi connection status */}
                 {isWuzapi && (
-                  <div className="flex items-center gap-2 py-1">
+                  <div className="flex items-center gap-2 py-1 flex-wrap">
                     {wuzapiStatus._global?.connected ? (
-                      <span className="inline-flex items-center gap-1.5 text-xs font-medium text-green-700 bg-green-50 px-2.5 py-1 rounded-full">
-                        <CheckCircle2 className="h-3.5 w-3.5" /> Conectado
-                      </span>
+                      <>
+                        <span className="inline-flex items-center gap-1.5 text-xs font-medium text-green-700 bg-green-50 px-2.5 py-1 rounded-full">
+                          <CheckCircle2 className="h-3.5 w-3.5" /> Conectado
+                        </span>
+                        {wuzapiStatus._global?.phone_number && (
+                          <span className="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground bg-muted px-2.5 py-1 rounded-full">
+                            <Phone className="h-3.5 w-3.5" /> +{wuzapiStatus._global.phone_number}
+                          </span>
+                        )}
+                      </>
                     ) : (
                       <span className="inline-flex items-center gap-1.5 text-xs font-medium text-amber-700 bg-amber-50 px-2.5 py-1 rounded-full">
                         <AlertCircle className="h-3.5 w-3.5" /> Desconectado
