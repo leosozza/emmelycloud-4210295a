@@ -1333,6 +1333,7 @@ function QRCodeDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (op
     }
   };
 
+  // Auto-poll every 3s while dialog is open and not yet connected
   useEffect(() => {
     if (open) {
       handleConnect();
@@ -1340,6 +1341,12 @@ function QRCodeDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (op
       setResult(null);
     }
   }, [open]);
+
+  useEffect(() => {
+    if (!open || result?.connected) return;
+    const interval = setInterval(fetchStatus, 3000);
+    return () => clearInterval(interval);
+  }, [open, result?.connected]);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>

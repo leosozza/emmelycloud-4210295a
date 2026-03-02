@@ -187,9 +187,9 @@ Deno.serve(async (req) => {
       const isConnected = statusData.Connected || statusData.connected || false;
       const isLoggedIn = statusData.LoggedIn || statusData.loggedIn || false;
 
-      if (isConnected && isLoggedIn) {
+      if (isConnected || isLoggedIn) {
         connected = true;
-        loggedIn = true;
+        loggedIn = isLoggedIn;
         sessionStatus = "connected";
       } else {
         sessionStatus = "disconnected";
