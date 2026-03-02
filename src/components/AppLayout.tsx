@@ -35,35 +35,33 @@ function AppDock() {
 
   return (
     <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-30">
-      <div className="glass border rounded-2xl shadow-xl">
-        <Dock
-          magnification={isMobile ? 52 : 68}
-          panelHeight={isMobile ? 48 : 56}
-          distance={isMobile ? 100 : 150}
-        >
-          {dockItems.map((item) => {
-            const isActive =
-              item.url === "/"
-                ? location.pathname === "/"
-                : location.pathname.startsWith(item.url);
-            return (
-              <DockItem key={item.url} onClick={() => navigate(item.url)}>
-                <DockLabel>{item.title}</DockLabel>
-                <DockIcon>
-                  <div className="relative flex items-center justify-center h-full w-full">
-                    <item.icon
-                      className={`h-full w-full ${isActive ? "text-primary" : "text-muted-foreground"}`}
-                    />
-                    {isActive && (
-                      <div className="absolute -bottom-1.5 h-1 w-1 rounded-full bg-primary" />
-                    )}
-                  </div>
-                </DockIcon>
-              </DockItem>
-            );
-          })}
-        </Dock>
-      </div>
+      <Dock
+        magnification={isMobile ? 52 : 68}
+        panelHeight={isMobile ? 48 : 56}
+        distance={isMobile ? 100 : 150}
+      >
+        {dockItems.map((item) => {
+          const isActive =
+            item.url === "/"
+              ? location.pathname === "/"
+              : location.pathname.startsWith(item.url);
+          return (
+            <DockItem key={item.url} onClick={() => navigate(item.url)}>
+              <DockLabel>{item.title}</DockLabel>
+              <DockIcon>
+                <div className="relative flex items-center justify-center h-full w-full">
+                  <item.icon
+                    className={`h-full w-full ${isActive ? "text-primary" : "text-muted-foreground"}`}
+                  />
+                  {isActive && (
+                    <div className="absolute -bottom-1.5 h-1 w-1 rounded-full bg-primary" />
+                  )}
+                </div>
+              </DockIcon>
+            </DockItem>
+          );
+        })}
+      </Dock>
     </div>
   );
 }
