@@ -172,6 +172,7 @@ Deno.serve(async (req) => {
     let connected = false;
     let loggedIn = false;
     let qrCode: string | null = null;
+    let phoneNumber: string | null = null;
 
     try {
       const statusRes = await fetch(`${resolvedBaseUrl}/session/status`, {
@@ -191,6 +192,11 @@ Deno.serve(async (req) => {
         connected = true;
         loggedIn = isLoggedIn;
         sessionStatus = "connected";
+        // Extract phone number from Jid (format: 5511999999999@s.whatsapp.net)
+        const jid = statusData.Jid || statusData.jid || statusData.JID || "";
+        if (jid) {
+          phoneNumber = jid.split("@")[0].split(":")[0];
+        }
       } else {
         sessionStatus = "disconnected";
         // Extract QR code from status response if available
@@ -256,9 +262,10 @@ Deno.serve(async (req) => {
       ok: true,
       status: sessionStatus,
       connected,
+      phone_number: phoneNumber,
       qr_code: qrCode,
       webhook_configured: webhookConfigured,
-      message: connected ? "WhatsApp conectado" + (webhookConfigured ? " e webhook configurado" : "") : (qrCode ? "Leia o QR Code para conectar" : "Sessão desconectada"),
+      message: connected ? "WhatsApp conectado" + (phoneNumber ? ` (${phoneNumber})` : "") + (webhookConfigured ? " e webhook configurado" : "") : (qrCode ? "Leia o QR Code para conectar" : "Sessão desconectada"),
     }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
