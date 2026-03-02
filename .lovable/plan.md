@@ -1,104 +1,38 @@
 
 
-## Redesenho Completo da Interface
+## Atualizar Roadmap com Todos os Módulos
 
-O problema e que as alteracoes anteriores so mudaram variaveis de cor mas nao redesenharam os componentes visuais. Vou fazer um redesenho completo: header, KPIs, graficos, cards, layout do dashboard — tudo com visual moderno e coerente com a paleta vermelha/dourada.
+Analisei o código completo e identifiquei **13 funcionalidades já implementadas** que faltam no roadmap, e **1 funcionalidade marcada como "por iniciar"** que já está concluída. Vou reescrever o array `defaultPhases` no ficheiro `src/pages/Roadmap.tsx`.
 
-### Ficheiros a alterar
+### Módulos a ADICIONAR como Concluídos (100%)
 
-**1. `src/index.css`** — Reescrever completamente:
-- Variaveis CSS `:root` e `.dark` com os valores exactos fornecidos (hex directo, sem HSL)
-- Remover TODOS os estilos legacy `.b24-*` (stepper, table, chat, etc.) — simplificar drasticamente
-- Manter apenas gradientes actualizados e estilos base
-- Font import Poppins
+| Módulo | Descrição | Evidência |
+|---|---|---|
+| Treino de Persona via Chat | Chat natural para treinar agentes com preview/confirmar/reverter | AgentTrainingChat.tsx + persona-trainer edge fn |
+| Chatbot Toggle por Canal | Ativar/desativar chatbot por canal (WA, IG) com agente selecionado | Integracoes.tsx + chatbot_channel_settings table |
+| Chat IA Interno | Chat com agentes IA, sessões persistentes, markdown, áudio | ChatIA.tsx + ai-process-message edge fn |
+| Manual do Utilizador | Guia completo /manual com FAQ, quick-start, dicas | Manual.tsx |
+| Busca Global (Command Palette) | Ctrl+K pesquisa em leads, clientes, casos, conversas | CommandPalette.tsx (MOVER de "por iniciar" para concluído) |
+| Proposta Pública (Aceite Online) | Link público para cliente aceitar proposta e gerar contrato | PropostaPublica.tsx |
+| Triagem IA | Classificação automática de leads com IA | Triagem.tsx + ai-triage edge fn |
+| Integração Callbell (Instagram) | Envio/recepção de mensagens Instagram via Callbell API | instagram-send, instagram-webhook edge fns |
+| Ollama Self-Hosted | Provedor IA local via Ollama com webhook de URL dinâmico | ollama-test-connection, ollama-url-webhook |
+| Importador PowerBot | Importação de fluxos de outras plataformas | powerbotImporter.ts |
+| Gravação de Áudio & Speech Recognition | Botão de gravar áudio e reconhecimento de fala no chat | AudioRecordButton.tsx + useSpeechRecognition |
+| Bitrix24 Field Mapping | Mapeamento visual de campos entre Emmely e Bitrix24 | FieldMappingManager.tsx |
+| Dashboard Customizável | Arrastar/reorganizar widgets do dashboard | DashboardCustomizer.tsx |
+| Bitrix24 App Embeddable | Interface embeddida para uso dentro do Bitrix24 | Bitrix24App.tsx |
+| Redesenho UI (Tema Vermelho/Dourado) | Novo design system com paleta vermelha/dourada e Poppins | index.css atualizado |
 
-**2. `src/components/AppHeader.tsx`** — Redesenhar header:
-- Fundo glassmorphism (`bg-card/80 backdrop-blur-lg`) em vez do gradiente solido
-- Logo com icone em fundo gradient pill
-- Barra de pesquisa com estilo card/input em vez de branco transparente
-- Acoes com estilo mais limpo e moderno
-- Remover classe `bg-bitrix-gradient` e texto branco hardcoded
+### Módulo a MOVER
 
-**3. `src/components/dashboard/DashboardKPIs.tsx`** — Redesenhar KPIs:
-- Substituir BentoCards com gradiente animado por cards limpos com fundo `card`, icone colorido em circulo, valor grande e indicador de mudanca
-- Estilo "flat modern" — sem gradientes pesados nos KPIs
-- Cada KPI com borda esquerda colorida ou icone em circulo com cor tematica
-- Layout responsivo 2→3→6 colunas mantido
+- **Busca Global**: de "📅 Próximas Etapas" → "✅ Concluído" (CommandPalette.tsx já existe e funciona)
 
-**4. `src/components/dashboard/DashboardChartsLive.tsx`** — Modernizar graficos:
-- Cards com `rounded-2xl` e sombra suave
-- Tooltips estilizados com `contentStyle` customizado
-- Cores dos graficos alinhadas com `--chart-1..5` do novo tema
-- Grids mais subtis (opacidade reduzida)
-- Adicionar area preenchida no LineChart (AreaChart)
+### Alteração
 
-**5. `src/components/dashboard/RecentLeads.tsx`** — Redesenhar lista:
-- Avatares com gradiente suave em vez de cor solida
-- Hover states mais pronunciados
-- Badge com cantos mais arredondados
-- Separadores mais subtis
-
-**6. `src/components/dashboard/DashboardSidebar.tsx`** — Modernizar sidebar:
-- Progress bars coloridas em vez de texto simples para "Top Areas"
-- Avatares de equipa com anel de cor
-- Cards com hover lift effect
-
-**7. `src/pages/Index.tsx`** — Refinar layout:
-- Saudacao com emoji animado (wave)
-- Subtitle com badge de "live" a piscar
-- Spacing e gap mais generosos
-- Grid dos graficos com 2 colunas equilibradas
-
-**8. `src/components/PageHeader.tsx`** — Modernizar:
-- Substituir gradiente solido por fundo `card` com borda e icone decorativo
-- Texto em `foreground` em vez de branco forcado
-
-**9. `src/components/AppLayout.tsx`** — Refinar Dock:
-- Fundo glassmorphism no dock
-- Indicador activo com dot em vez de cor
-
-### Componentes novos
-
-Nenhum ficheiro novo — apenas redesenho dos existentes.
-
-### Resultado esperado
-
-```text
-+----------------------------------------------------------+
-| [logo] Emmely Cloud    [pesquisa...]    🇧🇷 🔔 [avatar] |  ← header glassmorphism
-+----------------------------------------------------------+
-| Bom dia, João 👋                        [7d▼] [⚙️]      |
-| segunda-feira, 2 de março de 2026  🟢 live               |
-+----------------------------------------------------------+
-| ┌─────┐ ┌─────┐ ┌─────┐ ┌─────┐ ┌─────┐ ┌─────┐       |
-| │ 12  │ │  3  │ │R$8k │ │ 24% │ │  7  │ │  4  │       |
-| │Leads│ │ SLA │ │Rec. │ │Conv.│ │Casos│ │Cont.│       |
-| └─────┘ └─────┘ └─────┘ └─────┘ └─────┘ └─────┘       |  ← cards flat com icone colorido
-+----------------------------------------------------------+
-| ┌──────────────┐  ┌──────────────┐                       |
-| │  Funil       │  │ Leads/Origem │                       |
-| │  ████████    │  │    🍩        │                       |
-| └──────────────┘  └──────────────┘                       |  ← charts modernos
-| ┌──────────────┐  ┌──────────────┐                       |
-| │  Receita/Area│  │  Tendência   │                       |
-| │  ═══════     │  │  📈          │                       |
-| └──────────────┘  └──────────────┘                       |
-+----------------------------------------------------------+
-| ┌──────────────────────┐  ┌───────────┐                  |
-| │  Últimos Leads       │  │ Top Áreas │                  |
-| │  ──────────────      │  │ ████ 40%  │                  |
-| │  ──────────────      │  │ ███  30%  │                  |
-| └──────────────────────┘  │ ██   20%  │                  |
-|                           └───────────┘                  |
-+---------------------------[●●●● dock ●●●●]---------------+
-```
-
-### Detalhes tecnicos
-
-- Header usa `backdrop-blur-lg` e `bg-card/80` para efeito glass
-- KPIs usam `Card` com `border-l-4` colorido por metrica + icone em circulo com bg tematico
-- Graficos usam `rounded-2xl`, tooltips com `bg-card border shadow-lg`, grid com `stroke-dasharray` e opacidade baixa
-- PageHeader muda de gradiente para `bg-card border` com texto normal
-- Dock recebe `bg-card/80 backdrop-blur-md border shadow-xl`
-- Todas as cores hardcoded (`#9b2c2c`, etc.) sao removidas dos componentes e substituidas por tokens CSS
+**`src/pages/Roadmap.tsx`** (linhas 59-195) — Reescrever o array `defaultPhases`:
+- Adicionar os 15 módulos acima à secção "Concluído"
+- Remover "Busca Global" da secção "Próximas Etapas"
+- Manter os módulos "Em Progresso" e "Próximas Etapas" existentes (menos Busca Global)
+- Total concluídos passará de ~38 para ~53
 
