@@ -89,7 +89,7 @@ export function DashboardKPIs() {
       up: (data?.leadsChange ?? 0) >= 0,
       icon: Users,
       description: "Últimos 30 dias",
-      colors: ["#2283d8", "#4a9fe5", "#7b5ea7", "#2283d8"],
+      colors: ["#8a79ab", "#a995c9", "#e6a5b8", "#8a79ab"],
     },
     {
       title: "SLA Expirando",
@@ -98,7 +98,7 @@ export function DashboardKPIs() {
       up: false,
       icon: Clock,
       description: "Nas próximas 4h",
-      colors: ["#e8a838", "#f0c060", "#d4903c", "#e8a838"],
+      colors: ["#f0c88d", "#e8b870", "#d4a35c", "#f0c88d"],
     },
     {
       title: "Receita do Mês",
@@ -107,7 +107,7 @@ export function DashboardKPIs() {
       up: (data?.revenueChange ?? 0) >= 0,
       icon: DollarSign,
       description: "vs. mês anterior",
-      colors: ["#34a853", "#5dc576", "#2d8f47", "#34a853"],
+      colors: ["#77b8a1", "#5daa8a", "#8fc9b3", "#77b8a1"],
     },
     {
       title: "Taxa de Conversão",
@@ -116,7 +116,7 @@ export function DashboardKPIs() {
       up: true,
       icon: TrendingUp,
       description: "Lead → Contrato",
-      colors: ["#7b5ea7", "#9b7ec8", "#5e4287", "#7b5ea7"],
+      colors: ["#e6a5b8", "#d48fa5", "#f2b8c6", "#e6a5b8"],
     },
     {
       title: "Casos Ativos",
@@ -125,7 +125,7 @@ export function DashboardKPIs() {
       up: true,
       icon: Briefcase,
       description: "Em andamento",
-      colors: ["#3b82b8", "#5a9fd0", "#2d6a9f", "#3b82b8"],
+      colors: ["#a0bbe3", "#8aaad6", "#b5ccee", "#a0bbe3"],
     },
     {
       title: "Contratos Pendentes",
@@ -134,7 +134,7 @@ export function DashboardKPIs() {
       up: false,
       icon: FileSignature,
       description: "Aguardando assinatura",
-      colors: ["#d44060", "#e06080", "#b83050", "#d44060"],
+      colors: ["#c49ab0", "#b0879d", "#d4a8bc", "#c49ab0"],
     },
   ];
 

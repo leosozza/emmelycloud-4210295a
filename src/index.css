@@ -149,24 +149,24 @@
 /* b24ui Card hover */
 .b24-card {
   border-radius: 12px;
-  border: 1px solid #dfe0e3;
+  border: 1px solid hsl(var(--border));
   transition: box-shadow 0.2s ease, transform 0.15s ease;
 }
 .b24-card:hover {
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
 }
 .dark .b24-card {
-  border-color: hsl(222 30% 22%);
+  border-color: hsl(var(--border));
 }
 .dark .b24-card:hover {
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
 }
 
 /* b24ui Status border-left cards */
-.b24-status-success { border-left: 4px solid #589731; }
-.b24-status-warning { border-left: 4px solid #c49c00; }
-.b24-status-danger { border-left: 4px solid #df532d; }
-.b24-status-info { border-left: 4px solid #2283d8; }
+.b24-status-success { border-left: 4px solid hsl(var(--success)); }
+.b24-status-warning { border-left: 4px solid hsl(var(--warning)); }
+.b24-status-danger { border-left: 4px solid hsl(var(--destructive)); }
+.b24-status-info { border-left: 4px solid hsl(var(--primary)); }
 
 /* b24ui Stepper */
 .b24-stepper {
@@ -180,11 +180,11 @@
   top: 1.5rem;
   bottom: 0.5rem;
   width: 2px;
-  background: #dfe0e3;
+  background: hsl(var(--border));
   border-radius: 1px;
 }
 .dark .b24-stepper::before {
-  background: hsl(222 30% 22%);
+  background: hsl(var(--border));
 }
 .b24-step {
   position: relative;
@@ -205,16 +205,16 @@
   z-index: 1;
 }
 .b24-step-dot.done {
-  background: #589731;
+  background: hsl(var(--success));
   color: white;
 }
 .b24-step-dot.pending {
-  background: #dfe0e3;
-  color: #525c69;
+  background: hsl(var(--muted));
+  color: hsl(var(--muted-foreground));
 }
 .dark .b24-step-dot.pending {
-  background: hsl(222 30% 22%);
-  color: #9ca3af;
+  background: hsl(var(--muted));
+  color: hsl(var(--muted-foreground));
 }
 
 /* b24ui Table zebra */
@@ -228,22 +228,22 @@
   transition: background 0.15s ease;
 }
 .b24-table tbody tr:hover {
-  background: rgba(34, 131, 216, 0.04);
+  background: hsl(var(--primary) / 0.04);
 }
 .dark .b24-table tbody tr:hover {
-  background: rgba(34, 131, 216, 0.08);
+  background: hsl(var(--primary) / 0.08);
 }
 .b24-table thead th {
-  background: #f5f7fa;
+  background: hsl(var(--muted));
   font-weight: 600;
   font-size: 0.7rem;
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  color: #525c69;
+  color: hsl(var(--muted-foreground));
 }
 .dark .b24-table thead th {
-  background: hsl(222 47% 9%);
-  color: #9ca3af;
+  background: hsl(var(--card));
+  color: hsl(var(--muted-foreground));
 }
 
 /* b24ui Sidebar */
