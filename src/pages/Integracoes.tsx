@@ -1300,7 +1300,7 @@ function InstancesTab() {
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [newName, setNewName] = useState("");
-  const [newType, setNewType] = useState<"whatsapp" | "instagram">("whatsapp");
+  const [newType, setNewType] = useState<"whatsapp" | "whatsapp_qrcode" | "instagram">("whatsapp");
   const [creating, setCreating] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [configDrafts, setConfigDrafts] = useState<Record<string, Record<string, string>>>({});
@@ -1327,11 +1327,12 @@ function InstancesTab() {
   const handleCreate = async () => {
     if (!newName.trim()) return;
     setCreating(true);
+    const channelType = newType === "whatsapp_qrcode" ? "whatsapp" : newType;
     const { error } = await supabase.from("channel_instances").insert({
       name: newName.trim(),
-      channel_type: newType,
+      channel_type: channelType,
       status: "inactive",
-      config: {},
+      config: newType === "whatsapp_qrcode" ? { provider: "wuzapi" } : {},
     });
     if (error) {
       toast.error("Erro ao criar instância");
@@ -1413,7 +1414,12 @@ function InstancesTab() {
     setLinkingInstance(null);
   };
 
-  const getConfigFields = (type: string): { key: string; label: string }[] => {
+  const getConfigFields = (type: string, config?: Record<string, any>): { key: string; label: string }[] => {
+    if (type === "whatsapp" && config?.provider === "wuzapi") {
+      return [
+        { key: "provider", label: "Provider (wuzapi)" },
+      ];
+    }
     if (type === "whatsapp") {
       return [
         { key: "access_token", label: "Access Token (Meta)" },
@@ -1474,7 +1480,7 @@ function InstancesTab() {
               </div>
               <div className="space-y-2">
                 <Label>Tipo de Canal</Label>
-                <Select value={newType} onValueChange={(v) => setNewType(v as "whatsapp" | "instagram")}>
+                <Select value={newType} onValueChange={(v) => setNewType(v as "whatsapp" | "whatsapp_qrcode" | "instagram")}>
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
@@ -1483,6 +1489,12 @@ function InstancesTab() {
                       <div className="flex items-center gap-2">
                         <Phone className="h-4 w-4 text-green-600" />
                         WhatsApp — API Oficial Meta
+                      </div>
+                    </SelectItem>
+                    <SelectItem value="whatsapp_qrcode">
+                      <div className="flex items-center gap-2">
+                        <QrCode className="h-4 w-4 text-green-600" />
+                        WhatsApp — QR Code (WUZAPI)
                       </div>
                     </SelectItem>
                     <SelectItem value="instagram">
@@ -1521,9 +1533,10 @@ function InstancesTab() {
       <div className="grid gap-4 md:grid-cols-2">
         {instances.map((inst) => {
           const isEditing = editingId === inst.id;
-          const fields = getConfigFields(inst.channel_type);
+          const fields = getConfigFields(inst.channel_type, inst.config);
           const drafts = configDrafts[inst.id] || {};
           const isWhatsapp = inst.channel_type === "whatsapp";
+          const isWuzapi = isWhatsapp && inst.config?.provider === "wuzapi";
           const showVal = showValues[inst.id] ?? false;
 
           return (
@@ -1531,12 +1544,12 @@ function InstancesTab() {
               <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-2">
                 <div className="flex items-center gap-3">
                   <div className={`flex h-10 w-10 items-center justify-center rounded-lg ${isWhatsapp ? "bg-green-100" : "bg-pink-100"}`}>
-                    {isWhatsapp ? <Phone className="h-5 w-5 text-green-600" /> : <Instagram className="h-5 w-5 text-pink-600" />}
+                    {isWuzapi ? <QrCode className="h-5 w-5 text-green-600" /> : isWhatsapp ? <Phone className="h-5 w-5 text-green-600" /> : <Instagram className="h-5 w-5 text-pink-600" />}
                   </div>
                   <div>
                     <CardTitle className="text-base">{inst.name}</CardTitle>
                     <CardDescription>
-                      {isWhatsapp ? "WhatsApp Business API" : "Instagram Graph API"}
+                      {isWuzapi ? "WhatsApp QR Code (WUZAPI)" : isWhatsapp ? "WhatsApp Business API" : "Instagram Graph API"}
                       {inst.config.bitrix24_mapping_id && bitrixMappings.length > 0 && (
                         <span className="text-[10px] text-blue-600 flex items-center gap-0.5 mt-0.5">
                           <Plug className="h-2.5 w-2.5" />
