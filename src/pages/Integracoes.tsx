@@ -425,11 +425,9 @@ function WhatsAppQRCodeCard({ credProps }: { credProps: any }) {
       // Get credentials to build config
       const { data: credsData } = await supabase.functions.invoke("manage-credentials", { method: "GET" });
       let baseUrl = "";
-      let userToken = "";
       if (credsData?.credentials) {
         for (const c of credsData.credentials) {
           if (c.provider === "wuzapi" && c.credential_key === "WUZAPI_BASE_URL") baseUrl = c.credential_value_masked ? "configured" : "";
-          if (c.provider === "wuzapi" && c.credential_key === "WUZAPI_USER_TOKEN") userToken = c.credential_value_masked ? "configured" : "";
         }
       }
 
@@ -483,7 +481,6 @@ function WhatsAppQRCodeCard({ credProps }: { credProps: any }) {
           <p className="font-medium text-xs uppercase text-muted-foreground tracking-wide">Credenciais do Servidor</p>
           <CredentialInput provider="wuzapi" credentialKey="WUZAPI_BASE_URL" label="URL do Servidor" {...credProps} />
           <CredentialInput provider="wuzapi" credentialKey="WUZAPI_ADMIN_TOKEN" label="Admin Token" {...credProps} />
-          <CredentialInput provider="wuzapi" credentialKey="WUZAPI_USER_TOKEN" label="User Token" {...credProps} />
           <CredentialInput provider="wuzapi" credentialKey="WUZAPI_SECRET_KEY" label="Secret Key (HMAC)" {...credProps} />
         </div>
 

@@ -12,7 +12,7 @@ Deno.serve(async (req) => {
 
   try {
     const body = await req.json().catch(() => ({}));
-    const { action, base_url, user_token, admin_token, webhook_url } = body as Record<string, string>;
+    const { action, base_url, admin_token, webhook_url } = body as Record<string, string>;
 
     const supabase = createClient(
       Deno.env.get("SUPABASE_URL")!,
@@ -21,10 +21,10 @@ Deno.serve(async (req) => {
 
     // Resolve credentials: prefer body params, fallback to integration_credentials
     let resolvedBaseUrl = base_url?.trim();
-    let resolvedUserToken = user_token?.trim();
     let resolvedAdminToken = admin_token?.trim();
+    let resolvedUserToken = "";
 
-    if (!resolvedBaseUrl || !resolvedUserToken) {
+    if (!resolvedBaseUrl || !resolvedAdminToken) {
       const { data: creds } = await supabase
         .from("integration_credentials")
         .select("credential_key, credential_value")
@@ -33,10 +33,18 @@ Deno.serve(async (req) => {
       if (creds) {
         for (const c of creds) {
           if (c.credential_key === "WUZAPI_BASE_URL" && !resolvedBaseUrl) resolvedBaseUrl = c.credential_value?.trim();
-          if (c.credential_key === "WUZAPI_USER_TOKEN" && !resolvedUserToken) resolvedUserToken = c.credential_value?.trim();
           if (c.credential_key === "WUZAPI_ADMIN_TOKEN" && !resolvedAdminToken) resolvedAdminToken = c.credential_value?.trim();
+          if (c.credential_key === "WUZAPI_USER_TOKEN") resolvedUserToken = c.credential_value?.trim() || "";
         }
       }
+    } else {
+      // Still try to get existing user token
+      const { data: creds } = await supabase
+        .from("integration_credentials")
+        .select("credential_key, credential_value")
+        .eq("provider", "wuzapi")
+        .eq("credential_key", "WUZAPI_USER_TOKEN");
+      if (creds?.[0]) resolvedUserToken = creds[0].credential_value?.trim() || "";
     }
 
     if (!resolvedBaseUrl) {
@@ -45,17 +53,80 @@ Deno.serve(async (req) => {
       });
     }
 
+    if (!resolvedAdminToken) {
+      return new Response(JSON.stringify({ ok: false, error: "Admin Token não configurado" }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     // Remove trailing slash
     resolvedBaseUrl = resolvedBaseUrl.replace(/\/+$/, "");
 
-    // ── Action: configure webhook ──
-    if (action === "configure_webhook" && webhook_url) {
-      if (!resolvedUserToken) {
-        return new Response(JSON.stringify({ ok: false, error: "User Token não configurado" }), {
+    // ── Auto-create user if no user token exists ──
+    if (!resolvedUserToken) {
+      console.log("[WUZAPI-TEST] No user token found, auto-creating user via admin API...");
+      try {
+        const createRes = await fetch(`${resolvedBaseUrl}/admin/users`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "Authorization": resolvedAdminToken },
+          body: JSON.stringify({ name: "emmely" }),
+        });
+
+        const createBody = await createRes.json().catch(() => ({}));
+        console.log("[WUZAPI-TEST] Create user response:", createRes.status, JSON.stringify(createBody));
+
+        if (createRes.ok && createBody.token) {
+          resolvedUserToken = createBody.token.trim();
+          // Save the auto-created user token
+          await supabase.from("integration_credentials").upsert(
+            { provider: "wuzapi", credential_key: "WUZAPI_USER_TOKEN", credential_value: resolvedUserToken },
+            { onConflict: "provider,credential_key" }
+          );
+          console.log("[WUZAPI-TEST] User token auto-created and saved");
+        } else if (createRes.status === 409 || createBody.error?.includes("already exists")) {
+          // User already exists, try to get token via list
+          console.log("[WUZAPI-TEST] User already exists, fetching user list...");
+          const listRes = await fetch(`${resolvedBaseUrl}/admin/users`, {
+            method: "GET",
+            headers: { "Authorization": resolvedAdminToken },
+          });
+          const listBody = await listRes.json().catch(() => ([]));
+          console.log("[WUZAPI-TEST] User list response:", listRes.status, JSON.stringify(listBody).slice(0, 500));
+
+          const users = Array.isArray(listBody) ? listBody : listBody.users || listBody.data || [];
+          const emmelyUser = users.find((u: any) => u.name === "emmely" || u.Name === "emmely");
+          if (emmelyUser) {
+            resolvedUserToken = (emmelyUser.token || emmelyUser.Token || "").trim();
+            if (resolvedUserToken) {
+              await supabase.from("integration_credentials").upsert(
+                { provider: "wuzapi", credential_key: "WUZAPI_USER_TOKEN", credential_value: resolvedUserToken },
+                { onConflict: "provider,credential_key" }
+              );
+              console.log("[WUZAPI-TEST] User token retrieved from list and saved");
+            }
+          }
+        } else {
+          console.error("[WUZAPI-TEST] Failed to create user:", JSON.stringify(createBody));
+          return new Response(JSON.stringify({ ok: false, error: `Erro ao criar user WUZAPI: ${createBody.error || createBody.message || createRes.status}` }), {
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+      } catch (e) {
+        console.error("[WUZAPI-TEST] Auto-create user failed:", e);
+        return new Response(JSON.stringify({ ok: false, error: "Falha ao criar user automático no servidor WUZAPI" }), {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
+    }
 
+    if (!resolvedUserToken) {
+      return new Response(JSON.stringify({ ok: false, error: "Não foi possível obter user token do servidor", status: "unconfigured" }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // ── Action: configure webhook ──
+    if (action === "configure_webhook" && webhook_url) {
       const whRes = await fetch(`${resolvedBaseUrl}/webhook`, {
         method: "POST",
         headers: { "Content-Type": "application/json", "token": resolvedUserToken },
@@ -76,12 +147,6 @@ Deno.serve(async (req) => {
 
     // ── Action: connect session ──
     if (action === "connect") {
-      if (!resolvedUserToken) {
-        return new Response(JSON.stringify({ ok: false, error: "User Token não configurado" }), {
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      }
-
       const connectRes = await fetch(`${resolvedBaseUrl}/session/connect`, {
         method: "POST",
         headers: { "Content-Type": "application/json", "token": resolvedUserToken },
@@ -96,12 +161,6 @@ Deno.serve(async (req) => {
     }
 
     // ── Default: check status + QR ──
-    if (!resolvedUserToken) {
-      return new Response(JSON.stringify({ ok: false, error: "User Token não configurado", status: "unconfigured" }), {
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-
     // Check session status
     let sessionStatus = "unknown";
     let connected = false;
@@ -135,11 +194,10 @@ Deno.serve(async (req) => {
           method: "GET",
           headers: { "token": resolvedUserToken },
         });
-        
+
         if (qrRes.ok) {
           const contentType = qrRes.headers.get("content-type") || "";
           if (contentType.includes("image")) {
-            // QR returned as image - convert to base64
             const buffer = await qrRes.arrayBuffer();
             const base64 = btoa(String.fromCharCode(...new Uint8Array(buffer)));
             qrCode = `data:${contentType};base64,${base64}`;
