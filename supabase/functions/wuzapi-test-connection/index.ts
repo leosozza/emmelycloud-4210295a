@@ -170,6 +170,8 @@ Deno.serve(async (req) => {
     // Check session status
     let sessionStatus = "unknown";
     let connected = false;
+    let loggedIn = false;
+    let qrCode: string | null = null;
 
     try {
       const statusRes = await fetch(`${resolvedBaseUrl}/session/status`, {
@@ -179,11 +181,20 @@ Deno.serve(async (req) => {
       const statusBody = await statusRes.json().catch(() => ({}));
       console.log("[WUZAPI-TEST] Status:", JSON.stringify(statusBody));
 
-      if (statusBody.Connected || statusBody.connected) {
+      // Handle nested {code, data: {...}} structure from WUZAPI
+      const statusData = statusBody.data || statusBody;
+
+      const isConnected = statusData.Connected || statusData.connected || false;
+      const isLoggedIn = statusData.LoggedIn || statusData.loggedIn || false;
+
+      if (isConnected && isLoggedIn) {
         connected = true;
+        loggedIn = true;
         sessionStatus = "connected";
       } else {
         sessionStatus = "disconnected";
+        // Extract QR code from status response if available
+        qrCode = statusData.QRCode || statusData.qrcode || statusData.qr_code || null;
       }
     } catch (e) {
       console.error("[WUZAPI-TEST] Status check failed:", e);
@@ -192,9 +203,8 @@ Deno.serve(async (req) => {
       });
     }
 
-    // If disconnected, get QR code
-    let qrCode: string | null = null;
-    if (!connected) {
+    // If disconnected and no QR from status, try dedicated QR endpoint
+    if (!connected && !qrCode) {
       try {
         const qrRes = await fetch(`${resolvedBaseUrl}/session/qr`, {
           method: "GET",
@@ -209,7 +219,8 @@ Deno.serve(async (req) => {
             qrCode = `data:${contentType};base64,${base64}`;
           } else {
             const qrBody = await qrRes.json().catch(() => ({}));
-            qrCode = qrBody.QRCode || qrBody.qrcode || qrBody.code || null;
+            const qrData = qrBody.data || qrBody;
+            qrCode = qrData.QRCode || qrData.qrcode || qrData.qr_code || null;
           }
         }
       } catch (e) {
