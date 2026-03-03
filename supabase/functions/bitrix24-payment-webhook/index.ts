@@ -305,7 +305,6 @@ Deno.serve(async (req) => {
             currencyId: currency,
             isManualOpportunity: "Y",
             parentId2: parseInt(String(dealId)),
-            ufCrm31Deal: parseInt(String(dealId)),       // UF_CRM_SMART_INVOICE_DEAL — explicit deal binding for kanban
             contactId: contactId ? parseInt(String(contactId)) : undefined,
             begindate: new Date().toISOString().split("T")[0],
             closedate: parcel.due_date,
