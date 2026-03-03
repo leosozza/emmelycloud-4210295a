@@ -3,9 +3,10 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { ChannelIcon } from "./ChannelIcon";
-import { Phone, Mail, Instagram, Link2, User, UserPlus, ChevronDown } from "lucide-react";
+import { Phone, Mail, Instagram, Link2, User, UserPlus, ChevronDown, Sparkles, Loader2, FileSearch } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useState } from "react";
+import { useSummarizeConversation, useExtractLeadData } from "@/hooks/useAiAutomation";
 
 type Channel = "whatsapp" | "instagram" | "email" | "webchat";
 
@@ -41,6 +42,9 @@ function CollapsibleSection({ title, defaultOpen = true, children }: { title: st
 
 export function ContactProfile({ conversation }: ContactProfileProps) {
   const navigate = useNavigate();
+  const summarize = useSummarizeConversation();
+  const extractData = useExtractLeadData();
+  const [summary, setSummary] = useState<string | null>(null);
 
   if (!conversation) {
     return (
@@ -149,6 +153,37 @@ export function ContactProfile({ conversation }: ContactProfileProps) {
           >
             <UserPlus className="h-3 w-3 mr-1" /> Criar Lead a partir desta conversa
           </Button>
+        </CollapsibleSection>
+
+        <CollapsibleSection title="IA">
+          <div className="space-y-2">
+            <Button
+              variant="outline"
+              size="sm"
+              className="w-full text-xs"
+              disabled={summarize.isPending}
+              onClick={async () => {
+                const result = await summarize.mutateAsync(conversation.id);
+                if (result?.summary) setSummary(result.summary);
+              }}
+            >
+              {summarize.isPending ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <Sparkles className="h-3 w-3 mr-1" />}
+              Resumir Conversa
+            </Button>
+            {summary && (
+              <p className="text-xs text-muted-foreground bg-muted/50 rounded p-2">{summary}</p>
+            )}
+            <Button
+              variant="outline"
+              size="sm"
+              className="w-full text-xs"
+              disabled={extractData.isPending}
+              onClick={() => extractData.mutate(conversation.id)}
+            >
+              {extractData.isPending ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <FileSearch className="h-3 w-3 mr-1" />}
+              Extrair Dados do Lead
+            </Button>
+          </div>
         </CollapsibleSection>
       </div>
     </div>
