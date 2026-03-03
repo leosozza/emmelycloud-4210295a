@@ -1,71 +1,72 @@
 
 
-## Sincronização Bidirecional Emmely ↔ Bitrix24
+## Sistema Anti-Loop para Integração Bitrix24
 
-### Resumo
-Implementar sincronização bidirecional de leads (e preparar para deals/contactos) entre o Emmely e o Bitrix24, com prevenção de loops e tracking via `bitrix24_id`.
+### Análise do Estado Atual
+- A tabela `leads` já tem `sync_source` (text, default 'emmely') — adicionado na migração anterior
+- A tabela `messages` **não** tem `sync_source`
+- Deduplicação por `external_id` já existe parcialmente em `instagram-webhook` e `whatsapp-webhook`, mas não em `bitrix24-worker`
+- **Não existem** funções `callbell-webhook` ou `callbell-send` — o projeto usa `whatsapp-webhook`, `wuzapi-webhook`, `instagram-webhook` (inbound) e `message-send`, `instagram-send`, `bitrix24-send` (outbound)
 
-### Componentes
+### Plano de Implementação
 
-#### 1. Migração DB — Adicionar campos de tracking à tabela `leads`
+#### 1. Criar tabela `sync_dedup_cache`
 ```sql
-ALTER TABLE public.leads 
-  ADD COLUMN bitrix24_id text,
-  ADD COLUMN sync_source text DEFAULT 'emmely';
+CREATE TABLE public.sync_dedup_cache (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  entity_type text NOT NULL,        -- 'message', 'lead', 'deal'
+  entity_id text NOT NULL,          -- ID interno (Emmely)
+  external_id text NOT NULL,        -- ID externo (Bitrix24/WhatsApp)
+  source text NOT NULL,             -- 'emmely' ou 'bitrix24'
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX idx_dedup_entity_external ON public.sync_dedup_cache(entity_type, external_id, source);
+CREATE INDEX idx_dedup_created_at ON public.sync_dedup_cache(created_at);
+
+ALTER TABLE public.sync_dedup_cache ENABLE ROW LEVEL SECURITY;
+
+-- Service role only
+CREATE POLICY "Service role full access sync_dedup_cache"
+  ON public.sync_dedup_cache FOR ALL
+  USING (true) WITH CHECK (true);
 ```
-- `bitrix24_id`: ID do lead correspondente no Bitrix24
-- `sync_source`: `'emmely'` ou `'bitrix24'` — usado para prevenir loops
 
-#### 2. Nova Edge Function `bitrix24-sync`
-Responsável pela sincronização Emmely → Bitrix24:
-- **Endpoint POST** recebe `{ action: 'lead_create' | 'lead_update', lead_id, data }`
-- Busca integração ativa em `bitrix24_integrations`, renova token via `ensureValidToken` (padrão já existente no worker)
-- Mapeamento de campos:
-  ```text
-  name        → TITLE
-  phone       → PHONE[0].VALUE
-  email       → EMAIL[0].VALUE
-  legal_area  → UF_LEGAL_AREA (campo custom)
-  funnel_stage → STATUS_ID
-  ```
-- Chama `crm.lead.add` (se sem `bitrix24_id`) ou `crm.lead.update` (se já tem)
-- Guarda o `bitrix24_id` retornado na tabela `leads`
-- Marca `sync_source = 'emmely'` para o worker ignorar o echo
-
-#### 3. Expandir `bitrix24-events` — Novos eventos CRM
-Adicionar ao `SUPPORTED_EVENTS`:
-- `ONCRMLEAD ADD`, `ONCRMLEAD UPDATE`
-
-#### 4. Expandir `bitrix24-worker` — Handlers de CRM inbound
-Novo handler `handleLeadEvent`:
-- Recebe payload do evento `ONCRMLEAD*`
-- Busca dados completos via `crm.lead.get`
-- Verifica se já existe lead no Emmely com esse `bitrix24_id`
-  - Se existe e `sync_source = 'emmely'` → ignora (anti-loop)
-  - Se existe → atualiza dados
-  - Se não existe → cria novo lead com `sync_source = 'bitrix24'`
-- Mapeia campos inverso (TITLE→name, PHONE→phone, etc.)
-
-#### 5. Integrar chamada sync no frontend (Leads.tsx)
-Após `saveMutation.onSuccess`, fazer fire-and-forget `supabase.functions.invoke('bitrix24-sync', ...)` para sincronizar o lead criado/editado com o Bitrix24.
-
-#### 6. Config
-Adicionar `[functions.bitrix24-sync] verify_jwt = false` ao `config.toml`.
-
-### Prevenção de Loops
-```text
-Emmely cria lead → sync_source='emmely' → chama bitrix24-sync → crm.lead.add
-Bitrix24 dispara ONCRMLEAD ADD → worker recebe → verifica bitrix24_id existe + sync_source='emmely' → IGNORA
+#### 2. Adicionar `sync_source` à tabela `messages`
+```sql
+ALTER TABLE public.messages ADD COLUMN IF NOT EXISTS sync_source text;
 ```
-Após processar um evento inbound, o worker reseta `sync_source` para `null`, permitindo futuras edições manuais.
 
-### Ficheiros a criar/modificar
+#### 3. Edge function de limpeza TTL (cron-style cleanup)
+Adicionar lógica de cleanup no `bitrix24-worker` — antes de processar eventos, limpar entradas com mais de 5 minutos:
+```sql
+DELETE FROM sync_dedup_cache WHERE created_at < now() - interval '5 minutes';
+```
+
+#### 4. Modificar `bitrix24-worker` — dedup no `handleConnectorMessage`
+Antes de inserir/reencaminhar mensagem, verificar no `sync_dedup_cache`:
+- Se `external_id` já existe com `source='emmely'` → é eco do envio → ignorar
+- Ao processar mensagem inbound, registar no cache com `source='bitrix24'`
+
+#### 5. Modificar `bitrix24-send` — marcar mensagens enviadas
+Após enviar mensagem ao Bitrix24, inserir no `sync_dedup_cache`:
+```js
+{ entity_type: 'message', entity_id: conversationId, external_id: messageImId, source: 'emmely' }
+```
+
+#### 6. Modificar `bitrix24-events` — dedup de eventos CRM
+Antes de enfileirar, verificar se o evento já foi processado recentemente (mesmo `event_type` + `member_id` + entity ID no cache).
+
+#### 7. Reforçar dedup existente em `whatsapp-webhook` e `wuzapi-webhook`
+Já verificam `external_id` na tabela `messages`. Adicionar também check no `sync_dedup_cache` para mensagens enviadas pelo Emmely.
+
+### Ficheiros a Criar/Modificar
+
 | Ficheiro | Ação |
 |---|---|
-| Migration SQL | Criar — `bitrix24_id` e `sync_source` na tabela `leads` |
-| `supabase/functions/bitrix24-sync/index.ts` | Criar — Emmely→Bitrix24 |
-| `supabase/functions/bitrix24-events/index.ts` | Editar — adicionar eventos ONCRMLEAD* |
-| `supabase/functions/bitrix24-worker/index.ts` | Editar — handler `handleLeadEvent` |
-| `supabase/config.toml` | Editar — adicionar `bitrix24-sync` |
-| `src/pages/Leads.tsx` | Editar — trigger sync após save |
+| Migration SQL | Criar — tabela `sync_dedup_cache` + coluna `sync_source` em `messages` |
+| `supabase/functions/bitrix24-worker/index.ts` | Editar — dedup em `handleConnectorMessage` + cleanup TTL |
+| `supabase/functions/bitrix24-send/index.ts` | Editar — registar no cache após envio |
+| `supabase/functions/bitrix24-events/index.ts` | Editar — dedup de eventos CRM antes de enfileirar |
+| `supabase/functions/message-send/index.ts` | Editar — registar `sync_source` nas mensagens outbound |
 
