@@ -154,7 +154,7 @@ const defaultPhases: RoadmapPhase[] = [
     ],
   },
   {
-    title: "📅 Próximas Etapas",
+    title: "Próximas Etapas",
     icon: <Calendar className="h-5 w-5 text-warning" />,
     modules: [
       { name: "Integração Telefonia VoIP", description: "SIP trunking para receber/fazer chamadas reais", progress: 0, status: "por_iniciar",
@@ -202,7 +202,7 @@ const statusConfig: Record<ModuleStatus, { label: string; variant: "default" | "
 const phaseOptions: { value: string; label: string }[] = [
   { value: "Concluído", label: "Concluído" },
   { value: "Em Progresso", label: "Em Progresso" },
-  { value: "📅 Próximas Etapas", label: "📅 Próximas Etapas" },
+  { value: "Próximas Etapas", label: "Próximas Etapas" },
 ];
 
 export default function RoadmapPage() {
@@ -223,7 +223,7 @@ export default function RoadmapPage() {
     status: "por_iniciar" as ModuleStatus,
     priority: "media" as ModulePriority,
     progress: 0,
-    phase: "📅 Próximas Etapas",
+    phase: "Próximas Etapas",
   });
 
   const saveAndSetCustom = (modules: (RoadmapModule & { phase: string })[]) => {
@@ -265,7 +265,7 @@ export default function RoadmapPage() {
     };
     saveAndSetCustom([...customModules, entry]);
     setShowAddDialog(false);
-    setNewModule({ name: "", description: "", details: "", prompt: "", status: "por_iniciar", priority: "media", progress: 0, phase: "📅 Próximas Etapas" });
+    setNewModule({ name: "", description: "", details: "", prompt: "", status: "por_iniciar", priority: "media", progress: 0, phase: "Próximas Etapas" });
     toast.success(`Módulo "${entry.name}" adicionado ao roadmap.`);
   };
 
