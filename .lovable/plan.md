@@ -1,34 +1,29 @@
 
 
-## Métodos de Pagamento por Região no Stripe
+## Plano: Testar Fluxo de Cobrança — Deal 8901
 
-### Problema Atual
-A função `createStripePayment` em `payment-create/index.ts` usa sempre a mesma lista fixa de métodos de pagamento (`card, sepa_debit, multibanco, mb_way, ideal, bancontact, sofort, klarna, link`), independentemente da região. O mesmo acontece em `bitrix24-payment-handler/index.ts`.
+O objetivo é simular o fluxo completo do robot `emmely_create_charge` para o deal 8901, com **3 parcelas**, gateway **direto** (crediário próprio), e depois ajustar os status para cenário de teste.
 
-Quando o robot escolhe **Stripe PT**, deve aceitar métodos portugueses. Quando escolhe **Stripe BR**, métodos brasileiros.
+### 1. Criar 3 parcelas via `payment-create`
+Chamar a edge function 3 vezes com `force_gateway: "direto"`, simulando o que o robot faz:
 
-### Plano
+| Parcela | Valor | Vencimento | Descrição |
+|---------|-------|------------|-----------|
+| 1/3 | 333.33 EUR | 2026-04-03 | Parcela 1/3 - Deal 8901 |
+| 2/3 | 333.33 EUR | 2026-05-03 | Parcela 2/3 - Deal 8901 |
+| 3/3 | 333.34 EUR | 2026-06-03 | Parcela 3/3 - Deal 8901 |
 
-**1. Alterar `createStripePayment` em `payment-create/index.ts`**
-- Adicionar parâmetro `region?: "pt" | "br" | null`
-- Selecionar métodos de pagamento com base na região:
+Cada chamada incluirá metadata com `bitrix_deal_id: "8901"` e `installment_group_id` compartilhado.
 
-```text
-stripe_pt → card, multibanco, mb_way, sepa_debit, link
-stripe_br → card, boleto, pix, link
-fallback  → card, sepa_debit, multibanco, mb_way, link (actual behavior)
-```
+### 2. Ajustar status das parcelas
+Após criação, usar `payment-create` (PATCH) para:
+- **Parcela 1**: status `confirmed` (paga)
+- **Parcela 2**: manter `pending` + vencimento no passado (atrasada)
+- **Parcela 3**: manter `pending` + vencimento futuro (em aberto)
 
-- Passar `stripeRegion` na chamada: `createStripePayment(stripeKey, amount, currency, email, description, returnUrl, stripeRegion)`
+### 3. Verificar na página Financeiro
+Confirmar que as 3 transações aparecem corretamente com os status esperados.
 
-**2. Alterar `bitrix24-payment-handler/index.ts`**
-- Aplicar a mesma lógica regional na secção Stripe (linhas ~170-220)
-- Métodos PT: `card, multibanco, mb_way, sepa_debit, link`
-- Métodos BR: `card, boleto, pix, link`
-
-### Ficheiros a Modificar
-| Ficheiro | Alteração |
-|---|---|
-| `supabase/functions/payment-create/index.ts` | Adicionar parâmetro `region` a `createStripePayment`, lógica de métodos por região |
-| `supabase/functions/bitrix24-payment-handler/index.ts` | Métodos de pagamento regionalizados na secção Stripe |
+### Execução
+Tudo via chamadas directas às edge functions — sem alterações de código.
 
