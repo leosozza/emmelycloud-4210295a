@@ -782,7 +782,11 @@ export type Database = {
           id: string
           notes: string | null
           proposal_id: string
+          sign_token: string | null
           signed_at: string | null
+          signer_email: string | null
+          signer_name: string | null
+          signer_phone: string | null
           starts_at: string | null
           status: Database["public"]["Enums"]["contract_status"]
           updated_at: string
@@ -795,7 +799,11 @@ export type Database = {
           id?: string
           notes?: string | null
           proposal_id: string
+          sign_token?: string | null
           signed_at?: string | null
+          signer_email?: string | null
+          signer_name?: string | null
+          signer_phone?: string | null
           starts_at?: string | null
           status?: Database["public"]["Enums"]["contract_status"]
           updated_at?: string
@@ -808,7 +816,11 @@ export type Database = {
           id?: string
           notes?: string | null
           proposal_id?: string
+          sign_token?: string | null
           signed_at?: string | null
+          signer_email?: string | null
+          signer_name?: string | null
+          signer_phone?: string | null
           starts_at?: string | null
           status?: Database["public"]["Enums"]["contract_status"]
           updated_at?: string
@@ -903,6 +915,68 @@ export type Database = {
             columns: ["client_id"]
             isOneToOne: false
             referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      digital_signatures: {
+        Row: {
+          contract_id: string
+          created_at: string
+          device_info: Json | null
+          evidence_hash: string | null
+          geolocation: Json | null
+          id: string
+          ip_address: string | null
+          signature_image_url: string | null
+          signature_method: string
+          signed_at: string
+          signer_document: string | null
+          signer_email: string | null
+          signer_name: string
+          signer_phone: string | null
+          user_agent: string | null
+        }
+        Insert: {
+          contract_id: string
+          created_at?: string
+          device_info?: Json | null
+          evidence_hash?: string | null
+          geolocation?: Json | null
+          id?: string
+          ip_address?: string | null
+          signature_image_url?: string | null
+          signature_method?: string
+          signed_at?: string
+          signer_document?: string | null
+          signer_email?: string | null
+          signer_name: string
+          signer_phone?: string | null
+          user_agent?: string | null
+        }
+        Update: {
+          contract_id?: string
+          created_at?: string
+          device_info?: Json | null
+          evidence_hash?: string | null
+          geolocation?: Json | null
+          id?: string
+          ip_address?: string | null
+          signature_image_url?: string | null
+          signature_method?: string
+          signed_at?: string
+          signer_document?: string | null
+          signer_email?: string | null
+          signer_name?: string
+          signer_phone?: string | null
+          user_agent?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "digital_signatures_contract_id_fkey"
+            columns: ["contract_id"]
+            isOneToOne: false
+            referencedRelation: "contracts"
             referencedColumns: ["id"]
           },
         ]
