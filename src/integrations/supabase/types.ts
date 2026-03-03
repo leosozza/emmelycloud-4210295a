@@ -707,6 +707,72 @@ export type Database = {
         }
         Relationships: []
       }
+      companies: {
+        Row: {
+          address: string | null
+          asaas_credential_key: string | null
+          city: string | null
+          country: string | null
+          created_at: string | null
+          currency: string | null
+          default_gateway: string | null
+          document_number: string | null
+          email: string | null
+          id: string
+          is_active: boolean | null
+          legal_name: string | null
+          logo_url: string | null
+          name: string
+          phone: string | null
+          postal_code: string | null
+          state: string | null
+          stripe_credential_key: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          address?: string | null
+          asaas_credential_key?: string | null
+          city?: string | null
+          country?: string | null
+          created_at?: string | null
+          currency?: string | null
+          default_gateway?: string | null
+          document_number?: string | null
+          email?: string | null
+          id?: string
+          is_active?: boolean | null
+          legal_name?: string | null
+          logo_url?: string | null
+          name: string
+          phone?: string | null
+          postal_code?: string | null
+          state?: string | null
+          stripe_credential_key?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          address?: string | null
+          asaas_credential_key?: string | null
+          city?: string | null
+          country?: string | null
+          created_at?: string | null
+          currency?: string | null
+          default_gateway?: string | null
+          document_number?: string | null
+          email?: string | null
+          id?: string
+          is_active?: boolean | null
+          legal_name?: string | null
+          logo_url?: string | null
+          name?: string
+          phone?: string | null
+          postal_code?: string | null
+          state?: string | null
+          stripe_credential_key?: string | null
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
       contracts: {
         Row: {
           case_id: string | null
@@ -1329,6 +1395,7 @@ export type Database = {
         Row: {
           amount: number
           client_id: string | null
+          company_id: string | null
           contract_id: string | null
           created_at: string
           currency: string
@@ -1348,6 +1415,7 @@ export type Database = {
         Insert: {
           amount?: number
           client_id?: string | null
+          company_id?: string | null
           contract_id?: string | null
           created_at?: string
           currency?: string
@@ -1367,6 +1435,7 @@ export type Database = {
         Update: {
           amount?: number
           client_id?: string | null
+          company_id?: string | null
           contract_id?: string | null
           created_at?: string
           currency?: string
@@ -1389,6 +1458,13 @@ export type Database = {
             columns: ["client_id"]
             isOneToOne: false
             referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "payment_transactions_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
             referencedColumns: ["id"]
           },
           {

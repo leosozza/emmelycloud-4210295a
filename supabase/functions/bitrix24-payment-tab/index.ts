@@ -83,6 +83,7 @@ interface InstallmentData {
   is_down_payment?: boolean;
   invoice_id?: number;
   is_direct?: boolean;
+  company_name?: string;
 }
 
 function getStatusColor(status: string): { bg: string; bgDark: string; text: string; textDark: string; label: string } {
@@ -131,6 +132,7 @@ function renderPaymentTab(opts: {
           </div>
           <span class="b24-badge" style="--badge-bg:${s.bg};--badge-bg-dark:${s.bgDark};--badge-text:${s.text};--badge-text-dark:${s.textDark}">${s.label}</span>
         </div>
+        ${inst.company_name ? `<div class="b24-item-meta"><span style="font-weight:600">🏢 ${inst.company_name}</span></div>` : ""}
         <div class="b24-item-meta">
           <span>Vence: ${formatDate(inst.due_date)}</span>
           ${inst.paid_at ? `<span>Pago: ${formatDate(inst.paid_at)}</span>` : ""}
@@ -938,6 +940,16 @@ Deno.serve(async (req) => {
       totalValue = dealTransactions.reduce((s: number, tx: any) => s + (tx.amount || 0), 0);
       currency = dealTransactions[0].currency || dealCurrency;
 
+      // Fetch company names for transactions with company_id
+      const companyIds = [...new Set(dealTransactions.filter((tx: any) => tx.company_id).map((tx: any) => tx.company_id))];
+      let companyMap: Record<string, string> = {};
+      if (companyIds.length > 0) {
+        const { data: companies } = await supabase.from("companies").select("id, name").in("id", companyIds);
+        if (companies) {
+          for (const c of companies) companyMap[c.id] = c.name;
+        }
+      }
+
       installments = dealTransactions.map((tx: any, idx: number) => {
         let status = "pendente";
         if (tx.status === "paid" || tx.status === "confirmed" || tx.status === "succeeded") status = "paga";
@@ -966,6 +978,7 @@ Deno.serve(async (req) => {
           is_down_payment: isDown,
           invoice_id: meta.bitrix_old_invoice_id || meta.bitrix_invoice_id || null,
           is_direct: tx.gateway === "direto" || tx.payment_method === "parcelado_direto",
+          company_name: tx.company_id ? (companyMap[tx.company_id] || meta.company_name || "") : (meta.company_name || ""),
         };
       });
 

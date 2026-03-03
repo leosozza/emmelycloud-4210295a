@@ -196,14 +196,54 @@ async function handleCreateCharge(
   const firstDueDate = properties.first_due_date || properties.FIRST_DUE_DATE || "";
   const dealId = properties.deal_id || properties.DEAL_ID || "";
   const contactId = properties.contact_id || properties.CONTACT_ID || "";
+  const companyId = properties.company_id || properties.COMPANY_ID || "";
+
+  const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+  const supabase = createClient(supabaseUrl, serviceKey);
 
   if (!totalAmount || totalAmount <= 0) {
     return { charge_id: "", charge_status: "error", payment_url: "", pix_code: "", gateway_used: "", invoices_created: "0", error: "amount must be > 0" };
   }
 
+  // Lookup company credentials if company_id provided
+  let companyCredentialProvider = "";
+  let companyCredentialKey = "";
+  let companyGateway = gateway;
+  let companyName = "";
+
+  if (companyId) {
+    try {
+      const { data: company } = await supabase
+        .from("companies")
+        .select("*")
+        .eq("id", companyId)
+        .maybeSingle();
+
+      if (company) {
+        companyName = company.name || "";
+        // Use company's default gateway if robot sends "auto"
+        if (companyGateway === "auto" && company.default_gateway && company.default_gateway !== "auto") {
+          companyGateway = company.default_gateway;
+        }
+        // Determine credential override based on gateway
+        if (companyGateway === "asaas" || companyGateway === "stripe_br" && company.asaas_credential_key) {
+          // For asaas, credential_key stores the provider name in integration_credentials
+          companyCredentialProvider = company.asaas_credential_key || "";
+          companyCredentialKey = "ASAAS_API_KEY";
+        } else if (company.stripe_credential_key) {
+          companyCredentialProvider = company.stripe_credential_key || "";
+          companyCredentialKey = "STRIPE_SECRET_KEY";
+        }
+        console.log(`[ROBOT-HANDLER] Company: ${companyName}, gateway: ${companyGateway}, provider: ${companyCredentialProvider}`);
+      }
+    } catch (e) {
+      console.error("[ROBOT-HANDLER] Company lookup error:", e);
+    }
+  }
+
   let country = currency === "BRL" ? "Brasil" : "Portugal";
-  if (gateway === "stripe") country = "Portugal";
-  else if (gateway === "asaas") country = "Brasil";
+  if (companyGateway === "stripe" || companyGateway === "stripe_pt") country = "Portugal";
+  else if (companyGateway === "asaas" || companyGateway === "stripe_br") country = "Brasil";
 
   try {
     // Calculate installment plan
@@ -241,31 +281,41 @@ async function handleCreateCharge(
       const label = parcel.is_down ? "Entrada" : `Parcela ${parcel.number}/${numInstallments}`;
 
       // 1. Create payment transaction
+      const paymentBody: Record<string, any> = {
+        amount: parcel.amount,
+        currency,
+        payment_method: paymentMethod,
+        customer_data: {
+          name: customerName,
+          email: customerEmail,
+          cpf_cnpj: customerCpf || undefined,
+          country,
+        },
+        description: `${description} (${label})`,
+        due_date: parcel.due_date,
+        installment_number: parcel.number,
+        total_installments: totalCount,
+        installment_group_id: groupId,
+        is_down_payment: parcel.is_down,
+        force_gateway: companyGateway !== "auto" ? companyGateway : undefined,
+        company_id: companyId || undefined,
+        metadata: {
+          bitrix_deal_id: dealId,
+          bitrix_contact_id: contactId,
+          source: "bitrix24_robot",
+          company_name: companyName || undefined,
+        },
+      };
+      // Add credential overrides if company has them
+      if (companyCredentialProvider && companyCredentialKey) {
+        paymentBody.credential_provider = companyCredentialProvider;
+        paymentBody.credential_key = companyCredentialKey;
+      }
+
       const res = await fetch(`${supabaseUrl}/functions/v1/payment-create`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          amount: parcel.amount,
-          currency,
-          payment_method: paymentMethod,
-          customer_data: {
-            name: customerName,
-            email: customerEmail,
-            cpf_cnpj: customerCpf || undefined,
-            country,
-          },
-          description: `${description} (${label})`,
-          due_date: parcel.due_date,
-          installment_number: parcel.number,
-          total_installments: totalCount,
-          installment_group_id: groupId,
-          is_down_payment: parcel.is_down,
-          metadata: {
-            bitrix_deal_id: dealId,
-            bitrix_contact_id: contactId,
-            source: "bitrix24_robot",
-          },
-        }),
+        body: JSON.stringify(paymentBody),
       });
       const data = await res.json();
       const tx = data.transaction || {};
