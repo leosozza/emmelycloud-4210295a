@@ -124,6 +124,7 @@ const defaultPhases: RoadmapPhase[] = [
       { name: "Assinatura Digital de Contratos", description: "Assinatura eletrónica com captura de IP, selfie, geolocalização e certificado PDF", progress: 100, status: "concluido" },
       { name: "Cobranças Automáticas", description: "Envio automático de links de pagamento via WhatsApp com CRON diário e botão manual", progress: 100, status: "concluido" },
       { name: "Processamento PDF/DOCX", description: "Extração de texto de ficheiros PDF/DOCX para base de conhecimento via parse-document", progress: 100, status: "concluido" },
+      { name: "Notificações em Tempo Real", description: "Alertas in-app com realtime, triggers para leads, mensagens, pagamentos e SLA", progress: 100, status: "concluido" },
     ],
   },
   {
@@ -179,10 +180,6 @@ const defaultPhases: RoadmapPhase[] = [
       { name: "Relatórios Avançados", description: "Benchmarks, previsão de faturamento, exportações", progress: 0, status: "por_iniciar",
         details: "Módulo de relatórios avançados com análises de performance, benchmarks e exportação de dados.",
         prompt: "Implementar módulo de relatórios avançados na página /relatorios. 1) Relatório de Leads: funil de conversão (leads → triagem → proposta → contrato → fechado) com taxas de conversão por etapa, tempo médio em cada etapa, origem dos leads (pie chart). 2) Relatório Financeiro: receita por área jurídica, por advogado, por mês; comparação período anterior; projeção. 3) Relatório de Atendimento: volume de conversas por canal, tempo médio de resposta, conversas por agente, satisfação. 4) Relatório de Performance: leads por comercial, casos por advogado, valores por período. 5) Filtros globais: período, área jurídica, responsável. 6) Exportação CSV e PDF para cada relatório. 7) Usar recharts para gráficos interativos."
-      },
-      { name: "Notificações em Tempo Real", description: "Push notifications, alertas in-app, email", progress: 0, status: "por_iniciar",
-        details: "Sistema de notificações em tempo real para novos leads, mensagens, pagamentos e alertas do sistema.",
-        prompt: "Implementar sistema de notificações em tempo real. 1) Criar tabela 'notifications' com: id, user_id, type (text), title, message, entity_type, entity_id, read_at, created_at. RLS: users read own. 2) Usar Supabase Realtime (ALTER PUBLICATION supabase_realtime ADD TABLE notifications) para push em tempo real. 3) Criar componente NotificationCenter no AppHeader: ícone de sino com badge de contagem, dropdown com lista de notificações, marcar como lida ao clicar. 4) Criar triggers/funções que inserem notificações para: novo lead (notifica comerciais), nova mensagem (notifica atendente), pagamento recebido (notifica financeiro), SLA expirando (notifica responsável). 5) Toasts sonner para notificações em tempo real quando o utilizador está online."
       },
       { name: "Multi-escritórios (SaaS)", description: "Suporte multi-tenant para vários escritórios", progress: 0, status: "por_iniciar",
         details: "Transformar o Emmely Cloud em SaaS multi-tenant, permitindo que múltiplos escritórios usem a plataforma de forma isolada.",

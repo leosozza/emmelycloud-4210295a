@@ -1,4 +1,4 @@
-import { Search, Bell, LogOut, Scale } from "lucide-react";
+import { Search, LogOut, Scale } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -12,7 +12,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Badge } from "@/components/ui/badge";
+import { NotificationCenter } from "@/components/NotificationCenter";
 
 export function AppHeader({ onSearchClick }: { onSearchClick?: () => void }) {
   const { user } = useAuth();
@@ -67,12 +67,7 @@ export function AppHeader({ onSearchClick }: { onSearchClick?: () => void }) {
             {locale === "pt-BR" ? "🇧🇷" : "🇵🇹"}
           </Button>
 
-          <Button variant="ghost" size="icon" className="relative rounded-full">
-            <Bell className="h-4 w-4" />
-            <Badge className="absolute -top-1 -right-1 h-4 w-4 p-0 flex items-center justify-center text-[10px]">
-              3
-            </Badge>
-          </Button>
+          <NotificationCenter />
 
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
