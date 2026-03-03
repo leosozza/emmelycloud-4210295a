@@ -58,7 +58,7 @@ function saveCustomModules(modules: RoadmapModule[]) {
 
 const defaultPhases: RoadmapPhase[] = [
   {
-    title: "✅ Concluído",
+    title: "Concluído",
     icon: <CheckCircle2 className="h-5 w-5 text-success" />,
     modules: [
       { name: "Design System", description: "Cores, fontes, tokens semânticos, dark/light mode", progress: 100, status: "concluido",
@@ -200,7 +200,7 @@ const statusConfig: Record<ModuleStatus, { label: string; variant: "default" | "
 };
 
 const phaseOptions: { value: string; label: string }[] = [
-  { value: "✅ Concluído", label: "✅ Concluído" },
+  { value: "Concluído", label: "Concluído" },
   { value: "🔧 Em Progresso", label: "🔧 Em Progresso" },
   { value: "📅 Próximas Etapas", label: "📅 Próximas Etapas" },
 ];
