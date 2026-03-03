@@ -1,52 +1,34 @@
 
 
-## Cobranças Automáticas — Plano de Implementação
+## Métodos de Pagamento por Região no Stripe
 
-### 1. Nova Edge Function `payment-reminder`
-Função que busca `financial_records` com `status = 'pendente'` e `due_date` nos próximos 3 dias, no dia, ou vencidos. Para cada parcela:
-- Busca o contrato → proposta → caso → lead → `conversation_id` e dados do cliente
-- Chama `payment-create` para gerar link de pagamento (se ainda não existe `payment_transaction` para aquele `financial_record_id`)
-- Monta mensagem personalizada com nome, valor, vencimento e link
-- Envia via `message-send` na conversa do cliente
-- Registra `metadata.reminder_sent_at` na transaction para evitar reenvios
+### Problema Atual
+A função `createStripePayment` em `payment-create/index.ts` usa sempre a mesma lista fixa de métodos de pagamento (`card, sepa_debit, multibanco, mb_way, ideal, bancontact, sofort, klarna, link`), independentemente da região. O mesmo acontece em `bitrix24-payment-handler/index.ts`.
 
-Suporta dois modos:
-- **POST `{ mode: "cron" }`**: processa todos os pendentes (chamada pelo CRON)
-- **POST `{ mode: "manual", financial_record_id }`**: envia cobrança manual de uma parcela específica
+Quando o robot escolhe **Stripe PT**, deve aceitar métodos portugueses. Quando escolhe **Stripe BR**, métodos brasileiros.
 
-### 2. CRON Job via pg_cron + pg_net
-Executar SQL (via insert tool, não migration) para criar job diário às 9h:
-```sql
-SELECT cron.schedule('payment-reminder-daily', '0 9 * * *', $$
-  SELECT net.http_post(
-    url:='https://qohnsluvhyziovfynzlu.supabase.co/functions/v1/payment-reminder',
-    headers:='{"Content-Type":"application/json","Authorization":"Bearer <anon_key>"}'::jsonb,
-    body:='{"mode":"cron"}'::jsonb
-  ) as request_id;
-$$);
+### Plano
+
+**1. Alterar `createStripePayment` em `payment-create/index.ts`**
+- Adicionar parâmetro `region?: "pt" | "br" | null`
+- Selecionar métodos de pagamento com base na região:
+
+```text
+stripe_pt → card, multibanco, mb_way, sepa_debit, link
+stripe_br → card, boleto, pix, link
+fallback  → card, sepa_debit, multibanco, mb_way, link (actual behavior)
 ```
 
-### 3. Config
-Adicionar `[functions.payment-reminder] verify_jwt = false` ao `config.toml`.
+- Passar `stripeRegion` na chamada: `createStripePayment(stripeKey, amount, currency, email, description, returnUrl, stripeRegion)`
 
-### 4. Frontend — Página Financeiro
-- Adicionar coluna "Ações" na tabela com botão "Enviar Cobrança" por parcela pendente
-- Botão chama `supabase.functions.invoke('payment-reminder', { body: { mode: 'manual', financial_record_id: tx.financial_record_id } })`
-- Novo KPI card "Cobranças Enviadas" que conta `payment_transactions` com `metadata->reminder_sent_at IS NOT NULL` no período
+**2. Alterar `bitrix24-payment-handler/index.ts`**
+- Aplicar a mesma lógica regional na secção Stripe (linhas ~170-220)
+- Métodos PT: `card, multibanco, mb_way, sepa_debit, link`
+- Métodos BR: `card, boleto, pix, link`
 
-### 5. Habilitar extensões pg_cron e pg_net
-Migração para garantir que as extensões estão ativas:
-```sql
-CREATE EXTENSION IF NOT EXISTS pg_cron WITH SCHEMA pg_catalog;
-CREATE EXTENSION IF NOT EXISTS pg_net WITH SCHEMA extensions;
-```
-
-### Ficheiros a Criar/Modificar
-| Ficheiro | Ação |
+### Ficheiros a Modificar
+| Ficheiro | Alteração |
 |---|---|
-| `supabase/functions/payment-reminder/index.ts` | Criar |
-| `supabase/config.toml` | Editar — adicionar payment-reminder |
-| `src/pages/Financeiro.tsx` | Editar — botão manual + KPI cobranças |
-| Migration SQL | Extensões pg_cron + pg_net |
-| Insert SQL | CRON job schedule |
+| `supabase/functions/payment-create/index.ts` | Adicionar parâmetro `region` a `createStripePayment`, lógica de métodos por região |
+| `supabase/functions/bitrix24-payment-handler/index.ts` | Métodos de pagamento regionalizados na secção Stripe |
 
