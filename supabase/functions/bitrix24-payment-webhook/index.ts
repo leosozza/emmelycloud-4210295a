@@ -305,6 +305,7 @@ Deno.serve(async (req) => {
             currencyId: currency,
             isManualOpportunity: "Y",
             parentId2: parseInt(String(dealId)),
+            contactId: contactId ? parseInt(String(contactId)) : undefined,
             begindate: new Date().toISOString().split("T")[0],
             closedate: parcel.due_date,
             comments: `Fatura gerada automaticamente pelo Emmely Pay. ${label}. Grupo: ${groupId}`,
