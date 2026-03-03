@@ -9,7 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { SignatureCanvas } from "@/components/contratos/SignatureCanvas";
 import { SelfieCapture } from "@/components/contratos/SelfieCapture";
-import { FileSignature, Pen, Camera, Shield, CheckCircle2, Loader2, ExternalLink } from "lucide-react";
+import { FileSignature, Pen, Camera, Shield, CheckCircle2, Loader2, ExternalLink, Download } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
@@ -102,6 +102,10 @@ const SignContract = () => {
   // Already signed
   if (data.signature || result) {
     const sig = result || data.signature!;
+    const downloadCertificate = () => {
+      const params = token ? `token=${token}` : `contract_id=${data.contract.id}`;
+      window.open(`${SUPABASE_URL}/functions/v1/signature-certificate?${params}&format=html`, "_blank");
+    };
     return (
       <div className="min-h-screen bg-background p-4 flex items-center justify-center">
         <Card className="max-w-lg w-full">
@@ -117,6 +121,9 @@ const SignContract = () => {
               {"ip_address" in sig && <div><strong>IP:</strong> {sig.ip_address}</div>}
               {"signature_method" in sig && <div><strong>Método:</strong> {sig.signature_method === "draw" ? "Desenho" : sig.signature_method === "selfie" ? "Selfie" : "Aceite por IP"}</div>}
             </div>
+            <Button onClick={downloadCertificate} variant="outline" className="w-full">
+              <Download className="mr-2 h-4 w-4" /> Descarregar Certificado de Prova
+            </Button>
             <p className="text-xs text-muted-foreground">Guarde este hash como comprovativo da assinatura.</p>
           </CardContent>
         </Card>
