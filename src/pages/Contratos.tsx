@@ -10,7 +10,7 @@ import {
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
-import { Plus, Search, Pencil, Trash2, FileSignature, Ban, Link2, Copy } from "lucide-react";
+import { Plus, Search, Pencil, Trash2, FileSignature, Ban, Link2, Copy, Download } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Tables, Constants } from "@/integrations/supabase/types";
 import { ContratoForm } from "@/components/contratos/ContratoForm";
@@ -162,6 +162,11 @@ const ContratosPage = () => {
     toast({ title: "Link copiado", description: "Link de assinatura copiado para a área de transferência" });
   };
 
+  const downloadCertificate = (contractId: string) => {
+    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+    window.open(`${supabaseUrl}/functions/v1/signature-certificate?contract_id=${contractId}&format=html`, "_blank");
+  };
+
   return (
     <div className="space-y-4">
       <PageHeader title="Contratos" description="Gestão de contratos e assinaturas">
@@ -246,6 +251,11 @@ const ContratosPage = () => {
                           <Ban className="h-4 w-4 text-destructive" />
                         </Button>
                       </>
+                    )}
+                    {signaturesMap[c.id] && (
+                      <Button variant="ghost" size="icon" title="Descarregar certificado" onClick={() => downloadCertificate(c.id)}>
+                        <Download className="h-4 w-4 text-primary" />
+                      </Button>
                     )}
                     <Button variant="ghost" size="icon" onClick={() => { setEditingContrato(c); setFormOpen(true); }}>
                       <Pencil className="h-4 w-4" />

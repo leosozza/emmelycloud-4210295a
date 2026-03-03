@@ -119,3 +119,6 @@ verify_jwt = false
 
 [functions.sign-contract]
 verify_jwt = false
+
+[functions.signature-certificate]
+verify_jwt = false
