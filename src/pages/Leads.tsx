@@ -88,11 +88,31 @@ const LeadsPage = () => {
         if (error) throw error;
       }
     },
-    onSuccess: () => {
+    onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: ["leads"] });
       setFormOpen(false);
+      const wasEditing = editingLead;
+      const leadId = wasEditing?.id;
       setEditingLead(null);
-      toast({ title: editingLead ? "Lead atualizado" : "Lead criado" });
+      toast({ title: wasEditing ? "Lead atualizado" : "Lead criado" });
+
+      // Fire-and-forget sync to Bitrix24
+      if (leadId) {
+        supabase.functions.invoke("bitrix24-sync", {
+          body: { action: "lead_update", lead_id: leadId, data: variables },
+        }).catch((e) => console.warn("[SYNC] Bitrix24 sync error:", e));
+      } else {
+        // For new leads, we need to find the just-created lead
+        supabase.from("leads").select("id").eq("name", variables.name)
+          .order("created_at", { ascending: false }).limit(1).single()
+          .then(({ data: newLead }) => {
+            if (newLead) {
+              supabase.functions.invoke("bitrix24-sync", {
+                body: { action: "lead_create", lead_id: newLead.id, data: variables },
+              }).catch((e) => console.warn("[SYNC] Bitrix24 sync error:", e));
+            }
+          });
+      }
     },
     onError: (e: any) => {
       toast({ title: "Erro", description: e.message, variant: "destructive" });

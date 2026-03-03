@@ -122,3 +122,6 @@ verify_jwt = false
 
 [functions.signature-certificate]
 verify_jwt = false
+
+[functions.bitrix24-sync]
+verify_jwt = false

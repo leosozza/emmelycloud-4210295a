@@ -77,6 +77,8 @@ const SUPPORTED_EVENTS = [
   "ONIMBOTWELCOMEMESSAGE",
   "ONIMBOTJOINCHAT",   // Open Lines join event
   "ONCRMDEALUPDATE",   // Deal update — auto-charge on close
+  "ONCRMLEADADD",      // Lead created in Bitrix24
+  "ONCRMLEADUPDATE",   // Lead updated in Bitrix24
 ];
 
 Deno.serve(async (req) => {
