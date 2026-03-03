@@ -100,6 +100,17 @@ Deno.serve(async (req) => {
   try {
     const body = await req.json();
     const dealId = body.deal_id || body.DEAL_ID || body.id || body.ID || "";
+    
+    // Body overrides (allow caller to force values without field mappings)
+    const bodyOverrides = {
+      num_installments: body.num_installments ? parseInt(body.num_installments) : undefined,
+      total_amount: body.total_amount ? parseFloat(body.total_amount) : undefined,
+      down_payment: body.down_payment ? parseFloat(body.down_payment) : undefined,
+      first_due_date: body.first_due_date || undefined,
+      interval_days: body.interval_days ? parseInt(body.interval_days) : undefined,
+      force_gateway: body.force_gateway || undefined,
+      currency: body.currency || undefined,
+    };
 
     if (!dealId) {
       return new Response(JSON.stringify({ error: "deal_id is required" }), {
@@ -150,16 +161,18 @@ Deno.serve(async (req) => {
 
     console.log("[PAYMENT-WEBHOOK] Deal fetched:", deal.TITLE, "| OPPORTUNITY:", deal.OPPORTUNITY);
 
-    // Extract values from mapped fields
-    const totalAmount = parseFloat(deal[amountField] || deal.OPPORTUNITY || "0");
-    const currency = deal[currencyField] || deal.CURRENCY_ID || "EUR";
-    const numInstallments = parseInt(installmentsField ? (deal[installmentsField] || "1") : "1") || 1;
-    const downPayment = parseFloat(downPaymentField ? (deal[downPaymentField] || "0") : "0") || 0;
-    const intervalDays = parseInt(intervalDaysField ? (deal[intervalDaysField] || "30") : "30") || 30;
+    // Extract values from mapped fields (body overrides take priority)
+    const totalAmount = bodyOverrides.total_amount || parseFloat(deal[amountField] || deal.OPPORTUNITY || "0");
+    const currency = bodyOverrides.currency || deal[currencyField] || deal.CURRENCY_ID || "EUR";
+    const numInstallments = bodyOverrides.num_installments || (parseInt(installmentsField ? (deal[installmentsField] || "1") : "1") || 1);
+    const downPayment = bodyOverrides.down_payment ?? (parseFloat(downPaymentField ? (deal[downPaymentField] || "0") : "0") || 0);
+    const intervalDays = bodyOverrides.interval_days || (parseInt(intervalDaysField ? (deal[intervalDaysField] || "30") : "30") || 30);
 
     // First due date
     let firstDueDate: string;
-    if (firstDueDateField && deal[firstDueDateField]) {
+    if (bodyOverrides.first_due_date) {
+      firstDueDate = bodyOverrides.first_due_date;
+    } else if (firstDueDateField && deal[firstDueDateField]) {
       const parsed = new Date(deal[firstDueDateField]);
       firstDueDate = isNaN(parsed.getTime()) ? new Date(Date.now() + intervalDays * 86400000).toISOString().split("T")[0] : parsed.toISOString().split("T")[0];
     } else {
@@ -168,14 +181,17 @@ Deno.serve(async (req) => {
       firstDueDate = d.toISOString().split("T")[0];
     }
 
-    // Gateway
-    const gatewayValue = gatewayField ? (deal[gatewayField] || "").toString().toLowerCase().trim() : "";
-    const gatewayMap: Record<string, string> = {
-      stripe_pt: "stripe_pt", stripe_br: "stripe_br", asaas: "asaas",
-      direto: "direto", financiamento: "direto",
-      "stripe portugal": "stripe_pt", "stripe brasil": "stripe_br",
-    };
-    const forceGateway = gatewayMap[gatewayValue] || gatewayValue || undefined;
+    // Gateway (body override takes priority)
+    let forceGateway = bodyOverrides.force_gateway;
+    if (!forceGateway) {
+      const gatewayValue = gatewayField ? (deal[gatewayField] || "").toString().toLowerCase().trim() : "";
+      const gatewayMap: Record<string, string> = {
+        stripe_pt: "stripe_pt", stripe_br: "stripe_br", asaas: "asaas",
+        direto: "direto", financiamento: "direto",
+        "stripe portugal": "stripe_pt", "stripe brasil": "stripe_br",
+      };
+      forceGateway = gatewayMap[gatewayValue] || gatewayValue || undefined;
+    }
 
     if (totalAmount <= 0) {
       return new Response(JSON.stringify({ error: "Deal amount is 0 or invalid" }), {
@@ -317,19 +333,21 @@ Deno.serve(async (req) => {
     }
 
     // Debug log
-    await supabase.from("bitrix24_debug_logs").insert({
-      integration_id: integration.id,
-      event_type: "payment_webhook_processed",
-      direction: "inbound",
-      payload: {
-        deal_id: dealId,
-        total_amount: totalAmount,
-        num_installments: numInstallments,
-        parcels_created: transactions.length,
-        errors,
-        group_id: groupId,
-      },
-    }).catch(() => {});
+    try {
+      await supabase.from("bitrix24_debug_logs").insert({
+        integration_id: integration.id,
+        event_type: "payment_webhook_processed",
+        direction: "inbound",
+        payload: {
+          deal_id: dealId,
+          total_amount: totalAmount,
+          num_installments: numInstallments,
+          parcels_created: transactions.length,
+          errors,
+          group_id: groupId,
+        },
+      });
+    } catch (_) { /* ignore */ }
 
     console.log("[PAYMENT-WEBHOOK] Done:", transactions.length, "transactions created,", errors.length, "errors");
 
