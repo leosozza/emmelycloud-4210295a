@@ -1,138 +1,111 @@
 
 
-## Revisão do Fluxo de Pagamento via Robots Bitrix24
+## Cadastro de Empresas com Integração de Pagamento Própria
 
-### Entendimento Corrigido
+### Problema
 
-O fluxo de pagamento **não** é via webhook externo. É accionado pelo **Robot `emmely_create_charge`** que já existe no `bitrix24-robot-handler`. O robot recebe os dados de pagamento directamente do BizProc do Bitrix24. Para cada parcela, deve criar uma **Invoice (old API)** via `crm.invoice.add` no Bitrix24.
+Actualmente o sistema assume uma única entidade emissora. O utilizador tem 2-3 empresas (filiais) com CNPJs diferentes, e cada uma precisa da sua própria configuração de pagamento (chaves Stripe/Asaas diferentes). O robot precisa saber **qual empresa** está a emitir a cobrança.
 
-### O que Mudar
+### Plano
 
----
+#### 1. Nova tabela `companies`
 
-#### 1. Refactorizar `handleCreateCharge` no robot-handler para suportar parcelamento
+```sql
+CREATE TABLE public.companies (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  name text NOT NULL,
+  legal_name text,
+  document_number text, -- CNPJ/NIF
+  country text DEFAULT 'Portugal',
+  currency text DEFAULT 'EUR',
+  address text,
+  city text,
+  state text,
+  postal_code text,
+  phone text,
+  email text,
+  logo_url text,
+  -- Payment gateway credentials (references to integration_credentials)
+  stripe_credential_key text,    -- e.g. "stripe_pt_empresa1" → maps to integration_credentials
+  asaas_credential_key text,     -- e.g. "asaas_empresa1"
+  default_gateway text DEFAULT 'auto', -- auto, stripe_pt, stripe_br, asaas, direto
+  is_active boolean DEFAULT true,
+  created_at timestamptz DEFAULT now(),
+  updated_at timestamptz DEFAULT now()
+);
 
-**Ficheiro:** `supabase/functions/bitrix24-robot-handler/index.ts`
+ALTER TABLE public.companies ENABLE ROW LEVEL SECURITY;
 
-O `handleCreateCharge` actual (linhas 181-233) cria apenas **uma** cobrança simples. Precisa suportar:
+CREATE POLICY "Admins full access companies" ON public.companies FOR ALL TO authenticated
+  USING (is_admin()) WITH CHECK (is_admin());
 
-- **Novos parâmetros do robot:**
-  - `installments` / `INSTALLMENTS` — número de parcelas (default 1)
-  - `first_due_date` / `FIRST_DUE_DATE` — data do 1º vencimento
-  - `down_payment` / `DOWN_PAYMENT` — valor de entrada (default 0)
-  - `deal_id` / `DEAL_ID` — ID do negócio para vincular faturas
-  - `contact_id` / `CONTACT_ID` — ID do contacto
+CREATE POLICY "Authenticated can read companies" ON public.companies FOR SELECT TO authenticated
+  USING (true);
 
-- **Lógica de parcelamento:**
-  1. Calcular parcelas (entrada + N parcelas mensais de 30 em 30 dias)
-  2. Para cada parcela, chamar `payment-create` (como já faz)
-  3. Para cada parcela, chamar `crm.invoice.add` (API old) no Bitrix24 com:
-     - `ORDER_TOPIC`: "Parcela X/N - Descrição"
-     - `STATUS_ID`: "N" (novo/pendente)
-     - `DATE_PAY_BEFORE`: data de vencimento da parcela
-     - `UF_DEAL_ID`: deal_id recebido
-     - `UF_CONTACT_ID`: contact_id recebido
-     - `PRODUCT_ROWS`: item único com o valor da parcela
-  4. Retornar valores ao BizProc: `charge_id`, `charge_status`, `invoices_created`, `gateway_used`
+CREATE POLICY "Service role full access companies" ON public.companies FOR ALL TO service_role
+  USING (true) WITH CHECK (true);
+```
 
-- **Precisa do `memberId`** e da integração para chamar a API do Bitrix24. O handler principal já tem acesso a isso (linhas 589-615), mas `handleCreateCharge` actualmente não recebe esses dados. Refactorizar para passar a integração.
+#### 2. Adicionar `company_id` na tabela `payment_transactions`
 
----
+```sql
+ALTER TABLE public.payment_transactions ADD COLUMN company_id uuid REFERENCES public.companies(id);
+```
 
-#### 2. Actualizar registos dos robots no Bitrix24
+Isto permite saber qual empresa emitiu cada cobrança.
 
-O robot `emmely_create_charge` precisa registar os novos campos de entrada (installments, first_due_date, down_payment, deal_id, contact_id) e de saída (invoices_created). Isto é feito no `bitrix24-install` ou `bitrix24-reregister-bot`.
+#### 3. Adicionar campo `company_id` no Robot `emmely_create_charge`
 
-**Ficheiro:** `supabase/functions/bitrix24-reregister-bot/index.ts` — adicionar propriedades do robot.
+**`bitrix24-robot-handler`**: O robot recebe um novo parâmetro `company_id` (ou `COMPANY_ID`). Ao criar a cobrança, busca a empresa na tabela `companies`, obtém as credenciais de pagamento específicas dela (via `stripe_credential_key` / `asaas_credential_key`), e passa para o `payment-create` como `force_gateway` + credential override.
 
----
+**`bitrix24-reregister-bot`**: Registar o novo campo `company_id` como propriedade do robot (tipo `string`, nome "Empresa").
 
-#### 3. Payment Tab — melhorias no controlo pago/aberto
+#### 4. Actualizar `payment-create` para aceitar credential overrides
 
-**Ficheiro:** `supabase/functions/bitrix24-payment-tab/index.ts`
+O `payment-create` passa a aceitar opcionalmente `credential_provider` e `credential_key` no body. Se presentes, usa essas credenciais em vez das padrão. Isto permite que cada empresa use as suas próprias chaves.
 
-O tab já tem:
-- KPIs (Total / Pago / Em Aberto) com barra de progresso
-- Botão "Dar Baixa" que actualiza status para `confirmed`
-- Sincronização com Smart Invoices (entityTypeId 31)
+#### 5. UI de gestão de Empresas no `Bitrix24App.tsx`
 
-Alterações necessárias:
-- Na função `markAsPaid`, além de fechar Smart Invoices, também actualizar Invoices (old) via `crm.invoice.update` com `STATUS_ID: "P"` (paga)
-- Guardar o `bitrix_old_invoice_id` na metadata da transacção (criado no passo 1)
-- Exibir o link para a fatura old: `BX24.openPath('/crm/invoice/show/ID/')` em vez de `/crm/type/31/details/ID/`
+Nova view "Empresas" no sidebar do iframe Bitrix24 com:
+- Lista de empresas cadastradas (nome, CNPJ, gateway padrão)
+- Formulário para criar/editar empresa (nome, razão social, CNPJ, moeda, gateway padrão)
+- Campos para associar chaves de pagamento: seleccionar provider/key existentes na `integration_credentials` ou criar novos
+- Botão activar/desactivar
 
----
+#### 6. Payment Tab — exibir empresa na parcela
 
-#### 4. Remover/simplificar `bitrix24-payment-webhook`
-
-O ficheiro `supabase/functions/bitrix24-payment-webhook/index.ts` criado anteriormente pode ser removido ou mantido como endpoint alternativo. A lógica principal passa a viver no robot handler.
-
----
+O `bitrix24-payment-tab` passa a mostrar o nome da empresa emissora em cada parcela (busca de `companies` pelo `company_id` da transacção).
 
 ### Ficheiros Afectados
 
 | Ficheiro | Alteração |
 |---|---|
-| `supabase/functions/bitrix24-robot-handler/index.ts` | Refactorizar `handleCreateCharge` para suportar parcelamento + criar Invoices (old API) |
-| `supabase/functions/bitrix24-payment-tab/index.ts` | Actualizar `markAsPaid` para fechar Invoice old; mostrar link correcto |
-| `supabase/functions/bitrix24-reregister-bot/index.ts` | Registar novos campos do robot (installments, due_date, etc.) |
+| **Migração SQL** | Criar tabela `companies`, adicionar `company_id` em `payment_transactions` |
+| `src/pages/Bitrix24App.tsx` | Nova view "Empresas" com CRUD; adicionar item no sidebar |
+| `supabase/functions/bitrix24-robot-handler/index.ts` | Aceitar `company_id`, buscar empresa, passar credenciais ao `payment-create` |
+| `supabase/functions/payment-create/index.ts` | Aceitar `credential_provider`/`credential_key` opcionais para override |
+| `supabase/functions/bitrix24-reregister-bot/index.ts` | Registar campo `company_id` no robot |
+| `supabase/functions/bitrix24-payment-tab/index.ts` | Exibir nome da empresa na parcela |
 
 ### Fluxo Resumido
 
 ```text
-Bitrix24 BizProc → Robot "emmely_create_charge"
-        │
-        ├─ Dados enviados pelo robot:
-        │   amount, installments, gateway, first_due_date,
-        │   down_payment, deal_id, contact_id, currency
-        │
-        ▼
-bitrix24-robot-handler (handleCreateCharge)
-        │
-        ├─ Calcula parcelas (entrada + N mensais)
-        │
-        ├─ Para cada parcela:
-        │   ├─ POST /payment-create → transaction na DB
-        │   └─ crm.invoice.add → fatura no Bitrix24
-        │       (ORDER_TOPIC, STATUS_ID:"N", DATE_PAY_BEFORE,
-        │        UF_DEAL_ID, UF_CONTACT_ID, PRODUCT_ROWS)
-        │
-        └─ bizproc.event.send → retorna resultados ao BizProc
-            { charge_id, invoices_created, gateway_used }
+Robot emmely_create_charge
+  │ company_id: "uuid-empresa-X"
+  │ amount, installments, gateway...
+  ▼
+bitrix24-robot-handler
+  │
+  ├─ SELECT * FROM companies WHERE id = company_id
+  │   → stripe_credential_key, asaas_credential_key, default_gateway
+  │
+  ├─ POST /payment-create
+  │   { ..., company_id, credential_provider: "stripe_pt_empresa1",
+  │     credential_key: "STRIPE_SECRET_KEY" }
+  │
+  └─ crm.invoice.add (com dados da empresa)
 
-Payment Tab (Placement CRM)
-        │
-        ├─ Busca transactions WHERE metadata.bitrix_deal_id = entityId
-        ├─ Exibe: Parcela X/N | Valor | Vencimento | Status
-        ├─ KPIs: Total | Pago | Em Aberto | % progresso
-        │
-        └─ "Dar Baixa" →
-            ├─ PATCH /payment-create (status: confirmed)
-            └─ crm.invoice.update (STATUS_ID: "P")
+Payment Tab
+  └─ Exibe: Empresa X | Parcela 1/5 | €200 | 02/04/2026
 ```
-
-### Detalhes Técnicos: `crm.invoice.add`
-
-Baseado na documentação oficial, cada fatura será criada com:
-```javascript
-crm.invoice.add({
-  fields: {
-    ORDER_TOPIC: "Parcela 1/5 - Nome do Negócio",
-    STATUS_ID: "N",           // N = Novo/Pendente
-    DATE_BILL: "2026-03-02",  // Data de emissão (hoje)
-    DATE_PAY_BEFORE: "2026-04-02", // Vencimento
-    UF_DEAL_ID: dealId,
-    UF_CONTACT_ID: contactId,
-    RESPONSIBLE_ID: 1,
-    PERSON_TYPE_ID: 1,        // 1 = Pessoa Física
-    PRODUCT_ROWS: [{
-      PRODUCT_NAME: "Parcela 1/5",
-      QUANTITY: 1,
-      PRICE: 200.00
-    }]
-  }
-})
-```
-
-Para dar baixa: `crm.invoice.update({ ID: invoiceId, fields: { STATUS_ID: "P" } })`
 
