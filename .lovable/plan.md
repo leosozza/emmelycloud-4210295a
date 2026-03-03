@@ -1,34 +1,37 @@
 
 
-## Plan: Fix Smart Invoice Deal & Contact Binding + Test with Deal 8857
+## Plan: Fix Smart Invoice Deal Field + Test Deal 8857 with "Direto"
 
-### Problem
-The `crm.item.add` call in `bitrix24-payment-webhook` uses `parentId2` and `contactId`, but Smart Invoices (entityTypeId 31) in Bitrix24 require the explicit field `UF_CRM_SMART_INVOICE_DEAL` to properly link to a deal in the kanban view. The `contactId` field may also need to be passed as `ufCrm3_contactId` or via the `contacts` binding depending on the Bitrix24 version.
+### Analysis
+The Bitrix24 HTML confirms the deal binding field is `PARENT_ID_2` (shown as "Negócio" in the Smart Invoice form). The current code already sends `parentId2` which is correct. The `ufCrm31Deal` field added previously is likely being ignored or causing issues — it's not a standard field for Smart Process type 31.
 
-### Fix in `supabase/functions/bitrix24-payment-webhook/index.ts`
+The key issue: in `crm.item.add` REST API for Smart Processes, field names use **camelCase** format. The deal binding is `parentId2` (parent entity of type 2 = Deal). There is no separate `ufCrm31Deal` field — that was a mistaken assumption. The `parentId2` field alone should handle the deal link correctly.
 
-Update the `fields` object in the `crm.item.add` call (around line 302) to include:
+### Changes
 
-```typescript
-fields: {
-  title: invoiceTitle,
-  opportunity: parcel.amount,
-  currencyId: currency,
-  isManualOpportunity: "Y",
-  parentId2: parseInt(String(dealId)),
-  ufCrm31Deal: parseInt(String(dealId)),       // UF_CRM_SMART_INVOICE_DEAL equivalent
-  contactId: contactId ? parseInt(String(contactId)) : undefined,
-  begindate: new Date().toISOString().split("T")[0],
-  closedate: parcel.due_date,
-  comments: `Fatura gerada automaticamente pelo Emmely Pay. ${label}. Grupo: ${groupId}`,
+1. **Remove `ufCrm31Deal`** from the `crm.item.add` call — it's not a real field and may cause warnings. Keep only `parentId2` which is confirmed correct from the HTML.
+
+2. **Test with deal 8857** using `bodyOverrides`:
+   - `force_gateway: "direto"` — crediário próprio, no external payment gateway
+   - 3 parcels: €200 each (01/02, 03/03, 02/04)
+   - Parcela 1 should be marked `confirmed` after creation
+   - Verify Smart Invoices appear in `/crm/type/31/` kanban with deal and contact linked
+
+### File changed
+- `supabase/functions/bitrix24-payment-webhook/index.ts` — remove `ufCrm31Deal` line (line 308)
+
+### Test
+After deploy, call the webhook with:
+```json
+{
+  "deal_id": 8857,
+  "bodyOverrides": {
+    "force_gateway": "direto",
+    "total_amount": 600,
+    "num_installments": 3,
+    "first_due_date": "2025-02-01",
+    "interval_days": 30
+  }
 }
 ```
-
-Note: The REST API field name for `UF_CRM_SMART_INVOICE_DEAL` in `crm.item.add` for Smart Process type 31 is typically `parentId2` (parent deal). If the Bitrix24 instance has a custom field `UF_CRM_SMART_INVOICE_DEAL`, we add it explicitly. We keep both `parentId2` and the UF field for maximum compatibility.
-
-### Testing
-After deploying, call the webhook with `deal_id: 8857` to create 3 new invoices and verify they appear linked in the Bitrix24 kanban at `/crm/type/31/`.
-
-### Files changed
-- `supabase/functions/bitrix24-payment-webhook/index.ts` — add `ufCrm31Deal` field to `crm.item.add`
 
