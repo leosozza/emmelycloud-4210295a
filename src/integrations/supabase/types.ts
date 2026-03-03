@@ -1257,6 +1257,7 @@ export type Database = {
           ai_viability: string | null
           assigned_attorney_id: string | null
           assigned_commercial_id: string | null
+          bitrix24_id: string | null
           client_id: string | null
           conversation_id: string | null
           country: string | null
@@ -1271,6 +1272,7 @@ export type Database = {
           origin: Database["public"]["Enums"]["lead_origin"]
           phone: string | null
           sla_expires_at: string | null
+          sync_source: string | null
           updated_at: string
           urgency: string | null
         }
@@ -1279,6 +1281,7 @@ export type Database = {
           ai_viability?: string | null
           assigned_attorney_id?: string | null
           assigned_commercial_id?: string | null
+          bitrix24_id?: string | null
           client_id?: string | null
           conversation_id?: string | null
           country?: string | null
@@ -1293,6 +1296,7 @@ export type Database = {
           origin?: Database["public"]["Enums"]["lead_origin"]
           phone?: string | null
           sla_expires_at?: string | null
+          sync_source?: string | null
           updated_at?: string
           urgency?: string | null
         }
@@ -1301,6 +1305,7 @@ export type Database = {
           ai_viability?: string | null
           assigned_attorney_id?: string | null
           assigned_commercial_id?: string | null
+          bitrix24_id?: string | null
           client_id?: string | null
           conversation_id?: string | null
           country?: string | null
@@ -1315,6 +1320,7 @@ export type Database = {
           origin?: Database["public"]["Enums"]["lead_origin"]
           phone?: string | null
           sla_expires_at?: string | null
+          sync_source?: string | null
           updated_at?: string
           urgency?: string | null
         }

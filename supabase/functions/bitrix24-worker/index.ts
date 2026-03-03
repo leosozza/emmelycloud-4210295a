@@ -547,6 +547,91 @@ async function handleBotJoinChat(supabase: any, integration: any, payload: any) 
   });
 }
 
+// ─── Lead Sync Handler (Bitrix24 → Emmely) ───
+
+async function handleLeadEvent(supabase: any, integration: any, payload: any) {
+  const eventData = payload.data || {};
+  const params = eventData.FIELDS || eventData.PARAMS || eventData;
+  const bitrixLeadId = String(params.ID || params.id || "");
+
+  if (!bitrixLeadId) {
+    console.log("[WORKER] ONCRMLEAD*: No lead ID in payload");
+    return;
+  }
+
+  try {
+    const accessToken = await ensureValidToken(supabase, integration);
+
+    // Fetch full lead data from Bitrix24
+    const leadResult = await callBitrix(integration.client_endpoint, accessToken, "crm.lead.get", { ID: bitrixLeadId });
+    const bxLead = leadResult.result;
+
+    if (!bxLead) {
+      console.log("[WORKER] Bitrix24 lead not found:", bitrixLeadId);
+      return;
+    }
+
+    // Check if lead exists in Emmely
+    const { data: existingLead } = await supabase
+      .from("leads")
+      .select("id, sync_source, bitrix24_id")
+      .eq("bitrix24_id", bitrixLeadId)
+      .maybeSingle();
+
+    // Anti-loop: if sync_source is 'emmely', this is an echo — ignore and reset
+    if (existingLead && existingLead.sync_source === "emmely") {
+      console.log("[WORKER] Anti-loop: ignoring echo for lead:", bitrixLeadId);
+      await supabase.from("leads").update({ sync_source: null }).eq("id", existingLead.id);
+      return;
+    }
+
+    // Map Bitrix24 fields to Emmely
+    const phone = Array.isArray(bxLead.PHONE) && bxLead.PHONE.length > 0 ? bxLead.PHONE[0].VALUE : "";
+    const email = Array.isArray(bxLead.EMAIL) && bxLead.EMAIL.length > 0 ? bxLead.EMAIL[0].VALUE : "";
+
+    // Map STATUS_ID to funnel_stage
+    const statusMap: Record<string, string> = {
+      NEW: "lead", IN_PROCESS: "contactado", PROCESSED: "qualificado",
+      CONVERTED: "fechado", JUNK: "perdido",
+      "1": "lead", "2": "contactado", "3": "proposta",
+      "4": "analise", "5": "contrato", "6": "financeiro",
+    };
+    const funnelStage = statusMap[bxLead.STATUS_ID] || "lead";
+
+    const leadData: Record<string, any> = {
+      name: bxLead.TITLE || "Sem nome",
+      phone: phone || "",
+      email: email || "",
+      funnel_stage: funnelStage,
+      notes: bxLead.COMMENTS || "",
+      sync_source: "bitrix24",
+      bitrix24_id: bitrixLeadId,
+    };
+
+    if (bxLead.UF_LEGAL_AREA) {
+      leadData.legal_area = bxLead.UF_LEGAL_AREA;
+    }
+
+    if (existingLead) {
+      // Update existing lead
+      console.log("[WORKER] Updating Emmely lead from Bitrix24:", existingLead.id);
+      await supabase.from("leads").update(leadData).eq("id", existingLead.id);
+    } else {
+      // Create new lead
+      console.log("[WORKER] Creating Emmely lead from Bitrix24:", bitrixLeadId);
+      leadData.origin = "bitrix24";
+      await supabase.from("leads").insert(leadData);
+    }
+
+    await debugLog(supabase, integration.id, "lead_synced_inbound", "inbound", {
+      bitrixLeadId, action: existingLead ? "updated" : "created",
+    });
+  } catch (e) {
+    console.error("[WORKER] Lead sync error:", e);
+    await debugLog(supabase, integration.id, "lead_sync_error", "inbound", { bitrixLeadId }, String(e));
+  }
+}
+
 // ─── Deal Update Handler (auto-charge on close) ───
 
 async function handleDealUpdate(supabase: any, integration: any, payload: any) {
@@ -753,6 +838,10 @@ Deno.serve(async (req) => {
             break;
           case "ONCRMDEALUPDATE":
             await handleDealUpdate(supabase, integration, event.payload);
+            break;
+          case "ONCRMLEADADD":
+          case "ONCRMLEADUPDATE":
+            await handleLeadEvent(supabase, integration, event.payload);
             break;
           default:
             console.log("[WORKER] Unknown event type:", eventType);
