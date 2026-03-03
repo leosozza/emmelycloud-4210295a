@@ -128,7 +128,7 @@ const defaultPhases: RoadmapPhase[] = [
     ],
   },
   {
-    title: "🔧 Em Progresso",
+    title: "Em Progresso",
     icon: <Clock className="h-5 w-5 text-primary" />,
     modules: [
       { name: "Gestão de Roles (Admin)", description: "Admin atribui/remove roles à equipa", progress: 60, status: "em_progresso",
@@ -201,7 +201,7 @@ const statusConfig: Record<ModuleStatus, { label: string; variant: "default" | "
 
 const phaseOptions: { value: string; label: string }[] = [
   { value: "Concluído", label: "Concluído" },
-  { value: "🔧 Em Progresso", label: "🔧 Em Progresso" },
+  { value: "Em Progresso", label: "Em Progresso" },
   { value: "📅 Próximas Etapas", label: "📅 Próximas Etapas" },
 ];
 
