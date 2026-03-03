@@ -213,6 +213,7 @@ Deno.serve(async (req) => {
           down_payment: { Name: "Valor de Entrada", Type: "double", Required: "N", Default: "0" },
           deal_id: { Name: "ID do Negócio", Type: "int", Required: "N" },
           contact_id: { Name: "ID do Contacto", Type: "int", Required: "N" },
+          company_id: { Name: "ID da Empresa", Type: "string", Required: "N" },
           customer_name: { Name: "Nome do Cliente", Type: "string", Required: "N" },
           customer_email: { Name: "Email do Cliente", Type: "string", Required: "N" },
           customer_cpf: { Name: "CPF/CNPJ", Type: "string", Required: "N" },

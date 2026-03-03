@@ -30,7 +30,7 @@ import {
   Settings, CreditCard, Zap, CheckCircle, XCircle, Activity,
   Power, ExternalLink, AlertCircle, MessageSquare, BarChart3,
   DollarSign, Clock, AlertTriangle, TrendingUp, Link,
-  ArrowDownLeft, ArrowUpRight,
+  ArrowDownLeft, ArrowUpRight, Building2,
 } from "lucide-react";
 import {
   BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis,
@@ -59,7 +59,7 @@ const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
 
 const customNodeTypes = { custom: CustomFlowNode };
 
-type AppView = "loading" | "dashboard" | "agentes" | "training" | "flows" | "playground" | "chatia" | "pagamentos" | "relatorios" | "mapeamento";
+type AppView = "loading" | "dashboard" | "agentes" | "training" | "flows" | "playground" | "chatia" | "pagamentos" | "relatorios" | "mapeamento" | "empresas";
 
 // ==================== MAIN COMPONENT ====================
 const Bitrix24App = () => {
@@ -185,6 +185,7 @@ const Bitrix24App = () => {
       label: "Emmely Pay",
       items: [
         { id: "pagamentos", label: "Pagamentos", icon: CreditCard },
+        { id: "empresas", label: "Empresas", icon: Building2 },
         { id: "relatorios", label: "Relatórios", icon: BarChart3 },
       ],
     },
@@ -296,6 +297,7 @@ const Bitrix24App = () => {
         {view === "chatia" && <ChatIABitrixView />}
         {view === "mapeamento" && <MapeamentoView integrationId={integration?.id} />}
         {view === "pagamentos" && <PagamentosView integration={integration} onRefresh={() => memberId && fetchData(memberId)} />}
+        {view === "empresas" && <EmpresasView />}
         {view === "relatorios" && <RelatoriosView />}
       </main>
     </div>
@@ -2027,6 +2029,233 @@ function PagamentosView({ integration, onRefresh }: { integration: any; onRefres
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+// ==================== EMPRESAS VIEW ====================
+function EmpresasView() {
+  const [companies, setCompanies] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [showForm, setShowForm] = useState(false);
+  const [editId, setEditId] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [form, setForm] = useState({
+    name: "", legal_name: "", document_number: "", country: "Portugal", currency: "EUR",
+    email: "", phone: "", address: "", city: "", state: "", postal_code: "",
+    stripe_credential_key: "", asaas_credential_key: "", default_gateway: "auto",
+  });
+
+  const fetchCompanies = async () => {
+    setLoading(true);
+    try {
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/companies?select=*&order=name.asc`, {
+        headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` },
+      });
+      if (res.ok) setCompanies(await res.json());
+    } catch (e) { console.error(e); }
+    setLoading(false);
+  };
+
+  useEffect(() => { fetchCompanies(); }, []);
+
+  const openNew = () => {
+    setEditId(null);
+    setForm({ name: "", legal_name: "", document_number: "", country: "Portugal", currency: "EUR", email: "", phone: "", address: "", city: "", state: "", postal_code: "", stripe_credential_key: "", asaas_credential_key: "", default_gateway: "auto" });
+    setShowForm(true);
+  };
+
+  const openEdit = (c: any) => {
+    setEditId(c.id);
+    setForm({
+      name: c.name || "", legal_name: c.legal_name || "", document_number: c.document_number || "",
+      country: c.country || "Portugal", currency: c.currency || "EUR",
+      email: c.email || "", phone: c.phone || "", address: c.address || "",
+      city: c.city || "", state: c.state || "", postal_code: c.postal_code || "",
+      stripe_credential_key: c.stripe_credential_key || "", asaas_credential_key: c.asaas_credential_key || "",
+      default_gateway: c.default_gateway || "auto",
+    });
+    setShowForm(true);
+  };
+
+  const handleSave = async () => {
+    if (!form.name.trim()) return;
+    setSaving(true);
+    try {
+      const url = editId
+        ? `${SUPABASE_URL}/rest/v1/companies?id=eq.${editId}`
+        : `${SUPABASE_URL}/rest/v1/companies`;
+      await fetch(url, {
+        method: editId ? "PATCH" : "POST",
+        headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}`, "Content-Type": "application/json", Prefer: "return=minimal" },
+        body: JSON.stringify(form),
+      });
+      setShowForm(false);
+      fetchCompanies();
+    } catch (e) { console.error(e); }
+    setSaving(false);
+  };
+
+  const toggleActive = async (id: string, isActive: boolean) => {
+    try {
+      await fetch(`${SUPABASE_URL}/rest/v1/companies?id=eq.${id}`, {
+        method: "PATCH",
+        headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}`, "Content-Type": "application/json", Prefer: "return=minimal" },
+        body: JSON.stringify({ is_active: !isActive }),
+      });
+      fetchCompanies();
+    } catch (e) { console.error(e); }
+  };
+
+  const gatewayLabels: Record<string, string> = { auto: "Automático", stripe_pt: "Stripe PT", stripe_br: "Stripe BR", asaas: "Asaas", direto: "Crediário Próprio" };
+
+  return (
+    <div className="p-6 space-y-6">
+      <div className="b24-view-header flex items-center justify-between">
+        <div>
+          <h1 className="text-xl font-bold text-white">Empresas</h1>
+          <p className="text-white/60 text-sm mt-0.5">Filiais e configurações de pagamento</p>
+        </div>
+        <Button onClick={openNew} className="rounded-md bg-white/15 hover:bg-white/25 text-white border-0">
+          <Plus className="h-4 w-4 mr-2" />Nova Empresa
+        </Button>
+      </div>
+
+      {showForm && (
+        <Card className="b24-card">
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2">
+              <Building2 className="h-4 w-4" /> {editId ? "Editar Empresa" : "Nova Empresa"}
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label className="text-xs">Nome *</Label>
+                <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="mt-1" placeholder="Nome comercial" />
+              </div>
+              <div>
+                <Label className="text-xs">Razão Social</Label>
+                <Input value={form.legal_name} onChange={(e) => setForm({ ...form, legal_name: e.target.value })} className="mt-1" />
+              </div>
+              <div>
+                <Label className="text-xs">CNPJ/NIF</Label>
+                <Input value={form.document_number} onChange={(e) => setForm({ ...form, document_number: e.target.value })} className="mt-1" />
+              </div>
+              <div>
+                <Label className="text-xs">País</Label>
+                <Select value={form.country} onValueChange={(v) => setForm({ ...form, country: v })}>
+                  <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Portugal">Portugal</SelectItem>
+                    <SelectItem value="Brasil">Brasil</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label className="text-xs">Moeda</Label>
+                <Select value={form.currency} onValueChange={(v) => setForm({ ...form, currency: v })}>
+                  <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="EUR">EUR</SelectItem>
+                    <SelectItem value="BRL">BRL</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label className="text-xs">Email</Label>
+                <Input value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} className="mt-1" type="email" />
+              </div>
+              <div>
+                <Label className="text-xs">Telefone</Label>
+                <Input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} className="mt-1" />
+              </div>
+              <div>
+                <Label className="text-xs">Endereço</Label>
+                <Input value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} className="mt-1" />
+              </div>
+            </div>
+
+            <Separator />
+
+            <h3 className="text-sm font-semibold text-foreground flex items-center gap-2"><CreditCard className="h-4 w-4 text-primary" /> Credenciais de Pagamento</h3>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label className="text-xs">Gateway Padrão</Label>
+                <Select value={form.default_gateway} onValueChange={(v) => setForm({ ...form, default_gateway: v })}>
+                  <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="auto">Automático</SelectItem>
+                    <SelectItem value="stripe_pt">Stripe Portugal</SelectItem>
+                    <SelectItem value="stripe_br">Stripe Brasil</SelectItem>
+                    <SelectItem value="asaas">Asaas</SelectItem>
+                    <SelectItem value="direto">Crediário Próprio</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label className="text-xs">Provider Stripe (integration_credentials)</Label>
+                <Input value={form.stripe_credential_key} onChange={(e) => setForm({ ...form, stripe_credential_key: e.target.value })} className="mt-1" placeholder="ex: stripe_pt_empresa1" />
+                <p className="text-[10px] text-muted-foreground mt-1">Nome do provider na tabela de credenciais</p>
+              </div>
+              <div>
+                <Label className="text-xs">Provider Asaas (integration_credentials)</Label>
+                <Input value={form.asaas_credential_key} onChange={(e) => setForm({ ...form, asaas_credential_key: e.target.value })} className="mt-1" placeholder="ex: asaas_empresa1" />
+                <p className="text-[10px] text-muted-foreground mt-1">Nome do provider na tabela de credenciais</p>
+              </div>
+            </div>
+
+            <div className="flex gap-2 justify-end pt-2">
+              <Button variant="outline" onClick={() => setShowForm(false)}>Cancelar</Button>
+              <Button onClick={handleSave} disabled={saving || !form.name.trim()}>
+                {saving ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Salvando...</> : <><Save className="h-4 w-4 mr-2" />Salvar</>}
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {loading ? (
+        <div className="flex justify-center py-8"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
+      ) : companies.length === 0 ? (
+        <Card className="b24-card">
+          <CardContent className="py-12 text-center text-muted-foreground">
+            <Building2 className="h-12 w-12 mx-auto mb-4 opacity-30" />
+            <p>Nenhuma empresa cadastrada</p>
+            <p className="text-xs mt-1">Adicione as suas filiais para configurar pagamentos por empresa</p>
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="space-y-3">
+          {companies.map((c) => (
+            <Card key={c.id} className="b24-card cursor-pointer" onClick={() => openEdit(c)}>
+              <CardContent className="pt-4 pb-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-3 flex-1 min-w-0">
+                    <div className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
+                      <Building2 className="h-4 w-4 text-primary" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <p className="font-medium text-sm truncate text-foreground">{c.name}</p>
+                        <Badge variant={c.is_active ? "default" : "outline"} className="text-[10px]">
+                          {c.is_active ? "Ativa" : "Inativa"}
+                        </Badge>
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        {c.document_number || "Sem CNPJ"} • {gatewayLabels[c.default_gateway] || c.default_gateway} • {c.currency}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="shrink-0" onClick={(e) => e.stopPropagation()}>
+                    <Switch checked={c.is_active} onCheckedChange={() => toggleActive(c.id, c.is_active)} />
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

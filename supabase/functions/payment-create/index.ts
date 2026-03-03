@@ -230,7 +230,7 @@ Deno.serve(async (req) => {
     );
 
     const body = await req.json();
-    const { contract_id, client_id, financial_record_id, amount, currency = "EUR", payment_method = "card", customer_data, description = "Pagamento Emmely Cloud", metadata: extraMetadata, due_date, installment_number, total_installments, installment_group_id, is_down_payment, force_gateway } = body;
+    const { contract_id, client_id, financial_record_id, amount, currency = "EUR", payment_method = "card", customer_data, description = "Pagamento Emmely Cloud", metadata: extraMetadata, due_date, installment_number, total_installments, installment_group_id, is_down_payment, force_gateway, company_id, credential_provider, credential_key } = body;
 
     if (!amount || amount <= 0) {
       return new Response(JSON.stringify({ error: "amount is required and must be > 0" }), {
@@ -279,22 +279,28 @@ Deno.serve(async (req) => {
         pix_code: null,
       };
     } else if (gateway === "stripe") {
-      // Determine which Stripe key to use based on region
-      const stripeKeyName = stripeRegion === "br" ? "STRIPE_SECRET_KEY_BR" : (stripeRegion === "pt" ? "STRIPE_SECRET_KEY_PT" : "STRIPE_SECRET_KEY");
-      const stripeProvider = stripeRegion === "br" ? "stripe_br" : (stripeRegion === "pt" ? "stripe_pt" : "stripe");
-      let stripeKey = await getCredential(supabase, stripeProvider, stripeKeyName);
-      // Fallback: try regional provider with generic key name, then generic provider
-      if (!stripeKey && stripeRegion) {
-        stripeKey = await getCredential(supabase, stripeProvider, "STRIPE_SECRET_KEY");
+      // Use credential override from company if provided
+      let stripeKey: string | null = null;
+      if (credential_provider && credential_key) {
+        stripeKey = await getCredential(supabase, credential_provider, credential_key);
       }
       if (!stripeKey) {
-        stripeKey = await getCredential(supabase, "stripe", stripeKeyName);
+        // Determine which Stripe key to use based on region
+        const stripeKeyName = stripeRegion === "br" ? "STRIPE_SECRET_KEY_BR" : (stripeRegion === "pt" ? "STRIPE_SECRET_KEY_PT" : "STRIPE_SECRET_KEY");
+        const stripeProvider = stripeRegion === "br" ? "stripe_br" : (stripeRegion === "pt" ? "stripe_pt" : "stripe");
+        stripeKey = await getCredential(supabase, stripeProvider, stripeKeyName);
+        if (!stripeKey && stripeRegion) {
+          stripeKey = await getCredential(supabase, stripeProvider, "STRIPE_SECRET_KEY");
+        }
+        if (!stripeKey) {
+          stripeKey = await getCredential(supabase, "stripe", stripeKeyName);
+        }
+        if (!stripeKey) {
+          stripeKey = await getCredential(supabase, "stripe", "STRIPE_SECRET_KEY");
+        }
       }
       if (!stripeKey) {
-        stripeKey = await getCredential(supabase, "stripe", "STRIPE_SECRET_KEY");
-      }
-      if (!stripeKey) {
-        return new Response(JSON.stringify({ error: `Stripe API key not configured (${stripeKeyName})` }), {
+        return new Response(JSON.stringify({ error: `Stripe API key not configured` }), {
           status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
@@ -308,7 +314,14 @@ Deno.serve(async (req) => {
           });
         }
       }
-      const asaasKey = await getCredential(supabase, "asaas", "ASAAS_API_KEY");
+      // Use credential override from company if provided
+      let asaasKey: string | null = null;
+      if (credential_provider && credential_key) {
+        asaasKey = await getCredential(supabase, credential_provider, credential_key);
+      }
+      if (!asaasKey) {
+        asaasKey = await getCredential(supabase, "asaas", "ASAAS_API_KEY");
+      }
       if (!asaasKey) {
         return new Response(JSON.stringify({ error: "Asaas API key not configured" }), {
           status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -325,6 +338,7 @@ Deno.serve(async (req) => {
       contract_id: contract_id || null,
       client_id: client_id || null,
       financial_record_id: financial_record_id || null,
+      company_id: company_id || null,
       gateway: effectiveGateway,
       gateway_payment_id: result.gateway_payment_id,
       gateway_customer_id: result.gateway_customer_id || null,
