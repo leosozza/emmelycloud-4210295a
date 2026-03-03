@@ -7,6 +7,10 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
+import { Calendar } from "@/components/ui/calendar";
+import { format } from "date-fns";
+import { CalendarIcon } from "lucide-react";
 import { AudioRecordButton } from "@/components/chat/AudioRecordButton";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
@@ -2264,7 +2268,7 @@ function EmpresasView() {
 const COLORS_STATUS = { confirmed: "#589731", pending: "#c49c00", overdue: "#df532d" };
 const COLORS_CHART = ["#2fc6f6", "#589731", "#c49c00", "#df532d", "#8b5cf6"];
 
-type PeriodKey = "7d" | "30d" | "90d" | "year" | "all";
+type PeriodKey = "7d" | "30d" | "90d" | "year" | "all" | "custom";
 const PERIOD_OPTIONS: { key: PeriodKey; label: string }[] = [
   { key: "7d", label: "7 dias" },
   { key: "30d", label: "30 dias" },
@@ -2279,11 +2283,14 @@ function RelatoriosView() {
   const [period, setPeriod] = useState<PeriodKey>("30d");
   const [gatewayFilter, setGatewayFilter] = useState<string>("all");
   const [clientFilter, setClientFilter] = useState<string>("all");
+  const [companyFilter, setCompanyFilter] = useState<string>("all");
+  const [dateRange, setDateRange] = useState<{ from?: Date; to?: Date }>({});
+  const [datePickerOpen, setDatePickerOpen] = useState(false);
 
   useEffect(() => {
     setLoading(true);
     fetch(
-      `${SUPABASE_URL}/rest/v1/payment_transactions?select=*,clients(name)&order=created_at.desc&limit=1000`,
+      `${SUPABASE_URL}/rest/v1/payment_transactions?select=*,clients(name),companies(name)&order=created_at.desc&limit=1000`,
       { headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` } }
     )
       .then((r) => r.json())
@@ -2294,10 +2301,18 @@ function RelatoriosView() {
 
   const gateways = Array.from(new Set(transactions.map((t) => t.gateway).filter(Boolean))).sort();
   const clients = Array.from(new Set(transactions.map((t) => t.clients?.name).filter(Boolean))).sort() as string[];
+  const companies = Array.from(new Set(transactions.map((t) => t.companies?.name).filter(Boolean))).sort() as string[];
 
-  const filtered = (() => {
+  const filtered = useMemo(() => {
     let data = transactions;
-    if (period !== "all") {
+    // Date filtering
+    if (period === "custom" && dateRange.from) {
+      const from = new Date(dateRange.from);
+      from.setHours(0, 0, 0, 0);
+      const to = dateRange.to ? new Date(dateRange.to) : new Date(dateRange.from);
+      to.setHours(23, 59, 59, 999);
+      data = data.filter((t) => { const d = new Date(t.created_at); return d >= from && d <= to; });
+    } else if (period !== "all") {
       const now = new Date();
       const ms: Record<string, number> = { "7d": 7, "30d": 30, "90d": 90, year: 365 };
       const cutoff = new Date(now.getTime() - (ms[period] || 30) * 86400000);
@@ -2305,8 +2320,9 @@ function RelatoriosView() {
     }
     if (gatewayFilter !== "all") data = data.filter((t) => t.gateway === gatewayFilter);
     if (clientFilter !== "all") data = data.filter((t) => (t.clients?.name || "") === clientFilter);
+    if (companyFilter !== "all") data = data.filter((t) => (t.companies?.name || "") === companyFilter);
     return data;
-  })();
+  }, [transactions, period, dateRange, gatewayFilter, clientFilter, companyFilter]);
 
   const today = new Date();
   const classify = (t: any) => {
@@ -2319,7 +2335,8 @@ function RelatoriosView() {
   const pending = filtered.filter((t) => classify(t) === "pending");
   const overdue = filtered.filter((t) => classify(t) === "overdue");
 
-  const totalRevenue = confirmed.reduce((s, t) => s + Number(t.amount || 0), 0);
+  const totalCharged = filtered.reduce((s, t) => s + Number(t.amount || 0), 0);
+  const totalPaid = confirmed.reduce((s, t) => s + Number(t.amount || 0), 0);
   const openAmount = pending.reduce((s, t) => s + Number(t.amount || 0), 0);
   const overdueAmount = overdue.reduce((s, t) => s + Number(t.amount || 0), 0);
   const paymentRate = filtered.length ? Math.round((confirmed.length / filtered.length) * 100) : 0;
@@ -2327,7 +2344,7 @@ function RelatoriosView() {
   const fmt = (v: number) =>
     new Intl.NumberFormat("pt-PT", { style: "currency", currency: "EUR", minimumFractionDigits: 0 }).format(v);
 
-  const monthlyData = (() => {
+  const monthlyData = useMemo(() => {
     const months: Record<string, { month: string; pago: number; pendente: number }> = {};
     const monthNames = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
     filtered.forEach((t) => {
@@ -2338,7 +2355,7 @@ function RelatoriosView() {
       else months[key].pendente += Number(t.amount || 0);
     });
     return Object.entries(months).sort(([a], [b]) => a.localeCompare(b)).map(([, v]) => v);
-  })();
+  }, [filtered]);
 
   const statusData = [
     { name: "Pago", value: confirmed.length, color: COLORS_STATUS.confirmed },
@@ -2346,26 +2363,58 @@ function RelatoriosView() {
     { name: "Atrasado", value: overdue.length, color: COLORS_STATUS.overdue },
   ].filter((d) => d.value > 0);
 
-  const methodData = (() => {
+  const methodData = useMemo(() => {
     const map: Record<string, number> = {};
     filtered.forEach((t) => {
       const m = t.payment_method || "outro";
       map[m] = (map[m] || 0) + Number(t.amount || 0);
     });
     return Object.entries(map).map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value);
-  })();
+  }, [filtered]);
 
-  const clientData = (() => {
+  const clientData = useMemo(() => {
     const map: Record<string, number> = {};
     filtered.forEach((t) => {
       const name = t.clients?.name || "Sem cliente";
       map[name] = (map[name] || 0) + Number(t.amount || 0);
     });
     return Object.entries(map).map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value).slice(0, 5);
-  })();
+  }, [filtered]);
+
+  // Seller / Responsible report
+  const sellerData = useMemo(() => {
+    const map: Record<string, { name: string; total: number; paid: number; count: number }> = {};
+    filtered.forEach((t) => {
+      const seller = (t.metadata as any)?.responsible_name || "Sem responsável";
+      if (!map[seller]) map[seller] = { name: seller, total: 0, paid: 0, count: 0 };
+      map[seller].total += Number(t.amount || 0);
+      map[seller].count += 1;
+      if (classify(t) === "confirmed") map[seller].paid += Number(t.amount || 0);
+    });
+    return Object.values(map).sort((a, b) => b.total - a.total);
+  }, [filtered]);
+
+  const sellerChartData = sellerData.map((s) => ({
+    name: s.name.length > 20 ? s.name.slice(0, 18) + "…" : s.name,
+    pago: s.paid,
+    pendente: s.total - s.paid,
+  }));
 
   const textColor = "#374151";
   const gridColor = "#e5e7eb";
+
+  const handleDateRangeSelect = (range: any) => {
+    if (range?.from) {
+      setDateRange({ from: range.from, to: range.to });
+      setPeriod("custom");
+      if (range.to) setDatePickerOpen(false);
+    }
+  };
+
+  const clearDateRange = () => {
+    setDateRange({});
+    setPeriod("30d");
+  };
 
   if (loading) {
     return (
@@ -2389,7 +2438,7 @@ function RelatoriosView() {
             {PERIOD_OPTIONS.map((p) => (
               <button
                 key={p.key}
-                onClick={() => setPeriod(p.key)}
+                onClick={() => { setPeriod(p.key); if (p.key !== "custom") setDateRange({}); }}
                 className={cn(
                   "px-3 py-1.5 rounded-md text-xs font-medium transition-all",
                   period === p.key
@@ -2401,35 +2450,82 @@ function RelatoriosView() {
               </button>
             ))}
           </div>
-          <Select value={gatewayFilter} onValueChange={setGatewayFilter}>
-            <SelectTrigger className="h-8 w-[130px] text-xs">
-              <SelectValue placeholder="Gateway" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Todos Gateways</SelectItem>
-              {gateways.map((g) => (
-                <SelectItem key={g} value={g}>{g}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Select value={clientFilter} onValueChange={setClientFilter}>
-            <SelectTrigger className="h-8 w-[160px] text-xs">
-              <SelectValue placeholder="Cliente" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Todos Clientes</SelectItem>
-              {clients.map((c) => (
-                <SelectItem key={c} value={c}>{c}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
         </div>
       </div>
 
+      {/* Filters Row */}
+      <div className="flex items-center gap-3 flex-wrap">
+        {/* Date Range Picker */}
+        <Popover open={datePickerOpen} onOpenChange={setDatePickerOpen}>
+          <PopoverTrigger asChild>
+            <Button variant="outline" className={cn("h-8 text-xs gap-1.5 min-w-[180px] justify-start", period === "custom" && "border-primary")}>
+              <CalendarIcon className="h-3.5 w-3.5" />
+              {period === "custom" && dateRange.from
+                ? `${format(dateRange.from, "dd/MM/yyyy")}${dateRange.to ? ` - ${format(dateRange.to, "dd/MM/yyyy")}` : ""}`
+                : "Período personalizado"
+              }
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent className="w-auto p-0" align="start">
+            <Calendar
+              mode="range"
+              selected={dateRange.from ? { from: dateRange.from, to: dateRange.to } : undefined}
+              onSelect={handleDateRangeSelect}
+              numberOfMonths={2}
+              className="p-3 pointer-events-auto"
+            />
+            {period === "custom" && (
+              <div className="px-3 pb-3">
+                <Button variant="ghost" size="sm" className="text-xs w-full" onClick={clearDateRange}>
+                  Limpar período
+                </Button>
+              </div>
+            )}
+          </PopoverContent>
+        </Popover>
+
+        <Select value={companyFilter} onValueChange={setCompanyFilter}>
+          <SelectTrigger className="h-8 w-[160px] text-xs">
+            <SelectValue placeholder="Empresa" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Todas Empresas</SelectItem>
+            {companies.map((c) => (
+              <SelectItem key={c} value={c}>{c}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
+        <Select value={gatewayFilter} onValueChange={setGatewayFilter}>
+          <SelectTrigger className="h-8 w-[130px] text-xs">
+            <SelectValue placeholder="Gateway" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Todos Gateways</SelectItem>
+            {gateways.map((g) => (
+              <SelectItem key={g} value={g}>{g}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
+        <Select value={clientFilter} onValueChange={setClientFilter}>
+          <SelectTrigger className="h-8 w-[160px] text-xs">
+            <SelectValue placeholder="Cliente" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Todos Clientes</SelectItem>
+            {clients.map((c) => (
+              <SelectItem key={c} value={c}>{c}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+
       {/* KPI Cards */}
-      <div className="grid grid-cols-5 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
         {[
-          { label: "Total Receita", value: fmt(totalRevenue), icon: DollarSign, bg: "bg-success/10", color: "text-success" },
+          { label: "Total Cobrado", value: fmt(totalCharged), icon: DollarSign, bg: "bg-primary/10", color: "text-primary" },
+          { label: "Total Pago", value: fmt(totalPaid), icon: CheckCircle, bg: "bg-success/10", color: "text-success" },
           { label: "Em Aberto", value: fmt(openAmount), icon: Clock, bg: "bg-warning/10", color: "text-warning" },
           { label: "Em Atraso", value: fmt(overdueAmount), icon: AlertTriangle, bg: "bg-destructive/10", color: "text-destructive" },
           { label: "Pagos", value: String(confirmed.length), icon: CheckCircle, bg: "bg-success/10", color: "text-success" },
@@ -2533,6 +2629,71 @@ function RelatoriosView() {
         </Card>
       </div>
 
+      {/* Seller / Responsible Report */}
+      <div className="grid grid-cols-2 gap-4">
+        <Card className="b24-card">
+          <CardHeader className="pb-2 pt-4 px-4">
+            <CardTitle className="text-sm flex items-center gap-2">
+              <Users className="h-4 w-4" /> Recebimentos por Vendedor
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="px-2 pb-3">
+            {sellerChartData.length > 0 ? (
+              <ResponsiveContainer width="100%" height={Math.max(200, sellerChartData.length * 40)}>
+                <BarChart data={sellerChartData} layout="vertical">
+                  <CartesianGrid strokeDasharray="3 3" stroke={gridColor} />
+                  <XAxis type="number" tick={{ fill: textColor, fontSize: 10 }} />
+                  <YAxis type="category" dataKey="name" tick={{ fill: textColor, fontSize: 10 }} width={120} />
+                  <RechartsTooltip contentStyle={{ backgroundColor: "#fff", border: "1px solid " + gridColor, borderRadius: 8, fontSize: 12 }} />
+                  <Legend wrapperStyle={{ fontSize: 11 }} />
+                  <Bar dataKey="pago" name="Pago" fill={COLORS_STATUS.confirmed} stackId="a" radius={[0, 0, 0, 0]} />
+                  <Bar dataKey="pendente" name="Pendente" fill={COLORS_STATUS.pending} stackId="a" radius={[0, 4, 4, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            ) : (
+              <p className="text-center text-muted-foreground text-sm py-8">Sem dados de vendedor</p>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card className="b24-card">
+          <CardHeader className="pb-2 pt-4 px-4">
+            <CardTitle className="text-sm">Resumo por Vendedor</CardTitle>
+          </CardHeader>
+          <CardContent className="px-0 pb-2">
+            <div className="overflow-auto max-h-[300px]">
+              <table className="w-full text-xs b24-table">
+                <thead className="sticky top-0">
+                  <tr>
+                    <th className="text-left px-4 py-2 font-medium text-muted-foreground">Vendedor</th>
+                    <th className="text-right px-4 py-2 font-medium text-muted-foreground">Nº Trans.</th>
+                    <th className="text-right px-4 py-2 font-medium text-muted-foreground">Total</th>
+                    <th className="text-right px-4 py-2 font-medium text-muted-foreground">Pago</th>
+                    <th className="text-right px-4 py-2 font-medium text-muted-foreground">Em Aberto</th>
+                    <th className="text-right px-4 py-2 font-medium text-muted-foreground">% Pago</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {sellerData.map((s) => (
+                    <tr key={s.name} className="border-b border-border hover:bg-muted/30 transition-colors">
+                      <td className="px-4 py-2 font-medium">{s.name}</td>
+                      <td className="px-4 py-2 text-right">{s.count}</td>
+                      <td className="px-4 py-2 text-right">{fmt(s.total)}</td>
+                      <td className="px-4 py-2 text-right text-success">{fmt(s.paid)}</td>
+                      <td className="px-4 py-2 text-right text-warning">{fmt(s.total - s.paid)}</td>
+                      <td className="px-4 py-2 text-right font-semibold">{s.total > 0 ? Math.round((s.paid / s.total) * 100) : 0}%</td>
+                    </tr>
+                  ))}
+                  {sellerData.length === 0 && (
+                    <tr><td colSpan={6} className="text-center py-6 text-muted-foreground">Sem dados</td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
       {/* Detailed Table */}
       <Card className="b24-card">
         <CardHeader className="pb-2 pt-4 px-4">
@@ -2545,6 +2706,8 @@ function RelatoriosView() {
                 <tr>
                   <th className="text-left px-4 py-2 font-medium text-muted-foreground">Data</th>
                   <th className="text-left px-4 py-2 font-medium text-muted-foreground">Cliente</th>
+                  <th className="text-left px-4 py-2 font-medium text-muted-foreground">Empresa</th>
+                  <th className="text-left px-4 py-2 font-medium text-muted-foreground">Responsável</th>
                   <th className="text-right px-4 py-2 font-medium text-muted-foreground">Valor</th>
                   <th className="text-left px-4 py-2 font-medium text-muted-foreground">Método</th>
                   <th className="text-left px-4 py-2 font-medium text-muted-foreground">Gateway</th>
@@ -2565,6 +2728,8 @@ function RelatoriosView() {
                     <tr key={t.id} className="border-b border-border hover:bg-muted/30 transition-colors">
                       <td className="px-4 py-2">{new Date(t.created_at).toLocaleDateString("pt-PT")}</td>
                       <td className="px-4 py-2">{t.clients?.name || "—"}</td>
+                      <td className="px-4 py-2">{t.companies?.name || "—"}</td>
+                      <td className="px-4 py-2">{(t.metadata as any)?.responsible_name || "—"}</td>
                       <td className="px-4 py-2 text-right font-medium">{fmt(Number(t.amount || 0))}</td>
                       <td className="px-4 py-2">{t.payment_method}</td>
                       <td className="px-4 py-2">{t.gateway}</td>
@@ -2579,7 +2744,7 @@ function RelatoriosView() {
                 })}
                 {filtered.length === 0 && (
                   <tr>
-                    <td colSpan={7} className="text-center py-8 text-muted-foreground">Sem transações neste período</td>
+                    <td colSpan={9} className="text-center py-8 text-muted-foreground">Sem transações neste período</td>
                   </tr>
                 )}
               </tbody>
