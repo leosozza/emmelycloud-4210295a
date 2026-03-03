@@ -1,32 +1,51 @@
 
 
-## Plan: Link Deal and Contact to Smart Invoices
+## Plan: AI Automation Agent
 
-### Problem
-When creating Smart Invoices (entityTypeId 31) via `crm.item.add`, two bindings are missing:
-1. **Deal link** — field `parentId2` is set but `UF_CRM_SMART_INVOICE_DEAL` (the standard deal binding for Smart Invoices) is not
-2. **Contact link** — the contact from the deal (`CONTACT_ID`) is not linked to the Smart Invoice
+### What already exists
+- `ai-triage` edge function already does `classify_lead` with Lovable AI (gemini-3-flash-preview)
+- `LeadSheet` already has "Classificar com IA" button using `useAiTriage` hook
+- `ContactProfile` has contact info but no "Resumir Conversa" button
 
-### Fix
-In `supabase/functions/bitrix24-payment-webhook/index.ts`, update the `fields` object in the `crm.item.add` call (lines 302-311) to include:
+### What to build
 
-```typescript
-fields: {
-  title: invoiceTitle,
-  opportunity: parcel.amount,
-  currencyId: currency,
-  isManualOpportunity: "Y",
-  parentId2: parseInt(String(dealId)),
-  contactId: contactId ? parseInt(String(contactId)) : undefined,
-  begindate: new Date().toISOString().split("T")[0],
-  closedate: parcel.due_date,
-  comments: `Fatura gerada automaticamente pelo Emmely Pay. ${label}. Grupo: ${groupId}`,
-}
+#### 1. Edge Function: `ai-automation-agent`
+Single edge function with `action` parameter routing to 4 handlers:
+
+- **`classify_lead`**: Reuse existing `ai-triage` logic (fetch lead + messages, call AI with tool calling, update lead with ai_score/ai_viability/legal_area/urgency/notes)
+- **`summarize_conversation`**: Fetch all messages for conversation_id, send to AI asking for a summary, save summary to the linked lead's notes (or return if no lead linked)
+- **`suggest_next_action`**: Fetch lead + case + conversation data, ask AI to suggest next action (ligar, enviar proposta, agendar reunião, etc.), return suggestion
+- **`extract_lead_data`**: Fetch conversation messages, ask AI to extract name/phone/email/legal_area using tool calling, create or update lead with extracted data
+
+All actions use `LOVABLE_API_KEY` + `google/gemini-3-flash-preview`. Add to `config.toml` with `verify_jwt = false`.
+
+#### 2. Frontend Hook: `useAiAutomation`
+Generic hook wrapping `supabase.functions.invoke("ai-automation-agent", { body: { action, ...params } })` with toast notifications per action type.
+
+#### 3. LeadSheet: Add "Classificar com IA" for all stages
+The button already exists in triage stage and as "Reclassificar" outside triage. Will keep existing behavior — no changes needed for leads.
+
+#### 4. ContactProfile: Add "Resumir Conversa" button
+Add a new `CollapsibleSection` titled "IA" with:
+- "Resumir Conversa" button calling `summarize_conversation` with the conversation ID
+- "Extrair Dados" button calling `extract_lead_data`
+- Loading states with spinner
+
+#### Technical details
+
+**Edge function structure:**
 ```
+supabase/functions/ai-automation-agent/index.ts
+```
+- Switch on `action` field from request body
+- Each action: fetch context from DB → build prompt → call AI gateway → parse response → update DB → return result
+- Tool calling for structured output (classify_lead, extract_lead_data)
+- Plain text response for summarize_conversation and suggest_next_action
+- Handle 429/402 rate limit errors
 
-- `contactId` — links the deal's contact to the Smart Invoice (already extracted as `deal.CONTACT_ID` on line ~215)
-- `parentId2` is already present and should handle the deal binding for Smart Process type 31
+**Config update:** Add `[functions.ai-automation-agent]` with `verify_jwt = false` to `supabase/config.toml`.
 
-### Note
-The field `UF_CRM_SMART_INVOICE_DEAL` is specific to the native Smart Invoice entity. For custom Smart Processes (type 31), the deal binding is typically done via `parentId2`. If this specific Bitrix24 instance uses `UF_CRM_SMART_INVOICE_DEAL`, we add that too as a fallback.
+**Hook file:** `src/hooks/useAiAutomation.ts` with individual mutation functions for each action.
+
+**ContactProfile changes:** Add Sparkles icon button for summarize + extract, with loading state and toast feedback.
 
