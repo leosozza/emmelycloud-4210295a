@@ -8,9 +8,11 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { format } from "date-fns";
 import { pt } from "date-fns/locale";
-import { Banknote, CheckCircle2, Clock, TrendingUp } from "lucide-react";
+import { Banknote, CheckCircle2, Clock, TrendingUp, Send, Bell } from "lucide-react";
+import { toast } from "sonner";
 
 function getPeriodRange(period: string) {
   const now = new Date();
@@ -34,6 +36,7 @@ function getPeriodRange(period: string) {
 
 const FinanceiroPage = () => {
   const [period, setPeriod] = useState("30d");
+  const [sendingReminder, setSendingReminder] = useState<string | null>(null);
   const range = getPeriodRange(period);
 
   const { data: transactions = [], isLoading } = useQuery({
@@ -51,10 +54,46 @@ const FinanceiroPage = () => {
     },
   });
 
+  // Count reminders sent in the period
+  const { data: reminderCount = 0 } = useQuery({
+    queryKey: ["reminders-sent", period],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("payment_transactions")
+        .select("id, metadata")
+        .gte("created_at", range.start)
+        .lte("created_at", range.end);
+      if (error) throw error;
+      return (data || []).filter((tx) => {
+        const meta = (tx.metadata || {}) as Record<string, any>;
+        return !!meta.reminder_sent_at;
+      }).length;
+    },
+  });
+
   const confirmed = transactions.filter((t) => t.status === "confirmed");
   const pending = transactions.filter((t) => t.status === "pending");
   const totalConfirmed = confirmed.reduce((s, t) => s + Number(t.amount), 0);
   const totalPending = pending.reduce((s, t) => s + Number(t.amount), 0);
+
+  const handleSendReminder = async (financialRecordId: string) => {
+    setSendingReminder(financialRecordId);
+    try {
+      const { data, error } = await supabase.functions.invoke("payment-reminder", {
+        body: { mode: "manual", financial_record_id: financialRecordId },
+      });
+      if (error) throw error;
+      if (data?.ok) {
+        toast.success("Cobrança enviada com sucesso!");
+      } else {
+        toast.error(data?.reason || "Não foi possível enviar a cobrança");
+      }
+    } catch (err: any) {
+      toast.error(err.message || "Erro ao enviar cobrança");
+    } finally {
+      setSendingReminder(null);
+    }
+  };
 
   return (
     <div>
@@ -63,7 +102,7 @@ const FinanceiroPage = () => {
       </PageHeader>
 
       {/* KPI Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">Total Recebido</CardTitle>
@@ -106,6 +145,16 @@ const FinanceiroPage = () => {
             <p className="text-xs text-muted-foreground">baixas realizadas</p>
           </CardContent>
         </Card>
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground">Cobranças Enviadas</CardTitle>
+            <Bell className="h-4 w-4 text-primary" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{reminderCount}</div>
+            <p className="text-xs text-muted-foreground">lembretes no período</p>
+          </CardContent>
+        </Card>
       </div>
 
       {/* Table */}
@@ -129,6 +178,7 @@ const FinanceiroPage = () => {
                   <TableHead>Método</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Baixa em</TableHead>
+                  <TableHead>Ações</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -136,6 +186,7 @@ const FinanceiroPage = () => {
                   const meta = (tx.metadata || {}) as Record<string, any>;
                   const clientName = (tx as any).clients?.name;
                   const paidAt = tx.status === "confirmed" ? tx.updated_at : null;
+                  const isPending = tx.status === "pending";
                   return (
                     <TableRow key={tx.id}>
                       <TableCell className="whitespace-nowrap">
@@ -167,6 +218,20 @@ const FinanceiroPage = () => {
                       </TableCell>
                       <TableCell className="whitespace-nowrap text-muted-foreground text-xs">
                         {paidAt ? format(new Date(paidAt), "dd/MM/yyyy HH:mm", { locale: pt }) : "—"}
+                      </TableCell>
+                      <TableCell>
+                        {isPending && tx.financial_record_id && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="gap-1"
+                            disabled={sendingReminder === tx.financial_record_id}
+                            onClick={() => handleSendReminder(tx.financial_record_id!)}
+                          >
+                            <Send className="h-3 w-3" />
+                            {sendingReminder === tx.financial_record_id ? "Enviando..." : "Cobrar"}
+                          </Button>
+                        )}
                       </TableCell>
                     </TableRow>
                   );
