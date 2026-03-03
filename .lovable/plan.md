@@ -1,29 +1,32 @@
 
 
-## Plano: Criar Faturas no Bitrix24 para o Deal 8901
+## Plan: Link Deal and Contact to Smart Invoices
 
-### Diagnóstico
-As 3 parcelas foram criadas chamando `payment-create` directamente, que apenas cria transações locais no Supabase. A criação de faturas no Bitrix24 só acontece em dois fluxos:
-- **`bitrix24-robot-handler`** → usa `crm.invoice.add` (API legacy)
-- **`bitrix24-payment-webhook`** → usa `crm.item.add` com `entityTypeId: 31` (Smart Process)
+### Problem
+When creating Smart Invoices (entityTypeId 31) via `crm.item.add`, two bindings are missing:
+1. **Deal link** — field `parentId2` is set but `UF_CRM_SMART_INVOICE_DEAL` (the standard deal binding for Smart Invoices) is not
+2. **Contact link** — the contact from the deal (`CONTACT_ID`) is not linked to the Smart Invoice
 
-O kanban `/crm/type/31/` usa Smart Process, logo precisamos de `crm.item.add`.
+### Fix
+In `supabase/functions/bitrix24-payment-webhook/index.ts`, update the `fields` object in the `crm.item.add` call (lines 302-311) to include:
 
-### Abordagem
-Apagar as 3 transações de teste e re-executar via **`bitrix24-payment-webhook`** (que cria transações + Smart Invoices tipo 31 de uma só vez). Este endpoint já tem toda a lógica de:
-1. Buscar o deal no Bitrix24
-2. Calcular parcelas
-3. Criar transações via `payment-create`
-4. Criar Smart Invoices via `crm.item.add` entityTypeId 31
-5. Linkar os IDs das faturas nas transações
+```typescript
+fields: {
+  title: invoiceTitle,
+  opportunity: parcel.amount,
+  currencyId: currency,
+  isManualOpportunity: "Y",
+  parentId2: parseInt(String(dealId)),
+  contactId: contactId ? parseInt(String(contactId)) : undefined,
+  begindate: new Date().toISOString().split("T")[0],
+  closedate: parcel.due_date,
+  comments: `Fatura gerada automaticamente pelo Emmely Pay. ${label}. Grupo: ${groupId}`,
+}
+```
 
-### Passos
+- `contactId` — links the deal's contact to the Smart Invoice (already extracted as `deal.CONTACT_ID` on line ~215)
+- `parentId2` is already present and should handle the deal binding for Smart Process type 31
 
-1. **Limpar transações existentes** — DELETE das 3 transações do deal 8901
-2. **Chamar `bitrix24-payment-webhook`** com `deal_id: 8901` — isto cria 3 parcelas + 3 Smart Invoices no Bitrix24
-3. **Ajustar status** — Parcela 1 → `confirmed`, Parcela 2 → vencimento passado, Parcela 3 → vencimento futuro
-4. **Verificar** — Confirmar no kanban `/crm/type/31/` que as faturas aparecem
-
-### Nota técnica
-O `bitrix24-payment-webhook` usa os campos configurados no `config` da integração (como `deal_amount_field`, `deal_installments_field`). Se esses campos não estiverem mapeados, usa os defaults (`OPPORTUNITY`, 1 parcela). Pode ser necessário passar parâmetros extra no body ou garantir que o deal 8901 tem `OPPORTUNITY = 1000` e os campos de parcelas preenchidos no Bitrix24.
+### Note
+The field `UF_CRM_SMART_INVOICE_DEAL` is specific to the native Smart Invoice entity. For custom Smart Processes (type 31), the deal binding is typically done via `parentId2`. If this specific Bitrix24 instance uses `UF_CRM_SMART_INVOICE_DEAL`, we add that too as a fallback.
 
