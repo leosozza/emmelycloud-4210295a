@@ -241,7 +241,10 @@ Deno.serve(async (req) => {
       params.append("line_items[0][price_data][product_data][name]", description);
       params.append("line_items[0][quantity]", "1");
 
-      const paymentMethods = ["card", "sepa_debit", "multibanco", "mb_way", "ideal", "bancontact", "sofort", "klarna", "link"];
+      // Regional payment methods based on currency
+      const paymentMethods = currency === "BRL"
+        ? ["card", "boleto", "pix", "link"]
+        : ["card", "multibanco", "mb_way", "sepa_debit", "link"];
       for (const pm of paymentMethods) {
         params.append("payment_method_types[]", pm);
       }
