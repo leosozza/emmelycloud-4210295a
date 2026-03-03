@@ -23,8 +23,14 @@ function getGateway(country: string | null, currency: string): "stripe" | "asaas
   return "stripe";
 }
 
-async function createStripePayment(apiKey: string, amount: number, currency: string, customerEmail: string, description: string, returnUrl?: string) {
-  // Create a Checkout Session with all payment methods
+function getStripePaymentMethods(region?: "pt" | "br" | null): string[] {
+  if (region === "pt") return ["card", "multibanco", "mb_way", "sepa_debit", "link"];
+  if (region === "br") return ["card", "boleto", "pix", "link"];
+  return ["card", "sepa_debit", "multibanco", "mb_way", "link"];
+}
+
+async function createStripePayment(apiKey: string, amount: number, currency: string, customerEmail: string, description: string, returnUrl?: string, region?: "pt" | "br" | null) {
+  // Create a Checkout Session with regional payment methods
   const params = new URLSearchParams();
   params.append("mode", "payment");
   params.append("line_items[0][price_data][currency]", currency.toLowerCase());
@@ -32,8 +38,7 @@ async function createStripePayment(apiKey: string, amount: number, currency: str
   params.append("line_items[0][price_data][product_data][name]", description);
   params.append("line_items[0][quantity]", "1");
 
-  // All payment method types
-  const paymentMethods = ["card", "sepa_debit", "multibanco", "mb_way", "ideal", "bancontact", "sofort", "klarna", "link"];
+  const paymentMethods = getStripePaymentMethods(region);
   for (const pm of paymentMethods) {
     params.append("payment_method_types[]", pm);
   }
@@ -304,7 +309,7 @@ Deno.serve(async (req) => {
           status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
-      result = await createStripePayment(stripeKey, amount, currency, customer_data?.email || "", description, body.return_url);
+      result = await createStripePayment(stripeKey, amount, currency, customer_data?.email || "", description, body.return_url, stripeRegion);
     } else {
       // Validate CPF/CNPJ before calling Asaas
       if (customer_data?.cpf_cnpj) {
