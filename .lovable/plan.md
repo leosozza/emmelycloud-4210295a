@@ -1,72 +1,52 @@
 
 
-## Sistema Anti-Loop para Integração Bitrix24
+## Cobranças Automáticas — Plano de Implementação
 
-### Análise do Estado Atual
-- A tabela `leads` já tem `sync_source` (text, default 'emmely') — adicionado na migração anterior
-- A tabela `messages` **não** tem `sync_source`
-- Deduplicação por `external_id` já existe parcialmente em `instagram-webhook` e `whatsapp-webhook`, mas não em `bitrix24-worker`
-- **Não existem** funções `callbell-webhook` ou `callbell-send` — o projeto usa `whatsapp-webhook`, `wuzapi-webhook`, `instagram-webhook` (inbound) e `message-send`, `instagram-send`, `bitrix24-send` (outbound)
+### 1. Nova Edge Function `payment-reminder`
+Função que busca `financial_records` com `status = 'pendente'` e `due_date` nos próximos 3 dias, no dia, ou vencidos. Para cada parcela:
+- Busca o contrato → proposta → caso → lead → `conversation_id` e dados do cliente
+- Chama `payment-create` para gerar link de pagamento (se ainda não existe `payment_transaction` para aquele `financial_record_id`)
+- Monta mensagem personalizada com nome, valor, vencimento e link
+- Envia via `message-send` na conversa do cliente
+- Registra `metadata.reminder_sent_at` na transaction para evitar reenvios
 
-### Plano de Implementação
+Suporta dois modos:
+- **POST `{ mode: "cron" }`**: processa todos os pendentes (chamada pelo CRON)
+- **POST `{ mode: "manual", financial_record_id }`**: envia cobrança manual de uma parcela específica
 
-#### 1. Criar tabela `sync_dedup_cache`
+### 2. CRON Job via pg_cron + pg_net
+Executar SQL (via insert tool, não migration) para criar job diário às 9h:
 ```sql
-CREATE TABLE public.sync_dedup_cache (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  entity_type text NOT NULL,        -- 'message', 'lead', 'deal'
-  entity_id text NOT NULL,          -- ID interno (Emmely)
-  external_id text NOT NULL,        -- ID externo (Bitrix24/WhatsApp)
-  source text NOT NULL,             -- 'emmely' ou 'bitrix24'
-  created_at timestamptz NOT NULL DEFAULT now()
-);
-
-CREATE UNIQUE INDEX idx_dedup_entity_external ON public.sync_dedup_cache(entity_type, external_id, source);
-CREATE INDEX idx_dedup_created_at ON public.sync_dedup_cache(created_at);
-
-ALTER TABLE public.sync_dedup_cache ENABLE ROW LEVEL SECURITY;
-
--- Service role only
-CREATE POLICY "Service role full access sync_dedup_cache"
-  ON public.sync_dedup_cache FOR ALL
-  USING (true) WITH CHECK (true);
+SELECT cron.schedule('payment-reminder-daily', '0 9 * * *', $$
+  SELECT net.http_post(
+    url:='https://qohnsluvhyziovfynzlu.supabase.co/functions/v1/payment-reminder',
+    headers:='{"Content-Type":"application/json","Authorization":"Bearer <anon_key>"}'::jsonb,
+    body:='{"mode":"cron"}'::jsonb
+  ) as request_id;
+$$);
 ```
 
-#### 2. Adicionar `sync_source` à tabela `messages`
+### 3. Config
+Adicionar `[functions.payment-reminder] verify_jwt = false` ao `config.toml`.
+
+### 4. Frontend — Página Financeiro
+- Adicionar coluna "Ações" na tabela com botão "Enviar Cobrança" por parcela pendente
+- Botão chama `supabase.functions.invoke('payment-reminder', { body: { mode: 'manual', financial_record_id: tx.financial_record_id } })`
+- Novo KPI card "Cobranças Enviadas" que conta `payment_transactions` com `metadata->reminder_sent_at IS NOT NULL` no período
+
+### 5. Habilitar extensões pg_cron e pg_net
+Migração para garantir que as extensões estão ativas:
 ```sql
-ALTER TABLE public.messages ADD COLUMN IF NOT EXISTS sync_source text;
+CREATE EXTENSION IF NOT EXISTS pg_cron WITH SCHEMA pg_catalog;
+CREATE EXTENSION IF NOT EXISTS pg_net WITH SCHEMA extensions;
 ```
-
-#### 3. Edge function de limpeza TTL (cron-style cleanup)
-Adicionar lógica de cleanup no `bitrix24-worker` — antes de processar eventos, limpar entradas com mais de 5 minutos:
-```sql
-DELETE FROM sync_dedup_cache WHERE created_at < now() - interval '5 minutes';
-```
-
-#### 4. Modificar `bitrix24-worker` — dedup no `handleConnectorMessage`
-Antes de inserir/reencaminhar mensagem, verificar no `sync_dedup_cache`:
-- Se `external_id` já existe com `source='emmely'` → é eco do envio → ignorar
-- Ao processar mensagem inbound, registar no cache com `source='bitrix24'`
-
-#### 5. Modificar `bitrix24-send` — marcar mensagens enviadas
-Após enviar mensagem ao Bitrix24, inserir no `sync_dedup_cache`:
-```js
-{ entity_type: 'message', entity_id: conversationId, external_id: messageImId, source: 'emmely' }
-```
-
-#### 6. Modificar `bitrix24-events` — dedup de eventos CRM
-Antes de enfileirar, verificar se o evento já foi processado recentemente (mesmo `event_type` + `member_id` + entity ID no cache).
-
-#### 7. Reforçar dedup existente em `whatsapp-webhook` e `wuzapi-webhook`
-Já verificam `external_id` na tabela `messages`. Adicionar também check no `sync_dedup_cache` para mensagens enviadas pelo Emmely.
 
 ### Ficheiros a Criar/Modificar
-
 | Ficheiro | Ação |
 |---|---|
-| Migration SQL | Criar — tabela `sync_dedup_cache` + coluna `sync_source` em `messages` |
-| `supabase/functions/bitrix24-worker/index.ts` | Editar — dedup em `handleConnectorMessage` + cleanup TTL |
-| `supabase/functions/bitrix24-send/index.ts` | Editar — registar no cache após envio |
-| `supabase/functions/bitrix24-events/index.ts` | Editar — dedup de eventos CRM antes de enfileirar |
-| `supabase/functions/message-send/index.ts` | Editar — registar `sync_source` nas mensagens outbound |
+| `supabase/functions/payment-reminder/index.ts` | Criar |
+| `supabase/config.toml` | Editar — adicionar payment-reminder |
+| `src/pages/Financeiro.tsx` | Editar — botão manual + KPI cobranças |
+| Migration SQL | Extensões pg_cron + pg_net |
+| Insert SQL | CRON job schedule |
 
