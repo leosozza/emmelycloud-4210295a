@@ -283,6 +283,29 @@ async function handleConnectorMessage(supabase: any, integration: any, payload: 
 
     if (!messageText) continue;
 
+    // Dedup: check if this message was sent by Emmely (echo prevention)
+    if (messageId) {
+      const { data: dedupHit } = await supabase
+        .from("sync_dedup_cache")
+        .select("id")
+        .eq("entity_type", "message")
+        .eq("external_id", String(messageId))
+        .eq("source", "emmely")
+        .maybeSingle();
+      if (dedupHit) {
+        console.log("[WORKER] Dedup: skipping echo message:", messageId);
+        await debugLog(supabase, integration.id, "dedup_echo_skipped", "inbound", { messageId });
+        continue;
+      }
+      // Register inbound message in dedup cache
+      await supabase.from("sync_dedup_cache").upsert({
+        entity_type: "message",
+        entity_id: "inbound",
+        external_id: String(messageId),
+        source: "bitrix24",
+      }, { onConflict: "entity_type,external_id,source" }).catch(() => {});
+    }
+
     // Skip bot messages
     if (isBotMessage(messageText)) {
       console.log("[WORKER] Skipping bot message");
@@ -739,6 +762,9 @@ Deno.serve(async (req) => {
         }
       } catch {}
     }
+
+    // TTL cleanup: remove dedup cache entries older than 5 minutes
+    await supabase.from("sync_dedup_cache").delete().lt("created_at", new Date(Date.now() - 5 * 60 * 1000).toISOString());
 
     // Fetch pending events (batch of 10)
     const { data: events, error } = await supabase

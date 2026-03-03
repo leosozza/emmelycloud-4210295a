@@ -227,6 +227,15 @@ Deno.serve(async (req) => {
       }
     }
 
+    // Register sent message in dedup cache to prevent echo
+    const messageImId = Date.now().toString();
+    await supabase.from("sync_dedup_cache").upsert({
+      entity_type: "message",
+      entity_id: conversationId || "unknown",
+      external_id: messageImId,
+      source: "emmely",
+    }, { onConflict: "entity_type,external_id,source" }).catch(() => {});
+
     return new Response(JSON.stringify({ ok: true, sentCount }), { headers: jsonHeaders });
   } catch (error) {
     console.error("[SEND] Fatal error:", error);

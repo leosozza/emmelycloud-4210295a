@@ -117,6 +117,32 @@ Deno.serve(async (req) => {
 
     // Enfileirar eventos suportados
     if (SUPPORTED_EVENTS.includes(event)) {
+      // Dedup: check if this exact event was recently processed
+      const eventEntityId = data.data?.FIELDS?.ID || data.data?.PARAMS?.ID || "";
+      if (eventEntityId && memberId) {
+        const dedupKey = `${event}_${memberId}_${eventEntityId}`;
+        const { data: dedupHit } = await supabase
+          .from("sync_dedup_cache")
+          .select("id")
+          .eq("entity_type", "crm_event")
+          .eq("external_id", dedupKey)
+          .eq("source", "bitrix24")
+          .maybeSingle();
+        if (dedupHit) {
+          console.log("[EVENTS] Dedup: skipping duplicate event:", dedupKey);
+          return new Response("successfully", {
+            headers: { ...corsHeaders, "Content-Type": "text/plain; charset=utf-8" },
+          });
+        }
+        // Register event in dedup cache
+        await supabase.from("sync_dedup_cache").upsert({
+          entity_type: "crm_event",
+          entity_id: String(eventEntityId),
+          external_id: dedupKey,
+          source: "bitrix24",
+        }, { onConflict: "entity_type,external_id,source" }).catch(() => {});
+      }
+
       const { error: insertError } = await supabase.from("bitrix_event_queue").insert({
         event_type: event,
         member_id: memberId,  // pode ser null — o worker também tenta pelo domain/payload
