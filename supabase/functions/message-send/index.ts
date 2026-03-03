@@ -360,8 +360,19 @@ Deno.serve(async (req) => {
         sender_name: "Atendente",
         external_id: externalMessageId,
         delivery_status: "sent",
+        sync_source: "emmely",
         media_type: message_type && message_type !== "interactive_buttons" && message_type !== "interactive_list" ? message_type : null,
       });
+
+      // Register in dedup cache to prevent echo from webhooks
+      if (externalMessageId) {
+        await supabase.from("sync_dedup_cache").upsert({
+          entity_type: "message",
+          entity_id: conversation_id,
+          external_id: externalMessageId,
+          source: "emmely",
+        }, { onConflict: "entity_type,external_id,source" }).catch(() => {})
+      }
 
       await supabase.from("conversations").update({
         last_message_at: new Date().toISOString(),

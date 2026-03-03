@@ -149,6 +149,23 @@ Deno.serve(async (req) => {
       conversationId = newConv.id;
     }
 
+    // Dedup: check if this message was sent by Emmely (echo prevention)
+    if (externalId) {
+      const { data: dedupHit } = await supabase
+        .from("sync_dedup_cache")
+        .select("id")
+        .eq("entity_type", "message")
+        .eq("external_id", externalId)
+        .eq("source", "emmely")
+        .maybeSingle();
+      if (dedupHit) {
+        console.log("[WUZAPI-WEBHOOK] Dedup: skipping echo message:", externalId);
+        return new Response(JSON.stringify({ ok: true, skipped: "dedup_echo" }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+    }
+
     // Insert message
     await supabase.from("messages").insert({
       conversation_id: conversationId,
@@ -159,6 +176,7 @@ Deno.serve(async (req) => {
       media_type: mediaType,
       media_url: mediaUrl,
       delivery_status: "delivered",
+      sync_source: "bitrix24",
     });
 
     // Trigger chatbot-reply if bot is active

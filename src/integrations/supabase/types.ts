@@ -1368,6 +1368,7 @@ export type Database = {
           media_url: string | null
           read_at: string | null
           sender_name: string | null
+          sync_source: string | null
         }
         Insert: {
           content: string
@@ -1381,6 +1382,7 @@ export type Database = {
           media_url?: string | null
           read_at?: string | null
           sender_name?: string | null
+          sync_source?: string | null
         }
         Update: {
           content?: string
@@ -1394,6 +1396,7 @@ export type Database = {
           media_url?: string | null
           read_at?: string | null
           sender_name?: string | null
+          sync_source?: string | null
         }
         Relationships: [
           {
@@ -1800,6 +1803,33 @@ export type Database = {
           name?: string
           updated_at?: string
           value?: number
+        }
+        Relationships: []
+      }
+      sync_dedup_cache: {
+        Row: {
+          created_at: string
+          entity_id: string
+          entity_type: string
+          external_id: string
+          id: string
+          source: string
+        }
+        Insert: {
+          created_at?: string
+          entity_id: string
+          entity_type: string
+          external_id: string
+          id?: string
+          source: string
+        }
+        Update: {
+          created_at?: string
+          entity_id?: string
+          entity_type?: string
+          external_id?: string
+          id?: string
+          source?: string
         }
         Relationships: []
       }
