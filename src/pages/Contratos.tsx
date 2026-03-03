@@ -10,7 +10,7 @@ import {
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
-import { Plus, Search, Pencil, Trash2, FileSignature, Ban } from "lucide-react";
+import { Plus, Search, Pencil, Trash2, FileSignature, Ban, Link2, Copy } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Tables, Constants } from "@/integrations/supabase/types";
 import { ContratoForm } from "@/components/contratos/ContratoForm";
@@ -43,9 +43,20 @@ const ContratosPage = () => {
     queryFn: async () => {
       const { data, error } = await supabase.from("contracts").select("*").order("created_at", { ascending: false });
       if (error) throw error;
+      return data as any[];
+    },
+  });
+
+  const { data: signatures = [] } = useQuery({
+    queryKey: ["digital-signatures"],
+    queryFn: async () => {
+      const { data, error } = await supabase.from("digital_signatures").select("contract_id, signature_method, signed_at");
+      if (error) throw error;
       return data;
     },
   });
+
+  const signaturesMap = Object.fromEntries(signatures.map((s: any) => [s.contract_id, s]));
 
   const { data: proposals = [] } = useQuery({
     queryKey: ["proposals-select"],
@@ -145,6 +156,12 @@ const ContratosPage = () => {
 
   const fmtDate = (d: string | null) => d ? format(parseISO(d), "dd/MM/yyyy") : "—";
 
+  const copySignLink = (signToken: string) => {
+    const link = `${window.location.origin}/sign/${signToken}`;
+    navigator.clipboard.writeText(link);
+    toast({ title: "Link copiado", description: "Link de assinatura copiado para a área de transferência" });
+  };
+
   return (
     <div className="space-y-4">
       <PageHeader title="Contratos" description="Gestão de contratos e assinaturas">
@@ -173,15 +190,18 @@ const ContratosPage = () => {
               <TableHead>Início</TableHead>
               <TableHead>Expiração</TableHead>
               <TableHead>Assinatura</TableHead>
-              <TableHead className="w-36">Ações</TableHead>
+              <TableHead>Assinatura Digital</TableHead>
+              <TableHead className="w-44">Ações</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {isLoading ? (
               <TableRow><TableCell colSpan={7} className="text-center text-muted-foreground">A carregar...</TableCell></TableRow>
             ) : filtered.length === 0 ? (
-              <TableRow><TableCell colSpan={7} className="text-center text-muted-foreground">Nenhum contrato encontrado</TableCell></TableRow>
-            ) : filtered.map((c) => (
+              <TableRow><TableCell colSpan={8} className="text-center text-muted-foreground">Nenhum contrato encontrado</TableCell></TableRow>
+            ) : filtered.map((c: any) => {
+              const sig = signaturesMap[c.id];
+              return (
               <TableRow key={c.id}>
                 <TableCell className="font-medium text-sm">
                   <Button variant="link" size="sm" className="p-0 h-auto text-sm" onClick={() => navigate("/propostas")}>
@@ -201,11 +221,25 @@ const ContratosPage = () => {
                 <TableCell className="text-xs text-muted-foreground">{fmtDate(c.starts_at)}</TableCell>
                 <TableCell className="text-xs text-muted-foreground">{fmtDate(c.expires_at)}</TableCell>
                 <TableCell className="text-xs text-muted-foreground">{fmtDate(c.signed_at)}</TableCell>
+                <TableCell className="text-xs">
+                  {sig ? (
+                    <Badge variant="outline" className="text-xs">
+                      {sig.signature_method === "draw" ? "✍️ Desenho" : sig.signature_method === "selfie" ? "📸 Selfie" : "🔒 IP"}
+                    </Badge>
+                  ) : c.status === "pendente" ? (
+                    <span className="text-muted-foreground">—</span>
+                  ) : "—"}
+                </TableCell>
                 <TableCell>
                   <div className="flex gap-1">
                     {c.status === "pendente" && (
                       <>
-                        <Button variant="ghost" size="icon" title="Assinar" onClick={() => signMutation.mutate(c.id)}>
+                        {c.sign_token && (
+                          <Button variant="ghost" size="icon" title="Copiar link de assinatura" onClick={() => copySignLink(c.sign_token)}>
+                            <Link2 className="h-4 w-4 text-primary" />
+                          </Button>
+                        )}
+                        <Button variant="ghost" size="icon" title="Assinar (interno)" onClick={() => signMutation.mutate(c.id)}>
                           <FileSignature className="h-4 w-4 text-success" />
                         </Button>
                         <Button variant="ghost" size="icon" title="Cancelar" onClick={() => cancelMutation.mutate(c.id)}>
@@ -222,7 +256,8 @@ const ContratosPage = () => {
                   </div>
                 </TableCell>
               </TableRow>
-            ))}
+            );
+            })}
           </TableBody>
         </Table>
       </div>

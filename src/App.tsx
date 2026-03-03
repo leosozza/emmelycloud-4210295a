@@ -33,6 +33,7 @@ import Terms from "./pages/Terms";
 import DataDeletion from "./pages/DataDeletion";
 import Bitrix24App from "./pages/Bitrix24App";
 import PropostaPublica from "./pages/PropostaPublica";
+import SignContract from "./pages/SignContract";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -52,6 +53,7 @@ const App = () => (
           <Route path="/data-deletion" element={<DataDeletion />} />
           <Route path="/bitrix24" element={<Bitrix24App />} />
           <Route path="/proposta/:token" element={<PropostaPublica />} />
+          <Route path="/sign/:token" element={<SignContract />} />
           <Route element={<AppLayout />}>
             <Route path="/" element={<Index />} />
             <Route path="/leads" element={<LeadsPage />} />
