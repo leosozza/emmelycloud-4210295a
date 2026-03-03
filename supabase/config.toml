@@ -125,3 +125,6 @@ verify_jwt = false
 
 [functions.bitrix24-sync]
 verify_jwt = false
+
+[functions.ai-automation-agent]
+verify_jwt = false
