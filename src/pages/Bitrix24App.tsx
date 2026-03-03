@@ -2415,6 +2415,55 @@ function RelatoriosView() {
     setDateRange({});
     setPeriod("30d");
   };
+  const [exporting, setExporting] = useState(false);
+  const [exportedLink, setExportedLink] = useState<string | null>(null);
+
+  const buildSnapshotData = () => ({
+    kpis: { totalCharged, totalPaid, openAmount, overdueAmount, confirmedCount: confirmed.length, paymentRate },
+    sellerData,
+    transactions: filtered.map((t) => ({
+      created_at: t.created_at,
+      client_name: t.clients?.name || null,
+      company_name: t.companies?.name || null,
+      responsible: (t.metadata as any)?.responsible_name || null,
+      amount: Number(t.amount || 0),
+      payment_method: t.payment_method,
+      gateway: t.gateway,
+      status: t.status,
+      due_date: (t.metadata as any)?.due_date || null,
+    })),
+  });
+
+  const handleExportLink = async () => {
+    setExporting(true);
+    try {
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/report_snapshots`, {
+        method: "POST",
+        headers: {
+          apikey: SUPABASE_KEY,
+          Authorization: `Bearer ${SUPABASE_KEY}`,
+          "Content-Type": "application/json",
+          Prefer: "return=representation",
+        },
+        body: JSON.stringify({
+          title: "Relatório Financeiro",
+          data: buildSnapshotData(),
+          filters: { period, company: companyFilter, gateway: gatewayFilter, client: clientFilter },
+        }),
+      });
+      const [snap] = await res.json();
+      if (snap?.id) {
+        const link = `${SUPABASE_URL}/functions/v1/report-public?id=${snap.id}`;
+        setExportedLink(link);
+        try { await navigator.clipboard.writeText(link); } catch {}
+      }
+    } catch (e) { console.error(e); }
+    setExporting(false);
+  };
+
+  const handleExportPDF = () => {
+    window.print();
+  };
 
   if (loading) {
     return (
@@ -2431,6 +2480,12 @@ function RelatoriosView() {
         <div>
           <h1 className="text-xl font-bold text-white">Relatórios Financeiros</h1>
           <p className="text-white/60 text-sm mt-0.5">{filtered.length} transações no período</p>
+          {exportedLink && (
+            <div className="flex items-center gap-2 mt-1">
+              <span className="text-[11px] text-green-300">✅ Link copiado!</span>
+              <a href={exportedLink} target="_blank" rel="noopener noreferrer" className="text-[11px] text-blue-300 underline truncate max-w-[300px]">{exportedLink}</a>
+            </div>
+          )}
         </div>
         <div className="flex items-center gap-3 flex-wrap">
           {/* Period pills */}
@@ -2449,6 +2504,16 @@ function RelatoriosView() {
                 {p.label}
               </button>
             ))}
+          </div>
+          <div className="flex gap-1.5">
+            <Button variant="outline" size="sm" className="h-8 text-xs gap-1.5 bg-white/10 border-white/20 text-white hover:bg-white/20" onClick={handleExportLink} disabled={exporting}>
+              {exporting ? <Loader2 className="h-3 w-3 animate-spin" /> : <Link className="h-3 w-3" />}
+              Link Público
+            </Button>
+            <Button variant="outline" size="sm" className="h-8 text-xs gap-1.5 bg-white/10 border-white/20 text-white hover:bg-white/20 print:hidden" onClick={handleExportPDF}>
+              <FileText className="h-3 w-3" />
+              PDF
+            </Button>
           </div>
         </div>
       </div>

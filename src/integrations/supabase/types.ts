@@ -1630,6 +1630,36 @@ export type Database = {
         }
         Relationships: []
       }
+      report_snapshots: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          data: Json
+          expires_at: string
+          filters: Json
+          id: string
+          title: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          data?: Json
+          expires_at?: string
+          filters?: Json
+          id?: string
+          title?: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          data?: Json
+          expires_at?: string
+          filters?: Json
+          id?: string
+          title?: string
+        }
+        Relationships: []
+      }
       sef_locations: {
         Row: {
           created_at: string
