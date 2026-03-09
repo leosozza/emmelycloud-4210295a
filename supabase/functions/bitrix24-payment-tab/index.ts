@@ -179,9 +179,13 @@ function renderPaymentTab(opts: {
         </div>
         ${inst.company_name ? `<div class="b24-item-meta"><span style="font-weight:600">🏢 ${inst.company_name}</span></div>` : ""}
         <div class="b24-item-meta">
-          <span>${inst.due_date ? 'Vence: ' + formatDate(inst.due_date) : '<span class="b24-missing">Vencimento: ⚠</span>'}</span>
-          ${inst.paid_at ? `<span>Pago: ${formatDate(inst.paid_at)}</span>` : ""}
-          ${inst.payment_method ? `<span>💳 ${inst.payment_method}</span>` : ""}
+          ${inst.due_date
+            ? `<span>📅 Vence: ${formatDate(inst.due_date)}</span>`
+            : `<span onclick='openEditModal(${instJson})' class="b24-missing b24-clickable" title="Clique para definir">📅 Vencimento: ⚠ Definir</span>`}
+          ${inst.paid_at ? `<span>✅ Pago: ${formatDate(inst.paid_at)}</span>` : ""}
+          ${inst.payment_method
+            ? `<span>💳 ${inst.payment_method}</span>`
+            : `<span onclick='openEditModal(${instJson})' class="b24-missing b24-clickable" title="Clique para definir">💳 Método: ⚠ Definir</span>`}
           ${totalLabel}
         </div>
         ${discountInfo || paidAmountInfo || proofInfo ? `<div class="b24-item-meta">${paidAmountInfo} ${discountInfo} ${proofInfo}</div>` : ""}
@@ -190,14 +194,10 @@ function renderPaymentTab(opts: {
         ${inst.invoice_id ? `<div class="b24-link-row"><a href="javascript:void(0)" onclick="openInvoice(${inst.invoice_id})" class="b24-link">📄 Ver Fatura #${inst.invoice_id}</a></div>` : ""}
         ${inst.status !== "paga" ? `
           <div class="b24-item-actions">
-            <select id="action-${inst.id}" class="b24-select" style="flex:1">
-              <option value="">Selecionar ação...</option>
-              <option value="baixa">✓ Dar Baixa</option>
-              <option value="link">🔗 Gerar Link de Pagamento</option>
-              <option value="editar">✏ Editar Parcela</option>
-              ${contactPhone && flows.length > 0 ? `<option value="fluxo">📤 Enviar Fluxo</option>` : ""}
-            </select>
-            <button onclick='executeAction("${inst.id}", ${instJson})' class="b24-btn-emmely">Executar</button>
+            <button onclick='openEditModal(${instJson})' class="b24-btn-action" title="Editar Parcela">✏ Editar</button>
+            <button onclick='generatePaymentLink(${instJson})' class="b24-btn-action" title="Gerar Link de Pagamento">🔗 Link</button>
+            <button onclick='openBaixaModal(${instJson})' class="b24-btn-action b24-btn-baixa" title="Dar Baixa">✓ Baixa</button>
+            ${contactPhone && flows.length > 0 ? `<button onclick='toggleFlowRow("${inst.id}")' class="b24-btn-action b24-btn-fluxo" title="Enviar Fluxo">📤 Fluxo</button>` : ""}
           </div>
           ${contactPhone && flows.length > 0 ? `
           <div class="b24-item-actions" id="flow-row-${inst.id}" style="display:none">
@@ -205,7 +205,8 @@ function renderPaymentTab(opts: {
               <option value="">Selecionar fluxo...</option>
               ${flowOptions}
             </select>
-            <button onclick="triggerFlow('${inst.id}','${contactPhone}',${inst.number})" class="b24-btn-emmely">Disparar</button>
+            <button onclick="triggerFlow('${inst.id}','${contactPhone}',${inst.number})" class="b24-btn-emmely">Enviar</button>
+            <button onclick='toggleFlowRow("${inst.id}")' class="b24-btn-outline" style="height:32px;padding:0 10px">✕</button>
           </div>
           ` : ""}
         ` : ""}
