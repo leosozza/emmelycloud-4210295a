@@ -2834,6 +2834,8 @@ function MapeamentoView({ integrationId }: { integrationId?: string }) {
 }
 
 // ==================== BAIXA CARTEIRA VIEW ====================
+type EntityType = "lead" | "deal" | "spa";
+
 interface BaixaDeal {
   id: string;
   title: string;
@@ -2859,6 +2861,16 @@ interface BaixaForm {
   notes: string;
 }
 
+interface PipelineOption {
+  id: string;
+  name: string;
+}
+
+interface StageOption {
+  id: string;
+  name: string;
+}
+
 const PAYMENT_METHODS = [
   { value: "transferencia", label: "Transferência Bancária" },
   { value: "cartao", label: "Cartão de Crédito/Débito" },
@@ -2869,6 +2881,12 @@ const PAYMENT_METHODS = [
   { value: "dinheiro", label: "Dinheiro" },
   { value: "outro", label: "Outro" },
 ];
+
+const ENTITY_LABELS: Record<EntityType, string> = {
+  lead: "Lead",
+  deal: "Negócio (Deal)",
+  spa: "SPA (Smart Process)",
+};
 
 function countMissingFields(form: BaixaForm | undefined, deal: BaixaDeal): number {
   if (!form) return 5;
@@ -2890,29 +2908,104 @@ function BaixaCarteiraView({ integration }: { integration: any }) {
   const [savingBitrix, setSavingBitrix] = useState<string | null>(null);
   const [savedDeals, setSavedDeals] = useState<Set<string>>(new Set());
 
-  // Filters
+  // Cascading filters
+  const [entityType, setEntityType] = useState<EntityType>("deal");
+  const [pipelines, setPipelines] = useState<PipelineOption[]>([]);
+  const [pipelineId, setPipelineId] = useState("");
+  const [stages, setStages] = useState<StageOption[]>([]);
   const [stageId, setStageId] = useState("");
+  const [loadingPipelines, setLoadingPipelines] = useState(false);
+  const [loadingStages, setLoadingStages] = useState(false);
   const [dateFrom, setDateFrom] = useState<Date | undefined>(undefined);
   const [dateTo, setDateTo] = useState<Date | undefined>(undefined);
 
-  const fetchDeals = async () => {
+  const fetchEntityData = async (act: string, extra: Record<string, string> = {}) => {
+    if (!integration?.member_id) return null;
+    const params = new URLSearchParams({ member_id: integration.member_id, action: act, entity: entityType, ...extra });
+    const res = await fetch(`${SUPABASE_URL}/functions/v1/bitrix24-fetch-entities?${params}`, {
+      headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` },
+    });
+    return res.json();
+  };
+
+  // When entity type changes, load pipelines
+  const handleEntityChange = async (et: EntityType) => {
+    setEntityType(et);
+    setPipelineId("");
+    setStageId("");
+    setStages([]);
+    setDeals([]);
+    setPipelines([]);
+
+    if (et === "lead") {
+      // Leads have no pipelines, load stages directly
+      setPipelines([]);
+      setLoadingStages(true);
+      try {
+        const data = await fetchEntityDataWithEntity(et, "stages", {});
+        if (data?.stages) setStages(data.stages);
+      } catch (e) { console.error(e); }
+      setLoadingStages(false);
+      return;
+    }
+
+    setLoadingPipelines(true);
+    try {
+      const data = await fetchEntityDataWithEntity(et, "pipelines", {});
+      if (data?.pipelines) {
+        setPipelines(data.pipelines);
+        // If deal has stages returned directly (from lead endpoint)
+        if (data.stages) setStages(data.stages);
+      }
+    } catch (e) { console.error(e); }
+    setLoadingPipelines(false);
+  };
+
+  const fetchEntityDataWithEntity = async (et: EntityType, act: string, extra: Record<string, string> = {}) => {
+    if (!integration?.member_id) return null;
+    const params = new URLSearchParams({ member_id: integration.member_id, action: act, entity: et, ...extra });
+    const res = await fetch(`${SUPABASE_URL}/functions/v1/bitrix24-fetch-entities?${params}`, {
+      headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` },
+    });
+    return res.json();
+  };
+
+  // When pipeline changes, load stages
+  const handlePipelineChange = async (pid: string) => {
+    setPipelineId(pid);
+    setStageId("");
+    setStages([]);
+    setDeals([]);
+
+    if (!pid) return;
+
+    setLoadingStages(true);
+    try {
+      const extra: Record<string, string> = {};
+      if (entityType === "deal") extra.category_id = pid;
+      if (entityType === "spa") extra.spa_entity_type_id = pid;
+      const data = await fetchEntityData("stages", extra);
+      if (data?.stages) setStages(data.stages);
+    } catch (e) { console.error(e); }
+    setLoadingStages(false);
+  };
+
+  const fetchItems = async () => {
     if (!integration?.member_id) return;
     setLoading(true);
     try {
-      const params = new URLSearchParams({ member_id: integration.member_id });
-      if (stageId) params.append("stage_id", stageId);
-      if (dateFrom) params.append("date_from", format(dateFrom, "yyyy-MM-dd"));
-      if (dateTo) params.append("date_to", format(dateTo, "yyyy-MM-dd"));
+      const extra: Record<string, string> = {};
+      if (stageId) extra.stage_id = stageId;
+      if (entityType === "deal" && pipelineId) extra.category_id = pipelineId;
+      if (entityType === "spa" && pipelineId) extra.spa_entity_type_id = pipelineId;
+      if (dateFrom) extra.date_from = format(dateFrom, "yyyy-MM-dd");
+      if (dateTo) extra.date_to = format(dateTo, "yyyy-MM-dd");
 
-      const res = await fetch(`${SUPABASE_URL}/functions/v1/bitrix24-fetch-deals?${params}`, {
-        headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` },
-      });
-      const data = await res.json();
-      if (data.deals) {
-        setDeals(data.deals);
-        // Initialize forms for each deal
+      const data = await fetchEntityData("items", extra);
+      if (data?.items) {
+        setDeals(data.items);
         const newForms: Record<string, BaixaForm> = {};
-        for (const d of data.deals) {
+        for (const d of data.items) {
           newForms[d.id] = {
             totalInstallments: 1,
             installmentValue: d.opportunity,
@@ -2989,6 +3082,8 @@ function BaixaCarteiraView({ integration }: { integration: any }) {
         body: JSON.stringify({
           member_id: integration.member_id,
           deal_id: deal.id,
+          entity_type: entityType,
+          spa_entity_type_id: entityType === "spa" ? pipelineId : undefined,
           payment_data: {
             total_installments: form.totalInstallments,
             installment_value: form.installmentValue,
@@ -3166,17 +3261,67 @@ function BaixaCarteiraView({ integration }: { integration: any }) {
 
       {/* Filters */}
       <Card className="b24-card">
-        <CardContent className="pt-5">
+        <CardContent className="pt-5 space-y-4">
+          {/* Row 1: Entity Type + Pipeline + Stage */}
           <div className="flex flex-wrap gap-4 items-end">
-            <div className="flex-1 min-w-[150px]">
-              <Label className="text-xs text-muted-foreground">Etapa (STAGE_ID)</Label>
-              <Input
-                placeholder="C5:NEW, C5:WON..."
-                value={stageId}
-                onChange={(e) => setStageId(e.target.value)}
-                className="h-9"
-              />
+            <div className="w-[180px]">
+              <Label className="text-xs text-muted-foreground">Tipo de Entidade</Label>
+              <Select value={entityType} onValueChange={(v) => handleEntityChange(v as EntityType)}>
+                <SelectTrigger className="h-9">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="lead">Lead</SelectItem>
+                  <SelectItem value="deal">Negócio (Deal)</SelectItem>
+                  <SelectItem value="spa">SPA (Smart Process)</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
+
+            {entityType !== "lead" && (
+              <div className="w-[200px]">
+                <Label className="text-xs text-muted-foreground">
+                  {entityType === "deal" ? "Pipeline / Categoria" : "Tipo SPA"}
+                </Label>
+                <Select value={pipelineId} onValueChange={handlePipelineChange} disabled={loadingPipelines}>
+                  <SelectTrigger className="h-9">
+                    {loadingPipelines ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <SelectValue placeholder="Selecionar..." />
+                    )}
+                  </SelectTrigger>
+                  <SelectContent>
+                    {pipelines.map((p) => (
+                      <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
+            <div className="w-[200px]">
+              <Label className="text-xs text-muted-foreground">Etapa</Label>
+              <Select value={stageId} onValueChange={setStageId} disabled={loadingStages || (entityType !== "lead" && !pipelineId)}>
+                <SelectTrigger className="h-9">
+                  {loadingStages ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <SelectValue placeholder="Todas as etapas" />
+                  )}
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="">Todas as etapas</SelectItem>
+                  {stages.map((s) => (
+                    <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          {/* Row 2: Date filters + Search */}
+          <div className="flex flex-wrap gap-4 items-end">
             <div className="w-[140px]">
               <Label className="text-xs text-muted-foreground">Data Início</Label>
               <Popover>
@@ -3205,7 +3350,7 @@ function BaixaCarteiraView({ integration }: { integration: any }) {
                 </PopoverContent>
               </Popover>
             </div>
-            <Button onClick={fetchDeals} disabled={loading} className="h-9">
+            <Button onClick={fetchItems} disabled={loading} className="h-9">
               {loading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <RefreshCw className="h-4 w-4 mr-2" />}
               Buscar
             </Button>
@@ -3213,10 +3358,10 @@ function BaixaCarteiraView({ integration }: { integration: any }) {
         </CardContent>
       </Card>
 
-      {/* Deals List */}
+      {/* Items List */}
       <Card className="b24-card">
         <CardHeader className="pb-3">
-          <CardTitle className="text-base">Negócios Encontrados ({deals.length})</CardTitle>
+          <CardTitle className="text-base">{ENTITY_LABELS[entityType]} Encontrados ({deals.length})</CardTitle>
         </CardHeader>
         <CardContent>
           {deals.length === 0 ? (

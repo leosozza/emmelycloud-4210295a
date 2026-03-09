@@ -134,3 +134,6 @@ verify_jwt = false
 
 [functions.bitrix24-update-deal-payment]
 verify_jwt = false
+
+[functions.bitrix24-fetch-entities]
+verify_jwt = false
