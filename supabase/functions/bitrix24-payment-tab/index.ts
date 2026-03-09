@@ -1176,6 +1176,9 @@ Deno.serve(async (req) => {
     let dealCurrency = "EUR";
     let contactPhone = "";
     let contactId = "";
+    let dealGateway = "";
+    let dealPaymentMethod = "";
+    let dealCreatedAt = "";
 
     try {
       const dealResult = await callBitrix(endpoint, accessToken, "crm.deal.get", { ID: entityId });
@@ -1184,6 +1187,10 @@ Deno.serve(async (req) => {
       dealAmount = parseFloat(deal.OPPORTUNITY || "0");
       dealCurrency = deal.CURRENCY_ID || "EUR";
       contactId = deal.CONTACT_ID || "";
+      dealCreatedAt = deal.DATE_CREATE || deal.CREATED_DATE || "";
+      // Read UF_CRM_EMMELY_* fields
+      dealGateway = deal.UF_CRM_EMMELY_GATEWAY || "";
+      dealPaymentMethod = deal.UF_CRM_EMMELY_PAYMENT_METHOD || "";
       if (contactId) {
         const contactResult = await callBitrix(endpoint, accessToken, "crm.contact.get", { ID: contactId });
         const contact = contactResult.result || {};
