@@ -338,6 +338,16 @@ export function getDefaultData(nodeType: FlowNodeType): FlowNodeData {
         analysisPrompt: "",
       };
       break;
+    case "bitrix_create_badge":
+      base.bitrixBadge = {
+        badgeCode: "",
+        headerTitle: "",
+        messagePreview: "",
+        entityType: "deal",
+        entityId: "",
+        badgeType: "success",
+      };
+      break;
     default:
       if (nodeType.startsWith("bitrix_")) {
         const parts = nodeType.replace("bitrix_", "").split("_");
