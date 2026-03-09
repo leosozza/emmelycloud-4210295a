@@ -223,17 +223,30 @@ Deno.serve(async (req) => {
         Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
       );
       const body = await req.json();
-      const { transaction_id, metadata_update, status_update } = body;
+      const { transaction_id, metadata_update, status_update, amount_update, due_date_update, payment_method_update, paid_amount, discount_amount, discount_reason, proof_url, notes } = body;
       if (!transaction_id) {
         return new Response(JSON.stringify({ error: "transaction_id required" }), {
           status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
       // Get existing metadata and merge
-      const { data: existing } = await supabase.from("payment_transactions").select("metadata").eq("id", transaction_id).maybeSingle();
-      const merged = metadata_update ? { ...(existing?.metadata as any || {}), ...metadata_update } : (existing?.metadata || {});
+      const { data: existing } = await supabase.from("payment_transactions").select("metadata, amount").eq("id", transaction_id).maybeSingle();
+      const existingMeta = (existing?.metadata as any) || {};
+      const metaUpdates: any = { ...(metadata_update || {}) };
+
+      // Handle paid_amount / discount for partial payments
+      if (paid_amount != null) metaUpdates.paid_amount = paid_amount;
+      if (discount_amount != null) metaUpdates.discount_amount = discount_amount;
+      if (discount_reason) metaUpdates.discount_reason = discount_reason;
+      if (proof_url) metaUpdates.proof_url = proof_url;
+      if (notes) metaUpdates.notes = notes;
+      if (due_date_update) metaUpdates.due_date = due_date_update;
+
+      const merged = { ...existingMeta, ...metaUpdates };
       const updatePayload: any = { metadata: merged };
       if (status_update) updatePayload.status = status_update;
+      if (amount_update != null && amount_update > 0) updatePayload.amount = amount_update;
+      if (payment_method_update) updatePayload.payment_method = payment_method_update;
       const { error } = await supabase.from("payment_transactions").update(updatePayload).eq("id", transaction_id);
       if (error) throw new Error(error.message);
       return new Response(JSON.stringify({ ok: true }), {
