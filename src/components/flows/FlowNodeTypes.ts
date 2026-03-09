@@ -189,6 +189,15 @@ export interface FlowBitrixField {
   value: string;
 }
 
+export interface FlowBitrixBadge {
+  badgeCode: string;
+  headerTitle: string;
+  messagePreview: string;
+  entityType: "deal" | "lead" | "contact";
+  entityId: string;
+  badgeType: "success" | "failure" | "warning" | "primary" | "secondary";
+}
+
 export interface FlowBitrixCRM {
   entity: "lead" | "deal" | "spa";
   operation: "create" | "update" | "get" | "delete";
