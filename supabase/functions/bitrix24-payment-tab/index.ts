@@ -144,6 +144,7 @@ function renderPaymentTab(opts: {
     const instJson = JSON.stringify({
       id: inst.id,
       transaction_id: inst.transaction_id,
+      entity_id: opts.entityId,
       value: inst.value,
       due_date: inst.due_date,
       payment_method: inst.payment_method || "card",
@@ -173,7 +174,7 @@ function renderPaymentTab(opts: {
         ${inst.description ? `<div class="b24-item-desc">${inst.description}</div>` : ""}
         ${inst.payment_url && inst.status !== "paga" ? `<div class="b24-link-row"><a href="${inst.payment_url}" target="_blank" class="b24-link">Link de pagamento</a><button class="b24-btn-copy" onclick="copyLink(this,'${inst.payment_url.replace(/'/g, "\\'")}')" title="Copiar link"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button></div>` : ""}
         ${inst.invoice_id ? `<div class="b24-link-row"><a href="javascript:void(0)" onclick="openInvoice(${inst.invoice_id})" class="b24-link">📄 Ver Fatura #${inst.invoice_id}</a></div>` : ""}
-        ${inst.status !== "paga" && inst.transaction_id ? `
+        ${inst.status !== "paga" ? `
           <div class="b24-item-actions">
             <button onclick='openEditModal(${instJson})' class="b24-btn-outline" style="font-size:11px">✏ Editar</button>
             <button onclick='openBaixaModal(${instJson})' class="b24-btn-primary" style="background:#589731">✓ Dar Baixa</button>
@@ -768,6 +769,10 @@ function renderPaymentTab(opts: {
     document.getElementById('baixa-reason-other-group').style.display = 'none';
     document.getElementById('baixa-proof').value = '';
     document.getElementById('baixa-result').style.display = 'none';
+    // Store entity info for synthetic creation
+    document.getElementById('baixa-overlay').dataset.entityId = inst.entity_id || ENTITY_ID;
+    document.getElementById('baixa-overlay').dataset.currency = cur;
+    document.getElementById('baixa-overlay').dataset.description = inst.description || '';
     document.getElementById('baixa-overlay').classList.add('active');
     calcDiscount();
   }
@@ -808,6 +813,11 @@ function renderPaymentTab(opts: {
     var btn = document.getElementById('baixa-submit');
     btn.disabled = true; btn.textContent = 'A processar...';
     var el = document.getElementById('baixa-result');
+
+    try {
+      // Ensure transaction exists (create if synthetic)
+      var overlay = document.getElementById('baixa-overlay');
+      txId = await ensureTxExists(txId, overlay, _baixaOriginalAmount, overlay.dataset.currency || 'EUR', overlay.dataset.description || '');
 
     try {
       // Upload proof if provided
