@@ -715,12 +715,26 @@ async function handleConvertCurrency(properties: Record<string, any>): Promise<R
 
   // Fallback rates (updated periodically)
   const fallbackRates: Record<string, number> = {
-    "EUR_BRL": 6.10,
-    "BRL_EUR": 0.164,
-    "USD_BRL": 5.50,
-    "BRL_USD": 0.182,
-    "EUR_USD": 1.08,
-    "USD_EUR": 0.926,
+    // EUR pairs
+    "EUR_BRL": 6.10, "BRL_EUR": 0.164,
+    "EUR_USD": 1.08, "USD_EUR": 0.926,
+    "EUR_GBP": 0.84, "GBP_EUR": 1.19,
+    "EUR_CHF": 0.94, "CHF_EUR": 1.06,
+    "EUR_CAD": 1.50, "CAD_EUR": 0.67,
+    // USD pairs
+    "USD_BRL": 5.50, "BRL_USD": 0.182,
+    "USD_GBP": 0.78, "GBP_USD": 1.28,
+    "USD_CHF": 0.87, "CHF_USD": 1.15,
+    "USD_CAD": 1.39, "CAD_USD": 0.72,
+    // GBP pairs
+    "GBP_BRL": 7.10, "BRL_GBP": 0.141,
+    "GBP_CHF": 1.12, "CHF_GBP": 0.89,
+    "GBP_CAD": 1.78, "CAD_GBP": 0.56,
+    // CHF pairs
+    "CHF_BRL": 6.30, "BRL_CHF": 0.159,
+    "CHF_CAD": 1.59, "CAD_CHF": 0.63,
+    // CAD pairs
+    "CAD_BRL": 3.96, "BRL_CAD": 0.253,
   };
 
   try {
