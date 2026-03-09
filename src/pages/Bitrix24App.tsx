@@ -300,7 +300,7 @@ const Bitrix24App = () => {
         {view === "flows" && <FlowsView />}
         {view === "playground" && <PlaygroundView />}
         {view === "chatia" && <ChatIABitrixView />}
-        {view === "mapeamento" && <MapeamentoView integrationId={integration?.id} />}
+        {view === "mapeamento" && <MapeamentoView integrationId={integration?.id} memberId={memberId || undefined} />}
         {view === "pagamentos" && <PagamentosView integration={integration} onRefresh={() => memberId && fetchData(memberId)} />}
         {view === "baixa" && <BaixaCarteiraView integration={integration} />}
         {view === "empresas" && <EmpresasView />}
@@ -2824,11 +2824,11 @@ function RelatoriosView() {
 }
 
 // ==================== MAPEAMENTO VIEW ====================
-function MapeamentoView({ integrationId }: { integrationId?: string }) {
+function MapeamentoView({ integrationId, memberId }: { integrationId?: string; memberId?: string }) {
   const FieldMappingManager = lazy(() => import("@/components/bitrix24/FieldMappingManager"));
   return (
     <Suspense fallback={<div className="flex items-center justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-primary" /></div>}>
-      <FieldMappingManager integrationId={integrationId} compact />
+      <FieldMappingManager integrationId={integrationId} memberId={memberId} compact />
     </Suspense>
   );
 }
@@ -2927,6 +2927,13 @@ function BaixaCarteiraView({ integration }: { integration: any }) {
     });
     return res.json();
   };
+
+  // Auto-load pipelines on mount
+  useEffect(() => {
+    if (integration?.member_id) {
+      handleEntityChange("deal");
+    }
+  }, [integration?.member_id]);
 
   // When entity type changes, load pipelines
   const handleEntityChange = async (et: EntityType) => {

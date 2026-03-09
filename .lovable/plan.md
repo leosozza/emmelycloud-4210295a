@@ -1,49 +1,37 @@
 
 
-## Plano: Corrigir carregamento de Pipelines/Etapas e Mapeamento de Campos
+## Plan: Fix Smart Invoice Deal Field + Test Deal 8857 with "Direto"
 
-### Problemas Identificados
+### Analysis
+The Bitrix24 HTML confirms the deal binding field is `PARENT_ID_2` (shown as "Negócio" in the Smart Invoice form). The current code already sends `parentId2` which is correct. The `ufCrm31Deal` field added previously is likely being ignored or causing issues — it's not a standard field for Smart Process type 31.
 
-1. **Edge functions não estavam deployed** — `bitrix24-fetch-entities` e `bitrix24-fields` não estavam publicadas. Já foram deployed agora.
+The key issue: in `crm.item.add` REST API for Smart Processes, field names use **camelCase** format. The deal binding is `parentId2` (parent entity of type 2 = Deal). There is no separate `ufCrm31Deal` field — that was a mistaken assumption. The `parentId2` field alone should handle the deal link correctly.
 
-2. **BaixaCarteiraView não carrega pipelines automaticamente** — Quando o utilizador abre a vista "Baixa Carteira", não existe `useEffect` para carregar os pipelines ao montar o componente. O utilizador tem de mudar manualmente o tipo de entidade para disparar a busca.
+### Changes
 
-3. **FieldMappingManager não busca campos do Bitrix24** — O componente chama `bitrix24-fields` com o token de autenticação do Supabase, mas dentro do iframe do Bitrix24 não existe sessão Supabase ativa. O `bitrix24-fields` usa `connector_active` para encontrar a integração, mas sem autenticação válida a chamada falha silenciosamente.
+1. **Remove `ufCrm31Deal`** from the `crm.item.add` call — it's not a real field and may cause warnings. Keep only `parentId2` which is confirmed correct from the HTML.
 
-4. **Mapeamentos automáticos não são criados** — Na instalação, os campos UF_CRM_EMMELY_* são criados no Bitrix24 mas o sistema não insere os mapeamentos correspondentes na tabela `bitrix24_field_mappings`.
+2. **Test with deal 8857** using `bodyOverrides`:
+   - `force_gateway: "direto"` — crediário próprio, no external payment gateway
+   - 3 parcels: €200 each (01/02, 03/03, 02/04)
+   - Parcela 1 should be marked `confirmed` after creation
+   - Verify Smart Invoices appear in `/crm/type/31/` kanban with deal and contact linked
 
-### Correções
+### File changed
+- `supabase/functions/bitrix24-payment-webhook/index.ts` — remove `ufCrm31Deal` line (line 308)
 
-#### 1. `src/pages/Bitrix24App.tsx` — Auto-load pipelines no mount
-
-Adicionar `useEffect` na `BaixaCarteiraView` para chamar `handleEntityChange("deal")` quando o componente monta e a integração está disponível.
-
-```typescript
-useEffect(() => {
-  if (integration?.member_id) {
-    handleEntityChange("deal");
+### Test
+After deploy, call the webhook with:
+```json
+{
+  "deal_id": 8857,
+  "bodyOverrides": {
+    "force_gateway": "direto",
+    "total_amount": 600,
+    "num_installments": 3,
+    "first_due_date": "2025-02-01",
+    "interval_days": 30
   }
-}, [integration?.member_id]);
+}
 ```
-
-#### 2. `src/components/bitrix24/FieldMappingManager.tsx` — Usar anon key quando não há sessão
-
-O `fetchBitrixFields` já constrói o header com fallback para `SUPABASE_KEY`, mas pode falhar se a edge function exigir auth. Ajustar para sempre usar a anon key no contexto iframe.
-
-#### 3. `supabase/functions/bitrix24-fields/index.ts` — Aceitar `member_id` como parâmetro
-
-Atualmente a function busca a primeira integração ativa (`connector_active = true`). Adicionar suporte a `member_id` como query param para ser consistente com as outras functions do Bitrix24.
-
-#### 4. `supabase/functions/bitrix24-install/index.ts` — Criar mapeamentos automáticos
-
-Após criar os campos UF_CRM_EMMELY_*, inserir automaticamente registos na tabela `bitrix24_field_mappings` para cada campo criado, vinculando-os às colunas relevantes da tabela `payment_transactions`.
-
-### Ficheiros a Modificar
-
-| Ficheiro | Alteração |
-|---|---|
-| `src/pages/Bitrix24App.tsx` | Adicionar useEffect para auto-load de pipelines na BaixaCarteiraView |
-| `src/components/bitrix24/FieldMappingManager.tsx` | Passar member_id para bitrix24-fields |
-| `supabase/functions/bitrix24-fields/index.ts` | Aceitar member_id param + disable JWT verification |
-| `supabase/functions/bitrix24-install/index.ts` | Auto-seed field mappings após criar userfields |
 

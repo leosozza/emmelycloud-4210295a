@@ -97,12 +97,20 @@ Deno.serve(async (req) => {
     const url = new URL(req.url);
     const entity = url.searchParams.get("entity") || "lead"; // lead, deal, spa
     const spaEntityTypeId = url.searchParams.get("spaEntityTypeId") || "";
+    const memberIdParam = url.searchParams.get("member_id") || "";
 
-    // Get first active integration
-    const { data: integration } = await supabase
+    // Get integration by member_id or first active
+    let integrationQuery = supabase
       .from("bitrix24_integrations")
-      .select("*")
-      .eq("connector_active", true)
+      .select("*");
+
+    if (memberIdParam) {
+      integrationQuery = integrationQuery.eq("member_id", memberIdParam);
+    } else {
+      integrationQuery = integrationQuery.eq("connector_active", true);
+    }
+
+    const { data: integration } = await integrationQuery
       .limit(1)
       .maybeSingle();
 
