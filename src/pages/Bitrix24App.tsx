@@ -2928,6 +2928,13 @@ function BaixaCarteiraView({ integration }: { integration: any }) {
     return res.json();
   };
 
+  // Auto-load pipelines on mount
+  useEffect(() => {
+    if (integration?.member_id) {
+      handleEntityChange("deal");
+    }
+  }, [integration?.member_id]);
+
   // When entity type changes, load pipelines
   const handleEntityChange = async (et: EntityType) => {
     setEntityType(et);

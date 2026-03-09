@@ -142,8 +142,10 @@ export default function FieldMappingManager({ integrationId, compact, memberId }
     setLoadingFields(true);
     try {
       const session = (await supabase.auth.getSession()).data.session;
+      const queryParams = new URLSearchParams({ entity });
+      if (memberId) queryParams.set("member_id", memberId);
       const res = await fetch(
-        `${SUPABASE_URL}/functions/v1/bitrix24-fields?entity=${entity}`,
+        `${SUPABASE_URL}/functions/v1/bitrix24-fields?${queryParams}`,
         {
           headers: {
             apikey: SUPABASE_KEY,

@@ -892,6 +892,53 @@ Deno.serve(async (req) => {
       await debugLog(supabase, integrationId, "userfields_registered", "outbound", {
         fields: installSummary.userfields_registered,
       });
+
+      // --- Auto-seed field mappings for Deal entity ---
+      try {
+        const fieldMappingSeed = [
+          { bitrix_field_key: "UF_CRM_EMMELY_PAYMENT_STATUS", bitrix_field_title: "Status de Pagamento", supabase_table: "payment_transactions", supabase_column: "status" },
+          { bitrix_field_key: "UF_CRM_EMMELY_INSTALLMENT_GROUP", bitrix_field_title: "Grupo de Parcelas", supabase_table: "payment_transactions", supabase_column: "gateway_payment_id" },
+          { bitrix_field_key: "UF_CRM_EMMELY_GATEWAY", bitrix_field_title: "Gateway de Pagamento", supabase_table: "payment_transactions", supabase_column: "gateway" },
+          { bitrix_field_key: "UF_CRM_EMMELY_TOTAL_PAID", bitrix_field_title: "Total Pago", supabase_table: "payment_transactions", supabase_column: "amount" },
+          { bitrix_field_key: "UF_CRM_EMMELY_PAYMENT_URL", bitrix_field_title: "Link de Pagamento", supabase_table: "payment_transactions", supabase_column: "payment_url" },
+          { bitrix_field_key: "UF_CRM_EMMELY_TOTAL_INSTALLMENTS", bitrix_field_title: "Nº de Parcelas", supabase_table: "financial_records", supabase_column: "total_installments" },
+          { bitrix_field_key: "UF_CRM_EMMELY_PAID_INSTALLMENTS", bitrix_field_title: "Parcelas Pagas", supabase_table: "financial_records", supabase_column: "installment_number" },
+          { bitrix_field_key: "UF_CRM_EMMELY_INSTALLMENT_VALUE", bitrix_field_title: "Valor da Parcela", supabase_table: "financial_records", supabase_column: "installment_value" },
+          { bitrix_field_key: "UF_CRM_EMMELY_NEXT_DUE_DATE", bitrix_field_title: "Próximo Vencimento", supabase_table: "financial_records", supabase_column: "due_date" },
+          { bitrix_field_key: "UF_CRM_EMMELY_PAYMENT_METHOD", bitrix_field_title: "Método de Pagamento", supabase_table: "payment_transactions", supabase_column: "payment_method" },
+          { bitrix_field_key: "UF_CRM_EMMELY_PAYMENT_NOTES", bitrix_field_title: "Notas de Pagamento", supabase_table: "financial_records", supabase_column: "description" },
+        ];
+
+        // Delete existing mappings for this integration
+        await supabase
+          .from("bitrix24_field_mappings")
+          .delete()
+          .eq("integration_id", integrationId)
+          .eq("bitrix_entity", "deal");
+
+        const mappingsToInsert = fieldMappingSeed.map((m) => ({
+          integration_id: integrationId,
+          bitrix_entity: "deal",
+          bitrix_field_key: m.bitrix_field_key,
+          bitrix_field_title: m.bitrix_field_title,
+          supabase_table: m.supabase_table,
+          supabase_column: m.supabase_column,
+          sync_direction: "both",
+          is_active: true,
+        }));
+
+        const { error: mapError } = await supabase
+          .from("bitrix24_field_mappings")
+          .insert(mappingsToInsert);
+
+        if (mapError) {
+          console.error("[INSTALL] Field mapping seed error:", mapError);
+        } else {
+          console.log(`[INSTALL] Seeded ${mappingsToInsert.length} field mappings for deal`);
+        }
+      } catch (seedErr) {
+        console.error("[INSTALL] Field mapping seed error:", seedErr);
+      }
     } catch (ufError) {
       console.error("[INSTALL] UserField creation error:", ufError);
       await debugLog(supabase, integrationId, "userfields_error", "outbound", null, String(ufError));
