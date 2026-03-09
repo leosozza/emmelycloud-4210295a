@@ -114,8 +114,13 @@ function renderPaymentTab(opts: {
   flows: { id: string; name: string }[];
   contactPhone: string;
   noData: boolean;
+  gateway?: string;
+  paymentMethod?: string;
+  nextDueDate?: string | null;
+  createdAt?: string | null;
 }): string {
   const { dealTitle, totalValue, paidValue, openValue, currency, installments, supabaseUrl, memberId, flows, contactPhone, noData } = opts;
+  const EUR_TO_BRL = 6.10;
 
   const paidPct = totalValue > 0 ? Math.round((paidValue / totalValue) * 100) : 0;
 
@@ -154,12 +159,20 @@ function renderPaymentTab(opts: {
       notes: meta.notes || "",
     }).replace(/"/g, "&quot;");
 
+    // Dual currency display
+    const valueBRL = inst.currency === "EUR" ? inst.value * EUR_TO_BRL : inst.value;
+    const valueEUR = inst.currency === "BRL" ? inst.value / EUR_TO_BRL : inst.value;
+    const dualDisplay = inst.currency === "EUR"
+      ? `<span class="b24-dual-currency">≈ ${formatCurrency(valueBRL, "BRL")}</span>`
+      : `<span class="b24-dual-currency">≈ ${formatCurrency(valueEUR, "EUR")}</span>`;
+
     return `
       <div class="b24-item${missingClass}">
         <div class="b24-item-row">
           <div class="b24-item-left">
             <span class="b24-item-title">${label}</span>
             <span class="b24-item-value">${formatCurrency(inst.value, inst.currency)}</span>
+            ${dualDisplay}
             ${missingIndicator}
           </div>
           <span class="b24-badge" style="--badge-bg:${s.bg};--badge-bg-dark:${s.bgDark};--badge-text:${s.text};--badge-text-dark:${s.textDark}">${s.label}</span>
@@ -168,6 +181,7 @@ function renderPaymentTab(opts: {
         <div class="b24-item-meta">
           <span>${inst.due_date ? 'Vence: ' + formatDate(inst.due_date) : '<span class="b24-missing">Vencimento: ⚠</span>'}</span>
           ${inst.paid_at ? `<span>Pago: ${formatDate(inst.paid_at)}</span>` : ""}
+          ${inst.payment_method ? `<span>💳 ${inst.payment_method}</span>` : ""}
           ${totalLabel}
         </div>
         ${discountInfo || paidAmountInfo || proofInfo ? `<div class="b24-item-meta">${paidAmountInfo} ${discountInfo} ${proofInfo}</div>` : ""}
@@ -176,18 +190,24 @@ function renderPaymentTab(opts: {
         ${inst.invoice_id ? `<div class="b24-link-row"><a href="javascript:void(0)" onclick="openInvoice(${inst.invoice_id})" class="b24-link">📄 Ver Fatura #${inst.invoice_id}</a></div>` : ""}
         ${inst.status !== "paga" ? `
           <div class="b24-item-actions">
-            <button onclick='openEditModal(${instJson})' class="b24-btn-outline" style="font-size:11px">✏ Editar</button>
-            <button onclick='openBaixaModal(${instJson})' class="b24-btn-primary" style="background:#589731">✓ Dar Baixa</button>
+            <select id="action-${inst.id}" class="b24-select" style="flex:1">
+              <option value="">Selecionar ação...</option>
+              <option value="baixa">✓ Dar Baixa</option>
+              <option value="link">🔗 Gerar Link de Pagamento</option>
+              <option value="editar">✏ Editar Parcela</option>
+              ${contactPhone && flows.length > 0 ? `<option value="fluxo">📤 Enviar Fluxo</option>` : ""}
+            </select>
+            <button onclick='executeAction("${inst.id}", ${instJson})' class="b24-btn-emmely">Executar</button>
           </div>
-        ` : ""}
-        ${inst.status !== "paga" && contactPhone && flows.length > 0 ? `
-          <div class="b24-item-actions">
+          ${contactPhone && flows.length > 0 ? `
+          <div class="b24-item-actions" id="flow-row-${inst.id}" style="display:none">
             <select id="flow-${inst.id}" class="b24-select">
               <option value="">Selecionar fluxo...</option>
               ${flowOptions}
             </select>
             <button onclick="triggerFlow('${inst.id}','${contactPhone}',${inst.number})" class="b24-btn-emmely">Disparar</button>
           </div>
+          ` : ""}
         ` : ""}
       </div>`;
   }).join("");
@@ -295,6 +315,12 @@ function renderPaymentTab(opts: {
     .b24-discount-row { background: #fef4d6; border: 1px solid #e6a817; border-radius: 4px; padding: 10px 12px; margin-bottom: 12px; font-size: 12px; color: #8a6d00; }
     body.dark .b24-discount-row { background: #4a4229; color: #ffd54f; border-color: #8a6d00; }
     .b24-readonly { font-size: 16px; font-weight: 700; color: var(--text-primary); padding: 6px 0; }
+    .b24-summary-info { display: flex; gap: 16px; flex-wrap: wrap; font-size: 12px; color: var(--text-secondary); margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--border-color); }
+    .b24-summary-info span { display: inline-flex; align-items: center; gap: 4px; }
+    .b24-summary-info strong { font-weight: 600; color: var(--text-primary); }
+    .b24-dual-currency { font-size: 11px; color: var(--text-secondary); font-weight: 400; }
+    .b24-dates-preview { background: var(--bg-page); border: 1px solid var(--border-color); border-radius: 4px; padding: 8px 12px; margin-top: 8px; font-size: 12px; }
+    .b24-dates-preview div { padding: 2px 0; color: var(--text-secondary); }
 
     .b24-empty { text-align: center; padding: 60px 20px; color: var(--text-secondary); }
     .b24-empty svg { margin-bottom: 12px; opacity: 0.4; }
@@ -331,6 +357,12 @@ function renderPaymentTab(opts: {
       <div class="b24-progress-fill" style="width:${paidPct}%"></div>
     </div>
     <div class="b24-progress-label">${paidPct}% pago</div>
+    <div class="b24-summary-info">
+      ${opts.gateway ? `<span>🏦 Gateway: <strong>${opts.gateway}</strong></span>` : ""}
+      ${opts.paymentMethod ? `<span>💳 Método: <strong>${opts.paymentMethod}</strong></span>` : ""}
+      ${opts.nextDueDate ? `<span>📅 Próx. vencimento: <strong>${formatDate(opts.nextDueDate)}</strong></span>` : ""}
+      ${opts.createdAt ? `<span>🕐 Criado: <strong>${formatDate(opts.createdAt)}</strong></span>` : ""}
+    </div>
   </div>
 
   <div class="b24-list">
@@ -425,14 +457,33 @@ function renderPaymentTab(opts: {
     <div class="b24-form-title">✏ Editar Parcela</div>
     <input type="hidden" id="edit-tx-id">
     <input type="hidden" id="edit-invoice-id">
+    <input type="hidden" id="edit-original-total">
+    <div class="b24-form-row">
+      <div class="b24-form-group">
+        <label class="b24-form-label">Nº de Parcelas</label>
+        <select id="edit-num-installments" class="b24-input" style="height:32px" onchange="recalcEditInstallments()">
+          ${[1,2,3,4,5,6,7,8,9,10,11,12].map(n => `<option value="${n}">${n}</option>`).join("")}
+        </select>
+      </div>
+      <div class="b24-form-group">
+        <label class="b24-form-label">Intervalo (dias)</label>
+        <select id="edit-interval" class="b24-input" style="height:32px" onchange="recalcEditInstallments()">
+          <option value="30">30 dias</option>
+          <option value="60">60 dias</option>
+          <option value="90">90 dias</option>
+        </select>
+      </div>
+    </div>
     <div class="b24-form-group">
       <label class="b24-form-label">Valor da Parcela</label>
-      <input type="number" id="edit-amount" class="b24-input" step="0.01" min="0.01">
+      <input type="number" id="edit-amount" class="b24-input" step="0.01" min="0.01" oninput="updateEditDualCurrency()">
+      <div class="b24-dual-currency" id="edit-dual-currency"></div>
     </div>
     <div class="b24-form-group">
-      <label class="b24-form-label">Data de Vencimento</label>
-      <input type="date" id="edit-due-date" class="b24-input">
+      <label class="b24-form-label">Data de Vencimento (1ª parcela)</label>
+      <input type="date" id="edit-due-date" class="b24-input" onchange="recalcEditInstallments()">
     </div>
+    <div id="edit-dates-preview" class="b24-dates-preview" style="display:none"></div>
     <div class="b24-form-group">
       <label class="b24-form-label">Método de Pagamento</label>
       <select id="edit-method" class="b24-input" style="height:32px">
@@ -512,6 +563,7 @@ function renderPaymentTab(opts: {
   var SUPABASE_KEY = "${Deno.env.get("SUPABASE_ANON_KEY") || ""}";
   var MEMBER_ID = "${memberId}";
   var ENTITY_ID = "${opts.entityId}";
+  var EUR_TO_BRL = 6.10;
   var _baixaOriginalAmount = 0;
 
   // Ensure a real transaction exists — creates one if txId is synthetic (e.g. "deal-123")
@@ -721,6 +773,56 @@ function renderPaymentTab(opts: {
     el.style.color = isError ? 'var(--value-open)' : 'var(--value-paid)';
   }
 
+  // === Unified Action Dispatcher ===
+  function executeAction(instId, instData) {
+    var sel = document.getElementById('action-' + instId);
+    if (!sel || !sel.value) { setStatus('Selecione uma ação primeiro.', 'var(--value-open)'); return; }
+    var action = sel.value;
+    sel.value = '';
+    // Hide flow row by default
+    var flowRow = document.getElementById('flow-row-' + instId);
+    if (flowRow) flowRow.style.display = 'none';
+
+    switch(action) {
+      case 'baixa': openBaixaModal(instData); break;
+      case 'editar': openEditModal(instData); break;
+      case 'link': generatePaymentLink(instData); break;
+      case 'fluxo':
+        if (flowRow) { flowRow.style.display = 'flex'; }
+        else { setStatus('Nenhum fluxo disponível.', 'var(--value-open)'); }
+        break;
+    }
+  }
+
+  async function generatePaymentLink(inst) {
+    setStatus('A gerar link de pagamento...', 'var(--text-secondary)');
+    try {
+      var res = await fetch(SUPABASE_URL + '/functions/v1/payment-create', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_KEY },
+        body: JSON.stringify({
+          amount: inst.value || 0,
+          currency: inst.currency || 'EUR',
+          payment_method: inst.payment_method || 'card',
+          description: inst.description || 'Pagamento',
+          metadata: { bitrix_deal_id: ENTITY_ID, source: 'bitrix24_payment_tab_link' }
+        })
+      });
+      var data = await res.json();
+      if (data.error) throw new Error(data.error);
+      if (data.transaction && data.transaction.payment_url) {
+        navigator.clipboard.writeText(data.transaction.payment_url).catch(function(){});
+        setStatus('✅ Link gerado e copiado! ' + data.transaction.payment_url, 'var(--value-paid)');
+        setTimeout(function() { location.reload(); }, 3000);
+      } else {
+        setStatus('⚠ Cobrança criada mas sem link (método direto?)', 'var(--text-secondary)');
+        setTimeout(function() { location.reload(); }, 2000);
+      }
+    } catch(e) {
+      setStatus('Erro: ' + e.message, 'var(--value-open)');
+    }
+  }
+
   // === Edit Modal ===
   function openEditModal(inst) {
     document.getElementById('edit-tx-id').value = inst.transaction_id || inst.id;
@@ -729,7 +831,10 @@ function renderPaymentTab(opts: {
     document.getElementById('edit-due-date').value = inst.due_date ? inst.due_date.split('T')[0] : '';
     document.getElementById('edit-method').value = inst.payment_method || 'card';
     document.getElementById('edit-notes').value = inst.notes || '';
+    document.getElementById('edit-num-installments').value = '1';
+    document.getElementById('edit-original-total').value = inst.value || '0';
     document.getElementById('edit-result').style.display = 'none';
+    document.getElementById('edit-dates-preview').style.display = 'none';
     // Store data for ensureTxExists
     var editOverlay = document.getElementById('edit-overlay');
     editOverlay.dataset.entityId = inst.entity_id || ENTITY_ID;
@@ -737,8 +842,53 @@ function renderPaymentTab(opts: {
     editOverlay.dataset.description = inst.description || '';
     editOverlay.dataset.amount = inst.value || '0';
     editOverlay.classList.add('active');
+    updateEditDualCurrency();
   }
   function closeEditModal() { document.getElementById('edit-overlay').classList.remove('active'); }
+
+  function updateEditDualCurrency() {
+    var val = parseFloat(document.getElementById('edit-amount').value) || 0;
+    var cur = document.getElementById('edit-overlay').dataset.currency || 'EUR';
+    var el = document.getElementById('edit-dual-currency');
+    if (cur === 'EUR') {
+      el.textContent = '≈ ' + new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val * EUR_TO_BRL);
+    } else {
+      el.textContent = '≈ ' + new Intl.NumberFormat('pt-PT', { style: 'currency', currency: 'EUR' }).format(val / EUR_TO_BRL);
+    }
+  }
+
+  function recalcEditInstallments() {
+    var numInst = parseInt(document.getElementById('edit-num-installments').value) || 1;
+    var interval = parseInt(document.getElementById('edit-interval').value) || 30;
+    var firstDue = document.getElementById('edit-due-date').value;
+    var totalVal = parseFloat(document.getElementById('edit-original-total').value) || 0;
+    var preview = document.getElementById('edit-dates-preview');
+    if (numInst <= 1) {
+      preview.style.display = 'none';
+      return;
+    }
+    var instVal = Math.floor(totalVal * 100 / numInst) / 100;
+    var lastVal = totalVal - (instVal * (numInst - 1));
+    document.getElementById('edit-amount').value = instVal.toFixed(2);
+    updateEditDualCurrency();
+    var lines = ['<div style="font-weight:600;margin-bottom:4px;color:var(--text-primary)">Parcelas geradas</div>'];
+    for (var i = 0; i < numInst; i++) {
+      var val = (i === numInst - 1) ? lastVal : instVal;
+      var dateStr = '—';
+      if (firstDue) {
+        var d = new Date(firstDue); d.setDate(d.getDate() + (interval * i));
+        dateStr = d.toLocaleDateString('pt-PT', { day: '2-digit', month: '2-digit', year: 'numeric' });
+      }
+      var cur = document.getElementById('edit-overlay').dataset.currency || 'EUR';
+      var fmtVal = new Intl.NumberFormat('pt-PT', { style: 'currency', currency: cur }).format(val);
+      var dualVal = cur === 'EUR'
+        ? new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val * EUR_TO_BRL)
+        : new Intl.NumberFormat('pt-PT', { style: 'currency', currency: 'EUR' }).format(val / EUR_TO_BRL);
+      lines.push('<div>' + (i+1) + 'ª parcela: ' + dateStr + ' — <strong>' + fmtVal + '</strong> <span style="font-size:11px;color:var(--text-secondary)">≈ ' + dualVal + '</span></div>');
+    }
+    preview.innerHTML = lines.join('');
+    preview.style.display = 'block';
+  }
 
   async function submitEdit() {
     var txId = document.getElementById('edit-tx-id').value;
@@ -1026,6 +1176,9 @@ Deno.serve(async (req) => {
     let dealCurrency = "EUR";
     let contactPhone = "";
     let contactId = "";
+    let dealGateway = "";
+    let dealPaymentMethod = "";
+    let dealCreatedAt = "";
 
     try {
       const dealResult = await callBitrix(endpoint, accessToken, "crm.deal.get", { ID: entityId });
@@ -1034,6 +1187,10 @@ Deno.serve(async (req) => {
       dealAmount = parseFloat(deal.OPPORTUNITY || "0");
       dealCurrency = deal.CURRENCY_ID || "EUR";
       contactId = deal.CONTACT_ID || "";
+      dealCreatedAt = deal.DATE_CREATE || deal.CREATED_DATE || "";
+      // Read UF_CRM_EMMELY_* fields
+      dealGateway = deal.UF_CRM_EMMELY_GATEWAY || "";
+      dealPaymentMethod = deal.UF_CRM_EMMELY_PAYMENT_METHOD || "";
       if (contactId) {
         const contactResult = await callBitrix(endpoint, accessToken, "crm.contact.get", { ID: contactId });
         const contact = contactResult.result || {};
@@ -1143,10 +1300,29 @@ Deno.serve(async (req) => {
       .from("flows").select("id, name").eq("is_active", true).order("name");
     const flows = (activeFlows || []).map((f: any) => ({ id: f.id, name: f.name }));
 
+    // Compute next due date from pending installments
+    const pendingInstallments = installments.filter(i => i.status !== "paga" && i.due_date);
+    const nextDueDate = pendingInstallments.length > 0
+      ? pendingInstallments.sort((a, b) => new Date(a.due_date!).getTime() - new Date(b.due_date!).getTime())[0].due_date
+      : null;
+
+    // Determine gateway/method from transactions or deal fields
+    const displayGateway = dealGateway || (dealTransactions.length > 0 ? dealTransactions[0].gateway : "") || "";
+    const displayMethod = dealPaymentMethod || (dealTransactions.length > 0 ? dealTransactions[0].payment_method : "") || "";
+    const displayCreatedAt = dealCreatedAt || (dealTransactions.length > 0 ? dealTransactions[0].created_at : "") || "";
+
+    // Gateway display name map
+    const gwNames: Record<string, string> = { stripe_pt: "Stripe PT", stripe_br: "Stripe BR", asaas: "Asaas", direto: "Direto", stripe: "Stripe" };
+    const methodNames: Record<string, string> = { card: "Cartão", pix: "PIX", boleto: "Boleto", multibanco: "Multibanco", mb_way: "MB Way", direto: "Direto", parcelado_direto: "Direto", sepa_debit: "SEPA" };
+
     return new Response(renderPaymentTab({
       entityId, dealTitle, totalValue, paidValue, openValue, currency,
       installments, supabaseUrl, memberId, flows, contactPhone,
       noData: installments.length === 0,
+      gateway: gwNames[displayGateway] || displayGateway,
+      paymentMethod: methodNames[displayMethod] || displayMethod,
+      nextDueDate,
+      createdAt: displayCreatedAt,
     }), { headers: htmlHeaders });
 
   } catch (err) {
