@@ -2855,6 +2855,30 @@ interface BaixaForm {
   paidDates: string[];
   nextDueDate: string;
   gateway: string;
+  paymentMethod: string;
+  notes: string;
+}
+
+const PAYMENT_METHODS = [
+  { value: "transferencia", label: "Transferência Bancária" },
+  { value: "cartao", label: "Cartão de Crédito/Débito" },
+  { value: "mbway", label: "MB Way" },
+  { value: "multibanco", label: "Multibanco" },
+  { value: "pix", label: "PIX" },
+  { value: "boleto", label: "Boleto" },
+  { value: "dinheiro", label: "Dinheiro" },
+  { value: "outro", label: "Outro" },
+];
+
+function countMissingFields(form: BaixaForm | undefined, deal: BaixaDeal): number {
+  if (!form) return 5;
+  let missing = 0;
+  if (!form.totalInstallments || form.totalInstallments < 1) missing++;
+  if (!form.installmentValue || form.installmentValue <= 0) missing++;
+  if (!form.paymentMethod) missing++;
+  if (form.paidInstallments > 0 && form.paidDates.some(d => !d)) missing++;
+  if (form.paidInstallments < form.totalInstallments && !form.nextDueDate) missing++;
+  return missing;
 }
 
 function BaixaCarteiraView({ integration }: { integration: any }) {
