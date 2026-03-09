@@ -271,7 +271,7 @@ function renderPaymentTab(opts: {
     .b24-item-actions { display: flex; gap: 6px; align-items: center; margin-top: 8px; }
     .b24-select { flex: 1; height: 32px; font-size: 13px; font-family: inherit; border: 1px solid var(--border-color); border-radius: 3px; padding: 0 8px; background: var(--bg-card); color: var(--text-primary); outline: none; }
     .b24-select:focus { border-color: var(--progress-fill); }
-    .b24-btn-emmely { background: #722F37; color: #fff; border: none; padding: 0 14px; height: 32px; border-radius: 4px; font-size: 12px; font-weight: 600; font-family: inherit; cursor: pointer; white-space: nowrap; transition: opacity 0.15s; }
+    .b24-btn-emmely { background: #2067b0; color: #fff; border: none; padding: 0 14px; height: 32px; border-radius: 4px; font-size: 12px; font-weight: 600; font-family: inherit; cursor: pointer; white-space: nowrap; transition: opacity 0.15s; }
     .b24-btn-emmely:hover { opacity: 0.85; }
     .b24-btn-primary { background: var(--progress-fill); color: #fff; border: none; padding: 0 16px; height: 32px; border-radius: 4px; font-size: 12px; font-weight: 600; font-family: inherit; cursor: pointer; white-space: nowrap; transition: opacity 0.15s; }
     .b24-btn-primary:hover { opacity: 0.85; }
