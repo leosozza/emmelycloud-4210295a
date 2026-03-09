@@ -2823,6 +2823,16 @@ function RelatoriosView() {
   );
 }
 
+// ==================== MAPEAMENTO VIEW ====================
+function MapeamentoView({ integrationId }: { integrationId?: string }) {
+  const FieldMappingManager = lazy(() => import("@/components/bitrix24/FieldMappingManager"));
+  return (
+    <Suspense fallback={<div className="flex items-center justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-primary" /></div>}>
+      <FieldMappingManager integrationId={integrationId} compact />
+    </Suspense>
+  );
+}
+
 // ==================== BAIXA CARTEIRA VIEW ====================
 interface BaixaDeal {
   id: string;
