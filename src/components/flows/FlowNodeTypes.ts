@@ -260,6 +260,8 @@ export interface FlowNodeData {
   variable?: FlowVariable;
   // Bitrix24 CRM
   bitrixCrm?: FlowBitrixCRM;
+  // Bitrix24 Badge
+  bitrixBadge?: FlowBitrixBadge;
   // IA Inteligente
   aiIntention?: FlowAIIntention;
   aiAction?: FlowAIAction;
