@@ -223,6 +223,7 @@ Deno.serve(async (req) => {
       robots_registered: [],
       placements_registered: [],
       badges_registered: [],
+      userfields_registered: [],
       paysystem_handler_registered: false,
       installed_modules: [],
       available_scopes: [],
