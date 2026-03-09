@@ -158,6 +158,37 @@ Deno.serve(async (req) => {
       // Mesmo sem member_id, enfileirar — o worker irá tentar encontrar a integração pelo payload
     }
 
+    // Handle ONAPPUNINSTALL directly (don't queue — cleanup immediately)
+    if (event === "ONAPPUNINSTALL" && memberId) {
+      console.log("[EVENTS] App uninstall detected for member:", memberId);
+
+      // Find integration to get tokens
+      const { data: integration } = await supabase
+        .from("bitrix24_integrations")
+        .select("id, client_endpoint, access_token")
+        .eq("member_id", memberId)
+        .maybeSingle();
+
+      if (integration?.client_endpoint && integration?.access_token) {
+        const cleanupResult = await cleanupEmmelyFields(integration.client_endpoint, integration.access_token);
+        console.log("[UNINSTALL] Cleanup result:", JSON.stringify(cleanupResult));
+
+        // Mark integration as inactive
+        await supabase
+          .from("bitrix24_integrations")
+          .update({ connector_active: false, connector_registered: false })
+          .eq("id", integration.id);
+
+        console.log("[UNINSTALL] Integration marked as inactive:", integration.id);
+      } else {
+        console.error("[UNINSTALL] No integration found for member:", memberId);
+      }
+
+      return new Response("successfully", {
+        headers: { ...corsHeaders, "Content-Type": "text/plain; charset=utf-8" },
+      });
+    }
+
     // Enfileirar eventos suportados
     if (SUPPORTED_EVENTS.includes(event)) {
       // Dedup: check if this exact event was recently processed
