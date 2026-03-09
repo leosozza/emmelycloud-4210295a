@@ -1,37 +1,83 @@
 
 
-## Plan: Fix Smart Invoice Deal Field + Test Deal 8857 with "Direto"
+## Plano: Botões de Ação Separados + Campos Sempre Visíveis
 
-### Analysis
-The Bitrix24 HTML confirms the deal binding field is `PARENT_ID_2` (shown as "Negócio" in the Smart Invoice form). The current code already sends `parentId2` which is correct. The `ufCrm31Deal` field added previously is likely being ignored or causing issues — it's not a standard field for Smart Process type 31.
+### Problema
+Atualmente cada parcela tem um `<select>` com todas as ações + botão "Executar". O utilizador quer:
+1. **Botões separados**: Editar, Gerar Link, Dar Baixa — sempre visíveis como botões individuais
+2. **Enviar Fluxo**: ao clicar, abre o seletor de fluxo inline + botão "Enviar"
+3. **Campos como vencimento e gateway sempre visíveis** — mesmo quando em branco, devem aparecer como clicáveis para editar diretamente no placement
 
-The key issue: in `crm.item.add` REST API for Smart Processes, field names use **camelCase** format. The deal binding is `parentId2` (parent entity of type 2 = Deal). There is no separate `ufCrm31Deal` field — that was a mistaken assumption. The `parentId2` field alone should handle the deal link correctly.
+### Alterações em `supabase/functions/bitrix24-payment-tab/index.ts`
 
-### Changes
+#### 1. Substituir dropdown por botões individuais (linhas 191-211)
 
-1. **Remove `ufCrm31Deal`** from the `crm.item.add` call — it's not a real field and may cause warnings. Keep only `parentId2` which is confirmed correct from the HTML.
+Trocar o bloco `<select id="action-...">` + `Executar` por 3-4 botões inline:
 
-2. **Test with deal 8857** using `bodyOverrides`:
-   - `force_gateway: "direto"` — crediário próprio, no external payment gateway
-   - 3 parcels: €200 each (01/02, 03/03, 02/04)
-   - Parcela 1 should be marked `confirmed` after creation
-   - Verify Smart Invoices appear in `/crm/type/31/` kanban with deal and contact linked
+```html
+<div class="b24-item-actions">
+  <button onclick='openEditModal(...)' class="b24-btn-action" title="Editar Parcela">✏ Editar</button>
+  <button onclick='generatePaymentLink(...)' class="b24-btn-action" title="Gerar Link">🔗 Link</button>
+  <button onclick='openBaixaModal(...)' class="b24-btn-action b24-btn-baixa" title="Dar Baixa">✓ Baixa</button>
+  <!-- Se tem fluxos -->
+  <button onclick='toggleFlowRow("id")' class="b24-btn-action" title="Enviar Fluxo">📤 Fluxo</button>
+</div>
+<!-- Flow row permanece escondido até clicar -->
+<div id="flow-row-..." style="display:none">...</div>
+```
 
-### File changed
-- `supabase/functions/bitrix24-payment-webhook/index.ts` — remove `ufCrm31Deal` line (line 308)
+Adicionar CSS `.b24-btn-action` com estilo de botão compacto.
 
-### Test
-After deploy, call the webhook with:
-```json
-{
-  "deal_id": 8857,
-  "bodyOverrides": {
-    "force_gateway": "direto",
-    "total_amount": 600,
-    "num_installments": 3,
-    "first_due_date": "2025-02-01",
-    "interval_days": 30
-  }
+#### 2. Campos sempre visíveis e editáveis (vencimento, gateway, método)
+
+Na secção de metadata de cada parcela (linhas 181-186), quando `due_date` ou `payment_method` ou gateway estiverem em branco, mostrar como link clicável que abre o modal de edição:
+
+```html
+<!-- Vencimento: se vazio, mostra link para editar -->
+<span onclick='openEditModal(inst)' style="cursor:pointer" class="b24-missing">
+  Vencimento: ⚠ Clique para definir
+</span>
+
+<!-- Gateway: sempre mostrar, mesmo vazio -->
+<span>🏦 Gateway: Stripe PT</span>  <!-- ou "—" se vazio, clicável -->
+```
+
+#### 3. Remover a função `executeAction` (linhas 777-795)
+
+Já não será necessária pois cada botão chama a função diretamente.
+
+#### 4. Adicionar `toggleFlowRow` function
+
+```javascript
+function toggleFlowRow(instId) {
+  var row = document.getElementById('flow-row-' + instId);
+  if (row) row.style.display = row.style.display === 'none' ? 'flex' : 'none';
 }
 ```
+
+### CSS novo
+
+```css
+.b24-btn-action {
+  background: transparent;
+  border: 1px solid var(--border-color);
+  border-radius: 3px;
+  padding: 4px 10px;
+  font-size: 12px;
+  font-family: inherit;
+  cursor: pointer;
+  color: var(--text-primary);
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+.b24-btn-action:hover { background: var(--bg-page); }
+.b24-btn-baixa { border-color: #589731; color: #589731; }
+.b24-btn-baixa:hover { background: #e0f5d7; }
+```
+
+### Ficheiro
+
+| Ficheiro | Alteração |
+|---|---|
+| `supabase/functions/bitrix24-payment-tab/index.ts` | Botões separados, campos sempre visíveis, toggle fluxo |
 
