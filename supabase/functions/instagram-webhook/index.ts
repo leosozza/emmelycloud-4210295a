@@ -43,6 +43,71 @@ Deno.serve(async (req) => {
         const messaging = entry.messaging || [];
 
         for (const event of messaging) {
+          // Handle delivery status updates (Instagram sends them as event.delivery)
+          if (event.delivery) {
+            try {
+              const mids = event.delivery?.mids || [];
+              for (const mid of mids) {
+                await supabase.from("messages")
+                  .update({ delivery_status: "delivered" })
+                  .eq("external_id", mid);
+
+                // Badge: emmely_msg_delivered
+                const { data: msgRow } = await supabase
+                  .from("messages")
+                  .select("conversation_id")
+                  .eq("external_id", mid)
+                  .maybeSingle();
+
+                if (msgRow?.conversation_id) {
+                  const { data: lead } = await supabase
+                    .from("leads")
+                    .select("bitrix24_id")
+                    .eq("conversation_id", msgRow.conversation_id)
+                    .not("bitrix24_id", "is", null)
+                    .maybeSingle();
+
+                  if (lead?.bitrix24_id) {
+                    const { data: integration } = await supabase
+                      .from("bitrix24_integrations")
+                      .select("client_endpoint, access_token")
+                      .order("created_at", { ascending: false })
+                      .limit(1)
+                      .maybeSingle();
+
+                    if (integration?.client_endpoint && integration?.access_token) {
+                      const ep = integration.client_endpoint.endsWith("/") ? integration.client_endpoint : integration.client_endpoint + "/";
+                      await fetch(`${ep}crm.activity.configurable.add`, {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                          auth: integration.access_token,
+                          ownerTypeId: 2,
+                          ownerId: parseInt(lead.bitrix24_id),
+                          fields: { completed: true, isIncomingChannel: "N", responsibleId: 1, badgeCode: "emmely_msg_delivered" },
+                          layout: {
+                            icon: { code: "done" },
+                            header: { title: "Entregue" },
+                            body: { logo: { code: "robot" }, blocks: {
+                              channel: { type: "text", properties: { value: "Instagram" } },
+                            } },
+                          },
+                        }),
+                      });
+                      console.log(`[IG-WEBHOOK] Badge emmely_msg_delivered for deal ${lead.bitrix24_id}`);
+                    }
+                  }
+                }
+              }
+            } catch (deliveryErr) {
+              console.error("[IG-WEBHOOK] Delivery badge error:", deliveryErr);
+            }
+            continue;
+          }
+
+          // Handle read receipts
+          if (event.read) continue;
+
           // Only process messages (not reactions, reads, etc.)
           if (!event.message || event.message.is_echo) continue;
 
