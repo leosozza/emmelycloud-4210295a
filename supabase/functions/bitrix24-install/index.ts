@@ -613,14 +613,46 @@ Deno.serve(async (req) => {
           CODE: "emmely_create_charge",
           NAME: "Emmely: Criar Cobrança",
           PROPERTIES: {
-            amount: { Name: "Valor", Type: "double", Required: "Y", Description: "Valor da cobrança" },
+            amount: { Name: "Valor Total", Type: "double", Required: "Y", Description: "Valor total da cobrança" },
             currency: { Name: "Moeda", Type: "select", Required: "Y", Options: { EUR: "EUR", BRL: "BRL" }, Default: "EUR" },
-            gateway: { Name: "Gateway", Type: "select", Options: { auto: "Automático (por moeda)", stripe: "Stripe", asaas: "Asaas" }, Default: "auto", Description: "Automático: EUR→Stripe, BRL→Asaas" },
-            payment_method: { Name: "Método de Pagamento", Type: "select", Options: { card: "Cartão", pix: "PIX", boleto: "Boleto", direto: "Recebimento Direto" }, Default: "card" },
+            gateway: { 
+              Name: "Gateway", 
+              Type: "select", 
+              Options: { 
+                auto: "Automático", 
+                stripe_pt: "Stripe Portugal (EUR)", 
+                stripe_br: "Stripe Brasil (BRL)", 
+                asaas: "Asaas (Brasil)", 
+                direto: "Crediário Próprio" 
+              }, 
+              Default: "auto", 
+              Description: "Automático: EUR→Stripe PT, BRL→Stripe BR ou Asaas" 
+            },
+            payment_method: { 
+              Name: "Método de Pagamento", 
+              Type: "select", 
+              Options: { 
+                card: "Cartão", 
+                multibanco: "Multibanco (PT)", 
+                mb_way: "MB WAY (PT)", 
+                sepa_debit: "Débito SEPA (PT)", 
+                pix: "PIX (BR)", 
+                boleto: "Boleto (BR)", 
+                link: "Link de Pagamento",
+                direto: "Recebimento Direto" 
+              }, 
+              Default: "card" 
+            },
             customer_name: { Name: "Nome do Cliente", Type: "string" },
             customer_email: { Name: "Email do Cliente", Type: "string" },
-            customer_cpf: { Name: "CPF/CNPJ", Type: "string", Description: "Obrigatório para Asaas (BRL)" },
+            customer_cpf: { Name: "CPF/CNPJ", Type: "string", Description: "Obrigatório para Asaas" },
             description: { Name: "Descrição", Type: "string" },
+            installments: { Name: "Número de Parcelas", Type: "int", Default: "1", Description: "Quantidade de parcelas mensais" },
+            down_payment: { Name: "Valor de Entrada", Type: "double", Default: "0", Description: "Valor de entrada (opcional)" },
+            first_due_date: { Name: "Data 1º Vencimento", Type: "date", Description: "Data da primeira parcela (YYYY-MM-DD)" },
+            deal_id: { Name: "ID do Negócio", Type: "string", Description: "ID do Deal para vincular faturas" },
+            contact_id: { Name: "ID do Contacto", Type: "string", Description: "ID do Contacto para vincular faturas" },
+            company_id: { Name: "ID da Empresa", Type: "string", Description: "UUID da empresa/filial em Emmely" },
           },
           RETURN_PROPERTIES: {
             charge_id: { Name: "ID da Cobrança", Type: "string" },
@@ -628,6 +660,7 @@ Deno.serve(async (req) => {
             payment_url: { Name: "URL de Pagamento", Type: "string" },
             pix_code: { Name: "Código PIX", Type: "string" },
             gateway_used: { Name: "Gateway Utilizado", Type: "string" },
+            invoices_created: { Name: "Faturas Criadas", Type: "string" },
             error: { Name: "Erro", Type: "string" },
           },
         },

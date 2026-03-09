@@ -303,7 +303,7 @@ async function handleCreateCharge(
       const paymentBody: Record<string, any> = {
         amount: parcel.amount,
         currency,
-        payment_method: paymentMethod,
+        payment_method: effectivePaymentMethod,
         customer_data: {
           name: customerName,
           email: customerEmail,
@@ -316,13 +316,14 @@ async function handleCreateCharge(
         total_installments: totalCount,
         installment_group_id: groupId,
         is_down_payment: parcel.is_down,
-        force_gateway: companyGateway !== "auto" ? companyGateway : undefined,
+        force_gateway: companyGateway,
         company_id: companyId || undefined,
         metadata: {
           bitrix_deal_id: dealId,
           bitrix_contact_id: contactId,
           source: "bitrix24_robot",
           company_name: companyName || undefined,
+          requested_payment_method: paymentMethod,
         },
       };
       // Add credential overrides if company has them
