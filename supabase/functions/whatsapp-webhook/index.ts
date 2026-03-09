@@ -101,6 +101,68 @@ Deno.serve(async (req) => {
               await supabase.from("messages")
                 .update({ delivery_status: status.status })
                 .eq("external_id", status.id);
+
+              // Badge: emmely_msg_delivered / emmely_msg_failed
+              if (status.status === "delivered" || status.status === "read" || status.status === "failed") {
+                try {
+                  // Find conversation via message
+                  const { data: msgRow } = await supabase
+                    .from("messages")
+                    .select("conversation_id")
+                    .eq("external_id", status.id)
+                    .maybeSingle();
+
+                  if (msgRow?.conversation_id) {
+                    // conversation → lead → bitrix24_id
+                    const { data: lead } = await supabase
+                      .from("leads")
+                      .select("bitrix24_id")
+                      .eq("conversation_id", msgRow.conversation_id)
+                      .not("bitrix24_id", "is", null)
+                      .maybeSingle();
+
+                    if (lead?.bitrix24_id) {
+                      const { data: integration } = await supabase
+                        .from("bitrix24_integrations")
+                        .select("client_endpoint, access_token")
+                        .order("created_at", { ascending: false })
+                        .limit(1)
+                        .maybeSingle();
+
+                      if (integration?.client_endpoint && integration?.access_token) {
+                        const ep = integration.client_endpoint.endsWith("/") ? integration.client_endpoint : integration.client_endpoint + "/";
+                        const isFail = status.status === "failed";
+                        const badgeCode = isFail ? "emmely_msg_failed" : "emmely_msg_delivered";
+                        const title = isFail ? "Erro de Envio" : (status.status === "read" ? "Lida" : "Entregue");
+                        const icon = isFail ? "warning" : "done";
+                        const recipient = status.recipient_id || "";
+
+                        await fetch(`${ep}crm.activity.configurable.add`, {
+                          method: "POST",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({
+                            auth: integration.access_token,
+                            ownerTypeId: 2,
+                            ownerId: parseInt(lead.bitrix24_id),
+                            fields: { completed: !isFail, isIncomingChannel: "N", responsibleId: 1, badgeCode },
+                            layout: {
+                              icon: { code: icon },
+                              header: { title },
+                              body: { logo: { code: "robot" }, blocks: {
+                                channel: { type: "text", properties: { value: "WhatsApp" } },
+                                to: { type: "text", properties: { value: recipient } },
+                              } },
+                            },
+                          }),
+                        });
+                        console.log(`[WA-WEBHOOK] Badge ${badgeCode} for deal ${lead.bitrix24_id}`);
+                      }
+                    }
+                  }
+                } catch (badgeErr) {
+                  console.error("[WA-WEBHOOK] Badge delivery error:", badgeErr);
+                }
+              }
             }
           }
 
