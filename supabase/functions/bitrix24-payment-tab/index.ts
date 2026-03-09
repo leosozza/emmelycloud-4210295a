@@ -784,25 +784,10 @@ function renderPaymentTab(opts: {
     el.style.color = isError ? 'var(--value-open)' : 'var(--value-paid)';
   }
 
-  // === Unified Action Dispatcher ===
-  function executeAction(instId, instData) {
-    var sel = document.getElementById('action-' + instId);
-    if (!sel || !sel.value) { setStatus('Selecione uma ação primeiro.', 'var(--value-open)'); return; }
-    var action = sel.value;
-    sel.value = '';
-    // Hide flow row by default
-    var flowRow = document.getElementById('flow-row-' + instId);
-    if (flowRow) flowRow.style.display = 'none';
-
-    switch(action) {
-      case 'baixa': openBaixaModal(instData); break;
-      case 'editar': openEditModal(instData); break;
-      case 'link': generatePaymentLink(instData); break;
-      case 'fluxo':
-        if (flowRow) { flowRow.style.display = 'flex'; }
-        else { setStatus('Nenhum fluxo disponível.', 'var(--value-open)'); }
-        break;
-    }
+  // === Toggle Flow Row ===
+  function toggleFlowRow(instId) {
+    var row = document.getElementById('flow-row-' + instId);
+    if (row) row.style.display = row.style.display === 'none' ? 'flex' : 'none';
   }
 
   async function generatePaymentLink(inst) {
