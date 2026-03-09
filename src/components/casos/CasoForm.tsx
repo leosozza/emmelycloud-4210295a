@@ -101,7 +101,7 @@ export function CasoForm({ open, onOpenChange, caso, leads, profiles, onSave, sa
               <Select value={leadId} onValueChange={setLeadId}>
                 <SelectTrigger><SelectValue placeholder="Nenhum" /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">Nenhum</SelectItem>
+                  <SelectItem value="none">Nenhum</SelectItem>
                   {leads.map((l) => (
                     <SelectItem key={l.id} value={l.id}>{l.name}</SelectItem>
                   ))}
