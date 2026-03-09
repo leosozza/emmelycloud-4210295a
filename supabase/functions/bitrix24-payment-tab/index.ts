@@ -730,7 +730,13 @@ function renderPaymentTab(opts: {
     document.getElementById('edit-method').value = inst.payment_method || 'card';
     document.getElementById('edit-notes').value = inst.notes || '';
     document.getElementById('edit-result').style.display = 'none';
-    document.getElementById('edit-overlay').classList.add('active');
+    // Store data for ensureTxExists
+    var editOverlay = document.getElementById('edit-overlay');
+    editOverlay.dataset.entityId = inst.entity_id || ENTITY_ID;
+    editOverlay.dataset.currency = inst.currency || 'EUR';
+    editOverlay.dataset.description = inst.description || '';
+    editOverlay.dataset.amount = inst.value || '0';
+    editOverlay.classList.add('active');
   }
   function closeEditModal() { document.getElementById('edit-overlay').classList.remove('active'); }
 
