@@ -2823,13 +2823,480 @@ function RelatoriosView() {
   );
 }
 
-// ==================== MAPEAMENTO VIEW ====================
-function MapeamentoView({ integrationId }: { integrationId?: string }) {
-  const FieldMappingManager = lazy(() => import("@/components/bitrix24/FieldMappingManager"));
+// ==================== BAIXA CARTEIRA VIEW ====================
+interface BaixaDeal {
+  id: string;
+  title: string;
+  opportunity: number;
+  currency: string;
+  stage_id: string;
+  stage_name: string;
+  contact_id: string | null;
+  contact_name: string | null;
+  contact_phone: string | null;
+  contact_email: string | null;
+  date_create: string;
+}
+
+interface BaixaForm {
+  totalInstallments: number;
+  installmentValue: number;
+  paidInstallments: number;
+  paidDates: string[];
+  nextDueDate: string;
+  gateway: string;
+}
+
+function BaixaCarteiraView({ integration }: { integration: any }) {
+  const [loading, setLoading] = useState(false);
+  const [deals, setDeals] = useState<BaixaDeal[]>([]);
+  const [expandedDeal, setExpandedDeal] = useState<string | null>(null);
+  const [forms, setForms] = useState<Record<string, BaixaForm>>({});
+  const [saving, setSaving] = useState<string | null>(null);
+  const [savedDeals, setSavedDeals] = useState<Set<string>>(new Set());
+
+  // Filters
+  const [stageId, setStageId] = useState("");
+  const [dateFrom, setDateFrom] = useState<Date | undefined>(undefined);
+  const [dateTo, setDateTo] = useState<Date | undefined>(undefined);
+
+  const fetchDeals = async () => {
+    if (!integration?.member_id) return;
+    setLoading(true);
+    try {
+      const params = new URLSearchParams({ member_id: integration.member_id });
+      if (stageId) params.append("stage_id", stageId);
+      if (dateFrom) params.append("date_from", format(dateFrom, "yyyy-MM-dd"));
+      if (dateTo) params.append("date_to", format(dateTo, "yyyy-MM-dd"));
+
+      const res = await fetch(`${SUPABASE_URL}/functions/v1/bitrix24-fetch-deals?${params}`, {
+        headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` },
+      });
+      const data = await res.json();
+      if (data.deals) {
+        setDeals(data.deals);
+        // Initialize forms for each deal
+        const newForms: Record<string, BaixaForm> = {};
+        for (const d of data.deals) {
+          newForms[d.id] = {
+            totalInstallments: 1,
+            installmentValue: d.opportunity,
+            paidInstallments: 0,
+            paidDates: [],
+            nextDueDate: format(new Date(), "yyyy-MM-dd"),
+            gateway: "direto",
+          };
+        }
+        setForms(newForms);
+      }
+    } catch (e) {
+      console.error("[BaixaCarteira] Error:", e);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const updateForm = (dealId: string, updates: Partial<BaixaForm>) => {
+    setForms((prev) => {
+      const current = prev[dealId] || {
+        totalInstallments: 1,
+        installmentValue: 0,
+        paidInstallments: 0,
+        paidDates: [],
+        nextDueDate: format(new Date(), "yyyy-MM-dd"),
+        gateway: "direto",
+      };
+      const updated = { ...current, ...updates };
+
+      // Auto-adjust paidDates array length
+      if (updates.paidInstallments !== undefined) {
+        const newDates = [...current.paidDates];
+        while (newDates.length < updates.paidInstallments) {
+          newDates.push(format(new Date(), "yyyy-MM-dd"));
+        }
+        while (newDates.length > updates.paidInstallments) {
+          newDates.pop();
+        }
+        updated.paidDates = newDates;
+      }
+
+      return { ...prev, [dealId]: updated };
+    });
+  };
+
+  const updatePaidDate = (dealId: string, index: number, date: string) => {
+    setForms((prev) => {
+      const current = prev[dealId];
+      if (!current) return prev;
+      const newDates = [...current.paidDates];
+      newDates[index] = date;
+      return { ...prev, [dealId]: { ...current, paidDates: newDates } };
+    });
+  };
+
+  const handleImport = async (deal: BaixaDeal) => {
+    const form = forms[deal.id];
+    if (!form) return;
+
+    setSaving(deal.id);
+    try {
+      // 1. Find or create client
+      let clientId: string | null = null;
+      if (deal.contact_phone || deal.contact_email) {
+        // Check if client exists
+        let query = `${SUPABASE_URL}/rest/v1/clients?select=id`;
+        if (deal.contact_phone) {
+          query += `&or=(phone.eq.${encodeURIComponent(deal.contact_phone)},mobile.eq.${encodeURIComponent(deal.contact_phone)})`;
+        }
+        const clientRes = await fetch(query, {
+          headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` },
+        });
+        const existingClients = await clientRes.json();
+        
+        if (existingClients && existingClients.length > 0) {
+          clientId = existingClients[0].id;
+        } else if (deal.contact_name) {
+          // Create new client
+          const createRes = await fetch(`${SUPABASE_URL}/rest/v1/clients`, {
+            method: "POST",
+            headers: {
+              apikey: SUPABASE_KEY,
+              Authorization: `Bearer ${SUPABASE_KEY}`,
+              "Content-Type": "application/json",
+              Prefer: "return=representation",
+            },
+            body: JSON.stringify({
+              name: deal.contact_name,
+              notes: `Importado do Bitrix24 Deal ${deal.id}`,
+            }),
+          });
+          const newClients = await createRes.json();
+          if (newClients && newClients.length > 0) {
+            clientId = newClients[0].id;
+
+            // Create contact
+            if (deal.contact_phone || deal.contact_email) {
+              await fetch(`${SUPABASE_URL}/rest/v1/client_contacts`, {
+                method: "POST",
+                headers: {
+                  apikey: SUPABASE_KEY,
+                  Authorization: `Bearer ${SUPABASE_KEY}`,
+                  "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                  client_id: clientId,
+                  name: deal.contact_name,
+                  phone: deal.contact_phone,
+                  email: deal.contact_email,
+                }),
+              });
+            }
+          }
+        }
+      }
+
+      const groupId = crypto.randomUUID();
+
+      // 2. Create confirmed transactions for paid installments
+      for (let i = 0; i < form.paidInstallments; i++) {
+        const paidDate = form.paidDates[i] || format(new Date(), "yyyy-MM-dd");
+        await fetch(`${SUPABASE_URL}/rest/v1/payment_transactions`, {
+          method: "POST",
+          headers: {
+            apikey: SUPABASE_KEY,
+            Authorization: `Bearer ${SUPABASE_KEY}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            amount: form.installmentValue,
+            currency: deal.currency || "EUR",
+            status: "confirmed",
+            gateway: "direto",
+            payment_method: "historico",
+            client_id: clientId,
+            metadata: {
+              bitrix_deal_id: deal.id,
+              bitrix_contact_id: deal.contact_id,
+              installment_number: i + 1,
+              total_installments: form.totalInstallments,
+              installment_group_id: groupId,
+              imported: true,
+              original_paid_date: paidDate,
+              customer_name: deal.contact_name,
+              customer_phone: deal.contact_phone,
+            },
+          }),
+        });
+      }
+
+      // 3. Create pending transactions for remaining installments
+      const pendingCount = form.totalInstallments - form.paidInstallments;
+      const baseDate = form.nextDueDate ? new Date(form.nextDueDate) : new Date();
+
+      for (let i = 0; i < pendingCount; i++) {
+        const dueDate = new Date(baseDate);
+        dueDate.setDate(dueDate.getDate() + 30 * i);
+
+        await fetch(`${SUPABASE_URL}/rest/v1/payment_transactions`, {
+          method: "POST",
+          headers: {
+            apikey: SUPABASE_KEY,
+            Authorization: `Bearer ${SUPABASE_KEY}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            amount: form.installmentValue,
+            currency: deal.currency || "EUR",
+            status: "pending",
+            gateway: form.gateway,
+            payment_method: form.gateway === "direto" ? "parcelado_direto" : "card",
+            client_id: clientId,
+            metadata: {
+              bitrix_deal_id: deal.id,
+              bitrix_contact_id: deal.contact_id,
+              installment_number: form.paidInstallments + i + 1,
+              total_installments: form.totalInstallments,
+              installment_group_id: groupId,
+              imported: true,
+              due_date: format(dueDate, "yyyy-MM-dd"),
+              customer_name: deal.contact_name,
+              customer_phone: deal.contact_phone,
+            },
+          }),
+        });
+      }
+
+      setSavedDeals((prev) => new Set(prev).add(deal.id));
+      setExpandedDeal(null);
+    } catch (e) {
+      console.error("[BaixaCarteira] Import error:", e);
+    } finally {
+      setSaving(null);
+    }
+  };
+
   return (
-    <Suspense fallback={<div className="flex items-center justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-primary" /></div>}>
-      <FieldMappingManager integrationId={integrationId} compact />
-    </Suspense>
+    <div className="p-6 space-y-6">
+      {/* Header */}
+      <div className="b24-view-header">
+        <h1 className="text-xl font-bold text-white">Baixa Carteira</h1>
+        <p className="text-white/60 text-sm mt-0.5">Importar pagamentos manuais do Bitrix24</p>
+      </div>
+
+      {/* Filters */}
+      <Card className="b24-card">
+        <CardContent className="pt-5">
+          <div className="flex flex-wrap gap-4 items-end">
+            <div className="flex-1 min-w-[150px]">
+              <Label className="text-xs text-muted-foreground">Etapa (STAGE_ID)</Label>
+              <Input
+                placeholder="C5:NEW, C5:WON..."
+                value={stageId}
+                onChange={(e) => setStageId(e.target.value)}
+                className="h-9"
+              />
+            </div>
+            <div className="w-[140px]">
+              <Label className="text-xs text-muted-foreground">Data Início</Label>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button variant="outline" className="w-full h-9 justify-start text-left font-normal">
+                    <CalendarIcon className="mr-2 h-4 w-4" />
+                    {dateFrom ? format(dateFrom, "dd/MM/yyyy") : "Selecionar"}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0" align="start">
+                  <Calendar mode="single" selected={dateFrom} onSelect={setDateFrom} initialFocus />
+                </PopoverContent>
+              </Popover>
+            </div>
+            <div className="w-[140px]">
+              <Label className="text-xs text-muted-foreground">Data Fim</Label>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button variant="outline" className="w-full h-9 justify-start text-left font-normal">
+                    <CalendarIcon className="mr-2 h-4 w-4" />
+                    {dateTo ? format(dateTo, "dd/MM/yyyy") : "Selecionar"}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0" align="start">
+                  <Calendar mode="single" selected={dateTo} onSelect={setDateTo} initialFocus />
+                </PopoverContent>
+              </Popover>
+            </div>
+            <Button onClick={fetchDeals} disabled={loading} className="h-9">
+              {loading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <RefreshCw className="h-4 w-4 mr-2" />}
+              Buscar
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Deals List */}
+      <Card className="b24-card">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base">Negócios Encontrados ({deals.length})</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {deals.length === 0 ? (
+            <div className="text-center py-8 text-muted-foreground">
+              {loading ? "Carregando..." : "Nenhum negócio encontrado. Use os filtros acima."}
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {deals.map((deal) => {
+                const form = forms[deal.id];
+                const isExpanded = expandedDeal === deal.id;
+                const isSaved = savedDeals.has(deal.id);
+
+                return (
+                  <div key={deal.id} className={cn("border rounded-lg", isSaved && "border-green-500/50 bg-green-500/5")}>
+                    {/* Deal Header */}
+                    <div
+                      className="flex items-center justify-between p-4 cursor-pointer hover:bg-muted/50"
+                      onClick={() => setExpandedDeal(isExpanded ? null : deal.id)}
+                    >
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2">
+                          <span className="font-medium">{deal.title}</span>
+                          <Badge variant="outline" className="text-[10px]">ID: {deal.id}</Badge>
+                          {isSaved && <Badge className="bg-green-500 text-white text-[10px]">Importado</Badge>}
+                        </div>
+                        <div className="flex items-center gap-4 text-sm text-muted-foreground mt-1">
+                          <span className="font-semibold text-foreground">
+                            {new Intl.NumberFormat("pt-PT", { style: "currency", currency: deal.currency || "EUR" }).format(deal.opportunity)}
+                          </span>
+                          <span>Etapa: {deal.stage_name}</span>
+                          {deal.contact_name && <span>Contacto: {deal.contact_name}</span>}
+                        </div>
+                      </div>
+                      <ChevronRight className={cn("h-5 w-5 transition-transform", isExpanded && "rotate-90")} />
+                    </div>
+
+                    {/* Expanded Form */}
+                    {isExpanded && form && (
+                      <div className="border-t p-4 bg-muted/30 space-y-4">
+                        {/* Contact Info */}
+                        {deal.contact_name && (
+                          <div className="flex items-center gap-4 text-sm">
+                            <span className="text-muted-foreground">Cliente:</span>
+                            <span className="font-medium">{deal.contact_name}</span>
+                            {deal.contact_phone && <span className="text-muted-foreground">{deal.contact_phone}</span>}
+                            {deal.contact_email && <span className="text-muted-foreground">{deal.contact_email}</span>}
+                          </div>
+                        )}
+
+                        {/* Form Fields */}
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                          <div>
+                            <Label className="text-xs">Parcelas Totais</Label>
+                            <Input
+                              type="number"
+                              min={1}
+                              value={form.totalInstallments}
+                              onChange={(e) => updateForm(deal.id, { totalInstallments: parseInt(e.target.value) || 1 })}
+                              className="h-9"
+                            />
+                          </div>
+                          <div>
+                            <Label className="text-xs">Valor Parcela</Label>
+                            <Input
+                              type="number"
+                              step="0.01"
+                              value={form.installmentValue}
+                              onChange={(e) => updateForm(deal.id, { installmentValue: parseFloat(e.target.value) || 0 })}
+                              className="h-9"
+                            />
+                          </div>
+                          <div>
+                            <Label className="text-xs">Parcelas Pagas</Label>
+                            <Input
+                              type="number"
+                              min={0}
+                              max={form.totalInstallments}
+                              value={form.paidInstallments}
+                              onChange={(e) => updateForm(deal.id, { paidInstallments: Math.min(parseInt(e.target.value) || 0, form.totalInstallments) })}
+                              className="h-9"
+                            />
+                          </div>
+                          <div>
+                            <Label className="text-xs">Gateway Futuro</Label>
+                            <Select value={form.gateway} onValueChange={(v) => updateForm(deal.id, { gateway: v })}>
+                              <SelectTrigger className="h-9">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="direto">Manual (Direto)</SelectItem>
+                                <SelectItem value="stripe_pt">Stripe PT</SelectItem>
+                                <SelectItem value="stripe_br">Stripe BR</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        </div>
+
+                        {/* Paid Dates */}
+                        {form.paidInstallments > 0 && (
+                          <div>
+                            <Label className="text-xs mb-2 block">Datas dos Pagamentos</Label>
+                            <div className="flex flex-wrap gap-2">
+                              {form.paidDates.map((date, idx) => (
+                                <div key={idx} className="flex items-center gap-1">
+                                  <span className="text-xs text-muted-foreground">[{idx + 1}]</span>
+                                  <Input
+                                    type="date"
+                                    value={date}
+                                    onChange={(e) => updatePaidDate(deal.id, idx, e.target.value)}
+                                    className="h-8 w-[140px]"
+                                  />
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Next Due Date */}
+                        {form.paidInstallments < form.totalInstallments && (
+                          <div className="flex items-center gap-4">
+                            <div className="w-[180px]">
+                              <Label className="text-xs">Próximo Vencimento</Label>
+                              <Input
+                                type="date"
+                                value={form.nextDueDate}
+                                onChange={(e) => updateForm(deal.id, { nextDueDate: e.target.value })}
+                                className="h-9"
+                              />
+                            </div>
+                            <div className="text-sm text-muted-foreground pt-5">
+                              {form.totalInstallments - form.paidInstallments} parcela(s) pendente(s)
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Import Button */}
+                        <div className="flex justify-end pt-2">
+                          <Button
+                            onClick={() => handleImport(deal)}
+                            disabled={saving === deal.id || isSaved}
+                            className="gap-2"
+                          >
+                            {saving === deal.id ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <CheckCircle className="h-4 w-4" />
+                            )}
+                            {isSaved ? "Já Importado" : "Importar e Dar Baixa"}
+                          </Button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    </div>
   );
 }
 
