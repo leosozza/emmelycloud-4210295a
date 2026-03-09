@@ -458,7 +458,7 @@ Deno.serve(async (req) => {
       // 2. Do NOT auto-activate on lines — user must manually enable in Contact Center
       const connectorActive = false;
 
-      // 3. Bind events (connector + bot)
+      // 3. Bind events (connector + bot + uninstall)
       const eventsUrl = `${supabaseUrl}/functions/v1/bitrix24-events`;
       const events = [
         "OnImConnectorMessageAdd",
@@ -468,7 +468,8 @@ Deno.serve(async (req) => {
         "OnImbotMessageAdd",       // eventos do IM Bot
         "OnImbotWelcomeMessage",   // boas-vindas do IM Bot
         "OnImbotJoinOpen",         // bot adicionado a open line
-        "OnImbotJoinChat",         // NOVO — bot adicionado via Open Lines (Contact Center)
+        "OnImbotJoinChat",         // bot adicionado via Open Lines (Contact Center)
+        "OnAppUninstall",          // limpeza de campos na desinstalação
       ];
 
       for (const event of events) {
@@ -798,7 +799,31 @@ Deno.serve(async (req) => {
         },
       ];
 
-      // Create fields for both Deal and Lead entities
+      // Step 1: Delete existing EMMELY fields to ensure clean recreation
+      const deleteApis = [
+        { name: "Deal", listMethod: "crm.deal.userfield.list", deleteMethod: "crm.deal.userfield.delete" },
+        { name: "Lead", listMethod: "crm.lead.userfield.list", deleteMethod: "crm.lead.userfield.delete" },
+      ];
+
+      for (const api of deleteApis) {
+        try {
+          const existingFields = await callBitrix(clientEndpoint, accessToken, api.listMethod, {});
+          const emmelyFields = (existingFields.result || []).filter(
+            (f: any) => f.FIELD_NAME && f.FIELD_NAME.startsWith("UF_CRM_EMMELY_")
+          );
+          for (const f of emmelyFields) {
+            await callBitrix(clientEndpoint, accessToken, api.deleteMethod, { id: f.ID });
+            console.log(`[INSTALL] Deleted ${api.name} field ${f.FIELD_NAME} (ID: ${f.ID})`);
+          }
+          if (emmelyFields.length > 0) {
+            console.log(`[INSTALL] Cleaned ${emmelyFields.length} existing ${api.name} EMMELY fields`);
+          }
+        } catch (delErr) {
+          console.error(`[INSTALL] Error cleaning ${api.name} fields:`, delErr);
+        }
+      }
+
+      // Step 2: Create fields for both Deal and Lead entities
       const entityApis = [
         { name: "Deal", method: "crm.deal.userfield.add" },
         { name: "Lead", method: "crm.lead.userfield.add" },
@@ -807,11 +832,10 @@ Deno.serve(async (req) => {
       for (const entity of entityApis) {
         for (const field of emmelyUserFields) {
           const result = await callBitrix(clientEndpoint, accessToken, entity.method, { fields: field });
-          const errStr = String(result.error || "") + " " + String(result.error_description || "");
-          if (result.error && !errStr.includes("ALREADY") && !errStr.includes("DUPLICATE") && !errStr.includes("FIELD_NAME_DUPLICATED")) {
+          if (result.error) {
             console.error(`[INSTALL] ${entity.name} UserField ${field.FIELD_NAME} failed:`, result.error, result.error_description);
           } else {
-            console.log(`[INSTALL] ${entity.name} UserField ${field.FIELD_NAME}: OK`);
+            console.log(`[INSTALL] ${entity.name} UserField ${field.FIELD_NAME}: Created (ID: ${result.result})`);
             installSummary.userfields_registered.push(`${entity.name}:${field.FIELD_NAME}`);
           }
         }

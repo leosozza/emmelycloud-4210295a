@@ -79,7 +79,50 @@ const SUPPORTED_EVENTS = [
   "ONCRMDEALUPDATE",   // Deal update — auto-charge on close
   "ONCRMLEADADD",      // Lead created in Bitrix24
   "ONCRMLEADUPDATE",   // Lead updated in Bitrix24
+  "ONAPPUNINSTALL",    // App uninstalled — cleanup fields
 ];
+
+// Helper to call Bitrix24 REST API
+async function callBitrixApi(
+  clientEndpoint: string,
+  accessToken: string,
+  method: string,
+  params: Record<string, any> = {}
+): Promise<any> {
+  const url = `${clientEndpoint}${method}`;
+  const response = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ...params, auth: accessToken }),
+  });
+  return response.json();
+}
+
+// Cleanup all UF_CRM_EMMELY_* fields from Deal and Lead
+async function cleanupEmmelyFields(clientEndpoint: string, accessToken: string): Promise<{ deleted: string[] }> {
+  const deleted: string[] = [];
+  const apis = [
+    { name: "Deal", listMethod: "crm.deal.userfield.list", deleteMethod: "crm.deal.userfield.delete" },
+    { name: "Lead", listMethod: "crm.lead.userfield.list", deleteMethod: "crm.lead.userfield.delete" },
+  ];
+
+  for (const api of apis) {
+    try {
+      const result = await callBitrixApi(clientEndpoint, accessToken, api.listMethod, {});
+      const emmelyFields = (result.result || []).filter(
+        (f: any) => f.FIELD_NAME && f.FIELD_NAME.startsWith("UF_CRM_EMMELY_")
+      );
+      for (const f of emmelyFields) {
+        await callBitrixApi(clientEndpoint, accessToken, api.deleteMethod, { id: f.ID });
+        deleted.push(`${api.name}:${f.FIELD_NAME}`);
+        console.log(`[UNINSTALL] Deleted ${api.name} field ${f.FIELD_NAME}`);
+      }
+    } catch (err) {
+      console.error(`[UNINSTALL] Error cleaning ${api.name} fields:`, err);
+    }
+  }
+  return { deleted };
+}
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -113,6 +156,37 @@ Deno.serve(async (req) => {
     if (!memberId) {
       console.error("[EVENTS] No member_id found! payload keys:", Object.keys(data).join(", "));
       // Mesmo sem member_id, enfileirar — o worker irá tentar encontrar a integração pelo payload
+    }
+
+    // Handle ONAPPUNINSTALL directly (don't queue — cleanup immediately)
+    if (event === "ONAPPUNINSTALL" && memberId) {
+      console.log("[EVENTS] App uninstall detected for member:", memberId);
+
+      // Find integration to get tokens
+      const { data: integration } = await supabase
+        .from("bitrix24_integrations")
+        .select("id, client_endpoint, access_token")
+        .eq("member_id", memberId)
+        .maybeSingle();
+
+      if (integration?.client_endpoint && integration?.access_token) {
+        const cleanupResult = await cleanupEmmelyFields(integration.client_endpoint, integration.access_token);
+        console.log("[UNINSTALL] Cleanup result:", JSON.stringify(cleanupResult));
+
+        // Mark integration as inactive
+        await supabase
+          .from("bitrix24_integrations")
+          .update({ connector_active: false, connector_registered: false })
+          .eq("id", integration.id);
+
+        console.log("[UNINSTALL] Integration marked as inactive:", integration.id);
+      } else {
+        console.error("[UNINSTALL] No integration found for member:", memberId);
+      }
+
+      return new Response("successfully", {
+        headers: { ...corsHeaders, "Content-Type": "text/plain; charset=utf-8" },
+      });
     }
 
     // Enfileirar eventos suportados
