@@ -73,15 +73,15 @@ serve(async (req) => {
 
     console.log(`[update-deal-payment] entity=${entity_type} id=${deal_id} payment:`, payment_data);
 
-    // ── 1. Update entity UF fields ──
+    // ── 1. Update entity UF fields (aligned with bitrix24-install field names) ──
     const ufFields: Record<string, any> = {};
-    if (total_installments !== undefined) ufFields["UF_CRM_PARCELAS_TOTAL"] = total_installments;
-    if (paid_installments !== undefined) ufFields["UF_CRM_PARCELAS_PAGAS"] = paid_installments;
-    if (installment_value !== undefined) ufFields["UF_CRM_VALOR_PARCELA"] = installment_value;
-    if (next_due_date) ufFields["UF_CRM_PROX_VENCIMENTO"] = next_due_date;
-    if (payment_method) ufFields["UF_CRM_METODO_PAGAMENTO"] = payment_method;
-    if (gateway) ufFields["UF_CRM_GATEWAY"] = gateway;
-    if (notes) ufFields["UF_CRM_NOTAS_PAGAMENTO"] = notes;
+    if (total_installments !== undefined) ufFields["UF_CRM_EMMELY_TOTAL_INSTALLMENTS"] = total_installments;
+    if (paid_installments !== undefined) ufFields["UF_CRM_EMMELY_PAID_INSTALLMENTS"] = paid_installments;
+    if (installment_value !== undefined) ufFields["UF_CRM_EMMELY_INSTALLMENT_VALUE"] = installment_value;
+    if (next_due_date) ufFields["UF_CRM_EMMELY_NEXT_DUE_DATE"] = next_due_date;
+    if (payment_method) ufFields["UF_CRM_EMMELY_PAYMENT_METHOD"] = payment_method;
+    if (gateway) ufFields["UF_CRM_EMMELY_GATEWAY"] = gateway;
+    if (notes) ufFields["UF_CRM_EMMELY_PAYMENT_NOTES"] = notes;
 
     let entityUpdateResult = null;
     if (Object.keys(ufFields).length > 0) {
