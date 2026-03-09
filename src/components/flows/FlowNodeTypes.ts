@@ -49,7 +49,8 @@ export type FlowNodeType =
   | "bitrix_create_spa"
   | "bitrix_update_spa"
   | "bitrix_get_spa"
-  | "bitrix_delete_spa";
+  | "bitrix_delete_spa"
+  | "bitrix_create_badge";
 
 export interface FlowNodeCategory {
   id: string;
