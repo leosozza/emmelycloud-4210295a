@@ -815,6 +815,11 @@ function renderPaymentTab(opts: {
     var el = document.getElementById('baixa-result');
 
     try {
+      // Ensure transaction exists (create if synthetic)
+      var overlay = document.getElementById('baixa-overlay');
+      txId = await ensureTxExists(txId, overlay, _baixaOriginalAmount, overlay.dataset.currency || 'EUR', overlay.dataset.description || '');
+
+    try {
       // Upload proof if provided
       var proofUrl = null;
       var fileInput = document.getElementById('baixa-proof');
