@@ -5,6 +5,7 @@ import {
   Bot, UserCog, Phone, ArrowLeftToLine, XCircle,
   Building2, Handshake, Boxes, Plus, Pencil, Search, Trash2,
   BrainCircuit, Cog, GitFork,
+  Award,
   type LucideIcon,
 } from "lucide-react";
 
