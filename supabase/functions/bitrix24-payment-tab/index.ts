@@ -1300,10 +1300,29 @@ Deno.serve(async (req) => {
       .from("flows").select("id, name").eq("is_active", true).order("name");
     const flows = (activeFlows || []).map((f: any) => ({ id: f.id, name: f.name }));
 
+    // Compute next due date from pending installments
+    const pendingInstallments = installments.filter(i => i.status !== "paga" && i.due_date);
+    const nextDueDate = pendingInstallments.length > 0
+      ? pendingInstallments.sort((a, b) => new Date(a.due_date!).getTime() - new Date(b.due_date!).getTime())[0].due_date
+      : null;
+
+    // Determine gateway/method from transactions or deal fields
+    const displayGateway = dealGateway || (dealTransactions.length > 0 ? dealTransactions[0].gateway : "") || "";
+    const displayMethod = dealPaymentMethod || (dealTransactions.length > 0 ? dealTransactions[0].payment_method : "") || "";
+    const displayCreatedAt = dealCreatedAt || (dealTransactions.length > 0 ? dealTransactions[0].created_at : "") || "";
+
+    // Gateway display name map
+    const gwNames: Record<string, string> = { stripe_pt: "Stripe PT", stripe_br: "Stripe BR", asaas: "Asaas", direto: "Direto", stripe: "Stripe" };
+    const methodNames: Record<string, string> = { card: "Cartão", pix: "PIX", boleto: "Boleto", multibanco: "Multibanco", mb_way: "MB Way", direto: "Direto", parcelado_direto: "Direto", sepa_debit: "SEPA" };
+
     return new Response(renderPaymentTab({
       entityId, dealTitle, totalValue, paidValue, openValue, currency,
       installments, supabaseUrl, memberId, flows, contactPhone,
       noData: installments.length === 0,
+      gateway: gwNames[displayGateway] || displayGateway,
+      paymentMethod: methodNames[displayMethod] || displayMethod,
+      nextDueDate,
+      createdAt: displayCreatedAt,
     }), { headers: htmlHeaders });
 
   } catch (err) {
