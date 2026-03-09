@@ -458,7 +458,7 @@ Deno.serve(async (req) => {
       // 2. Do NOT auto-activate on lines — user must manually enable in Contact Center
       const connectorActive = false;
 
-      // 3. Bind events (connector + bot)
+      // 3. Bind events (connector + bot + uninstall)
       const eventsUrl = `${supabaseUrl}/functions/v1/bitrix24-events`;
       const events = [
         "OnImConnectorMessageAdd",
@@ -468,7 +468,8 @@ Deno.serve(async (req) => {
         "OnImbotMessageAdd",       // eventos do IM Bot
         "OnImbotWelcomeMessage",   // boas-vindas do IM Bot
         "OnImbotJoinOpen",         // bot adicionado a open line
-        "OnImbotJoinChat",         // NOVO — bot adicionado via Open Lines (Contact Center)
+        "OnImbotJoinChat",         // bot adicionado via Open Lines (Contact Center)
+        "OnAppUninstall",          // limpeza de campos na desinstalação
       ];
 
       for (const event of events) {
