@@ -563,6 +563,7 @@ function renderPaymentTab(opts: {
   var SUPABASE_KEY = "${Deno.env.get("SUPABASE_ANON_KEY") || ""}";
   var MEMBER_ID = "${memberId}";
   var ENTITY_ID = "${opts.entityId}";
+  var EUR_TO_BRL = 6.10;
   var _baixaOriginalAmount = 0;
 
   // Ensure a real transaction exists — creates one if txId is synthetic (e.g. "deal-123")
