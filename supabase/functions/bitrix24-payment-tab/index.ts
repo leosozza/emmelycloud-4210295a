@@ -144,6 +144,7 @@ function renderPaymentTab(opts: {
     const instJson = JSON.stringify({
       id: inst.id,
       transaction_id: inst.transaction_id,
+      entity_id: opts.entityId,
       value: inst.value,
       due_date: inst.due_date,
       payment_method: inst.payment_method || "card",
