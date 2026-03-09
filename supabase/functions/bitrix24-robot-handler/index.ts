@@ -226,11 +226,10 @@ async function handleCreateCharge(
           companyGateway = company.default_gateway;
         }
         // Determine credential override based on gateway
-        if (companyGateway === "asaas" || companyGateway === "stripe_br" && company.asaas_credential_key) {
-          // For asaas, credential_key stores the provider name in integration_credentials
+        if (companyGateway === "asaas" && company.asaas_credential_key) {
           companyCredentialProvider = company.asaas_credential_key || "";
           companyCredentialKey = "ASAAS_API_KEY";
-        } else if (company.stripe_credential_key) {
+        } else if ((companyGateway === "stripe_pt" || companyGateway === "stripe_br" || companyGateway === "stripe") && company.stripe_credential_key) {
           companyCredentialProvider = company.stripe_credential_key || "";
           companyCredentialKey = "STRIPE_SECRET_KEY";
         }
@@ -239,6 +238,26 @@ async function handleCreateCharge(
     } catch (e) {
       console.error("[ROBOT-HANDLER] Company lookup error:", e);
     }
+  }
+
+  // Auto-determine gateway based on currency if still "auto"
+  if (companyGateway === "auto") {
+    companyGateway = currency === "BRL" ? "stripe_br" : "stripe_pt";
+  }
+
+  // Validate payment method against gateway - map incompatible methods
+  let effectivePaymentMethod = paymentMethod;
+  const ptOnlyMethods = ["multibanco", "mb_way", "sepa_debit"];
+  const brOnlyMethods = ["pix", "boleto"];
+  
+  if (ptOnlyMethods.includes(paymentMethod) && companyGateway !== "stripe_pt" && companyGateway !== "stripe") {
+    // PT-only method requested but not using PT gateway - fallback to card
+    console.warn(`[ROBOT-HANDLER] ${paymentMethod} not supported on ${companyGateway}, using card`);
+    effectivePaymentMethod = "card";
+  } else if (brOnlyMethods.includes(paymentMethod) && companyGateway !== "stripe_br" && companyGateway !== "asaas") {
+    // BR-only method requested but not using BR gateway - fallback to card
+    console.warn(`[ROBOT-HANDLER] ${paymentMethod} not supported on ${companyGateway}, using card`);
+    effectivePaymentMethod = "card";
   }
 
   let country = currency === "BRL" ? "Brasil" : "Portugal";
