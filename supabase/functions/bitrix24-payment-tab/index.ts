@@ -322,6 +322,17 @@ function renderPaymentTab(opts: {
     .b24-dates-preview { background: var(--bg-page); border: 1px solid var(--border-color); border-radius: 4px; padding: 8px 12px; margin-top: 8px; font-size: 12px; }
     .b24-dates-preview div { padding: 2px 0; color: var(--text-secondary); }
 
+    .b24-btn-action { background: transparent; border: 1px solid var(--border-color); border-radius: 3px; padding: 4px 10px; font-size: 12px; font-family: inherit; cursor: pointer; color: var(--text-primary); transition: all 0.15s; white-space: nowrap; display: inline-flex; align-items: center; gap: 3px; }
+    .b24-btn-action:hover { background: var(--bg-page); }
+    .b24-btn-baixa { border-color: #589731; color: #589731; }
+    .b24-btn-baixa:hover { background: #e0f5d7; }
+    body.dark .b24-btn-baixa:hover { background: #2a4a2a; }
+    .b24-btn-fluxo { border-color: #2067b0; color: #2067b0; }
+    .b24-btn-fluxo:hover { background: #e3f0fa; }
+    body.dark .b24-btn-fluxo:hover { background: #1e3a52; }
+    .b24-clickable { cursor: pointer; text-decoration: underline dotted; }
+    .b24-clickable:hover { opacity: 0.7; }
+
     .b24-empty { text-align: center; padding: 60px 20px; color: var(--text-secondary); }
     .b24-empty svg { margin-bottom: 12px; opacity: 0.4; }
     .b24-empty-title { font-size: 14px; font-weight: 600; margin-bottom: 4px; }
