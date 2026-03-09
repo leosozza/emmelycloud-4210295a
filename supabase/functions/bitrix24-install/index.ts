@@ -129,6 +129,184 @@ Deno.serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
+  // --- repair_fields action: delete and recreate all UF_CRM_EMMELY_* fields ---
+  const reqUrl = new URL(req.url);
+  if (reqUrl.searchParams.get("action") === "repair_fields") {
+    const supabase = createClient(
+      Deno.env.get("SUPABASE_URL")!,
+      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
+    );
+
+    try {
+      // Get integration
+      const { data: integration } = await supabase
+        .from("bitrix24_integrations")
+        .select("*")
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (!integration?.client_endpoint || !integration?.access_token) {
+        return new Response(JSON.stringify({ error: "No integration found" }), { status: 400, headers: jsonHeaders });
+      }
+
+      const ep = integration.client_endpoint.endsWith("/") ? integration.client_endpoint : integration.client_endpoint + "/";
+      const token = integration.access_token;
+      const report: any = { deleted_deal: [], deleted_lead: [], created_deal: [], created_lead: [], errors: [] };
+
+      // 1. List and delete existing EMMELY fields for Deal
+      const dealFieldsList = await callBitrix(ep, token, "crm.deal.userfield.list", { filter: {} });
+      const dealFields = Array.isArray(dealFieldsList.result) ? dealFieldsList.result : [];
+      for (const f of dealFields) {
+        if (f.FIELD_NAME && f.FIELD_NAME.startsWith("UF_CRM_EMMELY_")) {
+          const delRes = await callBitrix(ep, token, "crm.deal.userfield.delete", { id: f.ID });
+          if (delRes.result) { report.deleted_deal.push(f.FIELD_NAME); }
+          else { report.errors.push(`delete deal ${f.FIELD_NAME}: ${delRes.error || 'unknown'}`); }
+        }
+      }
+
+      // 2. List and delete existing EMMELY fields for Lead
+      const leadFieldsList = await callBitrix(ep, token, "crm.lead.userfield.list", { filter: {} });
+      const leadFields = Array.isArray(leadFieldsList.result) ? leadFieldsList.result : [];
+      for (const f of leadFields) {
+        if (f.FIELD_NAME && f.FIELD_NAME.startsWith("UF_CRM_EMMELY_")) {
+          const delRes = await callBitrix(ep, token, "crm.lead.userfield.delete", { id: f.ID });
+          if (delRes.result) { report.deleted_lead.push(f.FIELD_NAME); }
+          else { report.errors.push(`delete lead ${f.FIELD_NAME}: ${delRes.error || 'unknown'}`); }
+        }
+      }
+
+      // 3. Recreate all fields
+      const emmelyUserFields = [
+        {
+          FIELD_NAME: "UF_CRM_EMMELY_PAYMENT_STATUS",
+          USER_TYPE_ID: "enumeration",
+          EDIT_FORM_LABEL: { pt: "Status de Pagamento", en: "Payment Status" },
+          LIST_COLUMN_LABEL: { pt: "Status Pagamento", en: "Payment Status" },
+          LIST: [
+            { VALUE: "Pendente", SORT: 100, DEF: "Y" },
+            { VALUE: "Parcial", SORT: 200 },
+            { VALUE: "Pago", SORT: 300 },
+            { VALUE: "Cancelado", SORT: 400 },
+          ],
+          SETTINGS: { DISPLAY: "LIST" },
+        },
+        {
+          FIELD_NAME: "UF_CRM_EMMELY_INSTALLMENT_GROUP",
+          USER_TYPE_ID: "string",
+          EDIT_FORM_LABEL: { pt: "Grupo de Parcelas", en: "Installment Group" },
+          LIST_COLUMN_LABEL: { pt: "Grupo Parcelas", en: "Installment Group" },
+        },
+        {
+          FIELD_NAME: "UF_CRM_EMMELY_GATEWAY",
+          USER_TYPE_ID: "enumeration",
+          EDIT_FORM_LABEL: { pt: "Gateway de Pagamento", en: "Payment Gateway" },
+          LIST_COLUMN_LABEL: { pt: "Gateway", en: "Gateway" },
+          LIST: [
+            { VALUE: "Stripe Portugal", SORT: 100, DEF: "Y" },
+            { VALUE: "Stripe Brasil", SORT: 200 },
+            { VALUE: "Asaas", SORT: 300 },
+            { VALUE: "Direto", SORT: 400 },
+          ],
+        },
+        {
+          FIELD_NAME: "UF_CRM_EMMELY_TOTAL_PAID",
+          USER_TYPE_ID: "double",
+          EDIT_FORM_LABEL: { pt: "Total Pago", en: "Total Paid" },
+          LIST_COLUMN_LABEL: { pt: "Total Pago", en: "Total Paid" },
+        },
+        {
+          FIELD_NAME: "UF_CRM_EMMELY_PAYMENT_URL",
+          USER_TYPE_ID: "url",
+          EDIT_FORM_LABEL: { pt: "Link de Pagamento", en: "Payment Link" },
+          LIST_COLUMN_LABEL: { pt: "Link Pagamento", en: "Payment Link" },
+        },
+        {
+          FIELD_NAME: "UF_CRM_EMMELY_TOTAL_INSTALLMENTS",
+          USER_TYPE_ID: "enumeration",
+          EDIT_FORM_LABEL: { pt: "Nº de Parcelas", en: "Installments" },
+          LIST_COLUMN_LABEL: { pt: "Nº Parcelas", en: "Installments" },
+          LIST: [
+            { VALUE: "1 Parcela", SORT: 100, DEF: "Y" },
+            { VALUE: "2 Parcelas", SORT: 200 },
+            { VALUE: "3 Parcelas", SORT: 300 },
+            { VALUE: "4 Parcelas", SORT: 400 },
+            { VALUE: "5 Parcelas", SORT: 500 },
+            { VALUE: "6 Parcelas", SORT: 600 },
+            { VALUE: "7 Parcelas", SORT: 700 },
+            { VALUE: "8 Parcelas", SORT: 800 },
+            { VALUE: "9 Parcelas", SORT: 900 },
+            { VALUE: "10 Parcelas", SORT: 1000 },
+            { VALUE: "11 Parcelas", SORT: 1100 },
+            { VALUE: "12 Parcelas", SORT: 1200 },
+          ],
+          SETTINGS: { DISPLAY: "LIST" },
+        },
+        {
+          FIELD_NAME: "UF_CRM_EMMELY_PAID_INSTALLMENTS",
+          USER_TYPE_ID: "integer",
+          EDIT_FORM_LABEL: { pt: "Parcelas Pagas", en: "Paid Installments" },
+          LIST_COLUMN_LABEL: { pt: "Parcelas Pagas", en: "Paid Installments" },
+        },
+        {
+          FIELD_NAME: "UF_CRM_EMMELY_INSTALLMENT_VALUE",
+          USER_TYPE_ID: "double",
+          EDIT_FORM_LABEL: { pt: "Valor da Parcela", en: "Installment Value" },
+          LIST_COLUMN_LABEL: { pt: "Valor Parcela", en: "Installment Value" },
+        },
+        {
+          FIELD_NAME: "UF_CRM_EMMELY_NEXT_DUE_DATE",
+          USER_TYPE_ID: "date",
+          EDIT_FORM_LABEL: { pt: "Próximo Vencimento", en: "Next Due Date" },
+          LIST_COLUMN_LABEL: { pt: "Próx. Vencimento", en: "Next Due Date" },
+        },
+        {
+          FIELD_NAME: "UF_CRM_EMMELY_PAYMENT_METHOD",
+          USER_TYPE_ID: "enumeration",
+          EDIT_FORM_LABEL: { pt: "Método de Pagamento", en: "Payment Method" },
+          LIST_COLUMN_LABEL: { pt: "Método Pagamento", en: "Payment Method" },
+          LIST: [
+            { VALUE: "Cartão", SORT: 100, DEF: "Y" },
+            { VALUE: "PIX", SORT: 200 },
+            { VALUE: "Boleto", SORT: 300 },
+            { VALUE: "MB Way", SORT: 400 },
+            { VALUE: "Multibanco", SORT: 500 },
+            { VALUE: "Débito SEPA", SORT: 600 },
+            { VALUE: "Direto", SORT: 700 },
+          ],
+        },
+        {
+          FIELD_NAME: "UF_CRM_EMMELY_PAYMENT_NOTES",
+          USER_TYPE_ID: "string",
+          EDIT_FORM_LABEL: { pt: "Notas de Pagamento", en: "Payment Notes" },
+          LIST_COLUMN_LABEL: { pt: "Notas Pagamento", en: "Payment Notes" },
+        },
+      ];
+
+      const entityApis = [
+        { name: "Deal", add: "crm.deal.userfield.add" },
+        { name: "Lead", add: "crm.lead.userfield.add" },
+      ];
+
+      for (const entity of entityApis) {
+        for (const field of emmelyUserFields) {
+          const result = await callBitrix(ep, token, entity.add, { fields: field });
+          const errStr = String(result.error || "") + " " + String(result.error_description || "");
+          if (result.error && !errStr.includes("ALREADY") && !errStr.includes("DUPLICATE") && !errStr.includes("FIELD_NAME_DUPLICATED")) {
+            report.errors.push(`create ${entity.name} ${field.FIELD_NAME}: ${result.error}`);
+          } else {
+            (entity.name === "Deal" ? report.created_deal : report.created_lead).push(field.FIELD_NAME);
+          }
+        }
+      }
+
+      await debugLog(supabase, integration.id, "repair_fields", "outbound", report);
+      return new Response(JSON.stringify({ ok: true, report }), { headers: jsonHeaders });
+    } catch (err) {
+      return new Response(JSON.stringify({ error: String(err) }), { status: 500, headers: jsonHeaders });
+    }
+  }
+
   const supabase = createClient(
     Deno.env.get("SUPABASE_URL")!,
     Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
