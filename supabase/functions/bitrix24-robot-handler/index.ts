@@ -848,6 +848,9 @@ Deno.serve(async (req) => {
       case "emmely_generate_proposal":
         returnValues = await handleGenerateProposal(properties, memberId, supabaseUrl, serviceKey);
         break;
+      case "emmely_convert_currency":
+        returnValues = await handleConvertCurrency(properties);
+        break;
       default:
         console.error("[ROBOT-HANDLER] Unknown robot code:", code);
         returnValues = { error: `Unknown robot: ${code}` };
