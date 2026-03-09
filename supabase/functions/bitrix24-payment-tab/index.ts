@@ -114,8 +114,13 @@ function renderPaymentTab(opts: {
   flows: { id: string; name: string }[];
   contactPhone: string;
   noData: boolean;
+  gateway?: string;
+  paymentMethod?: string;
+  nextDueDate?: string | null;
+  createdAt?: string | null;
 }): string {
   const { dealTitle, totalValue, paidValue, openValue, currency, installments, supabaseUrl, memberId, flows, contactPhone, noData } = opts;
+  const EUR_TO_BRL = 6.10;
 
   const paidPct = totalValue > 0 ? Math.round((paidValue / totalValue) * 100) : 0;
 
