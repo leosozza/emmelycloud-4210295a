@@ -128,3 +128,6 @@ verify_jwt = false
 
 [functions.ai-automation-agent]
 verify_jwt = false
+
+[functions.bitrix24-fetch-deals]
+verify_jwt = false
