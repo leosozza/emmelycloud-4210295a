@@ -2887,6 +2887,7 @@ function BaixaCarteiraView({ integration }: { integration: any }) {
   const [expandedDeal, setExpandedDeal] = useState<string | null>(null);
   const [forms, setForms] = useState<Record<string, BaixaForm>>({});
   const [saving, setSaving] = useState<string | null>(null);
+  const [savingBitrix, setSavingBitrix] = useState<string | null>(null);
   const [savedDeals, setSavedDeals] = useState<Set<string>>(new Set());
 
   // Filters
