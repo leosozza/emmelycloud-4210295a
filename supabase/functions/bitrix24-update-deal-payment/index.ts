@@ -15,7 +15,7 @@ serve(async (req) => {
 
   try {
     const body = await req.json();
-    const { member_id, deal_id, payment_data } = body;
+    const { member_id, deal_id, entity_type = "deal", spa_entity_type_id, payment_data } = body;
 
     if (!member_id || !deal_id) {
       return new Response(
@@ -28,7 +28,6 @@ serve(async (req) => {
     const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    // Fetch integration
     const { data: integration, error: intError } = await supabase
       .from("bitrix24_integrations")
       .select("*")
@@ -52,6 +51,15 @@ serve(async (req) => {
       );
     }
 
+    const bitrixCall = async (method: string, payload: Record<string, any> = {}) => {
+      const res = await fetch(`${endpoint}${method}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ auth: accessToken, ...payload }),
+      });
+      return res.json();
+    };
+
     const {
       total_installments,
       installment_value,
@@ -63,70 +71,90 @@ serve(async (req) => {
       notes,
     } = payment_data || {};
 
-    console.log(`[bitrix24-update-deal-payment] Updating deal ${deal_id} with payment data:`, payment_data);
+    console.log(`[update-deal-payment] entity=${entity_type} id=${deal_id} payment:`, payment_data);
 
-    // 1. Update deal UF_CRM_* fields
-    const dealFields: Record<string, any> = {};
-    if (total_installments !== undefined) dealFields["UF_CRM_PARCELAS_TOTAL"] = total_installments;
-    if (paid_installments !== undefined) dealFields["UF_CRM_PARCELAS_PAGAS"] = paid_installments;
-    if (installment_value !== undefined) dealFields["UF_CRM_VALOR_PARCELA"] = installment_value;
-    if (next_due_date) dealFields["UF_CRM_PROX_VENCIMENTO"] = next_due_date;
-    if (payment_method) dealFields["UF_CRM_METODO_PAGAMENTO"] = payment_method;
-    if (gateway) dealFields["UF_CRM_GATEWAY"] = gateway;
-    if (notes) dealFields["UF_CRM_NOTAS_PAGAMENTO"] = notes;
+    // ── 1. Update entity UF fields ──
+    const ufFields: Record<string, any> = {};
+    if (total_installments !== undefined) ufFields["UF_CRM_PARCELAS_TOTAL"] = total_installments;
+    if (paid_installments !== undefined) ufFields["UF_CRM_PARCELAS_PAGAS"] = paid_installments;
+    if (installment_value !== undefined) ufFields["UF_CRM_VALOR_PARCELA"] = installment_value;
+    if (next_due_date) ufFields["UF_CRM_PROX_VENCIMENTO"] = next_due_date;
+    if (payment_method) ufFields["UF_CRM_METODO_PAGAMENTO"] = payment_method;
+    if (gateway) ufFields["UF_CRM_GATEWAY"] = gateway;
+    if (notes) ufFields["UF_CRM_NOTAS_PAGAMENTO"] = notes;
 
-    let dealUpdateResult = null;
-    if (Object.keys(dealFields).length > 0) {
-      const dealUpdateRes = await fetch(`${endpoint}crm.deal.update`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          auth: accessToken,
-          id: deal_id,
-          fields: dealFields,
-        }),
+    let entityUpdateResult = null;
+    if (Object.keys(ufFields).length > 0) {
+      if (entity_type === "lead") {
+        entityUpdateResult = await bitrixCall("crm.lead.update", { id: deal_id, fields: ufFields });
+      } else if (entity_type === "spa" && spa_entity_type_id) {
+        // SPA uses camelCase UF fields
+        const spaFields: Record<string, any> = {};
+        for (const [k, v] of Object.entries(ufFields)) {
+          // Convert UF_CRM_X to ufCrmX (camelCase)
+          const camel = k.toLowerCase().replace(/_([a-z])/g, (_, c) => c.toUpperCase());
+          spaFields[camel] = v;
+        }
+        entityUpdateResult = await bitrixCall("crm.item.update", {
+          entityTypeId: parseInt(spa_entity_type_id),
+          id: parseInt(deal_id),
+          fields: spaFields,
+        });
+      } else {
+        entityUpdateResult = await bitrixCall("crm.deal.update", { id: deal_id, fields: ufFields });
+      }
+      console.log("[update-deal-payment] Entity update result:", entityUpdateResult);
+    }
+
+    // ── 2. Get entity data for contact/company info ──
+    let contactId: string | null = null;
+    let companyId: string | null = null;
+    let currency = "EUR";
+    let entityOpportunity = 0;
+
+    if (entity_type === "lead") {
+      const data = await bitrixCall("crm.lead.get", { id: deal_id });
+      const lead = data.result;
+      if (lead) {
+        contactId = lead.CONTACT_ID;
+        companyId = lead.COMPANY_ID;
+        currency = lead.CURRENCY_ID || "EUR";
+        entityOpportunity = parseFloat(lead.OPPORTUNITY) || 0;
+      }
+    } else if (entity_type === "spa" && spa_entity_type_id) {
+      const data = await bitrixCall("crm.item.get", {
+        entityTypeId: parseInt(spa_entity_type_id),
+        id: parseInt(deal_id),
       });
-      dealUpdateResult = await dealUpdateRes.json();
-      console.log("[bitrix24-update-deal-payment] Deal update result:", dealUpdateResult);
+      const item = data.result?.item || data.result;
+      if (item) {
+        contactId = item.contactId ? String(item.contactId) : null;
+        companyId = item.companyId ? String(item.companyId) : null;
+        currency = item.currencyId || "EUR";
+        entityOpportunity = parseFloat(item.opportunity) || 0;
+      }
+    } else {
+      const data = await bitrixCall("crm.deal.get", { id: deal_id });
+      const deal = data.result;
+      if (deal) {
+        contactId = deal.CONTACT_ID;
+        companyId = deal.COMPANY_ID;
+        currency = deal.CURRENCY_ID || "EUR";
+        entityOpportunity = parseFloat(deal.OPPORTUNITY) || 0;
+      }
     }
 
-    // 2. Create/Update Smart Invoices (Entity Type 31) for each installment
-    // First, get the deal to extract contact info
-    const dealRes = await fetch(`${endpoint}crm.deal.get`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        auth: accessToken,
-        id: deal_id,
-      }),
-    });
-    const dealData = await dealRes.json();
-    const deal = dealData.result;
-
-    if (!deal) {
-      return new Response(
-        JSON.stringify({ error: "Deal not found in Bitrix24", dealUpdateResult }),
-        { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
-    const contactId = deal.CONTACT_ID;
-    const companyId = deal.COMPANY_ID;
-    const currency = deal.CURRENCY_ID || "EUR";
-
+    // ── 3. Create/Update Smart Invoices (Entity Type 31) ──
     const invoicesCreated: any[] = [];
-
-    // Create Smart Invoices for each installment
     const totalInst = total_installments || 1;
     const paidInst = paid_installments || 0;
-    const instValue = installment_value || (parseFloat(deal.OPPORTUNITY) / totalInst);
+    const instValue = installment_value || (entityOpportunity / totalInst);
 
     for (let i = 0; i < totalInst; i++) {
       const installmentNum = i + 1;
       const isPaid = i < paidInst;
       const paidDate = isPaid && paid_dates?.[i] ? paid_dates[i] : null;
 
-      // Calculate due date for pending installments
       let dueDate = null;
       if (!isPaid && next_due_date) {
         const baseDate = new Date(next_due_date);
@@ -135,107 +163,95 @@ serve(async (req) => {
         dueDate = baseDate.toISOString().split("T")[0];
       }
 
-      // Stage: D31:NEW for pending, D31:FINAL_INVOICE for paid
-      // Note: Stage IDs may vary per Bitrix24 instance
       const stageId = isPaid ? "DT31_1:P" : "DT31_1:NEW";
 
       const invoiceFields: Record<string, any> = {
-        title: `Parcela ${installmentNum}/${totalInst} - Deal #${deal_id}`,
+        title: `Parcela ${installmentNum}/${totalInst} - ${entity_type === "lead" ? "Lead" : entity_type === "spa" ? "SPA" : "Deal"} #${deal_id}`,
         opportunity: instValue,
         currencyId: currency,
-        parentId2: deal_id, // Link to Deal
-        stageId: stageId,
+        stageId,
       };
+
+      // Link to parent entity
+      if (entity_type === "deal") {
+        invoiceFields["parentId2"] = deal_id; // Deal = entity type 2
+      } else if (entity_type === "lead") {
+        invoiceFields["parentId1"] = deal_id; // Lead = entity type 1
+      } else if (entity_type === "spa" && spa_entity_type_id) {
+        invoiceFields[`parentId${spa_entity_type_id}`] = deal_id;
+      }
 
       if (contactId) invoiceFields["contactId"] = contactId;
       if (companyId) invoiceFields["companyId"] = companyId;
       if (dueDate) invoiceFields["ufCrm31DueDate"] = dueDate;
       if (paidDate) invoiceFields["ufCrm31PaidDate"] = paidDate;
 
-      // Check if invoice already exists for this installment
-      const existingInvoiceRes = await fetch(`${endpoint}crm.item.list`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          auth: accessToken,
-          entityTypeId: 31,
-          filter: {
-            "parentId2": deal_id,
-            "title": `Parcela ${installmentNum}/${totalInst}%`,
-          },
-          select: ["id", "title"],
-        }),
-      });
-      const existingInvoiceData = await existingInvoiceRes.json();
-      const existingInvoice = existingInvoiceData.result?.items?.[0];
+      // Check existing
+      const parentFilter: Record<string, any> = {
+        title: `Parcela ${installmentNum}/${totalInst}%`,
+      };
+      if (entity_type === "deal") parentFilter["parentId2"] = deal_id;
+      else if (entity_type === "lead") parentFilter["parentId1"] = deal_id;
 
-      if (existingInvoice) {
-        // Update existing
-        const updateRes = await fetch(`${endpoint}crm.item.update`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            auth: accessToken,
-            entityTypeId: 31,
-            id: existingInvoice.id,
-            fields: invoiceFields,
-          }),
+      const existingData = await bitrixCall("crm.item.list", {
+        entityTypeId: 31,
+        filter: parentFilter,
+        select: ["id", "title"],
+      });
+      const existing = existingData.result?.items?.[0];
+
+      if (existing) {
+        const updateData = await bitrixCall("crm.item.update", {
+          entityTypeId: 31,
+          id: existing.id,
+          fields: invoiceFields,
         });
-        const updateData = await updateRes.json();
-        invoicesCreated.push({ action: "updated", id: existingInvoice.id, result: updateData });
+        invoicesCreated.push({ action: "updated", id: existing.id, result: updateData });
       } else {
-        // Create new
-        const createRes = await fetch(`${endpoint}crm.item.add`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            auth: accessToken,
-            entityTypeId: 31,
-            fields: invoiceFields,
-          }),
+        const createData = await bitrixCall("crm.item.add", {
+          entityTypeId: 31,
+          fields: invoiceFields,
         });
-        const createData = await createRes.json();
         invoicesCreated.push({ action: "created", result: createData });
       }
     }
 
-    // --- Badge: emmely_deal_payment_updated ---
+    // ── 4. Badge ──
+    // ownerTypeId: 1=Lead, 2=Deal, SPA=entityTypeId
+    const ownerTypeId = entity_type === "lead" ? 1 : entity_type === "spa" ? parseInt(spa_entity_type_id || "2") : 2;
     try {
-      await fetch(`${endpoint}crm.activity.configurable.add`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          auth: accessToken,
-          ownerTypeId: 2,
-          ownerId: parseInt(deal_id),
-          fields: { completed: false, isIncomingChannel: "N", responsibleId: 1, badgeCode: "emmely_deal_payment_updated" },
-          layout: {
-            icon: { code: "money" },
-            header: { title: "Parcelas Atualizadas" },
-            body: { logo: { code: "robot" }, blocks: {
+      await bitrixCall("crm.activity.configurable.add", {
+        ownerTypeId,
+        ownerId: parseInt(deal_id),
+        fields: { completed: false, isIncomingChannel: "N", responsibleId: 1, badgeCode: "emmely_deal_payment_updated" },
+        layout: {
+          icon: { code: "money" },
+          header: { title: "Parcelas Atualizadas" },
+          body: {
+            logo: { code: "robot" },
+            blocks: {
               total: { type: "text", properties: { value: `${totalInst} parcelas` } },
               paid: { type: "text", properties: { value: `${paidInst} pagas` } },
               value: { type: "text", properties: { value: `${instValue} ${currency}` } },
-            } },
+            },
           },
-        }),
+        },
       });
-      console.log(`[bitrix24-update-deal-payment] Badge emmely_deal_payment_updated for deal ${deal_id}`);
     } catch (badgeErr) {
-      console.error("[bitrix24-update-deal-payment] Badge error:", badgeErr);
+      console.error("[update-deal-payment] Badge error:", badgeErr);
     }
 
     return new Response(
       JSON.stringify({
         success: true,
-        dealUpdateResult,
+        entityUpdateResult,
         invoicesCreated,
-        message: `Deal ${deal_id} updated with ${invoicesCreated.length} invoices processed`,
+        message: `${entity_type} ${deal_id} updated with ${invoicesCreated.length} invoices processed`,
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   } catch (error) {
-    console.error("[bitrix24-update-deal-payment] Error:", error);
+    console.error("[update-deal-payment] Error:", error);
     return new Response(
       JSON.stringify({ error: String(error) }),
       { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }

@@ -3082,6 +3082,8 @@ function BaixaCarteiraView({ integration }: { integration: any }) {
         body: JSON.stringify({
           member_id: integration.member_id,
           deal_id: deal.id,
+          entity_type: entityType,
+          spa_entity_type_id: entityType === "spa" ? pipelineId : undefined,
           payment_data: {
             total_installments: form.totalInstallments,
             installment_value: form.installmentValue,
