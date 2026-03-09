@@ -769,6 +769,10 @@ function renderPaymentTab(opts: {
     document.getElementById('baixa-reason-other-group').style.display = 'none';
     document.getElementById('baixa-proof').value = '';
     document.getElementById('baixa-result').style.display = 'none';
+    // Store entity info for synthetic creation
+    document.getElementById('baixa-overlay').dataset.entityId = inst.entity_id || ENTITY_ID;
+    document.getElementById('baixa-overlay').dataset.currency = cur;
+    document.getElementById('baixa-overlay').dataset.description = inst.description || '';
     document.getElementById('baixa-overlay').classList.add('active');
     calcDiscount();
   }
