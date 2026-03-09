@@ -514,6 +514,29 @@ function renderPaymentTab(opts: {
   var ENTITY_ID = "${opts.entityId}";
   var _baixaOriginalAmount = 0;
 
+  // Ensure a real transaction exists — creates one if txId is synthetic (e.g. "deal-123")
+  async function ensureTxExists(txId, overlayEl, amount, currency, description) {
+    if (!txId || !txId.startsWith('deal-')) return txId;
+    // Create real transaction via payment-create POST
+    var entityId = (overlayEl && overlayEl.dataset && overlayEl.dataset.entityId) || ENTITY_ID;
+    var res = await fetch(SUPABASE_URL + '/functions/v1/payment-create', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_KEY },
+      body: JSON.stringify({
+        amount: amount || 0,
+        currency: currency || 'EUR',
+        payment_method: 'direto',
+        force_gateway: 'direto',
+        description: description || 'Parcela',
+        metadata: { bitrix_deal_id: entityId, source: 'bitrix24_payment_tab_synthetic' }
+      })
+    });
+    var data = await res.json();
+    if (data.error) throw new Error('Erro ao criar transação: ' + data.error);
+    if (data.transaction && data.transaction.id) return data.transaction.id;
+    throw new Error('Não foi possível criar a transação');
+  }
+
   function setStatus(msg, color) {
     var el = document.getElementById('status-msg');
     if (el) { el.textContent = msg; el.style.color = color || 'var(--text-secondary)'; }
@@ -707,7 +730,13 @@ function renderPaymentTab(opts: {
     document.getElementById('edit-method').value = inst.payment_method || 'card';
     document.getElementById('edit-notes').value = inst.notes || '';
     document.getElementById('edit-result').style.display = 'none';
-    document.getElementById('edit-overlay').classList.add('active');
+    // Store data for ensureTxExists
+    var editOverlay = document.getElementById('edit-overlay');
+    editOverlay.dataset.entityId = inst.entity_id || ENTITY_ID;
+    editOverlay.dataset.currency = inst.currency || 'EUR';
+    editOverlay.dataset.description = inst.description || '';
+    editOverlay.dataset.amount = inst.value || '0';
+    editOverlay.classList.add('active');
   }
   function closeEditModal() { document.getElementById('edit-overlay').classList.remove('active'); }
 
@@ -718,6 +747,10 @@ function renderPaymentTab(opts: {
     btn.disabled = true; btn.textContent = 'A guardar...';
     var el = document.getElementById('edit-result');
     try {
+      // Ensure transaction exists (create if synthetic)
+      var editOverlay = document.getElementById('edit-overlay');
+      txId = await ensureTxExists(txId, editOverlay, parseFloat(editOverlay.dataset.amount) || 0, editOverlay.dataset.currency || 'EUR', editOverlay.dataset.description || '');
+
       var payload = {
         transaction_id: txId,
         amount_update: parseFloat(document.getElementById('edit-amount').value) || undefined,
@@ -819,7 +852,6 @@ function renderPaymentTab(opts: {
       var overlay = document.getElementById('baixa-overlay');
       txId = await ensureTxExists(txId, overlay, _baixaOriginalAmount, overlay.dataset.currency || 'EUR', overlay.dataset.description || '');
 
-    try {
       // Upload proof if provided
       var proofUrl = null;
       var fileInput = document.getElementById('baixa-proof');
@@ -873,7 +905,6 @@ function renderPaymentTab(opts: {
           }, function(r) {
             if (r.error()) {
               console.error('Invoice close error:', r.error());
-              // Fallback old API
               BX24.callMethod('crm.invoice.update', { ID: parseInt(invoiceId), fields: { STATUS_ID: 'P' } }, function() { resolve(null); });
             } else { resolve(null); }
           });

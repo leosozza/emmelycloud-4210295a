@@ -1,58 +1,37 @@
 
 
-## Análise Completa: Problemas Encontrados
+## Plan: Fix Smart Invoice Deal Field + Test Deal 8857 with "Direto"
 
-Após análise detalhada dos logs, código e dados, identifiquei **5 problemas críticos** que explicam por que nada funciona:
+### Analysis
+The Bitrix24 HTML confirms the deal binding field is `PARENT_ID_2` (shown as "Negócio" in the Smart Invoice form). The current code already sends `parentId2` which is correct. The `ufCrm31Deal` field added previously is likely being ignored or causing issues — it's not a standard field for Smart Process type 31.
 
-### Problema 1: Campos NÃO foram atualizados no Bitrix24
-O log da última instalação (13:03) mostra `userfields_registered: []` — **zero campos criados**. Isto porque os campos já existiam da instalação anterior (12:22) com labels em inglês e tipo `integer`. A API do Bitrix24 retorna "already exists" e o sistema ignora. **Não existe mecanismo para apagar e recriar campos.**
+The key issue: in `crm.item.add` REST API for Smart Processes, field names use **camelCase** format. The deal binding is `parentId2` (parent entity of type 2 = Deal). There is no separate `ufCrm31Deal` field — that was a mistaken assumption. The `parentId2` field alone should handle the deal link correctly.
 
-### Problema 2: Função `ensureTxExists` NUNCA FOI DEFINIDA
-Na linha 820 do payment-tab, `submitBaixa` chama `ensureTxExists(txId, ...)` — mas esta função **não existe em lado nenhum do ficheiro**. Qualquer tentativa de dar baixa numa parcela sintética causa erro JavaScript imediato.
+### Changes
 
-### Problema 3: `submitEdit` não trata parcelas sintéticas
-O `submitEdit` (linha 714) envia diretamente um PATCH com o `txId`. Para parcelas sintéticas (ID `deal-XXX`), o `payment-create` PATCH falha porque não existe transação com esse ID. Falta chamar `ensureTxExists` antes.
+1. **Remove `ufCrm31Deal`** from the `crm.item.add` call — it's not a real field and may cause warnings. Keep only `parentId2` which is confirmed correct from the HTML.
 
-### Problema 4: `submitBaixa` tem erro de sintaxe
-Linhas 817-822: existe um `try {` a abrir seguido de outro `try {` sem fechar o primeiro. O bloco try/catch está mal estruturado, o que pode causar comportamento imprevisível.
+2. **Test with deal 8857** using `bodyOverrides`:
+   - `force_gateway: "direto"` — crediário próprio, no external payment gateway
+   - 3 parcels: €200 each (01/02, 03/03, 02/04)
+   - Parcela 1 should be marked `confirmed` after creation
+   - Verify Smart Invoices appear in `/crm/type/31/` kanban with deal and contact linked
 
-### Problema 5: Ícone do conector ainda vermelho
-Na linha 260 do install, o ícone SVG do conector usa `fill="#722F37"` (vermelho bordeaux). Não foi atualizado para azul.
+### File changed
+- `supabase/functions/bitrix24-payment-webhook/index.ts` — remove `ufCrm31Deal` line (line 308)
 
----
-
-## Plano de Correção
-
-### Ficheiro 1: `supabase/functions/bitrix24-install/index.ts`
-
-1. **Adicionar ação `repair_fields`** acessível via query param `?action=repair_fields`:
-   - Lista campos existentes via `crm.deal.userfield.list` com filtro `FIELD_NAME LIKE UF_CRM_EMMELY%`
-   - **Apaga cada campo** via `crm.deal.userfield.delete` (e `crm.lead.userfield.delete`)
-   - Recria todos os 11 campos com labels PT e tipos corretos
-   - Retorna relatório JSON: `{ deleted: [...], created: [...], errors: [...] }`
-
-2. **Mudar cor do ícone do conector** de `#722F37` para `#2067b0` (azul Bitrix24) nas linhas do SVG e BORDER
-
-### Ficheiro 2: `supabase/functions/bitrix24-payment-tab/index.ts`
-
-1. **Definir a função `ensureTxExists`** no bloco `<script>`:
-   - Se `txId` começa com `deal-`: faz POST a `payment-create` para criar transação real com os dados da parcela
-   - Retorna o novo `txId` real
-   - Se `txId` não é sintético: retorna como está
-
-2. **Adicionar `ensureTxExists` ao `submitEdit`**: antes do PATCH, chamar `ensureTxExists` para garantir que a transação existe
-
-3. **Corrigir try/catch de `submitBaixa`**: remover o `try {` duplicado nas linhas 817-822, alinhar corretamente o bloco
-
-4. **Adicionar `entity_id` ao dataset do `edit-overlay`**: para que `ensureTxExists` tenha acesso ao entityId também na edição
-
-### Ficheiros a Modificar
-
-| Ficheiro | Alterações |
-|---|---|
-| `supabase/functions/bitrix24-install/index.ts` | Ação `repair_fields` (delete+recreate); cor do ícone azul |
-| `supabase/functions/bitrix24-payment-tab/index.ts` | Definir `ensureTxExists`; usá-la em `submitEdit` e `submitBaixa`; corrigir try/catch |
-
-### Após Implementação
-O utilizador deve chamar manualmente o endpoint `bitrix24-install?action=repair_fields` (ou reinstalar a app) para que os campos sejam apagados e recriados com os nomes corretos em PT.
+### Test
+After deploy, call the webhook with:
+```json
+{
+  "deal_id": 8857,
+  "bodyOverrides": {
+    "force_gateway": "direto",
+    "total_amount": 600,
+    "num_installments": 3,
+    "first_due_date": "2025-02-01",
+    "interval_days": 30
+  }
+}
+```
 
