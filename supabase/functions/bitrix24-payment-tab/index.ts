@@ -773,6 +773,56 @@ function renderPaymentTab(opts: {
     el.style.color = isError ? 'var(--value-open)' : 'var(--value-paid)';
   }
 
+  // === Unified Action Dispatcher ===
+  function executeAction(instId, instData) {
+    var sel = document.getElementById('action-' + instId);
+    if (!sel || !sel.value) { setStatus('Selecione uma ação primeiro.', 'var(--value-open)'); return; }
+    var action = sel.value;
+    sel.value = '';
+    // Hide flow row by default
+    var flowRow = document.getElementById('flow-row-' + instId);
+    if (flowRow) flowRow.style.display = 'none';
+
+    switch(action) {
+      case 'baixa': openBaixaModal(instData); break;
+      case 'editar': openEditModal(instData); break;
+      case 'link': generatePaymentLink(instData); break;
+      case 'fluxo':
+        if (flowRow) { flowRow.style.display = 'flex'; }
+        else { setStatus('Nenhum fluxo disponível.', 'var(--value-open)'); }
+        break;
+    }
+  }
+
+  async function generatePaymentLink(inst) {
+    setStatus('A gerar link de pagamento...', 'var(--text-secondary)');
+    try {
+      var res = await fetch(SUPABASE_URL + '/functions/v1/payment-create', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_KEY },
+        body: JSON.stringify({
+          amount: inst.value || 0,
+          currency: inst.currency || 'EUR',
+          payment_method: inst.payment_method || 'card',
+          description: inst.description || 'Pagamento',
+          metadata: { bitrix_deal_id: ENTITY_ID, source: 'bitrix24_payment_tab_link' }
+        })
+      });
+      var data = await res.json();
+      if (data.error) throw new Error(data.error);
+      if (data.transaction && data.transaction.payment_url) {
+        navigator.clipboard.writeText(data.transaction.payment_url).catch(function(){});
+        setStatus('✅ Link gerado e copiado! ' + data.transaction.payment_url, 'var(--value-paid)');
+        setTimeout(function() { location.reload(); }, 3000);
+      } else {
+        setStatus('⚠ Cobrança criada mas sem link (método direto?)', 'var(--text-secondary)');
+        setTimeout(function() { location.reload(); }, 2000);
+      }
+    } catch(e) {
+      setStatus('Erro: ' + e.message, 'var(--value-open)');
+    }
+  }
+
   // === Edit Modal ===
   function openEditModal(inst) {
     document.getElementById('edit-tx-id').value = inst.transaction_id || inst.id;
@@ -781,7 +831,10 @@ function renderPaymentTab(opts: {
     document.getElementById('edit-due-date').value = inst.due_date ? inst.due_date.split('T')[0] : '';
     document.getElementById('edit-method').value = inst.payment_method || 'card';
     document.getElementById('edit-notes').value = inst.notes || '';
+    document.getElementById('edit-num-installments').value = '1';
+    document.getElementById('edit-original-total').value = inst.value || '0';
     document.getElementById('edit-result').style.display = 'none';
+    document.getElementById('edit-dates-preview').style.display = 'none';
     // Store data for ensureTxExists
     var editOverlay = document.getElementById('edit-overlay');
     editOverlay.dataset.entityId = inst.entity_id || ENTITY_ID;
@@ -789,8 +842,53 @@ function renderPaymentTab(opts: {
     editOverlay.dataset.description = inst.description || '';
     editOverlay.dataset.amount = inst.value || '0';
     editOverlay.classList.add('active');
+    updateEditDualCurrency();
   }
   function closeEditModal() { document.getElementById('edit-overlay').classList.remove('active'); }
+
+  function updateEditDualCurrency() {
+    var val = parseFloat(document.getElementById('edit-amount').value) || 0;
+    var cur = document.getElementById('edit-overlay').dataset.currency || 'EUR';
+    var el = document.getElementById('edit-dual-currency');
+    if (cur === 'EUR') {
+      el.textContent = '≈ ' + new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val * EUR_TO_BRL);
+    } else {
+      el.textContent = '≈ ' + new Intl.NumberFormat('pt-PT', { style: 'currency', currency: 'EUR' }).format(val / EUR_TO_BRL);
+    }
+  }
+
+  function recalcEditInstallments() {
+    var numInst = parseInt(document.getElementById('edit-num-installments').value) || 1;
+    var interval = parseInt(document.getElementById('edit-interval').value) || 30;
+    var firstDue = document.getElementById('edit-due-date').value;
+    var totalVal = parseFloat(document.getElementById('edit-original-total').value) || 0;
+    var preview = document.getElementById('edit-dates-preview');
+    if (numInst <= 1) {
+      preview.style.display = 'none';
+      return;
+    }
+    var instVal = Math.floor(totalVal * 100 / numInst) / 100;
+    var lastVal = totalVal - (instVal * (numInst - 1));
+    document.getElementById('edit-amount').value = instVal.toFixed(2);
+    updateEditDualCurrency();
+    var lines = ['<div style="font-weight:600;margin-bottom:4px;color:var(--text-primary)">Parcelas geradas</div>'];
+    for (var i = 0; i < numInst; i++) {
+      var val = (i === numInst - 1) ? lastVal : instVal;
+      var dateStr = '—';
+      if (firstDue) {
+        var d = new Date(firstDue); d.setDate(d.getDate() + (interval * i));
+        dateStr = d.toLocaleDateString('pt-PT', { day: '2-digit', month: '2-digit', year: 'numeric' });
+      }
+      var cur = document.getElementById('edit-overlay').dataset.currency || 'EUR';
+      var fmtVal = new Intl.NumberFormat('pt-PT', { style: 'currency', currency: cur }).format(val);
+      var dualVal = cur === 'EUR'
+        ? new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val * EUR_TO_BRL)
+        : new Intl.NumberFormat('pt-PT', { style: 'currency', currency: 'EUR' }).format(val / EUR_TO_BRL);
+      lines.push('<div>' + (i+1) + 'ª parcela: ' + dateStr + ' — <strong>' + fmtVal + '</strong> <span style="font-size:11px;color:var(--text-secondary)">≈ ' + dualVal + '</span></div>');
+    }
+    preview.innerHTML = lines.join('');
+    preview.style.display = 'block';
+  }
 
   async function submitEdit() {
     var txId = document.getElementById('edit-tx-id').value;
