@@ -96,6 +96,7 @@ export function ExpandableTabs({
         const title = (tab as Tab).title;
         return (
           <motion.button
+            title={title}
             key={title}
             variants={buttonVariants}
             initial={false}
