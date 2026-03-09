@@ -377,6 +377,46 @@ Deno.serve(async (req) => {
 
     if (txError) throw new Error(txError.message);
 
+    // --- Bitrix24 Badge: emmely_payment_created ---
+    try {
+      const bitrixDealId = body.bitrix_deal_id || extraMetadata?.bitrix_deal_id;
+      if (bitrixDealId) {
+        const { data: integration } = await supabase
+          .from("bitrix24_integrations")
+          .select("*")
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        if (integration?.client_endpoint && integration?.access_token) {
+          const endpoint = integration.client_endpoint.endsWith("/") ? integration.client_endpoint : integration.client_endpoint + "/";
+          const fmt = (v: number) => new Intl.NumberFormat("pt-PT", { style: "currency", currency }).format(v);
+          await fetch(`${endpoint}crm.activity.configurable.add`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              auth: integration.access_token,
+              ownerTypeId: 2, // Deal
+              ownerId: parseInt(bitrixDealId),
+              fields: { completed: false, isIncomingChannel: "N", responsibleId: 1, badgeCode: "emmely_payment_created" },
+              layout: {
+                icon: { code: "money" },
+                header: { title: "Cobrança Criada" },
+                body: { logo: { code: "robot" }, blocks: {
+                  amount: { type: "text", properties: { value: fmt(amount) } },
+                  gateway: { type: "text", properties: { value: effectiveGateway } },
+                  method: { type: "text", properties: { value: payment_method } },
+                } },
+              },
+            }),
+          });
+          console.log(`[PAYMENT-CREATE] Badge emmely_payment_created for deal ${bitrixDealId}`);
+        }
+      }
+    } catch (badgeErr) {
+      console.error("[PAYMENT-CREATE] Badge error:", badgeErr);
+    }
+
     return new Response(JSON.stringify({ ok: true, transaction: tx }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });

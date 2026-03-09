@@ -199,6 +199,32 @@ serve(async (req) => {
       }
     }
 
+    // --- Badge: emmely_deal_payment_updated ---
+    try {
+      await fetch(`${endpoint}crm.activity.configurable.add`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          auth: accessToken,
+          ownerTypeId: 2,
+          ownerId: parseInt(deal_id),
+          fields: { completed: false, isIncomingChannel: "N", responsibleId: 1, badgeCode: "emmely_deal_payment_updated" },
+          layout: {
+            icon: { code: "money" },
+            header: { title: "Parcelas Atualizadas" },
+            body: { logo: { code: "robot" }, blocks: {
+              total: { type: "text", properties: { value: `${totalInst} parcelas` } },
+              paid: { type: "text", properties: { value: `${paidInst} pagas` } },
+              value: { type: "text", properties: { value: `${instValue} ${currency}` } },
+            } },
+          },
+        }),
+      });
+      console.log(`[bitrix24-update-deal-payment] Badge emmely_deal_payment_updated for deal ${deal_id}`);
+    } catch (badgeErr) {
+      console.error("[bitrix24-update-deal-payment] Badge error:", badgeErr);
+    }
+
     return new Response(
       JSON.stringify({
         success: true,
