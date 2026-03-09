@@ -734,6 +734,23 @@ Deno.serve(async (req) => {
             error: { Name: "Erro", Type: "string" },
           },
         },
+        {
+          CODE: "emmely_create_badge",
+          NAME: "Emmely: Criar Badge",
+          PROPERTIES: {
+            badge_code: { Name: "Código da Badge", Type: "string", Required: "Y", Description: "Código da badge (ex: emmely_payment_confirmed ou custom)" },
+            header_title: { Name: "Título", Type: "string", Required: "Y", Description: "Título exibido na timeline" },
+            message_preview: { Name: "Preview", Type: "string", Description: "Texto de preview na timeline" },
+            entity_type: { Name: "Tipo de Entidade", Type: "select", Options: { deal: "Negócio", lead: "Lead", contact: "Contacto" }, Default: "deal" },
+            entity_id: { Name: "ID da Entidade", Type: "string", Required: "Y", Description: "ID do deal/lead/contact" },
+            badge_type: { Name: "Tipo Visual", Type: "select", Options: { success: "Sucesso (verde)", primary: "Primário (azul)", warning: "Alerta (amarelo)", failure: "Erro (vermelho)", secondary: "Secundário (cinza)" }, Default: "success" },
+          },
+          RETURN_PROPERTIES: {
+            badge_status: { Name: "Status", Type: "string" },
+            activity_id: { Name: "ID da Atividade", Type: "string" },
+            error: { Name: "Erro", Type: "string" },
+          },
+        },
       ];
 
       for (const robot of robots) {

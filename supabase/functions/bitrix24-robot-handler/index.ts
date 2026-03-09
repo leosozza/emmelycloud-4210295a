@@ -865,6 +865,68 @@ Deno.serve(async (req) => {
       case "emmely_convert_currency":
         returnValues = await handleConvertCurrency(properties);
         break;
+      case "emmely_create_badge": {
+        const badgeCode = properties.badge_code || properties.BADGE_CODE || "";
+        const headerTitle = properties.header_title || properties.HEADER_TITLE || "";
+        const messagePreview = properties.message_preview || properties.MESSAGE_PREVIEW || "";
+        const entityType = (properties.entity_type || properties.ENTITY_TYPE || "deal").toLowerCase();
+        const entityId = properties.entity_id || properties.ENTITY_ID || "";
+        const badgeType = properties.badge_type || properties.BADGE_TYPE || "success";
+
+        if (!badgeCode || !entityId) {
+          returnValues = { badge_status: "error", error: "badge_code and entity_id are required" };
+        } else {
+          try {
+            // Get integration for Bitrix API access
+            let badgeIntegration: any = null;
+            if (memberId) {
+              const { data: intData } = await supabase
+                .from("bitrix24_integrations")
+                .select("*")
+                .eq("member_id", memberId)
+                .maybeSingle();
+              badgeIntegration = intData;
+            }
+            if (!badgeIntegration?.client_endpoint || !badgeIntegration?.access_token) {
+              returnValues = { badge_status: "error", error: "Bitrix24 integration not found" };
+            } else {
+              // Map entity type to Bitrix owner type
+              const ownerTypeMap: Record<string, number> = { lead: 1, deal: 2, contact: 3 };
+              const ownerTypeId = ownerTypeMap[entityType] || 2;
+
+              // 1. Create timeline activity
+              const actResult = await callBitrix(badgeIntegration.client_endpoint, badgeIntegration.access_token, "crm.activity.add", {
+                fields: {
+                  OWNER_TYPE_ID: ownerTypeId,
+                  OWNER_ID: parseInt(entityId) || 0,
+                  TYPE_ID: 6,
+                  PROVIDER_ID: "REST_APP",
+                  PROVIDER_TYPE_ID: "emmely_badge",
+                  SUBJECT: headerTitle || badgeCode,
+                  DESCRIPTION: messagePreview || "",
+                  COMPLETED: "Y",
+                  DIRECTION: 0,
+                },
+              });
+
+              const activityId = actResult.result;
+              if (activityId) {
+                // 2. Assign badge to activity
+                const badgeResult = await callBitrix(badgeIntegration.client_endpoint, badgeIntegration.access_token, "crm.activity.badge.set", {
+                  activityId,
+                  badgeCode,
+                });
+                returnValues = { badge_status: "created", activity_id: String(activityId), error: "" };
+              } else {
+                returnValues = { badge_status: "error", error: `Activity creation failed: ${JSON.stringify(actResult)}` };
+              }
+            }
+          } catch (e) {
+            returnValues = { badge_status: "error", error: String(e) };
+          }
+        }
+        break;
+      }
       default:
         console.error("[ROBOT-HANDLER] Unknown robot code:", code);
         returnValues = { error: `Unknown robot: ${code}` };

@@ -524,6 +524,74 @@ export default function NodeConfigPanel({ data, onChange, onDelete, onClose }: N
               </>
             );
           })()}
+          {/* ═══ Bitrix24 Badge ═══ */}
+          {data.nodeType === "bitrix_create_badge" && (() => {
+            const badge = data.bitrixBadge || { badgeCode: "", headerTitle: "", messagePreview: "", entityType: "deal", entityId: "", badgeType: "success" };
+            const updateBadge = (patch: Partial<FlowBitrixBadge>) => update({ bitrixBadge: { ...badge, ...patch } });
+
+            const presetBadges = [
+              "emmely_bot_replied", "emmely_msg_sent", "emmely_msg_delivered", "emmely_msg_failed",
+              "emmely_human_takeover", "emmely_payment_created", "emmely_payment_confirmed",
+              "emmely_contract_signed", "emmely_baixa_imported",
+            ];
+
+            return (
+              <>
+                <div className="space-y-1">
+                  <Label className="text-[11px]">Código da Badge</Label>
+                  <Select value={presetBadges.includes(badge.badgeCode) ? badge.badgeCode : "_custom"} onValueChange={(v) => { if (v !== "_custom") updateBadge({ badgeCode: v }); }}>
+                    <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Selecionar..." /></SelectTrigger>
+                    <SelectContent>
+                      {presetBadges.map(b => <SelectItem key={b} value={b}>{b}</SelectItem>)}
+                      <SelectItem value="_custom">Personalizado</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  {(!presetBadges.includes(badge.badgeCode)) && (
+                    <Input className="h-8 text-xs mt-1" value={badge.badgeCode} onChange={(e) => updateBadge({ badgeCode: e.target.value })} placeholder="meu_badge_code" />
+                  )}
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-[11px]">Título</Label>
+                  <Input className="h-8 text-xs" value={badge.headerTitle} onChange={(e) => updateBadge({ headerTitle: e.target.value })} placeholder="Ex: Pagamento Recebido" />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-[11px]">Preview</Label>
+                  <Input className="h-8 text-xs" value={badge.messagePreview} onChange={(e) => updateBadge({ messagePreview: e.target.value })} placeholder="Texto de preview na timeline" />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-[11px]">Tipo de Entidade</Label>
+                  <Select value={badge.entityType} onValueChange={(v) => updateBadge({ entityType: v as any })}>
+                    <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="deal">Deal</SelectItem>
+                      <SelectItem value="lead">Lead</SelectItem>
+                      <SelectItem value="contact">Contact</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-[11px]">ID da Entidade</Label>
+                  <Input className="h-8 text-xs" value={badge.entityId} onChange={(e) => updateBadge({ entityId: e.target.value })} placeholder="{{deal_id}}" />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-[11px]">Tipo de Badge</Label>
+                  <Select value={badge.badgeType} onValueChange={(v) => updateBadge({ badgeType: v as any })}>
+                    <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="success">Sucesso (verde)</SelectItem>
+                      <SelectItem value="primary">Primário (azul)</SelectItem>
+                      <SelectItem value="warning">Alerta (amarelo)</SelectItem>
+                      <SelectItem value="failure">Erro (vermelho)</SelectItem>
+                      <SelectItem value="secondary">Secundário (cinza)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="rounded bg-muted/50 p-2">
+                  <p className="text-[9px] text-muted-foreground">🏷️ Cria uma badge visual na timeline do CRM Bitrix24. Use variáveis {"{{deal_id}}"} nos campos.</p>
+                </div>
+              </>
+            );
+          })()}
         </div>
       </ScrollArea>
 
