@@ -514,6 +514,29 @@ function renderPaymentTab(opts: {
   var ENTITY_ID = "${opts.entityId}";
   var _baixaOriginalAmount = 0;
 
+  // Ensure a real transaction exists — creates one if txId is synthetic (e.g. "deal-123")
+  async function ensureTxExists(txId, overlayEl, amount, currency, description) {
+    if (!txId || !txId.startsWith('deal-')) return txId;
+    // Create real transaction via payment-create POST
+    var entityId = (overlayEl && overlayEl.dataset && overlayEl.dataset.entityId) || ENTITY_ID;
+    var res = await fetch(SUPABASE_URL + '/functions/v1/payment-create', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_KEY },
+      body: JSON.stringify({
+        amount: amount || 0,
+        currency: currency || 'EUR',
+        payment_method: 'direto',
+        force_gateway: 'direto',
+        description: description || 'Parcela',
+        metadata: { bitrix_deal_id: entityId, source: 'bitrix24_payment_tab_synthetic' }
+      })
+    });
+    var data = await res.json();
+    if (data.error) throw new Error('Erro ao criar transação: ' + data.error);
+    if (data.transaction && data.transaction.id) return data.transaction.id;
+    throw new Error('Não foi possível criar a transação');
+  }
+
   function setStatus(msg, color) {
     var el = document.getElementById('status-msg');
     if (el) { el.textContent = msg; el.style.color = color || 'var(--text-secondary)'; }
