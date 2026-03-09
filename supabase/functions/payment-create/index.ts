@@ -56,7 +56,7 @@ async function createStripePayment(apiKey: string, amount: number, currency: str
   params.append("line_items[0][price_data][product_data][name]", description);
   params.append("line_items[0][quantity]", "1");
 
-  const paymentMethods = getStripePaymentMethods(region);
+  const paymentMethods = getStripePaymentMethods(region, requestedMethod);
   for (const pm of paymentMethods) {
     params.append("payment_method_types[]", pm);
   }
