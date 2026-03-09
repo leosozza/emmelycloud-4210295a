@@ -47,7 +47,7 @@ function getStripePaymentMethods(region?: "pt" | "br" | null, requestedMethod?: 
   return methods;
 }
 
-async function createStripePayment(apiKey: string, amount: number, currency: string, customerEmail: string, description: string, returnUrl?: string, region?: "pt" | "br" | null) {
+async function createStripePayment(apiKey: string, amount: number, currency: string, customerEmail: string, description: string, returnUrl?: string, region?: "pt" | "br" | null, requestedMethod?: string | null) {
   // Create a Checkout Session with regional payment methods
   const params = new URLSearchParams();
   params.append("mode", "payment");
