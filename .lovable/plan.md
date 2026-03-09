@@ -1,37 +1,61 @@
 
 
-## Plan: Fix Smart Invoice Deal Field + Test Deal 8857 with "Direto"
+## Plano: Baixa Carteira integrada com Lead, Deal e SPA do Bitrix24
 
-### Analysis
-The Bitrix24 HTML confirms the deal binding field is `PARENT_ID_2` (shown as "Negócio" in the Smart Invoice form). The current code already sends `parentId2` which is correct. The `ufCrm31Deal` field added previously is likely being ignored or causing issues — it's not a standard field for Smart Process type 31.
+### Problema
+A `BaixaCarteiraView` atual apenas busca Deals. O utilizador precisa de escolher entre Lead, Deal ou SPA, e depois selecionar pipeline/categoria e etapa de forma cascadeada.
 
-The key issue: in `crm.item.add` REST API for Smart Processes, field names use **camelCase** format. The deal binding is `parentId2` (parent entity of type 2 = Deal). There is no separate `ufCrm31Deal` field — that was a mistaken assumption. The `parentId2` field alone should handle the deal link correctly.
+### Solução
 
-### Changes
+#### 1. Nova Edge Function: `bitrix24-fetch-entities`
 
-1. **Remove `ufCrm31Deal`** from the `crm.item.add` call — it's not a real field and may cause warnings. Keep only `parentId2` which is confirmed correct from the HTML.
+Substitui/complementa `bitrix24-fetch-deals` com suporte a 3 entidades:
 
-2. **Test with deal 8857** using `bodyOverrides`:
-   - `force_gateway: "direto"` — crediário próprio, no external payment gateway
-   - 3 parcels: €200 each (01/02, 03/03, 02/04)
-   - Parcela 1 should be marked `confirmed` after creation
-   - Verify Smart Invoices appear in `/crm/type/31/` kanban with deal and contact linked
+| Endpoint | Ação |
+|---|---|
+| `?action=pipelines&entity=lead` | Retorna status list via `crm.status.list` (filtro `ENTITY_ID=STATUS`) |
+| `?action=pipelines&entity=deal` | Retorna categorias via `crm.dealcategory.list` |
+| `?action=pipelines&entity=spa` | Retorna SPA types via `crm.type.list` |
+| `?action=stages&entity=deal&category_id=X` | Retorna etapas do pipeline via `crm.dealcategory.stage.list` |
+| `?action=stages&entity=spa&spa_entity_type_id=X` | Retorna etapas do SPA via `crm.status.list` com `entityId` |
+| `?action=items&entity=lead&stage_id=X` | Lista leads via `crm.lead.list` com filtro `STATUS_ID` |
+| `?action=items&entity=deal&category_id=X&stage_id=X` | Lista deals via `crm.deal.list` |
+| `?action=items&entity=spa&spa_entity_type_id=X&stage_id=X` | Lista itens SPA via `crm.item.list` |
 
-### File changed
-- `supabase/functions/bitrix24-payment-webhook/index.ts` — remove `ufCrm31Deal` line (line 308)
+Todos os items retornam formato unificado: `{ id, title, opportunity, currency, stage_id, stage_name, contact_name, contact_phone, contact_email, date_create }`.
 
-### Test
-After deploy, call the webhook with:
-```json
-{
-  "deal_id": 8857,
-  "bodyOverrides": {
-    "force_gateway": "direto",
-    "total_amount": 600,
-    "num_installments": 3,
-    "first_due_date": "2025-02-01",
-    "interval_days": 30
-  }
-}
+#### 2. Refactor da `BaixaCarteiraView` no `Bitrix24App.tsx`
+
+Filtros cascadeados:
+
+```text
+[Entity Type: Lead | Deal | SPA]
+       ↓
+[Pipeline/Categoria] (Deal: categorias, SPA: entity types, Lead: omitido)
+       ↓
+[Etapa/Stage] (carregado dinamicamente)
+       ↓
+[Buscar] → lista de items
 ```
+
+- **Estado**: `entityType` (lead/deal/spa), `pipelineId`, `stageId`
+- Quando `entityType` muda → limpar pipeline e stage, buscar pipelines
+- Quando `pipelineId` muda → limpar stage, buscar stages
+- O botão "Buscar" chama `action=items` com os filtros selecionados
+- A lista e formulário de baixa permanecem iguais (formato unificado)
+
+#### 3. Adaptar `bitrix24-update-deal-payment`
+
+- Aceitar parâmetro `entity_type` para saber se é lead, deal ou SPA
+- Para leads: usar `crm.lead.update` em vez de `crm.deal.update`
+- Para SPA: usar `crm.item.update` com `entityTypeId`
+- Badge: ajustar `ownerTypeId` (1=Lead, 2=Deal, 128+=SPA)
+
+### Ficheiros
+
+| Ficheiro | Alteração |
+|---|---|
+| `supabase/functions/bitrix24-fetch-entities/index.ts` | **Nova** — edge function unificada com actions: pipelines, stages, items |
+| `src/pages/Bitrix24App.tsx` | Refactor `BaixaCarteiraView`: filtros cascadeados Lead/Deal/SPA → Pipeline → Stage |
+| `supabase/functions/bitrix24-update-deal-payment/index.ts` | Aceitar `entity_type` e adaptar API calls por entidade |
 
