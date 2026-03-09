@@ -11,6 +11,7 @@ import {
   type FlowButtonItem, type FlowBitrixCRM, type FlowBitrixField,
   type FlowAIIntention, type FlowAIIntentionField,
   type FlowAIAction, type FlowAIRouter, type FlowAIRouterRoute,
+  type FlowBitrixBadge,
 } from "./FlowNodeTypes";
 import BitrixFieldSelector from "./BitrixFieldSelector";
 
