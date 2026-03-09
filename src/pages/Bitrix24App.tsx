@@ -300,7 +300,7 @@ const Bitrix24App = () => {
         {view === "flows" && <FlowsView />}
         {view === "playground" && <PlaygroundView />}
         {view === "chatia" && <ChatIABitrixView />}
-        {view === "mapeamento" && <MapeamentoView integrationId={integration?.id} />}
+        {view === "mapeamento" && <MapeamentoView integrationId={integration?.id} memberId={memberId || undefined} />}
         {view === "pagamentos" && <PagamentosView integration={integration} onRefresh={() => memberId && fetchData(memberId)} />}
         {view === "baixa" && <BaixaCarteiraView integration={integration} />}
         {view === "empresas" && <EmpresasView />}
