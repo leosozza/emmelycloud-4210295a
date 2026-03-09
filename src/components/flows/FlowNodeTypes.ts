@@ -146,6 +146,8 @@ export const NODE_TYPE_META: Record<FlowNodeType, NodeTypeMeta> = {
   bitrix_update_spa:  { label: "Atualizar SPA",     icon: Boxes,      color: "#9333ea", description: "Atualizar item SPA existente" },
   bitrix_get_spa:     { label: "Buscar SPA",        icon: Boxes,      color: "#7e22ce", description: "Obter item SPA por ID" },
   bitrix_delete_spa:  { label: "Excluir SPA",       icon: Boxes,      color: "#6b21a8", description: "Excluir item SPA do Bitrix24" },
+  // Bitrix24 – Badge
+  bitrix_create_badge: { label: "Criar Badge",      icon: Award,      color: "#f59e0b", description: "Criar badge personalizada no CRM" },
 };
 
 // ── Data interfaces ──
