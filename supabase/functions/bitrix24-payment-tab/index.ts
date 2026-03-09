@@ -457,14 +457,33 @@ function renderPaymentTab(opts: {
     <div class="b24-form-title">✏ Editar Parcela</div>
     <input type="hidden" id="edit-tx-id">
     <input type="hidden" id="edit-invoice-id">
+    <input type="hidden" id="edit-original-total">
+    <div class="b24-form-row">
+      <div class="b24-form-group">
+        <label class="b24-form-label">Nº de Parcelas</label>
+        <select id="edit-num-installments" class="b24-input" style="height:32px" onchange="recalcEditInstallments()">
+          ${[1,2,3,4,5,6,7,8,9,10,11,12].map(n => `<option value="${n}">${n}</option>`).join("")}
+        </select>
+      </div>
+      <div class="b24-form-group">
+        <label class="b24-form-label">Intervalo (dias)</label>
+        <select id="edit-interval" class="b24-input" style="height:32px" onchange="recalcEditInstallments()">
+          <option value="30">30 dias</option>
+          <option value="60">60 dias</option>
+          <option value="90">90 dias</option>
+        </select>
+      </div>
+    </div>
     <div class="b24-form-group">
       <label class="b24-form-label">Valor da Parcela</label>
-      <input type="number" id="edit-amount" class="b24-input" step="0.01" min="0.01">
+      <input type="number" id="edit-amount" class="b24-input" step="0.01" min="0.01" oninput="updateEditDualCurrency()">
+      <div class="b24-dual-currency" id="edit-dual-currency"></div>
     </div>
     <div class="b24-form-group">
-      <label class="b24-form-label">Data de Vencimento</label>
-      <input type="date" id="edit-due-date" class="b24-input">
+      <label class="b24-form-label">Data de Vencimento (1ª parcela)</label>
+      <input type="date" id="edit-due-date" class="b24-input" onchange="recalcEditInstallments()">
     </div>
+    <div id="edit-dates-preview" class="b24-dates-preview" style="display:none"></div>
     <div class="b24-form-group">
       <label class="b24-form-label">Método de Pagamento</label>
       <select id="edit-method" class="b24-input" style="height:32px">
