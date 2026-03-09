@@ -2995,7 +2995,7 @@ function BaixaCarteiraView({ integration }: { integration: any }) {
     setLoading(true);
     try {
       const extra: Record<string, string> = {};
-      if (stageId) extra.stage_id = stageId;
+      if (stageId && stageId !== "all") extra.stage_id = stageId;
       if (entityType === "deal" && pipelineId) extra.category_id = pipelineId;
       if (entityType === "spa" && pipelineId) extra.spa_entity_type_id = pipelineId;
       if (dateFrom) extra.date_from = format(dateFrom, "yyyy-MM-dd");
@@ -3311,7 +3311,7 @@ function BaixaCarteiraView({ integration }: { integration: any }) {
                   )}
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">Todas as etapas</SelectItem>
+                  <SelectItem value="all">Todas as etapas</SelectItem>
                   {stages.map((s) => (
                     <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
                   ))}

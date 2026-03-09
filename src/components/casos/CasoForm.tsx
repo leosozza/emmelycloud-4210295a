@@ -57,8 +57,8 @@ export function CasoForm({ open, onOpenChange, caso, leads, profiles, onSave, sa
               description: description || null,
               legal_area: legalArea as any,
               status: status as any,
-              lead_id: leadId || null,
-              assigned_attorney_id: attorneyId || null,
+              lead_id: leadId && leadId !== "none" ? leadId : null,
+              assigned_attorney_id: attorneyId && attorneyId !== "none" ? attorneyId : null,
               viability: viability || null,
               internal_notes: internalNotes || null,
             });
@@ -101,7 +101,7 @@ export function CasoForm({ open, onOpenChange, caso, leads, profiles, onSave, sa
               <Select value={leadId} onValueChange={setLeadId}>
                 <SelectTrigger><SelectValue placeholder="Nenhum" /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">Nenhum</SelectItem>
+                  <SelectItem value="none">Nenhum</SelectItem>
                   {leads.map((l) => (
                     <SelectItem key={l.id} value={l.id}>{l.name}</SelectItem>
                   ))}
@@ -113,7 +113,7 @@ export function CasoForm({ open, onOpenChange, caso, leads, profiles, onSave, sa
               <Select value={attorneyId} onValueChange={setAttorneyId}>
                 <SelectTrigger><SelectValue placeholder="Nenhum" /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">Nenhum</SelectItem>
+                  <SelectItem value="none">Nenhum</SelectItem>
                   {profiles.map((p) => (
                     <SelectItem key={p.id} value={p.id}>{p.full_name}</SelectItem>
                   ))}

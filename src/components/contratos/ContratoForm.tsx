@@ -59,7 +59,7 @@ export function ContratoForm({ open, onOpenChange, contrato, proposals, cases, o
             e.preventDefault();
             onSave({
               proposal_id: proposalId,
-              case_id: caseId || null,
+              case_id: caseId === "none" ? null : caseId || null,
               starts_at: startsAt || null,
               expires_at: expiresAt || null,
               notes: notes || null,
@@ -87,7 +87,7 @@ export function ContratoForm({ open, onOpenChange, contrato, proposals, cases, o
             <Select value={caseId} onValueChange={setCaseId}>
               <SelectTrigger><SelectValue placeholder="Selecionar caso" /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="">Nenhum</SelectItem>
+                <SelectItem value="none">Nenhum</SelectItem>
                 {cases.map((c) => (
                   <SelectItem key={c.id} value={c.id}>{c.title}</SelectItem>
                 ))}
