@@ -59,7 +59,7 @@ export function ContratoForm({ open, onOpenChange, contrato, proposals, cases, o
             e.preventDefault();
             onSave({
               proposal_id: proposalId,
-              case_id: caseId || null,
+              case_id: caseId === "none" ? null : caseId || null,
               starts_at: startsAt || null,
               expires_at: expiresAt || null,
               notes: notes || null,
