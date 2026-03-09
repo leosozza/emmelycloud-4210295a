@@ -3259,17 +3259,67 @@ function BaixaCarteiraView({ integration }: { integration: any }) {
 
       {/* Filters */}
       <Card className="b24-card">
-        <CardContent className="pt-5">
+        <CardContent className="pt-5 space-y-4">
+          {/* Row 1: Entity Type + Pipeline + Stage */}
           <div className="flex flex-wrap gap-4 items-end">
-            <div className="flex-1 min-w-[150px]">
-              <Label className="text-xs text-muted-foreground">Etapa (STAGE_ID)</Label>
-              <Input
-                placeholder="C5:NEW, C5:WON..."
-                value={stageId}
-                onChange={(e) => setStageId(e.target.value)}
-                className="h-9"
-              />
+            <div className="w-[180px]">
+              <Label className="text-xs text-muted-foreground">Tipo de Entidade</Label>
+              <Select value={entityType} onValueChange={(v) => handleEntityChange(v as EntityType)}>
+                <SelectTrigger className="h-9">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="lead">Lead</SelectItem>
+                  <SelectItem value="deal">Negócio (Deal)</SelectItem>
+                  <SelectItem value="spa">SPA (Smart Process)</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
+
+            {entityType !== "lead" && (
+              <div className="w-[200px]">
+                <Label className="text-xs text-muted-foreground">
+                  {entityType === "deal" ? "Pipeline / Categoria" : "Tipo SPA"}
+                </Label>
+                <Select value={pipelineId} onValueChange={handlePipelineChange} disabled={loadingPipelines}>
+                  <SelectTrigger className="h-9">
+                    {loadingPipelines ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <SelectValue placeholder="Selecionar..." />
+                    )}
+                  </SelectTrigger>
+                  <SelectContent>
+                    {pipelines.map((p) => (
+                      <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
+            <div className="w-[200px]">
+              <Label className="text-xs text-muted-foreground">Etapa</Label>
+              <Select value={stageId} onValueChange={setStageId} disabled={loadingStages || (entityType !== "lead" && !pipelineId)}>
+                <SelectTrigger className="h-9">
+                  {loadingStages ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <SelectValue placeholder="Todas as etapas" />
+                  )}
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="">Todas as etapas</SelectItem>
+                  {stages.map((s) => (
+                    <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          {/* Row 2: Date filters + Search */}
+          <div className="flex flex-wrap gap-4 items-end">
             <div className="w-[140px]">
               <Label className="text-xs text-muted-foreground">Data Início</Label>
               <Popover>
@@ -3298,7 +3348,7 @@ function BaixaCarteiraView({ integration }: { integration: any }) {
                 </PopoverContent>
               </Popover>
             </div>
-            <Button onClick={fetchDeals} disabled={loading} className="h-9">
+            <Button onClick={fetchItems} disabled={loading} className="h-9">
               {loading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <RefreshCw className="h-4 w-4 mr-2" />}
               Buscar
             </Button>
@@ -3306,10 +3356,10 @@ function BaixaCarteiraView({ integration }: { integration: any }) {
         </CardContent>
       </Card>
 
-      {/* Deals List */}
+      {/* Items List */}
       <Card className="b24-card">
         <CardHeader className="pb-3">
-          <CardTitle className="text-base">Negócios Encontrados ({deals.length})</CardTitle>
+          <CardTitle className="text-base">{ENTITY_LABELS[entityType]} Encontrados ({deals.length})</CardTitle>
         </CardHeader>
         <CardContent>
           {deals.length === 0 ? (
