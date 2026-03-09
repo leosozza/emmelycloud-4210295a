@@ -87,7 +87,7 @@ export function ContratoForm({ open, onOpenChange, contrato, proposals, cases, o
             <Select value={caseId} onValueChange={setCaseId}>
               <SelectTrigger><SelectValue placeholder="Selecionar caso" /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="">Nenhum</SelectItem>
+                <SelectItem value="none">Nenhum</SelectItem>
                 {cases.map((c) => (
                   <SelectItem key={c.id} value={c.id}>{c.title}</SelectItem>
                 ))}
