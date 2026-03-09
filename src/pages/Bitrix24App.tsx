@@ -2934,13 +2934,15 @@ function BaixaCarteiraView({ integration }: { integration: any }) {
 
   const updateForm = (dealId: string, updates: Partial<BaixaForm>) => {
     setForms((prev) => {
-      const current = prev[dealId] || {
+      const current: BaixaForm = prev[dealId] || {
         totalInstallments: 1,
         installmentValue: 0,
         paidInstallments: 0,
         paidDates: [],
         nextDueDate: format(new Date(), "yyyy-MM-dd"),
         gateway: "direto",
+        paymentMethod: "",
+        notes: "",
       };
       const updated = { ...current, ...updates };
 
