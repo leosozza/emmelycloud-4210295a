@@ -2919,6 +2919,8 @@ function BaixaCarteiraView({ integration }: { integration: any }) {
             paidDates: [],
             nextDueDate: format(new Date(), "yyyy-MM-dd"),
             gateway: "direto",
+            paymentMethod: "",
+            notes: "",
           };
         }
         setForms(newForms);
