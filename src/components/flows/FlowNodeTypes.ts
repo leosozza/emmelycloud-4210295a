@@ -91,6 +91,7 @@ export const NODE_CATEGORIES: FlowNodeCategory[] = [
       "bitrix_create_lead", "bitrix_update_lead", "bitrix_get_lead", "bitrix_delete_lead",
       "bitrix_create_deal", "bitrix_update_deal", "bitrix_get_deal", "bitrix_delete_deal",
       "bitrix_create_spa", "bitrix_update_spa", "bitrix_get_spa", "bitrix_delete_spa",
+      "bitrix_create_badge",
     ],
   },
 ];
