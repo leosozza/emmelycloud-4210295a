@@ -1,58 +1,37 @@
 
 
-## Plano: Nó "Criar Badge" no Flow Editor + Robot "Criar Badge" no Bitrix24
+## Plan: Fix Smart Invoice Deal Field + Test Deal 8857 with "Direto"
 
-### Problema
-Atualmente as badges são hard-coded (7 badges fixas registadas no install). Não existe forma de criar badges personalizadas nem no editor de fluxos, nem nos robots.
+### Analysis
+The Bitrix24 HTML confirms the deal binding field is `PARENT_ID_2` (shown as "Negócio" in the Smart Invoice form). The current code already sends `parentId2` which is correct. The `ufCrm31Deal` field added previously is likely being ignored or causing issues — it's not a standard field for Smart Process type 31.
 
-### Solução
+The key issue: in `crm.item.add` REST API for Smart Processes, field names use **camelCase** format. The deal binding is `parentId2` (parent entity of type 2 = Deal). There is no separate `ufCrm31Deal` field — that was a mistaken assumption. The `parentId2` field alone should handle the deal link correctly.
 
-#### 1. Novo nó de fluxo: `bitrix_create_badge`
+### Changes
 
-**FlowNodeTypes.ts** — Adicionar:
-- Tipo `"bitrix_create_badge"` ao `FlowNodeType`
-- Categoria "bitrix24" no `NODE_CATEGORIES`
-- Metadados: `{ label: "Criar Badge", icon: Award, color: "#f59e0b", description: "Criar badge personalizada no CRM" }`
-- Interface `FlowBitrixBadge` com campos: `badgeCode`, `headerTitle`, `messagePreview`, `entityType` (lead/deal/contact), `entityId`
-- Default data no `getDefaultData`
+1. **Remove `ufCrm31Deal`** from the `crm.item.add` call — it's not a real field and may cause warnings. Keep only `parentId2` which is confirmed correct from the HTML.
 
-**NodeConfigPanel.tsx** — Adicionar secção de configuração para `bitrix_create_badge`:
-- Campo `badgeCode` (texto livre ou select com as badges registadas + opção custom)
-- Campo `headerTitle` (título do badge)
-- Campo `messagePreview` (texto de preview)
-- Campo `entityType` (Lead, Deal, Contact)
-- Campo `entityId` (suporta variáveis `{{deal_id}}`)
+2. **Test with deal 8857** using `bodyOverrides`:
+   - `force_gateway: "direto"` — crediário próprio, no external payment gateway
+   - 3 parcels: €200 each (01/02, 03/03, 02/04)
+   - Parcela 1 should be marked `confirmed` after creation
+   - Verify Smart Invoices appear in `/crm/type/31/` kanban with deal and contact linked
 
-#### 2. Motor de fluxos: executar nó badge
+### File changed
+- `supabase/functions/bitrix24-payment-webhook/index.ts` — remove `ufCrm31Deal` line (line 308)
 
-**flow-engine/index.ts** — Adicionar case `"bitrix_create_badge"`:
-- Interpolar variáveis nos campos
-- Chamar `bitrix24-worker` com `_badgeRequest: true` e os dados do nó
-- Guardar resultado em variável
-
-#### 3. Novo robot: `emmely_create_badge`
-
-**bitrix24-install/index.ts** — Registar novo robot com propriedades:
-- `badge_code` (string) — código da badge
-- `header_title` (string) — título
-- `message_preview` (string) — texto de preview
-- `entity_type` (string) — lead/deal/contact
-- `entity_id` (string) — ID da entidade
-
-**bitrix24-robot-handler/index.ts** — Adicionar handler:
-- Receber propriedades do robot
-- Chamar `bitrix24-worker` com `_badgeRequest: true`
-- Retornar `{ badge_status, error }`
-
----
-
-### Ficheiros a Modificar
-
-| Ficheiro | Alteração |
-|---|---|
-| `src/components/flows/FlowNodeTypes.ts` | +tipo `bitrix_create_badge`, meta, interface, default data |
-| `src/components/flows/NodeConfigPanel.tsx` | +secção de config para badge |
-| `supabase/functions/flow-engine/index.ts` | +case `bitrix_create_badge` |
-| `supabase/functions/bitrix24-robot-handler/index.ts` | +handler `emmely_create_badge` |
-| `supabase/functions/bitrix24-install/index.ts` | +registar robot `emmely_create_badge` |
+### Test
+After deploy, call the webhook with:
+```json
+{
+  "deal_id": 8857,
+  "bodyOverrides": {
+    "force_gateway": "direto",
+    "total_amount": 600,
+    "num_installments": 3,
+    "first_due_date": "2025-02-01",
+    "interval_days": 30
+  }
+}
+```
 

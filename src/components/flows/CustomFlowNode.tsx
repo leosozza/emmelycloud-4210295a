@@ -117,7 +117,7 @@ function CustomFlowNode({ data, selected }: NodeProps) {
         )}
 
         {/* Bitrix preview */}
-        {nd.nodeType.startsWith("bitrix_") && nd.bitrixCrm && (
+        {nd.nodeType.startsWith("bitrix_") && nd.nodeType !== "bitrix_create_badge" && nd.bitrixCrm && (
           <div className="space-y-0.5">
             {nd.bitrixCrm.entityId && (
               <p className="text-[10px] text-muted-foreground">ID: {nd.bitrixCrm.entityId}</p>
@@ -127,6 +127,19 @@ function CustomFlowNode({ data, selected }: NodeProps) {
             )}
             {nd.bitrixCrm.resultVar && (
               <p className="text-[10px] text-muted-foreground">→ {`{{${nd.bitrixCrm.resultVar}}}`}</p>
+            )}
+          </div>
+        )}
+
+        {/* Badge preview */}
+        {nd.nodeType === "bitrix_create_badge" && (nd as any).bitrixBadge && (
+          <div className="space-y-0.5">
+            <p className="text-[10px] text-muted-foreground font-medium">🏷️ {(nd as any).bitrixBadge.badgeCode || "..."}</p>
+            {(nd as any).bitrixBadge.headerTitle && (
+              <p className="text-[9px] text-muted-foreground">{(nd as any).bitrixBadge.headerTitle}</p>
+            )}
+            {(nd as any).bitrixBadge.entityId && (
+              <p className="text-[9px] text-muted-foreground">→ {(nd as any).bitrixBadge.entityType} {(nd as any).bitrixBadge.entityId}</p>
             )}
           </div>
         )}

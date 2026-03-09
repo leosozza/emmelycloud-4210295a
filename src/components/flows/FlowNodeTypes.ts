@@ -5,6 +5,7 @@ import {
   Bot, UserCog, Phone, ArrowLeftToLine, XCircle,
   Building2, Handshake, Boxes, Plus, Pencil, Search, Trash2,
   BrainCircuit, Cog, GitFork,
+  Award,
   type LucideIcon,
 } from "lucide-react";
 
@@ -48,7 +49,8 @@ export type FlowNodeType =
   | "bitrix_create_spa"
   | "bitrix_update_spa"
   | "bitrix_get_spa"
-  | "bitrix_delete_spa";
+  | "bitrix_delete_spa"
+  | "bitrix_create_badge";
 
 export interface FlowNodeCategory {
   id: string;
@@ -89,6 +91,7 @@ export const NODE_CATEGORIES: FlowNodeCategory[] = [
       "bitrix_create_lead", "bitrix_update_lead", "bitrix_get_lead", "bitrix_delete_lead",
       "bitrix_create_deal", "bitrix_update_deal", "bitrix_get_deal", "bitrix_delete_deal",
       "bitrix_create_spa", "bitrix_update_spa", "bitrix_get_spa", "bitrix_delete_spa",
+      "bitrix_create_badge",
     ],
   },
 ];
@@ -143,6 +146,8 @@ export const NODE_TYPE_META: Record<FlowNodeType, NodeTypeMeta> = {
   bitrix_update_spa:  { label: "Atualizar SPA",     icon: Boxes,      color: "#9333ea", description: "Atualizar item SPA existente" },
   bitrix_get_spa:     { label: "Buscar SPA",        icon: Boxes,      color: "#7e22ce", description: "Obter item SPA por ID" },
   bitrix_delete_spa:  { label: "Excluir SPA",       icon: Boxes,      color: "#6b21a8", description: "Excluir item SPA do Bitrix24" },
+  // Bitrix24 – Badge
+  bitrix_create_badge: { label: "Criar Badge",      icon: Award,      color: "#f59e0b", description: "Criar badge personalizada no CRM" },
 };
 
 // ── Data interfaces ──
@@ -182,6 +187,15 @@ export interface FlowVariable {
 export interface FlowBitrixField {
   key: string;
   value: string;
+}
+
+export interface FlowBitrixBadge {
+  badgeCode: string;
+  headerTitle: string;
+  messagePreview: string;
+  entityType: "deal" | "lead" | "contact";
+  entityId: string;
+  badgeType: "success" | "failure" | "warning" | "primary" | "secondary";
 }
 
 export interface FlowBitrixCRM {
@@ -246,6 +260,8 @@ export interface FlowNodeData {
   variable?: FlowVariable;
   // Bitrix24 CRM
   bitrixCrm?: FlowBitrixCRM;
+  // Bitrix24 Badge
+  bitrixBadge?: FlowBitrixBadge;
   // IA Inteligente
   aiIntention?: FlowAIIntention;
   aiAction?: FlowAIAction;
@@ -320,6 +336,16 @@ export function getDefaultData(nodeType: FlowNodeType): FlowNodeData {
           { label: "Rota 2", description: "", handleId: "route_1" },
         ],
         analysisPrompt: "",
+      };
+      break;
+    case "bitrix_create_badge":
+      base.bitrixBadge = {
+        badgeCode: "",
+        headerTitle: "",
+        messagePreview: "",
+        entityType: "deal",
+        entityId: "",
+        badgeType: "success",
       };
       break;
     default:

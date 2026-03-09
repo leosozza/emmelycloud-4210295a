@@ -484,6 +484,8 @@ Deno.serve(async (req) => {
         { code: "emmely_human_takeover", title: "Atendimento Humano", value: "Humano", type: "warning" },
         { code: "emmely_payment_created", title: "Cobrança Criada", value: "Cobrança", type: "primary" },
         { code: "emmely_payment_confirmed", title: "Pagamento Confirmado", value: "Pago", type: "success" },
+        { code: "emmely_contract_signed", title: "Contrato Assinado", value: "Assinado", type: "success" },
+        { code: "emmely_baixa_imported", title: "Baixa Importada", value: "Importado", type: "primary" },
       ];
 
       for (const badge of badges) {
@@ -729,6 +731,23 @@ Deno.serve(async (req) => {
             converted_value: { Name: "Valor Convertido", Type: "double" },
             exchange_rate: { Name: "Taxa de Câmbio", Type: "double" },
             rate_date: { Name: "Data da Cotação", Type: "string" },
+            error: { Name: "Erro", Type: "string" },
+          },
+        },
+        {
+          CODE: "emmely_create_badge",
+          NAME: "Emmely: Criar Badge",
+          PROPERTIES: {
+            badge_code: { Name: "Código da Badge", Type: "string", Required: "Y", Description: "Código da badge (ex: emmely_payment_confirmed ou custom)" },
+            header_title: { Name: "Título", Type: "string", Required: "Y", Description: "Título exibido na timeline" },
+            message_preview: { Name: "Preview", Type: "string", Description: "Texto de preview na timeline" },
+            entity_type: { Name: "Tipo de Entidade", Type: "select", Options: { deal: "Negócio", lead: "Lead", contact: "Contacto" }, Default: "deal" },
+            entity_id: { Name: "ID da Entidade", Type: "string", Required: "Y", Description: "ID do deal/lead/contact" },
+            badge_type: { Name: "Tipo Visual", Type: "select", Options: { success: "Sucesso (verde)", primary: "Primário (azul)", warning: "Alerta (amarelo)", failure: "Erro (vermelho)", secondary: "Secundário (cinza)" }, Default: "success" },
+          },
+          RETURN_PROPERTIES: {
+            badge_status: { Name: "Status", Type: "string" },
+            activity_id: { Name: "ID da Atividade", Type: "string" },
             error: { Name: "Erro", Type: "string" },
           },
         },

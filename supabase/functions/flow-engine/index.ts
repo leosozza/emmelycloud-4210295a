@@ -325,6 +325,40 @@ async function executeFlow(
         await clearBotState(supabase, conversation.id);
         return { completed: true, executed_nodes: executedNodes };
 
+      case "bitrix_create_badge": {
+        try {
+          const badge = nodeData.bitrixBadge || {};
+          const badgeCode = replaceVariables(badge.badgeCode || "", variables);
+          const headerTitle = replaceVariables(badge.headerTitle || "", variables);
+          const messagePreview = replaceVariables(badge.messagePreview || "", variables);
+          const entityType = badge.entityType || "deal";
+          const entityId = replaceVariables(badge.entityId || "", variables);
+
+          const workerRes = await fetch(`${supabaseUrl}/functions/v1/bitrix24-worker`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "Authorization": `Bearer ${serviceKey}` },
+            body: JSON.stringify({
+              _badgeRequest: true,
+              badgeCode,
+              headerTitle,
+              messagePreview,
+              entityType,
+              entityId,
+              badgeType: badge.badgeType || "success",
+              conversation_id: conversation.id,
+            }),
+          });
+          const workerResult = await workerRes.json().catch(() => ({}));
+          variables["badge_result"] = JSON.stringify(workerResult);
+          console.log("[FLOW-ENGINE] Badge created:", badgeCode, workerResult);
+        } catch (e) {
+          console.error("[FLOW-ENGINE] Badge error:", e);
+          variables["badge_result"] = "error";
+        }
+        currentNodeId = getNextNode(node.id, edges);
+        break;
+      }
+
       default:
         console.log("[FLOW-ENGINE] Unknown node type:", nodeType);
         currentNodeId = getNextNode(node.id, edges);
