@@ -57,8 +57,8 @@ export function CasoForm({ open, onOpenChange, caso, leads, profiles, onSave, sa
               description: description || null,
               legal_area: legalArea as any,
               status: status as any,
-              lead_id: leadId || null,
-              assigned_attorney_id: attorneyId || null,
+              lead_id: leadId && leadId !== "none" ? leadId : null,
+              assigned_attorney_id: attorneyId && attorneyId !== "none" ? attorneyId : null,
               viability: viability || null,
               internal_notes: internalNotes || null,
             });

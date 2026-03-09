@@ -3311,7 +3311,7 @@ function BaixaCarteiraView({ integration }: { integration: any }) {
                   )}
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">Todas as etapas</SelectItem>
+                  <SelectItem value="all">Todas as etapas</SelectItem>
                   {stages.map((s) => (
                     <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
                   ))}
