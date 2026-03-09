@@ -300,6 +300,12 @@ function renderPaymentTab(opts: {
     .b24-discount-row { background: #fef4d6; border: 1px solid #e6a817; border-radius: 4px; padding: 10px 12px; margin-bottom: 12px; font-size: 12px; color: #8a6d00; }
     body.dark .b24-discount-row { background: #4a4229; color: #ffd54f; border-color: #8a6d00; }
     .b24-readonly { font-size: 16px; font-weight: 700; color: var(--text-primary); padding: 6px 0; }
+    .b24-summary-info { display: flex; gap: 16px; flex-wrap: wrap; font-size: 12px; color: var(--text-secondary); margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--border-color); }
+    .b24-summary-info span { display: inline-flex; align-items: center; gap: 4px; }
+    .b24-summary-info strong { font-weight: 600; color: var(--text-primary); }
+    .b24-dual-currency { font-size: 11px; color: var(--text-secondary); font-weight: 400; }
+    .b24-dates-preview { background: var(--bg-page); border: 1px solid var(--border-color); border-radius: 4px; padding: 8px 12px; margin-top: 8px; font-size: 12px; }
+    .b24-dates-preview div { padding: 2px 0; color: var(--text-secondary); }
 
     .b24-empty { text-align: center; padding: 60px 20px; color: var(--text-secondary); }
     .b24-empty svg { margin-bottom: 12px; opacity: 0.4; }
