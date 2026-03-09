@@ -1,137 +1,37 @@
 
 
-## Plano: Robot de Conversão de Moeda para Bitrix24
+## Plan: Fix Smart Invoice Deal Field + Test Deal 8857 with "Direto"
 
-### Objetivo
-Criar um robot que lê um campo de valor em uma moeda (ex: EUR) e preenche outro campo com o valor convertido para outra moeda (ex: BRL), permitindo orçamentos em Euro serem automaticamente convertidos para Reais.
+### Analysis
+The Bitrix24 HTML confirms the deal binding field is `PARENT_ID_2` (shown as "Negócio" in the Smart Invoice form). The current code already sends `parentId2` which is correct. The `ufCrm31Deal` field added previously is likely being ignored or causing issues — it's not a standard field for Smart Process type 31.
 
----
+The key issue: in `crm.item.add` REST API for Smart Processes, field names use **camelCase** format. The deal binding is `parentId2` (parent entity of type 2 = Deal). There is no separate `ufCrm31Deal` field — that was a mistaken assumption. The `parentId2` field alone should handle the deal link correctly.
 
-### Implementação
+### Changes
 
-#### 1. Registrar Robot `emmely_convert_currency` em `bitrix24-install/index.ts`
+1. **Remove `ufCrm31Deal`** from the `crm.item.add` call — it's not a real field and may cause warnings. Keep only `parentId2` which is confirmed correct from the HTML.
 
-Adicionar ao array `robots` (linha ~585):
+2. **Test with deal 8857** using `bodyOverrides`:
+   - `force_gateway: "direto"` — crediário próprio, no external payment gateway
+   - 3 parcels: €200 each (01/02, 03/03, 02/04)
+   - Parcela 1 should be marked `confirmed` after creation
+   - Verify Smart Invoices appear in `/crm/type/31/` kanban with deal and contact linked
 
-```typescript
+### File changed
+- `supabase/functions/bitrix24-payment-webhook/index.ts` — remove `ufCrm31Deal` line (line 308)
+
+### Test
+After deploy, call the webhook with:
+```json
 {
-  CODE: "emmely_convert_currency",
-  NAME: "Emmely: Converter Moeda",
-  PROPERTIES: {
-    source_value: { Name: "Valor Original", Type: "double", Required: "Y", Description: "Campo com o valor a converter" },
-    source_currency: { Name: "Moeda Origem", Type: "select", Required: "Y", Options: { EUR: "EUR", BRL: "BRL", USD: "USD" }, Default: "EUR" },
-    target_currency: { Name: "Moeda Destino", Type: "select", Required: "Y", Options: { BRL: "BRL", EUR: "EUR", USD: "USD" }, Default: "BRL" },
-    spread_percent: { Name: "Spread (%)", Type: "double", Default: "0", Description: "Margem adicional sobre a cotação (ex: 2 = +2%)" },
-  },
-  RETURN_PROPERTIES: {
-    converted_value: { Name: "Valor Convertido", Type: "double" },
-    exchange_rate: { Name: "Taxa de Câmbio", Type: "double" },
-    rate_date: { Name: "Data da Cotação", Type: "string" },
-    error: { Name: "Erro", Type: "string" },
-  },
-}
-```
-
-#### 2. Criar Handler `handleConvertCurrency` em `bitrix24-robot-handler/index.ts`
-
-```typescript
-async function handleConvertCurrency(properties: Record<string, any>): Promise<Record<string, string>> {
-  const sourceValue = parseFloat(properties.source_value || properties.SOURCE_VALUE || "0");
-  const sourceCurrency = (properties.source_currency || properties.SOURCE_CURRENCY || "EUR").toUpperCase();
-  const targetCurrency = (properties.target_currency || properties.TARGET_CURRENCY || "BRL").toUpperCase();
-  const spreadPercent = parseFloat(properties.spread_percent || properties.SPREAD_PERCENT || "0");
-
-  if (!sourceValue || sourceValue <= 0) {
-    return { converted_value: "0", exchange_rate: "0", rate_date: "", error: "Valor inválido" };
-  }
-
-  if (sourceCurrency === targetCurrency) {
-    return {
-      converted_value: String(sourceValue),
-      exchange_rate: "1",
-      rate_date: new Date().toISOString().split("T")[0],
-      error: "",
-    };
-  }
-
-  try {
-    // Usar API gratuita de câmbio (Exchange Rate API ou similar)
-    const apiUrl = `https://api.exchangerate.host/latest?base=${sourceCurrency}&symbols=${targetCurrency}`;
-    const res = await fetch(apiUrl);
-    const data = await res.json();
-
-    if (!data.success || !data.rates?.[targetCurrency]) {
-      // Fallback para taxas fixas (EUR→BRL, etc.)
-      const fallbackRates: Record<string, number> = {
-        "EUR_BRL": 6.10,
-        "BRL_EUR": 0.164,
-        "USD_BRL": 5.50,
-        "BRL_USD": 0.182,
-        "EUR_USD": 1.08,
-        "USD_EUR": 0.926,
-      };
-      const rateKey = `${sourceCurrency}_${targetCurrency}`;
-      const rate = fallbackRates[rateKey] || 1;
-      const finalRate = rate * (1 + spreadPercent / 100);
-      const converted = sourceValue * finalRate;
-
-      return {
-        converted_value: String(Math.round(converted * 100) / 100),
-        exchange_rate: String(Math.round(finalRate * 10000) / 10000),
-        rate_date: new Date().toISOString().split("T")[0] + " (fallback)",
-        error: "",
-      };
-    }
-
-    const rate = data.rates[targetCurrency];
-    const finalRate = rate * (1 + spreadPercent / 100);
-    const converted = sourceValue * finalRate;
-
-    return {
-      converted_value: String(Math.round(converted * 100) / 100),
-      exchange_rate: String(Math.round(finalRate * 10000) / 10000),
-      rate_date: data.date || new Date().toISOString().split("T")[0],
-      error: "",
-    };
-  } catch (e) {
-    return { converted_value: "0", exchange_rate: "0", rate_date: "", error: String(e) };
+  "deal_id": 8857,
+  "bodyOverrides": {
+    "force_gateway": "direto",
+    "total_amount": 600,
+    "num_installments": 3,
+    "first_due_date": "2025-02-01",
+    "interval_days": 30
   }
 }
 ```
-
-#### 3. Adicionar Case no Switch do Handler Principal
-
-```typescript
-case "emmely_convert_currency":
-  returnValues = await handleConvertCurrency(properties);
-  break;
-```
-
----
-
-### Fluxo de Uso no Bitrix24
-
-```text
-┌─────────────────────────────────────────────────────────┐
-│  Workflow Bitrix24                                      │
-├─────────────────────────────────────────────────────────┤
-│  1. Robot "Emmely: Converter Moeda"                     │
-│     ├─ Valor Original: {{Negócio.OPPORTUNITY}} (EUR)   │
-│     ├─ Moeda Origem: EUR                                │
-│     ├─ Moeda Destino: BRL                               │
-│     └─ Spread: 2 (%)                                    │
-│                                                         │
-│  2. Robot "Modificar Negócio"                           │
-│     └─ UF_CRM_VALOR_BRL = {{Valor Convertido}}         │
-└─────────────────────────────────────────────────────────┘
-```
-
----
-
-### Ficheiros a Modificar
-
-| Ficheiro | Alteração |
-|----------|-----------|
-| `supabase/functions/bitrix24-install/index.ts` | Adicionar robot `emmely_convert_currency` |
-| `supabase/functions/bitrix24-robot-handler/index.ts` | Adicionar handler + case no switch |
 
