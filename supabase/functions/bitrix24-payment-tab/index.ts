@@ -159,12 +159,20 @@ function renderPaymentTab(opts: {
       notes: meta.notes || "",
     }).replace(/"/g, "&quot;");
 
+    // Dual currency display
+    const valueBRL = inst.currency === "EUR" ? inst.value * EUR_TO_BRL : inst.value;
+    const valueEUR = inst.currency === "BRL" ? inst.value / EUR_TO_BRL : inst.value;
+    const dualDisplay = inst.currency === "EUR"
+      ? `<span class="b24-dual-currency">≈ ${formatCurrency(valueBRL, "BRL")}</span>`
+      : `<span class="b24-dual-currency">≈ ${formatCurrency(valueEUR, "EUR")}</span>`;
+
     return `
       <div class="b24-item${missingClass}">
         <div class="b24-item-row">
           <div class="b24-item-left">
             <span class="b24-item-title">${label}</span>
             <span class="b24-item-value">${formatCurrency(inst.value, inst.currency)}</span>
+            ${dualDisplay}
             ${missingIndicator}
           </div>
           <span class="b24-badge" style="--badge-bg:${s.bg};--badge-bg-dark:${s.bgDark};--badge-text:${s.text};--badge-text-dark:${s.textDark}">${s.label}</span>
@@ -173,6 +181,7 @@ function renderPaymentTab(opts: {
         <div class="b24-item-meta">
           <span>${inst.due_date ? 'Vence: ' + formatDate(inst.due_date) : '<span class="b24-missing">Vencimento: ⚠</span>'}</span>
           ${inst.paid_at ? `<span>Pago: ${formatDate(inst.paid_at)}</span>` : ""}
+          ${inst.payment_method ? `<span>💳 ${inst.payment_method}</span>` : ""}
           ${totalLabel}
         </div>
         ${discountInfo || paidAmountInfo || proofInfo ? `<div class="b24-item-meta">${paidAmountInfo} ${discountInfo} ${proofInfo}</div>` : ""}
@@ -181,18 +190,24 @@ function renderPaymentTab(opts: {
         ${inst.invoice_id ? `<div class="b24-link-row"><a href="javascript:void(0)" onclick="openInvoice(${inst.invoice_id})" class="b24-link">📄 Ver Fatura #${inst.invoice_id}</a></div>` : ""}
         ${inst.status !== "paga" ? `
           <div class="b24-item-actions">
-            <button onclick='openEditModal(${instJson})' class="b24-btn-outline" style="font-size:11px">✏ Editar</button>
-            <button onclick='openBaixaModal(${instJson})' class="b24-btn-primary" style="background:#589731">✓ Dar Baixa</button>
+            <select id="action-${inst.id}" class="b24-select" style="flex:1">
+              <option value="">Selecionar ação...</option>
+              <option value="baixa">✓ Dar Baixa</option>
+              <option value="link">🔗 Gerar Link de Pagamento</option>
+              <option value="editar">✏ Editar Parcela</option>
+              ${contactPhone && flows.length > 0 ? `<option value="fluxo">📤 Enviar Fluxo</option>` : ""}
+            </select>
+            <button onclick='executeAction("${inst.id}", ${instJson})' class="b24-btn-emmely">Executar</button>
           </div>
-        ` : ""}
-        ${inst.status !== "paga" && contactPhone && flows.length > 0 ? `
-          <div class="b24-item-actions">
+          ${contactPhone && flows.length > 0 ? `
+          <div class="b24-item-actions" id="flow-row-${inst.id}" style="display:none">
             <select id="flow-${inst.id}" class="b24-select">
               <option value="">Selecionar fluxo...</option>
               ${flowOptions}
             </select>
             <button onclick="triggerFlow('${inst.id}','${contactPhone}',${inst.number})" class="b24-btn-emmely">Disparar</button>
           </div>
+          ` : ""}
         ` : ""}
       </div>`;
   }).join("");
