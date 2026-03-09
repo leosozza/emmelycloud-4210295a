@@ -2973,6 +2973,48 @@ function BaixaCarteiraView({ integration }: { integration: any }) {
     });
   };
 
+  const handleSaveToBitrix = async (deal: BaixaDeal) => {
+    const form = forms[deal.id];
+    if (!form || !integration?.member_id) return;
+
+    setSavingBitrix(deal.id);
+    try {
+      const res = await fetch(`${SUPABASE_URL}/functions/v1/bitrix24-update-deal-payment`, {
+        method: "POST",
+        headers: {
+          apikey: SUPABASE_KEY,
+          Authorization: `Bearer ${SUPABASE_KEY}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          member_id: integration.member_id,
+          deal_id: deal.id,
+          payment_data: {
+            total_installments: form.totalInstallments,
+            installment_value: form.installmentValue,
+            paid_installments: form.paidInstallments,
+            paid_dates: form.paidDates,
+            next_due_date: form.nextDueDate,
+            payment_method: form.paymentMethod,
+            gateway: form.gateway,
+            notes: form.notes,
+          },
+        }),
+      });
+
+      const data = await res.json();
+      if (data.success) {
+        console.log("[BaixaCarteira] Saved to Bitrix24:", data);
+      } else {
+        console.error("[BaixaCarteira] Bitrix24 save error:", data);
+      }
+    } catch (e) {
+      console.error("[BaixaCarteira] Save to Bitrix24 error:", e);
+    } finally {
+      setSavingBitrix(null);
+    }
+  };
+
   const handleImport = async (deal: BaixaDeal) => {
     const form = forms[deal.id];
     if (!form) return;
