@@ -2855,6 +2855,30 @@ interface BaixaForm {
   paidDates: string[];
   nextDueDate: string;
   gateway: string;
+  paymentMethod: string;
+  notes: string;
+}
+
+const PAYMENT_METHODS = [
+  { value: "transferencia", label: "Transferência Bancária" },
+  { value: "cartao", label: "Cartão de Crédito/Débito" },
+  { value: "mbway", label: "MB Way" },
+  { value: "multibanco", label: "Multibanco" },
+  { value: "pix", label: "PIX" },
+  { value: "boleto", label: "Boleto" },
+  { value: "dinheiro", label: "Dinheiro" },
+  { value: "outro", label: "Outro" },
+];
+
+function countMissingFields(form: BaixaForm | undefined, deal: BaixaDeal): number {
+  if (!form) return 5;
+  let missing = 0;
+  if (!form.totalInstallments || form.totalInstallments < 1) missing++;
+  if (!form.installmentValue || form.installmentValue <= 0) missing++;
+  if (!form.paymentMethod) missing++;
+  if (form.paidInstallments > 0 && form.paidDates.some(d => !d)) missing++;
+  if (form.paidInstallments < form.totalInstallments && !form.nextDueDate) missing++;
+  return missing;
 }
 
 function BaixaCarteiraView({ integration }: { integration: any }) {
@@ -2863,6 +2887,7 @@ function BaixaCarteiraView({ integration }: { integration: any }) {
   const [expandedDeal, setExpandedDeal] = useState<string | null>(null);
   const [forms, setForms] = useState<Record<string, BaixaForm>>({});
   const [saving, setSaving] = useState<string | null>(null);
+  const [savingBitrix, setSavingBitrix] = useState<string | null>(null);
   const [savedDeals, setSavedDeals] = useState<Set<string>>(new Set());
 
   // Filters
@@ -2895,6 +2920,8 @@ function BaixaCarteiraView({ integration }: { integration: any }) {
             paidDates: [],
             nextDueDate: format(new Date(), "yyyy-MM-dd"),
             gateway: "direto",
+            paymentMethod: "",
+            notes: "",
           };
         }
         setForms(newForms);
@@ -2908,13 +2935,15 @@ function BaixaCarteiraView({ integration }: { integration: any }) {
 
   const updateForm = (dealId: string, updates: Partial<BaixaForm>) => {
     setForms((prev) => {
-      const current = prev[dealId] || {
+      const current: BaixaForm = prev[dealId] || {
         totalInstallments: 1,
         installmentValue: 0,
         paidInstallments: 0,
         paidDates: [],
         nextDueDate: format(new Date(), "yyyy-MM-dd"),
         gateway: "direto",
+        paymentMethod: "",
+        notes: "",
       };
       const updated = { ...current, ...updates };
 
@@ -2942,6 +2971,48 @@ function BaixaCarteiraView({ integration }: { integration: any }) {
       newDates[index] = date;
       return { ...prev, [dealId]: { ...current, paidDates: newDates } };
     });
+  };
+
+  const handleSaveToBitrix = async (deal: BaixaDeal) => {
+    const form = forms[deal.id];
+    if (!form || !integration?.member_id) return;
+
+    setSavingBitrix(deal.id);
+    try {
+      const res = await fetch(`${SUPABASE_URL}/functions/v1/bitrix24-update-deal-payment`, {
+        method: "POST",
+        headers: {
+          apikey: SUPABASE_KEY,
+          Authorization: `Bearer ${SUPABASE_KEY}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          member_id: integration.member_id,
+          deal_id: deal.id,
+          payment_data: {
+            total_installments: form.totalInstallments,
+            installment_value: form.installmentValue,
+            paid_installments: form.paidInstallments,
+            paid_dates: form.paidDates,
+            next_due_date: form.nextDueDate,
+            payment_method: form.paymentMethod,
+            gateway: form.gateway,
+            notes: form.notes,
+          },
+        }),
+      });
+
+      const data = await res.json();
+      if (data.success) {
+        console.log("[BaixaCarteira] Saved to Bitrix24:", data);
+      } else {
+        console.error("[BaixaCarteira] Bitrix24 save error:", data);
+      }
+    } catch (e) {
+      console.error("[BaixaCarteira] Save to Bitrix24 error:", e);
+    } finally {
+      setSavingBitrix(null);
+    }
   };
 
   const handleImport = async (deal: BaixaDeal) => {
@@ -3158,19 +3229,36 @@ function BaixaCarteiraView({ integration }: { integration: any }) {
                 const form = forms[deal.id];
                 const isExpanded = expandedDeal === deal.id;
                 const isSaved = savedDeals.has(deal.id);
+                const missingCount = countMissingFields(form, deal);
 
                 return (
-                  <div key={deal.id} className={cn("border rounded-lg", isSaved && "border-green-500/50 bg-green-500/5")}>
+                  <div key={deal.id} className={cn(
+                    "border rounded-lg transition-colors",
+                    isSaved && "border-success/50 bg-success/5",
+                    !isSaved && missingCount > 0 && "border-warning/50"
+                  )}>
                     {/* Deal Header */}
                     <div
                       className="flex items-center justify-between p-4 cursor-pointer hover:bg-muted/50"
                       onClick={() => setExpandedDeal(isExpanded ? null : deal.id)}
                     >
                       <div className="flex-1">
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 flex-wrap">
                           <span className="font-medium">{deal.title}</span>
                           <Badge variant="outline" className="text-[10px]">ID: {deal.id}</Badge>
-                          {isSaved && <Badge className="bg-green-500 text-white text-[10px]">Importado</Badge>}
+                          {isSaved && <Badge className="bg-success text-success-foreground text-[10px]">Importado</Badge>}
+                          {!isSaved && missingCount > 0 && (
+                            <Badge variant="outline" className="text-[10px] bg-warning/10 text-warning border-warning/30 gap-1">
+                              <AlertTriangle className="h-3 w-3" />
+                              {missingCount} campo{missingCount > 1 ? "s" : ""} faltante{missingCount > 1 ? "s" : ""}
+                            </Badge>
+                          )}
+                          {!isSaved && missingCount === 0 && (
+                            <Badge className="bg-success/20 text-success text-[10px] border-0">
+                              <CheckCircle className="h-3 w-3 mr-1" />
+                              Completo
+                            </Badge>
+                          )}
                         </div>
                         <div className="flex items-center gap-4 text-sm text-muted-foreground mt-1">
                           <span className="font-semibold text-foreground">
@@ -3196,26 +3284,32 @@ function BaixaCarteiraView({ integration }: { integration: any }) {
                           </div>
                         )}
 
-                        {/* Form Fields */}
+                        {/* Form Fields Row 1 */}
                         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
                           <div>
-                            <Label className="text-xs">Parcelas Totais</Label>
+                            <Label className={cn("text-xs flex items-center gap-1", (!form.totalInstallments || form.totalInstallments < 1) && "text-warning")}>
+                              {(!form.totalInstallments || form.totalInstallments < 1) && <AlertTriangle className="h-3 w-3" />}
+                              Parcelas Totais
+                            </Label>
                             <Input
                               type="number"
                               min={1}
                               value={form.totalInstallments}
                               onChange={(e) => updateForm(deal.id, { totalInstallments: parseInt(e.target.value) || 1 })}
-                              className="h-9"
+                              className={cn("h-9", (!form.totalInstallments || form.totalInstallments < 1) && "border-warning bg-warning/5")}
                             />
                           </div>
                           <div>
-                            <Label className="text-xs">Valor Parcela</Label>
+                            <Label className={cn("text-xs flex items-center gap-1", (!form.installmentValue || form.installmentValue <= 0) && "text-warning")}>
+                              {(!form.installmentValue || form.installmentValue <= 0) && <AlertTriangle className="h-3 w-3" />}
+                              Valor Parcela
+                            </Label>
                             <Input
                               type="number"
                               step="0.01"
                               value={form.installmentValue}
                               onChange={(e) => updateForm(deal.id, { installmentValue: parseFloat(e.target.value) || 0 })}
-                              className="h-9"
+                              className={cn("h-9", (!form.installmentValue || form.installmentValue <= 0) && "border-warning bg-warning/5")}
                             />
                           </div>
                           <div>
@@ -3230,6 +3324,26 @@ function BaixaCarteiraView({ integration }: { integration: any }) {
                             />
                           </div>
                           <div>
+                            <Label className={cn("text-xs flex items-center gap-1", !form.paymentMethod && "text-warning")}>
+                              {!form.paymentMethod && <AlertTriangle className="h-3 w-3" />}
+                              Método de Pagamento
+                            </Label>
+                            <Select value={form.paymentMethod} onValueChange={(v) => updateForm(deal.id, { paymentMethod: v })}>
+                              <SelectTrigger className={cn("h-9", !form.paymentMethod && "border-warning bg-warning/5")}>
+                                <SelectValue placeholder="Selecionar..." />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {PAYMENT_METHODS.map((m) => (
+                                  <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        </div>
+
+                        {/* Form Fields Row 2 */}
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                          <div>
                             <Label className="text-xs">Gateway Futuro</Label>
                             <Select value={form.gateway} onValueChange={(v) => updateForm(deal.id, { gateway: v })}>
                               <SelectTrigger className="h-9">
@@ -3239,15 +3353,28 @@ function BaixaCarteiraView({ integration }: { integration: any }) {
                                 <SelectItem value="direto">Manual (Direto)</SelectItem>
                                 <SelectItem value="stripe_pt">Stripe PT</SelectItem>
                                 <SelectItem value="stripe_br">Stripe BR</SelectItem>
+                                <SelectItem value="asaas">Asaas</SelectItem>
                               </SelectContent>
                             </Select>
+                          </div>
+                          <div className="col-span-3">
+                            <Label className="text-xs">Notas / Observações</Label>
+                            <Input
+                              value={form.notes}
+                              onChange={(e) => updateForm(deal.id, { notes: e.target.value })}
+                              placeholder="Observações sobre este cliente..."
+                              className="h-9"
+                            />
                           </div>
                         </div>
 
                         {/* Paid Dates */}
                         {form.paidInstallments > 0 && (
                           <div>
-                            <Label className="text-xs mb-2 block">Datas dos Pagamentos</Label>
+                            <Label className="text-xs mb-2 block flex items-center gap-1">
+                              {form.paidDates.some(d => !d) && <AlertTriangle className="h-3 w-3 text-warning" />}
+                              Datas dos Pagamentos Recebidos
+                            </Label>
                             <div className="flex flex-wrap gap-2">
                               {form.paidDates.map((date, idx) => (
                                 <div key={idx} className="flex items-center gap-1">
@@ -3256,8 +3383,10 @@ function BaixaCarteiraView({ integration }: { integration: any }) {
                                     type="date"
                                     value={date}
                                     onChange={(e) => updatePaidDate(deal.id, idx, e.target.value)}
-                                    className="h-8 w-[140px]"
+                                    className={cn("h-8 w-[140px]", !date && "border-warning bg-warning/5")}
                                   />
+                                  {date && <CheckCircle className="h-3 w-3 text-success" />}
+                                  {!date && <AlertTriangle className="h-3 w-3 text-warning" />}
                                 </div>
                               ))}
                             </div>
@@ -3268,12 +3397,15 @@ function BaixaCarteiraView({ integration }: { integration: any }) {
                         {form.paidInstallments < form.totalInstallments && (
                           <div className="flex items-center gap-4">
                             <div className="w-[180px]">
-                              <Label className="text-xs">Próximo Vencimento</Label>
+                              <Label className={cn("text-xs flex items-center gap-1", !form.nextDueDate && "text-warning")}>
+                                {!form.nextDueDate && <AlertTriangle className="h-3 w-3" />}
+                                Próximo Vencimento
+                              </Label>
                               <Input
                                 type="date"
                                 value={form.nextDueDate}
                                 onChange={(e) => updateForm(deal.id, { nextDueDate: e.target.value })}
-                                className="h-9"
+                                className={cn("h-9", !form.nextDueDate && "border-warning bg-warning/5")}
                               />
                             </div>
                             <div className="text-sm text-muted-foreground pt-5">
@@ -3282,8 +3414,21 @@ function BaixaCarteiraView({ integration }: { integration: any }) {
                           </div>
                         )}
 
-                        {/* Import Button */}
-                        <div className="flex justify-end pt-2">
+                        {/* Action Buttons */}
+                        <div className="flex justify-end gap-2 pt-2">
+                          <Button
+                            variant="outline"
+                            onClick={() => handleSaveToBitrix(deal)}
+                            disabled={savingBitrix === deal.id}
+                            className="gap-2"
+                          >
+                            {savingBitrix === deal.id ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <Save className="h-4 w-4" />
+                            )}
+                            Salvar no Bitrix24
+                          </Button>
                           <Button
                             onClick={() => handleImport(deal)}
                             disabled={saving === deal.id || isSaved}
