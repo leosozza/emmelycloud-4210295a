@@ -747,6 +747,10 @@ function renderPaymentTab(opts: {
     btn.disabled = true; btn.textContent = 'A guardar...';
     var el = document.getElementById('edit-result');
     try {
+      // Ensure transaction exists (create if synthetic)
+      var editOverlay = document.getElementById('edit-overlay');
+      txId = await ensureTxExists(txId, editOverlay, parseFloat(editOverlay.dataset.amount) || 0, editOverlay.dataset.currency || 'EUR', editOverlay.dataset.description || '');
+
       var payload = {
         transaction_id: txId,
         amount_update: parseFloat(document.getElementById('edit-amount').value) || undefined,
