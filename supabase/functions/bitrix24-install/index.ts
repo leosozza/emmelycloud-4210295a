@@ -512,9 +512,9 @@ Deno.serve(async (req) => {
       await debugLog(supabase, integrationId, "badges_error", "outbound", null, String(badgeError));
     }
 
-    // --- Create Custom Deal User Fields ---
+    // --- Create Custom User Fields (Deal + Lead) ---
     try {
-      const dealUserFields = [
+      const emmelyUserFields = [
         {
           FIELD_NAME: "UF_CRM_EMMELY_PAYMENT_STATUS",
           USER_TYPE_ID: "enumeration",
@@ -558,16 +558,69 @@ Deno.serve(async (req) => {
           EDIT_FORM_LABEL: { pt: "Link de Pagamento", en: "Payment Link" },
           LIST_COLUMN_LABEL: { pt: "Link Pagamento", en: "Payment Link" },
         },
+        {
+          FIELD_NAME: "UF_CRM_EMMELY_TOTAL_INSTALLMENTS",
+          USER_TYPE_ID: "integer",
+          EDIT_FORM_LABEL: { pt: "Nº Total de Parcelas", en: "Total Installments" },
+          LIST_COLUMN_LABEL: { pt: "Total Parcelas", en: "Total Installments" },
+        },
+        {
+          FIELD_NAME: "UF_CRM_EMMELY_PAID_INSTALLMENTS",
+          USER_TYPE_ID: "integer",
+          EDIT_FORM_LABEL: { pt: "Parcelas Pagas", en: "Paid Installments" },
+          LIST_COLUMN_LABEL: { pt: "Parcelas Pagas", en: "Paid Installments" },
+        },
+        {
+          FIELD_NAME: "UF_CRM_EMMELY_INSTALLMENT_VALUE",
+          USER_TYPE_ID: "double",
+          EDIT_FORM_LABEL: { pt: "Valor da Parcela", en: "Installment Value" },
+          LIST_COLUMN_LABEL: { pt: "Valor Parcela", en: "Installment Value" },
+        },
+        {
+          FIELD_NAME: "UF_CRM_EMMELY_NEXT_DUE_DATE",
+          USER_TYPE_ID: "date",
+          EDIT_FORM_LABEL: { pt: "Próximo Vencimento", en: "Next Due Date" },
+          LIST_COLUMN_LABEL: { pt: "Próx. Vencimento", en: "Next Due Date" },
+        },
+        {
+          FIELD_NAME: "UF_CRM_EMMELY_PAYMENT_METHOD",
+          USER_TYPE_ID: "enumeration",
+          EDIT_FORM_LABEL: { pt: "Método de Pagamento", en: "Payment Method" },
+          LIST_COLUMN_LABEL: { pt: "Método Pagamento", en: "Payment Method" },
+          LIST: [
+            { VALUE: "card", SORT: 100, DEF: "Y" },
+            { VALUE: "pix", SORT: 200 },
+            { VALUE: "boleto", SORT: 300 },
+            { VALUE: "mb_way", SORT: 400 },
+            { VALUE: "multibanco", SORT: 500 },
+            { VALUE: "sepa_debit", SORT: 600 },
+            { VALUE: "direto", SORT: 700 },
+          ],
+        },
+        {
+          FIELD_NAME: "UF_CRM_EMMELY_PAYMENT_NOTES",
+          USER_TYPE_ID: "string",
+          EDIT_FORM_LABEL: { pt: "Notas de Pagamento", en: "Payment Notes" },
+          LIST_COLUMN_LABEL: { pt: "Notas Pagamento", en: "Payment Notes" },
+        },
       ];
 
-      for (const field of dealUserFields) {
-        const result = await callBitrix(clientEndpoint, accessToken, "crm.deal.userfield.add", { fields: field });
-        const errStr = String(result.error || "") + " " + String(result.error_description || "");
-        if (result.error && !errStr.includes("ALREADY") && !errStr.includes("DUPLICATE") && !errStr.includes("FIELD_NAME_DUPLICATED")) {
-          console.error(`[INSTALL] UserField ${field.FIELD_NAME} failed:`, result.error, result.error_description);
-        } else {
-          console.log(`[INSTALL] UserField ${field.FIELD_NAME}: OK`);
-          installSummary.userfields_registered.push(field.FIELD_NAME);
+      // Create fields for both Deal and Lead entities
+      const entityApis = [
+        { name: "Deal", method: "crm.deal.userfield.add" },
+        { name: "Lead", method: "crm.lead.userfield.add" },
+      ];
+
+      for (const entity of entityApis) {
+        for (const field of emmelyUserFields) {
+          const result = await callBitrix(clientEndpoint, accessToken, entity.method, { fields: field });
+          const errStr = String(result.error || "") + " " + String(result.error_description || "");
+          if (result.error && !errStr.includes("ALREADY") && !errStr.includes("DUPLICATE") && !errStr.includes("FIELD_NAME_DUPLICATED")) {
+            console.error(`[INSTALL] ${entity.name} UserField ${field.FIELD_NAME} failed:`, result.error, result.error_description);
+          } else {
+            console.log(`[INSTALL] ${entity.name} UserField ${field.FIELD_NAME}: OK`);
+            installSummary.userfields_registered.push(`${entity.name}:${field.FIELD_NAME}`);
+          }
         }
       }
 
