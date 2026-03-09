@@ -1,160 +1,37 @@
 
 
-## Plano: Revisão Completa do Fluxo de Pagamentos
+## Plan: Fix Smart Invoice Deal Field + Test Deal 8857 with "Direto"
 
-### Análise do Estado Atual
+### Analysis
+The Bitrix24 HTML confirms the deal binding field is `PARENT_ID_2` (shown as "Negócio" in the Smart Invoice form). The current code already sends `parentId2` which is correct. The `ufCrm31Deal` field added previously is likely being ignored or causing issues — it's not a standard field for Smart Process type 31.
 
-**Gateways suportados:**
-- Stripe (PT/BR) ✅
-- Asaas (BR) ✅
-- Direto (crediário próprio) ✅
+The key issue: in `crm.item.add` REST API for Smart Processes, field names use **camelCase** format. The deal binding is `parentId2` (parent entity of type 2 = Deal). There is no separate `ufCrm31Deal` field — that was a mistaken assumption. The `parentId2` field alone should handle the deal link correctly.
 
-**Métodos de pagamento por região:**
-- **Stripe PT**: card, multibanco, mb_way, sepa_debit, link
-- **Stripe BR**: card, boleto, pix, link
-- **Asaas**: pix, boleto, card (credit_card)
+### Changes
 
-### Problemas Identificados
+1. **Remove `ufCrm31Deal`** from the `crm.item.add` call — it's not a real field and may cause warnings. Keep only `parentId2` which is confirmed correct from the HTML.
 
-1. **Robot `emmely_create_charge`** — opções de gateway limitadas:
-   - Atual: `auto`, `stripe`, `asaas`
-   - **Falta**: `stripe_pt`, `stripe_br` como opções explícitas
+2. **Test with deal 8857** using `bodyOverrides`:
+   - `force_gateway: "direto"` — crediário próprio, no external payment gateway
+   - 3 parcels: €200 each (01/02, 03/03, 02/04)
+   - Parcela 1 should be marked `confirmed` after creation
+   - Verify Smart Invoices appear in `/crm/type/31/` kanban with deal and contact linked
 
-2. **Robot `emmely_create_charge`** — métodos de pagamento incompletos:
-   - Atual: `card`, `pix`, `boleto`, `direto`
-   - **Falta**: `multibanco`, `mb_way`, `sepa_debit`, `link`
+### File changed
+- `supabase/functions/bitrix24-payment-webhook/index.ts` — remove `ufCrm31Deal` line (line 308)
 
-3. **Campo `UF_CRM_EMMELY_GATEWAY`** — enumeração desatualizada:
-   - Atual: `stripe`, `asaas`, `direto`
-   - **Falta**: `stripe_pt`, `stripe_br`
-
-4. **Lógica de seleção de métodos** — Ok em `payment-create`, mas robot não expõe todas opções
-
----
-
-### Alterações Propostas
-
-#### 1. Atualizar Robot `emmely_create_charge` em `bitrix24-install/index.ts`
-
-```typescript
+### Test
+After deploy, call the webhook with:
+```json
 {
-  CODE: "emmely_create_charge",
-  NAME: "Emmely: Criar Cobrança",
-  PROPERTIES: {
-    amount: { Name: "Valor", Type: "double", Required: "Y" },
-    currency: { Name: "Moeda", Type: "select", Options: { EUR: "EUR", BRL: "BRL" }, Default: "EUR" },
-    gateway: { 
-      Name: "Gateway", 
-      Type: "select", 
-      Options: { 
-        auto: "Automático", 
-        stripe_pt: "Stripe Portugal", 
-        stripe_br: "Stripe Brasil", 
-        asaas: "Asaas (Brasil)", 
-        direto: "Crediário Próprio" 
-      }, 
-      Default: "auto" 
-    },
-    payment_method: { 
-      Name: "Método de Pagamento", 
-      Type: "select", 
-      Options: { 
-        card: "Cartão",
-        multibanco: "Multibanco (PT)",
-        mb_way: "MB WAY (PT)",
-        sepa_debit: "Débito SEPA (PT)",
-        pix: "PIX (BR)",
-        boleto: "Boleto (BR)",
-        link: "Link de Pagamento",
-        direto: "Recebimento Direto"
-      }, 
-      Default: "card" 
-    },
-    // ... restantes campos
-  },
-}
-```
-
-#### 2. Atualizar campo `UF_CRM_EMMELY_GATEWAY` em `bitrix24-install/index.ts`
-
-```typescript
-{
-  FIELD_NAME: "UF_CRM_EMMELY_GATEWAY",
-  USER_TYPE_ID: "enumeration",
-  LIST: [
-    { VALUE: "stripe_pt", SORT: 100 },
-    { VALUE: "stripe_br", SORT: 200 },
-    { VALUE: "asaas", SORT: 300 },
-    { VALUE: "direto", SORT: 400 },
-  ],
-}
-```
-
-#### 3. Atualizar `payment-create/index.ts` — melhorar lógica de métodos regionais
-
-Já está bem implementado, mas vamos adicionar suporte a métodos individuais quando passados explicitamente:
-
-```typescript
-// Se payment_method específico foi solicitado, incluí-lo na lista
-if (body.payment_method && body.payment_method !== "card") {
-  const requestedMethod = body.payment_method;
-  if (!paymentMethods.includes(requestedMethod)) {
-    paymentMethods.push(requestedMethod);
+  "deal_id": 8857,
+  "bodyOverrides": {
+    "force_gateway": "direto",
+    "total_amount": 600,
+    "num_installments": 3,
+    "first_due_date": "2025-02-01",
+    "interval_days": 30
   }
 }
-```
-
-#### 4. Atualizar `bitrix24-robot-handler/index.ts` — passar método correto
-
-Atualizar `handleCreateCharge` para mapear corretamente os métodos por região:
-
-```typescript
-// Determinar payment_method baseado no gateway selecionado
-let effectivePaymentMethod = paymentMethod;
-if (paymentMethod === "card" && (companyGateway === "asaas")) {
-  effectivePaymentMethod = "card"; // Asaas usa CREDIT_CARD
-} else if (["multibanco", "mb_way", "sepa_debit"].includes(paymentMethod) && companyGateway !== "stripe_pt" && companyGateway !== "stripe") {
-  effectivePaymentMethod = "card"; // Fallback para gateways não-PT
-}
-```
-
----
-
-### Ficheiros a Modificar
-
-| Ficheiro | Alteração |
-|----------|-----------|
-| `supabase/functions/bitrix24-install/index.ts` | Robot `emmely_create_charge` + UserField `UF_CRM_EMMELY_GATEWAY` |
-| `supabase/functions/bitrix24-robot-handler/index.ts` | Lógica de mapeamento gateway → método |
-| `supabase/functions/payment-create/index.ts` | Pequenos ajustes para métodos explícitos |
-
----
-
-### Credenciais Necessárias (tabela `integration_credentials`)
-
-| Provider | Key | Descrição |
-|----------|-----|-----------|
-| `stripe_pt` | `STRIPE_SECRET_KEY` | Stripe Portugal (EUR) |
-| `stripe_br` | `STRIPE_SECRET_KEY` | Stripe Brasil (BRL) |
-| `asaas` | `ASAAS_API_KEY` | Asaas Brasil (alternativa) |
-
----
-
-### Resumo Visual
-
-```text
-┌──────────────────────────────────────────────────────────┐
-│                  ROBOT EMMELY_CREATE_CHARGE              │
-├──────────────────────────────────────────────────────────┤
-│  Gateway:                                                │
-│  ├─ stripe_pt → card, multibanco, mb_way, sepa, link    │
-│  ├─ stripe_br → card, boleto, pix, link                 │
-│  ├─ asaas     → pix, boleto, card                       │
-│  └─ direto    → (sem gateway externo)                   │
-├──────────────────────────────────────────────────────────┤
-│  Métodos de Pagamento (todos disponíveis):              │
-│  card | multibanco | mb_way | sepa_debit | pix |        │
-│  boleto | link | direto                                 │
-└──────────────────────────────────────────────────────────┘
 ```
 

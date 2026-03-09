@@ -23,13 +23,31 @@ function getGateway(country: string | null, currency: string): "stripe" | "asaas
   return "stripe";
 }
 
-function getStripePaymentMethods(region?: "pt" | "br" | null): string[] {
-  if (region === "pt") return ["card", "multibanco", "mb_way", "sepa_debit", "link"];
-  if (region === "br") return ["card", "boleto", "pix", "link"];
-  return ["card", "sepa_debit", "multibanco", "mb_way", "link"];
+function getStripePaymentMethods(region?: "pt" | "br" | null, requestedMethod?: string | null): string[] {
+  // Base methods per region
+  let methods: string[];
+  if (region === "pt") {
+    methods = ["card", "multibanco", "mb_way", "sepa_debit", "link"];
+  } else if (region === "br") {
+    methods = ["card", "boleto", "pix", "link"];
+  } else {
+    methods = ["card", "sepa_debit", "multibanco", "mb_way", "link"];
+  }
+  
+  // If a specific method was requested and it's valid for Stripe, prioritize it
+  if (requestedMethod && requestedMethod !== "card" && requestedMethod !== "direto") {
+    // Move requested method to front if present, or add it if valid
+    const validStripeMethods = ["card", "multibanco", "mb_way", "sepa_debit", "pix", "boleto", "link"];
+    if (validStripeMethods.includes(requestedMethod)) {
+      methods = methods.filter(m => m !== requestedMethod);
+      methods.unshift(requestedMethod);
+    }
+  }
+  
+  return methods;
 }
 
-async function createStripePayment(apiKey: string, amount: number, currency: string, customerEmail: string, description: string, returnUrl?: string, region?: "pt" | "br" | null) {
+async function createStripePayment(apiKey: string, amount: number, currency: string, customerEmail: string, description: string, returnUrl?: string, region?: "pt" | "br" | null, requestedMethod?: string | null) {
   // Create a Checkout Session with regional payment methods
   const params = new URLSearchParams();
   params.append("mode", "payment");
@@ -38,7 +56,7 @@ async function createStripePayment(apiKey: string, amount: number, currency: str
   params.append("line_items[0][price_data][product_data][name]", description);
   params.append("line_items[0][quantity]", "1");
 
-  const paymentMethods = getStripePaymentMethods(region);
+  const paymentMethods = getStripePaymentMethods(region, requestedMethod);
   for (const pm of paymentMethods) {
     params.append("payment_method_types[]", pm);
   }
@@ -309,7 +327,7 @@ Deno.serve(async (req) => {
           status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
-      result = await createStripePayment(stripeKey, amount, currency, customer_data?.email || "", description, body.return_url, stripeRegion);
+      result = await createStripePayment(stripeKey, amount, currency, customer_data?.email || "", description, body.return_url, stripeRegion, payment_method);
     } else {
       // Validate CPF/CNPJ before calling Asaas
       if (customer_data?.cpf_cnpj) {
