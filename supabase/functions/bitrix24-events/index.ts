@@ -79,7 +79,50 @@ const SUPPORTED_EVENTS = [
   "ONCRMDEALUPDATE",   // Deal update — auto-charge on close
   "ONCRMLEADADD",      // Lead created in Bitrix24
   "ONCRMLEADUPDATE",   // Lead updated in Bitrix24
+  "ONAPPUNINSTALL",    // App uninstalled — cleanup fields
 ];
+
+// Helper to call Bitrix24 REST API
+async function callBitrixApi(
+  clientEndpoint: string,
+  accessToken: string,
+  method: string,
+  params: Record<string, any> = {}
+): Promise<any> {
+  const url = `${clientEndpoint}${method}`;
+  const response = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ...params, auth: accessToken }),
+  });
+  return response.json();
+}
+
+// Cleanup all UF_CRM_EMMELY_* fields from Deal and Lead
+async function cleanupEmmelyFields(clientEndpoint: string, accessToken: string): Promise<{ deleted: string[] }> {
+  const deleted: string[] = [];
+  const apis = [
+    { name: "Deal", listMethod: "crm.deal.userfield.list", deleteMethod: "crm.deal.userfield.delete" },
+    { name: "Lead", listMethod: "crm.lead.userfield.list", deleteMethod: "crm.lead.userfield.delete" },
+  ];
+
+  for (const api of apis) {
+    try {
+      const result = await callBitrixApi(clientEndpoint, accessToken, api.listMethod, {});
+      const emmelyFields = (result.result || []).filter(
+        (f: any) => f.FIELD_NAME && f.FIELD_NAME.startsWith("UF_CRM_EMMELY_")
+      );
+      for (const f of emmelyFields) {
+        await callBitrixApi(clientEndpoint, accessToken, api.deleteMethod, { id: f.ID });
+        deleted.push(`${api.name}:${f.FIELD_NAME}`);
+        console.log(`[UNINSTALL] Deleted ${api.name} field ${f.FIELD_NAME}`);
+      }
+    } catch (err) {
+      console.error(`[UNINSTALL] Error cleaning ${api.name} fields:`, err);
+    }
+  }
+  return { deleted };
+}
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
