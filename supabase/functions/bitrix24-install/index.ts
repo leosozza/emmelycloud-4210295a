@@ -540,10 +540,10 @@ Deno.serve(async (req) => {
           EDIT_FORM_LABEL: { pt: "Gateway de Pagamento", en: "Payment Gateway" },
           LIST_COLUMN_LABEL: { pt: "Gateway", en: "Gateway" },
           LIST: [
-            { VALUE: "stripe_pt", SORT: 100, DEF: "Y" },
-            { VALUE: "stripe_br", SORT: 200 },
-            { VALUE: "asaas", SORT: 300 },
-            { VALUE: "direto", SORT: 400 },
+            { VALUE: "Stripe Portugal", SORT: 100, DEF: "Y" },
+            { VALUE: "Stripe Brasil", SORT: 200 },
+            { VALUE: "Asaas", SORT: 300 },
+            { VALUE: "Direto", SORT: 400 },
           ],
         },
         {
