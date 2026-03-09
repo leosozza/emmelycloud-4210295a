@@ -692,6 +692,90 @@ async function handleExecuteFlow(properties: Record<string, any>, supabaseUrl: s
   }
 }
 
+// --- Currency Conversion Handler ---
+
+async function handleConvertCurrency(properties: Record<string, any>): Promise<Record<string, string>> {
+  const sourceValue = parseFloat(properties.source_value || properties.SOURCE_VALUE || "0");
+  const sourceCurrency = (properties.source_currency || properties.SOURCE_CURRENCY || "EUR").toUpperCase();
+  const targetCurrency = (properties.target_currency || properties.TARGET_CURRENCY || "BRL").toUpperCase();
+  const spreadPercent = parseFloat(properties.spread_percent || properties.SPREAD_PERCENT || "0");
+
+  if (!sourceValue || sourceValue <= 0) {
+    return { converted_value: "0", exchange_rate: "0", rate_date: "", error: "Valor inválido" };
+  }
+
+  if (sourceCurrency === targetCurrency) {
+    return {
+      converted_value: String(sourceValue),
+      exchange_rate: "1",
+      rate_date: new Date().toISOString().split("T")[0],
+      error: "",
+    };
+  }
+
+  // Fallback rates (updated periodically)
+  const fallbackRates: Record<string, number> = {
+    "EUR_BRL": 6.10,
+    "BRL_EUR": 0.164,
+    "USD_BRL": 5.50,
+    "BRL_USD": 0.182,
+    "EUR_USD": 1.08,
+    "USD_EUR": 0.926,
+  };
+
+  try {
+    // Try exchangerate.host API (free, no key required)
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000);
+
+    const apiUrl = `https://api.exchangerate.host/latest?base=${sourceCurrency}&symbols=${targetCurrency}`;
+    const res = await fetch(apiUrl, { signal: controller.signal });
+    clearTimeout(timeoutId);
+
+    const data = await res.json();
+
+    if (data.success && data.rates?.[targetCurrency]) {
+      const rate = data.rates[targetCurrency];
+      const finalRate = rate * (1 + spreadPercent / 100);
+      const converted = sourceValue * finalRate;
+
+      return {
+        converted_value: String(Math.round(converted * 100) / 100),
+        exchange_rate: String(Math.round(finalRate * 10000) / 10000),
+        rate_date: data.date || new Date().toISOString().split("T")[0],
+        error: "",
+      };
+    }
+
+    // API response invalid, use fallback
+    const rateKey = `${sourceCurrency}_${targetCurrency}`;
+    const rate = fallbackRates[rateKey] || 1;
+    const finalRate = rate * (1 + spreadPercent / 100);
+    const converted = sourceValue * finalRate;
+
+    return {
+      converted_value: String(Math.round(converted * 100) / 100),
+      exchange_rate: String(Math.round(finalRate * 10000) / 10000),
+      rate_date: new Date().toISOString().split("T")[0] + " (fallback)",
+      error: "",
+    };
+  } catch (e) {
+    // Network error, use fallback
+    console.warn("[ROBOT-HANDLER] Currency API failed, using fallback:", e);
+    const rateKey = `${sourceCurrency}_${targetCurrency}`;
+    const rate = fallbackRates[rateKey] || 1;
+    const finalRate = rate * (1 + spreadPercent / 100);
+    const converted = sourceValue * finalRate;
+
+    return {
+      converted_value: String(Math.round(converted * 100) / 100),
+      exchange_rate: String(Math.round(finalRate * 10000) / 10000),
+      rate_date: new Date().toISOString().split("T")[0] + " (fallback)",
+      error: "",
+    };
+  }
+}
+
 // --- Main Handler ---
 
 Deno.serve(async (req) => {
