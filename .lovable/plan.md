@@ -1,96 +1,37 @@
 
 
-## Plan: Auto-Create Custom Deal Fields During Bitrix24 Installation
+## Plan: Fix Smart Invoice Deal Field + Test Deal 8857 with "Direto"
 
-### What we're building
-Add automatic creation of custom fields (User Fields) on Deals in Bitrix24 during the installation process. These fields will be used by the payment system to track installment groups, payment status, and gateway information.
+### Analysis
+The Bitrix24 HTML confirms the deal binding field is `PARENT_ID_2` (shown as "Negócio" in the Smart Invoice form). The current code already sends `parentId2` which is correct. The `ufCrm31Deal` field added previously is likely being ignored or causing issues — it's not a standard field for Smart Process type 31.
 
-### Fields to create
+The key issue: in `crm.item.add` REST API for Smart Processes, field names use **camelCase** format. The deal binding is `parentId2` (parent entity of type 2 = Deal). There is no separate `ufCrm31Deal` field — that was a mistaken assumption. The `parentId2` field alone should handle the deal link correctly.
 
-| Field Code | Title | Type | Description |
-|------------|-------|------|-------------|
-| `UF_CRM_EMMELY_PAYMENT_STATUS` | Emmely: Status Pagamento | `enumeration` | pendente, parcial, pago, cancelado |
-| `UF_CRM_EMMELY_INSTALLMENT_GROUP` | Emmely: Grupo Parcelas | `string` | UUID linking related Smart Invoices |
-| `UF_CRM_EMMELY_GATEWAY` | Emmely: Gateway | `enumeration` | stripe, asaas, direto |
-| `UF_CRM_EMMELY_TOTAL_PAID` | Emmely: Total Pago | `double` | Sum of paid installments |
-| `UF_CRM_EMMELY_PAYMENT_URL` | Emmely: Link Pagamento | `url` | Checkout URL for current payment |
+### Changes
 
-### Implementation
+1. **Remove `ufCrm31Deal`** from the `crm.item.add` call — it's not a real field and may cause warnings. Keep only `parentId2` which is confirmed correct from the HTML.
 
-**Modify `supabase/functions/bitrix24-install/index.ts`:**
+2. **Test with deal 8857** using `bodyOverrides`:
+   - `force_gateway: "direto"` — crediário próprio, no external payment gateway
+   - 3 parcels: €200 each (01/02, 03/03, 02/04)
+   - Parcela 1 should be marked `confirmed` after creation
+   - Verify Smart Invoices appear in `/crm/type/31/` kanban with deal and contact linked
 
-Add a new section after badges registration (~line 507) to create custom fields:
+### File changed
+- `supabase/functions/bitrix24-payment-webhook/index.ts` — remove `ufCrm31Deal` line (line 308)
 
-```typescript
-// --- Create Custom Deal User Fields ---
-try {
-  const dealUserFields = [
-    {
-      FIELD_NAME: "UF_CRM_EMMELY_PAYMENT_STATUS",
-      USER_TYPE_ID: "enumeration",
-      EDIT_FORM_LABEL: { pt: "Status de Pagamento" },
-      LIST_COLUMN_LABEL: { pt: "Status Pagamento" },
-      LIST: [
-        { VALUE: "pendente", SORT: 100, DEF: "Y" },
-        { VALUE: "parcial", SORT: 200 },
-        { VALUE: "pago", SORT: 300 },
-        { VALUE: "cancelado", SORT: 400 },
-      ],
-      SETTINGS: { DISPLAY: "LIST" },
-    },
-    {
-      FIELD_NAME: "UF_CRM_EMMELY_INSTALLMENT_GROUP",
-      USER_TYPE_ID: "string",
-      EDIT_FORM_LABEL: { pt: "Grupo de Parcelas" },
-      LIST_COLUMN_LABEL: { pt: "Grupo Parcelas" },
-    },
-    {
-      FIELD_NAME: "UF_CRM_EMMELY_GATEWAY",
-      USER_TYPE_ID: "enumeration",
-      EDIT_FORM_LABEL: { pt: "Gateway de Pagamento" },
-      LIST_COLUMN_LABEL: { pt: "Gateway" },
-      LIST: [
-        { VALUE: "stripe", SORT: 100 },
-        { VALUE: "asaas", SORT: 200 },
-        { VALUE: "direto", SORT: 300 },
-      ],
-    },
-    {
-      FIELD_NAME: "UF_CRM_EMMELY_TOTAL_PAID",
-      USER_TYPE_ID: "double",
-      EDIT_FORM_LABEL: { pt: "Total Pago" },
-      LIST_COLUMN_LABEL: { pt: "Total Pago" },
-    },
-    {
-      FIELD_NAME: "UF_CRM_EMMELY_PAYMENT_URL",
-      USER_TYPE_ID: "url",
-      EDIT_FORM_LABEL: { pt: "Link de Pagamento" },
-      LIST_COLUMN_LABEL: { pt: "Link Pagamento" },
-    },
-  ];
-
-  for (const field of dealUserFields) {
-    const result = await callBitrix(clientEndpoint, accessToken, "crm.deal.userfield.add", field);
-    const errStr = String(result.error || "");
-    if (result.error && !errStr.includes("ALREADY") && !errStr.includes("DUPLICATE") && !errStr.includes("FIELD_NAME_DUPLICATED")) {
-      console.error(`[INSTALL] UserField ${field.FIELD_NAME} failed:`, result.error);
-    } else {
-      console.log(`[INSTALL] UserField ${field.FIELD_NAME}: OK`);
-      installSummary.userfields_registered.push(field.FIELD_NAME);
-    }
+### Test
+After deploy, call the webhook with:
+```json
+{
+  "deal_id": 8857,
+  "bodyOverrides": {
+    "force_gateway": "direto",
+    "total_amount": 600,
+    "num_installments": 3,
+    "first_due_date": "2025-02-01",
+    "interval_days": 30
   }
-  installSummary.installed_modules.push("userfields");
-} catch (ufError) {
-  console.error("[INSTALL] UserField creation error:", ufError);
 }
 ```
-
-### Changes to install summary
-Update `installSummary` object to include:
-```typescript
-userfields_registered: [],
-```
-
-### Files changed
-- `supabase/functions/bitrix24-install/index.ts` — add userfields creation block after badges registration
 

@@ -223,6 +223,7 @@ Deno.serve(async (req) => {
       robots_registered: [],
       placements_registered: [],
       badges_registered: [],
+      userfields_registered: [],
       paysystem_handler_registered: false,
       installed_modules: [],
       available_scopes: [],
@@ -504,6 +505,76 @@ Deno.serve(async (req) => {
     } catch (badgeError) {
       console.error("[INSTALL] Badge registration error:", badgeError);
       await debugLog(supabase, integrationId, "badges_error", "outbound", null, String(badgeError));
+    }
+
+    // --- Create Custom Deal User Fields ---
+    try {
+      const dealUserFields = [
+        {
+          FIELD_NAME: "UF_CRM_EMMELY_PAYMENT_STATUS",
+          USER_TYPE_ID: "enumeration",
+          EDIT_FORM_LABEL: { pt: "Status de Pagamento", en: "Payment Status" },
+          LIST_COLUMN_LABEL: { pt: "Status Pagamento", en: "Payment Status" },
+          LIST: [
+            { VALUE: "pendente", SORT: 100, DEF: "Y" },
+            { VALUE: "parcial", SORT: 200 },
+            { VALUE: "pago", SORT: 300 },
+            { VALUE: "cancelado", SORT: 400 },
+          ],
+          SETTINGS: { DISPLAY: "LIST" },
+        },
+        {
+          FIELD_NAME: "UF_CRM_EMMELY_INSTALLMENT_GROUP",
+          USER_TYPE_ID: "string",
+          EDIT_FORM_LABEL: { pt: "Grupo de Parcelas", en: "Installment Group" },
+          LIST_COLUMN_LABEL: { pt: "Grupo Parcelas", en: "Installment Group" },
+        },
+        {
+          FIELD_NAME: "UF_CRM_EMMELY_GATEWAY",
+          USER_TYPE_ID: "enumeration",
+          EDIT_FORM_LABEL: { pt: "Gateway de Pagamento", en: "Payment Gateway" },
+          LIST_COLUMN_LABEL: { pt: "Gateway", en: "Gateway" },
+          LIST: [
+            { VALUE: "stripe", SORT: 100 },
+            { VALUE: "asaas", SORT: 200 },
+            { VALUE: "direto", SORT: 300 },
+          ],
+        },
+        {
+          FIELD_NAME: "UF_CRM_EMMELY_TOTAL_PAID",
+          USER_TYPE_ID: "double",
+          EDIT_FORM_LABEL: { pt: "Total Pago", en: "Total Paid" },
+          LIST_COLUMN_LABEL: { pt: "Total Pago", en: "Total Paid" },
+        },
+        {
+          FIELD_NAME: "UF_CRM_EMMELY_PAYMENT_URL",
+          USER_TYPE_ID: "url",
+          EDIT_FORM_LABEL: { pt: "Link de Pagamento", en: "Payment Link" },
+          LIST_COLUMN_LABEL: { pt: "Link Pagamento", en: "Payment Link" },
+        },
+      ];
+
+      for (const field of dealUserFields) {
+        const result = await callBitrix(clientEndpoint, accessToken, "crm.deal.userfield.add", { fields: field });
+        const errStr = String(result.error || "") + " " + String(result.error_description || "");
+        if (result.error && !errStr.includes("ALREADY") && !errStr.includes("DUPLICATE") && !errStr.includes("FIELD_NAME_DUPLICATED")) {
+          console.error(`[INSTALL] UserField ${field.FIELD_NAME} failed:`, result.error, result.error_description);
+        } else {
+          console.log(`[INSTALL] UserField ${field.FIELD_NAME}: OK`);
+          installSummary.userfields_registered.push(field.FIELD_NAME);
+        }
+      }
+
+      if (installSummary.userfields_registered.length > 0) {
+        installSummary.installed_modules.push("userfields");
+      }
+
+      await debugLog(supabase, integrationId, "userfields_registered", "outbound", {
+        fields: installSummary.userfields_registered,
+      });
+    } catch (ufError) {
+      console.error("[INSTALL] UserField creation error:", ufError);
+      await debugLog(supabase, integrationId, "userfields_error", "outbound", null, String(ufError));
     }
 
     // --- Register BizProc Robots ---
