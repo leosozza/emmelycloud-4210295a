@@ -158,6 +158,54 @@ Deno.serve(async (req) => {
         }
       }
 
+      // --- Bitrix24 Badge: emmely_contract_signed ---
+      try {
+        // Find deal via case -> lead -> bitrix24_id
+        let bitrixDealId: string | null = null;
+        if (contract.case_id) {
+          const { data: linkedCase } = await supabase.from("cases").select("lead_id").eq("id", contract.case_id).single();
+          if (linkedCase?.lead_id) {
+            const { data: lead } = await supabase.from("leads").select("bitrix24_id").eq("id", linkedCase.lead_id).single();
+            bitrixDealId = lead?.bitrix24_id || null;
+          }
+        }
+
+        if (bitrixDealId) {
+          const { data: integration } = await supabase
+            .from("bitrix24_integrations")
+            .select("client_endpoint, access_token")
+            .order("created_at", { ascending: false })
+            .limit(1)
+            .maybeSingle();
+
+          if (integration?.client_endpoint && integration?.access_token) {
+            const endpoint = integration.client_endpoint.endsWith("/") ? integration.client_endpoint : integration.client_endpoint + "/";
+            await fetch(`${endpoint}crm.activity.configurable.add`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                auth: integration.access_token,
+                ownerTypeId: 2,
+                ownerId: parseInt(bitrixDealId),
+                fields: { completed: true, isIncomingChannel: "N", responsibleId: 1, badgeCode: "emmely_contract_signed" },
+                layout: {
+                  icon: { code: "done" },
+                  header: { title: "Contrato Assinado" },
+                  body: { logo: { code: "robot" }, blocks: {
+                    signer: { type: "text", properties: { value: signer_name || "Signatário" } },
+                    method: { type: "text", properties: { value: method } },
+                    date: { type: "text", properties: { value: new Date(signedAt).toLocaleDateString("pt-PT") } },
+                  } },
+                },
+              }),
+            });
+            console.log(`[SIGN-CONTRACT] Badge emmely_contract_signed for deal ${bitrixDealId}`);
+          }
+        }
+      } catch (badgeErr) {
+        console.error("[SIGN-CONTRACT] Badge error:", badgeErr);
+      }
+
       return new Response(JSON.stringify({
         success: true,
         signature_id: signature.id,

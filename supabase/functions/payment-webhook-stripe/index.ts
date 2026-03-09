@@ -261,6 +261,55 @@ Deno.serve(async (req) => {
       await notifyBitrix24DealPayment(supabase, tx.metadata as any, tx.amount, tx.currency);
     }
 
+    // --- Bitrix24 Badge based on status ---
+    const txMeta = (tx?.metadata || existingTx?.metadata) as any;
+    const bitrixDealId = txMeta?.bitrix_deal_id;
+    if (bitrixDealId && (newStatus === "confirmed" || newStatus === "failed" || newStatus === "refunded")) {
+      try {
+        const { data: integration } = await supabase
+          .from("bitrix24_integrations")
+          .select("client_endpoint, access_token")
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        if (integration?.client_endpoint && integration?.access_token) {
+          const endpoint = integration.client_endpoint.endsWith("/") ? integration.client_endpoint : integration.client_endpoint + "/";
+          const badgeMap: Record<string, { code: string; title: string; icon: string }> = {
+            confirmed: { code: "emmely_payment_confirmed", title: "Pagamento Confirmado", icon: "done" },
+            failed: { code: "emmely_payment_failed", title: "Pagamento Falhado", icon: "warning" },
+            refunded: { code: "emmely_payment_refunded", title: "Reembolso Processado", icon: "info" },
+          };
+          const badge = badgeMap[newStatus];
+          const paidAmount = tx?.amount || existingTx?.amount || 0;
+          const cur = tx?.currency || existingTx?.currency || "EUR";
+          const fmt = (v: number) => new Intl.NumberFormat("pt-PT", { style: "currency", currency: cur }).format(v);
+
+          await fetch(`${endpoint}crm.activity.configurable.add`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              auth: integration.access_token,
+              ownerTypeId: 2,
+              ownerId: parseInt(bitrixDealId),
+              fields: { completed: newStatus === "confirmed", isIncomingChannel: "N", responsibleId: 1, badgeCode: badge.code },
+              layout: {
+                icon: { code: badge.icon },
+                header: { title: badge.title },
+                body: { logo: { code: "robot" }, blocks: {
+                  amount: { type: "text", properties: { value: fmt(paidAmount) } },
+                  event: { type: "text", properties: { value: event.type } },
+                } },
+              },
+            }),
+          });
+          console.log(`[STRIPE-WEBHOOK] Badge ${badge.code} for deal ${bitrixDealId}`);
+        }
+      } catch (badgeErr) {
+        console.error("[STRIPE-WEBHOOK] Badge error:", badgeErr);
+      }
+    }
+
     return new Response(JSON.stringify({ ok: true, status: newStatus }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });

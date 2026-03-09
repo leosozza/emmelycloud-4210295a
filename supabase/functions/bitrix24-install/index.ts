@@ -485,6 +485,9 @@ Deno.serve(async (req) => {
         { code: "emmely_payment_created", title: "Cobrança Criada", value: "Cobrança", type: "primary" },
         { code: "emmely_payment_confirmed", title: "Pagamento Confirmado", value: "Pago", type: "success" },
         { code: "emmely_contract_signed", title: "Contrato Assinado", value: "Assinado", type: "success" },
+        { code: "emmely_payment_failed", title: "Pagamento Falhado", value: "Falhou", type: "failure" },
+        { code: "emmely_payment_refunded", title: "Reembolso", value: "Reembolsado", type: "warning" },
+        { code: "emmely_deal_payment_updated", title: "Parcelas Atualizadas", value: "Atualizado", type: "primary" },
         { code: "emmely_baixa_imported", title: "Baixa Importada", value: "Importado", type: "primary" },
       ];
 
