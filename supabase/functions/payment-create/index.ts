@@ -23,10 +23,28 @@ function getGateway(country: string | null, currency: string): "stripe" | "asaas
   return "stripe";
 }
 
-function getStripePaymentMethods(region?: "pt" | "br" | null): string[] {
-  if (region === "pt") return ["card", "multibanco", "mb_way", "sepa_debit", "link"];
-  if (region === "br") return ["card", "boleto", "pix", "link"];
-  return ["card", "sepa_debit", "multibanco", "mb_way", "link"];
+function getStripePaymentMethods(region?: "pt" | "br" | null, requestedMethod?: string | null): string[] {
+  // Base methods per region
+  let methods: string[];
+  if (region === "pt") {
+    methods = ["card", "multibanco", "mb_way", "sepa_debit", "link"];
+  } else if (region === "br") {
+    methods = ["card", "boleto", "pix", "link"];
+  } else {
+    methods = ["card", "sepa_debit", "multibanco", "mb_way", "link"];
+  }
+  
+  // If a specific method was requested and it's valid for Stripe, prioritize it
+  if (requestedMethod && requestedMethod !== "card" && requestedMethod !== "direto") {
+    // Move requested method to front if present, or add it if valid
+    const validStripeMethods = ["card", "multibanco", "mb_way", "sepa_debit", "pix", "boleto", "link"];
+    if (validStripeMethods.includes(requestedMethod)) {
+      methods = methods.filter(m => m !== requestedMethod);
+      methods.unshift(requestedMethod);
+    }
+  }
+  
+  return methods;
 }
 
 async function createStripePayment(apiKey: string, amount: number, currency: string, customerEmail: string, description: string, returnUrl?: string, region?: "pt" | "br" | null) {
