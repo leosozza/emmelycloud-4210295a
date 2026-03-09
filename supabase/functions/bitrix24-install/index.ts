@@ -435,8 +435,8 @@ Deno.serve(async (req) => {
         ID: CONNECTOR_ID,
         NAME: "Emmely Messages",
         ICON: {
-          DATA_IMAGE: "data:image/svg+xml;base64," + btoa('<svg width="48" height="48" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg"><rect width="48" height="48" rx="12" fill="#722F37"/><text x="24" y="31" font-size="22" font-weight="bold" text-anchor="middle" fill="white" font-family="Arial">E</text></svg>'),
-          COLOR: { BACKGROUND: "#722F37", BORDER: "#5A252C" },
+          DATA_IMAGE: "data:image/svg+xml;base64," + btoa('<svg width="48" height="48" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg"><rect width="48" height="48" rx="12" fill="#2067b0"/><text x="24" y="31" font-size="22" font-weight="bold" text-anchor="middle" fill="white" font-family="Arial">E</text></svg>'),
+          COLOR: { BACKGROUND: "#2067b0", BORDER: "#1a5690" },
           SIZE: { WIDTH: 48, HEIGHT: 48 },
           POSITION: { TOP: 0, LEFT: 0 },
         },

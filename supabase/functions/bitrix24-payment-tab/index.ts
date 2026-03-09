@@ -852,7 +852,6 @@ function renderPaymentTab(opts: {
       var overlay = document.getElementById('baixa-overlay');
       txId = await ensureTxExists(txId, overlay, _baixaOriginalAmount, overlay.dataset.currency || 'EUR', overlay.dataset.description || '');
 
-    try {
       // Upload proof if provided
       var proofUrl = null;
       var fileInput = document.getElementById('baixa-proof');
@@ -906,7 +905,6 @@ function renderPaymentTab(opts: {
           }, function(r) {
             if (r.error()) {
               console.error('Invoice close error:', r.error());
-              // Fallback old API
               BX24.callMethod('crm.invoice.update', { ID: parseInt(invoiceId), fields: { STATUS_ID: 'P' } }, function() { resolve(null); });
             } else { resolve(null); }
           });
