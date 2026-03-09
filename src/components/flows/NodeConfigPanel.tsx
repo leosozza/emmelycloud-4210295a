@@ -444,7 +444,7 @@ export default function NodeConfigPanel({ data, onChange, onDelete, onClose }: N
           })()}
 
           {/* Bitrix24 CRM */}
-          {data.nodeType.startsWith("bitrix_") && (() => {
+          {data.nodeType.startsWith("bitrix_") && data.nodeType !== "bitrix_create_badge" && (() => {
             const crm = data.bitrixCrm || { entity: "lead", operation: "create", entityId: "", spaEntityTypeId: "", fields: [], resultVar: "", pipeline: "", stageId: "" };
             const updateCrm = (patch: Partial<FlowBitrixCRM>) => update({ bitrixCrm: { ...crm, ...patch } });
             const needsId = crm.operation === "get" || crm.operation === "update" || crm.operation === "delete";
