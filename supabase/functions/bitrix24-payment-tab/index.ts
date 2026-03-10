@@ -188,7 +188,7 @@ function renderPaymentTab(opts: {
       : `<span class="b24-dual-currency">≈ ${formatCurrency(valueEUR, "EUR")}</span>`;
 
     return `
-      <div class="b24-item${missingClass}">
+      <div class="b24-item ${statusClass}${missingClass}">
         <div class="b24-item-row">
           <div class="b24-item-left">
             <span class="b24-item-title">${label}</span>
