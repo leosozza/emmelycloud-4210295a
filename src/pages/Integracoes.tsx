@@ -45,6 +45,9 @@ import {
   QrCode,
   Wifi,
   LogOut,
+  ExternalLink,
+  HelpCircle,
+  ChevronRight,
 } from "lucide-react";
 import {
   Dialog,
