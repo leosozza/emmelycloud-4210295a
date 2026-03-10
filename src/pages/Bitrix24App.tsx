@@ -2904,13 +2904,15 @@ function countMissingFields(form: BaixaForm | undefined, deal: BaixaDeal): numbe
 // ==================== PLACEMENT PREVIEW VIEW ====================
 function PlacementPreviewView({ integration, memberId }: { integration: any; memberId: string | null }) {
   const [dealId, setDealId] = useState("8857");
-  const [iframeSrc, setIframeSrc] = useState("");
+  const [htmlContent, setHtmlContent] = useState("");
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
 
   const loadPreview = useCallback(() => {
     const mid = memberId || integration?.member_id || "";
     if (!mid) return;
     setLoading(true);
+    setError("");
     const url = `${SUPABASE_URL}/functions/v1/bitrix24-payment-tab`;
     const formData = new URLSearchParams();
     formData.append("member_id", mid);
@@ -2927,10 +2929,26 @@ function PlacementPreviewView({ integration, memberId }: { integration: any; mem
     })
       .then((r) => r.text())
       .then((html) => {
-        const blob = new Blob([html], { type: "text/html" });
-        setIframeSrc(URL.createObjectURL(blob));
+        // Strip Bitrix24 SDK script (won't work outside Bitrix iframe) and inject a mock
+        const bx24Mock = `<script>
+          window.BX24 = {
+            init: function(cb) { if(cb) cb(); },
+            callMethod: function() {},
+            fitWindow: function() {},
+            resizeWindow: function() {},
+            getPlacement: function() { return { options: { ID: "${dealId}" } }; },
+            getDomain: function() { return "preview"; }
+          };
+        </script>`;
+        const cleaned = html
+          .replace(/<script[^>]*src=["']https:\/\/api\.bitrix24\.com[^"']*["'][^>]*><\/script>/gi, bx24Mock)
+          .replace(/<script[^>]*src=["']https:\/\/cdn\.bitrix24\.com[^"']*["'][^>]*><\/script>/gi, "");
+        setHtmlContent(cleaned);
       })
-      .catch((e) => console.error("[PLACEMENT] Error:", e))
+      .catch((e) => {
+        console.error("[PLACEMENT] Error:", e);
+        setError(e.message || "Erro ao carregar");
+      })
       .finally(() => setLoading(false));
   }, [dealId, memberId, integration?.member_id]);
 
@@ -2963,22 +2981,31 @@ function PlacementPreviewView({ integration, memberId }: { integration: any; mem
         </CardContent>
       </Card>
 
-      {iframeSrc && (
+      {htmlContent && (
         <Card className="b24-card overflow-hidden">
           <div className="border-b border-border px-4 py-2 flex items-center gap-2 bg-muted/30">
             <ExternalLink className="h-3.5 w-3.5 text-muted-foreground" strokeWidth={1.5} />
             <span className="text-xs text-muted-foreground font-medium">CRM_DEAL_DETAIL_TAB — Deal #{dealId}</span>
           </div>
           <iframe
-            src={iframeSrc}
+            srcDoc={htmlContent}
             className="w-full border-0"
             style={{ minHeight: "700px" }}
+            sandbox="allow-scripts allow-same-origin"
             title="Payment Tab Preview"
           />
         </Card>
       )}
 
-      {!iframeSrc && !loading && (
+      {error && (
+        <Card className="b24-card">
+          <CardContent className="pt-5 text-center text-destructive">
+            <p className="text-sm">{error}</p>
+          </CardContent>
+        </Card>
+      )}
+
+      {!htmlContent && !loading && !error && (
         <Card className="b24-card">
           <CardContent className="pt-8 pb-8 text-center text-muted-foreground">
             <CreditCard className="h-10 w-10 mx-auto mb-3 opacity-30" strokeWidth={1.5} />
