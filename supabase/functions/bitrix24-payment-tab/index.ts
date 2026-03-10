@@ -390,10 +390,10 @@ function renderPaymentTab(opts: {
     </div>
     <div class="b24-progress-label">${paidPct}% pago</div>
     <div class="b24-summary-info">
-      <span>🏦 Gateway: <strong>${opts.gateway || "—"}</strong></span>
-      <span>💳 Método: <strong>${opts.paymentMethod || "—"}</strong></span>
-      ${opts.nextDueDate ? `<span>📅 Próx. vencimento: <strong>${formatDate(opts.nextDueDate)}</strong></span>` : `<span>📅 Próx. vencimento: <strong>—</strong></span>`}
-      <span>🕐 Criado: <strong>${opts.createdAt ? formatDate(opts.createdAt) : "—"}</strong></span>
+      <span>${icon("bank", 13)} Gateway: <strong>${opts.gateway || "—"}</strong></span>
+      <span>${icon("credit-card", 13)} Método: <strong>${opts.paymentMethod || "—"}</strong></span>
+      ${opts.nextDueDate ? `<span>${icon("calendar", 13)} Próx. vencimento: <strong>${formatDate(opts.nextDueDate)}</strong></span>` : `<span>${icon("calendar", 13)} Próx. vencimento: <strong>—</strong></span>`}
+      <span>${icon("clock", 13)} Criado: <strong>${opts.createdAt ? formatDate(opts.createdAt) : "—"}</strong></span>
     </div>
   </div>
 
