@@ -89,7 +89,7 @@ export function AppHeader({ onSearchClick }: { onSearchClick?: () => void }) {
               <DropdownMenuItem>Perfil</DropdownMenuItem>
               <DropdownMenuItem>Configurações</DropdownMenuItem>
               <DropdownMenuItem onClick={handleLogout}>
-                <LogOut className="mr-2 h-4 w-4" />
+                <LogOut className="mr-2 h-4 w-4" strokeWidth={1.5} />
                 Sair
               </DropdownMenuItem>
             </DropdownMenuContent>
