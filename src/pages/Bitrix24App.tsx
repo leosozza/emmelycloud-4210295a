@@ -2981,22 +2981,31 @@ function PlacementPreviewView({ integration, memberId }: { integration: any; mem
         </CardContent>
       </Card>
 
-      {iframeSrc && (
+      {htmlContent && (
         <Card className="b24-card overflow-hidden">
           <div className="border-b border-border px-4 py-2 flex items-center gap-2 bg-muted/30">
             <ExternalLink className="h-3.5 w-3.5 text-muted-foreground" strokeWidth={1.5} />
             <span className="text-xs text-muted-foreground font-medium">CRM_DEAL_DETAIL_TAB — Deal #{dealId}</span>
           </div>
           <iframe
-            src={iframeSrc}
+            srcDoc={htmlContent}
             className="w-full border-0"
             style={{ minHeight: "700px" }}
+            sandbox="allow-scripts allow-same-origin"
             title="Payment Tab Preview"
           />
         </Card>
       )}
 
-      {!iframeSrc && !loading && (
+      {error && (
+        <Card className="b24-card">
+          <CardContent className="pt-5 text-center text-destructive">
+            <p className="text-sm">{error}</p>
+          </CardContent>
+        </Card>
+      )}
+
+      {!htmlContent && !loading && !error && (
         <Card className="b24-card">
           <CardContent className="pt-8 pb-8 text-center text-muted-foreground">
             <CreditCard className="h-10 w-10 mx-auto mb-3 opacity-30" strokeWidth={1.5} />
