@@ -145,6 +145,7 @@ function renderPaymentTab(opts: {
   const paidPct = totalValue > 0 ? Math.round((paidValue / totalValue) * 100) : 0;
 
   const installmentRows = installments.map((inst) => {
+    const statusClass = inst.status === "paga" ? "status-paga" : inst.status === "atrasada" ? "status-atrasada" : inst.status === "vencendo" ? "status-vencendo" : "status-pendente";
     const s = getStatusColor(inst.status);
     const flowOptions = flows.map(f => `<option value="${f.id}">${f.name}</option>`).join("");
     const label = inst.is_down_payment ? "Entrada" : `Parcela ${inst.number}/${inst.total}`;
