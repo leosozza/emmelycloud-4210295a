@@ -407,36 +407,35 @@ function renderPaymentTab(opts: {
   <div class="b24-create-bar">
     <button class="b24-btn-primary" onclick="openCreateForm()">${icon("file-text", 14)} Criar Cobrança</button>
   </div>
-  \${noData ? noDataHtml : \`
+  ${noData ? noDataHtml : `
   <div class="b24-summary">
-    <div class="b24-summary-title">${icon("bank", 16)} Emmely Pay — \${(dealTitle || "Negócio").replace(/</g, "&lt;")}</div>
+    <div class="b24-summary-title">${icon("bank", 16)} Emmely Pay — ${(dealTitle || "Negócio").replace(/</g, "&lt;")}</div>
     <div class="b24-summary-grid">
       <div class="b24-summary-item">
         <div class="b24-summary-label">Total</div>
-        <div class="b24-summary-value">\${formatCurrency(totalValue, currency)} <span class="b24-dual-currency">≈ \${formatCurrency(totalValue * EUR_TO_BRL, "BRL")}</span></div>
+        <div class="b24-summary-value">${formatCurrency(totalValue, currency)} <span class="b24-dual-currency">≈ ${formatCurrency(totalValue * EUR_TO_BRL, "BRL")}</span></div>
       </div>
       <div class="b24-summary-item stat-paid">
         <div class="b24-summary-label">Pago</div>
-        <div class="b24-summary-value" style="color:var(--value-paid)">\${formatCurrency(paidValue, currency)} <span class="b24-dual-currency">≈ \${formatCurrency(paidValue * EUR_TO_BRL, "BRL")}</span></div>
+        <div class="b24-summary-value" style="color:var(--value-paid)">${formatCurrency(paidValue, currency)} <span class="b24-dual-currency">≈ ${formatCurrency(paidValue * EUR_TO_BRL, "BRL")}</span></div>
       </div>
       <div class="b24-summary-item stat-open">
         <div class="b24-summary-label">Em Aberto</div>
-        <div class="b24-summary-value" style="color:\${openValue > 0 ? 'var(--value-open)' : 'var(--value-paid)'}">\${formatCurrency(openValue, currency)} <span class="b24-dual-currency">≈ \${formatCurrency(openValue * EUR_TO_BRL, "BRL")}</span></div>
+        <div class="b24-summary-value" style="color:${openValue > 0 ? 'var(--value-open)' : 'var(--value-paid)'}">${formatCurrency(openValue, currency)} <span class="b24-dual-currency">≈ ${formatCurrency(openValue * EUR_TO_BRL, "BRL")}</span></div>
       </div>
     </div>
     <div class="b24-progress-wrap">
       <div class="b24-progress">
-        <div class="b24-progress-fill" style="width:\${paidPct}%"></div>
+        <div class="b24-progress-fill" style="width:${paidPct}%"></div>
       </div>
-      <div class="b24-progress-label">\${paidPct}%</div>
+      <div class="b24-progress-label">${paidPct}%</div>
     </div>
     <div class="b24-summary-info">
-      <span>${icon("bank", 13)} Gateway: <strong>\${opts.gateway || "—"}</strong></span>
-      <span>${icon("credit-card", 13)} Método: <strong>\${opts.paymentMethod || "—"}</strong></span>
-      \${opts.nextDueDate ? \`<span>${icon("calendar", 13)} Próx. vencimento: <strong>\${formatDate(opts.nextDueDate)}</strong></span>\` : \`<span>${icon("calendar", 13)} Próx. vencimento: <strong>—</strong></span>\`}
-      <span>${icon("clock", 13)} Criado: <strong>\${opts.createdAt ? formatDate(opts.createdAt) : "—"}</strong></span>
+      <span>${icon("bank", 13)} Gateway: <strong>${opts.gateway || "—"}</strong></span>
+      <span>${icon("credit-card", 13)} Método: <strong>${opts.paymentMethod || "—"}</strong></span>
+      ${opts.nextDueDate ? `<span>${icon("calendar", 13)} Próx. vencimento: <strong>${formatDate(opts.nextDueDate)}</strong></span>` : `<span>${icon("calendar", 13)} Próx. vencimento: <strong>—</strong></span>`}
+      <span>${icon("clock", 13)} Criado: <strong>${opts.createdAt ? formatDate(opts.createdAt) : "—"}</strong></span>
     </div>
-  </div>
   </div>
 
   <div class="b24-list">
