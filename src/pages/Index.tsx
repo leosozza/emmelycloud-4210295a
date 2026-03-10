@@ -112,7 +112,7 @@ const Index = () => {
       <div className="flex items-center justify-between flex-wrap gap-4">
         <div>
           <h1 className="text-2xl font-bold text-foreground">
-            {getGreeting()}{userName ? `, ${userName}` : ""} 👋
+            {getGreeting()}{userName ? `, ${userName}` : ""}
           </h1>
           <div className="flex items-center gap-2 mt-1">
             <p className="text-sm text-muted-foreground capitalize">{todayFormatted}</p>
