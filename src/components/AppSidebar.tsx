@@ -78,7 +78,7 @@ export function AppSidebar() {
       <SidebarHeader className="p-4">
         <div className="flex items-center gap-3">
           <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary">
-            <Scale className="h-5 w-5 text-primary-foreground" />
+            <Scale className="h-5 w-5 text-primary-foreground" strokeWidth={1.5} />
           </div>
           {!collapsed && (
             <div className="flex flex-col">
@@ -109,7 +109,7 @@ export function AppSidebar() {
                       className="text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground rounded-lg transition-all"
                       activeClassName="bg-sidebar-accent text-sidebar-accent-foreground font-semibold"
                     >
-                      <item.icon className="h-4 w-4" />
+                      <item.icon className="h-[18px] w-[18px]" strokeWidth={1.5} />
                       <span>{item.title}</span>
                     </NavLink>
                   </SidebarMenuButton>
@@ -133,7 +133,7 @@ export function AppSidebar() {
                       className="text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground rounded-lg transition-all"
                       activeClassName="bg-sidebar-accent text-sidebar-accent-foreground font-semibold"
                     >
-                      <item.icon className="h-4 w-4" />
+                      <item.icon className="h-[18px] w-[18px]" strokeWidth={1.5} />
                       <span>{item.title}</span>
                     </NavLink>
                   </SidebarMenuButton>
@@ -157,7 +157,7 @@ export function AppSidebar() {
                       className="text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground rounded-lg transition-all"
                       activeClassName="bg-sidebar-accent text-sidebar-accent-foreground font-semibold"
                     >
-                      <item.icon className="h-4 w-4" />
+                      <item.icon className="h-[18px] w-[18px]" strokeWidth={1.5} />
                       <span>{item.title}</span>
                     </NavLink>
                   </SidebarMenuButton>
@@ -181,7 +181,7 @@ export function AppSidebar() {
                       className="text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground rounded-lg transition-all"
                       activeClassName="bg-sidebar-accent text-sidebar-accent-foreground font-semibold"
                     >
-                      <item.icon className="h-4 w-4" />
+                      <item.icon className="h-[18px] w-[18px]" strokeWidth={1.5} />
                       <span>{item.title}</span>
                     </NavLink>
                   </SidebarMenuButton>

@@ -99,6 +99,9 @@
   * {
     @apply border-border;
   }
+  .lucide {
+    stroke-width: 1.5 !important;
+  }
   body {
     @apply bg-background text-foreground;
     font-family: 'Poppins', sans-serif;

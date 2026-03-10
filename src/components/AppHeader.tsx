@@ -35,7 +35,7 @@ export function AppHeader({ onSearchClick }: { onSearchClick?: () => void }) {
         {/* Logo */}
         <div className="flex items-center gap-2.5 shrink-0">
           <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary shadow-md">
-            <Scale className="h-4.5 w-4.5 text-primary-foreground" />
+            <Scale className="h-5 w-5 text-primary-foreground" strokeWidth={1.5} />
           </div>
           <div className="hidden sm:flex flex-col leading-none">
             <span className="text-sm font-extrabold tracking-tight text-foreground">Emmely Cloud</span>
@@ -48,7 +48,7 @@ export function AppHeader({ onSearchClick }: { onSearchClick?: () => void }) {
           onClick={onSearchClick}
           className="relative flex-1 max-w-md flex items-center gap-2 h-9 px-3.5 bg-muted rounded-lg text-muted-foreground text-sm hover:bg-muted/80 transition-colors border border-border/50"
         >
-          <Search className="h-4 w-4" />
+          <Search className="h-4 w-4" strokeWidth={1.5} />
           <span>Pesquisar...</span>
           <kbd className="ml-auto hidden sm:inline-flex h-5 items-center gap-0.5 rounded border bg-background px-1.5 font-mono text-[10px] font-medium text-muted-foreground">
             ⌘K
@@ -89,7 +89,7 @@ export function AppHeader({ onSearchClick }: { onSearchClick?: () => void }) {
               <DropdownMenuItem>Perfil</DropdownMenuItem>
               <DropdownMenuItem>Configurações</DropdownMenuItem>
               <DropdownMenuItem onClick={handleLogout}>
-                <LogOut className="mr-2 h-4 w-4" />
+                <LogOut className="mr-2 h-4 w-4" strokeWidth={1.5} />
                 Sair
               </DropdownMenuItem>
             </DropdownMenuContent>

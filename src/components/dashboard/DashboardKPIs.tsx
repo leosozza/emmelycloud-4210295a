@@ -27,8 +27,8 @@ function KPICard({ title, value, change, up, icon: Icon, description, accentClas
     >
       <Card className={`relative overflow-hidden p-4 border-l-4 ${accentClass} hover:shadow-md transition-shadow`}>
         <div className="flex items-start justify-between mb-3">
-          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/8">
-            <Icon className="h-4.5 w-4.5 text-primary" />
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10">
+            <Icon className="h-5 w-5 text-primary" strokeWidth={1.5} />
           </div>
           {change && (
             <div className={`flex items-center gap-0.5 text-xs font-semibold ${up ? "text-success" : "text-destructive"}`}>
