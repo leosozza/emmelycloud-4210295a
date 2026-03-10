@@ -883,7 +883,7 @@ function PagamentosTab() {
     setStripePtResult(null);
     try {
       const { data, error } = await supabase.functions.invoke("payment-create", {
-        body: { amount: 0.01, currency: "EUR", payment_method: "card", force_gateway: "stripe_pt", customer_data: { country: "Portugal", email: "test@test.com" }, description: "Teste Stripe PT" },
+        body: { amount: 1.00, currency: "EUR", payment_method: "card", force_gateway: "stripe_pt", customer_data: { country: "Portugal", email: "test@test.com" }, description: "Teste Stripe PT" },
       });
       if (error || data?.error) {
         setStripePtResult({ ok: false, error: data?.error || "Erro ao contactar Stripe PT" });
