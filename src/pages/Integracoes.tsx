@@ -976,6 +976,8 @@ function PagamentosTab() {
           <CredentialInput provider="stripe_pt" credentialKey="STRIPE_SECRET_KEY_PT" label="Secret Key (sk_...)" {...credProps} />
           <CredentialInput provider="stripe_pt" credentialKey="STRIPE_WEBHOOK_SECRET_PT" label="Webhook Secret (whsec_...)" {...credProps} />
 
+          <StripeSetupGuide variant="pt" />
+
           <WebhookUrlDisplay
             label="Webhook URL"
             url={`https://qohnsluvhyziovfynzlu.supabase.co/functions/v1/payment-webhook-stripe`}
