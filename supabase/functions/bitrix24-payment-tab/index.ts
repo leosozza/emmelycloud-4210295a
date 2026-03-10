@@ -542,7 +542,7 @@ function renderPaymentTab(opts: {
 <!-- Baixa (Reconciliation) Modal -->
 <div class="b24-form-overlay" id="baixa-overlay">
   <div class="b24-form-card">
-    <div class="b24-form-title">✓ Dar Baixa</div>
+    <div class="b24-form-title">${icon("check", 16)} Dar Baixa</div>
     <input type="hidden" id="baixa-tx-id">
     <input type="hidden" id="baixa-invoice-id">
     <input type="hidden" id="baixa-currency">
