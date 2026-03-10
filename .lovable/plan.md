@@ -1,37 +1,47 @@
 
 
-## Plan: Fix Smart Invoice Deal Field + Test Deal 8857 with "Direto"
+## Plano: Melhorar Apresentação Visual dos Ícones
 
-### Analysis
-The Bitrix24 HTML confirms the deal binding field is `PARENT_ID_2` (shown as "Negócio" in the Smart Invoice form). The current code already sends `parentId2` which is correct. The `ufCrm31Deal` field added previously is likely being ignored or causing issues — it's not a standard field for Smart Process type 31.
+### Diagnóstico
 
-The key issue: in `crm.item.add` REST API for Smart Processes, field names use **camelCase** format. The deal binding is `parentId2` (parent entity of type 2 = Deal). There is no separate `ufCrm31Deal` field — that was a mistaken assumption. The `parentId2` field alone should handle the deal link correctly.
+Os ícones usam lucide-react (biblioteca profissional), mas a apresentação visual é inconsistente:
 
-### Changes
+1. **Sidebar**: ícones a `h-4 w-4` (16px) sem container — parecem pequenos e "soltos"
+2. **KPI Cards**: container `bg-primary/8` muito subtil, ícone a `h-4.5 w-4.5` (tamanho não-standard do Tailwind)
+3. **Header**: ícones sem tratamento visual uniforme
+4. **Dashboard**: mistura de tamanhos e estilos sem padrão
 
-1. **Remove `ufCrm31Deal`** from the `crm.item.add` call — it's not a real field and may cause warnings. Keep only `parentId2` which is confirmed correct from the HTML.
+### Solução
 
-2. **Test with deal 8857** using `bodyOverrides`:
-   - `force_gateway: "direto"` — crediário próprio, no external payment gateway
-   - 3 parcels: €200 each (01/02, 03/03, 02/04)
-   - Parcela 1 should be marked `confirmed` after creation
-   - Verify Smart Invoices appear in `/crm/type/31/` kanban with deal and contact linked
+Padronizar todos os ícones com `strokeWidth={1.5}` (mais elegante que o default 2) e containers consistentes com fundo suave e bordas arredondadas.
 
-### File changed
-- `supabase/functions/bitrix24-payment-webhook/index.ts` — remove `ufCrm31Deal` line (line 308)
+### Alterações
 
-### Test
-After deploy, call the webhook with:
-```json
-{
-  "deal_id": 8857,
-  "bodyOverrides": {
-    "force_gateway": "direto",
-    "total_amount": 600,
-    "num_installments": 3,
-    "first_due_date": "2025-02-01",
-    "interval_days": 30
-  }
-}
-```
+#### 1. `src/components/AppSidebar.tsx`
+- Ícones da sidebar: aumentar para `h-[18px] w-[18px]` com `strokeWidth={1.5}`
+- Ícone do logo: manter `h-5 w-5` com `strokeWidth={1.5}`
+
+#### 2. `src/components/dashboard/DashboardKPIs.tsx`
+- Container do ícone: `h-10 w-10 rounded-xl bg-primary/10` (mais visível)
+- Ícone: `h-5 w-5 strokeWidth={1.5}`
+
+#### 3. `src/components/AppHeader.tsx`
+- Ícones de ação: `strokeWidth={1.5}` no Search e LogOut
+- Logo: `strokeWidth={1.5}`
+
+#### 4. `src/components/NotificationCenter.tsx`
+- Bell e ícones de tipo: `strokeWidth={1.5}`
+
+#### 5. Global — `src/index.css`
+- Adicionar regra CSS global para todos os SVGs lucide: `stroke-width: 1.5` como override base, garantindo consistência mesmo em componentes que não passam a prop
+
+### Ficheiros a Modificar
+
+| Ficheiro | Alteração |
+|---|---|
+| `src/index.css` | Regra global `.lucide { stroke-width: 1.5 !important; }` |
+| `src/components/AppSidebar.tsx` | Ícones maiores (18px) com strokeWidth 1.5 |
+| `src/components/dashboard/DashboardKPIs.tsx` | Container maior, ícone 20px, strokeWidth 1.5 |
+| `src/components/AppHeader.tsx` | strokeWidth 1.5 nos ícones |
+| `src/components/NotificationCenter.tsx` | strokeWidth 1.5 nos ícones |
 
