@@ -271,6 +271,14 @@ Deno.serve(async (req) => {
       });
     }
 
+    // Stripe minimum is 0.50 for most currencies; Asaas minimum is 5.00 BRL
+    const minAmount = (currency === "BRL") ? 5.0 : 0.50;
+    if (amount < minAmount && payment_method !== "direto" && force_gateway !== "direto") {
+      return new Response(JSON.stringify({ error: `Valor mínimo para cobrança é ${currency} ${minAmount.toFixed(2)}. Valor enviado: ${currency} ${amount.toFixed(2)}` }), {
+        status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     // Determine gateway: force_gateway overrides auto-detection
     let gateway: "stripe" | "asaas";
     let stripeRegion: "pt" | "br" | null = null;
