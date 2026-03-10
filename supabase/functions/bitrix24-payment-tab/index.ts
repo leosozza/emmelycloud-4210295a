@@ -1246,9 +1246,35 @@ Deno.serve(async (req) => {
       dealCurrency = deal.CURRENCY_ID || "EUR";
       contactId = deal.CONTACT_ID || "";
       dealCreatedAt = deal.DATE_CREATE || deal.CREATED_DATE || "";
-      // Read UF_CRM_EMMELY_* fields
-      dealGateway = deal.UF_CRM_EMMELY_GATEWAY || "";
-      dealPaymentMethod = deal.UF_CRM_EMMELY_PAYMENT_METHOD || "";
+      // Read UF_CRM_EMMELY_* fields (list fields return item IDs, not labels)
+      const rawGateway = deal.UF_CRM_EMMELY_GATEWAY || "";
+      const rawMethod = deal.UF_CRM_EMMELY_PAYMENT_METHOD || "";
+
+      // Resolve list field IDs to display values
+      if (rawGateway || rawMethod) {
+        try {
+          const fieldsResult = await callBitrix(endpoint, accessToken, "crm.deal.fields", {});
+          const fields = fieldsResult.result || {};
+          const resolveListValue = (fieldDef: any, rawVal: string): string => {
+            if (!fieldDef || !rawVal) return "";
+            const items = fieldDef.items || fieldDef.ITEMS || [];
+            if (Array.isArray(items)) {
+              const match = items.find((item: any) => String(item.ID) === String(rawVal) || String(item.VALUE) === String(rawVal));
+              if (match) return match.VALUE || match.value || rawVal;
+            }
+            // If the raw value is purely numeric, it's an unresolved list ID — return empty
+            if (/^\d+$/.test(rawVal)) return "";
+            return rawVal;
+          };
+          dealGateway = resolveListValue(fields.UF_CRM_EMMELY_GATEWAY, rawGateway);
+          dealPaymentMethod = resolveListValue(fields.UF_CRM_EMMELY_PAYMENT_METHOD, rawMethod);
+        } catch (e) {
+          console.error("[PAYMENT-TAB] Error resolving list fields:", e);
+          // Fallback: if numeric, skip; otherwise use raw
+          dealGateway = /^\d+$/.test(rawGateway) ? "" : rawGateway;
+          dealPaymentMethod = /^\d+$/.test(rawMethod) ? "" : rawMethod;
+        }
+      }
       if (contactId) {
         const contactResult = await callBitrix(endpoint, accessToken, "crm.contact.get", { ID: contactId });
         const contact = contactResult.result || {};
