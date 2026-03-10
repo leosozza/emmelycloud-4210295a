@@ -1363,6 +1363,7 @@ function ChatbotTab() {
   );
 }
 
+          <StripeSetupGuide variant="pt" />
 
 // ─── Instances Tab ───────────────────────────────────────────────────────────
 
