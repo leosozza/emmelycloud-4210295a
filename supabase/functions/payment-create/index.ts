@@ -48,18 +48,15 @@ function getStripePaymentMethods(region?: "pt" | "br" | null, requestedMethod?: 
 }
 
 async function createStripePayment(apiKey: string, amount: number, currency: string, customerEmail: string, description: string, returnUrl?: string, region?: "pt" | "br" | null, requestedMethod?: string | null) {
-  // Create a Checkout Session with regional payment methods
+  // Create a Checkout Session — do NOT hardcode payment_method_types
+  // Instead, omit them so Stripe uses "automatic_payment_methods" (default behavior)
+  // which only shows methods activated in the merchant's dashboard
   const params = new URLSearchParams();
   params.append("mode", "payment");
   params.append("line_items[0][price_data][currency]", currency.toLowerCase());
   params.append("line_items[0][price_data][unit_amount]", Math.round(amount * 100).toString());
   params.append("line_items[0][price_data][product_data][name]", description);
   params.append("line_items[0][quantity]", "1");
-
-  const paymentMethods = getStripePaymentMethods(region, requestedMethod);
-  for (const pm of paymentMethods) {
-    params.append("payment_method_types[]", pm);
-  }
 
   if (customerEmail) params.append("customer_email", customerEmail);
 

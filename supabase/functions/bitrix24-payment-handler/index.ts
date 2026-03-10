@@ -241,13 +241,7 @@ Deno.serve(async (req) => {
       params.append("line_items[0][price_data][product_data][name]", description);
       params.append("line_items[0][quantity]", "1");
 
-      // Regional payment methods based on currency
-      const paymentMethods = currency === "BRL"
-        ? ["card", "boleto", "pix", "link"]
-        : ["card", "multibanco", "mb_way", "sepa_debit", "link"];
-      for (const pm of paymentMethods) {
-        params.append("payment_method_types[]", pm);
-      }
+      // Don't hardcode payment_method_types — let Stripe auto-select based on dashboard settings
 
       const customerEmail = body.CUSTOMER_EMAIL || body.customer_email || "";
       if (customerEmail) params.append("customer_email", customerEmail);
