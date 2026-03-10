@@ -363,6 +363,81 @@ function WebhookUrlDisplay({ label, url, hint }: { label: string; url: string; h
   );
 }
 
+// ─── Stripe Setup Guide ──────────────────────────────────────────────────────
+
+function StripeSetupGuide({ variant = "pt" }: { variant?: "pt" | "br" }) {
+  const [open, setOpen] = useState(false);
+
+  const steps = [
+    {
+      title: "Criar conta Stripe",
+      desc: variant === "pt"
+        ? "Aceda a stripe.com e crie uma conta com os dados da empresa portuguesa."
+        : "Aceda a stripe.com e crie uma conta com os dados da empresa brasileira.",
+      link: "https://dashboard.stripe.com/register",
+      linkLabel: "Criar conta",
+    },
+    {
+      title: "Ativar a conta",
+      desc: "Complete o onboarding: dados da empresa, conta bancária e documento de identidade. A Stripe pode levar 1-2 dias úteis para verificar.",
+    },
+    {
+      title: "Obter a Secret Key",
+      desc: "No Dashboard → Developers → API Keys, copie a Secret key (começa com sk_live_ ou sk_test_). ⚠️ Não use a Publishable key.",
+      link: "https://dashboard.stripe.com/apikeys",
+      linkLabel: "Abrir API Keys",
+    },
+    {
+      title: "Criar o Webhook",
+      desc: "Vá a Developers → Webhooks → Add endpoint. Cole o URL do webhook (acima) e selecione os eventos: payment_intent.succeeded, payment_intent.payment_failed, checkout.session.completed, charge.refunded.",
+      link: "https://dashboard.stripe.com/webhooks/create",
+      linkLabel: "Criar Webhook",
+    },
+    {
+      title: "Copiar o Webhook Secret",
+      desc: "Após criar o webhook, clique nele e copie o Signing secret (começa com whsec_). Cole no campo 'Webhook Secret' acima.",
+    },
+  ];
+
+  return (
+    <Collapsible open={open} onOpenChange={setOpen}>
+      <CollapsibleTrigger asChild>
+        <button className="flex items-center gap-1.5 text-xs text-primary hover:text-primary/80 transition-colors w-full py-1">
+          <HelpCircle className="h-3.5 w-3.5 shrink-0" />
+          <span>Como obter as chaves da Stripe?</span>
+          <ChevronRight className={`h-3 w-3 ml-auto transition-transform ${open ? "rotate-90" : ""}`} />
+        </button>
+      </CollapsibleTrigger>
+      <CollapsibleContent>
+        <div className="mt-2 space-y-2 rounded-lg border border-border bg-muted/30 p-3">
+          {steps.map((step, i) => (
+            <div key={i} className="flex gap-2.5">
+              <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary text-[10px] font-bold mt-0.5">
+                {i + 1}
+              </div>
+              <div className="space-y-0.5 min-w-0">
+                <p className="text-xs font-medium text-foreground">{step.title}</p>
+                <p className="text-[11px] text-muted-foreground leading-relaxed">{step.desc}</p>
+                {step.link && (
+                  <a
+                    href={step.link}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 text-[11px] text-primary hover:underline mt-0.5"
+                  >
+                    <ExternalLink className="h-3 w-3" />
+                    {step.linkLabel}
+                  </a>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      </CollapsibleContent>
+    </Collapsible>
+  );
+}
+
 // ─── WhatsApp QRCode Card ────────────────────────────────────────────────────
 
 function WhatsAppQRCodeCard({ credProps }: { credProps: any }) {
