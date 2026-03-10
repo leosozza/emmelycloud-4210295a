@@ -2904,13 +2904,15 @@ function countMissingFields(form: BaixaForm | undefined, deal: BaixaDeal): numbe
 // ==================== PLACEMENT PREVIEW VIEW ====================
 function PlacementPreviewView({ integration, memberId }: { integration: any; memberId: string | null }) {
   const [dealId, setDealId] = useState("8857");
-  const [iframeSrc, setIframeSrc] = useState("");
+  const [htmlContent, setHtmlContent] = useState("");
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
 
   const loadPreview = useCallback(() => {
     const mid = memberId || integration?.member_id || "";
     if (!mid) return;
     setLoading(true);
+    setError("");
     const url = `${SUPABASE_URL}/functions/v1/bitrix24-payment-tab`;
     const formData = new URLSearchParams();
     formData.append("member_id", mid);
@@ -2927,10 +2929,26 @@ function PlacementPreviewView({ integration, memberId }: { integration: any; mem
     })
       .then((r) => r.text())
       .then((html) => {
-        const blob = new Blob([html], { type: "text/html" });
-        setIframeSrc(URL.createObjectURL(blob));
+        // Strip Bitrix24 SDK script (won't work outside Bitrix iframe) and inject a mock
+        const bx24Mock = `<script>
+          window.BX24 = {
+            init: function(cb) { if(cb) cb(); },
+            callMethod: function() {},
+            fitWindow: function() {},
+            resizeWindow: function() {},
+            getPlacement: function() { return { options: { ID: "${dealId}" } }; },
+            getDomain: function() { return "preview"; }
+          };
+        </script>`;
+        const cleaned = html
+          .replace(/<script[^>]*src=["']https:\/\/api\.bitrix24\.com[^"']*["'][^>]*><\/script>/gi, bx24Mock)
+          .replace(/<script[^>]*src=["']https:\/\/cdn\.bitrix24\.com[^"']*["'][^>]*><\/script>/gi, "");
+        setHtmlContent(cleaned);
       })
-      .catch((e) => console.error("[PLACEMENT] Error:", e))
+      .catch((e) => {
+        console.error("[PLACEMENT] Error:", e);
+        setError(e.message || "Erro ao carregar");
+      })
       .finally(() => setLoading(false));
   }, [dealId, memberId, integration?.member_id]);
 
