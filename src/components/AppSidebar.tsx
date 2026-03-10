@@ -78,7 +78,7 @@ export function AppSidebar() {
       <SidebarHeader className="p-4">
         <div className="flex items-center gap-3">
           <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary">
-            <Scale className="h-5 w-5 text-primary-foreground" />
+            <Scale className="h-5 w-5 text-primary-foreground" strokeWidth={1.5} />
           </div>
           {!collapsed && (
             <div className="flex flex-col">
