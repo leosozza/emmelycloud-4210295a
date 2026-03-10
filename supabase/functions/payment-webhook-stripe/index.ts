@@ -188,11 +188,22 @@ Deno.serve(async (req) => {
     const body = await req.text();
     const sigHeader = req.headers.get("stripe-signature") || "";
 
-    // Verify webhook signature
-    const webhookSecret = await getCredential(supabase, "stripe", "STRIPE_WEBHOOK_SECRET");
-    if (webhookSecret && sigHeader) {
-      const valid = await verifyStripeSignature(body, sigHeader, webhookSecret);
-      if (!valid) {
+    // Verify webhook signature against all configured secrets (legacy, PT, BR)
+    const [secretLegacy, secretPt, secretBr] = await Promise.all([
+      getCredential(supabase, "stripe", "STRIPE_WEBHOOK_SECRET"),
+      getCredential(supabase, "stripe_pt", "STRIPE_WEBHOOK_SECRET_PT"),
+      getCredential(supabase, "stripe_br", "STRIPE_WEBHOOK_SECRET_BR"),
+    ]);
+    const allSecrets = [secretLegacy, secretPt, secretBr].filter(Boolean) as string[];
+    if (allSecrets.length > 0 && sigHeader) {
+      let validSignature = false;
+      for (const secret of allSecrets) {
+        if (await verifyStripeSignature(body, sigHeader, secret)) {
+          validSignature = true;
+          break;
+        }
+      }
+      if (!validSignature) {
         return new Response(JSON.stringify({ error: "Invalid signature" }), {
           status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
