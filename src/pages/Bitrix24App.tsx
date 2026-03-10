@@ -304,6 +304,7 @@ const Bitrix24App = () => {
         {view === "mapeamento" && <MapeamentoView integrationId={integration?.id} memberId={memberId || undefined} />}
         {view === "pagamentos" && <PagamentosView integration={integration} onRefresh={() => memberId && fetchData(memberId)} />}
         {view === "baixa" && <BaixaCarteiraView integration={integration} />}
+        {view === "placement" && <PlacementPreviewView integration={integration} memberId={memberId} />}
         {view === "empresas" && <EmpresasView />}
         {view === "relatorios" && <RelatoriosView />}
       </main>
