@@ -163,7 +163,7 @@ function renderPaymentTab(opts: {
     const meta = inst.metadata || {};
     const discountInfo = meta.discount_amount > 0 ? `<span style="color:#e6a817;font-size:11px">Desconto: ${formatCurrency(meta.discount_amount, inst.currency)} — ${meta.discount_reason || ''}</span>` : "";
     const paidAmountInfo = meta.paid_amount != null && inst.status === "paga" ? `<span style="color:var(--value-paid);font-size:11px">Pago: ${formatCurrency(meta.paid_amount, inst.currency)}</span>` : "";
-    const proofInfo = meta.proof_url ? `<a href="${meta.proof_url}" target="_blank" class="b24-link" style="font-size:11px">📎 Comprovante</a>` : "";
+    const proofInfo = meta.proof_url ? `<a href="${meta.proof_url}" target="_blank" class="b24-link" style="font-size:11px">${icon("paperclip", 12)} Comprovante</a>` : "";
 
     // Serialize installment data for JS
     const instJson = JSON.stringify({
