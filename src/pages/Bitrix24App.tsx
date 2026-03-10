@@ -2904,15 +2904,22 @@ function countMissingFields(form: BaixaForm | undefined, deal: BaixaDeal): numbe
 // ==================== PLACEMENT PREVIEW VIEW ====================
 function PlacementPreviewView({ integration, memberId }: { integration: any; memberId: string | null }) {
   const [dealId, setDealId] = useState("8857");
+  const [memberIdInput, setMemberIdInput] = useState(memberId || integration?.member_id || "");
   const [htmlContent, setHtmlContent] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
   const loadPreview = useCallback(() => {
-    const mid = memberId || integration?.member_id || "";
-    if (!mid) return;
+    const mid = (memberIdInput || memberId || integration?.member_id || "").trim();
+    if (!mid) {
+      setError("Informe o Member ID da integração para carregar o placement.");
+      return;
+    }
+
     setLoading(true);
     setError("");
+    setHtmlContent("");
+
     const url = `${SUPABASE_URL}/functions/v1/bitrix24-payment-tab`;
     const formData = new URLSearchParams();
     formData.append("member_id", mid);
@@ -2950,11 +2957,16 @@ function PlacementPreviewView({ integration, memberId }: { integration: any; mem
         setError(e.message || "Erro ao carregar");
       })
       .finally(() => setLoading(false));
-  }, [dealId, memberId, integration?.member_id]);
+  }, [dealId, memberIdInput, memberId, integration?.member_id]);
+
+  useEffect(() => {
+    const fallbackMid = memberId || integration?.member_id || "";
+    if (fallbackMid && !memberIdInput) setMemberIdInput(fallbackMid);
+  }, [memberId, integration?.member_id, memberIdInput]);
 
   useEffect(() => {
     if (memberId || integration?.member_id) loadPreview();
-  }, []);
+  }, [memberId, integration?.member_id, loadPreview]);
 
   return (
     <div className="p-6 space-y-4">
@@ -2965,12 +2977,19 @@ function PlacementPreviewView({ integration, memberId }: { integration: any; mem
 
       <Card className="b24-card">
         <CardContent className="pt-5">
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-3">
+            <Label className="text-sm font-medium shrink-0">Member ID:</Label>
+            <Input
+              value={memberIdInput}
+              onChange={(e) => setMemberIdInput(e.target.value)}
+              placeholder="Ex: bea4c89b89c5c33f21450b1a633e6fb1"
+              className="min-w-[260px] flex-1"
+            />
             <Label className="text-sm font-medium shrink-0">Deal ID:</Label>
             <Input
               value={dealId}
               onChange={(e) => setDealId(e.target.value)}
-              placeholder="Ex: 8857"
+              placeholder="Ex: 10581"
               className="max-w-[160px]"
             />
             <Button onClick={loadPreview} disabled={loading || !dealId} size="sm">
