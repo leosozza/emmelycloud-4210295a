@@ -61,6 +61,26 @@ function formatCurrency(value: number, currency: string): string {
   return new Intl.NumberFormat("pt-PT", { style: "currency", currency: currency || "EUR" }).format(value);
 }
 
+function icon(name: string, size = 14): string {
+  const s = `width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;flex-shrink:0"`;
+  const icons: Record<string, string> = {
+    bank: `<svg ${s}><rect x="1" y="6" width="22" height="15" rx="2"/><path d="M1 10h22"/><path d="M7 15h0"/><path d="M12 15h0"/></svg>`,
+    "credit-card": `<svg ${s}><rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>`,
+    calendar: `<svg ${s}><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>`,
+    clock: `<svg ${s}><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>`,
+    pencil: `<svg ${s}><path d="M17 3a2.85 2.85 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/><path d="m15 5 4 4"/></svg>`,
+    link: `<svg ${s}><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>`,
+    check: `<svg ${s}><polyline points="20 6 9 17 4 12"/></svg>`,
+    "check-circle": `<svg ${s}><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>`,
+    send: `<svg ${s}><path d="m22 2-7 20-4-9-9-4Z"/><path d="m22 2-11 11"/></svg>`,
+    "alert-triangle": `<svg ${s}><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>`,
+    "file-text": `<svg ${s}><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><line x1="10" y1="9" x2="8" y2="9"/></svg>`,
+    paperclip: `<svg ${s}><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>`,
+    building: `<svg ${s}><rect x="4" y="2" width="16" height="20" rx="2"/><path d="M9 22v-4h6v4"/><path d="M8 6h.01"/><path d="M16 6h.01"/><path d="M12 6h.01"/><path d="M12 10h.01"/><path d="M12 14h.01"/><path d="M16 10h.01"/><path d="M16 14h.01"/><path d="M8 10h.01"/><path d="M8 14h.01"/></svg>`,
+  };
+  return icons[name] || "";
+}
+
 function formatDate(dateStr: string | null): string {
   if (!dateStr) return "—";
   try {
@@ -137,13 +157,13 @@ function renderPaymentTab(opts: {
     if (!inst.value || inst.value <= 0) missingFields.push("valor");
     const hasMissing = missingFields.length > 0 && inst.status !== "paga";
     const missingClass = hasMissing ? " has-missing" : "";
-    const missingIndicator = hasMissing ? `<span class="b24-missing-icon" title="Campos em falta: ${missingFields.join(', ')}">⚠ ${missingFields.length} campo(s)</span>` : "";
+    const missingIndicator = hasMissing ? `<span class="b24-missing-icon" title="Campos em falta: ${missingFields.join(', ')}">${icon("alert-triangle", 12)} ${missingFields.length} campo(s)</span>` : "";
 
     // Discount/paid info from metadata
     const meta = inst.metadata || {};
     const discountInfo = meta.discount_amount > 0 ? `<span style="color:#e6a817;font-size:11px">Desconto: ${formatCurrency(meta.discount_amount, inst.currency)} — ${meta.discount_reason || ''}</span>` : "";
     const paidAmountInfo = meta.paid_amount != null && inst.status === "paga" ? `<span style="color:var(--value-paid);font-size:11px">Pago: ${formatCurrency(meta.paid_amount, inst.currency)}</span>` : "";
-    const proofInfo = meta.proof_url ? `<a href="${meta.proof_url}" target="_blank" class="b24-link" style="font-size:11px">📎 Comprovante</a>` : "";
+    const proofInfo = meta.proof_url ? `<a href="${meta.proof_url}" target="_blank" class="b24-link" style="font-size:11px">${icon("paperclip", 12)} Comprovante</a>` : "";
 
     // Serialize installment data for JS
     const instJson = JSON.stringify({
@@ -177,27 +197,27 @@ function renderPaymentTab(opts: {
           </div>
           <span class="b24-badge" style="--badge-bg:${s.bg};--badge-bg-dark:${s.bgDark};--badge-text:${s.text};--badge-text-dark:${s.textDark}">${s.label}</span>
         </div>
-        ${inst.company_name ? `<div class="b24-item-meta"><span style="font-weight:600">🏢 ${inst.company_name}</span></div>` : ""}
+        ${inst.company_name ? `<div class="b24-item-meta"><span style="font-weight:600">${icon("building", 13)} ${inst.company_name}</span></div>` : ""}
         <div class="b24-item-meta">
           ${inst.due_date
-            ? `<span>📅 Vence: ${formatDate(inst.due_date)}</span>`
-            : `<span onclick='openEditModal(${instJson})' class="b24-missing b24-clickable" title="Clique para definir">📅 Vencimento: ⚠ Definir</span>`}
-          ${inst.paid_at ? `<span>✅ Pago: ${formatDate(inst.paid_at)}</span>` : ""}
+            ? `<span>${icon("calendar", 13)} Vence: ${formatDate(inst.due_date)}</span>`
+            : `<span onclick='openEditModal(${instJson})' class="b24-missing b24-clickable" title="Clique para definir">${icon("calendar", 13)} Vencimento: ${icon("alert-triangle", 11)} Definir</span>`}
+          ${inst.paid_at ? `<span>${icon("check-circle", 13)} Pago: ${formatDate(inst.paid_at)}</span>` : ""}
           ${inst.payment_method
-            ? `<span>💳 ${inst.payment_method}</span>`
-            : `<span onclick='openEditModal(${instJson})' class="b24-missing b24-clickable" title="Clique para definir">💳 Método: ⚠ Definir</span>`}
+            ? `<span>${icon("credit-card", 13)} ${inst.payment_method}</span>`
+            : `<span onclick='openEditModal(${instJson})' class="b24-missing b24-clickable" title="Clique para definir">${icon("credit-card", 13)} Método: ${icon("alert-triangle", 11)} Definir</span>`}
           ${totalLabel}
         </div>
         ${discountInfo || paidAmountInfo || proofInfo ? `<div class="b24-item-meta">${paidAmountInfo} ${discountInfo} ${proofInfo}</div>` : ""}
         ${inst.description ? `<div class="b24-item-desc">${inst.description}</div>` : ""}
-        ${inst.payment_url && inst.status !== "paga" ? `<div class="b24-link-row"><a href="${inst.payment_url}" target="_blank" class="b24-link">Link de pagamento</a><button class="b24-btn-copy" onclick="copyLink(this,'${inst.payment_url.replace(/'/g, "\\'")}')" title="Copiar link"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button></div>` : ""}
-        ${inst.invoice_id ? `<div class="b24-link-row"><a href="javascript:void(0)" onclick="openInvoice(${inst.invoice_id})" class="b24-link">📄 Ver Fatura #${inst.invoice_id}</a></div>` : ""}
+        ${inst.payment_url && inst.status !== "paga" ? `<div class="b24-link-row"><a href="${inst.payment_url}" target="_blank" class="b24-link">Link de pagamento</a><button class="b24-btn-copy" onclick="copyLink(this,'${inst.payment_url.replace(/'/g, "\\'")}')" title="Copiar link"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button></div>` : ""}
+        ${inst.invoice_id ? `<div class="b24-link-row"><a href="javascript:void(0)" onclick="openInvoice(${inst.invoice_id})" class="b24-link">${icon("file-text", 13)} Ver Fatura #${inst.invoice_id}</a></div>` : ""}
         ${inst.status !== "paga" ? `
           <div class="b24-item-actions">
-            <button onclick='openEditModal(${instJson})' class="b24-btn-action" title="Editar Parcela">✏ Editar</button>
-            <button onclick='generatePaymentLink(${instJson})' class="b24-btn-action" title="Gerar Link de Pagamento">🔗 Link</button>
-            <button onclick='openBaixaModal(${instJson})' class="b24-btn-action b24-btn-baixa" title="Dar Baixa">✓ Baixa</button>
-            ${contactPhone && flows.length > 0 ? `<button onclick='toggleFlowRow("${inst.id}")' class="b24-btn-action b24-btn-fluxo" title="Enviar Fluxo">📤 Fluxo</button>` : ""}
+            <button onclick='openEditModal(${instJson})' class="b24-btn-action" title="Editar Parcela">${icon("pencil", 13)} Editar</button>
+            <button onclick='generatePaymentLink(${instJson})' class="b24-btn-action" title="Gerar Link de Pagamento">${icon("link", 13)} Link</button>
+            <button onclick='openBaixaModal(${instJson})' class="b24-btn-action b24-btn-baixa" title="Dar Baixa">${icon("check", 13)} Baixa</button>
+            ${contactPhone && flows.length > 0 ? `<button onclick='toggleFlowRow("${inst.id}")' class="b24-btn-action b24-btn-fluxo" title="Enviar Fluxo">${icon("send", 13)} Fluxo</button>` : ""}
           </div>
           ${contactPhone && flows.length > 0 ? `
           <div class="b24-item-actions" id="flow-row-${inst.id}" style="display:none">
@@ -319,7 +339,7 @@ function renderPaymentTab(opts: {
     .b24-summary-info { display: flex; gap: 16px; flex-wrap: wrap; font-size: 12px; color: var(--text-secondary); margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--border-color); }
     .b24-summary-info span { display: inline-flex; align-items: center; gap: 4px; }
     .b24-summary-info strong { font-weight: 600; color: var(--text-primary); }
-    .b24-dual-currency { font-size: 11px; color: var(--text-secondary); font-weight: 400; }
+    .b24-dual-currency { font-size: 10px; color: var(--text-secondary); font-weight: 400; white-space: nowrap; }
     .b24-dates-preview { background: var(--bg-page); border: 1px solid var(--border-color); border-radius: 4px; padding: 8px 12px; margin-top: 8px; font-size: 12px; }
     .b24-dates-preview div { padding: 2px 0; color: var(--text-secondary); }
 
@@ -370,10 +390,10 @@ function renderPaymentTab(opts: {
     </div>
     <div class="b24-progress-label">${paidPct}% pago</div>
     <div class="b24-summary-info">
-      <span>🏦 Gateway: <strong>${opts.gateway || "—"}</strong></span>
-      <span>💳 Método: <strong>${opts.paymentMethod || "—"}</strong></span>
-      ${opts.nextDueDate ? `<span>📅 Próx. vencimento: <strong>${formatDate(opts.nextDueDate)}</strong></span>` : `<span>📅 Próx. vencimento: <strong>—</strong></span>`}
-      <span>🕐 Criado: <strong>${opts.createdAt ? formatDate(opts.createdAt) : "—"}</strong></span>
+      <span>${icon("bank", 13)} Gateway: <strong>${opts.gateway || "—"}</strong></span>
+      <span>${icon("credit-card", 13)} Método: <strong>${opts.paymentMethod || "—"}</strong></span>
+      ${opts.nextDueDate ? `<span>${icon("calendar", 13)} Próx. vencimento: <strong>${formatDate(opts.nextDueDate)}</strong></span>` : `<span>${icon("calendar", 13)} Próx. vencimento: <strong>—</strong></span>`}
+      <span>${icon("clock", 13)} Criado: <strong>${opts.createdAt ? formatDate(opts.createdAt) : "—"}</strong></span>
     </div>
   </div>
 
@@ -466,7 +486,7 @@ function renderPaymentTab(opts: {
 <!-- Edit Installment Modal -->
 <div class="b24-form-overlay" id="edit-overlay">
   <div class="b24-form-card">
-    <div class="b24-form-title">✏ Editar Parcela</div>
+    <div class="b24-form-title">${icon("pencil", 16)} Editar Parcela</div>
     <input type="hidden" id="edit-tx-id">
     <input type="hidden" id="edit-invoice-id">
     <input type="hidden" id="edit-original-total">
@@ -522,7 +542,7 @@ function renderPaymentTab(opts: {
 <!-- Baixa (Reconciliation) Modal -->
 <div class="b24-form-overlay" id="baixa-overlay">
   <div class="b24-form-card">
-    <div class="b24-form-title">✓ Dar Baixa</div>
+    <div class="b24-form-title">${icon("check", 16)} Dar Baixa</div>
     <input type="hidden" id="baixa-tx-id">
     <input type="hidden" id="baixa-invoice-id">
     <input type="hidden" id="baixa-currency">

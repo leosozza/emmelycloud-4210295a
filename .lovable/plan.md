@@ -1,51 +1,37 @@
 
 
-## Problem
+## Plan: Fix Smart Invoice Deal Field + Test Deal 8857 with "Direto"
 
-The Payment Tab placement has two main issues:
+### Analysis
+The Bitrix24 HTML confirms the deal binding field is `PARENT_ID_2` (shown as "Negócio" in the Smart Invoice form). The current code already sends `parentId2` which is correct. The `ufCrm31Deal` field added previously is likely being ignored or causing issues — it's not a standard field for Smart Process type 31.
 
-1. **Unprofessional icons** — Uses emoji characters (📅, 💳, 🏦, ✏, 🔗, ✓, 📤, 🕐, ⚠, 📄, 📎, 🏢) instead of proper SVG icons. Emojis render inconsistently across platforms and look amateur in a business context.
+The key issue: in `crm.item.add` REST API for Smart Processes, field names use **camelCase** format. The deal binding is `parentId2` (parent entity of type 2 = Deal). There is no separate `ufCrm31Deal` field — that was a mistaken assumption. The `parentId2` field alone should handle the deal link correctly.
 
-2. **Currency display** — The dual currency shows EUR as primary but the BRL conversion is not clearly subordinated. Need: `600,00 €` as main value with `≈ 3.660,00 R$` in smaller/lighter text right after.
+### Changes
 
-## Plan
+1. **Remove `ufCrm31Deal`** from the `crm.item.add` call — it's not a real field and may cause warnings. Keep only `parentId2` which is confirmed correct from the HTML.
 
-### 1. Replace all emoji icons with inline SVGs
+2. **Test with deal 8857** using `bodyOverrides`:
+   - `force_gateway: "direto"` — crediário próprio, no external payment gateway
+   - 3 parcels: €200 each (01/02, 03/03, 02/04)
+   - Parcela 1 should be marked `confirmed` after creation
+   - Verify Smart Invoices appear in `/crm/type/31/` kanban with deal and contact linked
 
-Replace every emoji in the HTML template with clean, minimal SVG icons (Lucide-style, stroke-width 1.5):
+### File changed
+- `supabase/functions/bitrix24-payment-webhook/index.ts` — remove `ufCrm31Deal` line (line 308)
 
-- `🏦` (Gateway) → bank/building SVG
-- `💳` (Método) → credit-card SVG  
-- `📅` (Vencimento/Criado) → calendar SVG
-- `🕐` (Criado) → clock SVG
-- `✏` (Editar) → pencil SVG
-- `🔗` (Link) → link SVG
-- `✓` (Baixa) → check SVG
-- `📤` (Fluxo) → send SVG
-- `⚠` (Missing) → alert-triangle SVG
-- `📄` (Fatura) → file-text SVG
-- `📎` (Comprovante) → paperclip SVG
-- `🏢` (Company) → building SVG
-- `✅` (Pago) → check-circle SVG
-
-Create a helper function `icon(name)` that returns inline SVG strings, keeping the code clean.
-
-### 2. Fix dual currency display
-
-In the installment rows and summary:
-- Primary: EUR value in bold/normal size → `600,00 €`
-- Secondary: BRL in smaller, lighter text right next to it → `≈ 3.660,00 R$`
-
-Update the `.b24-dual-currency` styling to be inline with the main value (not on a separate line), with reduced font-size (10-11px) and secondary color.
-
-### 3. Improve action buttons styling
-
-Replace emoji-prefixed button text with SVG icon + text for a cleaner look:
-- `✏ Editar` → pencil-icon + "Editar"
-- `🔗 Link` → link-icon + "Link"  
-- `✓ Baixa` → check-icon + "Baixa"
-- `📤 Fluxo` → send-icon + "Fluxo"
-
-### Files to modify
-- `supabase/functions/bitrix24-payment-tab/index.ts` — All changes in the `renderPaymentTab` function and its CSS styles
+### Test
+After deploy, call the webhook with:
+```json
+{
+  "deal_id": 8857,
+  "bodyOverrides": {
+    "force_gateway": "direto",
+    "total_amount": 600,
+    "num_installments": 3,
+    "first_due_date": "2025-02-01",
+    "interval_days": 30
+  }
+}
+```
 
