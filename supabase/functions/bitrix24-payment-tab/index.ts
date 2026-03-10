@@ -235,7 +235,7 @@ function renderPaymentTab(opts: {
 
   const noDataHtml = `
     <div class="b24-empty">
-      <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
+      <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
       <div class="b24-empty-title">Nenhum pagamento registado</div>
       <div class="b24-empty-desc">Este negócio ainda não possui registos financeiros associados.</div>
     </div>`;
