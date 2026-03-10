@@ -787,6 +787,8 @@ function OmniChannelTab() {
             <CredentialInput provider="meta" credentialKey="META_WA_ACCESS_TOKEN" label="Access Token" {...credProps} />
             <CredentialInput provider="meta" credentialKey="META_WA_PHONE_NUMBER_ID" label="Phone Number ID" {...credProps} />
           </div>
+
+          <WhatsAppApiSetupGuide />
         </CardContent>
       </Card>
 
