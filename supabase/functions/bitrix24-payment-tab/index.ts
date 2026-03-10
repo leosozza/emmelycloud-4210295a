@@ -157,7 +157,7 @@ function renderPaymentTab(opts: {
     if (!inst.value || inst.value <= 0) missingFields.push("valor");
     const hasMissing = missingFields.length > 0 && inst.status !== "paga";
     const missingClass = hasMissing ? " has-missing" : "";
-    const missingIndicator = hasMissing ? `<span class="b24-missing-icon" title="Campos em falta: ${missingFields.join(', ')}">⚠ ${missingFields.length} campo(s)</span>` : "";
+    const missingIndicator = hasMissing ? `<span class="b24-missing-icon" title="Campos em falta: ${missingFields.join(', ')}">${icon("alert-triangle", 12)} ${missingFields.length} campo(s)</span>` : "";
 
     // Discount/paid info from metadata
     const meta = inst.metadata || {};
