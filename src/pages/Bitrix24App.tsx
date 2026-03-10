@@ -2986,14 +2986,7 @@ function PlacementPreviewView({ integration, memberId }: { integration: any; mem
 
       <Card className="b24-card">
         <CardContent className="pt-5">
-          <div className="flex flex-wrap items-center gap-3">
-            <Label className="text-sm font-medium shrink-0">Member ID:</Label>
-            <Input
-              value={memberIdInput}
-              onChange={(e) => setMemberIdInput(e.target.value)}
-              placeholder="Ex: bea4c89b89c5c33f21450b1a633e6fb1"
-              className="min-w-[260px] flex-1"
-            />
+          <div className="flex items-center gap-3">
             <Label className="text-sm font-medium shrink-0">Deal ID:</Label>
             <Input
               value={dealId}
@@ -3001,10 +2994,13 @@ function PlacementPreviewView({ integration, memberId }: { integration: any; mem
               placeholder="Ex: 10581"
               className="max-w-[160px]"
             />
-            <Button onClick={loadPreview} disabled={loading || !dealId} size="sm">
+            <Button onClick={loadPreview} disabled={loading || !dealId || !resolvedMemberId} size="sm">
               {loading ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <RefreshCw className="h-4 w-4 mr-1" strokeWidth={1.5} />}
               Carregar
             </Button>
+            {!resolvedMemberId && (
+              <span className="text-xs text-muted-foreground">A detectar integração...</span>
+            )}
           </div>
         </CardContent>
       </Card>
