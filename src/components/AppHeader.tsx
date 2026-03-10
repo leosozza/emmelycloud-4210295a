@@ -35,7 +35,7 @@ export function AppHeader({ onSearchClick }: { onSearchClick?: () => void }) {
         {/* Logo */}
         <div className="flex items-center gap-2.5 shrink-0">
           <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary shadow-md">
-            <Scale className="h-4.5 w-4.5 text-primary-foreground" />
+            <Scale className="h-5 w-5 text-primary-foreground" strokeWidth={1.5} />
           </div>
           <div className="hidden sm:flex flex-col leading-none">
             <span className="text-sm font-extrabold tracking-tight text-foreground">Emmely Cloud</span>
