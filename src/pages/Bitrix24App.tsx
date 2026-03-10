@@ -63,7 +63,7 @@ const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
 
 const customNodeTypes = { custom: CustomFlowNode };
 
-type AppView = "loading" | "dashboard" | "agentes" | "training" | "flows" | "playground" | "chatia" | "pagamentos" | "relatorios" | "mapeamento" | "empresas" | "baixa";
+type AppView = "loading" | "dashboard" | "agentes" | "training" | "flows" | "playground" | "chatia" | "pagamentos" | "relatorios" | "mapeamento" | "empresas" | "baixa" | "placement";
 
 // ==================== MAIN COMPONENT ====================
 const Bitrix24App = () => {
@@ -190,6 +190,7 @@ const Bitrix24App = () => {
       items: [
         { id: "pagamentos", label: "Pagamentos", icon: CreditCard },
         { id: "baixa", label: "Baixa Carteira", icon: FileDown },
+        { id: "placement", label: "Placement", icon: ExternalLink },
         { id: "empresas", label: "Empresas", icon: Building2 },
         { id: "relatorios", label: "Relatórios", icon: BarChart3 },
       ],
@@ -303,6 +304,7 @@ const Bitrix24App = () => {
         {view === "mapeamento" && <MapeamentoView integrationId={integration?.id} memberId={memberId || undefined} />}
         {view === "pagamentos" && <PagamentosView integration={integration} onRefresh={() => memberId && fetchData(memberId)} />}
         {view === "baixa" && <BaixaCarteiraView integration={integration} />}
+        {view === "placement" && <PlacementPreviewView integration={integration} memberId={memberId} />}
         {view === "empresas" && <EmpresasView />}
         {view === "relatorios" && <RelatoriosView />}
       </main>
@@ -2897,6 +2899,95 @@ function countMissingFields(form: BaixaForm | undefined, deal: BaixaDeal): numbe
   if (form.paidInstallments > 0 && form.paidDates.some(d => !d)) missing++;
   if (form.paidInstallments < form.totalInstallments && !form.nextDueDate) missing++;
   return missing;
+}
+
+// ==================== PLACEMENT PREVIEW VIEW ====================
+function PlacementPreviewView({ integration, memberId }: { integration: any; memberId: string | null }) {
+  const [dealId, setDealId] = useState("8857");
+  const [iframeSrc, setIframeSrc] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  const loadPreview = useCallback(() => {
+    const mid = memberId || integration?.member_id || "";
+    if (!mid) return;
+    setLoading(true);
+    const url = `${SUPABASE_URL}/functions/v1/bitrix24-payment-tab`;
+    const formData = new URLSearchParams();
+    formData.append("member_id", mid);
+    formData.append("PLACEMENT_OPTIONS", JSON.stringify({ ID: dealId, ENTITY_TYPE_ID: "2" }));
+
+    fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        apikey: SUPABASE_KEY,
+        Authorization: `Bearer ${SUPABASE_KEY}`,
+      },
+      body: formData.toString(),
+    })
+      .then((r) => r.text())
+      .then((html) => {
+        const blob = new Blob([html], { type: "text/html" });
+        setIframeSrc(URL.createObjectURL(blob));
+      })
+      .catch((e) => console.error("[PLACEMENT] Error:", e))
+      .finally(() => setLoading(false));
+  }, [dealId, memberId, integration?.member_id]);
+
+  useEffect(() => {
+    if (memberId || integration?.member_id) loadPreview();
+  }, []);
+
+  return (
+    <div className="p-6 space-y-4">
+      <div className="b24-view-header">
+        <h1 className="text-xl font-bold text-white">Placement Preview</h1>
+        <p className="text-white/60 text-sm mt-0.5">Pré-visualização do Payment Tab sem abrir o Bitrix24</p>
+      </div>
+
+      <Card className="b24-card">
+        <CardContent className="pt-5">
+          <div className="flex items-center gap-3">
+            <Label className="text-sm font-medium shrink-0">Deal ID:</Label>
+            <Input
+              value={dealId}
+              onChange={(e) => setDealId(e.target.value)}
+              placeholder="Ex: 8857"
+              className="max-w-[160px]"
+            />
+            <Button onClick={loadPreview} disabled={loading || !dealId} size="sm">
+              {loading ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <RefreshCw className="h-4 w-4 mr-1" strokeWidth={1.5} />}
+              Carregar
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      {iframeSrc && (
+        <Card className="b24-card overflow-hidden">
+          <div className="border-b border-border px-4 py-2 flex items-center gap-2 bg-muted/30">
+            <ExternalLink className="h-3.5 w-3.5 text-muted-foreground" strokeWidth={1.5} />
+            <span className="text-xs text-muted-foreground font-medium">CRM_DEAL_DETAIL_TAB — Deal #{dealId}</span>
+          </div>
+          <iframe
+            src={iframeSrc}
+            className="w-full border-0"
+            style={{ minHeight: "700px" }}
+            title="Payment Tab Preview"
+          />
+        </Card>
+      )}
+
+      {!iframeSrc && !loading && (
+        <Card className="b24-card">
+          <CardContent className="pt-8 pb-8 text-center text-muted-foreground">
+            <CreditCard className="h-10 w-10 mx-auto mb-3 opacity-30" strokeWidth={1.5} />
+            <p className="text-sm">Insira um Deal ID e clique em "Carregar" para pré-visualizar o placement</p>
+          </CardContent>
+        </Card>
+      )}
+    </div>
+  );
 }
 
 function BaixaCarteiraView({ integration }: { integration: any }) {
