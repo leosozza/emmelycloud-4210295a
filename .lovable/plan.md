@@ -1,37 +1,21 @@
 
 
-## Plan: Fix Smart Invoice Deal Field + Test Deal 8857 with "Direto"
+## Add WhatsApp Business API Setup Guide
 
-### Analysis
-The Bitrix24 HTML confirms the deal binding field is `PARENT_ID_2` (shown as "Negócio" in the Smart Invoice form). The current code already sends `parentId2` which is correct. The `ufCrm31Deal` field added previously is likely being ignored or causing issues — it's not a standard field for Smart Process type 31.
+Add a `WhatsAppApiSetupGuide` component (same pattern as `StripeSetupGuide`) inside the WhatsApp card in the Omni Channel tab.
 
-The key issue: in `crm.item.add` REST API for Smart Processes, field names use **camelCase** format. The deal binding is `parentId2` (parent entity of type 2 = Deal). There is no separate `ufCrm31Deal` field — that was a mistaken assumption. The `parentId2` field alone should handle the deal link correctly.
+### File: `src/pages/Integracoes.tsx`
 
-### Changes
+**New component** `WhatsAppApiSetupGuide` (place after `StripeSetupGuide`, before `WhatsAppQRCodeCard`):
+- Collapsible with trigger: "Como conectar o WhatsApp Business API?"
+- Steps:
+  1. **Criar conta Meta Business** — Aceda a business.facebook.com e crie uma conta Business Manager. Link: `https://business.facebook.com/`
+  2. **Criar App no Meta Developers** — Vá a developers.facebook.com → My Apps → Create App → Business → selecione a Business Account. Adicione o produto "WhatsApp". Link: `https://developers.facebook.com/apps/`
+  3. **Configurar número de telefone** — Em WhatsApp → Getting Started, adicione e verifique um número de telefone comercial. Copie o **Phone Number ID** (campo numérico abaixo do número).
+  4. **Gerar Access Token permanente** — Em WhatsApp → Getting Started, gere um token temporário ou crie um System User em Business Settings → System Users com permissão `whatsapp_business_messaging` e gere um token permanente. Copie o token (começa com `EAA...`).
+  5. **Configurar Webhook** — Em WhatsApp → Configuration → Webhook, cole o URL do webhook (mostrar URL dinâmico `whatsapp-webhook`) e use o META_APP_SECRET como Verify Token. Subscreva o campo `messages`.
 
-1. **Remove `ufCrm31Deal`** from the `crm.item.add` call — it's not a real field and may cause warnings. Keep only `parentId2` which is confirmed correct from the HTML.
+**Integration point**: Add `<WhatsAppApiSetupGuide />` inside the WhatsApp card's `<CardContent>`, after the credential inputs (line ~708).
 
-2. **Test with deal 8857** using `bodyOverrides`:
-   - `force_gateway: "direto"` — crediário próprio, no external payment gateway
-   - 3 parcels: €200 each (01/02, 03/03, 02/04)
-   - Parcela 1 should be marked `confirmed` after creation
-   - Verify Smart Invoices appear in `/crm/type/31/` kanban with deal and contact linked
-
-### File changed
-- `supabase/functions/bitrix24-payment-webhook/index.ts` — remove `ufCrm31Deal` line (line 308)
-
-### Test
-After deploy, call the webhook with:
-```json
-{
-  "deal_id": 8857,
-  "bodyOverrides": {
-    "force_gateway": "direto",
-    "total_amount": 600,
-    "num_installments": 3,
-    "first_due_date": "2025-02-01",
-    "interval_days": 30
-  }
-}
-```
+Also show the webhook URL dynamically (like the Stripe cards do) so the user can copy it for step 5.
 
