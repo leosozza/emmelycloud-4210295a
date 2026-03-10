@@ -48,7 +48,7 @@ export function AppHeader({ onSearchClick }: { onSearchClick?: () => void }) {
           onClick={onSearchClick}
           className="relative flex-1 max-w-md flex items-center gap-2 h-9 px-3.5 bg-muted rounded-lg text-muted-foreground text-sm hover:bg-muted/80 transition-colors border border-border/50"
         >
-          <Search className="h-4 w-4" />
+          <Search className="h-4 w-4" strokeWidth={1.5} />
           <span>Pesquisar...</span>
           <kbd className="ml-auto hidden sm:inline-flex h-5 items-center gap-0.5 rounded border bg-background px-1.5 font-mono text-[10px] font-medium text-muted-foreground">
             ⌘K
