@@ -486,7 +486,7 @@ function renderPaymentTab(opts: {
 <!-- Edit Installment Modal -->
 <div class="b24-form-overlay" id="edit-overlay">
   <div class="b24-form-card">
-    <div class="b24-form-title">✏ Editar Parcela</div>
+    <div class="b24-form-title">${icon("pencil", 16)} Editar Parcela</div>
     <input type="hidden" id="edit-tx-id">
     <input type="hidden" id="edit-invoice-id">
     <input type="hidden" id="edit-original-total">
