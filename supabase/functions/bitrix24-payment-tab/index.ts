@@ -197,21 +197,21 @@ function renderPaymentTab(opts: {
           </div>
           <span class="b24-badge" style="--badge-bg:${s.bg};--badge-bg-dark:${s.bgDark};--badge-text:${s.text};--badge-text-dark:${s.textDark}">${s.label}</span>
         </div>
-        ${inst.company_name ? `<div class="b24-item-meta"><span style="font-weight:600">🏢 ${inst.company_name}</span></div>` : ""}
+        ${inst.company_name ? `<div class="b24-item-meta"><span style="font-weight:600">${icon("building", 13)} ${inst.company_name}</span></div>` : ""}
         <div class="b24-item-meta">
           ${inst.due_date
-            ? `<span>📅 Vence: ${formatDate(inst.due_date)}</span>`
-            : `<span onclick='openEditModal(${instJson})' class="b24-missing b24-clickable" title="Clique para definir">📅 Vencimento: ⚠ Definir</span>`}
-          ${inst.paid_at ? `<span>✅ Pago: ${formatDate(inst.paid_at)}</span>` : ""}
+            ? `<span>${icon("calendar", 13)} Vence: ${formatDate(inst.due_date)}</span>`
+            : `<span onclick='openEditModal(${instJson})' class="b24-missing b24-clickable" title="Clique para definir">${icon("calendar", 13)} Vencimento: ${icon("alert-triangle", 11)} Definir</span>`}
+          ${inst.paid_at ? `<span>${icon("check-circle", 13)} Pago: ${formatDate(inst.paid_at)}</span>` : ""}
           ${inst.payment_method
-            ? `<span>💳 ${inst.payment_method}</span>`
-            : `<span onclick='openEditModal(${instJson})' class="b24-missing b24-clickable" title="Clique para definir">💳 Método: ⚠ Definir</span>`}
+            ? `<span>${icon("credit-card", 13)} ${inst.payment_method}</span>`
+            : `<span onclick='openEditModal(${instJson})' class="b24-missing b24-clickable" title="Clique para definir">${icon("credit-card", 13)} Método: ${icon("alert-triangle", 11)} Definir</span>`}
           ${totalLabel}
         </div>
         ${discountInfo || paidAmountInfo || proofInfo ? `<div class="b24-item-meta">${paidAmountInfo} ${discountInfo} ${proofInfo}</div>` : ""}
         ${inst.description ? `<div class="b24-item-desc">${inst.description}</div>` : ""}
-        ${inst.payment_url && inst.status !== "paga" ? `<div class="b24-link-row"><a href="${inst.payment_url}" target="_blank" class="b24-link">Link de pagamento</a><button class="b24-btn-copy" onclick="copyLink(this,'${inst.payment_url.replace(/'/g, "\\'")}')" title="Copiar link"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button></div>` : ""}
-        ${inst.invoice_id ? `<div class="b24-link-row"><a href="javascript:void(0)" onclick="openInvoice(${inst.invoice_id})" class="b24-link">📄 Ver Fatura #${inst.invoice_id}</a></div>` : ""}
+        ${inst.payment_url && inst.status !== "paga" ? `<div class="b24-link-row"><a href="${inst.payment_url}" target="_blank" class="b24-link">Link de pagamento</a><button class="b24-btn-copy" onclick="copyLink(this,'${inst.payment_url.replace(/'/g, "\\'")}')" title="Copiar link"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button></div>` : ""}
+        ${inst.invoice_id ? `<div class="b24-link-row"><a href="javascript:void(0)" onclick="openInvoice(${inst.invoice_id})" class="b24-link">${icon("file-text", 13)} Ver Fatura #${inst.invoice_id}</a></div>` : ""}
         ${inst.status !== "paga" ? `
           <div class="b24-item-actions">
             <button onclick='openEditModal(${instJson})' class="b24-btn-action" title="Editar Parcela">✏ Editar</button>
