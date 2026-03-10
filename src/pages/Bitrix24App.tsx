@@ -2903,16 +2903,30 @@ function countMissingFields(form: BaixaForm | undefined, deal: BaixaDeal): numbe
 
 // ==================== PLACEMENT PREVIEW VIEW ====================
 function PlacementPreviewView({ integration, memberId }: { integration: any; memberId: string | null }) {
-  const [dealId, setDealId] = useState("8857");
-  const [memberIdInput, setMemberIdInput] = useState(memberId || integration?.member_id || "");
+  const [dealId, setDealId] = useState("10581");
+  const [resolvedMemberId, setResolvedMemberId] = useState(memberId || integration?.member_id || "");
   const [htmlContent, setHtmlContent] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
+  // Auto-resolve member_id from DB if not available from context
+  useEffect(() => {
+    if (resolvedMemberId) return;
+    fetch(
+      `${SUPABASE_URL}/rest/v1/bitrix24_integrations?select=member_id&order=updated_at.desc&limit=1`,
+      { headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` } }
+    )
+      .then((r) => r.json())
+      .then((rows) => {
+        if (rows?.[0]?.member_id) setResolvedMemberId(rows[0].member_id);
+      })
+      .catch(() => {});
+  }, [resolvedMemberId]);
+
   const loadPreview = useCallback(() => {
-    const mid = (memberIdInput || memberId || integration?.member_id || "").trim();
+    const mid = resolvedMemberId;
     if (!mid) {
-      setError("Informe o Member ID da integração para carregar o placement.");
+      setError("Nenhuma integração Bitrix24 encontrada.");
       return;
     }
 
@@ -2936,7 +2950,6 @@ function PlacementPreviewView({ integration, memberId }: { integration: any; mem
     })
       .then((r) => r.text())
       .then((html) => {
-        // Strip Bitrix24 SDK script (won't work outside Bitrix iframe) and inject a mock
         const bx24Mock = `<script>
           window.BX24 = {
             init: function(cb) { if(cb) cb(); },
@@ -2957,16 +2970,12 @@ function PlacementPreviewView({ integration, memberId }: { integration: any; mem
         setError(e.message || "Erro ao carregar");
       })
       .finally(() => setLoading(false));
-  }, [dealId, memberIdInput, memberId, integration?.member_id]);
+  }, [dealId, resolvedMemberId]);
 
+  // Auto-load when member_id is resolved
   useEffect(() => {
-    const fallbackMid = memberId || integration?.member_id || "";
-    if (fallbackMid && !memberIdInput) setMemberIdInput(fallbackMid);
-  }, [memberId, integration?.member_id, memberIdInput]);
-
-  useEffect(() => {
-    if (memberId || integration?.member_id) loadPreview();
-  }, [memberId, integration?.member_id, loadPreview]);
+    if (resolvedMemberId && dealId) loadPreview();
+  }, [resolvedMemberId]);
 
   return (
     <div className="p-6 space-y-4">
