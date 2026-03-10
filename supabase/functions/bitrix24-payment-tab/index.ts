@@ -339,7 +339,7 @@ function renderPaymentTab(opts: {
     .b24-summary-info { display: flex; gap: 16px; flex-wrap: wrap; font-size: 12px; color: var(--text-secondary); margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--border-color); }
     .b24-summary-info span { display: inline-flex; align-items: center; gap: 4px; }
     .b24-summary-info strong { font-weight: 600; color: var(--text-primary); }
-    .b24-dual-currency { font-size: 11px; color: var(--text-secondary); font-weight: 400; }
+    .b24-dual-currency { font-size: 10px; color: var(--text-secondary); font-weight: 400; white-space: nowrap; }
     .b24-dates-preview { background: var(--bg-page); border: 1px solid var(--border-color); border-radius: 4px; padding: 8px 12px; margin-top: 8px; font-size: 12px; }
     .b24-dates-preview div { padding: 2px 0; color: var(--text-secondary); }
 
