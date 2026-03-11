@@ -10,10 +10,10 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
-import { Constants, Tables, TablesInsert } from "@/integrations/supabase/types";
+import { Constants, Tables } from "@/integrations/supabase/types";
 import { supabase } from "@/integrations/supabase/client";
 import { useQuery } from "@tanstack/react-query";
-import { User, FileText } from "lucide-react";
+import { User, FileText, LayoutTemplate } from "lucide-react";
 
 type Proposal = Tables<"proposals">;
 
@@ -43,7 +43,6 @@ export function PropostaForm({ open, onOpenChange, proposta, cases, onSave, savi
   const [conditions, setConditions] = useState("");
   const [validUntil, setValidUntil] = useState("");
   const [status, setStatus] = useState<string>("rascunho");
-  // New fields
   const [clientName, setClientName] = useState("");
   const [clientEmail, setClientEmail] = useState("");
   const [clientPhone, setClientPhone] = useState("");
@@ -61,7 +60,15 @@ export function PropostaForm({ open, onOpenChange, proposta, cases, onSave, savi
     },
   });
 
-  // Load lead data when case changes
+  const { data: templates = [] } = useQuery({
+    queryKey: ["proposal-templates"],
+    queryFn: async () => {
+      const { data, error } = await supabase.from("proposal_templates").select("*").order("name");
+      if (error) throw error;
+      return data;
+    },
+  });
+
   const { data: caseLeadData } = useQuery({
     queryKey: ["case-lead", caseId],
     enabled: !!caseId,
@@ -110,6 +117,18 @@ export function PropostaForm({ open, onOpenChange, proposta, cases, onSave, savi
     }
   };
 
+  const handleLoadTemplate = (templateId: string) => {
+    const t = templates.find((tpl: any) => tpl.id === templateId);
+    if (!t) return;
+    if ((t as any).title) setTitle((t as any).title);
+    if ((t as any).description) setDescription((t as any).description);
+    if ((t as any).conditions) setConditions((t as any).conditions);
+    setValue(((t as any).value ?? 0).toString());
+    setPaymentType((t as any).payment_type || "fixo");
+    setInstallments(((t as any).installments ?? 1).toString());
+    if ((t as any).service_id) setServiceId((t as any).service_id);
+  };
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
@@ -139,6 +158,26 @@ export function PropostaForm({ open, onOpenChange, proposta, cases, onSave, savi
           }}
           className="space-y-5"
         >
+          {/* Template loader */}
+          {!proposta && templates.length > 0 && (
+            <div className="rounded-lg border border-dashed border-primary/30 bg-primary/5 p-3">
+              <div className="flex items-center gap-2 mb-2">
+                <LayoutTemplate className="h-4 w-4 text-primary" />
+                <Label className="text-sm font-medium text-primary">Carregar Modelo</Label>
+              </div>
+              <Select onValueChange={handleLoadTemplate}>
+                <SelectTrigger><SelectValue placeholder="Selecionar modelo para preencher..." /></SelectTrigger>
+                <SelectContent>
+                  {templates.map((t: any) => (
+                    <SelectItem key={t.id} value={t.id}>
+                      {t.name} {t.value > 0 ? `— €${Number(t.value).toFixed(2)}` : ""}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+
           {/* Basic */}
           <div className="grid grid-cols-2 gap-4">
             <div className="col-span-2">
