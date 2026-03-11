@@ -1635,6 +1635,59 @@ export type Database = {
         }
         Relationships: []
       }
+      proposal_templates: {
+        Row: {
+          conditions: string | null
+          created_at: string
+          description: string | null
+          id: string
+          installments: number
+          is_default: boolean
+          name: string
+          payment_type: Database["public"]["Enums"]["payment_type"]
+          service_id: string | null
+          title: string | null
+          updated_at: string
+          value: number
+        }
+        Insert: {
+          conditions?: string | null
+          created_at?: string
+          description?: string | null
+          id?: string
+          installments?: number
+          is_default?: boolean
+          name: string
+          payment_type?: Database["public"]["Enums"]["payment_type"]
+          service_id?: string | null
+          title?: string | null
+          updated_at?: string
+          value?: number
+        }
+        Update: {
+          conditions?: string | null
+          created_at?: string
+          description?: string | null
+          id?: string
+          installments?: number
+          is_default?: boolean
+          name?: string
+          payment_type?: Database["public"]["Enums"]["payment_type"]
+          service_id?: string | null
+          title?: string | null
+          updated_at?: string
+          value?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "proposal_templates_service_id_fkey"
+            columns: ["service_id"]
+            isOneToOne: false
+            referencedRelation: "services"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       proposals: {
         Row: {
           accept_token: string | null
