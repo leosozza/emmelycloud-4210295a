@@ -445,16 +445,22 @@ function renderPaymentTab(opts: {
     <div class="b24-summary-title">${icon("bank", 16)} Emmely Pay — ${(dealTitle || "Negócio").replace(/</g, "&lt;")}</div>
     <div class="b24-summary-grid">
       <div class="b24-summary-item">
+        <div class="b24-summary-icon">${icon("bank", 16)}</div>
         <div class="b24-summary-label">Total</div>
-        <div class="b24-summary-value">${formatCurrency(totalValue, currency)} <span class="b24-dual-currency">≈ ${formatCurrency(totalValue * EUR_TO_BRL, "BRL")}</span></div>
+        <div class="b24-summary-value">${formatCurrency(totalValue, currency)}</div>
+        <div class="b24-dual-currency" style="margin-top:2px">≈ ${formatCurrency(totalValue * EUR_TO_BRL, "BRL")}</div>
       </div>
       <div class="b24-summary-item stat-paid">
+        <div class="b24-summary-icon">${icon("check-circle", 16)}</div>
         <div class="b24-summary-label">Pago</div>
-        <div class="b24-summary-value" style="color:var(--value-paid)">${formatCurrency(paidValue, currency)} <span class="b24-dual-currency">≈ ${formatCurrency(paidValue * EUR_TO_BRL, "BRL")}</span></div>
+        <div class="b24-summary-value" style="color:var(--value-paid)">${formatCurrency(paidValue, currency)}</div>
+        <div class="b24-dual-currency" style="margin-top:2px">≈ ${formatCurrency(paidValue * EUR_TO_BRL, "BRL")}</div>
       </div>
       <div class="b24-summary-item stat-open">
+        <div class="b24-summary-icon">${icon("clock", 16)}</div>
         <div class="b24-summary-label">Em Aberto</div>
-        <div class="b24-summary-value" style="color:${openValue > 0 ? 'var(--value-open)' : 'var(--value-paid)'}">${formatCurrency(openValue, currency)} <span class="b24-dual-currency">≈ ${formatCurrency(openValue * EUR_TO_BRL, "BRL")}</span></div>
+        <div class="b24-summary-value" style="color:${openValue > 0 ? 'var(--value-open)' : 'var(--value-paid)'}">${formatCurrency(openValue, currency)}</div>
+        <div class="b24-dual-currency" style="margin-top:2px">≈ ${formatCurrency(openValue * EUR_TO_BRL, "BRL")}</div>
       </div>
     </div>
     <div class="b24-progress-wrap">
