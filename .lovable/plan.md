@@ -1,37 +1,44 @@
 
 
-## Plan: Fix Smart Invoice Deal Field + Test Deal 8857 with "Direto"
+## Proposal Templates System
 
-### Analysis
-The Bitrix24 HTML confirms the deal binding field is `PARENT_ID_2` (shown as "Negócio" in the Smart Invoice form). The current code already sends `parentId2` which is correct. The `ufCrm31Deal` field added previously is likely being ignored or causing issues — it's not a standard field for Smart Process type 31.
+### What we're building
+A proposal templates system that lets users create, manage, and reuse templates when generating new proposals. This adds a "Modelos" (Templates) tab to the Propostas page.
 
-The key issue: in `crm.item.add` REST API for Smart Processes, field names use **camelCase** format. The deal binding is `parentId2` (parent entity of type 2 = Deal). There is no separate `ufCrm31Deal` field — that was a mistaken assumption. The `parentId2` field alone should handle the deal link correctly.
+### Database
 
-### Changes
+**New table: `proposal_templates`**
+- `id` uuid PK
+- `name` text NOT NULL
+- `title` text (default proposal title)
+- `description` text (service description template)
+- `conditions` text (default conditions)
+- `value` numeric DEFAULT 0
+- `payment_type` payment_type DEFAULT 'fixo'
+- `installments` integer DEFAULT 1
+- `service_id` uuid nullable (link to services)
+- `is_default` boolean DEFAULT false
+- `created_at`, `updated_at` timestamps
+- RLS: authenticated users full access
 
-1. **Remove `ufCrm31Deal`** from the `crm.item.add` call — it's not a real field and may cause warnings. Keep only `parentId2` which is confirmed correct from the HTML.
+### UI Changes
 
-2. **Test with deal 8857** using `bodyOverrides`:
-   - `force_gateway: "direto"` — crediário próprio, no external payment gateway
-   - 3 parcels: €200 each (01/02, 03/03, 02/04)
-   - Parcela 1 should be marked `confirmed` after creation
-   - Verify Smart Invoices appear in `/crm/type/31/` kanban with deal and contact linked
+**1. Propostas page (`src/pages/Propostas.tsx`)**
+- Add Tabs: "Propostas" (existing table) and "Modelos" (templates)
+- Modelos tab shows template cards in a grid with name, value, description preview
+- Each template card has Edit, Delete, Duplicate actions
+- "Novo Modelo" button to create templates
 
-### File changed
-- `supabase/functions/bitrix24-payment-webhook/index.ts` — remove `ufCrm31Deal` line (line 308)
+**2. New component: `PropostaTemplateForm.tsx`**
+- Dialog form for creating/editing templates (name, title, description, conditions, value, payment_type, installments, service_id)
 
-### Test
-After deploy, call the webhook with:
-```json
-{
-  "deal_id": 8857,
-  "bodyOverrides": {
-    "force_gateway": "direto",
-    "total_amount": 600,
-    "num_installments": 3,
-    "first_due_date": "2025-02-01",
-    "interval_days": 30
-  }
-}
-```
+**3. Update `PropostaForm.tsx`**
+- Add a "Carregar Modelo" (Load Template) select at the top of the form
+- When a template is selected, auto-fill title, description, conditions, value, payment_type, installments, service_id
+
+### Files to create/edit
+- **Migration**: Create `proposal_templates` table with RLS
+- **New**: `src/components/propostas/PropostaTemplateForm.tsx`
+- **Edit**: `src/pages/Propostas.tsx` — add Tabs with templates grid
+- **Edit**: `src/components/propostas/PropostaForm.tsx` — add template selector dropdown
 
