@@ -54,7 +54,7 @@ const endpoints: Endpoint[] = [
     path: "/whatsapp-webhook",
     auth: "Public",
     category: "omnichannel",
-    description: "Recebe mensagens inbound do WhatsApp Business API. GET para verificação, POST para mensagens. Cria conversas e dispara chatbot-reply automaticamente.",
+    description: "Recebe mensagens inbound do WhatsApp Business API. GET para verificação, POST para mensagens. Cria conversas e dispara flow-engine automaticamente.",
     notes: "Configure no Meta Business > WhatsApp > Configuration > Webhook URL. O verify_token é META_APP_SECRET.",
   },
   {
