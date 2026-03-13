@@ -1199,6 +1199,9 @@ function PagamentosTab() {
         </CardContent>
       </Card>
 
+      {/* Encargos por Atraso */}
+      <LateFeeConfigCard />
+
       {/* Emmely Pay Summary */}
       <Card className="md:col-span-3">
         <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-2">
