@@ -738,7 +738,7 @@ Deno.serve(async (req) => {
   );
 
   try {
-    // Check if this is a badge creation request (from chatbot-reply, message-send, etc.)
+    // Check if this is a badge creation request (from ai-process-message, message-send, etc.)
     const contentType = req.headers.get("content-type") || "";
     if (contentType.includes("application/json")) {
       try {

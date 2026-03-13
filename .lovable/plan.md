@@ -49,6 +49,19 @@
 - Error logging real em vez de fire-and-forget silencioso para message-send e bitrix24-send
 - Extração de memória com tolerância `count % 10 > 1` (mais robusto que `=== 0`)
 
+### Mudanças realizadas (Fase 2.1 — Limpeza Final)
+
+#### Código morto eliminado
+- `chatbot-reply/index.ts` e `ai-triage/index.ts` — diretórios já removidos, agora limpas referências em `config.toml`, `ApiDocs.tsx` e `bitrix24-worker.ts`
+- ApiDocs actualizado para documentar `ai-process-message` em vez de `chatbot-reply`
+
+#### Sintaxe corrigida
+- `parse-document/index.ts` — corrigida função `extractWithAI` que estava erroneamente aninhada dentro de `findFileInZip`
+
+#### Config.toml actualizado
+- Removidas entradas `ai-triage` e `chatbot-reply`
+- Adicionadas entradas para `generate-embeddings`, `parse-document` e `queue-worker`
+
 ### Próximos passos
 - Implementar dashboard de observabilidade no frontend
 - Adicionar botões thumbs up/down no chat de atendimento

@@ -274,9 +274,19 @@ async function findFileInZip(zipBytes: Uint8Array, targetName: string): Promise<
               pos += c.length;
             }
             return decoder.decode(result);
-          } catch (e) {
+           } catch (e) {
             console.error("Decompression error:", e);
             return null;
+          }
+        }
+      }
+
+      offset = dataStart + (compressedSize > 0 ? compressedSize : 1);
+    } else {
+      offset++;
+    }
+  }
+  return null;
 }
 
 async function extractWithAI(blob: Blob, ext: string): Promise<string> {
@@ -344,14 +354,4 @@ async function extractWithAI(blob: Blob, ext: string): Promise<string> {
     else console.error("AI extraction error:", e);
     return "";
   }
-}
-        }
-      }
-
-      offset = dataStart + (compressedSize > 0 ? compressedSize : 1);
-    } else {
-      offset++;
-    }
-  }
-  return null;
 }

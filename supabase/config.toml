@@ -60,8 +60,6 @@ verify_jwt = false
 [functions.elevenlabs-scribe-token]
 verify_jwt = false
 
-[functions.ai-triage]
-verify_jwt = false
 
 [functions.flow-engine]
 verify_jwt = false
@@ -78,8 +76,6 @@ verify_jwt = false
 [functions.persona-trainer]
 verify_jwt = false
 
-[functions.chatbot-reply]
-verify_jwt = false
 
 [functions.bitrix24-return-to-bot]
 verify_jwt = false
@@ -136,4 +132,13 @@ verify_jwt = false
 verify_jwt = false
 
 [functions.bitrix24-fetch-entities]
+verify_jwt = false
+
+[functions.generate-embeddings]
+verify_jwt = false
+
+[functions.parse-document]
+verify_jwt = false
+
+[functions.queue-worker]
 verify_jwt = false

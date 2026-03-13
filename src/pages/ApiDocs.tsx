@@ -54,7 +54,7 @@ const endpoints: Endpoint[] = [
     path: "/whatsapp-webhook",
     auth: "Public",
     category: "omnichannel",
-    description: "Recebe mensagens inbound do WhatsApp Business API. GET para verificação, POST para mensagens. Cria conversas e dispara chatbot-reply automaticamente.",
+    description: "Recebe mensagens inbound do WhatsApp Business API. GET para verificação, POST para mensagens. Cria conversas e dispara flow-engine automaticamente.",
     notes: "Configure no Meta Business > WhatsApp > Configuration > Webhook URL. O verify_token é META_APP_SECRET.",
   },
   {
@@ -63,7 +63,7 @@ const endpoints: Endpoint[] = [
     path: "/instagram-webhook",
     auth: "Public",
     category: "omnichannel",
-    description: "Recebe mensagens inbound do Instagram Messaging API. GET para verificação, POST para mensagens. Cria conversas e dispara chatbot-reply automaticamente.",
+    description: "Recebe mensagens inbound do Instagram Messaging API. GET para verificação, POST para mensagens. Cria conversas e dispara flow-engine automaticamente.",
     notes: "Configure no Meta Developers > Instagram > Webhooks. O verify_token é META_APP_SECRET.",
   },
   // ── Omni Channel - Instagram ──
@@ -115,21 +115,21 @@ const endpoints: Endpoint[] = [
 }`,
   },
   {
-    name: "Chatbot Auto-Reply",
+    name: "AI Process Message",
     method: "POST",
-    path: "/chatbot-reply",
+    path: "/ai-process-message",
     auth: "Service Role",
     category: "ai",
-    description: "Motor de auto-resposta IA. Busca agente default, gera resposta e envia para o canal externo e Bitrix24.",
+    description: "Motor de processamento IA unificado. RAG semântico (pgvector), tool calling, memória longa, reflexão e análise de sentimento.",
     request: `{
   "conversation_id": "uuid",
   "message_text": "Qual o prazo?"
 }`,
     response: `{
-  "success": true,
-  "reply": "O prazo médio é..."
+  "reply": "O prazo médio é...",
+  "agent_id": "uuid"
 }`,
-    notes: "Chamado internamente pelos webhooks. Requer agente com is_default=true e is_active=true.",
+    notes: "Chamado pelo flow-engine. Suporta RAG semântico com embeddings, router multi-agente e auto-escalação por sentimento.",
   },
   // ── Pagamentos ──
   {
