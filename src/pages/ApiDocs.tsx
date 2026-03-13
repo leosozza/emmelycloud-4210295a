@@ -63,7 +63,7 @@ const endpoints: Endpoint[] = [
     path: "/instagram-webhook",
     auth: "Public",
     category: "omnichannel",
-    description: "Recebe mensagens inbound do Instagram Messaging API. GET para verificação, POST para mensagens. Cria conversas e dispara chatbot-reply automaticamente.",
+    description: "Recebe mensagens inbound do Instagram Messaging API. GET para verificação, POST para mensagens. Cria conversas e dispara flow-engine automaticamente.",
     notes: "Configure no Meta Developers > Instagram > Webhooks. O verify_token é META_APP_SECRET.",
   },
   // ── Omni Channel - Instagram ──
