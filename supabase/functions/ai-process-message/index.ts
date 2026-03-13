@@ -506,29 +506,38 @@ async function keywordSearch(supabase: any, queryText: string, docIds: string[])
   }
 }
 
-// ─── Multi-agent router ───
+// ─── Multi-agent router (optimized for legal domain) ───
 async function routeToSubAgent(supabase: any, parentAgent: any, conversation: any, messageText: string): Promise<any | null> {
   const apiKey = Deno.env.get("LOVABLE_API_KEY");
   if (!apiKey) return null;
 
-  // Check if bot_state already has an active sub-agent (maintain consistency)
   const botState = conversation.bot_state || {};
-  if (botState.active_sub_agent_id) {
-    const { data: cached } = await supabase.from("ai_agents").select("*").eq("id", botState.active_sub_agent_id).eq("is_active", true).maybeSingle();
-    if (cached) return cached;
-  }
 
   // Load sub-agents
   const { data: subAgents } = await supabase
     .from("ai_agents")
-    .select("id, name, description, system_prompt")
+    .select("id, name, description")
     .in("id", parentAgent.sub_agent_ids)
     .eq("is_active", true);
 
   if (!subAgents || subAgents.length === 0) return null;
 
-  // Use routing_rules if available, otherwise classify via AI
-  const agentList = subAgents.map((a: any) => `- ${a.name}: ${a.description || "sem descrição"}`).join("\n");
+  // Check if bot_state already has an active sub-agent
+  if (botState.active_sub_agent_id) {
+    const cached = subAgents.find((a: any) => a.id === botState.active_sub_agent_id);
+    if (cached) {
+      // Detect topic change — if message clearly belongs to another agent, re-route
+      const shouldReroute = await detectTopicChange(apiKey, messageText, cached, subAgents);
+      if (!shouldReroute) {
+        const { data: fullAgent } = await supabase.from("ai_agents").select("*").eq("id", cached.id).single();
+        return fullAgent;
+      }
+      console.log("[AI-PROCESS] Topic change detected, re-routing...");
+    }
+  }
+
+  // Classify intent using structured tool calling
+  const agentList = subAgents.map((a: any) => `- "${a.name}": ${a.description || "sem descrição"}`).join("\n");
 
   try {
     const res = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
@@ -537,30 +546,119 @@ async function routeToSubAgent(supabase: any, parentAgent: any, conversation: an
       body: JSON.stringify({
         model: "google/gemini-2.5-flash-lite",
         messages: [
-          { role: "system", content: `Classifica a intenção do cliente e escolhe o agente mais adequado. Agentes disponíveis:\n${agentList}\n\nResponde APENAS com o nome exacto do agente escolhido, nada mais.` },
+          {
+            role: "system",
+            content: `És um router de intenções para um escritório de advocacia em Portugal e Brasil, especializado em imigração, cidadania e previdência.
+
+Analisa a mensagem do cliente e escolhe o agente mais adequado.
+
+Agentes disponíveis:
+${agentList}
+
+REGRAS DE ROUTING:
+- Vistos, residência, AIMA, Golden Visa, cidadania, nacionalidade, passaporte → Vistos & Cidadania
+- Aposentadoria, INSS, reforma, pensão, benefício social, segurança social, contribuição → Previdência & Segurança Social
+- Pagamento, honorário, fatura, contrato, parcela, valor, preço, recibo → Financeiro & Contratos
+- Agendamento, horário, dúvida geral, primeiro contacto, "quero saber mais", saudação → Suporte Geral & Atendimento
+- Se ambíguo ou saudação simples → Suporte Geral & Atendimento`,
+          },
           { role: "user", content: messageText },
         ],
+        tools: [{
+          type: "function",
+          function: {
+            name: "route_to_agent",
+            description: "Route the client message to the most appropriate specialist agent",
+            parameters: {
+              type: "object",
+              properties: {
+                agent_name: {
+                  type: "string",
+                  description: "The exact name of the chosen agent",
+                  enum: subAgents.map((a: any) => a.name),
+                },
+                confidence: {
+                  type: "number",
+                  description: "Confidence score from 0 to 1",
+                },
+                detected_topic: {
+                  type: "string",
+                  description: "Brief topic detected in the message",
+                },
+              },
+              required: ["agent_name", "confidence", "detected_topic"],
+              additionalProperties: false,
+            },
+          },
+        }],
+        tool_choice: { type: "function", function: { name: "route_to_agent" } },
         temperature: 0,
       }),
     });
 
     if (!res.ok) return null;
     const result = await res.json();
-    const chosenName = (result.choices?.[0]?.message?.content || "").trim();
 
-    const chosen = subAgents.find((a: any) => a.name.toLowerCase() === chosenName.toLowerCase());
+    // Parse tool call result
+    const toolCall = result.choices?.[0]?.message?.tool_calls?.[0];
+    if (!toolCall) {
+      // Fallback: parse from content
+      const content = (result.choices?.[0]?.message?.content || "").trim();
+      const chosen = subAgents.find((a: any) => content.toLowerCase().includes(a.name.toLowerCase()));
+      if (chosen) return await activateSubAgent(supabase, chosen, botState, conversation, null);
+      return null;
+    }
+
+    let args: any = {};
+    try { args = JSON.parse(toolCall.function.arguments || "{}"); } catch {}
+
+    const chosen = subAgents.find((a: any) => a.name === args.agent_name);
     if (chosen) {
-      // Load full agent data and save to bot_state
-      const { data: fullAgent } = await supabase.from("ai_agents").select("*").eq("id", chosen.id).single();
-      await supabase.from("conversations").update({
-        bot_state: { ...botState, active_sub_agent_id: chosen.id },
-      }).eq("id", conversation.id);
-      return fullAgent;
+      console.log(`[AI-PROCESS] Router: "${args.detected_topic}" → ${chosen.name} (confidence: ${args.confidence})`);
+      return await activateSubAgent(supabase, chosen, botState, conversation, args.detected_topic);
     }
   } catch (e) {
     console.log("[AI-PROCESS] Router failed:", e);
   }
   return null;
+}
+
+async function activateSubAgent(supabase: any, chosen: any, botState: any, conversation: any, topic: string | null): Promise<any> {
+  const { data: fullAgent } = await supabase.from("ai_agents").select("*").eq("id", chosen.id).single();
+  await supabase.from("conversations").update({
+    bot_state: {
+      ...botState,
+      active_sub_agent_id: chosen.id,
+      routed_topic: topic,
+      routed_at: new Date().toISOString(),
+    },
+  }).eq("id", conversation.id);
+  return fullAgent;
+}
+
+async function detectTopicChange(apiKey: string, messageText: string, currentAgent: any, allAgents: any[]): Promise<boolean> {
+  // Quick heuristic: very short messages or greetings don't change topic
+  if (messageText.length < 10) return false;
+  const greetings = ["olá", "oi", "bom dia", "boa tarde", "boa noite", "hello", "hi", "obrigado", "obrigada", "ok", "sim", "não"];
+  if (greetings.some(g => messageText.toLowerCase().trim() === g)) return false;
+
+  // Keyword-based quick check for obvious topic changes
+  const topicKeywords: Record<string, string[]> = {
+    "Vistos & Cidadania": ["visto", "cidadania", "residência", "aima", "golden visa", "passaporte", "nacionalidade", "imigração"],
+    "Previdência & Segurança Social": ["aposentadoria", "inss", "reforma", "pensão", "benefício", "previdência", "contribuição"],
+    "Financeiro & Contratos": ["pagamento", "honorário", "fatura", "parcela", "valor", "contrato", "pagar", "recibo"],
+    "Suporte Geral & Atendimento": ["agendar", "consulta", "horário", "endereço"],
+  };
+
+  const lower = messageText.toLowerCase();
+  const currentTopicKey = Object.keys(topicKeywords).find(k => currentAgent.name.includes(k.split(" ")[0]));
+  const otherTopics = Object.entries(topicKeywords).filter(([k]) => k !== currentTopicKey);
+
+  for (const [, keywords] of otherTopics) {
+    if (keywords.some(kw => lower.includes(kw))) return true;
+  }
+
+  return false;
 }
 
 // ─── Sentiment analysis ───
