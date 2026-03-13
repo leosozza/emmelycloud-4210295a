@@ -50,6 +50,44 @@ export type Database = {
           },
         ]
       }
+      agent_tools: {
+        Row: {
+          agent_id: string
+          created_at: string | null
+          id: string
+          is_active: boolean | null
+          tool_description: string | null
+          tool_name: string
+          tool_parameters: Json | null
+        }
+        Insert: {
+          agent_id: string
+          created_at?: string | null
+          id?: string
+          is_active?: boolean | null
+          tool_description?: string | null
+          tool_name: string
+          tool_parameters?: Json | null
+        }
+        Update: {
+          agent_id?: string
+          created_at?: string | null
+          id?: string
+          is_active?: boolean | null
+          tool_description?: string | null
+          tool_name?: string
+          tool_parameters?: Json | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "agent_tools_agent_id_fkey"
+            columns: ["agent_id"]
+            isOneToOne: false
+            referencedRelation: "ai_agents"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       agent_training_history: {
         Row: {
           agent_id: string
@@ -227,6 +265,69 @@ export type Database = {
           updated_at?: string
         }
         Relationships: []
+      }
+      ai_usage_logs: {
+        Row: {
+          agent_id: string | null
+          completion_tokens: number | null
+          conversation_id: string | null
+          cost_estimate: number | null
+          created_at: string | null
+          error: string | null
+          id: string
+          latency_ms: number | null
+          model: string | null
+          prompt_tokens: number | null
+          provider: string | null
+          total_tokens: number | null
+          was_fallback: boolean | null
+        }
+        Insert: {
+          agent_id?: string | null
+          completion_tokens?: number | null
+          conversation_id?: string | null
+          cost_estimate?: number | null
+          created_at?: string | null
+          error?: string | null
+          id?: string
+          latency_ms?: number | null
+          model?: string | null
+          prompt_tokens?: number | null
+          provider?: string | null
+          total_tokens?: number | null
+          was_fallback?: boolean | null
+        }
+        Update: {
+          agent_id?: string | null
+          completion_tokens?: number | null
+          conversation_id?: string | null
+          cost_estimate?: number | null
+          created_at?: string | null
+          error?: string | null
+          id?: string
+          latency_ms?: number | null
+          model?: string | null
+          prompt_tokens?: number | null
+          provider?: string | null
+          total_tokens?: number | null
+          was_fallback?: boolean | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ai_usage_logs_agent_id_fkey"
+            columns: ["agent_id"]
+            isOneToOne: false
+            referencedRelation: "ai_agents"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ai_usage_logs_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: false
+            referencedRelation: "conversations"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       bitrix_event_queue: {
         Row: {
@@ -842,6 +943,57 @@ export type Database = {
           },
         ]
       }
+      conversation_feedback: {
+        Row: {
+          comment: string | null
+          conversation_id: string
+          created_at: string | null
+          created_by: string | null
+          id: string
+          issue_type: string | null
+          message_id: string | null
+          rating: number | null
+          resolved: boolean | null
+        }
+        Insert: {
+          comment?: string | null
+          conversation_id: string
+          created_at?: string | null
+          created_by?: string | null
+          id?: string
+          issue_type?: string | null
+          message_id?: string | null
+          rating?: number | null
+          resolved?: boolean | null
+        }
+        Update: {
+          comment?: string | null
+          conversation_id?: string
+          created_at?: string | null
+          created_by?: string | null
+          id?: string
+          issue_type?: string | null
+          message_id?: string | null
+          rating?: number | null
+          resolved?: boolean | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "conversation_feedback_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: false
+            referencedRelation: "conversations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "conversation_feedback_message_id_fkey"
+            columns: ["message_id"]
+            isOneToOne: false
+            referencedRelation: "messages"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       conversations: {
         Row: {
           assigned_to: string | null
@@ -1168,6 +1320,7 @@ export type Database = {
           content: string
           created_at: string
           document_id: string
+          embedding: string | null
           id: string
           metadata: Json | null
           tokens_count: number | null
@@ -1177,6 +1330,7 @@ export type Database = {
           content: string
           created_at?: string
           document_id: string
+          embedding?: string | null
           id?: string
           metadata?: Json | null
           tokens_count?: number | null
@@ -1186,6 +1340,7 @@ export type Database = {
           content?: string
           created_at?: string
           document_id?: string
+          embedding?: string | null
           id?: string
           metadata?: Json | null
           tokens_count?: number | null
@@ -1348,6 +1503,65 @@ export type Database = {
           },
           {
             foreignKeyName: "leads_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: false
+            referencedRelation: "conversations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      message_queue: {
+        Row: {
+          attempts: number | null
+          completed_at: string | null
+          conversation_id: string
+          created_at: string | null
+          id: string
+          instance_id: string | null
+          interactive_response: Json | null
+          last_error: string | null
+          max_attempts: number | null
+          message_text: string
+          message_type: string | null
+          priority: number | null
+          processing_at: string | null
+          status: string | null
+        }
+        Insert: {
+          attempts?: number | null
+          completed_at?: string | null
+          conversation_id: string
+          created_at?: string | null
+          id?: string
+          instance_id?: string | null
+          interactive_response?: Json | null
+          last_error?: string | null
+          max_attempts?: number | null
+          message_text: string
+          message_type?: string | null
+          priority?: number | null
+          processing_at?: string | null
+          status?: string | null
+        }
+        Update: {
+          attempts?: number | null
+          completed_at?: string | null
+          conversation_id?: string
+          created_at?: string | null
+          id?: string
+          instance_id?: string | null
+          interactive_response?: Json | null
+          last_error?: string | null
+          max_attempts?: number | null
+          message_text?: string
+          message_type?: string | null
+          priority?: number | null
+          processing_at?: string | null
+          status?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "message_queue_conversation_id_fkey"
             columns: ["conversation_id"]
             isOneToOne: false
             referencedRelation: "conversations"
@@ -1922,6 +2136,42 @@ export type Database = {
         }
         Relationships: []
       }
+      user_memory: {
+        Row: {
+          contact_email: string | null
+          contact_instagram: string | null
+          contact_phone: string | null
+          created_at: string | null
+          id: string
+          key: string
+          source: string | null
+          updated_at: string | null
+          value: string
+        }
+        Insert: {
+          contact_email?: string | null
+          contact_instagram?: string | null
+          contact_phone?: string | null
+          created_at?: string | null
+          id?: string
+          key: string
+          source?: string | null
+          updated_at?: string | null
+          value: string
+        }
+        Update: {
+          contact_email?: string | null
+          contact_instagram?: string | null
+          contact_phone?: string | null
+          created_at?: string | null
+          id?: string
+          key?: string
+          source?: string | null
+          updated_at?: string | null
+          value?: string
+        }
+        Relationships: []
+      }
       user_roles: {
         Row: {
           id: string
@@ -1956,6 +2206,20 @@ export type Database = {
       is_advogado: { Args: never; Returns: boolean }
       is_comercial: { Args: never; Returns: boolean }
       is_financeiro: { Args: never; Returns: boolean }
+      match_chunks: {
+        Args: {
+          match_count?: number
+          match_threshold?: number
+          query_embedding: string
+        }
+        Returns: {
+          chunk_index: number
+          content: string
+          document_id: string
+          id: string
+          similarity: number
+        }[]
+      }
     }
     Enums: {
       app_role: "admin" | "advogado" | "comercial" | "financeiro"
