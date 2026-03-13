@@ -241,21 +241,23 @@ Deno.serve(async (req) => {
     }
 
     // First get existing transaction to preserve metadata
+    // Match any Stripe gateway variant: "stripe", "stripe_pt", "stripe_br"
     const { data: existingTx } = await supabase
       .from("payment_transactions")
-      .select("id, financial_record_id, metadata, amount, currency")
+      .select("id, financial_record_id, metadata, amount, currency, gateway")
       .eq("gateway_payment_id", gatewayPaymentId)
-      .eq("gateway", "stripe")
+      .like("gateway", "stripe%")
       .maybeSingle();
 
     const mergedMeta = { ...(existingTx?.metadata as any || {}), stripe_event: event.type, updated_via: "webhook" };
 
-    // Update payment_transactions
+    // Update payment_transactions — use the actual gateway from the existing record
+    const matchGateway = existingTx?.gateway || "stripe";
     const { data: tx } = await supabase
       .from("payment_transactions")
       .update({ status: newStatus, metadata: mergedMeta })
       .eq("gateway_payment_id", gatewayPaymentId)
-      .eq("gateway", "stripe")
+      .eq("gateway", matchGateway)
       .select("id, financial_record_id, metadata, amount, currency")
       .maybeSingle();
 

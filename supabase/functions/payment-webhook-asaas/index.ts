@@ -12,7 +12,7 @@ async function getCredential(supabase: any, provider: string, key: string): Prom
     .eq("provider", provider)
     .eq("credential_key", key)
     .maybeSingle();
-  return data?.credential_value || null;
+  return data?.credential_value?.trim() || null;
 }
 
 async function ensureValidToken(supabase: any, integration: any): Promise<string> {
