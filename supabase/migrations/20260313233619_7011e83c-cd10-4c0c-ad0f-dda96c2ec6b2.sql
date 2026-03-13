@@ -1,0 +1,2 @@
+ALTER TABLE public.payment_gateway_config DROP CONSTRAINT payment_gateway_config_gateway_check;
+ALTER TABLE public.payment_gateway_config ADD CONSTRAINT payment_gateway_config_gateway_check CHECK (gateway = ANY (ARRAY['stripe'::text, 'asaas'::text, 'late_fees'::text]));

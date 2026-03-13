@@ -1,48 +1,89 @@
 
 
-## Plano: Configurações de Taxas de Juros Pós-Atraso no Emmely Pay
+## Revisão Arquitetural — Fase 2 Implementada
 
-### O que será feito
+### Mudanças realizadas (Fase 2)
 
-Adicionar uma secção de **Configurações de Encargos por Atraso** na tab Pagamentos (Integrações), onde o utilizador define:
-- **Multa fixa** (% única sobre a parcela) — padrão: 10%
-- **Juros mensais** (% proporcional ao dia) — padrão: 1%/mês
-- **Limite máximo de dias** para cálculo de juros — padrão: 365 dias
-- **Dias de tolerância** (grace period antes de aplicar encargos) — padrão: 0
+#### 1. Código morto eliminado
+- `chatbot-reply/index.ts` — **removido** (100% duplicado com flow-engine → ai-process-message)
+- `ai-triage/index.ts` — **removido** (100% duplicado com ai-automation-agent action classify_lead)
 
-A lógica de cálculo segue o modelo profissional:
-```text
-diasAtraso = max(0, dataPagamento - dataVencimento - diasTolerancia)
-multa      = parcela × (multaPct / 100)        [cobrada 1x]
-juros      = parcela × (jurosPct / 100) × (min(diasAtraso, limiteMax) / 30)
-valorFinal = parcela + multa + juros
-```
+#### 2. Janela de contexto expandida
+- `RECENT_MSG_COUNT`: 5 → **15** mensagens recentes completas
+- `HISTORY_LIMIT`: 15 → **30** mensagens totais
+- TOON comprime as 15 mais antigas, mantém as 15 recentes intactas
 
-### Alterações
+#### 3. RAG semântico real (pgvector)
+- Edge function `generate-embeddings` criada — gera embeddings de 768 dimensões via Lovable AI
+- `parse-document` agora chama `generate-embeddings` automaticamente após chunking
+- `ai-process-message` usa `match_chunks()` RPC para busca semântica (threshold 0.5)
+- Fallback para keyword scoring quando embeddings não existem
 
-**1. Tabela `payment_gateway_config`** — Inserir registro `late_fees` com as taxas padrão via `config` JSON:
-```json
-{
-  "penalty_pct": 10,
-  "interest_monthly_pct": 1,
-  "max_interest_days": 365,
-  "grace_days": 0
-}
-```
-Usar a tabela existente `payment_gateway_config` (que já tem campo `config jsonb`), inserindo um registro com `gateway = 'late_fees'`.
+#### 4. Router multi-agente
+- Quando agente tem `sub_agent_ids`, classifica intenção via IA rápida (flash-lite)
+- Delega para sub-agente especialista com seu próprio prompt e KB
+- Mantém agente activo em `bot_state.active_sub_agent_id` para consistência
 
-**2. UI — `src/pages/Integracoes.tsx`** — Adicionar na `PagamentosTab`, após os 3 cards de gateway e antes do card de transações recentes, um card "Encargos por Atraso" com:
-- 4 inputs numéricos (multa %, juros %/mês, limite dias, tolerância dias)
-- Simulador em tempo real: o utilizador insere valor da parcela e dias de atraso → mostra multa, juros e valor final calculados
-- Botão "Guardar" que faz upsert na `payment_gateway_config`
+#### 5. Self-evaluation / Reflexão
+- Após gerar resposta, avalia qualidade via flash-lite (score 1-10)
+- Se score < 7, regenera com instrução de correcção (máximo 1 retry)
+- Respostas < 50 chars ignoram avaliação
 
-**3. Lógica de cálculo reutilizável** — Criar `src/lib/lateFeeCalc.ts` com função pura `calculateLateFees(amount, daysLate, config)` que retorna `{ penalty, interest, charges, total }`, para ser usada tanto no frontend (simulador) como importada por edge functions.
+#### 6. Sentiment analysis + Auto-escalação
+- Análise de sentimento via heurística + IA
+- 2x frustração consecutiva → auto-transfere para humano
+- Guarda sentiment em `bot_state.last_sentiment`
+- Regista escalação em `conversation_feedback`
 
-### Ficheiros
+#### 7. Tools dinâmicas expandidas
+- Novas tools: `search_knowledge`, `get_case_status`, `send_payment_link`
+- Tools desconhecidas verificam `tool_parameters.webhook_url` para chamada webhook genérica
+- Registry pattern: tools são lidas de `agent_tools` table
 
-| Ficheiro | Acção |
-|----------|-------|
-| `src/lib/lateFeeCalc.ts` | **Criar** — função de cálculo |
-| `src/pages/Integracoes.tsx` | **Editar** — adicionar card de configuração + simulador na PagamentosTab |
-| SQL (insert) | **Executar** — inserir registro padrão em `payment_gateway_config` |
+#### 8. Queue worker auto-trigger
+- Trigger PostgreSQL `AFTER INSERT ON message_queue` chama `pg_net.http_post()` para queue-worker
+- Cron backup via `pg_cron` a cada minuto
 
+#### 9. Melhorias de robustez no sendReply
+- `Promise.allSettled` para operações paralelas (save message + update conversation)
+- Error logging real em vez de fire-and-forget silencioso para message-send e bitrix24-send
+- Extração de memória com tolerância `count % 10 > 1` (mais robusto que `=== 0`)
+
+### Mudanças realizadas (Fase 2.1 — Consolidação Completa)
+
+#### Código morto eliminado
+- `chatbot-reply/index.ts` e `ai-triage/index.ts` — diretórios removidos, referências limpas em `config.toml`, `ApiDocs.tsx` e `bitrix24-worker.ts`
+- ApiDocs actualizado para documentar `ai-process-message` em vez de `chatbot-reply`
+
+#### Sintaxe corrigida
+- `parse-document/index.ts` — corrigida função `extractWithAI` que estava erroneamente aninhada dentro de `findFileInZip`
+
+#### Config.toml actualizado
+- Removidas entradas `ai-triage` e `chatbot-reply`
+- Adicionadas entradas para `generate-embeddings`, `parse-document` e `queue-worker`
+
+#### Triggers PostgreSQL criados
+- `on_message_queue_insert` → auto-invoca `queue-worker` via `pg_net`
+- `on_lead_created` → notifica comerciais e admins
+- `on_message_created` → notifica de novas mensagens inbound
+- `on_payment_status_change` → notifica pagamentos recebidos
+- `on_lead_sla_check` → alerta SLA a expirar
+- `on_lead_set_sla` → define SLA automático na criação
+- `on_profile_created` → atribui admin ao primeiro utilizador
+- Cron job `queue-worker-backup` — invoca queue-worker a cada minuto
+
+### Estado actual — 8/8 melhorias implementadas ✅
+1. ✅ Código morto eliminado (chatbot-reply + ai-triage)
+2. ✅ Contexto expandido (30 mensagens: 15 recentes + 15 comprimidas TOON)
+3. ✅ RAG semântico (pgvector + match_chunks + generate-embeddings)
+4. ✅ Router multi-agente (sub_agent_ids + classificação de intenção)
+5. ✅ Tools dinâmicas (registry pattern + webhook fallback)
+6. ✅ Reflexão/Auto-avaliação (score 1-10, retry se < 7)
+7. ✅ Sentiment analysis + auto-escalação (2x frustração → humano)
+8. ✅ Queue worker auto-trigger (pg_trigger + pg_cron backup)
+
+### Próximos passos
+- Implementar dashboard de observabilidade no frontend
+- Adicionar botões thumbs up/down no chat de atendimento
+- Batch job para gerar embeddings dos chunks existentes
+- Streaming no PlaygroundIA
