@@ -10,21 +10,22 @@ export interface TriageClassification {
   notes: string;
 }
 
+/**
+ * useAiTriage — now delegates to ai-automation-agent (action: classify_lead)
+ * instead of the deprecated ai-triage edge function.
+ */
 export function useAiTriage() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
   return useMutation({
     mutationFn: async (leadId: string): Promise<TriageClassification> => {
-      const { data, error } = await supabase.functions.invoke("ai-triage", {
-        body: { lead_id: leadId },
+      const { data, error } = await supabase.functions.invoke("ai-automation-agent", {
+        body: { action: "classify_lead", lead_id: leadId },
       });
 
       if (error) throw new Error(error.message || "Erro na triagem IA");
-
-      if (data?.error) {
-        throw new Error(data.error);
-      }
+      if (data?.error) throw new Error(data.error);
 
       return data.classification;
     },

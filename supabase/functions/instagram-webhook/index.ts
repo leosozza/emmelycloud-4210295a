@@ -211,8 +211,8 @@ Deno.serve(async (req) => {
             })
             .eq("id", conversationId);
 
-          // Fire and forget: chatbot-reply
-          fetch(`${supabaseUrl}/functions/v1/chatbot-reply`, {
+          // Fire and forget: flow-engine (unified pipeline)
+          fetch(`${supabaseUrl}/functions/v1/flow-engine`, {
             method: "POST",
             headers: {
               "Content-Type": "application/json",
@@ -222,7 +222,7 @@ Deno.serve(async (req) => {
               conversation_id: conversationId,
               message_text: text,
             }),
-          }).catch((e) => console.error("[IG-WEBHOOK] Chatbot error:", e));
+          }).catch((e) => console.error("[IG-WEBHOOK] Flow engine error:", e));
 
           // Fire and forget: forward to Bitrix24
           fetch(`${supabaseUrl}/functions/v1/bitrix24-send`, {
