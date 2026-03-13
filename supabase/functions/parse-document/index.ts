@@ -93,6 +93,18 @@ serve(async (req) => {
 
     console.log(`Parsed ${ext} file: ${chunks.length} chunks, ${extractedText.length} chars`);
 
+    // Auto-generate embeddings for new chunks
+    try {
+      fetch(`${supabaseUrl}/functions/v1/generate-embeddings`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${supabaseKey}`,
+        },
+        body: JSON.stringify({ document_id }),
+      }).catch(e => console.error("generate-embeddings call error:", e));
+    } catch {}
+
     return new Response(JSON.stringify({ text: extractedText.substring(0, 500), chunks: chunks.length }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
