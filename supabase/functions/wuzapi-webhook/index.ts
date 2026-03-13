@@ -179,12 +179,12 @@ Deno.serve(async (req) => {
       sync_source: "bitrix24",
     });
 
-    // Trigger chatbot-reply if bot is active
+    // Trigger flow-engine if bot is active (unified pipeline)
     if (attendanceMode === "bot") {
       try {
         const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
         const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-        fetch(`${supabaseUrl}/functions/v1/chatbot-reply`, {
+        fetch(`${supabaseUrl}/functions/v1/flow-engine`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -192,11 +192,9 @@ Deno.serve(async (req) => {
           },
           body: JSON.stringify({
             conversation_id: conversationId,
-            message: content,
-            contact_name: senderName,
-            channel: "whatsapp",
+            message_text: content,
           }),
-        }).catch((e) => console.error("[WUZAPI-WEBHOOK] chatbot-reply fire-and-forget error:", e));
+        }).catch((e) => console.error("[WUZAPI-WEBHOOK] flow-engine fire-and-forget error:", e));
       } catch {}
     }
 
