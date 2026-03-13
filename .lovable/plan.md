@@ -49,10 +49,10 @@
 - Error logging real em vez de fire-and-forget silencioso para message-send e bitrix24-send
 - Extração de memória com tolerância `count % 10 > 1` (mais robusto que `=== 0`)
 
-### Mudanças realizadas (Fase 2.1 — Limpeza Final)
+### Mudanças realizadas (Fase 2.1 — Consolidação Completa)
 
 #### Código morto eliminado
-- `chatbot-reply/index.ts` e `ai-triage/index.ts` — diretórios já removidos, agora limpas referências em `config.toml`, `ApiDocs.tsx` e `bitrix24-worker.ts`
+- `chatbot-reply/index.ts` e `ai-triage/index.ts` — diretórios removidos, referências limpas em `config.toml`, `ApiDocs.tsx` e `bitrix24-worker.ts`
 - ApiDocs actualizado para documentar `ai-process-message` em vez de `chatbot-reply`
 
 #### Sintaxe corrigida
@@ -61,6 +61,26 @@
 #### Config.toml actualizado
 - Removidas entradas `ai-triage` e `chatbot-reply`
 - Adicionadas entradas para `generate-embeddings`, `parse-document` e `queue-worker`
+
+#### Triggers PostgreSQL criados
+- `on_message_queue_insert` → auto-invoca `queue-worker` via `pg_net`
+- `on_lead_created` → notifica comerciais e admins
+- `on_message_created` → notifica de novas mensagens inbound
+- `on_payment_status_change` → notifica pagamentos recebidos
+- `on_lead_sla_check` → alerta SLA a expirar
+- `on_lead_set_sla` → define SLA automático na criação
+- `on_profile_created` → atribui admin ao primeiro utilizador
+- Cron job `queue-worker-backup` — invoca queue-worker a cada minuto
+
+### Estado actual — 8/8 melhorias implementadas ✅
+1. ✅ Código morto eliminado (chatbot-reply + ai-triage)
+2. ✅ Contexto expandido (30 mensagens: 15 recentes + 15 comprimidas TOON)
+3. ✅ RAG semântico (pgvector + match_chunks + generate-embeddings)
+4. ✅ Router multi-agente (sub_agent_ids + classificação de intenção)
+5. ✅ Tools dinâmicas (registry pattern + webhook fallback)
+6. ✅ Reflexão/Auto-avaliação (score 1-10, retry se < 7)
+7. ✅ Sentiment analysis + auto-escalação (2x frustração → humano)
+8. ✅ Queue worker auto-trigger (pg_trigger + pg_cron backup)
 
 ### Próximos passos
 - Implementar dashboard de observabilidade no frontend
