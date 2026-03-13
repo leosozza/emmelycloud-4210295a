@@ -115,21 +115,21 @@ const endpoints: Endpoint[] = [
 }`,
   },
   {
-    name: "Chatbot Auto-Reply",
+    name: "AI Process Message",
     method: "POST",
-    path: "/chatbot-reply",
+    path: "/ai-process-message",
     auth: "Service Role",
     category: "ai",
-    description: "Motor de auto-resposta IA. Busca agente default, gera resposta e envia para o canal externo e Bitrix24.",
+    description: "Motor de processamento IA unificado. RAG semântico (pgvector), tool calling, memória longa, reflexão e análise de sentimento.",
     request: `{
   "conversation_id": "uuid",
   "message_text": "Qual o prazo?"
 }`,
     response: `{
-  "success": true,
-  "reply": "O prazo médio é..."
+  "reply": "O prazo médio é...",
+  "agent_id": "uuid"
 }`,
-    notes: "Chamado internamente pelos webhooks. Requer agente com is_default=true e is_active=true.",
+    notes: "Chamado pelo flow-engine. Suporta RAG semântico com embeddings, router multi-agente e auto-escalação por sentimento.",
   },
   // ── Pagamentos ──
   {
