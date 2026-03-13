@@ -133,3 +133,12 @@ verify_jwt = false
 
 [functions.bitrix24-fetch-entities]
 verify_jwt = false
+
+[functions.generate-embeddings]
+verify_jwt = false
+
+[functions.parse-document]
+verify_jwt = false
+
+[functions.queue-worker]
+verify_jwt = false
