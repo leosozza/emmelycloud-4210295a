@@ -241,11 +241,13 @@ serve(async (req) => {
     }
 
     // ── MODE: honorarios or full ──────────────────────────────────────
-    if (!clientes || !honorarios) {
-      return new Response(JSON.stringify({ error: "clientes and honorarios arrays are required" }), {
+    if (!honorarios || !Array.isArray(honorarios)) {
+      return new Response(JSON.stringify({ error: "honorarios array is required for this mode" }), {
         status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
+    // If clientes not provided, use empty array (clients fetched from DB)
+    const clientesList = Array.isArray(clientes) ? clientes : [];
 
     // Build honorarios lookup: clientId -> honorarios[]
     const honByClient: Record<number, RawHonorario[]> = {};
@@ -261,16 +263,16 @@ serve(async (req) => {
     if (mode === "honorarios") {
       // Build minimal client stubs from honorarios' CLIENTE ids
       const uniqueClientIds = [...new Set(honorarios.map(h => h.CLIENTE))];
-      if (clientes && clientes.length > 0) {
+      if (clientesList.length > 0) {
         // Use provided clientes filtered to those with honorarios
         const clientIdSet = new Set(uniqueClientIds);
-        clientsToProcess = clientes.filter(c => clientIdSet.has(c.ID));
+        clientsToProcess = clientesList.filter(c => clientIdSet.has(c.ID));
       } else {
         // No clientes provided — create stubs
         clientsToProcess = uniqueClientIds.map(id => ({ ID: id, NOME: `Cliente ${id}` } as RawClient));
       }
     } else {
-      clientsToProcess = clientes;
+      clientsToProcess = clientesList;
     }
 
     const total = clientsToProcess.length;

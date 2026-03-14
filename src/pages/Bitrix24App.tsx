@@ -4265,7 +4265,7 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
             Authorization: `Bearer ${SUPABASE_KEY}`,
           },
           body: JSON.stringify({
-            clientes: clientesData ? (filteredClientes || []) : [],
+            clientes: [],
             honorarios: filteredHonorarios,
             mode: "honorarios",
             batch_start: batchStart,
@@ -4416,25 +4416,13 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label className="text-sm font-medium">TBL_HONORARIOS.xlsx</Label>
-              <Input type="file" accept=".xlsx,.xls" onChange={handleHonorariosUpload} disabled={isImporting} />
-              {honorariosData && (
-                <p className="text-xs text-muted-foreground">✅ {honorariosData.length} registos carregados</p>
-              )}
-            </div>
-            <div className="space-y-2">
-              <Label className="text-sm font-medium">TBL_CLIENTE.xlsx <span className="text-muted-foreground">(opcional)</span></Label>
-              {clientesData ? (
-                <p className="text-xs text-muted-foreground">✅ {clientesData.length} registos (da Fase 1)</p>
-              ) : (
-                <>
-                  <Input type="file" accept=".xlsx,.xls" onChange={handleClientesUpload} disabled={isImporting} />
-                  <p className="text-xs text-muted-foreground">Opcional — clientes já importados na Fase 1 serão usados da base de dados</p>
-                </>
-              )}
-            </div>
+          <div className="space-y-2">
+            <Label className="text-sm font-medium">TBL_HONORARIOS.xlsx</Label>
+            <Input type="file" accept=".xlsx,.xls" onChange={handleHonorariosUpload} disabled={isImporting} />
+            {honorariosData && (
+              <p className="text-xs text-muted-foreground">✅ {honorariosData.length} registos carregados</p>
+            )}
+            <p className="text-xs text-muted-foreground">Os clientes importados na Fase 1 serão usados automaticamente da base de dados.</p>
           </div>
 
           {/* Filters (Phase 2 only) */}
