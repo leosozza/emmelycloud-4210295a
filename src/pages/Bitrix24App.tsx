@@ -4767,6 +4767,8 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
   const [clientsProgress, setClientsProgress] = useState({ processed: 0, total: 0 });
   const [clientsLogs, setClientsLogs] = useState<{ client_name: string; status: string; error?: string; details?: string }[]>([]);
   const [clientsDone, setClientsDone] = useState(false);
+  const [clientsSessionId, setClientsSessionId] = useState<string | null>(null);
+  const [clientsFileRef, setClientsFileRef] = useState<File | null>(null);
 
   // Phase 2: Honorarios
   const [honorariosData, setHonorariosData] = useState<any[] | null>(null);
@@ -4774,6 +4776,10 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
   const [honorariosProgress, setHonorariosProgress] = useState({ processed: 0, total: 0 });
   const [honorariosLogs, setHonorariosLogs] = useState<{ client_name: string; status: string; error?: string; details?: string }[]>([]);
   const [honorariosDone, setHonorariosDone] = useState(false);
+  const [honorariosSessionId, setHonorariosSessionId] = useState<string | null>(null);
+
+  // Resuming state
+  const [resumingPhase, setResumingPhase] = useState<string | null>(null);
 
   // Phase 3: Interactive Sync
   type SyncClient = {
@@ -4814,6 +4820,110 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
   const [filterDateTo, setFilterDateTo] = useState<Date | undefined>(undefined);
   const [filterStatus, setFilterStatus] = useState("todos");
 
+  // ── Session persistence helpers ──
+  const saveSessionProgress = async (sessionId: string, processed: number, logs: any[]) => {
+    await supabase.from("import_sessions" as any).update({
+      processed_items: processed,
+      logs: logs as any,
+      updated_at: new Date().toISOString(),
+    } as any).eq("id", sessionId);
+  };
+
+  const createSession = async (phase: string, filePath: string, totalItems: number, filterCfg?: any): Promise<string | null> => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return null;
+    const { data, error } = await supabase.from("import_sessions" as any).insert({
+      user_id: user.id,
+      phase,
+      status: "in_progress",
+      file_path: filePath,
+      total_items: totalItems,
+      processed_items: 0,
+      logs: [] as any,
+      filter_config: (filterCfg || {}) as any,
+    } as any).select("id").single();
+    if (error) { console.error("[createSession]", error); return null; }
+    return (data as any)?.id || null;
+  };
+
+  const markSessionDone = async (sessionId: string) => {
+    await supabase.from("import_sessions" as any).update({ status: "done", updated_at: new Date().toISOString() } as any).eq("id", sessionId);
+  };
+
+  const clearSession = async (sessionId: string, filePath?: string) => {
+    if (filePath) {
+      await supabase.storage.from("import-files").remove([filePath]);
+    }
+    await supabase.from("import_sessions" as any).delete().eq("id", sessionId);
+  };
+
+  // ── Resume active sessions on mount ──
+  useEffect(() => {
+    const resumeSessions = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      const { data: sessions } = await supabase
+        .from("import_sessions" as any)
+        .select("*")
+        .eq("user_id", user.id)
+        .eq("status", "in_progress") as any;
+
+      if (!sessions || sessions.length === 0) return;
+
+      for (const session of sessions as any[]) {
+        if (!session.file_path) continue;
+        setResumingPhase(session.phase);
+
+        try {
+          // Download file from storage
+          const { data: fileData, error: dlError } = await supabase.storage
+            .from("import-files")
+            .download(session.file_path);
+
+          if (dlError || !fileData) {
+            console.error("[resume] Failed to download file:", dlError);
+            continue;
+          }
+
+          // Parse XLSX from blob
+          const XLSX = await import("xlsx");
+          const buffer = await fileData.arrayBuffer();
+          const wb = XLSX.read(buffer, { type: "array" });
+          const sheet = wb.Sheets[wb.SheetNames[0]];
+          const rows = XLSX.utils.sheet_to_json(sheet, { defval: "" });
+
+          const savedLogs = Array.isArray(session.logs) ? session.logs : [];
+
+          if (session.phase === "clients") {
+            setClientesData(rows);
+            setClientsSessionId(session.id);
+            setClientsLogs(savedLogs);
+            setClientsProgress({ processed: session.processed_items || 0, total: session.total_items || rows.length });
+            if (session.status === "done") setClientsDone(true);
+          } else if (session.phase === "honorarios") {
+            setHonorariosData(rows);
+            setHonorariosSessionId(session.id);
+            setHonorariosLogs(savedLogs);
+            setHonorariosProgress({ processed: session.processed_items || 0, total: session.total_items || 0 });
+            if (session.filter_config) {
+              const fc = session.filter_config as any;
+              if (fc.dateFrom) setFilterDateFrom(new Date(fc.dateFrom));
+              if (fc.dateTo) setFilterDateTo(new Date(fc.dateTo));
+              if (fc.status) setFilterStatus(fc.status);
+            }
+            if (session.status === "done") setHonorariosDone(true);
+          }
+        } catch (e) {
+          console.error("[resume] Error restoring session:", e);
+        }
+      }
+      setResumingPhase(null);
+    };
+
+    resumeSessions();
+  }, []);
+
   // Load pipelines when integration available
   useEffect(() => {
     if (!memberId || !integration) return;
@@ -4838,6 +4948,16 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
     return XLSX.utils.sheet_to_json(sheet, { defval: "" });
   };
 
+  const uploadFileToStorage = async (file: File, phase: string): Promise<string | null> => {
+    const filePath = `${phase}_${Date.now()}.xlsx`;
+    const { error } = await supabase.storage.from("import-files").upload(filePath, file, {
+      contentType: file.type || "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      upsert: false,
+    });
+    if (error) { console.error("[uploadFile]", error); return null; }
+    return filePath;
+  };
+
   const handleClientesUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -4846,6 +4966,15 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
       setClientesData(data);
       setClientsLogs([]);
       setClientsDone(false);
+      setClientsFileRef(file);
+
+      // Upload to storage and create session
+      const filePath = await uploadFileToStorage(file, "clients");
+      if (filePath) {
+        const validCount = data.filter((c: any) => c.ID > 3).length;
+        const sessionId = await createSession("clients", filePath, validCount);
+        if (sessionId) setClientsSessionId(sessionId);
+      }
     } catch {
       alert("Erro ao ler o ficheiro de clientes.");
     }
@@ -4859,6 +4988,17 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
       setHonorariosData(data);
       setHonorariosLogs([]);
       setHonorariosDone(false);
+
+      // Upload to storage and create session
+      const filePath = await uploadFileToStorage(file, "honorarios");
+      if (filePath) {
+        const sessionId = await createSession("honorarios", filePath, data.length, {
+          dateFrom: filterDateFrom?.toISOString(),
+          dateTo: filterDateTo?.toISOString(),
+          status: filterStatus,
+        });
+        if (sessionId) setHonorariosSessionId(sessionId);
+      }
     } catch {
       alert("Erro ao ler o ficheiro de honorários.");
     }
@@ -4887,7 +5027,9 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
     setClientsDone(false);
 
     const batchSize = 10;
-    let batchStart = 0;
+    // Resume from saved progress
+    let batchStart = clientsSessionId && clientsProgress.processed > 0 ? clientsProgress.processed : 0;
+    const allLogs: any[] = batchStart > 0 ? [...clientsLogs] : [];
 
     while (batchStart < validClients.length) {
       try {
@@ -4907,18 +5049,32 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
         });
         const data = await res.json();
         if (data.results) {
-          setClientsLogs(prev => [...prev, ...data.results]);
+          allLogs.push(...data.results);
+          setClientsLogs([...allLogs]);
         }
-        setClientsProgress({ processed: data.processed || batchStart + batchSize, total: validClients.length });
+        const processed = data.processed || batchStart + batchSize;
+        setClientsProgress({ processed, total: validClients.length });
+
+        // Checkpoint to database
+        if (clientsSessionId) {
+          await saveSessionProgress(clientsSessionId, processed, allLogs);
+        }
+
         if (!data.has_more) break;
         batchStart = data.next_batch_start;
       } catch (e) {
-        setClientsLogs(prev => [...prev, { client_name: `Batch ${batchStart}`, status: "error", error: String(e) }]);
+        const errLog = { client_name: `Batch ${batchStart}`, status: "error", error: String(e) };
+        allLogs.push(errLog);
+        setClientsLogs([...allLogs]);
+        if (clientsSessionId) {
+          await saveSessionProgress(clientsSessionId, batchStart, allLogs);
+        }
         break;
       }
     }
     setClientsDone(true);
     setImportingClients(false);
+    if (clientsSessionId) await markSessionDone(clientsSessionId);
   };
 
   // ── Phase 2: Filtered honorarios ──
