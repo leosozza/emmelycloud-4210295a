@@ -958,13 +958,14 @@ async function executeToolCall(supabase: any, supabaseUrl: string, serviceKey: s
   }
 }
 
-// ─── Observability: log AI usage ───
+// ─── Observability: log AI usage with cost estimation ───
 async function logUsage(
   supabase: any, conversationId: string | null, agentId: string, model: string, provider: string,
   promptTokens: number, completionTokens: number, totalTokens: number, latencyMs: number,
   wasFallback: boolean, error: string | null
 ) {
   try {
+    const costEstimate = estimateCost(model, promptTokens, completionTokens);
     await supabase.from("ai_usage_logs").insert({
       conversation_id: conversationId || null,
       agent_id: agentId,
@@ -974,6 +975,7 @@ async function logUsage(
       completion_tokens: completionTokens,
       total_tokens: totalTokens,
       latency_ms: latencyMs,
+      cost_estimate: costEstimate,
       was_fallback: wasFallback,
       error,
     });
