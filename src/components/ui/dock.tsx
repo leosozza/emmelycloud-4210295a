@@ -1,222 +1,310 @@
-'use client';
+"use client"
 
-import {
-  motion,
-  MotionValue,
-  useMotionValue,
-  useSpring,
-  useTransform,
-  type SpringOptions,
-  AnimatePresence,
-} from 'framer-motion';
-import {
-  Children,
-  cloneElement,
+import React, {
+  ReactNode,
   createContext,
+  useCallback,
   useContext,
   useEffect,
   useMemo,
   useRef,
   useState,
-} from 'react';
-import { cn } from '@/lib/utils';
+} from "react"
+import {
+  AnimatePresence,
+  MotionValue,
+  animate,
+  motion,
+  useAnimation,
+  useMotionValue,
+  useSpring,
+  useTransform,
+} from "motion/react"
 
-const DOCK_HEIGHT = 128;
-const DEFAULT_MAGNIFICATION = 80;
-const DEFAULT_DISTANCE = 150;
-const DEFAULT_PANEL_HEIGHT = 64;
+import { cn } from "@/lib/utils"
 
-type DockProps = {
-  children: React.ReactNode;
-  className?: string;
-  distance?: number;
-  panelHeight?: number;
-  magnification?: number;
-  spring?: SpringOptions;
-};
-type DockItemProps = {
-  className?: string;
-  children: React.ReactNode;
-  onClick?: () => void;
-};
-type DockLabelProps = {
-  className?: string;
-  children: React.ReactNode;
-};
-type DockIconProps = {
-  className?: string;
-  children: React.ReactNode;
-};
-
-type DocContextType = {
-  mouseX: MotionValue;
-  spring: SpringOptions;
-  magnification: number;
-  distance: number;
-};
-type DockProviderProps = {
-  children: React.ReactNode;
-  value: DocContextType;
-};
-
-const DockContext = createContext<DocContextType | undefined>(undefined);
-
-function DockProvider({ children, value }: DockProviderProps) {
-  return <DockContext.Provider value={value}>{children}</DockContext.Provider>;
+interface DockContextType {
+  width: number
+  hovered: boolean
+  setIsZooming: (value: boolean) => void
+  zoomLevel: MotionValue
+  mouseX: MotionValue
+  animatingIndexes: number[]
+  setAnimatingIndexes: (indexes: number[]) => void
 }
 
-function useDock() {
-  const context = useContext(DockContext);
-  if (!context) {
-    throw new Error('useDock must be used within a DockProvider');
-  }
-  return context;
+const INITIAL_WIDTH = 48
+
+const DockContext = createContext<DockContextType>({
+  width: 0,
+  hovered: false,
+  setIsZooming: () => {},
+  zoomLevel: null as any,
+  mouseX: null as any,
+  animatingIndexes: [],
+  setAnimatingIndexes: () => {},
+})
+
+const useDock = () => useContext(DockContext)
+
+interface DockProps {
+  className?: string
+  children: ReactNode
 }
 
-function Dock({
-  children,
-  className,
-  spring = { mass: 0.1, stiffness: 150, damping: 12 },
-  magnification = DEFAULT_MAGNIFICATION,
-  distance = DEFAULT_DISTANCE,
-  panelHeight = DEFAULT_PANEL_HEIGHT,
-}: DockProps) {
-  const mouseX = useMotionValue(Infinity);
-  const isHovered = useMotionValue(0);
+function Dock({ className, children }: DockProps) {
+  const [hovered, setHovered] = useState(false)
+  const [width, setWidth] = useState(0)
+  const dockRef = useRef<HTMLDivElement>(null)
+  const isZooming = useRef(false)
+  const [animatingIndexes, setAnimatingIndexes] = useState<number[]>([])
 
-  const maxHeight = useMemo(() => {
-    return Math.max(DOCK_HEIGHT, magnification + magnification / 2 + 4);
-  }, [magnification]);
+  const setIsZooming = useCallback((value: boolean) => {
+    isZooming.current = value
+    setHovered(!value)
+  }, [])
 
-  const heightRow = useTransform(isHovered, [0, 1], [panelHeight, maxHeight]);
-  const height = useSpring(heightRow, spring);
+  const zoomLevel = useMotionValue(1)
+
+  useWindowResize(() => {
+    setWidth(dockRef.current?.clientWidth || 0)
+  })
+
+  const mouseX = useMotionValue(Infinity)
 
   return (
-    <motion.div
-      style={{
-        height: height,
-        scrollbarWidth: 'none',
+    <DockContext.Provider
+      value={{
+        width,
+        hovered,
+        setIsZooming,
+        zoomLevel,
+        mouseX,
+        animatingIndexes,
+        setAnimatingIndexes,
       }}
-      className="mx-2 flex max-w-full items-end overflow-x-auto"
     >
       <motion.div
-        onMouseMove={({ pageX }) => {
-          isHovered.set(1);
-          mouseX.set(pageX);
-        }}
-        onMouseLeave={() => {
-          isHovered.set(0);
-          mouseX.set(Infinity);
-        }}
+        ref={dockRef}
         className={cn(
-          'mx-auto flex w-fit gap-4 rounded-2xl bg-background/80 backdrop-blur-xl border border-border shadow-lg px-4',
+          "fixed bottom-4 left-1/2 z-30 mx-auto flex max-w-full items-end gap-1 rounded-2xl bg-background/80 backdrop-blur-xl border border-border shadow-lg px-3 py-2 overflow-x-auto",
           className
         )}
-        style={{ height: panelHeight }}
+        onMouseMove={(e) => {
+          mouseX.set(e.pageX)
+          if (!isZooming.current) {
+            setHovered(true)
+          }
+        }}
+        onMouseLeave={() => {
+          mouseX.set(Infinity)
+          setHovered(false)
+        }}
+        style={{
+          x: "-50%",
+          scale: zoomLevel,
+          scrollbarWidth: "none",
+        }}
         role="toolbar"
         aria-label="Application dock"
       >
-        <DockProvider value={{ mouseX, spring, distance, magnification }}>
-          {children}
-        </DockProvider>
+        {children}
       </motion.div>
-    </motion.div>
-  );
+    </DockContext.Provider>
+  )
 }
 
-function DockItem({ children, className, onClick }: DockItemProps) {
-  const ref = useRef<HTMLDivElement>(null);
+Dock.displayName = "Dock"
 
-  const { distance, magnification, mouseX, spring } = useDock();
-
-  const isHovered = useMotionValue(0);
-
-  const mouseDistance = useTransform(mouseX, (val) => {
-    const domRect = ref.current?.getBoundingClientRect() ?? { x: 0, width: 0 };
-    return val - domRect.x - domRect.width / 2;
-  });
-
-  const widthTransform = useTransform(
-    mouseDistance,
-    [-distance, 0, distance],
-    [40, magnification, 40]
-  );
-
-  const width = useSpring(widthTransform, spring);
-
-  return (
-    <motion.div
-      ref={ref}
-      style={{ width }}
-      onHoverStart={() => isHovered.set(1)}
-      onHoverEnd={() => isHovered.set(0)}
-      onFocus={() => isHovered.set(1)}
-      onBlur={() => isHovered.set(0)}
-      onClick={onClick}
-      className={cn(
-        'relative inline-flex items-center justify-center cursor-pointer',
-        className
-      )}
-      tabIndex={0}
-      role="button"
-      aria-haspopup="true"
-    >
-      {Children.map(children, (child) =>
-        cloneElement(child as React.ReactElement, { width, isHovered })
-      )}
-    </motion.div>
-  );
+interface DockCardProps {
+  children: ReactNode
+  id: string
+  onClick?: () => void
+  isActive?: boolean
+  label?: string
 }
 
-function DockLabel({ children, className, ...rest }: DockLabelProps) {
-  const restProps = rest as Record<string, unknown>;
-  const isHovered = restProps['isHovered'] as MotionValue<number>;
-  const [isVisible, setIsVisible] = useState(false);
+function DockCard({ children, id, onClick, isActive, label }: DockCardProps) {
+  const cardRef = useRef<HTMLDivElement>(null)
+  const [elCenterX, setElCenterX] = useState(0)
+  const dock = useDock()
+  const [isHovered, setIsHovered] = useState(false)
 
-  useEffect(() => {
-    if (!isHovered) return;
-    const unsubscribe = isHovered.on('change', (latest) => {
-      setIsVisible(latest === 1);
-    });
-    return () => unsubscribe();
-  }, [isHovered]);
+  const size = useSpring(INITIAL_WIDTH, {
+    stiffness: 320,
+    damping: 20,
+    mass: 0.1,
+  })
+
+  useMousePosition(
+    {
+      onChange: ({ value }) => {
+        const mouseX = value.x
+        if (dock.width > 0) {
+          const transformedValue =
+            INITIAL_WIDTH +
+            36 *
+              Math.cos((((mouseX - elCenterX) / dock.width) * Math.PI) / 2) **
+                12
+
+          if (dock.hovered) {
+            animate(size, transformedValue)
+          }
+        }
+      },
+    },
+    [elCenterX, dock]
+  )
+
+  useWindowResize(() => {
+    const { x } = cardRef.current?.getBoundingClientRect() || { x: 0 }
+    setElCenterX(x + INITIAL_WIDTH / 2)
+  })
+
+  const distance = useTransform(dock.mouseX, (val) => {
+    const bounds = cardRef.current?.getBoundingClientRect() ?? {
+      x: 0,
+      width: 0,
+    }
+    return val - bounds.x - bounds.width / 2
+  })
+
+  const widthSync = useTransform(distance, [-150, 0, 150], [40, 80, 40])
+  const width = useSpring(widthSync, { mass: 0.1, stiffness: 150, damping: 12 })
 
   return (
-    <AnimatePresence>
-      {isVisible && (
+    <div className="relative flex flex-col items-center" ref={cardRef}>
+      <AnimatePresence>
+        {isHovered && label && (
+          <motion.div
+            initial={{ opacity: 0, y: 0 }}
+            animate={{ opacity: 1, y: -8 }}
+            exit={{ opacity: 0, y: 0 }}
+            transition={{ duration: 0.15 }}
+            className="absolute -top-8 left-1/2 w-fit whitespace-pre rounded-md border border-border bg-popover px-2 py-0.5 text-xs text-popover-foreground shadow-md"
+            style={{ x: "-50%" }}
+            role="tooltip"
+          >
+            {label}
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <motion.div
+        style={{ width }}
+        className={cn(
+          "relative flex aspect-square cursor-pointer items-center justify-center rounded-xl transition-colors",
+          isActive
+            ? "bg-primary/10"
+            : "hover:bg-muted"
+        )}
+        onClick={onClick}
+        onMouseEnter={() => setIsHovered(true)}
+        onMouseLeave={() => setIsHovered(false)}
+        tabIndex={0}
+        role="button"
+        aria-label={label}
+      >
         <motion.div
-          initial={{ opacity: 0, y: 0 }}
-          animate={{ opacity: 1, y: -10 }}
-          exit={{ opacity: 0, y: 0 }}
-          transition={{ duration: 0.2 }}
-          className={cn(
-            'absolute -top-6 left-1/2 w-fit whitespace-pre rounded-md border border-border bg-popover px-2 py-0.5 text-xs text-popover-foreground shadow-md',
-            className
-          )}
-          role="tooltip"
-          style={{ x: '-50%' }}
+          className="flex items-center justify-center"
+          style={{ width: useTransform(width, (val) => val * 0.5) }}
         >
           {children}
         </motion.div>
+      </motion.div>
+
+      {isActive && (
+        <div className="absolute -bottom-1 h-1 w-1 rounded-full bg-primary" />
       )}
-    </AnimatePresence>
-  );
+    </div>
+  )
 }
 
-function DockIcon({ children, className, ...rest }: DockIconProps) {
-  const restProps = rest as Record<string, unknown>;
-  const width = restProps['width'] as MotionValue<number>;
+DockCard.displayName = "DockCard"
 
-  const widthTransform = useTransform(width, (val) => val / 2);
-
+function DockDivider() {
   return (
-    <motion.div
-      style={{ width: widthTransform }}
-      className={cn('flex items-center justify-center', className)}
-    >
-      {children}
-    </motion.div>
-  );
+    <div className="flex items-center px-1">
+      <div className="h-6 w-px bg-border" />
+    </div>
+  )
 }
 
-export { Dock, DockIcon, DockItem, DockLabel };
+DockDivider.displayName = "DockDivider"
+
+// --- Hooks ---
+
+type UseWindowResizeCallback = (width: number, height: number) => void
+
+function useWindowResize(callback: UseWindowResizeCallback) {
+  const callbackRef = useCallbackRef(callback)
+
+  useEffect(() => {
+    const handleResize = () => {
+      callbackRef(window.innerWidth, window.innerHeight)
+    }
+
+    handleResize()
+    window.addEventListener("resize", handleResize)
+
+    return () => {
+      window.removeEventListener("resize", handleResize)
+    }
+  }, [callbackRef])
+}
+
+function useCallbackRef<T extends (...args: any[]) => any>(callback: T): T {
+  const callbackRef = useRef(callback)
+
+  useEffect(() => {
+    callbackRef.current = callback
+  })
+
+  return useMemo(() => ((...args: any[]) => callbackRef.current?.(...args)) as T, [])
+}
+
+interface MousePositionOptions {
+  onChange?: (position: { value: { x: number; y: number } }) => void
+}
+
+function useMousePosition(
+  options: MousePositionOptions = {},
+  deps: readonly any[] = []
+) {
+  const { onChange } = options
+
+  const x = useMotionValue(0)
+  const y = useMotionValue(0)
+
+  useEffect(() => {
+    const handleMouseMove = (event: MouseEvent) => {
+      animate(x, event.clientX)
+      animate(y, event.clientY)
+    }
+
+    const handleChange = () => {
+      if (onChange) {
+        onChange({ value: { x: x.get(), y: y.get() } })
+      }
+    }
+
+    const unsubscribeX = x.on("change", handleChange)
+    const unsubscribeY = y.on("change", handleChange)
+
+    window.addEventListener("mousemove", handleMouseMove)
+
+    return () => {
+      window.removeEventListener("mousemove", handleMouseMove)
+      unsubscribeX()
+      unsubscribeY()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [x, y, onChange, ...deps])
+
+  return useMemo(
+    () => ({ x, y }),
+    [x, y]
+  )
+}
+
+export { Dock, DockCard, DockDivider, useDock, useMousePosition }
