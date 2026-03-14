@@ -3130,6 +3130,9 @@ function PlacementPreviewView({ integration, memberId }: { integration: any; mem
       case "payment-tab":
         formData.append("PLACEMENT_OPTIONS", JSON.stringify({ ID: dealId, ENTITY_TYPE_ID: "2" }));
         break;
+      case "payment-tab-contact":
+        formData.append("PLACEMENT_OPTIONS", JSON.stringify({ ID: contactId, ENTITY_TYPE_ID: "3" }));
+        break;
       case "crm-tab":
         formData.append("PLACEMENT_OPTIONS", JSON.stringify({ ID: leadId }));
         break;
