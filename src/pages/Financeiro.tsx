@@ -165,14 +165,27 @@ const FinanceiroPage = () => {
 
       {/* Table */}
       <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Recebimentos Diretos</CardTitle>
+        <CardHeader className="flex flex-row items-center justify-between">
+          <CardTitle className="text-base">Transações</CardTitle>
+          <div className="flex gap-1">
+            {["all", "direto", "stripe_pt", "stripe_br", "asaas"].map((gw) => (
+              <Button
+                key={gw}
+                size="sm"
+                variant={gatewayFilter === gw ? "default" : "outline"}
+                className="text-xs h-7 px-2"
+                onClick={() => setGatewayFilter(gw)}
+              >
+                {gw === "all" ? "Todos" : gw === "direto" ? "Direto" : gw === "stripe_pt" ? "Stripe PT" : gw === "stripe_br" ? "Stripe BR" : "Asaas"}
+              </Button>
+            ))}
+          </div>
         </CardHeader>
         <CardContent className="p-0">
           {isLoading ? (
             <div className="p-8 text-center text-muted-foreground">Carregando...</div>
           ) : transactions.length === 0 ? (
-            <div className="p-8 text-center text-muted-foreground">Nenhum recebimento direto neste período.</div>
+            <div className="p-8 text-center text-muted-foreground">Nenhuma transação neste período.</div>
           ) : (
             <Table>
               <TableHeader>
