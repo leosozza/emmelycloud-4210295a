@@ -37,18 +37,24 @@ function getPeriodRange(period: string) {
 const FinanceiroPage = () => {
   const [period, setPeriod] = useState("30d");
   const [sendingReminder, setSendingReminder] = useState<string | null>(null);
+  const [gatewayFilter, setGatewayFilter] = useState("all");
   const range = getPeriodRange(period);
 
   const { data: transactions = [], isLoading } = useQuery({
-    queryKey: ["direct-payments", period],
+    queryKey: ["all-payments", period, gatewayFilter],
     queryFn: async () => {
-      const { data, error } = await supabase
+      let query = supabase
         .from("payment_transactions")
         .select("*, clients(name)")
-        .eq("gateway", "direto")
         .gte("created_at", range.start)
         .lte("created_at", range.end)
         .order("updated_at", { ascending: false });
+
+      if (gatewayFilter !== "all") {
+        query = query.eq("gateway", gatewayFilter);
+      }
+
+      const { data, error } = await query;
       if (error) throw error;
       return data || [];
     },
