@@ -3177,7 +3177,7 @@ function PlacementPreviewView({ integration, memberId }: { integration: any; mem
         getDomain: function() { return "preview"; }
       };
     </script>`;
-  }, [placementType, dealId, leadId, dialogId, messageId]);
+  }, [placementType, dealId, contactId, leadId, dialogId, messageId]);
 
   const loadPreview = useCallback(() => {
     const mid = resolvedMemberId;
