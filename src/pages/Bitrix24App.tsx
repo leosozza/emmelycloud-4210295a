@@ -3873,66 +3873,89 @@ function BaixaCarteiraView({ integration }: { integration: any }) {
 
 // ==================== IMPORTAÇÃO ACCESS VIEW ====================
 function ImportacaoAccessView({ integration, memberId }: { integration: any; memberId: string | null }) {
-  const [jsonData, setJsonData] = useState<any[] | null>(null);
+  const [clientesData, setClientesData] = useState<any[] | null>(null);
+  const [honorariosData, setHonorariosData] = useState<any[] | null>(null);
   const [importing, setImporting] = useState(false);
   const [progress, setProgress] = useState({ processed: 0, total: 0 });
-  const [logs, setLogs] = useState<{ client_name: string; status: string; error?: string }[]>([]);
+  const [logs, setLogs] = useState<{ client_name: string; status: string; error?: string; details?: string }[]>([]);
   const [syncBitrix, setSyncBitrix] = useState(!!integration);
   const [done, setDone] = useState(false);
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const parseXlsx = async (file: File): Promise<any[]> => {
+    const XLSX = await import("xlsx");
+    const buffer = await file.arrayBuffer();
+    const wb = XLSX.read(buffer, { type: "array" });
+    const sheet = wb.Sheets[wb.SheetNames[0]];
+    return XLSX.utils.sheet_to_json(sheet, { defval: "" });
+  };
+
+  const handleClientesUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      try {
-        const data = JSON.parse(ev.target?.result as string);
-        if (Array.isArray(data)) {
-          setJsonData(data);
-          setLogs([]);
-          setDone(false);
-          setProgress({ processed: 0, total: data.length });
-        } else {
-          alert("O ficheiro deve conter um array JSON de clientes.");
-        }
-      } catch {
-        alert("Erro ao ler o ficheiro JSON.");
-      }
-    };
-    reader.readAsText(file);
+    try {
+      const data = await parseXlsx(file);
+      setClientesData(data);
+      setLogs([]);
+      setDone(false);
+    } catch {
+      alert("Erro ao ler o ficheiro de clientes.");
+    }
+  };
+
+  const handleHonorariosUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const data = await parseXlsx(file);
+      setHonorariosData(data);
+      setLogs([]);
+      setDone(false);
+    } catch {
+      alert("Erro ao ler o ficheiro de honorários.");
+    }
   };
 
   const stats = useMemo(() => {
-    if (!jsonData) return null;
-    const totalClients = jsonData.length;
-    const activeClients = jsonData.filter((r: any) => r.cliente?.ativo === "SIM").length;
-    const totalHonorarios = jsonData.reduce((acc: number, r: any) => acc + (r.honorarios?.length || 0), 0);
-    const totalValue = jsonData.reduce((acc: number, r: any) => {
-      const seen = new Set<string>();
-      for (const h of (r.honorarios || [])) {
-        const key = `${h.descricao}_${h.valor}`;
-        if (!seen.has(key)) {
-          seen.add(key);
-          acc += parseFloat(h.valor) || 0;
-        }
+    if (!clientesData || !honorariosData) return null;
+    const totalClients = clientesData.filter((c: any) => c.ID > 3).length;
+    const activeClients = clientesData.filter((c: any) => (c.ATIVO || "").toUpperCase() === "SIM").length;
+    const totalHonorarios = honorariosData.length;
+
+    // Total value: sum unique VALOR per SEPARADORID
+    const seenSep = new Set<number>();
+    let totalValue = 0;
+    for (const h of honorariosData) {
+      const sid = h.SEPARADORID;
+      if (!seenSep.has(sid)) {
+        seenSep.add(sid);
+        const v = String(h.VALOR || "0").replace(/,/g, "");
+        totalValue += parseFloat(v) || 0;
       }
-      return acc;
+    }
+
+    const paidCount = honorariosData.filter((h: any) => (h.STATUS || "").toUpperCase() === "QUITADO").length;
+    const overdueCount = honorariosData.filter((h: any) => (h.STATUS || "").toUpperCase() === "ATRASADO").length;
+    const pendingCount = totalHonorarios - paidCount - overdueCount;
+
+    const totalPaid = honorariosData.reduce((acc: number, h: any) => {
+      const v = String(h.TOTALPAGO || "0").replace(/,/g, "");
+      return acc + (parseFloat(v) || 0);
     }, 0);
-    const paidCount = jsonData.reduce((acc: number, r: any) =>
-      acc + (r.honorarios || []).filter((h: any) => h.status === "QUITADO").length, 0);
-    const pendingCount = totalHonorarios - paidCount;
-    return { totalClients, activeClients, totalHonorarios, totalValue, paidCount, pendingCount };
-  }, [jsonData]);
+
+    return { totalClients, activeClients, totalHonorarios, totalValue, paidCount, pendingCount, overdueCount, totalPaid };
+  }, [clientesData, honorariosData]);
 
   const handleImport = async () => {
-    if (!jsonData) return;
+    if (!clientesData || !honorariosData) return;
     setImporting(true);
     setLogs([]);
     setDone(false);
+
+    const validClients = clientesData.filter((c: any) => c.ID > 3);
     const batchSize = 10;
     let batchStart = 0;
 
-    while (batchStart < jsonData.length) {
+    while (batchStart < validClients.length) {
       try {
         const res = await fetch(`${SUPABASE_URL}/functions/v1/import-access-data`, {
           method: "POST",
@@ -3942,7 +3965,8 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
             Authorization: `Bearer ${SUPABASE_KEY}`,
           },
           body: JSON.stringify({
-            records: jsonData,
+            clientes: validClients,
+            honorarios: honorariosData,
             batch_start: batchStart,
             batch_size: batchSize,
             member_id: memberId,
@@ -3953,7 +3977,7 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
         if (data.results) {
           setLogs(prev => [...prev, ...data.results]);
         }
-        setProgress({ processed: data.processed || batchStart + batchSize, total: jsonData.length });
+        setProgress({ processed: data.processed || batchStart + batchSize, total: validClients.length });
         if (!data.has_more) break;
         batchStart = data.next_batch_start;
       } catch (e) {
@@ -3966,24 +3990,39 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
   };
 
   const errorCount = logs.filter(l => l.status === "error").length;
-  const successCount = logs.filter(l => l.status === "ok").length;
+  const successCount = logs.filter(l => l.status === "ok" || l.status === "partial").length;
   const progressPct = progress.total > 0 ? Math.round((progress.processed / progress.total) * 100) : 0;
 
   return (
     <div className="p-6 space-y-6">
       <div className="b24-view-header">
         <h1 className="text-xl font-bold text-white">Importação Access</h1>
-        <p className="text-white/60 text-sm mt-0.5">Importar clientes e honorários do ficheiro Access/Manus</p>
+        <p className="text-white/60 text-sm mt-0.5">Importar clientes e honorários das tabelas originais do Access</p>
       </div>
 
       {/* Upload */}
       <Card>
         <CardHeader>
-          <CardTitle className="flex items-center gap-2"><Upload className="h-5 w-5" /> Carregar Ficheiro JSON</CardTitle>
-          <CardDescription>Selecione o ficheiro TABELA_CONSOLIDADA_ESTRUTURADA.json gerado pelo Manus</CardDescription>
+          <CardTitle className="flex items-center gap-2"><Upload className="h-5 w-5" /> Carregar Ficheiros Excel</CardTitle>
+          <CardDescription>Selecione os ficheiros TBL_CLIENTE.xlsx e TBL_HONORARIOS.xlsx</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <Input type="file" accept=".json" onChange={handleFileUpload} disabled={importing} />
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label className="text-sm font-medium">TBL_CLIENTE.xlsx</Label>
+              <Input type="file" accept=".xlsx,.xls" onChange={handleClientesUpload} disabled={importing} />
+              {clientesData && (
+                <p className="text-xs text-muted-foreground">✅ {clientesData.length} registos carregados</p>
+              )}
+            </div>
+            <div className="space-y-2">
+              <Label className="text-sm font-medium">TBL_HONORARIOS.xlsx</Label>
+              <Input type="file" accept=".xlsx,.xls" onChange={handleHonorariosUpload} disabled={importing} />
+              {honorariosData && (
+                <p className="text-xs text-muted-foreground">✅ {honorariosData.length} registos carregados</p>
+              )}
+            </div>
+          </div>
 
           {integration && (
             <div className="flex items-center gap-3">
@@ -4001,7 +4040,7 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
             <CardTitle>Pré-visualização</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               <div className="text-center p-3 rounded-lg bg-muted">
                 <p className="text-2xl font-bold text-foreground">{stats.totalClients}</p>
                 <p className="text-xs text-muted-foreground">Clientes</p>
@@ -4016,15 +4055,23 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
               </div>
               <div className="text-center p-3 rounded-lg bg-muted">
                 <p className="text-2xl font-bold text-foreground">€{stats.totalValue.toLocaleString("pt-PT", { minimumFractionDigits: 2 })}</p>
-                <p className="text-xs text-muted-foreground">Valor Total</p>
+                <p className="text-xs text-muted-foreground">Valor Total (Serviços)</p>
               </div>
               <div className="text-center p-3 rounded-lg bg-muted">
-                <p className="text-2xl font-bold text-success">{stats.paidCount}</p>
+                <p className="text-2xl font-bold text-foreground">€{stats.totalPaid.toLocaleString("pt-PT", { minimumFractionDigits: 2 })}</p>
+                <p className="text-xs text-muted-foreground">Total Pago</p>
+              </div>
+              <div className="text-center p-3 rounded-lg bg-muted">
+                <p className="text-2xl font-bold text-green-500">{stats.paidCount}</p>
                 <p className="text-xs text-muted-foreground">Quitados</p>
               </div>
               <div className="text-center p-3 rounded-lg bg-muted">
-                <p className="text-2xl font-bold text-destructive">{stats.pendingCount}</p>
+                <p className="text-2xl font-bold text-yellow-500">{stats.pendingCount}</p>
                 <p className="text-xs text-muted-foreground">Pendentes</p>
+              </div>
+              <div className="text-center p-3 rounded-lg bg-muted">
+                <p className="text-2xl font-bold text-destructive">{stats.overdueCount}</p>
+                <p className="text-xs text-muted-foreground">Atrasados</p>
               </div>
             </div>
 
@@ -4044,12 +4091,11 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
-              {importing ? <Loader2 className="h-5 w-5 animate-spin" /> : <CheckCircle className="h-5 w-5 text-success" />}
+              {importing ? <Loader2 className="h-5 w-5 animate-spin" /> : <CheckCircle className="h-5 w-5 text-green-500" />}
               {importing ? "Importando..." : "Importação Concluída"}
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            {/* Progress bar */}
             <div className="w-full bg-muted rounded-full h-3">
               <div
                 className="bg-primary h-3 rounded-full transition-all duration-300"
@@ -4067,7 +4113,6 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
               </div>
             )}
 
-            {/* Error log */}
             {logs.filter(l => l.status === "error").length > 0 && (
               <ScrollArea className="h-40 border rounded-lg p-3">
                 {logs.filter(l => l.status === "error").map((l, i) => (
