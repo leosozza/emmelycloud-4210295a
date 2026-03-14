@@ -1088,12 +1088,13 @@ function PagamentosTab() {
   const stripeBrConfigured = credentials["stripe_br::STRIPE_SECRET_KEY_BR"]?.has_value;
   const asaasConfigured = credentials["asaas::ASAAS_API_KEY"]?.has_value;
 
+  // Test connections via lightweight API validation (no real transactions created)
   const handleTestStripePT = async () => {
     setTestingStripePT(true);
     setStripePtResult(null);
     try {
-      const { data, error } = await supabase.functions.invoke("payment-create", {
-        body: { amount: 1.00, currency: "EUR", payment_method: "card", force_gateway: "stripe_pt", customer_data: { country: "Portugal", email: "test@test.com" }, description: "Teste Stripe PT" },
+      const { data, error } = await supabase.functions.invoke("manage-credentials", {
+        body: { action: "test_stripe", provider: "stripe_pt", credential_key: "STRIPE_SECRET_KEY_PT" },
       });
       if (error || data?.error) {
         setStripePtResult({ ok: false, error: data?.error || "Erro ao contactar Stripe PT" });
@@ -1110,8 +1111,8 @@ function PagamentosTab() {
     setTestingStripeBR(true);
     setStripeBrResult(null);
     try {
-      const { data, error } = await supabase.functions.invoke("payment-create", {
-        body: { amount: 5.00, currency: "BRL", payment_method: "card", force_gateway: "stripe_br", customer_data: { country: "Brasil", email: "test@test.com" }, description: "Teste Stripe BR" },
+      const { data, error } = await supabase.functions.invoke("manage-credentials", {
+        body: { action: "test_stripe", provider: "stripe_br", credential_key: "STRIPE_SECRET_KEY_BR" },
       });
       if (error || data?.error) {
         setStripeBrResult({ ok: false, error: data?.error || "Erro ao contactar Stripe BR" });
@@ -1128,8 +1129,8 @@ function PagamentosTab() {
     setTestingAsaas(true);
     setAsaasResult(null);
     try {
-      const { data, error } = await supabase.functions.invoke("payment-create", {
-        body: { amount: 5.00, currency: "BRL", payment_method: "pix", customer_data: { country: "Brasil", name: "Teste Emmely", cpf_cnpj: "24971563792" }, description: "Teste de conexão Emmely Pay" },
+      const { data, error } = await supabase.functions.invoke("manage-credentials", {
+        body: { action: "test_asaas", provider: "asaas", credential_key: "ASAAS_API_KEY" },
       });
       if (error || data?.error) {
         setAsaasResult({ ok: false, error: data?.error || "Erro ao contactar Asaas" });
