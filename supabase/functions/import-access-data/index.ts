@@ -118,6 +118,7 @@ serve(async (req) => {
       batch_size = 10,
       member_id,
       sync_bitrix = false,
+      category_id = "0",
     } = body as {
       clientes: RawClient[];
       honorarios: RawHonorario[];
@@ -125,6 +126,7 @@ serve(async (req) => {
       batch_size?: number;
       member_id?: string;
       sync_bitrix?: boolean;
+      category_id?: string;
     };
 
     if (!clientes || !honorarios) {
@@ -353,7 +355,7 @@ serve(async (req) => {
             // 4. Sync to Bitrix24 if enabled
             if (sync_bitrix && integration?.client_endpoint && integration?.access_token) {
               try {
-                await syncClientToBitrix(integration, client, desc, installments, String(separadorId), totalValue, totalPaid, allPaid);
+                await syncClientToBitrix(integration, client, desc, installments, String(separadorId), totalValue, totalPaid, allPaid, category_id);
               } catch (e) {
                 console.error(`[import] Bitrix sync error ${clientName}/${desc}:`, e);
               }
@@ -410,6 +412,7 @@ async function syncClientToBitrix(
   totalValue: number,
   totalPaid: number,
   allPaid: boolean,
+  categoryId: string = "0",
 ) {
   const endpoint = integration.client_endpoint;
   const accessToken = integration.access_token;
@@ -505,6 +508,8 @@ async function syncClientToBitrix(
     });
     console.log(`[import] Updated Bitrix deal ${dealId} for separadorId=${separadorId}`);
   } else {
+    // Add CATEGORY_ID only for new deals
+    dealFields.CATEGORY_ID = categoryId;
     const dealRes = await fetch(`${endpoint}crm.deal.add`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -512,7 +517,7 @@ async function syncClientToBitrix(
     });
     const dealData = await dealRes.json();
     dealId = dealData.result ? String(dealData.result) : null;
-    console.log(`[import] Created Bitrix deal ${dealId} for separadorId=${separadorId}`);
+    console.log(`[import] Created Bitrix deal ${dealId} in category=${categoryId} for separadorId=${separadorId}`);
   }
 
   if (!dealId) return;

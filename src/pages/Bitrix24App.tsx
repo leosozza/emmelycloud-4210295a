@@ -3880,6 +3880,25 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
   const [logs, setLogs] = useState<{ client_name: string; status: string; error?: string; details?: string }[]>([]);
   const [syncBitrix, setSyncBitrix] = useState(!!integration);
   const [done, setDone] = useState(false);
+  const [pipelines, setPipelines] = useState<{ id: string; name: string }[]>([]);
+  const [selectedCategoryId, setSelectedCategoryId] = useState("0");
+  const [loadingPipelines, setLoadingPipelines] = useState(false);
+
+  // Load pipelines when syncBitrix is enabled
+  useEffect(() => {
+    if (!syncBitrix || !memberId || !integration) return;
+    setLoadingPipelines(true);
+    fetch(`${SUPABASE_URL}/functions/v1/bitrix24-fetch-entities?action=pipelines&entity=deal&member_id=${encodeURIComponent(memberId)}`, {
+      headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` },
+    })
+      .then(r => r.json())
+      .then(data => {
+        const list = data.pipelines || [];
+        if (Array.isArray(list)) setPipelines(list);
+      })
+      .catch(console.error)
+      .finally(() => setLoadingPipelines(false));
+  }, [syncBitrix, memberId, integration]);
 
   const parseXlsx = async (file: File): Promise<any[]> => {
     const XLSX = await import("xlsx");
@@ -3971,6 +3990,7 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
             batch_size: batchSize,
             member_id: memberId,
             sync_bitrix: syncBitrix,
+            category_id: syncBitrix ? selectedCategoryId : undefined,
           }),
         });
         const data = await res.json();
@@ -4025,9 +4045,28 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
           </div>
 
           {integration && (
-            <div className="flex items-center gap-3">
-              <Switch checked={syncBitrix} onCheckedChange={setSyncBitrix} disabled={importing} />
-              <Label className="text-sm">Sincronizar com Bitrix24 (criar Contactos + Deals + Faturas)</Label>
+            <div className="space-y-3">
+              <div className="flex items-center gap-3">
+                <Switch checked={syncBitrix} onCheckedChange={setSyncBitrix} disabled={importing} />
+                <Label className="text-sm">Sincronizar com Bitrix24 (criar Contactos + Deals + Faturas)</Label>
+              </div>
+              {syncBitrix && (
+                <div className="space-y-1.5 pl-10">
+                  <Label className="text-sm">Pipeline de destino para novos Deals</Label>
+                  <Select value={selectedCategoryId} onValueChange={setSelectedCategoryId} disabled={importing || loadingPipelines}>
+                    <SelectTrigger className="w-full md:w-64">
+                      <SelectValue placeholder={loadingPipelines ? "Carregando..." : "Selecionar pipeline"} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="0">Pipeline Geral (padrão)</SelectItem>
+                      {pipelines.filter(p => p.id !== "0" && p.id !== "C0").map(p => (
+                        <SelectItem key={p.id} value={String(p.id)}>{p.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground">Deals existentes mantêm o pipeline actual</p>
+                </div>
+              )}
             </div>
           )}
         </CardContent>
