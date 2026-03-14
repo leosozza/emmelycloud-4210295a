@@ -940,13 +940,9 @@ function LateFeeConfigCard() {
     setSaving(false);
   };
 
-  // Simulate
-  const effectiveDays = Math.max(0, simDays - config.grace_days);
-  const cappedDays = Math.min(effectiveDays, config.max_interest_days);
-  const penalty = cappedDays > 0 ? Math.round(simAmount * (config.penalty_pct / 100) * 100) / 100 : 0;
-  const interest = cappedDays > 0 ? Math.round(simAmount * (config.interest_monthly_pct / 100) * (cappedDays / 30) * 100) / 100 : 0;
-  const charges = penalty + interest;
-  const total = Math.round((simAmount + charges) * 100) / 100;
+  // Simulate using the shared calculation function
+  const simResult = calculateLateFees(simAmount, simDays, config);
+  const { daysLate: cappedDays, penalty, interest, charges, total } = simResult;
 
   return (
     <Card className="md:col-span-3">

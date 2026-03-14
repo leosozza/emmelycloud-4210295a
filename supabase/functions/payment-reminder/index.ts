@@ -6,6 +6,42 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
+// ─── Late Fee Calculation (mirrors src/lib/lateFeeCalc.ts) ───────────────────
+
+interface LateFeeConfig {
+  penalty_pct: number;
+  interest_monthly_pct: number;
+  max_interest_days: number;
+  grace_days: number;
+}
+
+const DEFAULT_LATE_FEE_CONFIG: LateFeeConfig = {
+  penalty_pct: 10,
+  interest_monthly_pct: 1,
+  max_interest_days: 365,
+  grace_days: 0,
+};
+
+function calculateLateFees(amount: number, daysLate: number, config: LateFeeConfig) {
+  const effectiveDays = Math.max(0, daysLate - config.grace_days);
+  const cappedDays = Math.min(effectiveDays, config.max_interest_days);
+  if (cappedDays <= 0) {
+    return { daysLate: 0, penalty: 0, interest: 0, charges: 0, total: amount };
+  }
+  const penalty = Math.round(amount * (config.penalty_pct / 100) * 100) / 100;
+  const interest = Math.round(amount * (config.interest_monthly_pct / 100) * (cappedDays / 30) * 100) / 100;
+  const charges = penalty + interest;
+  return {
+    daysLate: cappedDays,
+    penalty,
+    interest,
+    charges,
+    total: Math.round((amount + charges) * 100) / 100,
+  };
+}
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
 function formatCurrency(value: number, currency: string): string {
   try {
     return new Intl.NumberFormat(currency === "BRL" ? "pt-BR" : "pt-PT", {
@@ -22,6 +58,40 @@ function formatDate(dateStr: string): string {
   return `${String(d.getUTCDate()).padStart(2, "0")}/${String(d.getUTCMonth() + 1).padStart(2, "0")}/${d.getUTCFullYear()}`;
 }
 
+function detectCurrency(clientCountry?: string | null): string {
+  if (!clientCountry) return "EUR";
+  const lower = (clientCountry || "").toLowerCase().trim();
+  if (lower === "brasil" || lower === "brazil" || lower === "br") return "BRL";
+  return "EUR";
+}
+
+// ─── Fetch late fees config ──────────────────────────────────────────────────
+
+async function getLateFeeConfig(supabase: any): Promise<LateFeeConfig> {
+  try {
+    const { data } = await supabase
+      .from("payment_gateway_config")
+      .select("config")
+      .eq("gateway", "late_fees")
+      .eq("is_active", true)
+      .maybeSingle();
+    if (data?.config) {
+      const c = data.config as any;
+      return {
+        penalty_pct: c.penalty_pct ?? DEFAULT_LATE_FEE_CONFIG.penalty_pct,
+        interest_monthly_pct: c.interest_monthly_pct ?? DEFAULT_LATE_FEE_CONFIG.interest_monthly_pct,
+        max_interest_days: c.max_interest_days ?? DEFAULT_LATE_FEE_CONFIG.max_interest_days,
+        grace_days: c.grace_days ?? DEFAULT_LATE_FEE_CONFIG.grace_days,
+      };
+    }
+  } catch (e) {
+    console.error("[PAYMENT-REMINDER] Failed to load late fee config:", e);
+  }
+  return DEFAULT_LATE_FEE_CONFIG;
+}
+
+// ─── Types ───────────────────────────────────────────────────────────────────
+
 interface FinancialRecord {
   id: string;
   contract_id: string;
@@ -34,11 +104,14 @@ interface FinancialRecord {
   description: string;
 }
 
+// ─── Process a single record ─────────────────────────────────────────────────
+
 async function processRecord(
   supabase: any,
   supabaseUrl: string,
   serviceKey: string,
-  record: FinancialRecord
+  record: FinancialRecord,
+  lateFeeConfig: LateFeeConfig
 ): Promise<{ ok: boolean; reason?: string }> {
   // 1. Check if reminder already sent today for this record
   const { data: existingTx } = await supabase
@@ -75,6 +148,7 @@ async function processRecord(
   let conversationId: string | null = null;
   let clientName = proposal?.client_name || "Cliente";
   let clientId: string | null = null;
+  let clientCountry: string | null = null;
 
   if (caseId) {
     const { data: caseData } = await supabase
@@ -86,12 +160,13 @@ async function processRecord(
     if (caseData?.lead_id) {
       const { data: lead } = await supabase
         .from("leads")
-        .select("conversation_id, client_id, name")
+        .select("conversation_id, client_id, name, country")
         .eq("id", caseData.lead_id)
         .maybeSingle();
 
       conversationId = lead?.conversation_id || null;
       clientId = lead?.client_id || null;
+      clientCountry = lead?.country || null;
       if (!clientName || clientName === "Cliente") clientName = lead?.name || clientName;
     }
   }
@@ -100,13 +175,31 @@ async function processRecord(
     return { ok: false, reason: "no_conversation_found" };
   }
 
-  // 3. Generate payment link if no existing pending tx
+  // 3. Determine currency from client country
+  const currency = detectCurrency(clientCountry);
+
+  // 4. Calculate late fees if overdue
+  const baseAmount = record.installment_value || record.total_value;
+  let finalAmount = baseAmount;
+  let feeResult: ReturnType<typeof calculateLateFees> | null = null;
+
+  if (record.due_date) {
+    const dueDate = new Date(record.due_date + "T00:00:00Z");
+    const now = new Date();
+    const diffMs = now.getTime() - dueDate.getTime();
+    const daysLate = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+
+    if (daysLate > 0) {
+      feeResult = calculateLateFees(baseAmount, daysLate, lateFeeConfig);
+      finalAmount = feeResult.total;
+    }
+  }
+
+  // 5. Generate payment link if no existing pending tx
   let paymentUrl = lastTx?.payment_url || null;
   let transactionId = lastTx?.id || null;
 
   if (!paymentUrl || lastTx?.status === "expired") {
-    // Call payment-create to generate a new payment link
-    const amount = record.installment_value || record.total_value;
     const paymentRes = await fetch(`${supabaseUrl}/functions/v1/payment-create`, {
       method: "POST",
       headers: {
@@ -117,10 +210,10 @@ async function processRecord(
         contract_id: record.contract_id,
         client_id: clientId,
         financial_record_id: record.id,
-        amount,
-        currency: "EUR",
+        amount: finalAmount,
+        currency,
         payment_method: "card",
-        description: `Parcela ${record.installment_number || 1}/${record.total_installments || 1}`,
+        description: `Parcela ${record.installment_number || 1}/${record.total_installments || 1}${feeResult && feeResult.charges > 0 ? ` (inclui encargos)` : ""}`,
         customer_data: {
           name: clientName,
           email: proposal?.client_email || "",
@@ -141,9 +234,7 @@ async function processRecord(
     transactionId = paymentResult.transaction?.id || null;
   }
 
-  // 4. Build personalized message
-  const amount = record.installment_value || record.total_value;
-  const currency = "EUR";
+  // 6. Build personalized message
   const dueStr = record.due_date ? formatDate(record.due_date) : "—";
   const installmentInfo = record.installment_number
     ? ` (parcela ${record.installment_number}/${record.total_installments})`
@@ -151,7 +242,15 @@ async function processRecord(
 
   let message = `Olá ${clientName}! 👋\n\n`;
   message += `Gostaríamos de lembrar sobre o pagamento pendente${installmentInfo}:\n\n`;
-  message += `💰 Valor: ${formatCurrency(amount, currency)}\n`;
+  message += `💰 Valor: ${formatCurrency(baseAmount, currency)}\n`;
+
+  // Add late fee breakdown if applicable
+  if (feeResult && feeResult.charges > 0) {
+    message += `⚠️ Multa: ${formatCurrency(feeResult.penalty, currency)}\n`;
+    message += `📈 Juros (${feeResult.daysLate} dias): ${formatCurrency(feeResult.interest, currency)}\n`;
+    message += `💵 Total com encargos: ${formatCurrency(feeResult.total, currency)}\n`;
+  }
+
   message += `📅 Vencimento: ${dueStr}\n`;
 
   if (paymentUrl) {
@@ -160,7 +259,7 @@ async function processRecord(
 
   message += `\nQualquer dúvida, estamos à disposição! 😊`;
 
-  // 5. Send message via message-send
+  // 7. Send message via message-send
   const sendRes = await fetch(`${supabaseUrl}/functions/v1/message-send`, {
     method: "POST",
     headers: {
@@ -179,8 +278,19 @@ async function processRecord(
     return { ok: false, reason: `message_send_failed: ${sendResult.error}` };
   }
 
-  // 6. Update transaction metadata with reminder_sent_at
+  // 8. Update transaction metadata with reminder_sent_at and fee details
   if (transactionId) {
+    const metaUpdate: Record<string, any> = { reminder_sent_at: new Date().toISOString() };
+    if (feeResult && feeResult.charges > 0) {
+      metaUpdate.late_fee = {
+        penalty: feeResult.penalty,
+        interest: feeResult.interest,
+        charges: feeResult.charges,
+        days_late: feeResult.daysLate,
+        base_amount: baseAmount,
+      };
+    }
+
     await fetch(`${supabaseUrl}/functions/v1/payment-create`, {
       method: "PATCH",
       headers: {
@@ -189,13 +299,15 @@ async function processRecord(
       },
       body: JSON.stringify({
         transaction_id: transactionId,
-        metadata_update: { reminder_sent_at: new Date().toISOString() },
+        metadata_update: metaUpdate,
       }),
     });
   }
 
   return { ok: true };
 }
+
+// ─── Main handler ────────────────────────────────────────────────────────────
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -207,11 +319,13 @@ Deno.serve(async (req) => {
     const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(supabaseUrl, serviceKey);
 
+    // Load late fee config once
+    const lateFeeConfig = await getLateFeeConfig(supabase);
+
     const body = await req.json();
     const { mode, financial_record_id } = body;
 
     if (mode === "manual" && financial_record_id) {
-      // Manual mode: process a single record
       const { data: record, error } = await supabase
         .from("financial_records")
         .select("*")
@@ -226,7 +340,7 @@ Deno.serve(async (req) => {
         );
       }
 
-      const result = await processRecord(supabase, supabaseUrl, serviceKey, record);
+      const result = await processRecord(supabase, supabaseUrl, serviceKey, record, lateFeeConfig);
       return new Response(JSON.stringify(result), {
         status: result.ok ? 200 : 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -260,7 +374,7 @@ Deno.serve(async (req) => {
 
     for (const record of records || []) {
       try {
-        const result = await processRecord(supabase, supabaseUrl, serviceKey, record);
+        const result = await processRecord(supabase, supabaseUrl, serviceKey, record, lateFeeConfig);
         results.push({ id: record.id, ...result });
       } catch (err) {
         console.error(`[PAYMENT-REMINDER] Error processing ${record.id}:`, err);

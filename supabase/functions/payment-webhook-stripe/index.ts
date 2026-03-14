@@ -242,12 +242,46 @@ Deno.serve(async (req) => {
 
     // First get existing transaction to preserve metadata
     // Match any Stripe gateway variant: "stripe", "stripe_pt", "stripe_br"
-    const { data: existingTx } = await supabase
-      .from("payment_transactions")
-      .select("id, financial_record_id, metadata, amount, currency, gateway")
-      .eq("gateway_payment_id", gatewayPaymentId)
-      .like("gateway", "stripe%")
-      .maybeSingle();
+    let existingTx: any = null;
+    {
+      const { data } = await supabase
+        .from("payment_transactions")
+        .select("id, financial_record_id, metadata, amount, currency, gateway")
+        .eq("gateway_payment_id", gatewayPaymentId)
+        .like("gateway", "stripe%")
+        .maybeSingle();
+      existingTx = data;
+    }
+
+    // Fallback: if not found by gateway_payment_id, try checkout_session_id in metadata
+    if (!existingTx && event.type === "checkout.session.completed") {
+      const sessionId = eventObject.id; // cs_xxx
+      const { data: allPending } = await supabase
+        .from("payment_transactions")
+        .select("id, financial_record_id, metadata, amount, currency, gateway, gateway_payment_id")
+        .like("gateway", "stripe%")
+        .eq("status", "pending")
+        .limit(50);
+
+      if (allPending) {
+        existingTx = allPending.find((tx: any) => {
+          const m = tx.metadata as any;
+          return m?.checkout_session_id === sessionId;
+        }) || null;
+        if (existingTx) {
+          // Update gateway_payment_id to the resolved payment_intent for future lookups
+          const resolvedPi = eventObject.payment_intent;
+          if (resolvedPi) {
+            await supabase
+              .from("payment_transactions")
+              .update({ gateway_payment_id: resolvedPi })
+              .eq("id", existingTx.id);
+            gatewayPaymentId = resolvedPi;
+          }
+          console.log(`[STRIPE-WEBHOOK] Fallback match via checkout_session_id: ${sessionId} -> tx ${existingTx.id}`);
+        }
+      }
+    }
 
     const mergedMeta = { ...(existingTx?.metadata as any || {}), stripe_event: event.type, updated_via: "webhook" };
 
