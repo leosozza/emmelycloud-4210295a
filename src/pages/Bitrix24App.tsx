@@ -3880,7 +3880,7 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
   const [logs, setLogs] = useState<{ client_name: string; status: string; error?: string; details?: string }[]>([]);
   const [syncBitrix, setSyncBitrix] = useState(!!integration);
   const [done, setDone] = useState(false);
-  const [pipelines, setPipelines] = useState<{ ID: string; NAME: string }[]>([]);
+  const [pipelines, setPipelines] = useState<{ id: string; name: string }[]>([]);
   const [selectedCategoryId, setSelectedCategoryId] = useState("0");
   const [loadingPipelines, setLoadingPipelines] = useState(false);
 
@@ -3893,7 +3893,7 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
     })
       .then(r => r.json())
       .then(data => {
-        const list = data.result || data.pipelines || data || [];
+        const list = data.pipelines || [];
         if (Array.isArray(list)) setPipelines(list);
       })
       .catch(console.error)
