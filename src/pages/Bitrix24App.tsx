@@ -4013,12 +4013,12 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
   }, [filteredClientes, filteredHonorarios]);
 
   const handleImport = async () => {
-    if (!clientesData || !honorariosData) return;
+    if (!filteredClientes || !filteredHonorarios || filteredClientes.length === 0) return;
     setImporting(true);
     setLogs([]);
     setDone(false);
 
-    const validClients = clientesData.filter((c: any) => c.ID > 3);
+    const validClients = filteredClientes;
     const batchSize = 10;
     let batchStart = 0;
 
@@ -4033,7 +4033,7 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
           },
           body: JSON.stringify({
             clientes: validClients,
-            honorarios: honorariosData,
+            honorarios: filteredHonorarios,
             batch_start: batchStart,
             batch_size: batchSize,
             member_id: memberId,
