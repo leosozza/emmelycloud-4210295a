@@ -39,6 +39,27 @@ function simpleHash(str: string): string {
 const RECENT_MSG_COUNT = 15;
 const HISTORY_LIMIT = 30;
 const MAX_CHUNKS = 20;
+const RETRY_DELAY_MS = 2000;
+const RETRYABLE_STATUSES = [429, 502, 503];
+
+// ─── Cost estimation per model (per 1M tokens, approximate USD) ───
+const MODEL_PRICING: Record<string, { input: number; output: number }> = {
+  "google/gemini-2.5-pro": { input: 1.25, output: 10.0 },
+  "google/gemini-2.5-flash": { input: 0.15, output: 0.6 },
+  "google/gemini-2.5-flash-lite": { input: 0.075, output: 0.3 },
+  "google/gemini-3-flash-preview": { input: 0.15, output: 0.6 },
+  "google/gemini-3.1-pro-preview": { input: 1.25, output: 10.0 },
+  "openai/gpt-5": { input: 2.0, output: 8.0 },
+  "openai/gpt-5-mini": { input: 0.4, output: 1.6 },
+  "openai/gpt-5-nano": { input: 0.1, output: 0.4 },
+  "openai/gpt-5.2": { input: 3.0, output: 12.0 },
+};
+
+function estimateCost(model: string, promptTokens: number, completionTokens: number): number {
+  const pricing = MODEL_PRICING[model];
+  if (!pricing) return 0;
+  return (promptTokens * pricing.input + completionTokens * pricing.output) / 1_000_000;
+}
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
