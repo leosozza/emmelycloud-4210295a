@@ -4030,11 +4030,15 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
     });
   }, [honorariosData, filterStatus, filterDateFrom, filterDateTo]);
 
-  // Derive filtered clients from filtered honorarios
+  // Derive filtered clients from filtered honorarios (clientesData is optional in Phase 2)
   const filteredClientes = useMemo(() => {
-    if (!clientesData || !filteredHonorarios) return null;
-    const clientIds = new Set(filteredHonorarios.map((h: any) => h.CLIENTE));
-    return clientesData.filter((c: any) => c.ID > 3 && clientIds.has(c.ID));
+    if (!filteredHonorarios) return null;
+    const clientIds = [...new Set(filteredHonorarios.map((h: any) => h.CLIENTE))];
+    if (clientesData) {
+      return clientesData.filter((c: any) => c.ID > 3 && clientIds.includes(c.ID));
+    }
+    // No client file: derive stubs from honorários
+    return clientIds.map(id => ({ ID: id, NOME: `Cliente ${id}`, ATIVO: "SIM" }));
   }, [clientesData, filteredHonorarios]);
 
   const stats = useMemo(() => {
