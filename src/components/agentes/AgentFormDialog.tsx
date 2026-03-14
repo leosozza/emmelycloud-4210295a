@@ -190,6 +190,44 @@ export function AgentFormDialog({
             </>
           )}
 
+          {/* Personality Engine */}
+          <Separator />
+          <h4 className="text-sm font-semibold">Motor de Personalidade</h4>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <Label>Estilo</Label>
+              <Select value={editingAgent.personality_style || "professional"} onValueChange={(v) => setEditingAgent(prev => ({ ...prev, personality_style: v }))}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="professional">Profissional</SelectItem>
+                  <SelectItem value="friendly">Amigável</SelectItem>
+                  <SelectItem value="formal">Formal</SelectItem>
+                  <SelectItem value="casual">Casual</SelectItem>
+                  <SelectItem value="technical">Técnico</SelectItem>
+                  <SelectItem value="persuasive">Persuasivo</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>Tom de Comunicação</Label>
+              <Select value={editingAgent.communication_tone || "empathetic"} onValueChange={(v) => setEditingAgent(prev => ({ ...prev, communication_tone: v }))}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="empathetic">Empático</SelectItem>
+                  <SelectItem value="direct">Directo</SelectItem>
+                  <SelectItem value="encouraging">Encorajador</SelectItem>
+                  <SelectItem value="neutral">Neutro</SelectItem>
+                  <SelectItem value="assertive">Assertivo</SelectItem>
+                  <SelectItem value="warm">Caloroso</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <div>
+            <Label>Objectivo Estratégico (opcional)</Label>
+            <Input value={editingAgent.strategic_objective || ""} onChange={(e) => setEditingAgent(prev => ({ ...prev, strategic_objective: e.target.value }))} placeholder="Ex: Converter leads em clientes, Resolver tickets rapidamente" />
+          </div>
+
           {/* System Prompt */}
           <Separator />
           <div>

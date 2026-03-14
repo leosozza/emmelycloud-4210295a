@@ -273,7 +273,32 @@ Deno.serve(async (req) => {
 
     const autoLangPrompt = `\n\nIDIOMA: Deteta automaticamente o idioma da primeira mensagem do cliente e responde SEMPRE nesse mesmo idioma durante toda a conversa. Não perguntes o idioma — adapta-te silenciosamente. Suportas: Português, English, Español, Français, Deutsch, Italiano, 中文, 日本語, العربية, e outros.\n`;
 
-    const systemPrompt = (agent.system_prompt || "") + knowledgeContext + memoryContext + compressedHistory + contactContext + antiRepetitionPrompt + sentimentFlag + autoLangPrompt;
+    // ─── Personality Engine injection ───
+    let personalityPrompt = "";
+    if (agent.personality_style || agent.communication_tone || agent.strategic_objective) {
+      const styleMap: Record<string, string> = {
+        professional: "Comunica de forma profissional, estruturada e confiável.",
+        friendly: "Comunica de forma amigável, acessível e próxima.",
+        formal: "Comunica de forma formal, respeitosa e institucional.",
+        casual: "Comunica de forma casual, descontraída e natural.",
+        technical: "Comunica de forma técnica, precisa e detalhada.",
+        persuasive: "Comunica de forma persuasiva, convincente e orientada a resultados.",
+      };
+      const toneMap: Record<string, string> = {
+        empathetic: "Tom empático: demonstra compreensão e sensibilidade.",
+        direct: "Tom directo: vai ao ponto sem rodeios.",
+        encouraging: "Tom encorajador: motiva e transmite confiança.",
+        neutral: "Tom neutro: equilibrado e imparcial.",
+        assertive: "Tom assertivo: firme mas respeitoso.",
+        warm: "Tom caloroso: acolhedor e humano.",
+      };
+      personalityPrompt = "\n\nPERSONALIDADE:\n";
+      if (agent.personality_style && styleMap[agent.personality_style]) personalityPrompt += `- ${styleMap[agent.personality_style]}\n`;
+      if (agent.communication_tone && toneMap[agent.communication_tone]) personalityPrompt += `- ${toneMap[agent.communication_tone]}\n`;
+      if (agent.strategic_objective) personalityPrompt += `- OBJECTIVO ESTRATÉGICO: ${agent.strategic_objective}\n`;
+    }
+
+    const systemPrompt = (agent.system_prompt || "") + personalityPrompt + knowledgeContext + memoryContext + compressedHistory + contactContext + antiRepetitionPrompt + sentimentFlag + autoLangPrompt;
 
     console.log(`[AI-PROCESS] Context: recent=${recentMessages.length}, older=${olderMessages.length}, kb=${linkedDocs?.length || 0}, memory=${memoryContext ? "yes" : "no"}`);
 

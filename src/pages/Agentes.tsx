@@ -89,6 +89,9 @@ export const defaultAgent: Partial<AIAgent> = {
   voice_provider: null,
   voice_model: null,
   voice_id: null,
+  personality_style: "professional",
+  communication_tone: "empathetic",
+  strategic_objective: null,
 };
 
 export default function AgentesPage() {

@@ -80,14 +80,21 @@ Deno.serve(async (req) => {
           result = await fallbackToAI(supabaseUrl, serviceKey, conversation, message_text, instance_id);
         }
       } else {
-        // 6. Try to match a flow
-        const match = await matchFlow(supabase, conversation, message_text);
-        if (match) {
-          console.log("[FLOW-ENGINE] Matched flow:", match.flow.name, "via", match.matchType);
-          result = await executeFlow(supabase, supabaseUrl, serviceKey, conversation, match.flow, {}, message_text, instance_id);
+        // 5.5. Evaluate business rules BEFORE flow/AI matching
+        const ruleResult = await evaluateBusinessRules(supabase, supabaseUrl, serviceKey, conversation, message_text, instance_id);
+        if (ruleResult) {
+          console.log("[FLOW-ENGINE] Business rule matched:", ruleResult.rule_name);
+          result = ruleResult;
         } else {
-          // 7. No flow matched - fallback to AI processor
-          result = await fallbackToAI(supabaseUrl, serviceKey, conversation, message_text, instance_id);
+          // 6. Try to match a flow
+          const match = await matchFlow(supabase, conversation, message_text);
+          if (match) {
+            console.log("[FLOW-ENGINE] Matched flow:", match.flow.name, "via", match.matchType);
+            result = await executeFlow(supabase, supabaseUrl, serviceKey, conversation, match.flow, {}, message_text, instance_id);
+          } else {
+            // 7. No flow matched - fallback to AI processor
+            result = await fallbackToAI(supabaseUrl, serviceKey, conversation, message_text, instance_id);
+          }
         }
       }
     } finally {
