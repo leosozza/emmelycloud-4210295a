@@ -82,8 +82,23 @@
 7. ✅ Sentiment analysis + auto-escalação (2x frustração → humano)
 8. ✅ Queue worker auto-trigger (pg_trigger + pg_cron backup)
 
+### Mudanças realizadas (Fase 3 — Auditoria Arquitetural)
+
+#### 1. Dashboard de Observabilidade IA
+- Nova página `/observabilidade-ia` com KPIs: requisições, tokens, custo estimado, latência média, taxa fallback, taxa erro, rating feedback
+- Hook `useAiObservability.ts` com agregação de dados
+
+#### 2. Thumbs up/down no chat de atendimento
+- Botões de feedback em mensagens outbound (bot) no painel de atendimento
+
+#### 3. Retry com backoff no AI gateway (429/502/503, 2s delay, 1 retry)
+
+#### 4. Cost estimation real (tabela de preços por modelo, cálculo automático)
+
+#### 5. Memory extraction melhorada (cada 15 msgs + em transferência humana)
+
+#### 6. Reorganização do monólito (constantes extraídas, secções delimitadas)
+
 ### Próximos passos
-- Implementar dashboard de observabilidade no frontend
-- Adicionar botões thumbs up/down no chat de atendimento
 - Batch job para gerar embeddings dos chunks existentes
 - Streaming no PlaygroundIA
