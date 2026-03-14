@@ -4774,11 +4774,36 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
   const [honorariosLogs, setHonorariosLogs] = useState<{ client_name: string; status: string; error?: string; details?: string }[]>([]);
   const [honorariosDone, setHonorariosDone] = useState(false);
 
-  // Phase 3: Sync Bitrix
-  const [syncingBitrix, setSyncingBitrix] = useState(false);
-  const [syncProgress, setSyncProgress] = useState({ processed: 0, total: 0 });
-  const [syncLogs, setSyncLogs] = useState<{ client_name: string; status: string; error?: string; details?: string }[]>([]);
-  const [syncDone, setSyncDone] = useState(false);
+  // Phase 3: Interactive Sync
+  type SyncClient = {
+    client_id: string;
+    name: string;
+    nif: string;
+    phones: string[];
+    emails: string[];
+    total_value: number;
+    total_paid: number;
+    status_class: "quitado" | "aberto" | "atrasado";
+    services: string[];
+    records_count: number;
+    bitrix_contact_id: string | null;
+    bitrix_deal_id: string | null;
+    synced?: boolean;
+    syncResult?: string;
+  };
+  const [syncClients, setSyncClients] = useState<SyncClient[]>([]);
+  const [loadingSyncClients, setLoadingSyncClients] = useState(false);
+  const [syncClientsLoaded, setSyncClientsLoaded] = useState(false);
+  const [activeTab, setActiveTab] = useState<"quitado" | "aberto" | "atrasado">("atrasado");
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [editingClient, setEditingClient] = useState<SyncClient | null>(null);
+  const [editName, setEditName] = useState("");
+  const [editPhone, setEditPhone] = useState("");
+  const [editNif, setEditNif] = useState("");
+  const [editActions, setEditActions] = useState({ contact: true, deal: true, invoices: true });
+  const [syncingSingle, setSyncingSingle] = useState(false);
+  const [syncingBatch, setSyncingBatch] = useState(false);
+  const [batchActions, setBatchActions] = useState({ contact: true, deal: true, invoices: true });
   const [pipelines, setPipelines] = useState<{ id: string; name: string }[]>([]);
   const [selectedCategoryId, setSelectedCategoryId] = useState("0");
   const [loadingPipelines, setLoadingPipelines] = useState(false);
@@ -4995,18 +5020,16 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
     setImportingHonorarios(false);
   };
 
-  // ── Phase 3: Sync to Bitrix24 ──
-  const handleSyncBitrix = async () => {
-    if (!memberId || !integration) return;
-    setSyncingBitrix(true);
-    setSyncLogs([]);
-    setSyncDone(false);
+  // ── Phase 3: Load clients for sync ──
+  const handleLoadSyncClients = async () => {
+    setLoadingSyncClients(true);
+    setSyncClients([]);
+    setSyncClientsLoaded(false);
 
-    const batchSize = 5; // Smaller batches for Bitrix API calls
     let batchStart = 0;
-    let totalClients = 0;
+    const batchSize = 20;
+    const allClients: SyncClient[] = [];
 
-    // Loop until no more
     while (true) {
       try {
         const res = await fetch(`${SUPABASE_URL}/functions/v1/import-access-data`, {
@@ -5018,33 +5041,104 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
           },
           body: JSON.stringify({
             clientes: [],
-            mode: "sync_bitrix",
+            mode: "list_sync_clients",
             batch_start: batchStart,
             batch_size: batchSize,
             member_id: memberId,
-            category_id: selectedCategoryId,
           }),
         });
         const data = await res.json();
-        if (!data.success) {
-          setSyncLogs(prev => [...prev, { client_name: "Erro", status: "error", error: data.error || "Erro desconhecido" }]);
-          break;
-        }
-        if (data.results) {
-          setSyncLogs(prev => [...prev, ...data.results]);
-        }
-        totalClients = data.total || totalClients;
-        setSyncProgress({ processed: data.processed || batchStart + batchSize, total: totalClients });
+        if (!data.success) break;
+        if (data.clients) allClients.push(...data.clients);
         if (!data.has_more) break;
         batchStart = data.next_batch_start;
       } catch (e) {
-        setSyncLogs(prev => [...prev, { client_name: `Batch ${batchStart}`, status: "error", error: String(e) }]);
+        console.error("[loadSyncClients]", e);
         break;
       }
     }
-    setSyncDone(true);
-    setSyncingBitrix(false);
+
+    setSyncClients(allClients);
+    setSyncClientsLoaded(true);
+    setLoadingSyncClients(false);
   };
+
+  const handleSyncSingleClient = async (client: SyncClient, actionsOverride?: { contact: boolean; deal: boolean; invoices: boolean }, overridesOverride?: { name?: string; phone?: string; nif?: string }) => {
+    setSyncingSingle(true);
+    try {
+      const res = await fetch(`${SUPABASE_URL}/functions/v1/import-access-data`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          apikey: SUPABASE_KEY,
+          Authorization: `Bearer ${SUPABASE_KEY}`,
+        },
+        body: JSON.stringify({
+          clientes: [],
+          mode: "sync_single_client",
+          client_id: client.client_id,
+          member_id: memberId,
+          category_id: selectedCategoryId,
+          actions: actionsOverride || editActions,
+          overrides: overridesOverride || { name: editName, phone: editPhone, nif: editNif },
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setSyncClients(prev => prev.map(c =>
+          c.client_id === client.client_id
+            ? { ...c, synced: true, syncResult: data.results?.join("; ") || "OK", bitrix_contact_id: data.contact_id || c.bitrix_contact_id, bitrix_deal_id: data.deal_id || c.bitrix_deal_id }
+            : c
+        ));
+      }
+    } catch (e) {
+      console.error("[syncSingle]", e);
+    } finally {
+      setSyncingSingle(false);
+      setEditingClient(null);
+    }
+  };
+
+  const handleSyncBatch = async () => {
+    if (selectedIds.size === 0) return;
+    setSyncingBatch(true);
+    const ids = Array.from(selectedIds);
+    for (const id of ids) {
+      const client = syncClients.find(c => c.client_id === id);
+      if (!client || client.synced) continue;
+      await handleSyncSingleClient(client, batchActions, { name: client.name, phone: client.phones[0] || "", nif: client.nif || "" });
+    }
+    setSyncingBatch(false);
+    setSelectedIds(new Set());
+  };
+
+  const openEditDialog = (client: SyncClient) => {
+    setEditingClient(client);
+    setEditName(client.name);
+    setEditPhone(client.phones[0] || "");
+    setEditNif(client.nif || "");
+    setEditActions({ contact: true, deal: true, invoices: client.status_class !== "quitado" || true });
+  };
+
+  const toggleSelect = (id: string) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const filteredSyncClients = syncClients.filter(c => c.status_class === activeTab);
+  const quitadoCount = syncClients.filter(c => c.status_class === "quitado").length;
+  const abertoCount = syncClients.filter(c => c.status_class === "aberto").length;
+  const atrasadoCount = syncClients.filter(c => c.status_class === "atrasado").length;
+
+  const selectAllInTab = () => {
+    const ids = filteredSyncClients.filter(c => !c.synced).map(c => c.client_id);
+    setSelectedIds(new Set(ids));
+  };
+  const deselectAll = () => setSelectedIds(new Set());
 
   const clientsErrorCount = clientsLogs.filter(l => l.status === "error").length;
   const clientsSuccessCount = clientsLogs.filter(l => l.status === "ok" || l.status === "partial").length;
@@ -5054,12 +5148,7 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
   const honSuccessCount = honorariosLogs.filter(l => l.status === "ok" || l.status === "partial").length;
   const honProgressPct = honorariosProgress.total > 0 ? Math.round((honorariosProgress.processed / honorariosProgress.total) * 100) : 0;
 
-  const syncErrorCount = syncLogs.filter(l => l.status === "error").length;
-  const syncSuccessCount = syncLogs.filter(l => l.status === "ok" || l.status === "partial").length;
-  const syncSkippedCount = syncLogs.filter(l => l.status === "skipped").length;
-  const syncProgressPct = syncProgress.total > 0 ? Math.round((syncProgress.processed / syncProgress.total) * 100) : 0;
-
-  const isImporting = importingClients || importingHonorarios || syncingBitrix;
+  const isImporting = importingClients || importingHonorarios || syncingSingle || syncingBatch || loadingSyncClients;
 
   return (
     <div className="p-6 space-y-6">
@@ -5290,17 +5379,17 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
         </CardContent>
       </Card>
 
-      {/* ═══════ FASE 3: SINCRONIZAR BITRIX24 ═══════ */}
+      {/* ═══════ FASE 3: SINCRONIZAR BITRIX24 (INTERACTIVO) ═══════ */}
       <Card className={cn(!integration && "opacity-50")}>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <Badge variant={syncDone ? "default" : "outline"} className="text-xs">FASE 3</Badge>
+            <Badge variant={syncClientsLoaded ? "default" : "outline"} className="text-xs">FASE 3</Badge>
             <RefreshCw className="h-5 w-5" /> Sincronizar com Bitrix24
           </CardTitle>
           <CardDescription>
             {integration
-              ? "Busca clientes importados na base de dados e sincroniza com o Bitrix24: cria/actualiza Contactos, Deals e Smart Invoices. Procura por campo UF (id_access), NIF/CPF ou telefone."
-              : "Integração com Bitrix24 não disponível. Configure a integração nas Configurações."
+              ? "Carregue os clientes importados, revise por status e aprove um a um ou em lote."
+              : "Integração com Bitrix24 não disponível."
             }
           </CardDescription>
         </CardHeader>
@@ -5309,6 +5398,7 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
             <p className="text-sm text-muted-foreground">⚠️ Sem integração Bitrix24 activa.</p>
           ) : (
             <>
+              {/* Pipeline selector */}
               <div className="space-y-1.5">
                 <Label className="text-sm">Pipeline de destino para novos Deals</Label>
                 <Select value={selectedCategoryId} onValueChange={setSelectedCategoryId} disabled={isImporting || loadingPipelines}>
@@ -5322,51 +5412,237 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
                     ))}
                   </SelectContent>
                 </Select>
-                <p className="text-xs text-muted-foreground">Deals existentes mantêm o pipeline actual. A busca usa: campo UF (id_access) → NIF/CPF → Telefone.</p>
               </div>
 
-              <Button onClick={handleSyncBitrix} disabled={isImporting} className="w-full" size="lg" variant="default">
-                {syncingBitrix ? (
-                  <><Loader2 className="h-4 w-4 animate-spin mr-2" /> Sincronizando... ({syncProgressPct}%)</>
-                ) : syncDone ? (
-                  <><CheckCircle className="h-4 w-4 mr-2" /> Re-sincronizar com Bitrix24</>
+              {/* Load clients button */}
+              <Button onClick={handleLoadSyncClients} disabled={isImporting} className="w-full" size="lg" variant="outline">
+                {loadingSyncClients ? (
+                  <><Loader2 className="h-4 w-4 animate-spin mr-2" /> Carregando clientes...</>
+                ) : syncClientsLoaded ? (
+                  <><RefreshCw className="h-4 w-4 mr-2" /> Recarregar ({syncClients.length} clientes)</>
                 ) : (
-                  <><RefreshCw className="h-4 w-4 mr-2" /> Sincronizar com Bitrix24</>
+                  <><Users className="h-4 w-4 mr-2" /> Carregar Clientes para Sincronização</>
                 )}
               </Button>
 
-              {/* Phase 3 Progress */}
-              {(syncingBitrix || syncDone) && (
-                <div className="space-y-3 pt-2 border-t">
-                  <div className="w-full bg-muted rounded-full h-2.5">
-                    <div className="bg-primary h-2.5 rounded-full transition-all duration-300" style={{ width: `${syncProgressPct}%` }} />
+              {/* Tabs + Client list */}
+              {syncClientsLoaded && syncClients.length > 0 && (
+                <div className="space-y-4 pt-3 border-t">
+                  {/* Status tabs */}
+                  <div className="flex gap-2">
+                    <Button
+                      variant={activeTab === "atrasado" ? "default" : "outline"}
+                      size="sm"
+                      onClick={() => { setActiveTab("atrasado"); setSelectedIds(new Set()); }}
+                      className="text-xs"
+                    >
+                      <AlertTriangle className="h-3.5 w-3.5 mr-1" /> Atrasados ({atrasadoCount})
+                    </Button>
+                    <Button
+                      variant={activeTab === "aberto" ? "default" : "outline"}
+                      size="sm"
+                      onClick={() => { setActiveTab("aberto"); setSelectedIds(new Set()); }}
+                      className="text-xs"
+                    >
+                      <Clock className="h-3.5 w-3.5 mr-1" /> Em Aberto ({abertoCount})
+                    </Button>
+                    <Button
+                      variant={activeTab === "quitado" ? "default" : "outline"}
+                      size="sm"
+                      onClick={() => { setActiveTab("quitado"); setSelectedIds(new Set()); }}
+                      className="text-xs"
+                    >
+                      <CheckCircle className="h-3.5 w-3.5 mr-1" /> Quitados ({quitadoCount})
+                    </Button>
                   </div>
-                  <p className="text-xs text-muted-foreground text-center">
-                    {syncProgress.processed} / {syncProgress.total} clientes processados
-                  </p>
-                  {syncDone && (
-                    <div className="flex gap-3 justify-center flex-wrap">
-                      <Badge variant="default" className="text-xs">✅ {syncSuccessCount} Sincronizados</Badge>
-                      {syncSkippedCount > 0 && <Badge variant="secondary" className="text-xs">⏭️ {syncSkippedCount} Sem dados</Badge>}
-                      {syncErrorCount > 0 && <Badge variant="destructive" className="text-xs">❌ {syncErrorCount} Erros</Badge>}
-                    </div>
-                  )}
-                  {/* Detailed logs */}
-                  {syncLogs.length > 0 && (
-                    <ScrollArea className="h-48 border rounded-lg p-2">
-                      {syncLogs.map((l, i) => (
-                        <div key={i} className={cn("text-xs mb-1", l.status === "error" ? "text-destructive" : l.status === "skipped" ? "text-muted-foreground" : "text-foreground")}>
-                          <strong>{l.client_name}:</strong> {l.status === "error" ? l.error : l.details}
+
+                  {/* Batch toolbar */}
+                  <div className="flex items-center gap-3 flex-wrap">
+                    <Button variant="ghost" size="sm" className="text-xs" onClick={selectAllInTab}>
+                      Selecionar todos ({filteredSyncClients.filter(c => !c.synced).length})
+                    </Button>
+                    {selectedIds.size > 0 && (
+                      <>
+                        <Button variant="ghost" size="sm" className="text-xs" onClick={deselectAll}>
+                          Desmarcar
+                        </Button>
+                        <Separator orientation="vertical" className="h-5" />
+                        <div className="flex items-center gap-2 text-xs">
+                          <label className="flex items-center gap-1"><input type="checkbox" checked={batchActions.contact} onChange={e => setBatchActions(p => ({ ...p, contact: e.target.checked }))} className="h-3 w-3" /> Contacto</label>
+                          <label className="flex items-center gap-1"><input type="checkbox" checked={batchActions.deal} onChange={e => setBatchActions(p => ({ ...p, deal: e.target.checked }))} className="h-3 w-3" /> Deal</label>
+                          <label className="flex items-center gap-1"><input type="checkbox" checked={batchActions.invoices} onChange={e => setBatchActions(p => ({ ...p, invoices: e.target.checked }))} className="h-3 w-3" /> Faturas</label>
                         </div>
-                      ))}
-                    </ScrollArea>
-                  )}
+                        <Button size="sm" onClick={handleSyncBatch} disabled={syncingBatch} className="text-xs ml-auto">
+                          {syncingBatch ? <><Loader2 className="h-3.5 w-3.5 animate-spin mr-1" /> Sincronizando...</> : <><RefreshCw className="h-3.5 w-3.5 mr-1" /> Sincronizar {selectedIds.size} seleccionados</>}
+                        </Button>
+                      </>
+                    )}
+                  </div>
+
+                  {/* Client list */}
+                  <ScrollArea className="h-[400px] border rounded-lg">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="w-10"></TableHead>
+                          <TableHead>Nome</TableHead>
+                          <TableHead>NIF</TableHead>
+                          <TableHead>Telefone</TableHead>
+                          <TableHead className="text-right">Valor</TableHead>
+                          <TableHead className="text-right">Pago</TableHead>
+                          <TableHead>Bitrix</TableHead>
+                          <TableHead className="w-24">Acção</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {filteredSyncClients.map(client => (
+                          <TableRow key={client.client_id} className={cn(client.synced && "opacity-60 bg-muted/30")}>
+                            <TableCell>
+                              {!client.synced && (
+                                <input
+                                  type="checkbox"
+                                  checked={selectedIds.has(client.client_id)}
+                                  onChange={() => toggleSelect(client.client_id)}
+                                  className="h-4 w-4"
+                                />
+                              )}
+                              {client.synced && <CheckCircle className="h-4 w-4 text-green-500" />}
+                            </TableCell>
+                            <TableCell className="font-medium text-xs">{client.name}</TableCell>
+                            <TableCell className="text-xs text-muted-foreground">{client.nif || "—"}</TableCell>
+                            <TableCell className="text-xs text-muted-foreground">{client.phones[0] || "—"}</TableCell>
+                            <TableCell className="text-right text-xs">€{client.total_value.toLocaleString("pt-PT", { minimumFractionDigits: 2 })}</TableCell>
+                            <TableCell className="text-right text-xs">€{client.total_paid.toLocaleString("pt-PT", { minimumFractionDigits: 2 })}</TableCell>
+                            <TableCell>
+                              {client.bitrix_deal_id ? (
+                                <Badge variant="outline" className="text-[10px]">Deal #{client.bitrix_deal_id}</Badge>
+                              ) : (
+                                <span className="text-[10px] text-muted-foreground">Novo</span>
+                              )}
+                            </TableCell>
+                            <TableCell>
+                              {client.synced ? (
+                                <span className="text-[10px] text-green-600">{client.syncResult?.substring(0, 30)}</span>
+                              ) : (
+                                <Button size="sm" variant="outline" className="text-xs h-7" onClick={() => openEditDialog(client)}>
+                                  <Edit className="h-3 w-3 mr-1" /> Sincronizar
+                                </Button>
+                              )}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                        {filteredSyncClients.length === 0 && (
+                          <TableRow>
+                            <TableCell colSpan={8} className="text-center text-sm text-muted-foreground py-8">
+                              Nenhum cliente com status "{activeTab}" encontrado.
+                            </TableCell>
+                          </TableRow>
+                        )}
+                      </TableBody>
+                    </Table>
+                  </ScrollArea>
                 </div>
+              )}
+
+              {syncClientsLoaded && syncClients.length === 0 && (
+                <p className="text-sm text-muted-foreground text-center py-4">Nenhum cliente importado encontrado na base de dados. Execute as Fases 1 e 2 primeiro.</p>
               )}
             </>
           )}
         </CardContent>
       </Card>
+
+      {/* ═══════ DIALOG: Aprovação Individual ═══════ */}
+      <Dialog open={!!editingClient} onOpenChange={(open) => { if (!open) setEditingClient(null); }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Sincronizar Cliente</DialogTitle>
+            <DialogDescription>
+              Revise e edite os dados antes de enviar ao Bitrix24.
+            </DialogDescription>
+          </DialogHeader>
+          {editingClient && (
+            <div className="space-y-4">
+              {/* Match info */}
+              {editingClient.bitrix_deal_id && (
+                <div className="p-2.5 rounded-lg bg-muted text-xs">
+                  <p className="font-medium">Match encontrado no Bitrix24</p>
+                  <p className="text-muted-foreground">Deal #{editingClient.bitrix_deal_id} {editingClient.bitrix_contact_id ? `· Contacto #${editingClient.bitrix_contact_id}` : ""}</p>
+                </div>
+              )}
+
+              {/* Status badge */}
+              <div className="flex items-center gap-2">
+                <Badge variant={editingClient.status_class === "quitado" ? "default" : editingClient.status_class === "atrasado" ? "destructive" : "secondary"} className="text-xs">
+                  {editingClient.status_class === "quitado" ? "Quitado" : editingClient.status_class === "atrasado" ? "Atrasado" : "Em Aberto"}
+                </Badge>
+                <span className="text-xs text-muted-foreground">{editingClient.records_count} parcelas · {editingClient.services.length} serviço(s)</span>
+              </div>
+
+              {/* Editable fields */}
+              <div className="space-y-3">
+                <div className="space-y-1">
+                  <Label className="text-xs">Nome</Label>
+                  <Input value={editName} onChange={e => setEditName(e.target.value)} className="h-9 text-sm" />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <Label className="text-xs">Telefone</Label>
+                    <Input value={editPhone} onChange={e => setEditPhone(e.target.value)} className="h-9 text-sm" />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs">NIF/CPF</Label>
+                    <Input value={editNif} onChange={e => setEditNif(e.target.value)} className="h-9 text-sm" />
+                  </div>
+                </div>
+              </div>
+
+              {/* Totals */}
+              <div className="grid grid-cols-2 gap-3">
+                <div className="p-2 rounded bg-muted text-center">
+                  <p className="text-sm font-bold">€{editingClient.total_value.toLocaleString("pt-PT", { minimumFractionDigits: 2 })}</p>
+                  <p className="text-[10px] text-muted-foreground">Valor Total</p>
+                </div>
+                <div className="p-2 rounded bg-muted text-center">
+                  <p className="text-sm font-bold">€{editingClient.total_paid.toLocaleString("pt-PT", { minimumFractionDigits: 2 })}</p>
+                  <p className="text-[10px] text-muted-foreground">Total Pago</p>
+                </div>
+              </div>
+
+              {/* Actions checkboxes */}
+              <div className="space-y-2">
+                <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">O que criar/actualizar no Bitrix24</Label>
+                <div className="flex gap-4">
+                  <label className="flex items-center gap-2 text-sm">
+                    <input type="checkbox" checked={editActions.contact} onChange={e => setEditActions(p => ({ ...p, contact: e.target.checked }))} className="h-4 w-4 rounded" />
+                    Contacto
+                  </label>
+                  <label className="flex items-center gap-2 text-sm">
+                    <input type="checkbox" checked={editActions.deal} onChange={e => setEditActions(p => ({ ...p, deal: e.target.checked }))} className="h-4 w-4 rounded" />
+                    Deal
+                  </label>
+                  <label className="flex items-center gap-2 text-sm">
+                    <input type="checkbox" checked={editActions.invoices} onChange={e => setEditActions(p => ({ ...p, invoices: e.target.checked }))} className="h-4 w-4 rounded" />
+                    Faturas
+                  </label>
+                </div>
+              </div>
+
+              <Button
+                onClick={() => handleSyncSingleClient(editingClient)}
+                disabled={syncingSingle || (!editActions.contact && !editActions.deal && !editActions.invoices)}
+                className="w-full"
+              >
+                {syncingSingle ? (
+                  <><Loader2 className="h-4 w-4 animate-spin mr-2" /> Sincronizando...</>
+                ) : (
+                  <><RefreshCw className="h-4 w-4 mr-2" /> Confirmar Sincronização</>
+                )}
+              </Button>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
