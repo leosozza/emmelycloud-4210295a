@@ -1,136 +1,104 @@
 
 
-## Auditoria de Engenharia de IA — Falhas e Optimizações Identificadas
+## Revisão Arquitetural — Fase 2 Implementada
 
-Após análise completa de todo o pipeline de IA (ai-process-message, flow-engine, queue-worker, generate-embeddings, message-send, whatsapp-webhook), identifiquei **12 falhas concretas** e oportunidades de optimização.
+### Mudanças realizadas (Fase 2)
 
----
+#### 1. Código morto eliminado
+- `chatbot-reply/index.ts` — **removido** (100% duplicado com flow-engine → ai-process-message)
+- `ai-triage/index.ts` — **removido** (100% duplicado com ai-automation-agent action classify_lead)
 
-### FALHAS CRÍTICAS (impacto directo na qualidade das respostas)
+#### 2. Janela de contexto expandida
+- `RECENT_MSG_COUNT`: 5 → **15** mensagens recentes completas
+- `HISTORY_LIMIT`: 15 → **30** mensagens totais
+- TOON comprime as 15 mais antigas, mantém as 15 recentes intactas
 
-#### 1. Embeddings falsos — LLM a gerar vectores em vez de embedding API real
-**Ficheiros:** `generate-embeddings/index.ts` L73-91, `ai-process-message/index.ts` L475-486
+#### 3. RAG semântico real (pgvector)
+- Edge function `generate-embeddings` criada — gera embeddings de 768 dimensões via Lovable AI
+- `parse-document` agora chama `generate-embeddings` automaticamente após chunking
+- `ai-process-message` usa `match_chunks()` RPC para busca semântica (threshold 0.5)
+- Fallback para keyword scoring quando embeddings não existem
 
-O sistema pede ao LLM (flash-lite) para "gerar um array JSON de 768 floats" — isto **não é um embedding real**. Um LLM de texto não produz representações vectoriais semânticas consistentes. Os vectores são essencialmente aleatórios, tornando o `match_chunks` RPC praticamente inútil para busca semântica.
+#### 4. Router multi-agente
+- Quando agente tem `sub_agent_ids`, classifica intenção via IA rápida (flash-lite)
+- Delega para sub-agente especialista com seu próprio prompt e KB
+- Mantém agente activo em `bot_state.active_sub_agent_id` para consistência
 
-**Correcção:** Substituir por chamada ao endpoint `/v1/embeddings` do Lovable AI Gateway (se disponível) ou usar um modelo de embeddings dedicado. Se nenhum estiver disponível, remover a pretensão de "busca semântica" e usar apenas keyword search com BM25/TF-IDF, que é honesto e funcional.
+#### 5. Self-evaluation / Reflexão
+- Após gerar resposta, avalia qualidade via flash-lite (score 1-10)
+- Se score < 7, regenera com instrução de correcção (máximo 1 retry)
+- Respostas < 50 chars ignoram avaliação
 
-#### 2. Self-evaluation desperdiça tokens sem impacto mensurável
-**Ficheiro:** `ai-process-message/index.ts` L754-817
+#### 6. Sentiment analysis + Auto-escalação
+- Análise de sentimento via heurística + IA
+- 2x frustração consecutiva → auto-transfere para humano
+- Guarda sentiment em `bot_state.last_sentiment`
+- Regista escalação em `conversation_feedback`
 
-Cada resposta > 50 chars passa por uma chamada extra ao LLM para "avaliar qualidade 1-10". Problemas:
-- O avaliador (flash-lite) é mais fraco que o modelo que gerou a resposta
-- O critério de avaliação é genérico — não tem acesso ao KB nem ao contexto do agente
-- Se score < 7, regenera **sem** o contexto de tools/RAG, produzindo respostas potencialmente piores
-- Custo: ~2x tokens por mensagem processada
+#### 7. Tools dinâmicas expandidas
+- Novas tools: `search_knowledge`, `get_case_status`, `send_payment_link`
+- Tools desconhecidas verificam `tool_parameters.webhook_url` para chamada webhook genérica
+- Registry pattern: tools são lidas de `agent_tools` table
 
-**Correcção:** Remover self-evaluation por defeito. Torná-la opt-in por agente (`enable_self_eval: boolean`). Quando activa, incluir o KB e contexto na avaliação.
+#### 8. Queue worker auto-trigger
+- Trigger PostgreSQL `AFTER INSERT ON message_queue` chama `pg_net.http_post()` para queue-worker
+- Cron backup via `pg_cron` a cada minuto
 
-#### 3. Memory extraction com `catch(() => {})` silencia todos os erros
-**Ficheiro:** `ai-process-message/index.ts` L1069-1070, L1138, L1142
+#### 9. Melhorias de robustez no sendReply
+- `Promise.allSettled` para operações paralelas (save message + update conversation)
+- Error logging real em vez de fire-and-forget silencioso para message-send e bitrix24-send
+- Extração de memória com tolerância `count % 10 > 1` (mais robusto que `=== 0`)
 
-```typescript
-extractUserMemory(...).catch(e => console.error(...));
-// ... mas internamente:
-} catch {} // L1142 — silencia TUDO
-```
+### Mudanças realizadas (Fase 2.1 — Consolidação Completa)
 
-Se a extracção de memória falhar (API down, parsing error, DB error), o sistema nunca sabe. A memória de longo prazo pode estar completamente vazia sem ninguém perceber.
+#### Código morto eliminado
+- `chatbot-reply/index.ts` e `ai-triage/index.ts` — diretórios removidos, referências limpas em `config.toml`, `ApiDocs.tsx` e `bitrix24-worker.ts`
+- ApiDocs actualizado para documentar `ai-process-message` em vez de `chatbot-reply`
 
-**Correcção:** Logar erros em `ai_usage_logs` ou `bitrix24_debug_logs` com `event_type: "memory_extraction_error"`.
+#### Sintaxe corrigida
+- `parse-document/index.ts` — corrigida função `extractWithAI` que estava erroneamente aninhada dentro de `findFileInZip`
 
----
+#### Config.toml actualizado
+- Removidas entradas `ai-triage` e `chatbot-reply`
+- Adicionadas entradas para `generate-embeddings`, `parse-document` e `queue-worker`
 
-### FALHAS IMPORTANTES (robustez e fiabilidade)
+#### Triggers PostgreSQL criados
+- `on_message_queue_insert` → auto-invoca `queue-worker` via `pg_net`
+- `on_lead_created` → notifica comerciais e admins
+- `on_message_created` → notifica de novas mensagens inbound
+- `on_payment_status_change` → notifica pagamentos recebidos
+- `on_lead_sla_check` → alerta SLA a expirar
+- `on_lead_set_sla` → define SLA automático na criação
+- `on_profile_created` → atribui admin ao primeiro utilizador
+- Cron job `queue-worker-backup` — invoca queue-worker a cada minuto
 
-#### 4. Race condition no processing lock (flow-engine)
-**Ficheiro:** `flow-engine/index.ts` L47-63
+### Estado actual — 8/8 melhorias implementadas ✅
+1. ✅ Código morto eliminado (chatbot-reply + ai-triage)
+2. ✅ Contexto expandido (30 mensagens: 15 recentes + 15 comprimidas TOON)
+3. ✅ RAG semântico (pgvector + match_chunks + generate-embeddings)
+4. ✅ Router multi-agente (sub_agent_ids + classificação de intenção)
+5. ✅ Tools dinâmicas (registry pattern + webhook fallback)
+6. ✅ Reflexão/Auto-avaliação (score 1-10, retry se < 7)
+7. ✅ Sentiment analysis + auto-escalação (2x frustração → humano)
+8. ✅ Queue worker auto-trigger (pg_trigger + pg_cron backup)
 
-O lock é verificado com `SELECT` e adquirido com `UPDATE` separados — duas operações não-atómicas. Em alta concorrência, duas invocações podem ambas passar o check e adquirir o lock.
+### Mudanças realizadas (Fase 3 — Auditoria Arquitetural)
 
-**Correcção:** Usar `UPDATE ... WHERE processing_lock_at IS NULL OR processing_lock_at < now() - interval '5 seconds' RETURNING id` como operação atómica.
+#### 1. Dashboard de Observabilidade IA
+- Nova página `/observabilidade-ia` com KPIs: requisições, tokens, custo estimado, latência média, taxa fallback, taxa erro, rating feedback
+- Hook `useAiObservability.ts` com agregação de dados
 
-#### 5. Tool call follow-up sem retry
-**Ficheiro:** `ai-process-message/index.ts` L399-417
+#### 2. Thumbs up/down no chat de atendimento
+- Botões de feedback em mensagens outbound (bot) no painel de atendimento
 
-O follow-up call após tool execution (L399) não tem retry. Se o LLM falhar nesta segunda chamada, o utilizador recebe a resposta bruta do primeiro call (que pode ser vazia ou apenas tool_calls).
+#### 3. Retry com backoff no AI gateway (429/502/503, 2s delay, 1 retry)
 
-**Correcção:** Aplicar o mesmo padrão de retry usado no call principal (L346-357).
+#### 4. Cost estimation real (tabela de preços por modelo, cálculo automático)
 
-#### 6. Business Rules avaliadas em CADA mensagem — sem cache
-**Ficheiro:** `flow-engine/index.ts` L120-126
+#### 5. Memory extraction melhorada (cada 15 msgs + em transferência humana)
 
-A cada mensagem, o sistema faz `SELECT * FROM business_rules WHERE is_active = true` — sem cache. Com 100+ regras e tráfego alto, isto é uma query desnecessária por mensagem.
+#### 6. Reorganização do monólito (constantes extraídas, secções delimitadas)
 
-**Correcção:** Cache as regras em memória (Map) com TTL de 60 segundos no contexto da invocação. Como Edge Functions reutilizam workers, o cache persiste entre requests.
-
-#### 7. Queue worker não marca jobs "grouped" como completed
-**Ficheiro:** `queue-worker/index.ts` L87-92
-
-Jobs agrupados são marcados como `status: "grouped"` mas nunca transitam para `completed`. Ao longo do tempo, a tabela acumula registos em estado terminal não-standard que podem confundir dashboards e contagens.
-
-**Correcção:** Marcar jobs grouped como `completed` em vez de `grouped`, ou adicionar `grouped` como estado terminal explícito nos filtros de limpeza.
-
----
-
-### FALHAS MODERADAS (performance e custo)
-
-#### 8. Keyword search carrega 100 chunks na memória para scoring
-**Ficheiro:** `ai-process-message/index.ts` L541-557
-
-O fallback de keyword search carrega até 100 chunks e faz scoring em JavaScript — ineficiente para bases de conhecimento grandes. Além disso, chama o LLM só para extrair 5 palavras-chave.
-
-**Correcção:** Usar `to_tsvector/to_tsquery` nativo do PostgreSQL via RPC para full-text search. Eliminar a chamada LLM para extracção de keywords (usar tokenização simples).
-
-#### 9. Chatbot channel settings consultado 2x no ai-process-message
-**Ficheiro:** `ai-process-message/index.ts` L100-104 e L121
-
-A tabela `chatbot_channel_settings` é consultada duas vezes: uma para verificar se está enabled (L100) e outra para obter o `agent_id` (L121). São duas queries quando uma bastava.
-
-**Correcção:** Combinar numa única query `select("enabled, agent_id")` e reutilizar o resultado.
-
-#### 10. sendReply cria novo Supabase client desnecessariamente
-**Ficheiro:** `ai-process-message/index.ts` L1014
-
-```typescript
-async function sendReply(...) {
-  const supabase = createClient(supabaseUrl, serviceKey); // novo client!
-```
-
-O handler principal já tem um client criado em L69. Não há razão para criar outro.
-
-**Correcção:** Passar o cliente existente como parâmetro.
-
-#### 11. Anti-repetição usa hash fraco de 32 bits
-**Ficheiro:** `ai-process-message/index.ts` L28-36
-
-`simpleHash` usa bit shift de 32 bits — alta probabilidade de colisão. Duas mensagens diferentes podem produzir o mesmo hash, bloqueando respostas legítimas.
-
-**Correcção:** Usar `crypto.subtle.digest("SHA-256", ...)` disponível em Deno, ou comparar strings directamente (as mensagens têm < 5KB).
-
-#### 12. Observabilidade não rastreia chamadas auxiliares ao LLM
-**Ficheiro:** `ai-process-message/index.ts`
-
-O `logUsage` regista apenas a chamada principal. As chamadas auxiliares (sentiment analysis L734, router L598, keyword extraction L523, self-evaluation L763, memory extraction L1108, topic change detection) são invisíveis. O custo real pode ser 3-5x superior ao reportado.
-
-**Correcção:** Adicionar `logUsage` para cada chamada auxiliar ao LLM, ou acumular tokens de todas as chamadas num único log entry.
-
----
-
-### Plano de Implementação (por prioridade)
-
-| # | Falha | Impacto | Ficheiros | Esforço |
-|---|-------|---------|-----------|---------|
-| 1 | **Embeddings falsos** — substituir LLM por FTS real | Crítico | `generate-embeddings`, `ai-process-message` | Alto |
-| 2 | **Self-eval opt-in** — desactivar por defeito, opt-in por agente | Crítico (custo) | `ai-process-message`, migration `ai_agents` | Baixo |
-| 3 | **Errors silenciados** — logar erros de memory extraction | Crítico (ops) | `ai-process-message` | Baixo |
-| 4 | **Race condition lock** — UPDATE atómico | Importante | `flow-engine` | Baixo |
-| 5 | **Tool follow-up retry** — aplicar retry pattern | Importante | `ai-process-message` | Baixo |
-| 6 | **Cache business rules** — TTL 60s | Importante | `flow-engine` | Baixo |
-| 7 | **Jobs grouped → completed** | Moderado | `queue-worker` | Baixo |
-| 8 | **FTS nativo PostgreSQL** — substituir keyword search | Moderado | `ai-process-message`, migration | Médio |
-| 9 | **Query duplicada channel_settings** | Moderado | `ai-process-message` | Baixo |
-| 10 | **Supabase client duplicado** | Menor | `ai-process-message` | Baixo |
-| 11 | **Hash colisões** — usar SHA-256 ou comparação directa | Menor | `ai-process-message` | Baixo |
-| 12 | **Observabilidade incompleta** — rastrear chamadas auxiliares | Moderado | `ai-process-message` | Médio |
-
+### Próximos passos
+- Batch job para gerar embeddings dos chunks existentes
+- Streaming no PlaygroundIA

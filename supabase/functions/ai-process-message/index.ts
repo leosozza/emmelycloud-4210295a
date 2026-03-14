@@ -25,14 +25,12 @@ function compressOldHistory(messages: { role: string; content: string }[]): stri
   return `\n\nCONTEXTO_ANTERIOR[${messages.length}]{idx,role,msg}:\n${rows.join("\n")}\n`;
 }
 
-function simpleHash(str: string): string {
-  let hash = 0;
-  for (let i = 0; i < str.length; i++) {
-    const char = str.charCodeAt(i);
-    hash = ((hash << 5) - hash) + char;
-    hash |= 0;
-  }
-  return hash.toString(36);
+// Fix #11: SHA-256 hash to prevent collisions
+async function computeHash(str: string): Promise<string> {
+  const data = new TextEncoder().encode(str);
+  const hashBuffer = await crypto.subtle.digest("SHA-256", data);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map(b => b.toString(16).padStart(2, "0")).join("");
 }
 
 // ─── Constants ───
@@ -61,12 +59,34 @@ function estimateCost(model: string, promptTokens: number, completionTokens: num
   return (promptTokens * pricing.input + completionTokens * pricing.output) / 1_000_000;
 }
 
+// Fix #12: Accumulator for auxiliary LLM call tokens
+interface TokenAccumulator {
+  prompt_tokens: number;
+  completion_tokens: number;
+  total_tokens: number;
+  aux_calls: number;
+}
+
+function newTokenAccumulator(): TokenAccumulator {
+  return { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0, aux_calls: 0 };
+}
+
+function accumulateUsage(acc: TokenAccumulator, usage: any) {
+  acc.prompt_tokens += usage?.prompt_tokens || 0;
+  acc.completion_tokens += usage?.completion_tokens || 0;
+  acc.total_tokens += usage?.total_tokens || 0;
+  acc.aux_calls++;
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
   const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
   const supabase = createClient(supabaseUrl, serviceKey);
+
+  // Fix #12: track all auxiliary LLM calls
+  const auxTokens = newTokenAccumulator();
 
   try {
     const { conversation_id, message_text, agent_id, skip_send } = await req.json();
@@ -97,6 +117,7 @@ Deno.serve(async (req) => {
         return new Response(JSON.stringify({ skipped: "human_mode" }), { headers: jsonHeaders });
       }
 
+      // Fix #9: Single query for channel settings (was 2 separate queries)
       const { data: channelSetting } = await supabase
         .from("chatbot_channel_settings")
         .select("enabled, agent_id")
@@ -109,6 +130,8 @@ Deno.serve(async (req) => {
       }
 
       conversation = conv;
+      // Store channelSetting for reuse below
+      (conversation as any)._channelSetting = channelSetting;
     }
 
     // 4. Find agent (with multi-agent routing support)
@@ -117,8 +140,9 @@ Deno.serve(async (req) => {
       const { data } = await supabase.from("ai_agents").select("*").eq("id", agent_id).eq("is_active", true).single();
       agent = data;
     }
+    // Fix #9: Reuse channelSetting from above instead of querying again
     if (!agent && conversation) {
-      const { data: cs } = await supabase.from("chatbot_channel_settings").select("agent_id").eq("channel", conversation.channel).maybeSingle();
+      const cs = (conversation as any)._channelSetting;
       if (cs?.agent_id) {
         const { data } = await supabase.from("ai_agents").select("*").eq("id", cs.agent_id).eq("is_active", true).maybeSingle();
         agent = data;
@@ -135,7 +159,7 @@ Deno.serve(async (req) => {
 
     // 4b. Multi-agent routing — if agent has sub_agent_ids, classify intent and delegate
     if (agent.sub_agent_ids && agent.sub_agent_ids.length > 0 && conversation) {
-      const routedAgent = await routeToSubAgent(supabase, agent, conversation, message_text);
+      const routedAgent = await routeToSubAgent(supabase, agent, conversation, message_text, auxTokens);
       if (routedAgent) {
         console.log(`[AI-PROCESS] Routed to sub-agent: ${routedAgent.name}`);
         agent = routedAgent;
@@ -162,7 +186,7 @@ Deno.serve(async (req) => {
     }));
     const compressedHistory = compressOldHistory(olderMessages);
 
-    // 6. Get knowledge base context — try semantic vector search, fallback to keyword
+    // 6. Get knowledge base context — try FTS, then fallback to sequential
     let knowledgeContext = "";
     const { data: linkedDocs } = await supabase
       .from("agent_knowledge_documents")
@@ -173,13 +197,8 @@ Deno.serve(async (req) => {
       const docIds = linkedDocs.map((d: any) => d.document_id);
       let chunks: any[] = [];
 
-      // Try semantic vector search via match_chunks RPC
-      chunks = await semanticSearch(supabase, message_text, docIds);
-
-      // Fallback to keyword scoring if no embeddings found
-      if (chunks.length === 0) {
-        chunks = await keywordSearch(supabase, message_text, docIds);
-      }
+      // Fix #1 + #8: Use native PostgreSQL FTS instead of fake LLM embeddings
+      chunks = await ftsSearch(supabase, message_text, docIds);
 
       // Final fallback to sequential
       if (chunks.length === 0) {
@@ -220,18 +239,15 @@ Deno.serve(async (req) => {
     // 6c. Sentiment analysis on incoming message
     let sentimentFlag = "";
     if (conversation) {
-      const sentiment = await analyzeSentiment(message_text, recentMessages);
+      const sentiment = await analyzeSentiment(message_text, recentMessages, auxTokens);
       if (sentiment === "frustrated") {
-        // Check if consecutive frustration → auto-transfer
         const botState = conversation.bot_state || {};
         const prevSentiment = botState.last_sentiment;
         if (prevSentiment === "frustrated") {
-          // 2x consecutive frustration → transfer to human
           console.log("[AI-PROCESS] Double frustration detected, auto-transferring to human");
           await supabase.from("conversations").update({ attendance_mode: "human" }).eq("id", conversation.id);
           const transferMsg = agent.fallback_message || "Vou transferir-te para um dos nossos atendentes. Um momento, por favor.";
-          if (!skip_send) await sendReply(supabaseUrl, serviceKey, conversation, agent, transferMsg);
-          // Log sentiment feedback
+          if (!skip_send) await sendReply(supabase, supabaseUrl, serviceKey, conversation, agent, transferMsg);
           await supabase.from("conversation_feedback").insert({
             conversation_id: conversation.id,
             issue_type: "auto_escalation_frustrated",
@@ -240,13 +256,11 @@ Deno.serve(async (req) => {
           }).catch(() => {});
           return new Response(JSON.stringify({ transferred: "human", reason: "double_frustration" }), { headers: jsonHeaders });
         }
-        // Save sentiment to bot_state
         await supabase.from("conversations").update({
           bot_state: { ...botState, last_sentiment: "frustrated" },
         }).eq("id", conversation.id);
         sentimentFlag = "\n⚠️ O cliente parece frustrado. Responde com empatia e oferece soluções concretas.\n";
       } else if (conversation.bot_state?.last_sentiment === "frustrated") {
-        // Clear frustration flag
         await supabase.from("conversations").update({
           bot_state: { ...conversation.bot_state, last_sentiment: null },
         }).eq("id", conversation.id);
@@ -326,8 +340,8 @@ Deno.serve(async (req) => {
 
     if (!apiUrl) {
       const fallbackReply = agent.fallback_message || "Desculpe, não consigo responder agora.";
-      if (!skip_send) await sendReply(supabaseUrl, serviceKey, conversation, agent, fallbackReply);
-      await logUsage(supabase, conversation_id, agent.id, agent.ai_model, agent.ai_provider, 0, 0, 0, Date.now() - startTime, true, "no_api_url");
+      if (!skip_send) await sendReply(supabase, supabaseUrl, serviceKey, conversation, agent, fallbackReply);
+      await logUsage(supabase, conversation_id, agent.id, agent.ai_model, agent.ai_provider, 0, 0, 0, Date.now() - startTime, true, "no_api_url", auxTokens);
       return new Response(JSON.stringify({ reply: fallbackReply, fallback: true }), { headers: jsonHeaders });
     }
 
@@ -360,8 +374,8 @@ Deno.serve(async (req) => {
       const errText = aiResponse ? await aiResponse.text() : "no response";
       console.error("[AI-PROCESS] AI API error:", aiResponse?.status, errText);
       const fallbackReply = agent.fallback_message || "Desculpe, não consigo responder agora.";
-      if (!skip_send) await sendReply(supabaseUrl, serviceKey, conversation, agent, fallbackReply);
-      await logUsage(supabase, conversation_id, agent.id, agent.ai_model, agent.ai_provider, 0, 0, 0, Date.now() - startTime, true, `API ${aiResponse?.status}`);
+      if (!skip_send) await sendReply(supabase, supabaseUrl, serviceKey, conversation, agent, fallbackReply);
+      await logUsage(supabase, conversation_id, agent.id, agent.ai_model, agent.ai_provider, 0, 0, 0, Date.now() - startTime, true, `API ${aiResponse?.status}`, auxTokens);
       return new Response(JSON.stringify({ reply: fallbackReply, fallback: true }), { headers: jsonHeaders });
     }
 
@@ -384,7 +398,7 @@ Deno.serve(async (req) => {
         });
       }
 
-      // Second call with tool results
+      // Fix #5: Tool follow-up with retry (same pattern as main call)
       const followUpBody: any = {
         model: agent.ai_model,
         messages: [
@@ -396,13 +410,19 @@ Deno.serve(async (req) => {
         temperature: Math.min(1, Math.max(0, agent.temperature || 0.7)),
       };
 
-      const followUp = await fetch(apiUrl, {
-        method: "POST",
-        headers: fetchHeaders,
-        body: JSON.stringify(followUpBody),
-      });
+      let followUp: Response | null = null;
+      for (let attempt = 0; attempt < 2; attempt++) {
+        followUp = await fetch(apiUrl, {
+          method: "POST",
+          headers: fetchHeaders,
+          body: JSON.stringify(followUpBody),
+        });
+        if (followUp.ok || !RETRYABLE_STATUSES.includes(followUp.status)) break;
+        console.log(`[AI-PROCESS] Tool follow-up retry ${attempt + 1}/2, waiting ${RETRY_DELAY_MS}ms`);
+        await new Promise(r => setTimeout(r, RETRY_DELAY_MS));
+      }
 
-      if (followUp.ok) {
+      if (followUp && followUp.ok) {
         const followUpResult = await followUp.json();
         replyText = followUpResult.choices?.[0]?.message?.content || replyText;
 
@@ -425,28 +445,30 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ skipped: "empty_response" }), { headers: jsonHeaders });
     }
 
-    // 10b. Self-evaluation / reflection (single retry max)
-    replyText = await selfEvaluate(replyText, message_text, systemPrompt, apiUrl, fetchHeaders, agent);
+    // Fix #2: Self-evaluation opt-in per agent
+    if (agent.enable_self_eval) {
+      replyText = await selfEvaluate(replyText, message_text, systemPrompt, apiUrl, fetchHeaders, agent, auxTokens);
+    }
 
-    // 11. Duplicate detection
-    const replyHash = simpleHash(replyText);
+    // Fix #11: SHA-256 duplicate detection
+    const replyHash = await computeHash(replyText);
     const lastSent = recentBotMessages[0];
-    if (lastSent && simpleHash(lastSent) === replyHash) {
+    if (lastSent && (await computeHash(lastSent)) === replyHash) {
       console.log("[AI-PROCESS] Duplicate response detected, skipping");
       return new Response(JSON.stringify({ skipped: "duplicate_response" }), { headers: jsonHeaders });
     }
 
-    // 12. Log usage (observability)
+    // 12. Log usage (observability) — Fix #12: includes auxiliary tokens
     const usage = result.usage || {};
     const latencyMs = Date.now() - startTime;
-    console.log(`[AI-PROCESS] Usage: prompt=${usage.prompt_tokens}, completion=${usage.completion_tokens}, total=${usage.total_tokens}, latency=${latencyMs}ms`);
+    console.log(`[AI-PROCESS] Usage: prompt=${usage.prompt_tokens}, completion=${usage.completion_tokens}, total=${usage.total_tokens}, aux_calls=${auxTokens.aux_calls}, aux_tokens=${auxTokens.total_tokens}, latency=${latencyMs}ms`);
 
     await logUsage(supabase, conversation_id, agent.id, agent.ai_model, agent.ai_provider,
-      usage.prompt_tokens || 0, usage.completion_tokens || 0, usage.total_tokens || 0, latencyMs, false, null);
+      usage.prompt_tokens || 0, usage.completion_tokens || 0, usage.total_tokens || 0, latencyMs, false, null, auxTokens);
 
-    // 13. Send the reply
+    // 13. Send the reply (Fix #10: pass supabase client)
     if (!skip_send) {
-      await sendReply(supabaseUrl, serviceKey, conversation, agent, replyText);
+      await sendReply(supabase, supabaseUrl, serviceKey, conversation, agent, replyText);
     }
 
     return new Response(JSON.stringify({ reply: replyText, agent_id: agent.id, usage, content: replyText }), { headers: jsonHeaders });
@@ -456,119 +478,47 @@ Deno.serve(async (req) => {
   }
 });
 
-// ─── Semantic vector search via match_chunks RPC ───
-async function semanticSearch(supabase: any, queryText: string, docIds: string[]): Promise<any[]> {
-  const apiKey = Deno.env.get("LOVABLE_API_KEY");
-  if (!apiKey) return [];
-
+// ─── Fix #1 + #8: Native PostgreSQL Full-Text Search via RPC ───
+async function ftsSearch(supabase: any, queryText: string, docIds: string[]): Promise<any[]> {
   try {
-    // First check if any embeddings exist
-    const { count } = await supabase
-      .from("knowledge_chunks")
-      .select("id", { count: "exact", head: true })
-      .in("document_id", docIds)
-      .not("embedding", "is", null);
+    // Simple tokenization — no LLM call needed
+    const searchTerms = queryText
+      .replace(/[^\w\sáàâãéèêíìîóòôõúùûçñ]/gi, " ")
+      .split(/\s+/)
+      .filter(t => t.length > 2)
+      .slice(0, 10)
+      .join(" ");
 
-    if (!count || count === 0) return [];
+    if (!searchTerms) return [];
 
-    // Generate query embedding via AI
-    const res = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model: "google/gemini-2.5-flash-lite",
-        messages: [
-          { role: "system", content: "Generate a semantic embedding representation of the following text. Return ONLY a JSON array of exactly 768 floating point numbers between -1 and 1. No explanation." },
-          { role: "user", content: queryText.substring(0, 1000) },
-        ],
-        temperature: 0,
-      }),
+    const { data: results, error } = await supabase.rpc("search_chunks_fts", {
+      search_query: searchTerms,
+      doc_ids: docIds,
+      max_results: MAX_CHUNKS,
     });
 
-    if (!res.ok) return [];
-    const result = await res.json();
-    const content = result.choices?.[0]?.message?.content || "";
-    const arrayMatch = content.match(/\[[\s\S]*\]/);
-    if (!arrayMatch) return [];
+    if (error) {
+      console.log("[AI-PROCESS] FTS search error:", error.message);
+      return [];
+    }
 
-    const queryEmbedding = JSON.parse(arrayMatch[0]);
-    if (!Array.isArray(queryEmbedding) || queryEmbedding.length !== 768) return [];
-
-    // Call match_chunks RPC
-    const { data: matched } = await supabase.rpc("match_chunks", {
-      query_embedding: `[${queryEmbedding.join(",")}]`,
-      match_count: MAX_CHUNKS,
-      match_threshold: 0.5,
-    });
-
-    if (matched && matched.length > 0) {
-      // Filter by docIds
-      const filtered = matched.filter((m: any) => docIds.includes(m.document_id));
-      console.log(`[AI-PROCESS] Semantic search: ${filtered.length} chunks (threshold 0.5)`);
-      return filtered;
+    if (results && results.length > 0) {
+      console.log(`[AI-PROCESS] FTS search: ${results.length} chunks found`);
+      return results;
     }
   } catch (e) {
-    console.log("[AI-PROCESS] Semantic search failed:", e);
+    console.log("[AI-PROCESS] FTS search failed:", e);
   }
   return [];
 }
 
-// ─── Keyword-based search fallback ───
-async function keywordSearch(supabase: any, queryText: string, docIds: string[]): Promise<any[]> {
-  const apiKey = Deno.env.get("LOVABLE_API_KEY");
-  try {
-    let searchTerms = queryText.toLowerCase().split(/\s+/).filter(t => t.length > 2);
-
-    if (apiKey) {
-      const res = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-        method: "POST",
-        headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-        body: JSON.stringify({
-          model: "google/gemini-2.5-flash-lite",
-          messages: [
-            { role: "system", content: "Return ONLY the key search terms from this question, no explanation. Max 5 words." },
-            { role: "user", content: queryText },
-          ],
-          temperature: 0,
-        }),
-      });
-      if (res.ok) {
-        const r = await res.json();
-        searchTerms = (r.choices?.[0]?.message?.content || queryText).toLowerCase().split(/\s+/);
-      }
-    }
-
-    const { data: allChunks } = await supabase
-      .from("knowledge_chunks")
-      .select("content, chunk_index")
-      .in("document_id", docIds)
-      .order("chunk_index")
-      .limit(100);
-
-    if (!allChunks || allChunks.length === 0) return [];
-
-    const scored = allChunks.map((c: any) => {
-      const lower = c.content.toLowerCase();
-      const score = searchTerms.reduce((acc: number, term: string) =>
-        acc + (lower.includes(term) ? 1 : 0), 0);
-      return { ...c, score };
-    });
-    scored.sort((a: any, b: any) => b.score - a.score);
-    return scored.slice(0, MAX_CHUNKS);
-  } catch (e) {
-    console.log("[AI-PROCESS] Keyword search failed:", e);
-    return [];
-  }
-}
-
 // ─── Multi-agent router (optimized for legal domain) ───
-async function routeToSubAgent(supabase: any, parentAgent: any, conversation: any, messageText: string): Promise<any | null> {
+async function routeToSubAgent(supabase: any, parentAgent: any, conversation: any, messageText: string, auxTokens: TokenAccumulator): Promise<any | null> {
   const apiKey = Deno.env.get("LOVABLE_API_KEY");
   if (!apiKey) return null;
 
   const botState = conversation.bot_state || {};
 
-  // Load sub-agents
   const { data: subAgents } = await supabase
     .from("ai_agents")
     .select("id, name, description")
@@ -577,11 +527,9 @@ async function routeToSubAgent(supabase: any, parentAgent: any, conversation: an
 
   if (!subAgents || subAgents.length === 0) return null;
 
-  // Check if bot_state already has an active sub-agent
   if (botState.active_sub_agent_id) {
     const cached = subAgents.find((a: any) => a.id === botState.active_sub_agent_id);
     if (cached) {
-      // Detect topic change — if message clearly belongs to another agent, re-route
       const shouldReroute = await detectTopicChange(apiKey, messageText, cached, subAgents);
       if (!shouldReroute) {
         const { data: fullAgent } = await supabase.from("ai_agents").select("*").eq("id", cached.id).single();
@@ -591,7 +539,6 @@ async function routeToSubAgent(supabase: any, parentAgent: any, conversation: an
     }
   }
 
-  // Classify intent using structured tool calling
   const agentList = subAgents.map((a: any) => `- "${a.name}": ${a.description || "sem descrição"}`).join("\n");
 
   try {
@@ -632,14 +579,8 @@ REGRAS DE ROUTING:
                   description: "The exact name of the chosen agent",
                   enum: subAgents.map((a: any) => a.name),
                 },
-                confidence: {
-                  type: "number",
-                  description: "Confidence score from 0 to 1",
-                },
-                detected_topic: {
-                  type: "string",
-                  description: "Brief topic detected in the message",
-                },
+                confidence: { type: "number", description: "Confidence score from 0 to 1" },
+                detected_topic: { type: "string", description: "Brief topic detected in the message" },
               },
               required: ["agent_name", "confidence", "detected_topic"],
               additionalProperties: false,
@@ -653,11 +594,11 @@ REGRAS DE ROUTING:
 
     if (!res.ok) return null;
     const result = await res.json();
+    // Fix #12: Track router usage
+    accumulateUsage(auxTokens, result.usage);
 
-    // Parse tool call result
     const toolCall = result.choices?.[0]?.message?.tool_calls?.[0];
     if (!toolCall) {
-      // Fallback: parse from content
       const content = (result.choices?.[0]?.message?.content || "").trim();
       const chosen = subAgents.find((a: any) => content.toLowerCase().includes(a.name.toLowerCase()));
       if (chosen) return await activateSubAgent(supabase, chosen, botState, conversation, null);
@@ -692,12 +633,10 @@ async function activateSubAgent(supabase: any, chosen: any, botState: any, conve
 }
 
 async function detectTopicChange(apiKey: string, messageText: string, currentAgent: any, allAgents: any[]): Promise<boolean> {
-  // Quick heuristic: very short messages or greetings don't change topic
   if (messageText.length < 10) return false;
   const greetings = ["olá", "oi", "bom dia", "boa tarde", "boa noite", "hello", "hi", "obrigado", "obrigada", "ok", "sim", "não"];
   if (greetings.some(g => messageText.toLowerCase().trim() === g)) return false;
 
-  // Keyword-based quick check for obvious topic changes
   const topicKeywords: Record<string, string[]> = {
     "Vistos & Cidadania": ["visto", "cidadania", "residência", "aima", "golden visa", "passaporte", "nacionalidade", "imigração"],
     "Previdência & Segurança Social": ["aposentadoria", "inss", "reforma", "pensão", "benefício", "previdência", "contribuição"],
@@ -716,16 +655,14 @@ async function detectTopicChange(apiKey: string, messageText: string, currentAge
   return false;
 }
 
-// ─── Sentiment analysis ───
-async function analyzeSentiment(messageText: string, recentMessages: any[]): Promise<string> {
-  // Quick heuristic check before calling AI
+// ─── Sentiment analysis ─── Fix #12: tracks tokens
+async function analyzeSentiment(messageText: string, recentMessages: any[], auxTokens: TokenAccumulator): Promise<string> {
   const frustratedWords = ["absurdo", "ridículo", "vergonha", "péssimo", "horrível", "lixo", "pior", "nunca mais", "inaceitável", "furioso", "raiva"];
   const lower = messageText.toLowerCase();
   const hasFrustratedWords = frustratedWords.some(w => lower.includes(w));
 
   if (!hasFrustratedWords && messageText.length < 200) return "neutral";
 
-  // Check recent context for escalating frustration
   const apiKey = Deno.env.get("LOVABLE_API_KEY");
   if (!apiKey) return hasFrustratedWords ? "frustrated" : "neutral";
 
@@ -745,15 +682,15 @@ async function analyzeSentiment(messageText: string, recentMessages: any[]): Pro
     });
     if (!res.ok) return hasFrustratedWords ? "frustrated" : "neutral";
     const result = await res.json();
+    accumulateUsage(auxTokens, result.usage);
     return (result.choices?.[0]?.message?.content || "neutral").trim().toLowerCase();
   } catch {
     return hasFrustratedWords ? "frustrated" : "neutral";
   }
 }
 
-// ─── Self-evaluation / reflection ───
-async function selfEvaluate(reply: string, userMessage: string, systemPrompt: string, apiUrl: string, fetchHeaders: Record<string, string>, agent: any): Promise<string> {
-  // Only evaluate for non-trivial responses
+// ─── Self-evaluation / reflection ─── Fix #2: opt-in only + Fix #12: tracks tokens
+async function selfEvaluate(reply: string, userMessage: string, systemPrompt: string, apiUrl: string, fetchHeaders: Record<string, string>, agent: any, auxTokens: TokenAccumulator): Promise<string> {
   if (reply.length < 50) return reply;
 
   const apiKey = Deno.env.get("LOVABLE_API_KEY");
@@ -775,6 +712,7 @@ async function selfEvaluate(reply: string, userMessage: string, systemPrompt: st
 
     if (!evalRes.ok) return reply;
     const evalResult = await evalRes.json();
+    accumulateUsage(auxTokens, evalResult.usage);
     const evalContent = evalResult.choices?.[0]?.message?.content || "";
 
     const jsonMatch = evalContent.match(/\{[\s\S]*\}/);
@@ -786,7 +724,6 @@ async function selfEvaluate(reply: string, userMessage: string, systemPrompt: st
       return reply;
     }
 
-    // Score < 7: regenerate with correction instruction
     console.log(`[AI-PROCESS] Self-eval score: ${evaluation.score}/10 — regenerating. Issue: ${evaluation.issue}`);
 
     const regenRes = await fetch(apiUrl, {
@@ -804,6 +741,7 @@ async function selfEvaluate(reply: string, userMessage: string, systemPrompt: st
 
     if (regenRes.ok) {
       const regenResult = await regenRes.json();
+      accumulateUsage(auxTokens, regenResult.usage);
       const improved = regenResult.choices?.[0]?.message?.content;
       if (improved && improved.length > 10) {
         console.log("[AI-PROCESS] Using improved response after self-eval");
@@ -918,12 +856,11 @@ async function executeToolCall(supabase: any, supabaseUrl: string, serviceKey: s
       }
 
       case "search_knowledge": {
-        // Semantic search tool for agent
         const { data: allDocs } = await supabase.from("agent_knowledge_documents").select("document_id").eq("agent_id", args.agent_id || "");
         if (!allDocs || allDocs.length === 0) return { results: [] };
         const docIds = allDocs.map((d: any) => d.document_id);
-        const results = await semanticSearch(supabase, args.query || "", docIds);
-        return { results: results.slice(0, 5).map((r: any) => ({ content: r.content, similarity: r.similarity })) };
+        const results = await ftsSearch(supabase, args.query || "", docIds);
+        return { results: results.slice(0, 5).map((r: any) => ({ content: r.content, rank: r.rank })) };
       }
 
       case "get_case_status": {
@@ -935,7 +872,6 @@ async function executeToolCall(supabase: any, supabaseUrl: string, serviceKey: s
       }
 
       case "send_payment_link": {
-        // Trigger payment creation
         try {
           const res = await fetch(`${supabaseUrl}/functions/v1/payment-create`, {
             method: "POST",
@@ -955,7 +891,6 @@ async function executeToolCall(supabase: any, supabaseUrl: string, serviceKey: s
       }
 
       default: {
-        // Check if it's a webhook-based tool
         const { data: toolConfig } = await supabase.from("agent_tools")
           .select("tool_parameters")
           .eq("tool_name", fnName)
@@ -983,22 +918,27 @@ async function executeToolCall(supabase: any, supabaseUrl: string, serviceKey: s
   }
 }
 
-// ─── Observability: log AI usage with cost estimation ───
+// ─── Observability: log AI usage with cost estimation ─── Fix #12: includes auxiliary tokens
 async function logUsage(
   supabase: any, conversationId: string | null, agentId: string, model: string, provider: string,
   promptTokens: number, completionTokens: number, totalTokens: number, latencyMs: number,
-  wasFallback: boolean, error: string | null
+  wasFallback: boolean, error: string | null, auxTokens?: TokenAccumulator
 ) {
   try {
-    const costEstimate = estimateCost(model, promptTokens, completionTokens);
+    // Include auxiliary call tokens in the total
+    const totalPrompt = promptTokens + (auxTokens?.prompt_tokens || 0);
+    const totalCompletion = completionTokens + (auxTokens?.completion_tokens || 0);
+    const totalAll = totalTokens + (auxTokens?.total_tokens || 0);
+    const costEstimate = estimateCost(model, totalPrompt, totalCompletion);
+
     await supabase.from("ai_usage_logs").insert({
       conversation_id: conversationId || null,
       agent_id: agentId,
       model,
       provider,
-      prompt_tokens: promptTokens,
-      completion_tokens: completionTokens,
-      total_tokens: totalTokens,
+      prompt_tokens: totalPrompt,
+      completion_tokens: totalCompletion,
+      total_tokens: totalAll,
       latency_ms: latencyMs,
       cost_estimate: costEstimate,
       was_fallback: wasFallback,
@@ -1010,9 +950,8 @@ async function logUsage(
 }
 
 // ─── Send reply via message-send + save to DB + forward to Bitrix24 ───
-async function sendReply(supabaseUrl: string, serviceKey: string, conversation: any, agent: any, replyText: string) {
-  const supabase = createClient(supabaseUrl, serviceKey);
-
+// Fix #10: Accepts supabase client as parameter instead of creating new one
+async function sendReply(supabase: any, supabaseUrl: string, serviceKey: string, conversation: any, agent: any, replyText: string) {
   // Save message and update conversation in parallel
   const [msgResult] = await Promise.allSettled([
     supabase.from("messages").insert({
@@ -1065,20 +1004,28 @@ async function sendReply(supabaseUrl: string, serviceKey: string, conversation: 
     console.error("[AI-PROCESS] Bitrix24 forward error:", e);
   }
 
-  // Extract and save user memory (async, with improved frequency)
-  extractUserMemory(supabaseUrl, serviceKey, conversation, replyText)
-    .catch(e => console.error("[AI-PROCESS] Memory extraction error:", e));
+  // Fix #3: Extract user memory with proper error logging (no silent catch)
+  extractUserMemory(supabase, supabaseUrl, serviceKey, conversation, replyText)
+    .catch(e => {
+      console.error("[AI-PROCESS] Memory extraction error:", e);
+      // Log to ai_usage_logs for observability
+      supabase.from("ai_usage_logs").insert({
+        conversation_id: conversation.id,
+        agent_id: null,
+        model: "memory_extraction",
+        provider: "system",
+        error: `Memory extraction failed: ${e?.message || String(e)}`,
+        latency_ms: 0,
+      }).catch(() => {});
+    });
 }
 
-// ─── Extract user memory from conversation (improved triggers) ───
-async function extractUserMemory(supabaseUrl: string, serviceKey: string, conversation: any, _lastReply: string) {
-  const supabase = createClient(supabaseUrl, serviceKey);
+// ─── Extract user memory from conversation ───
+// Fix #3: Proper error logging instead of silent catch
+async function extractUserMemory(supabase: any, supabaseUrl: string, serviceKey: string, conversation: any, _lastReply: string) {
   const contactId = conversation.contact_phone || conversation.contact_instagram || conversation.contact_email;
   if (!contactId) return;
 
-  // Check if extraction should happen:
-  // - On human transfer (attendance_mode just changed)
-  // - Every 15 new messages since last extraction
   const { count } = await supabase
     .from("messages")
     .select("id", { count: "exact", head: true })
@@ -1100,44 +1047,52 @@ async function extractUserMemory(supabaseUrl: string, serviceKey: string, conver
   const apiKey = Deno.env.get("LOVABLE_API_KEY");
   if (!apiKey) return;
 
-  try {
-    const formatted = messages.reverse().map((m: any) =>
-      `[${m.direction === "inbound" ? "Cliente" : "Bot"}]: ${m.content}`
-    ).join("\n");
+  const formatted = messages.reverse().map((m: any) =>
+    `[${m.direction === "inbound" ? "Cliente" : "Bot"}]: ${m.content}`
+  ).join("\n");
 
-    const res = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model: "google/gemini-2.5-flash-lite",
-        messages: [
-          { role: "system", content: "Extract key facts about the client from this conversation. Return ONLY a JSON array of {key, value} objects. Keys should be: name, company, product_interest, location, language, preference. Only include facts explicitly mentioned. Max 5 items." },
-          { role: "user", content: formatted },
-        ],
-        temperature: 0.1,
-      }),
-    });
+  const res = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      model: "google/gemini-2.5-flash-lite",
+      messages: [
+        { role: "system", content: "Extract key facts about the client from this conversation. Return ONLY a JSON array of {key, value} objects. Keys should be: name, company, product_interest, location, language, preference. Only include facts explicitly mentioned. Max 5 items." },
+        { role: "user", content: formatted },
+      ],
+      temperature: 0.1,
+    }),
+  });
 
-    if (!res.ok) return;
-    const result = await res.json();
-    const content = result.choices?.[0]?.message?.content || "";
+  if (!res.ok) {
+    throw new Error(`Memory extraction API error: ${res.status}`);
+  }
 
-    const jsonMatch = content.match(/\[[\s\S]*\]/);
-    if (!jsonMatch) return;
+  const result = await res.json();
+  const content = result.choices?.[0]?.message?.content || "";
 
-    const facts = JSON.parse(jsonMatch[0]);
-    const phoneCol = conversation.contact_phone ? "contact_phone" : conversation.contact_instagram ? "contact_instagram" : "contact_email";
+  const jsonMatch = content.match(/\[[\s\S]*\]/);
+  if (!jsonMatch) {
+    console.log("[AI-PROCESS] Memory extraction: no JSON array found in response");
+    return;
+  }
 
-    for (const fact of facts) {
-      if (!fact.key || !fact.value) continue;
-      await supabase.from("user_memory").upsert({
-        [phoneCol]: contactId,
-        key: fact.key,
-        value: String(fact.value),
-        updated_at: new Date().toISOString(),
-      }, { onConflict: `${phoneCol},key` }).catch(() => {});
+  const facts = JSON.parse(jsonMatch[0]);
+  const phoneCol = conversation.contact_phone ? "contact_phone" : conversation.contact_instagram ? "contact_instagram" : "contact_email";
+
+  for (const fact of facts) {
+    if (!fact.key || !fact.value) continue;
+    const { error: upsertErr } = await supabase.from("user_memory").upsert({
+      [phoneCol]: contactId,
+      key: fact.key,
+      value: String(fact.value),
+      updated_at: new Date().toISOString(),
+    }, { onConflict: `${phoneCol},key` });
+
+    if (upsertErr) {
+      console.error(`[AI-PROCESS] Memory upsert error for key "${fact.key}":`, upsertErr.message);
     }
+  }
 
-    console.log(`[AI-PROCESS] Extracted ${facts.length} memory facts for ${contactId}`);
-  } catch {}
+  console.log(`[AI-PROCESS] Extracted ${facts.length} memory facts for ${contactId}`);
 }

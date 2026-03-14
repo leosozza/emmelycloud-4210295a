@@ -141,6 +141,7 @@ export type Database = {
           created_at: string
           default_flow_id: string | null
           description: string | null
+          enable_self_eval: boolean | null
           fallback_message: string | null
           id: string
           is_active: boolean
@@ -170,6 +171,7 @@ export type Database = {
           created_at?: string
           default_flow_id?: string | null
           description?: string | null
+          enable_self_eval?: boolean | null
           fallback_message?: string | null
           id?: string
           is_active?: boolean
@@ -199,6 +201,7 @@ export type Database = {
           created_at?: string
           default_flow_id?: string | null
           description?: string | null
+          enable_self_eval?: boolean | null
           fallback_message?: string | null
           id?: string
           is_active?: boolean
@@ -2272,6 +2275,16 @@ export type Database = {
           document_id: string
           id: string
           similarity: number
+        }[]
+      }
+      search_chunks_fts: {
+        Args: { doc_ids: string[]; max_results?: number; search_query: string }
+        Returns: {
+          chunk_index: number
+          content: string
+          document_id: string
+          id: string
+          rank: number
         }[]
       }
     }
