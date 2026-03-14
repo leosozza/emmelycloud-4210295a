@@ -3960,10 +3960,7 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
         const s = (h.STATUS || "").toUpperCase().trim();
         if (filterStatus === "QUITADO" && s !== "QUITADO") return false;
         if (filterStatus === "ATRASADO" && s !== "ATRASADO") return false;
-        if (filterStatus === "PENDENTE" && s !== "" && s !== "PENDENTE" && s !== "ABERTO" && s === "QUITADO" || filterStatus === "PENDENTE" && s === "ATRASADO") return false;
-        if (filterStatus === "PENDENTE") {
-          if (s === "QUITADO" || s === "ATRASADO") return false;
-        }
+        if (filterStatus === "PENDENTE" && (s === "QUITADO" || s === "ATRASADO")) return false;
       }
       // Date filter on DATA column
       if (filterDateFrom || filterDateTo) {
