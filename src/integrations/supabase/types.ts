@@ -1963,6 +1963,8 @@ export type Database = {
         Row: {
           accept_token: string | null
           accepted_at: string | null
+          accepted_ip: string | null
+          accepted_user_agent: string | null
           case_id: string
           client_address: string | null
           client_document: string | null
@@ -1987,6 +1989,8 @@ export type Database = {
         Insert: {
           accept_token?: string | null
           accepted_at?: string | null
+          accepted_ip?: string | null
+          accepted_user_agent?: string | null
           case_id: string
           client_address?: string | null
           client_document?: string | null
@@ -2011,6 +2015,8 @@ export type Database = {
         Update: {
           accept_token?: string | null
           accepted_at?: string | null
+          accepted_ip?: string | null
+          accepted_user_agent?: string | null
           case_id?: string
           client_address?: string | null
           client_document?: string | null
