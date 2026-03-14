@@ -268,6 +268,7 @@ serve(async (req) => {
                 lead_id: lead!.id,
                 description: `Serviço importado do Access: ${desc} (SeparadorID: ${separadorId})`,
                 status: "concluido",
+                created_at: serviceDate,
               })
               .select("id")
               .single();
