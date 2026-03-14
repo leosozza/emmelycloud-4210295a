@@ -1,104 +1,59 @@
 
 
-## Revisão Arquitetural — Fase 2 Implementada
+## Plano: Persistir ficheiros XLSX no Storage antes de importar
 
-### Mudanças realizadas (Fase 2)
+### Problema
+Os ficheiros XLSX são lidos apenas em memória (via `FileReader` → `parseXlsx`). Se a página recarrega ou a internet oscila, perde-se o ficheiro e todo o progresso.
 
-#### 1. Código morto eliminado
-- `chatbot-reply/index.ts` — **removido** (100% duplicado com flow-engine → ai-process-message)
-- `ai-triage/index.ts` — **removido** (100% duplicado com ai-automation-agent action classify_lead)
+### Solução
+1. Criar bucket `import-files` no Storage
+2. Ao fazer upload do XLSX, guardar o ficheiro no bucket antes de o processar
+3. Criar tabela `import_sessions` para rastrear sessões activas (fase, progresso, path do ficheiro)
+4. Ao reabrir a página, verificar sessões activas e recarregar o ficheiro do Storage para retomar
 
-#### 2. Janela de contexto expandida
-- `RECENT_MSG_COUNT`: 5 → **15** mensagens recentes completas
-- `HISTORY_LIMIT`: 15 → **30** mensagens totais
-- TOON comprime as 15 mais antigas, mantém as 15 recentes intactas
+### Alterações
 
-#### 3. RAG semântico real (pgvector)
-- Edge function `generate-embeddings` criada — gera embeddings de 768 dimensões via Lovable AI
-- `parse-document` agora chama `generate-embeddings` automaticamente após chunking
-- `ai-process-message` usa `match_chunks()` RPC para busca semântica (threshold 0.5)
-- Fallback para keyword scoring quando embeddings não existem
+**1. Migration SQL**
+- Criar bucket `import-files` (privado)
+- Criar tabela `import_sessions`:
+  - `id`, `phase` (clients/honorarios), `status` (in_progress/done/error)
+  - `file_path` (caminho no bucket), `total_items`, `processed_items`
+  - `logs` (jsonb), `filter_config` (jsonb — filtros fase 2)
+  - `created_at`, `updated_at`
+- RLS: authenticated can ALL, service_role can ALL
 
-#### 4. Router multi-agente
-- Quando agente tem `sub_agent_ids`, classifica intenção via IA rápida (flash-lite)
-- Delega para sub-agente especialista com seu próprio prompt e KB
-- Mantém agente activo em `bot_state.active_sub_agent_id` para consistência
+**2. Frontend `Bitrix24App.tsx` — `ImportacaoAccessView`**
 
-#### 5. Self-evaluation / Reflexão
-- Após gerar resposta, avalia qualidade via flash-lite (score 1-10)
-- Se score < 7, regenera com instrução de correcção (máximo 1 retry)
-- Respostas < 50 chars ignoram avaliação
+Fluxo de upload alterado:
+```text
+Seleccionar XLSX → Upload para storage (import-files/clients_{timestamp}.xlsx)
+                 → Criar import_session com file_path
+                 → Parse local para mostrar dados na UI
+```
 
-#### 6. Sentiment analysis + Auto-escalação
-- Análise de sentimento via heurística + IA
-- 2x frustração consecutiva → auto-transfere para humano
-- Guarda sentiment em `bot_state.last_sentiment`
-- Regista escalação em `conversation_feedback`
+Fluxo de importação com checkpoint:
+```text
+Cada batch completo → UPDATE import_sessions SET processed_items = X, logs = [...]
+```
 
-#### 7. Tools dinâmicas expandidas
-- Novas tools: `search_knowledge`, `get_case_status`, `send_payment_link`
-- Tools desconhecidas verificam `tool_parameters.webhook_url` para chamada webhook genérica
-- Registry pattern: tools são lidas de `agent_tools` table
+Fluxo de resume (on mount):
+```text
+SELECT * FROM import_sessions WHERE status = 'in_progress'
+  → Se encontrar: download ficheiro do storage → parse → restaurar estado
+  → Retomar a partir de processed_items
+```
 
-#### 8. Queue worker auto-trigger
-- Trigger PostgreSQL `AFTER INSERT ON message_queue` chama `pg_net.http_post()` para queue-worker
-- Cron backup via `pg_cron` a cada minuto
+Mudanças específicas:
+- `handleClientesUpload` e `handleHonorariosUpload`: após `parseXlsx`, fazer `supabase.storage.from('import-files').upload(path, file)` e criar sessão na tabela
+- `handleImportClients` e `handleImportHonorarios`: após cada batch, `UPDATE import_sessions SET processed_items, logs`
+- Novo `useEffect` no mount: query `import_sessions` com `status = 'in_progress'`, se existir, download o ficheiro do Storage, parse, restaurar contadores e logs, marcar fase como "em curso"
+- Ao concluir fase: `UPDATE import_sessions SET status = 'done'`
+- Botão "Limpar Sessão" para apagar ficheiro do storage e sessão da tabela
 
-#### 9. Melhorias de robustez no sendReply
-- `Promise.allSettled` para operações paralelas (save message + update conversation)
-- Error logging real em vez de fire-and-forget silencioso para message-send e bitrix24-send
-- Extração de memória com tolerância `count % 10 > 1` (mais robusto que `=== 0`)
+### Ficheiros a modificar
 
-### Mudanças realizadas (Fase 2.1 — Consolidação Completa)
+| Ficheiro | Acção |
+|---|---|
+| Migration SQL | Criar bucket `import-files` + tabela `import_sessions` com RLS |
+| `src/pages/Bitrix24App.tsx` | Upload para storage, criar/atualizar sessão, restaurar no mount |
 
-#### Código morto eliminado
-- `chatbot-reply/index.ts` e `ai-triage/index.ts` — diretórios removidos, referências limpas em `config.toml`, `ApiDocs.tsx` e `bitrix24-worker.ts`
-- ApiDocs actualizado para documentar `ai-process-message` em vez de `chatbot-reply`
-
-#### Sintaxe corrigida
-- `parse-document/index.ts` — corrigida função `extractWithAI` que estava erroneamente aninhada dentro de `findFileInZip`
-
-#### Config.toml actualizado
-- Removidas entradas `ai-triage` e `chatbot-reply`
-- Adicionadas entradas para `generate-embeddings`, `parse-document` e `queue-worker`
-
-#### Triggers PostgreSQL criados
-- `on_message_queue_insert` → auto-invoca `queue-worker` via `pg_net`
-- `on_lead_created` → notifica comerciais e admins
-- `on_message_created` → notifica de novas mensagens inbound
-- `on_payment_status_change` → notifica pagamentos recebidos
-- `on_lead_sla_check` → alerta SLA a expirar
-- `on_lead_set_sla` → define SLA automático na criação
-- `on_profile_created` → atribui admin ao primeiro utilizador
-- Cron job `queue-worker-backup` — invoca queue-worker a cada minuto
-
-### Estado actual — 8/8 melhorias implementadas ✅
-1. ✅ Código morto eliminado (chatbot-reply + ai-triage)
-2. ✅ Contexto expandido (30 mensagens: 15 recentes + 15 comprimidas TOON)
-3. ✅ RAG semântico (pgvector + match_chunks + generate-embeddings)
-4. ✅ Router multi-agente (sub_agent_ids + classificação de intenção)
-5. ✅ Tools dinâmicas (registry pattern + webhook fallback)
-6. ✅ Reflexão/Auto-avaliação (score 1-10, retry se < 7)
-7. ✅ Sentiment analysis + auto-escalação (2x frustração → humano)
-8. ✅ Queue worker auto-trigger (pg_trigger + pg_cron backup)
-
-### Mudanças realizadas (Fase 3 — Auditoria Arquitetural)
-
-#### 1. Dashboard de Observabilidade IA
-- Nova página `/observabilidade-ia` com KPIs: requisições, tokens, custo estimado, latência média, taxa fallback, taxa erro, rating feedback
-- Hook `useAiObservability.ts` com agregação de dados
-
-#### 2. Thumbs up/down no chat de atendimento
-- Botões de feedback em mensagens outbound (bot) no painel de atendimento
-
-#### 3. Retry com backoff no AI gateway (429/502/503, 2s delay, 1 retry)
-
-#### 4. Cost estimation real (tabela de preços por modelo, cálculo automático)
-
-#### 5. Memory extraction melhorada (cada 15 msgs + em transferência humana)
-
-#### 6. Reorganização do monólito (constantes extraídas, secções delimitadas)
-
-### Próximos passos
-- Batch job para gerar embeddings dos chunks existentes
-- Streaming no PlaygroundIA
