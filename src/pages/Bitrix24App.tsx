@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback, useRef, lazy, Suspense, useMemo, Fragment } from "react";
+import { supabase } from "@/integrations/supabase/client";
 import { useBitrix24Theme } from "@/hooks/useBitrix24Theme";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
