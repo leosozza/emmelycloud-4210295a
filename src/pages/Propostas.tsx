@@ -125,7 +125,7 @@ const PropostasPage = () => {
         const data = res.data as any;
         if (data?.error) throw new Error(data.error);
       } else {
-        const { error } = await supabase.from("proposals").update({ status }).eq("id", id);
+        const { error } = await supabase.from("proposals").update({ status: status as any }).eq("id", id);
         if (error) throw error;
       }
     },
