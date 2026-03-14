@@ -316,7 +316,7 @@ const Bitrix24App = () => {
         {view === "empresas" && <EmpresasView />}
         {view === "relatorios" && <RelatoriosView />}
         {view === "importacao" && <ImportacaoAccessView integration={integration} memberId={memberId} />}
-        {view === "carteira" && <CarteiraAccessView integration={integration} />}
+        {view === "carteira" && <CarteiraAccessView integration={integration} memberId={memberId} />}
         {view === "configuracoes" && (
           <ConfigView
             integration={integration}
