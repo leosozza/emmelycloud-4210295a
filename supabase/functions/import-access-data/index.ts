@@ -235,6 +235,10 @@ serve(async (req) => {
             const allPaid = installments.every(i => (i.STATUS || "").toUpperCase() === "QUITADO");
             const totalPaid = installments.reduce((sum, i) => sum + parseNum(i.TOTALPAGO), 0);
 
+            // Extract service/contract date from DATA column
+            const serviceDateRaw = parseDate(installments[0]?.DATA);
+            const serviceDate = serviceDateRaw ? `${serviceDateRaw}T00:00:00Z` : new Date().toISOString();
+
             // Create lead
             const { data: lead, error: leadErr } = await supabase
               .from("leads")
