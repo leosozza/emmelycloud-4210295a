@@ -263,16 +263,16 @@ serve(async (req) => {
     if (mode === "honorarios") {
       // Build minimal client stubs from honorarios' CLIENTE ids
       const uniqueClientIds = [...new Set(honorarios.map(h => h.CLIENTE))];
-      if (clientes && clientes.length > 0) {
+      if (clientesList.length > 0) {
         // Use provided clientes filtered to those with honorarios
         const clientIdSet = new Set(uniqueClientIds);
-        clientsToProcess = clientes.filter(c => clientIdSet.has(c.ID));
+        clientsToProcess = clientesList.filter(c => clientIdSet.has(c.ID));
       } else {
         // No clientes provided — create stubs
         clientsToProcess = uniqueClientIds.map(id => ({ ID: id, NOME: `Cliente ${id}` } as RawClient));
       }
     } else {
-      clientsToProcess = clientes;
+      clientsToProcess = clientesList;
     }
 
     const total = clientsToProcess.length;
