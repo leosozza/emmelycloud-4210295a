@@ -333,7 +333,7 @@ serve(async (req) => {
 
             // Create financial records for each installment
             for (const inst of installments) {
-              const parcelaParts = (inst.PARCELA || "1/1").split("/");
+              const parcelaParts = (inst.PARCELA || "1/1").split(/[;/]/);
               const installmentNumber = parseInt(parcelaParts[0]) || 1;
               const installmentTotal = parseInt(parcelaParts[1]) || totalInstallments;
 
