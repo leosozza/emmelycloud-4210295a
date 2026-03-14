@@ -1,104 +1,76 @@
 
 
-## Revisão Arquitetural — Fase 2 Implementada
+## Plano: Importação Access → Emmely + Bitrix24
 
-### Mudanças realizadas (Fase 2)
+### Análise do ficheiro
 
-#### 1. Código morto eliminado
-- `chatbot-reply/index.ts` — **removido** (100% duplicado com flow-engine → ai-process-message)
-- `ai-triage/index.ts` — **removido** (100% duplicado com ai-automation-agent action classify_lead)
+O `TABELA_CONSOLIDADA_ESTRUTURADA.json` está bem estruturado pelo Manus:
+- **~1080 clientes** com dados pessoais (nome, NIF, documento, morada, nacionalidade)
+- **~5780 honorários** com parcelas detalhadas (valor, vencimento, pagamento, status)
+- Statuses: `QUITADO`, `PENDENTE`, `PARCIAL`
+- Período: 2022 a 2026
 
-#### 2. Janela de contexto expandida
-- `RECENT_MSG_COUNT`: 5 → **15** mensagens recentes completas
-- `HISTORY_LIMIT`: 15 → **30** mensagens totais
-- TOON comprime as 15 mais antigas, mantém as 15 recentes intactas
+### Mapeamento de dados
 
-#### 3. RAG semântico real (pgvector)
-- Edge function `generate-embeddings` criada — gera embeddings de 768 dimensões via Lovable AI
-- `parse-document` agora chama `generate-embeddings` automaticamente após chunking
-- `ai-process-message` usa `match_chunks()` RPC para busca semântica (threshold 0.5)
-- Fallback para keyword scoring quando embeddings não existem
+```text
+Access (JSON)              →  Emmely (Supabase)         →  Bitrix24
+─────────────────────────────────────────────────────────────────────
+cliente.nome               →  clients.name               →  Contact NAME
+cliente.nif                →  clients.document_number     →  Contact UF_NIF
+cliente.documento          →  clients.document_type=doc   →  Contact UF_DOCUMENTO
+cliente.nascimento         →  clients.birth_date          →  Contact BIRTHDATE
+cliente.nacionalidade      →  clients.nationality         →  Contact UF_NACIONALIDADE
+cliente.morada             →  clients.address             →  Contact ADDRESS
+cliente.codigopostal       →  clients.postal_code         →  Contact ADDRESS_POSTAL_CODE
+cliente.pais               →  clients.country             →  Contact ADDRESS_COUNTRY
+cliente.email              →  (se existir)                →  Contact EMAIL
 
-#### 4. Router multi-agente
-- Quando agente tem `sub_agent_ids`, classifica intenção via IA rápida (flash-lite)
-- Delega para sub-agente especialista com seu próprio prompt e KB
-- Mantém agente activo em `bot_state.active_sub_agent_id` para consistência
+honorario                  →  financial_records            →  Deal (1 por serviço)
+  descricao                →  description                  →  Deal TITLE
+  valor                    →  total_value                  →  Deal OPPORTUNITY
+  parcela N/M              →  installment_number/total     →  Smart Invoice (Type 31)
+  valor_parcela            →  installment_value            →  Invoice opportunity
+  status QUITADO           →  status=pago                  →  Invoice stage P (paid)
+  status PENDENTE          →  status=pendente              →  Invoice stage NEW
+```
 
-#### 5. Self-evaluation / Reflexão
-- Após gerar resposta, avalia qualidade via flash-lite (score 1-10)
-- Se score < 7, regenera com instrução de correcção (máximo 1 retry)
-- Respostas < 50 chars ignoram avaliação
+### Implementação
 
-#### 6. Sentiment analysis + Auto-escalação
-- Análise de sentimento via heurística + IA
-- 2x frustração consecutiva → auto-transfere para humano
-- Guarda sentiment em `bot_state.last_sentiment`
-- Regista escalação em `conversation_feedback`
+**1. Edge Function `import-access-data/index.ts`** — processa o JSON em batches:
 
-#### 7. Tools dinâmicas expandidas
-- Novas tools: `search_knowledge`, `get_case_status`, `send_payment_link`
-- Tools desconhecidas verificam `tool_parameters.webhook_url` para chamada webhook genérica
-- Registry pattern: tools são lidas de `agent_tools` table
+- Recebe o JSON via POST (ou lê de storage)
+- Para cada cliente:
+  - Upsert em `clients` (match por `document_number` / NIF)
+  - Agrupa honorários por `descricao` (cada serviço distinto = 1 contract/financial group)
+  - Cria `financial_records` para cada parcela
+  - Se `member_id` fornecido: cria Contact + Deal + Smart Invoices no Bitrix24
+- Processa em batches de 10 clientes para evitar timeouts
+- Retorna progresso (`processed`, `total`, `errors`)
 
-#### 8. Queue worker auto-trigger
-- Trigger PostgreSQL `AFTER INSERT ON message_queue` chama `pg_net.http_post()` para queue-worker
-- Cron backup via `pg_cron` a cada minuto
+**2. Página de importação no frontend** (`src/pages/Bitrix24App.tsx` — nova view ou modal):
 
-#### 9. Melhorias de robustez no sendReply
-- `Promise.allSettled` para operações paralelas (save message + update conversation)
-- Error logging real em vez de fire-and-forget silencioso para message-send e bitrix24-send
-- Extração de memória com tolerância `count % 10 > 1` (mais robusto que `=== 0`)
+- Upload do JSON ou selecção do ficheiro já carregado
+- Preview: tabela com total de clientes e honorários detectados
+- Botão "Importar" que chama a edge function em batches
+- Barra de progresso com contagem de clientes processados
+- Log de erros para registos que falharam
 
-### Mudanças realizadas (Fase 2.1 — Consolidação Completa)
+**3. Lógica de deduplicação**:
 
-#### Código morto eliminado
-- `chatbot-reply/index.ts` e `ai-triage/index.ts` — diretórios removidos, referências limpas em `config.toml`, `ApiDocs.tsx` e `bitrix24-worker.ts`
-- ApiDocs actualizado para documentar `ai-process-message` em vez de `chatbot-reply`
+- Match por `document_number` (NIF) para evitar duplicados na reimportação
+- Para Bitrix24: busca contacto existente por NIF antes de criar novo
 
-#### Sintaxe corrigida
-- `parse-document/index.ts` — corrigida função `extractWithAI` que estava erroneamente aninhada dentro de `findFileInZip`
+### Ficheiros a criar/modificar
 
-#### Config.toml actualizado
-- Removidas entradas `ai-triage` e `chatbot-reply`
-- Adicionadas entradas para `generate-embeddings`, `parse-document` e `queue-worker`
+| Ficheiro | Acção |
+|----------|-------|
+| `supabase/functions/import-access-data/index.ts` | Criar — edge function de importação batch |
+| `src/pages/Bitrix24App.tsx` | Adicionar view de importação com upload + progresso |
+| `supabase/config.toml` | Registar a nova function (verify_jwt=false) |
 
-#### Triggers PostgreSQL criados
-- `on_message_queue_insert` → auto-invoca `queue-worker` via `pg_net`
-- `on_lead_created` → notifica comerciais e admins
-- `on_message_created` → notifica de novas mensagens inbound
-- `on_payment_status_change` → notifica pagamentos recebidos
-- `on_lead_sla_check` → alerta SLA a expirar
-- `on_lead_set_sla` → define SLA automático na criação
-- `on_profile_created` → atribui admin ao primeiro utilizador
-- Cron job `queue-worker-backup` — invoca queue-worker a cada minuto
+### Considerações
 
-### Estado actual — 8/8 melhorias implementadas ✅
-1. ✅ Código morto eliminado (chatbot-reply + ai-triage)
-2. ✅ Contexto expandido (30 mensagens: 15 recentes + 15 comprimidas TOON)
-3. ✅ RAG semântico (pgvector + match_chunks + generate-embeddings)
-4. ✅ Router multi-agente (sub_agent_ids + classificação de intenção)
-5. ✅ Tools dinâmicas (registry pattern + webhook fallback)
-6. ✅ Reflexão/Auto-avaliação (score 1-10, retry se < 7)
-7. ✅ Sentiment analysis + auto-escalação (2x frustração → humano)
-8. ✅ Queue worker auto-trigger (pg_trigger + pg_cron backup)
+- O ficheiro tem 74K linhas (~3MB) — a edge function processará em batches para não ultrapassar o timeout de 60s
+- Clientes sem NIF usarão o `id` do Access como fallback de identificação
+- Honorários com `status=QUITADO` criarão `financial_records` com `status=pago` e `paid_at` preenchido
 
-### Mudanças realizadas (Fase 3 — Auditoria Arquitetural)
-
-#### 1. Dashboard de Observabilidade IA
-- Nova página `/observabilidade-ia` com KPIs: requisições, tokens, custo estimado, latência média, taxa fallback, taxa erro, rating feedback
-- Hook `useAiObservability.ts` com agregação de dados
-
-#### 2. Thumbs up/down no chat de atendimento
-- Botões de feedback em mensagens outbound (bot) no painel de atendimento
-
-#### 3. Retry com backoff no AI gateway (429/502/503, 2s delay, 1 retry)
-
-#### 4. Cost estimation real (tabela de preços por modelo, cálculo automático)
-
-#### 5. Memory extraction melhorada (cada 15 msgs + em transferência humana)
-
-#### 6. Reorganização do monólito (constantes extraídas, secções delimitadas)
-
-### Próximos passos
-- Batch job para gerar embeddings dos chunks existentes
-- Streaming no PlaygroundIA
