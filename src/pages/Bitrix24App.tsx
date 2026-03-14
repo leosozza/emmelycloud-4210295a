@@ -3084,10 +3084,11 @@ function countMissingFields(form: BaixaForm | undefined, deal: BaixaDeal): numbe
 }
 
 // ==================== PLACEMENT PREVIEW VIEW ====================
-type PlacementType = "payment-tab" | "crm-tab" | "im-sidebar" | "im-context-menu";
+type PlacementType = "payment-tab" | "payment-tab-contact" | "crm-tab" | "im-sidebar" | "im-context-menu";
 
 const PLACEMENT_OPTIONS: { value: PlacementType; label: string; endpoint: string; description: string }[] = [
-  { value: "payment-tab", label: "Payment Tab", endpoint: "bitrix24-payment-tab", description: "CRM_DEAL_DETAIL_TAB — Pagamentos" },
+  { value: "payment-tab", label: "Payment Tab (Deal)", endpoint: "bitrix24-payment-tab", description: "CRM_DEAL_DETAIL_TAB — Pagamentos" },
+  { value: "payment-tab-contact", label: "Payment Tab (Contacto)", endpoint: "bitrix24-payment-tab", description: "CRM_CONTACT_DETAIL_TAB — Pagamentos do Contacto" },
   { value: "crm-tab", label: "Emmely AI — CRM Tab", endpoint: "bitrix24-crm-tab", description: "CRM_LEAD_DETAIL_TAB — Conversa e histórico" },
   { value: "im-sidebar", label: "IM Sidebar", endpoint: "bitrix24-im-sidebar", description: "IM_SIDEBAR — Assistente IA no Messenger" },
   { value: "im-context-menu", label: "Context Menu", endpoint: "bitrix24-im-context-menu", description: "IM_CONTEXT_MENU — Analisar mensagem" },
