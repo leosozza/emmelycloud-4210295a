@@ -20,16 +20,15 @@ const htmlHeaders = {
   "X-Frame-Options": "ALLOWALL",
 };
 
-// SVG icons (Bitrix24 b24icons style: outline, stroke 1.5, currentColor)
 const ICONS = {
   robot: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="10" rx="2"/><circle cx="12" cy="5" r="2"/><line x1="12" y1="7" x2="12" y2="11"/><line x1="1" y1="16" x2="3" y2="16"/><line x1="21" y1="16" x2="23" y2="16"/><circle cx="8.5" cy="15.5" r="1"/><circle cx="15.5" cy="15.5" r="1"/></svg>`,
-  message: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>`,
   clipboard: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1"/></svg>`,
   target: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>`,
   messageSuggest: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>`,
   smile: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg>`,
   lightbulb: `<svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6"/><path d="M10 22h4"/><path d="M12 2a7 7 0 0 0-4 12.7V17h8v-2.3A7 7 0 0 0 12 2z"/></svg>`,
   send: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>`,
+  chevron: `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>`,
 };
 
 function sidebarHtml(supabaseUrl: string, anonKey: string): string {
@@ -48,18 +47,35 @@ function sidebarHtml(supabaseUrl: string, anonKey: string): string {
     }
     .header {
       background: linear-gradient(135deg, #2283d8, #7b5ea7);
-      color: white; padding: 12px 16px;
+      color: white; padding: 10px 14px;
       display: flex; align-items: center; gap: 10px;
     }
-    .header-icon { display: flex; align-items: center; }
-    .header h1 { font-size: 14px; font-weight: 600; }
-    .header small { font-size: 11px; opacity: 0.85; display: block; }
+    .header-icon { display: flex; align-items: center; flex-shrink: 0; }
+    .header-info { flex: 1; min-width: 0; }
+    .header h1 { font-size: 13px; font-weight: 600; }
+    .header small { font-size: 10px; opacity: 0.85; display: block; }
+    .agent-select-wrap {
+      position: relative; flex-shrink: 0;
+    }
+    .agent-select {
+      appearance: none; -webkit-appearance: none;
+      background: rgba(255,255,255,0.18); color: white;
+      border: 1px solid rgba(255,255,255,0.3); border-radius: 6px;
+      padding: 5px 24px 5px 8px; font-size: 11px;
+      cursor: pointer; outline: none; max-width: 120px;
+      font-family: inherit;
+    }
+    .agent-select:hover { background: rgba(255,255,255,0.28); }
+    .agent-select option { color: #333; background: white; }
+    .agent-select-chevron {
+      position: absolute; right: 6px; top: 50%; transform: translateY(-50%);
+      pointer-events: none; color: white; opacity: 0.8;
+    }
     .context-bar {
       background: #e8f4fd; border-bottom: 1px solid #c4dff0;
-      padding: 8px 12px; font-size: 12px; color: #2283d8;
+      padding: 7px 12px; font-size: 11px; color: #2283d8;
       display: flex; align-items: center; gap: 6px;
     }
-    .context-bar svg { flex-shrink: 0; }
     .messages {
       flex: 1; overflow-y: auto; padding: 12px;
       display: flex; flex-direction: column; gap: 8px;
@@ -123,18 +139,28 @@ function sidebarHtml(supabaseUrl: string, anonKey: string): string {
     }
     .empty-state .icon { margin-bottom: 12px; color: #c4cdd5; }
     .empty-state p { font-size: 13px; line-height: 1.5; }
+    .agent-badge {
+      display: inline-block; background: rgba(34,131,216,0.1); color: #2283d8;
+      font-size: 10px; padding: 2px 6px; border-radius: 4px; margin-left: 4px;
+    }
   </style>
 </head>
 <body>
   <div class="header">
     <span class="header-icon">${ICONS.robot}</span>
-    <div>
+    <div class="header-info">
       <h1>Emmely AI Assistant</h1>
-      <small>Consultoria interna — não envia ao cliente</small>
+      <small>Consulta interna — não envia ao cliente</small>
+    </div>
+    <div class="agent-select-wrap">
+      <select class="agent-select" id="agentSelect" title="Escolher agente">
+        <option value="">Auto</option>
+      </select>
+      <span class="agent-select-chevron">${ICONS.chevron}</span>
     </div>
   </div>
   <div class="context-bar" id="contextBar">
-    ${ICONS.message} <span id="contextText">A carregar contexto...</span>
+    <span id="contextText">A carregar contexto...</span>
   </div>
   <div class="messages" id="messages">
     <div class="empty-state" id="emptyState">
@@ -157,27 +183,66 @@ function sidebarHtml(supabaseUrl: string, anonKey: string): string {
   </div>
 
   <script>
-    const SUPABASE_URL = "${supabaseUrl}";
-    const ANON_KEY = "${anonKey}";
-    let dialogId = "";
-    let chatId = "";
-    let conversationHistory = [];
+    var SUPABASE_URL = "${supabaseUrl}";
+    var ANON_KEY = "${anonKey}";
+    var dialogId = "";
+    var chatId = "";
+    var conversationHistory = [];
+    var selectedAgentId = "";
+    var agents = [];
+
+    // Load agents
+    function loadAgents() {
+      fetch(SUPABASE_URL + "/rest/v1/ai_agents?is_active=eq.true&select=id,name&order=name.asc", {
+        headers: { "apikey": ANON_KEY, "Authorization": "Bearer " + ANON_KEY }
+      })
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        if (!Array.isArray(data)) return;
+        agents = data;
+        var sel = document.getElementById("agentSelect");
+        data.forEach(function(a) {
+          var opt = document.createElement("option");
+          opt.value = a.id;
+          opt.textContent = a.name;
+          sel.appendChild(opt);
+        });
+        // Restore from localStorage
+        var saved = localStorage.getItem("emmely_im_agent");
+        if (saved && data.some(function(a) { return a.id === saved; })) {
+          sel.value = saved;
+          selectedAgentId = saved;
+        }
+      })
+      .catch(function(e) { console.warn("[IM-SIDEBAR] Failed to load agents:", e); });
+    }
+
+    document.getElementById("agentSelect").addEventListener("change", function() {
+      selectedAgentId = this.value;
+      if (selectedAgentId) {
+        localStorage.setItem("emmely_im_agent", selectedAgentId);
+      } else {
+        localStorage.removeItem("emmely_im_agent");
+      }
+    });
 
     try {
       BX24.init(function() {
-        const opts = BX24.placement.options || {};
+        var opts = BX24.placement.options || {};
         dialogId = opts.DIALOG_ID || opts.dialogId || "";
         chatId = opts.CHAT_ID || opts.ID || "";
         console.log("[IM-SIDEBAR] Placement options:", JSON.stringify(opts));
         updateContext();
+        loadAgents();
       });
     } catch(e) {
       console.warn("[IM-SIDEBAR] BX24 init failed:", e);
       document.getElementById("contextText").textContent = "Modo standalone";
+      loadAgents();
     }
 
     function updateContext() {
-      const ctx = document.getElementById("contextText");
+      var ctx = document.getElementById("contextText");
       if (dialogId) {
         ctx.textContent = "Chat: " + dialogId + (chatId ? " (ID: " + chatId + ")" : "");
       } else {
@@ -186,15 +251,14 @@ function sidebarHtml(supabaseUrl: string, anonKey: string): string {
     }
 
     function addMessage(role, content) {
-      const el = document.getElementById("emptyState");
+      var el = document.getElementById("emptyState");
       if (el) el.remove();
-
-      const div = document.createElement("div");
+      var div = document.createElement("div");
       div.className = "msg " + role;
       div.textContent = content;
       document.getElementById("messages").appendChild(div);
       document.getElementById("messages").scrollTop = 999999;
-      conversationHistory.push({ role, content });
+      conversationHistory.push({ role: role, content: content });
     }
 
     function quickAsk(text) {
@@ -203,36 +267,52 @@ function sidebarHtml(supabaseUrl: string, anonKey: string): string {
     }
 
     async function sendMessage() {
-      const input = document.getElementById("input");
-      const text = input.value.trim();
+      var input = document.getElementById("input");
+      var text = input.value.trim();
       if (!text) return;
 
       input.value = "";
       addMessage("user", text);
 
-      const sendBtn = document.getElementById("sendBtn");
+      var sendBtn = document.getElementById("sendBtn");
       sendBtn.disabled = true;
       document.getElementById("typing").classList.add("active");
 
-      const contextPrefix = dialogId
+      var contextPrefix = dialogId
         ? "[Contexto: O operador está no chat " + dialogId + " do Bitrix24. Esta é uma consulta INTERNA — NÃO responda ao cliente. Ajude o operador a entender a situação e sugira o melhor procedimento.]\\n\\n"
         : "[Contexto: Consulta interna do operador. NÃO enviar ao cliente.]\\n\\n";
 
       try {
-        const res = await fetch(SUPABASE_URL + "/functions/v1/ai-process-message", {
+        var endpoint, body;
+
+        if (selectedAgentId) {
+          // Use ai-playground with specific agent
+          var msgs = conversationHistory.map(function(m) {
+            return { role: m.role === "assistant" ? "assistant" : "user", content: m.content };
+          });
+          // Prepend context as system-like user message
+          if (msgs.length > 0) {
+            msgs[0] = { role: "user", content: contextPrefix + msgs[0].content };
+          }
+          endpoint = "/functions/v1/ai-playground";
+          body = JSON.stringify({ agent_id: selectedAgentId, messages: msgs });
+        } else {
+          // Fallback: default ai-process-message
+          endpoint = "/functions/v1/ai-process-message";
+          body = JSON.stringify({ message_text: contextPrefix + text, skip_send: true });
+        }
+
+        var res = await fetch(SUPABASE_URL + endpoint, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
             "Authorization": "Bearer " + ANON_KEY,
           },
-          body: JSON.stringify({
-            message_text: contextPrefix + text,
-            skip_send: true,
-          }),
+          body: body,
         });
 
-        const data = await res.json();
-        const reply = data.reply || data.error || "Sem resposta disponível.";
+        var data = await res.json();
+        var reply = data.reply || data.response || data.error || "Sem resposta disponível.";
         addMessage("assistant", reply);
       } catch (err) {
         addMessage("system", "Erro ao contactar a IA: " + err.message);
