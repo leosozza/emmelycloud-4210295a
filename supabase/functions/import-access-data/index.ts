@@ -160,7 +160,10 @@ serve(async (req) => {
       batch_size = 10,
       member_id,
       category_id = "0",
-      mode = "full", // "clients_only" | "honorarios" | "full" | "sync_bitrix"
+      mode = "full", // "clients_only" | "honorarios" | "full" | "sync_bitrix" | "list_sync_clients" | "sync_single_client"
+      client_id,
+      actions,
+      overrides,
     } = body as {
       clientes: RawClient[];
       honorarios?: RawHonorario[];
@@ -169,6 +172,9 @@ serve(async (req) => {
       member_id?: string;
       category_id?: string;
       mode?: string;
+      client_id?: string;
+      actions?: { contact?: boolean; deal?: boolean; invoices?: boolean };
+      overrides?: { name?: string; phone?: string; nif?: string };
     };
 
     // ══════════════════════════════════════════════════════════════════
