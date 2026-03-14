@@ -3231,22 +3231,24 @@ function PlacementPreviewView({ integration, memberId }: { integration: any; mem
   const iframeLabel = useMemo(() => {
     switch (placementType) {
       case "payment-tab": return `CRM_DEAL_DETAIL_TAB — Deal #${dealId}`;
+      case "payment-tab-contact": return `CRM_CONTACT_DETAIL_TAB — Contact #${contactId}`;
       case "crm-tab": return `CRM_LEAD_DETAIL_TAB — Lead #${leadId}`;
       case "im-sidebar": return `IM_SIDEBAR — Dialog ${dialogId}`;
       case "im-context-menu": return `IM_CONTEXT_MENU — Dialog ${dialogId} / Msg ${messageId}`;
     }
-  }, [placementType, dealId, leadId, dialogId, messageId]);
+  }, [placementType, dealId, contactId, leadId, dialogId, messageId]);
 
   const canLoad = resolvedMemberId && !loading && (() => {
     switch (placementType) {
       case "payment-tab": return !!dealId;
+      case "payment-tab-contact": return !!contactId;
       case "crm-tab": return !!leadId;
       case "im-sidebar": return !!dialogId;
       case "im-context-menu": return !!dialogId && !!messageId;
     }
   })();
 
-  const placementIcon = placementType === "payment-tab" ? CreditCard
+  const placementIcon = (placementType === "payment-tab" || placementType === "payment-tab-contact") ? CreditCard
     : placementType === "crm-tab" ? FileText
     : placementType === "im-sidebar" ? MessageSquare
     : Sparkles;
