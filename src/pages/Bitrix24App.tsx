@@ -4265,7 +4265,7 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
             Authorization: `Bearer ${SUPABASE_KEY}`,
           },
           body: JSON.stringify({
-            clientes: clientesData ? (filteredClientes || []) : [],
+            clientes: [],
             honorarios: filteredHonorarios,
             mode: "honorarios",
             batch_start: batchStart,

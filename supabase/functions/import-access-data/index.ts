@@ -241,11 +241,13 @@ serve(async (req) => {
     }
 
     // ── MODE: honorarios or full ──────────────────────────────────────
-    if (!clientes || !honorarios) {
-      return new Response(JSON.stringify({ error: "clientes and honorarios arrays are required" }), {
+    if (!honorarios || !Array.isArray(honorarios)) {
+      return new Response(JSON.stringify({ error: "honorarios array is required for this mode" }), {
         status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
+    // If clientes not provided, use empty array (clients fetched from DB)
+    const clientesList = Array.isArray(clientes) ? clientes : [];
 
     // Build honorarios lookup: clientId -> honorarios[]
     const honByClient: Record<number, RawHonorario[]> = {};
