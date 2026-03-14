@@ -1045,19 +1045,23 @@ async function sendReply(supabaseUrl: string, serviceKey: string, conversation: 
     .catch(e => console.error("[AI-PROCESS] Memory extraction error:", e));
 }
 
-// ─── Extract user memory from conversation ───
+// ─── Extract user memory from conversation (improved triggers) ───
 async function extractUserMemory(supabaseUrl: string, serviceKey: string, conversation: any, _lastReply: string) {
   const supabase = createClient(supabaseUrl, serviceKey);
   const contactId = conversation.contact_phone || conversation.contact_instagram || conversation.contact_email;
   if (!contactId) return;
 
-  // Extract every ~10 messages (use modulo with tolerance for reliability)
+  // Check if extraction should happen:
+  // - On human transfer (attendance_mode just changed)
+  // - Every 15 new messages since last extraction
   const { count } = await supabase
     .from("messages")
     .select("id", { count: "exact", head: true })
     .eq("conversation_id", conversation.id);
 
-  if (!count || count < 5 || count % 10 > 1) return;
+  const isTransfer = conversation.attendance_mode === "human";
+  const shouldExtract = isTransfer || (count && count >= 5 && count % 15 === 0);
+  if (!shouldExtract) return;
 
   const { data: messages } = await supabase
     .from("messages")
