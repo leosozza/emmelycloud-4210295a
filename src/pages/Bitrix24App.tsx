@@ -3097,6 +3097,7 @@ const PLACEMENT_OPTIONS: { value: PlacementType; label: string; endpoint: string
 function PlacementPreviewView({ integration, memberId }: { integration: any; memberId: string | null }) {
   const [placementType, setPlacementType] = useState<PlacementType>("payment-tab");
   const [dealId, setDealId] = useState("10581");
+  const [contactId, setContactId] = useState("1");
   const [leadId, setLeadId] = useState("1");
   const [dialogId, setDialogId] = useState("chat12345");
   const [messageId, setMessageId] = useState("msg1");
