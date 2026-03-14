@@ -116,22 +116,17 @@ const PropostasPage = () => {
 
   const updateStatusMutation = useMutation({
     mutationFn: async ({ id, status }: { id: string; status: string }) => {
-      const updateData: any = { status };
-      const { error } = await supabase.from("proposals").update(updateData).eq("id", id);
-      if (error) throw error;
       if (status === "aceita") {
-        const proposal = proposals.find((p) => p.id === id);
-        if (proposal) {
-          const { error: contractError } = await supabase.from("contracts").insert({
-            proposal_id: id,
-            case_id: proposal.case_id,
-          });
-          if (contractError) throw contractError;
-          const { data: caseData } = await supabase.from("cases").select("lead_id").eq("id", proposal.case_id).single();
-          if (caseData?.lead_id) {
-            await supabase.from("leads").update({ funnel_stage: "contrato" as any }).eq("id", caseData.lead_id);
-          }
-        }
+        // Use centralized Edge Function for acceptance
+        const res = await supabase.functions.invoke("proposal-accept", {
+          body: { proposal_id: id },
+        });
+        if (res.error) throw new Error(res.error.message);
+        const data = res.data as any;
+        if (data?.error) throw new Error(data.error);
+      } else {
+        const { error } = await supabase.from("proposals").update({ status: status as any }).eq("id", id);
+        if (error) throw error;
       }
     },
     onSuccess: (_, { status }) => {
