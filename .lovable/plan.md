@@ -1,104 +1,92 @@
 
 
-## Revisão Arquitetural — Fase 2 Implementada
+## Plano: Redesign completo da Carteira — Vincular honorários, Deals Bitrix24 e botão "Atualizar Bitrix"
 
-### Mudanças realizadas (Fase 2)
+### Contexto actual
 
-#### 1. Código morto eliminado
-- `chatbot-reply/index.ts` — **removido** (100% duplicado com flow-engine → ai-process-message)
-- `ai-triage/index.ts` — **removido** (100% duplicado com ai-automation-agent action classify_lead)
+A cadeia de dados importados é:
+`clients` → `leads` (client_id, sync_source=access_import) → `cases` (lead_id) → `contracts` (case_id) → `financial_records` (contract_id)
 
-#### 2. Janela de contexto expandida
-- `RECENT_MSG_COUNT`: 5 → **15** mensagens recentes completas
-- `HISTORY_LIMIT`: 15 → **30** mensagens totais
-- TOON comprime as 15 mais antigas, mantém as 15 recentes intactas
+O Access ID do cliente está no campo `notes` da tabela `clients` e no campo `UF_CRM_1768312831` dos Deals no Bitrix24. Cada SEPARADORID do Access gera um lead separado (um cliente pode ter múltiplos leads/deals).
 
-#### 3. RAG semântico real (pgvector)
-- Edge function `generate-embeddings` criada — gera embeddings de 768 dimensões via Lovable AI
-- `parse-document` agora chama `generate-embeddings` automaticamente após chunking
-- `ai-process-message` usa `match_chunks()` RPC para busca semântica (threshold 0.5)
-- Fallback para keyword scoring quando embeddings não existem
+A `CarteiraAccessView` actual mostra apenas dados básicos do cliente sem vínculos financeiros nem integração com Bitrix24.
 
-#### 4. Router multi-agente
-- Quando agente tem `sub_agent_ids`, classifica intenção via IA rápida (flash-lite)
-- Delega para sub-agente especialista com seu próprio prompt e KB
-- Mantém agente activo em `bot_state.active_sub_agent_id` para consistência
+### Solução
 
-#### 5. Self-evaluation / Reflexão
-- Após gerar resposta, avalia qualidade via flash-lite (score 1-10)
-- Se score < 7, regenera com instrução de correcção (máximo 1 retry)
-- Respostas < 50 chars ignoram avaliação
+Reescrever `CarteiraAccessView` para mostrar o panorama completo de cada cliente com os seus serviços, parcelas e Deals do Bitrix24.
 
-#### 6. Sentiment analysis + Auto-escalação
-- Análise de sentimento via heurística + IA
-- 2x frustração consecutiva → auto-transfere para humano
-- Guarda sentiment em `bot_state.last_sentiment`
-- Regista escalação em `conversation_feedback`
+### Alterações em `src/pages/Bitrix24App.tsx` — `CarteiraAccessView`
 
-#### 7. Tools dinâmicas expandidas
-- Novas tools: `search_knowledge`, `get_case_status`, `send_payment_link`
-- Tools desconhecidas verificam `tool_parameters.webhook_url` para chamada webhook genérica
-- Registry pattern: tools são lidas de `agent_tools` table
+**1. Buscar dados completos (não apenas clients)**
+- Query: `clients` com `notes ILIKE '%Access%'`
+- Para cada cliente, fazer JOIN via REST: buscar `leads` com `client_id` e `sync_source=access_import`, depois `cases`, `contracts`, `financial_records`
+- Usar uma única query com select encadeado: `leads?client_id=eq.{id}&sync_source=eq.access_import&select=id,name,notes,cases(id,title,contracts(id,status,financial_records(id,description,installment_number,total_installments,installment_value,total_value,status,due_date,paid_at)))`
 
-#### 8. Queue worker auto-trigger
-- Trigger PostgreSQL `AFTER INSERT ON message_queue` chama `pg_net.http_post()` para queue-worker
-- Cron backup via `pg_cron` a cada minuto
+**2. Tabela principal — uma linha por cliente**
+- Colunas: Nome | Documento | Serviços (count de leads) | Valor Total | Pago | Pendente | Em Atraso | Ações
+- Valores calculados a partir dos `financial_records` de todos os contratos do cliente
+- Badge colorido: verde se tudo pago, laranja se pendente, vermelho se atraso
 
-#### 9. Melhorias de robustez no sendReply
-- `Promise.allSettled` para operações paralelas (save message + update conversation)
-- Error logging real em vez de fire-and-forget silencioso para message-send e bitrix24-send
-- Extração de memória com tolerância `count % 10 > 1` (mais robusto que `=== 0`)
+**3. Expandir linha — detalhes por serviço (lead/deal)**
+- Lista de cards, um por lead/caso:
+  - Título do serviço (case.title), valor total, parcelas pagas/total
+  - Tabela de parcelas (financial_records): nº, valor, vencimento, status, data pagamento
+  - Badge de status por parcela (paga/pendente/atrasada)
 
-### Mudanças realizadas (Fase 2.1 — Consolidação Completa)
+**4. Botão "Atualizar Bitrix" por cliente**
+- Ao clicar, abre modal/painel que:
+  1. Busca Deals do Bitrix24 pelo Access ID via `bitrix24-fetch-entities` (filter `UF_CRM_1768312831 = accessId`)
+  2. Para cada Deal encontrado mostra: título, contacto, produto/valor, gateway, parcelas, valor recebido, quitados/aberto/atraso, responsável
+  3. Botão "Sincronizar" que chama `bitrix24-update-deal-payment` para atualizar UF fields e criar/atualizar Smart Invoices
 
-#### Código morto eliminado
-- `chatbot-reply/index.ts` e `ai-triage/index.ts` — diretórios removidos, referências limpas em `config.toml`, `ApiDocs.tsx` e `bitrix24-worker.ts`
-- ApiDocs actualizado para documentar `ai-process-message` em vez de `chatbot-reply`
+**5. Clientes quitados sem Deal**
+- Para clientes 100% quitados que não têm Deal no Bitrix24, mostrar opção "Criar Contacto" que usa `crm.contact.add` para registar os dados no CRM (sem criar Deal), para futuras referências
 
-#### Sintaxe corrigida
-- `parse-document/index.ts` — corrigida função `extractWithAI` que estava erroneamente aninhada dentro de `findFileInZip`
+### Nova Edge Function: nenhuma necessária
+- Usar `bitrix24-fetch-entities` existente (já suporta filter por UF fields via `crm.deal.list`)
+- Usar `bitrix24-update-deal-payment` existente para sincronizar parcelas
+- Para buscar responsável do Deal, adicionar `ASSIGNED_BY_ID` ao select na chamada Bitrix (feito no frontend ao chamar a API)
 
-#### Config.toml actualizado
-- Removidas entradas `ai-triage` e `chatbot-reply`
-- Adicionadas entradas para `generate-embeddings`, `parse-document` e `queue-worker`
+### Estrutura visual
 
-#### Triggers PostgreSQL criados
-- `on_message_queue_insert` → auto-invoca `queue-worker` via `pg_net`
-- `on_lead_created` → notifica comerciais e admins
-- `on_message_created` → notifica de novas mensagens inbound
-- `on_payment_status_change` → notifica pagamentos recebidos
-- `on_lead_sla_check` → alerta SLA a expirar
-- `on_lead_set_sla` → define SLA automático na criação
-- `on_profile_created` → atribui admin ao primeiro utilizador
-- Cron job `queue-worker-backup` — invoca queue-worker a cada minuto
+```text
+┌──────────────────────────────────────────────────────────────────┐
+│ Carteira de Clientes    [🔍 Pesquisar]   [↻ Atualizar]          │
+│ 45 clientes • €120.5k total • €95k pago • €15k pendente         │
+├────────┬──────────┬─────────┬────────┬───────┬────────┬─────────┤
+│ Nome   │Documento │Serviços │V.Total │ Pago  │Pendente│ Ações   │
+│ Maria  │ 123...   │  2      │€3.000  │€2.000 │ €500   │[Bitrix] │
+│  └─ [EXPANDIDO]                                                  │
+│  ┌─ LEGALIZAÇÃO (€1.500)  3/3 pagas ✓                            │
+│  │  1/3 €500 venc:01/22 ✅ pago:01/22                            │
+│  │  2/3 €500 venc:02/22 ✅ pago:02/22                            │
+│  │  3/3 €500 venc:03/22 ✅ pago:03/22                            │
+│  ├─ REAGRUPAMENTO (€1.500)  2/3 pagas                            │
+│  │  1/3 €500 venc:04/22 ✅ pago:04/22                            │
+│  │  2/3 €500 venc:05/22 ✅ pago:05/22                            │
+│  │  3/3 €500 venc:06/22 🔴 atrasada                              │
+│ João   │ 678...   │  1      │€1.500  │€1.500 │  —     │[Bitrix] │
+└────────┴──────────┴─────────┴────────┴───────┴────────┴─────────┘
 
-### Estado actual — 8/8 melhorias implementadas ✅
-1. ✅ Código morto eliminado (chatbot-reply + ai-triage)
-2. ✅ Contexto expandido (30 mensagens: 15 recentes + 15 comprimidas TOON)
-3. ✅ RAG semântico (pgvector + match_chunks + generate-embeddings)
-4. ✅ Router multi-agente (sub_agent_ids + classificação de intenção)
-5. ✅ Tools dinâmicas (registry pattern + webhook fallback)
-6. ✅ Reflexão/Auto-avaliação (score 1-10, retry se < 7)
-7. ✅ Sentiment analysis + auto-escalação (2x frustração → humano)
-8. ✅ Queue worker auto-trigger (pg_trigger + pg_cron backup)
+Modal "Atualizar Bitrix" (cliente Maria):
+┌────────────────────────────────────────────────────┐
+│ Deals no Bitrix24 para Maria (Access ID: 42)       │
+├─ Deal #142: LEGALIZAÇÃO - MARIA                    │
+│  Contacto: Maria Silva (ID 55)                     │
+│  Valor: €1.500 | Gateway: — | Parcelas: 3          │
+│  Recebido: €1.500 | Quitados: 3 | Aberto: 0       │
+│  Responsável: Admin (ID 1)                         │
+│  [Sincronizar Parcelas]                            │
+├─ Deal #143: REAGRUPAMENTO - MARIA                  │
+│  ...                                               │
+│ ─────────────────────────────────────────────────── │
+│ ⚠ Sem Deal? [Criar apenas Contacto no Bitrix]      │
+└────────────────────────────────────────────────────┘
+```
 
-### Mudanças realizadas (Fase 3 — Auditoria Arquitetural)
+### Ficheiro a modificar
 
-#### 1. Dashboard de Observabilidade IA
-- Nova página `/observabilidade-ia` com KPIs: requisições, tokens, custo estimado, latência média, taxa fallback, taxa erro, rating feedback
-- Hook `useAiObservability.ts` com agregação de dados
+| Ficheiro | Acção |
+|---|---|
+| `src/pages/Bitrix24App.tsx` | Reescrever `CarteiraAccessView` com dados financeiros, tabela expandível por serviço, modal "Atualizar Bitrix" com fetch de Deals e sincronização |
 
-#### 2. Thumbs up/down no chat de atendimento
-- Botões de feedback em mensagens outbound (bot) no painel de atendimento
-
-#### 3. Retry com backoff no AI gateway (429/502/503, 2s delay, 1 retry)
-
-#### 4. Cost estimation real (tabela de preços por modelo, cálculo automático)
-
-#### 5. Memory extraction melhorada (cada 15 msgs + em transferência humana)
-
-#### 6. Reorganização do monólito (constantes extraídas, secções delimitadas)
-
-### Próximos passos
-- Batch job para gerar embeddings dos chunks existentes
-- Streaming no PlaygroundIA
