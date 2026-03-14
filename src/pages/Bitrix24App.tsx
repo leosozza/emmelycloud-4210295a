@@ -3084,10 +3084,11 @@ function countMissingFields(form: BaixaForm | undefined, deal: BaixaDeal): numbe
 }
 
 // ==================== PLACEMENT PREVIEW VIEW ====================
-type PlacementType = "payment-tab" | "crm-tab" | "im-sidebar" | "im-context-menu";
+type PlacementType = "payment-tab" | "payment-tab-contact" | "crm-tab" | "im-sidebar" | "im-context-menu";
 
 const PLACEMENT_OPTIONS: { value: PlacementType; label: string; endpoint: string; description: string }[] = [
-  { value: "payment-tab", label: "Payment Tab", endpoint: "bitrix24-payment-tab", description: "CRM_DEAL_DETAIL_TAB — Pagamentos" },
+  { value: "payment-tab", label: "Payment Tab (Deal)", endpoint: "bitrix24-payment-tab", description: "CRM_DEAL_DETAIL_TAB — Pagamentos" },
+  { value: "payment-tab-contact", label: "Payment Tab (Contacto)", endpoint: "bitrix24-payment-tab", description: "CRM_CONTACT_DETAIL_TAB — Pagamentos do Contacto" },
   { value: "crm-tab", label: "Emmely AI — CRM Tab", endpoint: "bitrix24-crm-tab", description: "CRM_LEAD_DETAIL_TAB — Conversa e histórico" },
   { value: "im-sidebar", label: "IM Sidebar", endpoint: "bitrix24-im-sidebar", description: "IM_SIDEBAR — Assistente IA no Messenger" },
   { value: "im-context-menu", label: "Context Menu", endpoint: "bitrix24-im-context-menu", description: "IM_CONTEXT_MENU — Analisar mensagem" },
@@ -3096,6 +3097,7 @@ const PLACEMENT_OPTIONS: { value: PlacementType; label: string; endpoint: string
 function PlacementPreviewView({ integration, memberId }: { integration: any; memberId: string | null }) {
   const [placementType, setPlacementType] = useState<PlacementType>("payment-tab");
   const [dealId, setDealId] = useState("10581");
+  const [contactId, setContactId] = useState("1");
   const [leadId, setLeadId] = useState("1");
   const [dialogId, setDialogId] = useState("chat12345");
   const [messageId, setMessageId] = useState("msg1");
@@ -3128,6 +3130,9 @@ function PlacementPreviewView({ integration, memberId }: { integration: any; mem
       case "payment-tab":
         formData.append("PLACEMENT_OPTIONS", JSON.stringify({ ID: dealId, ENTITY_TYPE_ID: "2" }));
         break;
+      case "payment-tab-contact":
+        formData.append("PLACEMENT_OPTIONS", JSON.stringify({ ID: contactId, ENTITY_TYPE_ID: "3" }));
+        break;
       case "crm-tab":
         formData.append("PLACEMENT_OPTIONS", JSON.stringify({ ID: leadId }));
         break;
@@ -3141,13 +3146,16 @@ function PlacementPreviewView({ integration, memberId }: { integration: any; mem
         break;
     }
     return formData;
-  }, [placementType, resolvedMemberId, dealId, leadId, dialogId, messageId]);
+  }, [placementType, resolvedMemberId, dealId, contactId, leadId, dialogId, messageId]);
 
   const buildBx24Mock = useCallback(() => {
     let placementOptions = "{}";
     switch (placementType) {
       case "payment-tab":
         placementOptions = JSON.stringify({ ID: dealId });
+        break;
+      case "payment-tab-contact":
+        placementOptions = JSON.stringify({ ID: contactId });
         break;
       case "crm-tab":
         placementOptions = JSON.stringify({ ID: leadId });
@@ -3169,7 +3177,7 @@ function PlacementPreviewView({ integration, memberId }: { integration: any; mem
         getDomain: function() { return "preview"; }
       };
     </script>`;
-  }, [placementType, dealId, leadId, dialogId, messageId]);
+  }, [placementType, dealId, contactId, leadId, dialogId, messageId]);
 
   const loadPreview = useCallback(() => {
     const mid = resolvedMemberId;
@@ -3223,22 +3231,24 @@ function PlacementPreviewView({ integration, memberId }: { integration: any; mem
   const iframeLabel = useMemo(() => {
     switch (placementType) {
       case "payment-tab": return `CRM_DEAL_DETAIL_TAB — Deal #${dealId}`;
+      case "payment-tab-contact": return `CRM_CONTACT_DETAIL_TAB — Contact #${contactId}`;
       case "crm-tab": return `CRM_LEAD_DETAIL_TAB — Lead #${leadId}`;
       case "im-sidebar": return `IM_SIDEBAR — Dialog ${dialogId}`;
       case "im-context-menu": return `IM_CONTEXT_MENU — Dialog ${dialogId} / Msg ${messageId}`;
     }
-  }, [placementType, dealId, leadId, dialogId, messageId]);
+  }, [placementType, dealId, contactId, leadId, dialogId, messageId]);
 
   const canLoad = resolvedMemberId && !loading && (() => {
     switch (placementType) {
       case "payment-tab": return !!dealId;
+      case "payment-tab-contact": return !!contactId;
       case "crm-tab": return !!leadId;
       case "im-sidebar": return !!dialogId;
       case "im-context-menu": return !!dialogId && !!messageId;
     }
   })();
 
-  const placementIcon = placementType === "payment-tab" ? CreditCard
+  const placementIcon = (placementType === "payment-tab" || placementType === "payment-tab-contact") ? CreditCard
     : placementType === "crm-tab" ? FileText
     : placementType === "im-sidebar" ? MessageSquare
     : Sparkles;
@@ -3275,6 +3285,12 @@ function PlacementPreviewView({ integration, memberId }: { integration: any; mem
               <>
                 <Label className="text-sm font-medium shrink-0">Deal ID:</Label>
                 <Input value={dealId} onChange={(e) => setDealId(e.target.value)} placeholder="Ex: 10581" className="max-w-[160px]" />
+              </>
+            )}
+            {placementType === "payment-tab-contact" && (
+              <>
+                <Label className="text-sm font-medium shrink-0">Contact ID:</Label>
+                <Input value={contactId} onChange={(e) => setContactId(e.target.value)} placeholder="Ex: 1" className="max-w-[160px]" />
               </>
             )}
             {placementType === "crm-tab" && (
