@@ -96,24 +96,22 @@ const Bitrix24App = () => {
             if (mid) {
               setMemberId(mid);
               if (auth?.domain) setDomain(auth.domain);
-              fetchData(mid);
-            } else {
-              setView("dashboard");
             }
+            fetchData(mid || "");
           });
         } else {
           const mid = midParam || domainParam;
-          if (mid) { setMemberId(mid); fetchData(mid); }
-          else setView("dashboard");
+          if (mid) setMemberId(mid);
+          fetchData(mid || "");
         }
       } catch {
-        setView("dashboard");
+        fetchData("");
       }
     };
     script.onerror = () => {
       const mid = midParam || domainParam;
-      if (mid) { setMemberId(mid); fetchData(mid); }
-      else setView("dashboard");
+      if (mid) setMemberId(mid);
+      fetchData(mid || "");
     };
     document.head.appendChild(script);
     return () => { try { document.head.removeChild(script); } catch {} };

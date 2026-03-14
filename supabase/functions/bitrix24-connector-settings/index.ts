@@ -101,9 +101,18 @@ Deno.serve(async (req) => {
     // Extract member_id: from body (Bitrix24 POST) OR from URL query param (frontend GET)
     const memberId = data.auth?.member_id || data.member_id || url.searchParams.get("member_id");
     if (!memberId) {
-      console.log("[SETTINGS] No member_id found, returning successfully");
+      console.log("[SETTINGS] No member_id found");
       if (isJsonRequest) {
-        return new Response(JSON.stringify({ integration: null }), {
+        // Auto-resolve: fetch the most recent integration (single-portal mode)
+        const { data: latestIntegration } = await supabase
+          .from("bitrix24_integrations")
+          .select("*")
+          .order("updated_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        console.log("[SETTINGS] Auto-resolved integration:", latestIntegration?.id || "none");
+        return new Response(JSON.stringify({ integration: latestIntegration || null }), {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
