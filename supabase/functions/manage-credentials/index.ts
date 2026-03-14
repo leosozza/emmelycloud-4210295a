@@ -87,6 +87,82 @@ Deno.serve(async (req) => {
 
   if (req.method === "POST") {
     const body = await req.json();
+
+    // ─── Test connection actions (no real transactions) ───────────────
+    if (body.action === "test_stripe") {
+      const { provider, credential_key } = body;
+      const { data: cred } = await serviceClient
+        .from("integration_credentials")
+        .select("credential_value")
+        .eq("provider", provider)
+        .eq("credential_key", credential_key)
+        .maybeSingle();
+
+      const sk = cred?.credential_value?.trim();
+      if (!sk) {
+        return new Response(JSON.stringify({ error: "Credencial não encontrada" }), {
+          status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      try {
+        const res = await fetch("https://api.stripe.com/v1/balance", {
+          headers: { Authorization: `Bearer ${sk}` },
+        });
+        const data = await res.json();
+        if (data.error) {
+          return new Response(JSON.stringify({ error: data.error.message || "API key inválida" }), {
+            status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+        return new Response(JSON.stringify({ ok: true, message: "Conexão Stripe válida" }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      } catch (e) {
+        return new Response(JSON.stringify({ error: `Erro de rede: ${e.message}` }), {
+          status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+    }
+
+    if (body.action === "test_asaas") {
+      const { data: cred } = await serviceClient
+        .from("integration_credentials")
+        .select("credential_value")
+        .eq("provider", "asaas")
+        .eq("credential_key", "ASAAS_API_KEY")
+        .maybeSingle();
+
+      const apiKey = cred?.credential_value?.trim();
+      if (!apiKey) {
+        return new Response(JSON.stringify({ error: "Credencial Asaas não encontrada" }), {
+          status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      try {
+        const isSandbox = apiKey.startsWith("$aact_") ? false : true;
+        const baseUrl = isSandbox ? "https://sandbox.asaas.com/api/v3" : "https://api.asaas.com/api/v3";
+        const res = await fetch(`${baseUrl}/customers?limit=1`, {
+          headers: { access_token: apiKey },
+        });
+        const data = await res.json();
+        if (data.errors) {
+          return new Response(JSON.stringify({ error: data.errors[0]?.description || "API key inválida" }), {
+            status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+        return new Response(JSON.stringify({ ok: true, message: "Conexão Asaas válida" }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      } catch (e) {
+        return new Response(JSON.stringify({ error: `Erro de rede: ${e.message}` }), {
+          status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+    }
+
+    // ─── Default: upsert credential ──────────────────────────────────
     const { provider, credential_key, credential_value } = body;
 
     if (!provider || !credential_key) {

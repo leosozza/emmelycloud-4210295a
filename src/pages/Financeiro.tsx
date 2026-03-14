@@ -37,18 +37,24 @@ function getPeriodRange(period: string) {
 const FinanceiroPage = () => {
   const [period, setPeriod] = useState("30d");
   const [sendingReminder, setSendingReminder] = useState<string | null>(null);
+  const [gatewayFilter, setGatewayFilter] = useState("all");
   const range = getPeriodRange(period);
 
   const { data: transactions = [], isLoading } = useQuery({
-    queryKey: ["direct-payments", period],
+    queryKey: ["all-payments", period, gatewayFilter],
     queryFn: async () => {
-      const { data, error } = await supabase
+      let query = supabase
         .from("payment_transactions")
         .select("*, clients(name)")
-        .eq("gateway", "direto")
         .gte("created_at", range.start)
         .lte("created_at", range.end)
         .order("updated_at", { ascending: false });
+
+      if (gatewayFilter !== "all") {
+        query = query.eq("gateway", gatewayFilter);
+      }
+
+      const { data, error } = await query;
       if (error) throw error;
       return data || [];
     },
@@ -130,7 +136,7 @@ const FinanceiroPage = () => {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{transactions.length}</div>
-            <p className="text-xs text-muted-foreground">recebimentos diretos</p>
+            <p className="text-xs text-muted-foreground">transações no período</p>
           </CardContent>
         </Card>
         <Card>
@@ -159,14 +165,27 @@ const FinanceiroPage = () => {
 
       {/* Table */}
       <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Recebimentos Diretos</CardTitle>
+        <CardHeader className="flex flex-row items-center justify-between">
+          <CardTitle className="text-base">Transações</CardTitle>
+          <div className="flex gap-1">
+            {["all", "direto", "stripe_pt", "stripe_br", "asaas"].map((gw) => (
+              <Button
+                key={gw}
+                size="sm"
+                variant={gatewayFilter === gw ? "default" : "outline"}
+                className="text-xs h-7 px-2"
+                onClick={() => setGatewayFilter(gw)}
+              >
+                {gw === "all" ? "Todos" : gw === "direto" ? "Direto" : gw === "stripe_pt" ? "Stripe PT" : gw === "stripe_br" ? "Stripe BR" : "Asaas"}
+              </Button>
+            ))}
+          </div>
         </CardHeader>
         <CardContent className="p-0">
           {isLoading ? (
             <div className="p-8 text-center text-muted-foreground">Carregando...</div>
           ) : transactions.length === 0 ? (
-            <div className="p-8 text-center text-muted-foreground">Nenhum recebimento direto neste período.</div>
+            <div className="p-8 text-center text-muted-foreground">Nenhuma transação neste período.</div>
           ) : (
             <Table>
               <TableHeader>

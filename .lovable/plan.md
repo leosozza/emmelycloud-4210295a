@@ -1,54 +1,89 @@
 
 
-## Análise Profunda — Emmely Pay
+## Revisão Arquitetural — Fase 2 Implementada
 
-### Estado Atual
+### Mudanças realizadas (Fase 2)
 
-O sistema está **estruturalmente funcional** com 16 transações registadas (Stripe PT, Stripe BR, Asaas, Direto). Os 3 gateways, webhooks, Bitrix24 badges, late fees config e payment reminders estão implementados.
+#### 1. Código morto eliminado
+- `chatbot-reply/index.ts` — **removido** (100% duplicado com flow-engine → ai-process-message)
+- `ai-triage/index.ts` — **removido** (100% duplicado com ai-automation-agent action classify_lead)
 
-### Problemas Identificados
+#### 2. Janela de contexto expandida
+- `RECENT_MSG_COUNT`: 5 → **15** mensagens recentes completas
+- `HISTORY_LIMIT`: 15 → **30** mensagens totais
+- TOON comprime as 15 mais antigas, mantém as 15 recentes intactas
 
-**1. CRÍTICO — Late Fees não são aplicados em nenhum fluxo real**
-O `calculateLateFees()` em `src/lib/lateFeeCalc.ts` existe mas **não é usado em lado nenhum** — nem no `payment-create`, nem no `payment-reminder`, nem no Payment Tab do Bitrix24. O simulador funciona na UI mas os encargos nunca são calculados/adicionados ao valor cobrado quando uma parcela está em atraso. É apenas visual.
+#### 3. RAG semântico real (pgvector)
+- Edge function `generate-embeddings` criada — gera embeddings de 768 dimensões via Lovable AI
+- `parse-document` agora chama `generate-embeddings` automaticamente após chunking
+- `ai-process-message` usa `match_chunks()` RPC para busca semântica (threshold 0.5)
+- Fallback para keyword scoring quando embeddings não existem
 
-**Correcção:** Integrar `calculateLateFees` no `payment-reminder` (ao gerar cobrança de parcela vencida, calcular encargos e somar ao valor) e no Payment Tab do Bitrix24 (mostrar valor com encargos para parcelas atrasadas).
+#### 4. Router multi-agente
+- Quando agente tem `sub_agent_ids`, classifica intenção via IA rápida (flash-lite)
+- Delega para sub-agente especialista com seu próprio prompt e KB
+- Mantém agente activo em `bot_state.active_sub_agent_id` para consistência
 
-**2. IMPORTANTE — Testes de conexão criam transações reais**
-Os botões "Testar Conexão" (Stripe PT, BR e Asaas) chamam `payment-create` que **cria transações reais** na base de dados (€1.00, R$5.00). Existem já 6 transações de teste pendentes. Isto polui os dados financeiros.
+#### 5. Self-evaluation / Reflexão
+- Após gerar resposta, avalia qualidade via flash-lite (score 1-10)
+- Se score < 7, regenera com instrução de correcção (máximo 1 retry)
+- Respostas < 50 chars ignoram avaliação
 
-**Correcção:** Adicionar um campo `is_test: true` na metadata ou criar um endpoint de teste dedicado que valide a API key sem criar transação. Alternativa: usar a API de balance do Stripe (`/v1/balance`) para validar a key sem criar cobranças.
+#### 6. Sentiment analysis + Auto-escalação
+- Análise de sentimento via heurística + IA
+- 2x frustração consecutiva → auto-transfere para humano
+- Guarda sentiment em `bot_state.last_sentiment`
+- Regista escalação em `conversation_feedback`
 
-**3. IMPORTANTE — Checkout Session vs Payment Intent mismatch**
-O `payment-create` guarda `data.payment_intent || data.id` como `gateway_payment_id`. Mas Checkout Sessions podem ter `payment_intent = null` (para métodos como Multibanco que são assíncronos). O webhook faz lookup por `gateway_payment_id` e pode falhar na reconciliação se o ID guardado for o `cs_` (session) em vez do `pi_` (payment intent).
+#### 7. Tools dinâmicas expandidas
+- Novas tools: `search_knowledge`, `get_case_status`, `send_payment_link`
+- Tools desconhecidas verificam `tool_parameters.webhook_url` para chamada webhook genérica
+- Registry pattern: tools são lidas de `agent_tools` table
 
-**Correcção:** Guardar **ambos** IDs — o `checkout_session_id` já é guardado na metadata, mas o lookup no webhook deveria procurar também por `checkout_session_id` na metadata como fallback.
+#### 8. Queue worker auto-trigger
+- Trigger PostgreSQL `AFTER INSERT ON message_queue` chama `pg_net.http_post()` para queue-worker
+- Cron backup via `pg_cron` a cada minuto
 
-**4. MODERADO — Payment Reminder hardcoded para EUR**
-A função `payment-reminder` tem `currency: "EUR"` hardcoded (linha 147 e no body do `payment-create` na linha 122). Clientes brasileiros receberão cobranças em EUR em vez de BRL.
+#### 9. Melhorias de robustez no sendReply
+- `Promise.allSettled` para operações paralelas (save message + update conversation)
+- Error logging real em vez de fire-and-forget silencioso para message-send e bitrix24-send
+- Extração de memória com tolerância `count % 10 > 1` (mais robusto que `=== 0`)
 
-**Correcção:** Determinar a moeda a partir do `financial_record` ou do `client.country`.
+### Mudanças realizadas (Fase 2.1 — Consolidação Completa)
 
-**5. MODERADO — Duplicação de `ensureValidToken` e `notifyBitrix24DealPayment`**
-O código de refresh de token Bitrix24 e notificação de pagamento está duplicado identicamente em 4 ficheiros: `payment-webhook-stripe`, `payment-webhook-asaas`, `bitrix24-payment-tab`, `bitrix24-payment-webhook`. Manutenção difícil.
+#### Código morto eliminado
+- `chatbot-reply/index.ts` e `ai-triage/index.ts` — diretórios removidos, referências limpas em `config.toml`, `ApiDocs.tsx` e `bitrix24-worker.ts`
+- ApiDocs actualizado para documentar `ai-process-message` em vez de `chatbot-reply`
 
-**6. MENOR — Financeiro page filtra apenas gateway "direto"**
-A página `/financeiro` (Financeiro.tsx linha 49) faz `.eq("gateway", "direto")`, mostrando apenas pagamentos diretos. Transações Stripe e Asaas não aparecem nesta vista.
+#### Sintaxe corrigida
+- `parse-document/index.ts` — corrigida função `extractWithAI` que estava erroneamente aninhada dentro de `findFileInZip`
 
-**7. MENOR — `LateFeeConfigCard` duplica lógica do `lateFeeCalc.ts`**
-O simulador no componente recalcula manualmente em vez de usar a função `calculateLateFees` importável.
+#### Config.toml actualizado
+- Removidas entradas `ai-triage` e `chatbot-reply`
+- Adicionadas entradas para `generate-embeddings`, `parse-document` e `queue-worker`
 
-### Plano de Melhorias (por prioridade)
+#### Triggers PostgreSQL criados
+- `on_message_queue_insert` → auto-invoca `queue-worker` via `pg_net`
+- `on_lead_created` → notifica comerciais e admins
+- `on_message_created` → notifica de novas mensagens inbound
+- `on_payment_status_change` → notifica pagamentos recebidos
+- `on_lead_sla_check` → alerta SLA a expirar
+- `on_lead_set_sla` → define SLA automático na criação
+- `on_profile_created` → atribui admin ao primeiro utilizador
+- Cron job `queue-worker-backup` — invoca queue-worker a cada minuto
 
-| # | Melhoria | Ficheiros |
-|---|----------|-----------|
-| 1 | **Integrar late fees no payment-reminder** — ao gerar cobrança de parcela vencida, buscar config de `late_fees` e somar encargos ao valor | `supabase/functions/payment-reminder/index.ts` |
-| 2 | **Testes sem criar transações** — substituir os testes de conexão por chamadas à API de balance do Stripe e customers do Asaas | `src/pages/Integracoes.tsx` |
-| 3 | **Fallback de lookup no webhook Stripe** — se não encontrar tx por `gateway_payment_id`, procurar `checkout_session_id` na metadata | `supabase/functions/payment-webhook-stripe/index.ts` |
-| 4 | **Currency dinâmica no reminder** — detectar moeda via client country ou financial record | `supabase/functions/payment-reminder/index.ts` |
-| 5 | **Usar `calculateLateFees` no simulador** — importar a função em vez de duplicar a lógica | `src/pages/Integracoes.tsx` |
-| 6 | **Financeiro mostrar todos os gateways** — remover filtro `.eq("gateway", "direto")` ou adicionar filtro seleccionável | `src/pages/Financeiro.tsx` |
+### Estado actual — 8/8 melhorias implementadas ✅
+1. ✅ Código morto eliminado (chatbot-reply + ai-triage)
+2. ✅ Contexto expandido (30 mensagens: 15 recentes + 15 comprimidas TOON)
+3. ✅ RAG semântico (pgvector + match_chunks + generate-embeddings)
+4. ✅ Router multi-agente (sub_agent_ids + classificação de intenção)
+5. ✅ Tools dinâmicas (registry pattern + webhook fallback)
+6. ✅ Reflexão/Auto-avaliação (score 1-10, retry se < 7)
+7. ✅ Sentiment analysis + auto-escalação (2x frustração → humano)
+8. ✅ Queue worker auto-trigger (pg_trigger + pg_cron backup)
 
-### Resumo
-
-O core está sólido (criação, webhooks, Bitrix24 sync). Os problemas mais graves são a **não-aplicação real dos encargos por atraso** e os **testes que criam transações reais**. Os restantes são melhorias de robustez e manutenibilidade.
-
+### Próximos passos
+- Implementar dashboard de observabilidade no frontend
+- Adicionar botões thumbs up/down no chat de atendimento
+- Batch job para gerar embeddings dos chunks existentes
+- Streaming no PlaygroundIA

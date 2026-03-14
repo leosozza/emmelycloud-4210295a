@@ -62,6 +62,7 @@ import { Switch } from "@/components/ui/switch";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+import { calculateLateFees } from "@/lib/lateFeeCalc";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -940,13 +941,9 @@ function LateFeeConfigCard() {
     setSaving(false);
   };
 
-  // Simulate
-  const effectiveDays = Math.max(0, simDays - config.grace_days);
-  const cappedDays = Math.min(effectiveDays, config.max_interest_days);
-  const penalty = cappedDays > 0 ? Math.round(simAmount * (config.penalty_pct / 100) * 100) / 100 : 0;
-  const interest = cappedDays > 0 ? Math.round(simAmount * (config.interest_monthly_pct / 100) * (cappedDays / 30) * 100) / 100 : 0;
-  const charges = penalty + interest;
-  const total = Math.round((simAmount + charges) * 100) / 100;
+  // Simulate using the shared calculation function
+  const simResult = calculateLateFees(simAmount, simDays, config);
+  const { daysLate: cappedDays, penalty, interest, charges, total } = simResult;
 
   return (
     <Card className="md:col-span-3">
@@ -1088,12 +1085,13 @@ function PagamentosTab() {
   const stripeBrConfigured = credentials["stripe_br::STRIPE_SECRET_KEY_BR"]?.has_value;
   const asaasConfigured = credentials["asaas::ASAAS_API_KEY"]?.has_value;
 
+  // Test connections via lightweight API validation (no real transactions created)
   const handleTestStripePT = async () => {
     setTestingStripePT(true);
     setStripePtResult(null);
     try {
-      const { data, error } = await supabase.functions.invoke("payment-create", {
-        body: { amount: 1.00, currency: "EUR", payment_method: "card", force_gateway: "stripe_pt", customer_data: { country: "Portugal", email: "test@test.com" }, description: "Teste Stripe PT" },
+      const { data, error } = await supabase.functions.invoke("manage-credentials", {
+        body: { action: "test_stripe", provider: "stripe_pt", credential_key: "STRIPE_SECRET_KEY_PT" },
       });
       if (error || data?.error) {
         setStripePtResult({ ok: false, error: data?.error || "Erro ao contactar Stripe PT" });
@@ -1110,8 +1108,8 @@ function PagamentosTab() {
     setTestingStripeBR(true);
     setStripeBrResult(null);
     try {
-      const { data, error } = await supabase.functions.invoke("payment-create", {
-        body: { amount: 5.00, currency: "BRL", payment_method: "card", force_gateway: "stripe_br", customer_data: { country: "Brasil", email: "test@test.com" }, description: "Teste Stripe BR" },
+      const { data, error } = await supabase.functions.invoke("manage-credentials", {
+        body: { action: "test_stripe", provider: "stripe_br", credential_key: "STRIPE_SECRET_KEY_BR" },
       });
       if (error || data?.error) {
         setStripeBrResult({ ok: false, error: data?.error || "Erro ao contactar Stripe BR" });
@@ -1128,8 +1126,8 @@ function PagamentosTab() {
     setTestingAsaas(true);
     setAsaasResult(null);
     try {
-      const { data, error } = await supabase.functions.invoke("payment-create", {
-        body: { amount: 5.00, currency: "BRL", payment_method: "pix", customer_data: { country: "Brasil", name: "Teste Emmely", cpf_cnpj: "24971563792" }, description: "Teste de conexão Emmely Pay" },
+      const { data, error } = await supabase.functions.invoke("manage-credentials", {
+        body: { action: "test_asaas", provider: "asaas", credential_key: "ASAAS_API_KEY" },
       });
       if (error || data?.error) {
         setAsaasResult({ ok: false, error: data?.error || "Erro ao contactar Asaas" });
