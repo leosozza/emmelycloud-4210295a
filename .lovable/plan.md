@@ -1,54 +1,104 @@
 
 
-## Plano: Limpar dados e corrigir mapeamento de colunas na importação
+## Revisão Arquitetural — Fase 2 Implementada
 
-### 1. Limpeza da base de dados
+### Mudanças realizadas (Fase 2)
 
-Apagar **todos** os registos importados (`sync_source = 'access_import'`), independentemente da data, usando DELETE em cascata:
-- `financial_records` → `contracts` → `proposals` → `cases` → `leads`
-- Manter `clients` (serão actualizados via upsert)
+#### 1. Código morto eliminado
+- `chatbot-reply/index.ts` — **removido** (100% duplicado com flow-engine → ai-process-message)
+- `ai-triage/index.ts` — **removido** (100% duplicado com ai-automation-agent action classify_lead)
 
-### 2. Correcções no `import-access-data/index.ts`
+#### 2. Janela de contexto expandida
+- `RECENT_MSG_COUNT`: 5 → **15** mensagens recentes completas
+- `HISTORY_LIMIT`: 15 → **30** mensagens totais
+- TOON comprime as 15 mais antigas, mantém as 15 recentes intactas
 
-#### a) Separador da PARCELA: ";" em vez de "/"
-A coluna L usa formato `1;2` (parcela 1 de 2). O código actual faz `split("/")`. Corrigir para suportar ambos os separadores (`/` e `;`).
+#### 3. RAG semântico real (pgvector)
+- Edge function `generate-embeddings` criada — gera embeddings de 768 dimensões via Lovable AI
+- `parse-document` agora chama `generate-embeddings` automaticamente após chunking
+- `ai-process-message` usa `match_chunks()` RPC para busca semântica (threshold 0.5)
+- Fallback para keyword scoring quando embeddings não existem
 
-```text
-"1;2" → installmentNumber=1, installmentTotal=2
-"2;2" → installmentNumber=2, installmentTotal=2
-```
+#### 4. Router multi-agente
+- Quando agente tem `sub_agent_ids`, classifica intenção via IA rápida (flash-lite)
+- Delega para sub-agente especialista com seu próprio prompt e KB
+- Mantém agente activo em `bot_state.active_sub_agent_id` para consistência
 
-#### b) Usar `totalInstallments` da PARCELA (não do `installments.length`)
-Actualmente `totalInstallments = installments.length` (conta linhas no grupo). Deve usar o valor do campo PARCELA (segundo número) como total real de parcelas na proposta.
+#### 5. Self-evaluation / Reflexão
+- Após gerar resposta, avalia qualidade via flash-lite (score 1-10)
+- Se score < 7, regenera com instrução de correcção (máximo 1 retry)
+- Respostas < 50 chars ignoram avaliação
 
-#### c) Mapear STATUS para badge no Bitrix24
-Actualmente o Deal só tem `STAGE_ID: "WON"` ou `"NEW"`. Melhorar:
-- **QUITADO** → `STAGE_ID: "WON"` (ganho/fechado)
-- **ABERTO/pendente** → `STAGE_ID: "NEW"`
-- **ATRASADO** → `STAGE_ID: "NEW"` + criar **badge na timeline** do Deal com texto "⚠️ Parcela(s) em atraso"
+#### 6. Sentiment analysis + Auto-escalação
+- Análise de sentimento via heurística + IA
+- 2x frustração consecutiva → auto-transfere para humano
+- Guarda sentiment em `bot_state.last_sentiment`
+- Regista escalação em `conversation_feedback`
 
-Nas Smart Invoices (Type 31), manter mapeamento existente + adicionar para ATRASADO um stageId distinto se disponível.
+#### 7. Tools dinâmicas expandidas
+- Novas tools: `search_knowledge`, `get_case_status`, `send_payment_link`
+- Tools desconhecidas verificam `tool_parameters.webhook_url` para chamada webhook genérica
+- Registry pattern: tools são lidas de `agent_tools` table
 
-#### d) Confirmar mapeamentos (já correctos)
-| Coluna Excel | Campo RawHonorario | Uso |
-|---|---|---|
-| F (Data fecho) | `DATA` | `created_at` de toda a cadeia |
-| G (Valor total) | `VALOR` | `totalValue` na proposta e deal |
-| K (Vencimento 1ª parcela) | `DATA_VENC` | `due_date` do financial_record |
-| L (Parcela) | `PARCELA` | `installment_number/total` |
-| M (Valor parcela) | `VALOR_PARCELA` | `installment_value` |
-| O (Já pago) | `TOTALPAGO` | Detectar pagamento parcial |
-| P (Data pgto) | `DATAPGTO` | `paid_at` |
-| Q (Status) | `STATUS` | `status` + badge Bitrix |
+#### 8. Queue worker auto-trigger
+- Trigger PostgreSQL `AFTER INSERT ON message_queue` chama `pg_net.http_post()` para queue-worker
+- Cron backup via `pg_cron` a cada minuto
 
-### Ficheiros a modificar
+#### 9. Melhorias de robustez no sendReply
+- `Promise.allSettled` para operações paralelas (save message + update conversation)
+- Error logging real em vez de fire-and-forget silencioso para message-send e bitrix24-send
+- Extração de memória com tolerância `count % 10 > 1` (mais robusto que `=== 0`)
 
-| Ficheiro | Acção |
-|---|---|
-| `supabase/functions/import-access-data/index.ts` | Fix PARCELA split (`;` e `/`), usar total da parcela em vez de `length`, adicionar badge Bitrix para status ATRASADO |
-| Base de dados | DELETE cascata de todos os `access_import` |
+### Mudanças realizadas (Fase 2.1 — Consolidação Completa)
 
-### Lógica da badge Bitrix24
+#### Código morto eliminado
+- `chatbot-reply/index.ts` e `ai-triage/index.ts` — diretórios removidos, referências limpas em `config.toml`, `ApiDocs.tsx` e `bitrix24-worker.ts`
+- ApiDocs actualizado para documentar `ai-process-message` em vez de `chatbot-reply`
 
-Para cada Deal com parcelas em atraso, após criar as Smart Invoices, chamar `crm.timeline.comment.add` com uma mensagem indicando quantas parcelas estão atrasadas e o valor em dívida. Isto aparece directamente na timeline do negócio.
+#### Sintaxe corrigida
+- `parse-document/index.ts` — corrigida função `extractWithAI` que estava erroneamente aninhada dentro de `findFileInZip`
 
+#### Config.toml actualizado
+- Removidas entradas `ai-triage` e `chatbot-reply`
+- Adicionadas entradas para `generate-embeddings`, `parse-document` e `queue-worker`
+
+#### Triggers PostgreSQL criados
+- `on_message_queue_insert` → auto-invoca `queue-worker` via `pg_net`
+- `on_lead_created` → notifica comerciais e admins
+- `on_message_created` → notifica de novas mensagens inbound
+- `on_payment_status_change` → notifica pagamentos recebidos
+- `on_lead_sla_check` → alerta SLA a expirar
+- `on_lead_set_sla` → define SLA automático na criação
+- `on_profile_created` → atribui admin ao primeiro utilizador
+- Cron job `queue-worker-backup` — invoca queue-worker a cada minuto
+
+### Estado actual — 8/8 melhorias implementadas ✅
+1. ✅ Código morto eliminado (chatbot-reply + ai-triage)
+2. ✅ Contexto expandido (30 mensagens: 15 recentes + 15 comprimidas TOON)
+3. ✅ RAG semântico (pgvector + match_chunks + generate-embeddings)
+4. ✅ Router multi-agente (sub_agent_ids + classificação de intenção)
+5. ✅ Tools dinâmicas (registry pattern + webhook fallback)
+6. ✅ Reflexão/Auto-avaliação (score 1-10, retry se < 7)
+7. ✅ Sentiment analysis + auto-escalação (2x frustração → humano)
+8. ✅ Queue worker auto-trigger (pg_trigger + pg_cron backup)
+
+### Mudanças realizadas (Fase 3 — Auditoria Arquitetural)
+
+#### 1. Dashboard de Observabilidade IA
+- Nova página `/observabilidade-ia` com KPIs: requisições, tokens, custo estimado, latência média, taxa fallback, taxa erro, rating feedback
+- Hook `useAiObservability.ts` com agregação de dados
+
+#### 2. Thumbs up/down no chat de atendimento
+- Botões de feedback em mensagens outbound (bot) no painel de atendimento
+
+#### 3. Retry com backoff no AI gateway (429/502/503, 2s delay, 1 retry)
+
+#### 4. Cost estimation real (tabela de preços por modelo, cálculo automático)
+
+#### 5. Memory extraction melhorada (cada 15 msgs + em transferência humana)
+
+#### 6. Reorganização do monólito (constantes extraídas, secções delimitadas)
+
+### Próximos passos
+- Batch job para gerar embeddings dos chunks existentes
+- Streaming no PlaygroundIA

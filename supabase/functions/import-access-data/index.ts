@@ -229,11 +229,21 @@ serve(async (req) => {
         for (const [separadorIdStr, installments] of Object.entries(groups)) {
           const separadorId = parseInt(separadorIdStr);
           try {
-            const desc = (installments[0]?.DESCRICAO || "SEM DESCRIÇÃO").trim().toUpperCase();
+        const desc = (installments[0]?.DESCRICAO || "SEM DESCRIÇÃO").trim().toUpperCase();
             const totalValue = parseNum(installments[0]?.VALOR);
-            const totalInstallments = installments.length;
+            
+            // Extract total installments from PARCELA field (e.g. "1;2" or "1/2" → total=2)
+            const firstParcelaRaw = installments[0]?.PARCELA || "1/1";
+            const firstParcelaParts = firstParcelaRaw.split(/[;/]/);
+            const totalInstallments = parseInt(firstParcelaParts[1]) || installments.length;
+            
             const allPaid = installments.every(i => (i.STATUS || "").toUpperCase() === "QUITADO");
+            const hasOverdue = installments.some(i => (i.STATUS || "").toUpperCase() === "ATRASADO");
             const totalPaid = installments.reduce((sum, i) => sum + parseNum(i.TOTALPAGO), 0);
+            const overdueCount = installments.filter(i => (i.STATUS || "").toUpperCase() === "ATRASADO").length;
+            const overdueValue = installments
+              .filter(i => (i.STATUS || "").toUpperCase() === "ATRASADO")
+              .reduce((sum, i) => sum + (parseNum(i.VALOR_PARCELA_CORRIGIDO) || parseNum(i.VALOR_PARCELA)) - parseNum(i.TOTALPAGO), 0);
 
             // Extract service/contract date from DATA column
             const serviceDateRaw = parseDate(installments[0]?.DATA);
@@ -323,7 +333,7 @@ serve(async (req) => {
 
             // Create financial records for each installment
             for (const inst of installments) {
-              const parcelaParts = (inst.PARCELA || "1/1").split("/");
+              const parcelaParts = (inst.PARCELA || "1/1").split(/[;/]/);
               const installmentNumber = parseInt(parcelaParts[0]) || 1;
               const installmentTotal = parseInt(parcelaParts[1]) || totalInstallments;
 
@@ -365,7 +375,7 @@ serve(async (req) => {
             // 4. Sync to Bitrix24 if enabled
             if (sync_bitrix && integration?.client_endpoint && integration?.access_token) {
               try {
-                await syncClientToBitrix(integration, client, desc, installments, String(separadorId), totalValue, totalPaid, allPaid, category_id);
+                await syncClientToBitrix(integration, client, desc, installments, String(separadorId), totalValue, totalPaid, allPaid, category_id, hasOverdue, overdueCount, overdueValue);
               } catch (e) {
                 console.error(`[import] Bitrix sync error ${clientName}/${desc}:`, e);
               }
@@ -423,6 +433,9 @@ async function syncClientToBitrix(
   totalPaid: number,
   allPaid: boolean,
   categoryId: string = "0",
+  hasOverdue: boolean = false,
+  overdueCount: number = 0,
+  overdueValue: number = 0,
 ) {
   const endpoint = integration.client_endpoint;
   const accessToken = integration.access_token;
@@ -534,15 +547,21 @@ async function syncClientToBitrix(
 
   // ── Create Smart Invoices (Type 31) per installment ──
   for (const inst of installments) {
-    const isPaid = (inst.STATUS || "").toUpperCase() === "QUITADO";
+    const upperStatus = (inst.STATUS || "").toUpperCase();
+    const isPaid = upperStatus === "QUITADO";
+    const isOverdue = upperStatus === "ATRASADO";
     const instValue = parseNum(inst.VALOR_PARCELA_CORRIGIDO) || parseNum(inst.VALOR_PARCELA);
+
+    let invoiceStage = "DT31_6:NEW";
+    if (isPaid) invoiceStage = "DT31_6:P";
+    else if (isOverdue) invoiceStage = "DT31_6:UC";
 
     const invoiceFields: Record<string, any> = {
       title: `Parcela ${inst.PARCELA} - ${desc}`,
       parentId2: dealId,
       opportunity: instValue,
       currencyId: "EUR",
-      stageId: isPaid ? "DT31_6:P" : "DT31_6:NEW",
+      stageId: invoiceStage,
     };
 
     const dueDate = parseDate(inst.DATA_VENC);
@@ -560,5 +579,23 @@ async function syncClientToBitrix(
         fields: invoiceFields,
       }),
     });
+  }
+
+  // ── Add timeline badge for overdue deals ──
+  if (hasOverdue && dealId) {
+    const badgeText = `⚠️ IMPORTAÇÃO: ${overdueCount} parcela(s) em atraso — Valor em dívida: €${overdueValue.toFixed(2)}`;
+    await fetch(`${endpoint}crm.timeline.comment.add`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        auth: accessToken,
+        fields: {
+          ENTITY_ID: dealId,
+          ENTITY_TYPE: "deal",
+          COMMENT: badgeText,
+        },
+      }),
+    });
+    console.log(`[import] Added overdue badge to deal ${dealId}: ${overdueCount} parcelas, €${overdueValue.toFixed(2)}`);
   }
 }
