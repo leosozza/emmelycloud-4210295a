@@ -316,18 +316,27 @@ Deno.serve(async (req) => {
     };
     if (tools) aiBody.tools = tools;
 
-    const aiResponse = await fetch(apiUrl, {
-      method: "POST",
-      headers: fetchHeaders,
-      body: JSON.stringify(aiBody),
-    });
+    // ─── AI API call with retry for 429/502/503 ───
+    let aiResponse: Response | null = null;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      aiResponse = await fetch(apiUrl, {
+        method: "POST",
+        headers: fetchHeaders,
+        body: JSON.stringify(aiBody),
+      });
 
-    if (!aiResponse.ok) {
-      const errText = await aiResponse.text();
-      console.error("[AI-PROCESS] AI API error:", aiResponse.status, errText);
+      if (aiResponse.ok || !RETRYABLE_STATUSES.includes(aiResponse.status)) break;
+
+      console.log(`[AI-PROCESS] Retryable error ${aiResponse.status}, attempt ${attempt + 1}/2, waiting ${RETRY_DELAY_MS}ms`);
+      await new Promise(r => setTimeout(r, RETRY_DELAY_MS));
+    }
+
+    if (!aiResponse || !aiResponse.ok) {
+      const errText = aiResponse ? await aiResponse.text() : "no response";
+      console.error("[AI-PROCESS] AI API error:", aiResponse?.status, errText);
       const fallbackReply = agent.fallback_message || "Desculpe, não consigo responder agora.";
       if (!skip_send) await sendReply(supabaseUrl, serviceKey, conversation, agent, fallbackReply);
-      await logUsage(supabase, conversation_id, agent.id, agent.ai_model, agent.ai_provider, 0, 0, 0, Date.now() - startTime, true, `API ${aiResponse.status}`);
+      await logUsage(supabase, conversation_id, agent.id, agent.ai_model, agent.ai_provider, 0, 0, 0, Date.now() - startTime, true, `API ${aiResponse?.status}`);
       return new Response(JSON.stringify({ reply: fallbackReply, fallback: true }), { headers: jsonHeaders });
     }
 
