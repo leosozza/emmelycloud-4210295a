@@ -59,7 +59,17 @@ function parseNum(v: any): number {
 }
 
 function parseDate(v: any): string | null {
-  if (!v || v === "") return null;
+  if (v == null || v === "") return null;
+
+  // Excel serial number (number or numeric string)
+  const num = typeof v === "number" ? v : Number(v);
+  if (!isNaN(num) && num > 1000 && num < 100000) {
+    // Excel epoch: 1899-12-30 (accounting for the 1900 leap year bug)
+    const epoch = new Date(Date.UTC(1899, 11, 30));
+    epoch.setUTCDate(epoch.getUTCDate() + num);
+    return epoch.toISOString().split("T")[0];
+  }
+
   const s = String(v).trim();
   // Try MM/DD/YY or MM/DD/YYYY
   const parts = s.split("/");
