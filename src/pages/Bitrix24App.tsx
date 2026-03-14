@@ -3287,6 +3287,12 @@ function PlacementPreviewView({ integration, memberId }: { integration: any; mem
                 <Input value={dealId} onChange={(e) => setDealId(e.target.value)} placeholder="Ex: 10581" className="max-w-[160px]" />
               </>
             )}
+            {placementType === "payment-tab-contact" && (
+              <>
+                <Label className="text-sm font-medium shrink-0">Contact ID:</Label>
+                <Input value={contactId} onChange={(e) => setContactId(e.target.value)} placeholder="Ex: 1" className="max-w-[160px]" />
+              </>
+            )}
             {placementType === "crm-tab" && (
               <>
                 <Label className="text-sm font-medium shrink-0">Lead ID:</Label>
