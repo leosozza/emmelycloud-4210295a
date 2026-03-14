@@ -249,6 +249,7 @@ serve(async (req) => {
                 funnel_stage: "fechado",
                 notes: `Importado do Access - ${desc} (SeparadorID: ${separadorId})`,
                 sync_source: "access_import",
+                created_at: serviceDate,
               })
               .select("id")
               .single();
