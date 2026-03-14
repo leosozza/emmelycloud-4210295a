@@ -39,6 +39,27 @@ function simpleHash(str: string): string {
 const RECENT_MSG_COUNT = 15;
 const HISTORY_LIMIT = 30;
 const MAX_CHUNKS = 20;
+const RETRY_DELAY_MS = 2000;
+const RETRYABLE_STATUSES = [429, 502, 503];
+
+// ─── Cost estimation per model (per 1M tokens, approximate USD) ───
+const MODEL_PRICING: Record<string, { input: number; output: number }> = {
+  "google/gemini-2.5-pro": { input: 1.25, output: 10.0 },
+  "google/gemini-2.5-flash": { input: 0.15, output: 0.6 },
+  "google/gemini-2.5-flash-lite": { input: 0.075, output: 0.3 },
+  "google/gemini-3-flash-preview": { input: 0.15, output: 0.6 },
+  "google/gemini-3.1-pro-preview": { input: 1.25, output: 10.0 },
+  "openai/gpt-5": { input: 2.0, output: 8.0 },
+  "openai/gpt-5-mini": { input: 0.4, output: 1.6 },
+  "openai/gpt-5-nano": { input: 0.1, output: 0.4 },
+  "openai/gpt-5.2": { input: 3.0, output: 12.0 },
+};
+
+function estimateCost(model: string, promptTokens: number, completionTokens: number): number {
+  const pricing = MODEL_PRICING[model];
+  if (!pricing) return 0;
+  return (promptTokens * pricing.input + completionTokens * pricing.output) / 1_000_000;
+}
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
@@ -295,18 +316,27 @@ Deno.serve(async (req) => {
     };
     if (tools) aiBody.tools = tools;
 
-    const aiResponse = await fetch(apiUrl, {
-      method: "POST",
-      headers: fetchHeaders,
-      body: JSON.stringify(aiBody),
-    });
+    // ─── AI API call with retry for 429/502/503 ───
+    let aiResponse: Response | null = null;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      aiResponse = await fetch(apiUrl, {
+        method: "POST",
+        headers: fetchHeaders,
+        body: JSON.stringify(aiBody),
+      });
 
-    if (!aiResponse.ok) {
-      const errText = await aiResponse.text();
-      console.error("[AI-PROCESS] AI API error:", aiResponse.status, errText);
+      if (aiResponse.ok || !RETRYABLE_STATUSES.includes(aiResponse.status)) break;
+
+      console.log(`[AI-PROCESS] Retryable error ${aiResponse.status}, attempt ${attempt + 1}/2, waiting ${RETRY_DELAY_MS}ms`);
+      await new Promise(r => setTimeout(r, RETRY_DELAY_MS));
+    }
+
+    if (!aiResponse || !aiResponse.ok) {
+      const errText = aiResponse ? await aiResponse.text() : "no response";
+      console.error("[AI-PROCESS] AI API error:", aiResponse?.status, errText);
       const fallbackReply = agent.fallback_message || "Desculpe, não consigo responder agora.";
       if (!skip_send) await sendReply(supabaseUrl, serviceKey, conversation, agent, fallbackReply);
-      await logUsage(supabase, conversation_id, agent.id, agent.ai_model, agent.ai_provider, 0, 0, 0, Date.now() - startTime, true, `API ${aiResponse.status}`);
+      await logUsage(supabase, conversation_id, agent.id, agent.ai_model, agent.ai_provider, 0, 0, 0, Date.now() - startTime, true, `API ${aiResponse?.status}`);
       return new Response(JSON.stringify({ reply: fallbackReply, fallback: true }), { headers: jsonHeaders });
     }
 
@@ -928,13 +958,14 @@ async function executeToolCall(supabase: any, supabaseUrl: string, serviceKey: s
   }
 }
 
-// ─── Observability: log AI usage ───
+// ─── Observability: log AI usage with cost estimation ───
 async function logUsage(
   supabase: any, conversationId: string | null, agentId: string, model: string, provider: string,
   promptTokens: number, completionTokens: number, totalTokens: number, latencyMs: number,
   wasFallback: boolean, error: string | null
 ) {
   try {
+    const costEstimate = estimateCost(model, promptTokens, completionTokens);
     await supabase.from("ai_usage_logs").insert({
       conversation_id: conversationId || null,
       agent_id: agentId,
@@ -944,6 +975,7 @@ async function logUsage(
       completion_tokens: completionTokens,
       total_tokens: totalTokens,
       latency_ms: latencyMs,
+      cost_estimate: costEstimate,
       was_fallback: wasFallback,
       error,
     });
@@ -1013,19 +1045,23 @@ async function sendReply(supabaseUrl: string, serviceKey: string, conversation: 
     .catch(e => console.error("[AI-PROCESS] Memory extraction error:", e));
 }
 
-// ─── Extract user memory from conversation ───
+// ─── Extract user memory from conversation (improved triggers) ───
 async function extractUserMemory(supabaseUrl: string, serviceKey: string, conversation: any, _lastReply: string) {
   const supabase = createClient(supabaseUrl, serviceKey);
   const contactId = conversation.contact_phone || conversation.contact_instagram || conversation.contact_email;
   if (!contactId) return;
 
-  // Extract every ~10 messages (use modulo with tolerance for reliability)
+  // Check if extraction should happen:
+  // - On human transfer (attendance_mode just changed)
+  // - Every 15 new messages since last extraction
   const { count } = await supabase
     .from("messages")
     .select("id", { count: "exact", head: true })
     .eq("conversation_id", conversation.id);
 
-  if (!count || count < 5 || count % 10 > 1) return;
+  const isTransfer = conversation.attendance_mode === "human";
+  const shouldExtract = isTransfer || (count && count >= 5 && count % 15 === 0);
+  if (!shouldExtract) return;
 
   const { data: messages } = await supabase
     .from("messages")

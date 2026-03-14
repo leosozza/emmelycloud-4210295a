@@ -21,6 +21,7 @@ import {
   MessageSquare,
   FileCode,
   BookOpen,
+  Activity,
 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import {
@@ -58,6 +59,7 @@ const aiNav = [
   { title: "Fluxos", url: "/flows", icon: GitBranch },
   { title: "Playground", url: "/playground", icon: Sparkles },
   { title: "Chat IA", url: "/chat", icon: MessageSquare },
+  { title: "Observabilidade", url: "/observabilidade-ia", icon: Activity },
 ];
 
 const secondaryNav = [
