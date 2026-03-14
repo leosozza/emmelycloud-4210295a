@@ -60,6 +60,9 @@ export interface AIAgent {
   voice_provider: string | null;
   voice_model: string | null;
   voice_id: string | null;
+  personality_style: string | null;
+  communication_tone: string | null;
+  strategic_objective: string | null;
   created_at: string;
 }
 
