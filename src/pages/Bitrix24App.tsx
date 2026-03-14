@@ -63,7 +63,7 @@ const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
 
 const customNodeTypes = { custom: CustomFlowNode };
 
-type AppView = "loading" | "dashboard" | "agentes" | "training" | "flows" | "playground" | "chatia" | "pagamentos" | "relatorios" | "mapeamento" | "empresas" | "baixa" | "placement";
+type AppView = "loading" | "dashboard" | "agentes" | "training" | "flows" | "playground" | "chatia" | "pagamentos" | "relatorios" | "mapeamento" | "empresas" | "baixa" | "placement" | "importacao";
 
 // ==================== MAIN COMPONENT ====================
 const Bitrix24App = () => {
