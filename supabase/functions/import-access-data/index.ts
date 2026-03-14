@@ -309,6 +309,8 @@ serve(async (req) => {
                 case_id: caso!.id,
                 status: allPaid ? "assinado" : "pendente",
                 signer_name: clientName,
+                created_at: serviceDate,
+                signed_at: allPaid ? serviceDate : null,
               })
               .select("id")
               .single();
