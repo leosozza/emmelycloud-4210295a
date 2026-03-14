@@ -5381,24 +5381,46 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
+          {/* Resume banner */}
+          {clientsSessionId && clientsProgress.processed > 0 && !clientsDone && !importingClients && (
+            <div className="flex items-center gap-2 p-3 rounded-lg bg-primary/10 border border-primary/20">
+              <AlertCircle className="h-4 w-4 text-primary shrink-0" />
+              <p className="text-xs text-foreground flex-1">
+                Sessão anterior encontrada: {clientsProgress.processed}/{clientsProgress.total} clientes processados. Clique em "Importar" para retomar.
+              </p>
+              <Button variant="ghost" size="sm" className="text-xs h-7 shrink-0" onClick={() => handleClearSession("clients")}>
+                <Trash2 className="h-3 w-3 mr-1" /> Limpar
+              </Button>
+            </div>
+          )}
+
           <div className="space-y-2">
             <Label className="text-sm font-medium">TBL_CLIENTE.xlsx</Label>
             <Input type="file" accept=".xlsx,.xls" onChange={handleClientesUpload} disabled={isImporting} />
             {validClients && (
-              <p className="text-xs text-muted-foreground">✅ {validClients.length} clientes válidos carregados (excluindo IDs ≤ 3)</p>
+              <p className="text-xs text-muted-foreground">✅ {validClients.length} clientes válidos carregados (excluindo IDs ≤ 3){clientsSessionId ? " · 📁 Ficheiro guardado" : ""}</p>
             )}
           </div>
 
           {validClients && validClients.length > 0 && (
-            <Button onClick={handleImportClients} disabled={isImporting} className="w-full" size="lg">
-              {importingClients ? (
-                <><Loader2 className="h-4 w-4 animate-spin mr-2" /> Importando Clientes... ({clientsProgressPct}%)</>
-              ) : clientsDone ? (
-                <><CheckCircle className="h-4 w-4 mr-2" /> Re-importar {validClients.length} Clientes</>
-              ) : (
-                <><Upload className="h-4 w-4 mr-2" /> Importar {validClients.length} Clientes</>
+            <div className="flex gap-2">
+              <Button onClick={handleImportClients} disabled={isImporting} className="flex-1" size="lg">
+                {importingClients ? (
+                  <><Loader2 className="h-4 w-4 animate-spin mr-2" /> Importando Clientes... ({clientsProgressPct}%)</>
+                ) : clientsProgress.processed > 0 && !clientsDone ? (
+                  <><RefreshCw className="h-4 w-4 mr-2" /> Retomar ({clientsProgress.processed}/{validClients.length})</>
+                ) : clientsDone ? (
+                  <><CheckCircle className="h-4 w-4 mr-2" /> Re-importar {validClients.length} Clientes</>
+                ) : (
+                  <><Upload className="h-4 w-4 mr-2" /> Importar {validClients.length} Clientes</>
+                )}
+              </Button>
+              {clientsSessionId && (
+                <Button variant="outline" size="lg" onClick={() => handleClearSession("clients")} disabled={isImporting} title="Limpar sessão e ficheiro">
+                  <Trash2 className="h-4 w-4" />
+                </Button>
               )}
-            </Button>
+            </div>
           )}
 
           {/* Phase 1 Progress */}
