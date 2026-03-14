@@ -346,6 +346,15 @@ serve(async (req) => {
         let groupsOk = 0;
         let groupsErr = 0;
 
+        // Aggregate totals across ALL groups for this client (for Bitrix sync)
+        let clientTotalValue = 0;
+        let clientTotalPaid = 0;
+        let clientAllPaid = true;
+        let clientHasOverdue = false;
+        let clientOverdueCount = 0;
+        let clientOverdueValue = 0;
+        const allClientInstallments: RawHonorario[] = [];
+
         for (const [separadorIdStr, installments] of Object.entries(groups)) {
           const separadorId = parseInt(separadorIdStr);
           try {
@@ -363,6 +372,15 @@ serve(async (req) => {
             const overdueValue = installments
               .filter(i => (i.STATUS || "").toUpperCase() === "ATRASADO")
               .reduce((sum, i) => sum + (parseNum(i.VALOR_PARCELA_CORRIGIDO) || parseNum(i.VALOR_PARCELA)) - parseNum(i.TOTALPAGO), 0);
+
+            // Accumulate client-level totals
+            clientTotalValue += totalValue;
+            clientTotalPaid += totalPaid;
+            if (!allPaid) clientAllPaid = false;
+            if (hasOverdue) clientHasOverdue = true;
+            clientOverdueCount += overdueCount;
+            clientOverdueValue += overdueValue;
+            allClientInstallments.push(...installments);
 
             const serviceDateRaw = parseDate(installments[0]?.DATA);
             const serviceDate = serviceDateRaw ? `${serviceDateRaw}T00:00:00Z` : new Date().toISOString();
@@ -488,19 +506,23 @@ serve(async (req) => {
               }
             }
 
-            // Sync to Bitrix24 if enabled
-            if (sync_bitrix && integration?.client_endpoint && integration?.access_token) {
-              try {
-                await syncHonorariosToBitrix(integration, client, desc, installments, String(separadorId), totalValue, totalPaid, allPaid, category_id, hasOverdue, overdueCount, overdueValue);
-              } catch (e) {
-                console.error(`[import] Bitrix sync error ${clientName}/${desc}:`, e);
-              }
-            }
-
             groupsOk++;
           } catch (e) {
             console.error(`[import] Group ${separadorIdStr} error for ${clientName}:`, e);
             groupsErr++;
+          }
+        }
+
+        // ── Sync to Bitrix24 ONCE per client (after all groups processed) ──
+        if (sync_bitrix && integration?.client_endpoint && integration?.access_token && allClientInstallments.length > 0) {
+          try {
+            await syncHonorariosToBitrix(
+              integration, client, allClientInstallments,
+              clientTotalValue, clientTotalPaid, clientAllPaid,
+              category_id, clientHasOverdue, clientOverdueCount, clientOverdueValue
+            );
+          } catch (e) {
+            console.error(`[import] Bitrix sync error ${clientName}:`, e);
           }
         }
 
