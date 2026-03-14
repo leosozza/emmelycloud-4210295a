@@ -137,6 +137,7 @@ export type Database = {
           ai_model: string
           ai_provider: string
           avatar_url: string | null
+          communication_tone: string | null
           created_at: string
           default_flow_id: string | null
           description: string | null
@@ -145,7 +146,9 @@ export type Database = {
           is_active: boolean
           is_default: boolean
           name: string
+          personality_style: string | null
           routing_rules: Json | null
+          strategic_objective: string | null
           sub_agent_ids: string[] | null
           system_prompt: string
           temperature: number
@@ -163,6 +166,7 @@ export type Database = {
           ai_model?: string
           ai_provider?: string
           avatar_url?: string | null
+          communication_tone?: string | null
           created_at?: string
           default_flow_id?: string | null
           description?: string | null
@@ -171,7 +175,9 @@ export type Database = {
           is_active?: boolean
           is_default?: boolean
           name: string
+          personality_style?: string | null
           routing_rules?: Json | null
+          strategic_objective?: string | null
           sub_agent_ids?: string[] | null
           system_prompt?: string
           temperature?: number
@@ -189,6 +195,7 @@ export type Database = {
           ai_model?: string
           ai_provider?: string
           avatar_url?: string | null
+          communication_tone?: string | null
           created_at?: string
           default_flow_id?: string | null
           description?: string | null
@@ -197,7 +204,9 @@ export type Database = {
           is_active?: boolean
           is_default?: boolean
           name?: string
+          personality_style?: string | null
           routing_rules?: Json | null
+          strategic_objective?: string | null
           sub_agent_ids?: string[] | null
           system_prompt?: string
           temperature?: number
@@ -558,6 +567,51 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      business_rules: {
+        Row: {
+          action_config: Json | null
+          action_type: string
+          created_at: string | null
+          description: string | null
+          field: string
+          id: string
+          is_active: boolean | null
+          name: string
+          operator: string
+          priority: number | null
+          updated_at: string | null
+          value: string
+        }
+        Insert: {
+          action_config?: Json | null
+          action_type?: string
+          created_at?: string | null
+          description?: string | null
+          field: string
+          id?: string
+          is_active?: boolean | null
+          name: string
+          operator?: string
+          priority?: number | null
+          updated_at?: string | null
+          value: string
+        }
+        Update: {
+          action_config?: Json | null
+          action_type?: string
+          created_at?: string | null
+          description?: string | null
+          field?: string
+          id?: string
+          is_active?: boolean | null
+          name?: string
+          operator?: string
+          priority?: number | null
+          updated_at?: string | null
+          value?: string
+        }
+        Relationships: []
       }
       cases: {
         Row: {

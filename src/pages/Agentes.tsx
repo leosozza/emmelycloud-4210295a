@@ -60,6 +60,9 @@ export interface AIAgent {
   voice_provider: string | null;
   voice_model: string | null;
   voice_id: string | null;
+  personality_style: string | null;
+  communication_tone: string | null;
+  strategic_objective: string | null;
   created_at: string;
 }
 
@@ -86,6 +89,9 @@ export const defaultAgent: Partial<AIAgent> = {
   voice_provider: null,
   voice_model: null,
   voice_id: null,
+  personality_style: "professional",
+  communication_tone: "empathetic",
+  strategic_objective: null,
 };
 
 export default function AgentesPage() {
