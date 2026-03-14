@@ -112,6 +112,104 @@ Deno.serve(async (req) => {
   }
 });
 
+// ─── BUSINESS RULES ENGINE ───
+async function evaluateBusinessRules(
+  supabase: any, supabaseUrl: string, serviceKey: string,
+  conversation: any, messageText: string, instanceId: string | null
+): Promise<any | null> {
+  const { data: rules } = await supabase
+    .from("business_rules")
+    .select("*")
+    .eq("is_active", true)
+    .order("priority", { ascending: false });
+
+  if (!rules || rules.length === 0) return null;
+
+  // Get conversation context for rule evaluation
+  const text = (messageText || "").toLowerCase().trim();
+  const channel = conversation.channel;
+  const contactName = conversation.contact_name || "";
+
+  for (const rule of rules) {
+    let fieldValue = "";
+    switch (rule.field) {
+      case "message_text": fieldValue = text; break;
+      case "channel": fieldValue = channel; break;
+      case "contact_name": fieldValue = contactName.toLowerCase(); break;
+      case "department": fieldValue = (conversation.department || "").toLowerCase(); break;
+      case "attendance_mode": fieldValue = conversation.attendance_mode || "bot"; break;
+      default: fieldValue = ""; break;
+    }
+
+    let matched = false;
+    switch (rule.operator) {
+      case "equals": matched = fieldValue === rule.value.toLowerCase(); break;
+      case "not_equals": matched = fieldValue !== rule.value.toLowerCase(); break;
+      case "contains": matched = fieldValue.includes(rule.value.toLowerCase()); break;
+      case "not_contains": matched = !fieldValue.includes(rule.value.toLowerCase()); break;
+      case "starts_with": matched = fieldValue.startsWith(rule.value.toLowerCase()); break;
+      case "ends_with": matched = fieldValue.endsWith(rule.value.toLowerCase()); break;
+      case "exists": matched = fieldValue.length > 0; break;
+      case "not_exists": matched = fieldValue.length === 0; break;
+      default: matched = false;
+    }
+
+    if (!matched) continue;
+
+    const config = rule.action_config || {};
+    console.log(`[BUSINESS-RULES] Rule "${rule.name}" matched (field=${rule.field}, op=${rule.operator})`);
+
+    switch (rule.action_type) {
+      case "auto_reply": {
+        const reply = config.reply_text || "Mensagem automática.";
+        // Send reply via message-send
+        await fetch(`${supabaseUrl}/functions/v1/message-send`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "Authorization": `Bearer ${serviceKey}` },
+          body: JSON.stringify({ conversation_id: conversation.id, content: reply, instance_id: instanceId }),
+        });
+        return { rule_name: rule.name, action: "auto_reply", reply };
+      }
+      case "change_agent": {
+        if (config.agent_id) {
+          const botState = conversation.bot_state || {};
+          await supabase.from("conversations").update({
+            bot_state: { ...botState, active_sub_agent_id: config.agent_id },
+          }).eq("id", conversation.id);
+        }
+        // Continue to AI with the new agent
+        return null;
+      }
+      case "set_priority": {
+        if (config.priority) {
+          await supabase.from("conversations").update({
+            department: config.department || conversation.department,
+          }).eq("id", conversation.id);
+        }
+        return null;
+      }
+      case "transfer_human": {
+        await supabase.from("conversations").update({
+          attendance_mode: "human",
+          status: "waiting",
+        }).eq("id", conversation.id);
+        const msg = config.transfer_message || "Vou transferi-lo para um atendente humano.";
+        await fetch(`${supabaseUrl}/functions/v1/message-send`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "Authorization": `Bearer ${serviceKey}` },
+          body: JSON.stringify({ conversation_id: conversation.id, content: msg, instance_id: instanceId }),
+        });
+        return { rule_name: rule.name, action: "transfer_human", reply: msg };
+      }
+      default:
+        console.log(`[BUSINESS-RULES] Unknown action_type: ${rule.action_type}`);
+        return null;
+    }
+  }
+
+  return null;
+}
+
 // ─── FLOW MATCHING ───
 async function matchFlow(supabase: any, conversation: any, messageText: string): Promise<FlowMatch | null> {
   const text = (messageText || "").toLowerCase().trim();
