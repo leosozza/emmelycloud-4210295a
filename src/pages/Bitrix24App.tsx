@@ -3884,6 +3884,11 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
   const [selectedCategoryId, setSelectedCategoryId] = useState("0");
   const [loadingPipelines, setLoadingPipelines] = useState(false);
 
+  // Filter states
+  const [filterDateFrom, setFilterDateFrom] = useState<Date | undefined>(undefined);
+  const [filterDateTo, setFilterDateTo] = useState<Date | undefined>(undefined);
+  const [filterStatus, setFilterStatus] = useState("todos");
+
   // Load pipelines when syncBitrix is enabled
   useEffect(() => {
     if (!syncBitrix || !memberId || !integration) return;
@@ -3934,16 +3939,56 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
     }
   };
 
-  const stats = useMemo(() => {
-    if (!clientesData || !honorariosData) return null;
-    const totalClients = clientesData.filter((c: any) => c.ID > 3).length;
-    const activeClients = clientesData.filter((c: any) => (c.ATIVO || "").toUpperCase() === "SIM").length;
-    const totalHonorarios = honorariosData.length;
+  // Helper to parse Excel serial date or string date
+  const parseExcelDate = (val: any): Date | null => {
+    if (!val) return null;
+    if (typeof val === "number") {
+      // Excel serial date
+      const d = new Date(Math.round((val - 25569) * 86400 * 1000));
+      return isNaN(d.getTime()) ? null : d;
+    }
+    const d = new Date(String(val));
+    return isNaN(d.getTime()) ? null : d;
+  };
 
-    // Total value: sum unique VALOR per SEPARADORID
+  // Filtered honorarios based on date & status
+  const filteredHonorarios = useMemo(() => {
+    if (!honorariosData) return null;
+    return honorariosData.filter((h: any) => {
+      // Status filter
+      if (filterStatus !== "todos") {
+        const s = (h.STATUS || "").toUpperCase().trim();
+        if (filterStatus === "QUITADO" && s !== "QUITADO") return false;
+        if (filterStatus === "ATRASADO" && s !== "ATRASADO") return false;
+        if (filterStatus === "PENDENTE" && (s === "QUITADO" || s === "ATRASADO")) return false;
+      }
+      // Date filter on DATA column
+      if (filterDateFrom || filterDateTo) {
+        const d = parseExcelDate(h.DATA);
+        if (!d) return false;
+        if (filterDateFrom && d < filterDateFrom) return false;
+        if (filterDateTo && d > filterDateTo) return false;
+      }
+      return true;
+    });
+  }, [honorariosData, filterStatus, filterDateFrom, filterDateTo]);
+
+  // Derive filtered clients from filtered honorarios
+  const filteredClientes = useMemo(() => {
+    if (!clientesData || !filteredHonorarios) return null;
+    const clientIds = new Set(filteredHonorarios.map((h: any) => h.CLIENTEID));
+    return clientesData.filter((c: any) => c.ID > 3 && clientIds.has(c.ID));
+  }, [clientesData, filteredHonorarios]);
+
+  const stats = useMemo(() => {
+    if (!filteredClientes || !filteredHonorarios) return null;
+    const totalClients = filteredClientes.length;
+    const activeClients = filteredClientes.filter((c: any) => (c.ATIVO || "").toUpperCase() === "SIM").length;
+    const totalHonorarios = filteredHonorarios.length;
+
     const seenSep = new Set<number>();
     let totalValue = 0;
-    for (const h of honorariosData) {
+    for (const h of filteredHonorarios) {
       const sid = h.SEPARADORID;
       if (!seenSep.has(sid)) {
         seenSep.add(sid);
@@ -3952,25 +3997,25 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
       }
     }
 
-    const paidCount = honorariosData.filter((h: any) => (h.STATUS || "").toUpperCase() === "QUITADO").length;
-    const overdueCount = honorariosData.filter((h: any) => (h.STATUS || "").toUpperCase() === "ATRASADO").length;
+    const paidCount = filteredHonorarios.filter((h: any) => (h.STATUS || "").toUpperCase() === "QUITADO").length;
+    const overdueCount = filteredHonorarios.filter((h: any) => (h.STATUS || "").toUpperCase() === "ATRASADO").length;
     const pendingCount = totalHonorarios - paidCount - overdueCount;
 
-    const totalPaid = honorariosData.reduce((acc: number, h: any) => {
+    const totalPaid = filteredHonorarios.reduce((acc: number, h: any) => {
       const v = String(h.TOTALPAGO || "0").replace(/,/g, "");
       return acc + (parseFloat(v) || 0);
     }, 0);
 
     return { totalClients, activeClients, totalHonorarios, totalValue, paidCount, pendingCount, overdueCount, totalPaid };
-  }, [clientesData, honorariosData]);
+  }, [filteredClientes, filteredHonorarios]);
 
   const handleImport = async () => {
-    if (!clientesData || !honorariosData) return;
+    if (!filteredClientes || !filteredHonorarios || filteredClientes.length === 0) return;
     setImporting(true);
     setLogs([]);
     setDone(false);
 
-    const validClients = clientesData.filter((c: any) => c.ID > 3);
+    const validClients = filteredClientes;
     const batchSize = 10;
     let batchStart = 0;
 
@@ -3985,7 +4030,7 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
           },
           body: JSON.stringify({
             clientes: validClients,
-            honorarios: honorariosData,
+            honorarios: filteredHonorarios,
             batch_start: batchStart,
             batch_size: batchSize,
             member_id: memberId,
@@ -4072,11 +4117,85 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
         </CardContent>
       </Card>
 
+      {/* Filters */}
+      {clientesData && honorariosData && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2"><Settings className="h-5 w-5" /> Filtros de Importação</CardTitle>
+            <CardDescription>Filtre por data e status para importar subconjuntos menores</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="flex flex-wrap items-end gap-4">
+              {/* Date From */}
+              <div className="space-y-1.5">
+                <Label className="text-xs">Data De (contrato)</Label>
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button variant="outline" size="sm" className={cn("w-[150px] justify-start text-left text-xs gap-1", !filterDateFrom && "text-muted-foreground")}>
+                      <CalendarIcon className="h-3 w-3" />
+                      {filterDateFrom ? format(filterDateFrom, "dd/MM/yyyy") : "Sem limite"}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0" align="start">
+                    <Calendar mode="single" selected={filterDateFrom} onSelect={setFilterDateFrom} className="p-3 pointer-events-auto" />
+                  </PopoverContent>
+                </Popover>
+              </div>
+
+              {/* Date To */}
+              <div className="space-y-1.5">
+                <Label className="text-xs">Data Até</Label>
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button variant="outline" size="sm" className={cn("w-[150px] justify-start text-left text-xs gap-1", !filterDateTo && "text-muted-foreground")}>
+                      <CalendarIcon className="h-3 w-3" />
+                      {filterDateTo ? format(filterDateTo, "dd/MM/yyyy") : "Sem limite"}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0" align="start">
+                    <Calendar mode="single" selected={filterDateTo} onSelect={setFilterDateTo} className="p-3 pointer-events-auto" />
+                  </PopoverContent>
+                </Popover>
+              </div>
+
+              {/* Status */}
+              <div className="space-y-1.5">
+                <Label className="text-xs">Status</Label>
+                <Select value={filterStatus} onValueChange={setFilterStatus}>
+                  <SelectTrigger className="w-[150px] h-9 text-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="todos">Todos</SelectItem>
+                    <SelectItem value="QUITADO">Quitado</SelectItem>
+                    <SelectItem value="ATRASADO">Atrasado</SelectItem>
+                    <SelectItem value="PENDENTE">Pendente/Aberto</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Clear */}
+              {(filterDateFrom || filterDateTo || filterStatus !== "todos") && (
+                <Button variant="ghost" size="sm" className="text-xs" onClick={() => { setFilterDateFrom(undefined); setFilterDateTo(undefined); setFilterStatus("todos"); }}>
+                  <RotateCcw className="h-3 w-3 mr-1" /> Limpar
+                </Button>
+              )}
+
+              {/* Summary */}
+              <div className="ml-auto text-xs text-muted-foreground">
+                {filteredHonorarios ? `${filteredHonorarios.length} de ${honorariosData.length} parcelas` : ""}
+                {filteredClientes ? ` · ${filteredClientes.length} clientes` : ""}
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Preview */}
       {stats && (
         <Card>
           <CardHeader>
-            <CardTitle>Pré-visualização</CardTitle>
+            <CardTitle>Pré-visualização {filterStatus !== "todos" || filterDateFrom || filterDateTo ? "(filtrado)" : ""}</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
