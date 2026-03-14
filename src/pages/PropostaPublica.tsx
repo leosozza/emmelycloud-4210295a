@@ -4,6 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
+import { Checkbox } from "@/components/ui/checkbox";
 import { CheckCircle2, Loader2, FileWarning } from "lucide-react";
 
 const paymentTypeLabels: Record<string, string> = {
@@ -16,6 +17,7 @@ export default function PropostaPublica() {
   const [loading, setLoading] = useState(true);
   const [accepting, setAccepting] = useState(false);
   const [accepted, setAccepted] = useState(false);
+  const [confirmed, setConfirmed] = useState(false);
   const [error, setError] = useState("");
 
   useEffect(() => {
@@ -36,35 +38,15 @@ export default function PropostaPublica() {
   }, [token]);
 
   const handleAccept = async () => {
-    if (!proposal) return;
+    if (!proposal || !confirmed) return;
     setAccepting(true);
     try {
-      // Update proposal
-      const { error: upErr } = await supabase
-        .from("proposals")
-        .update({ status: "aceita" as any, accepted_at: new Date().toISOString() })
-        .eq("id", proposal.id);
-      if (upErr) throw upErr;
-
-      // Create contract
-      await supabase.from("contracts").insert({
-        proposal_id: proposal.id,
-        case_id: proposal.case_id,
+      const res = await supabase.functions.invoke("proposal-accept", {
+        body: { accept_token: token },
       });
-
-      // Update lead funnel
-      const { data: caseData } = await supabase
-        .from("cases")
-        .select("lead_id")
-        .eq("id", proposal.case_id)
-        .single();
-      if (caseData?.lead_id) {
-        await supabase
-          .from("leads")
-          .update({ funnel_stage: "contrato" as any })
-          .eq("id", caseData.lead_id);
-      }
-
+      if (res.error) throw new Error(res.error.message || "Erro ao aceitar proposta");
+      const data = res.data as any;
+      if (data?.error) throw new Error(data.error);
       setAccepted(true);
     } catch (e: any) {
       setError(e.message);
@@ -197,18 +179,32 @@ export default function PropostaPublica() {
             <h3 className="text-xl font-bold text-red-800">Proposta Recusada</h3>
           </Card>
         ) : (
-          <div className="text-center">
+          <div className="text-center space-y-4">
+            {error && (
+              <p className="text-sm text-destructive">{error}</p>
+            )}
+            <div className="flex items-start gap-3 justify-center text-left max-w-md mx-auto">
+              <Checkbox
+                id="confirm-accept"
+                checked={confirmed}
+                onCheckedChange={(checked) => setConfirmed(checked === true)}
+                className="mt-0.5"
+              />
+              <label htmlFor="confirm-accept" className="text-sm text-muted-foreground cursor-pointer leading-relaxed">
+                Li e compreendo os termos e condições apresentados nesta proposta e desejo aceitá-la.
+              </label>
+            </div>
             <Button
               size="lg"
-              className="bg-green-600 hover:bg-green-700 text-white px-12 py-6 text-lg rounded-xl shadow-lg"
+              className="bg-green-600 hover:bg-green-700 text-white px-12 py-6 text-lg rounded-xl shadow-lg disabled:opacity-50"
               onClick={handleAccept}
-              disabled={accepting}
+              disabled={accepting || !confirmed}
             >
               {accepting ? <Loader2 className="h-5 w-5 animate-spin mr-2" /> : <CheckCircle2 className="h-5 w-5 mr-2" />}
               Aceitar Proposta
             </Button>
-            <p className="text-xs text-muted-foreground mt-3">
-              Ao aceitar, concorda com os termos e condições apresentados.
+            <p className="text-xs text-muted-foreground">
+              Ao aceitar, o seu IP e dados do dispositivo serão registados como prova de aceite digital.
             </p>
           </div>
         )}

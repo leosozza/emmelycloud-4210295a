@@ -5,6 +5,16 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+function escapeHtml(str: string | null | undefined): string {
+  if (!str) return "";
+  return str
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -33,6 +43,16 @@ Deno.serve(async (req) => {
     const installmentValue = proposal.installments > 1
       ? (proposal.value / proposal.installments).toLocaleString("pt-PT", { minimumFractionDigits: 2 })
       : null;
+
+    // Sanitize all user-provided fields
+    const title = escapeHtml(proposal.title);
+    const clientName = escapeHtml(proposal.client_name);
+    const clientEmail = escapeHtml(proposal.client_email);
+    const clientPhone = escapeHtml(proposal.client_phone);
+    const clientDocument = escapeHtml(proposal.client_document);
+    const clientAddress = escapeHtml(proposal.client_address);
+    const description = escapeHtml(proposal.description);
+    const conditions = escapeHtml(proposal.conditions);
 
     const html = `<!DOCTYPE html>
 <html lang="pt">
@@ -66,25 +86,25 @@ Deno.serve(async (req) => {
     <div class="tagline">Mais do que processos, cuidamos de pessoas e dos seus direitos.</div>
   </div>
   <div class="content">
-    <div class="title">${proposal.title}</div>
+    <div class="title">${title}</div>
     ${proposal.valid_until ? `<div class="validity">Válida até ${new Date(proposal.valid_until).toLocaleDateString("pt-PT")}</div>` : ""}
 
-    ${proposal.client_name ? `
+    ${clientName ? `
     <div class="section">
       <div class="section-title">Dados do Cliente</div>
       <div class="client-grid">
-        <div><span class="label">Nome:</span> ${proposal.client_name}</div>
-        ${proposal.client_email ? `<div><span class="label">Email:</span> ${proposal.client_email}</div>` : ""}
-        ${proposal.client_phone ? `<div><span class="label">Telefone:</span> ${proposal.client_phone}</div>` : ""}
-        ${proposal.client_document ? `<div><span class="label">Documento:</span> ${proposal.client_document}</div>` : ""}
-        ${proposal.client_address ? `<div style="grid-column: span 2"><span class="label">Morada:</span> ${proposal.client_address}</div>` : ""}
+        <div><span class="label">Nome:</span> ${clientName}</div>
+        ${clientEmail ? `<div><span class="label">Email:</span> ${clientEmail}</div>` : ""}
+        ${clientPhone ? `<div><span class="label">Telefone:</span> ${clientPhone}</div>` : ""}
+        ${clientDocument ? `<div><span class="label">Documento:</span> ${clientDocument}</div>` : ""}
+        ${clientAddress ? `<div style="grid-column: span 2"><span class="label">Morada:</span> ${clientAddress}</div>` : ""}
       </div>
     </div>` : ""}
 
-    ${proposal.description ? `
+    ${description ? `
     <div class="section">
       <div class="section-title">O Processo Inclui</div>
-      <div class="description">${proposal.description}</div>
+      <div class="description">${description}</div>
     </div>` : ""}
 
     <div class="section">
@@ -92,23 +112,23 @@ Deno.serve(async (req) => {
       <div class="budget-box">
         <div class="budget-value">€ ${valueFormatted}</div>
         <div class="budget-detail">
-          ${paymentTypeLabels[proposal.payment_type] || proposal.payment_type}
+          ${paymentTypeLabels[proposal.payment_type] || escapeHtml(proposal.payment_type)}
           ${installmentValue ? ` — ${proposal.installments}x de € ${installmentValue}` : ""}
         </div>
       </div>
     </div>
 
-    ${proposal.conditions ? `
+    ${conditions ? `
     <div class="section">
       <div class="section-title">Condições</div>
-      <div class="conditions">${proposal.conditions}</div>
+      <div class="conditions">${conditions}</div>
     </div>` : ""}
   </div>
   <div class="footer">Emmely Fernandes — Advocacia Internacional</div>
 </body>
 </html>`;
 
-    // Store the HTML as a file in storage (simple approach - HTML proposal)
+    // Store the HTML as a file in storage
     const fileName = `proposal-${proposal.id}.html`;
     const { error: uploadError } = await supabase.storage
       .from("proposal-files")

@@ -614,7 +614,8 @@ async function handleGenerateProposal(
       return { proposal_url: "", pdf_url: "", proposal_id: "", status: "error", error: proposalErr?.message || "Failed to create proposal" };
     }
 
-    const proposalUrl = `https://emmelycloud.lovable.app/proposta/${proposal.accept_token}`;
+    const frontendUrl = Deno.env.get("FRONTEND_URL") || "https://emmelycloud.lovable.app";
+    const proposalUrl = `${frontendUrl}/proposta/${proposal.accept_token}`;
 
     // 7. Generate PDF
     let pdfUrl = "";
