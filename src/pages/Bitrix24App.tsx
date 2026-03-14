@@ -4030,11 +4030,15 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
     });
   }, [honorariosData, filterStatus, filterDateFrom, filterDateTo]);
 
-  // Derive filtered clients from filtered honorarios
+  // Derive filtered clients from filtered honorarios (clientesData is optional in Phase 2)
   const filteredClientes = useMemo(() => {
-    if (!clientesData || !filteredHonorarios) return null;
-    const clientIds = new Set(filteredHonorarios.map((h: any) => h.CLIENTE));
-    return clientesData.filter((c: any) => c.ID > 3 && clientIds.has(c.ID));
+    if (!filteredHonorarios) return null;
+    const clientIds = [...new Set(filteredHonorarios.map((h: any) => h.CLIENTE))];
+    if (clientesData) {
+      return clientesData.filter((c: any) => c.ID > 3 && clientIds.includes(c.ID));
+    }
+    // No client file: derive stubs from honorários
+    return clientIds.map(id => ({ ID: id, NOME: `Cliente ${id}`, ATIVO: "SIM" }));
   }, [clientesData, filteredHonorarios]);
 
   const stats = useMemo(() => {
@@ -4067,7 +4071,7 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
   }, [filteredClientes, filteredHonorarios]);
 
   const handleImportHonorarios = async () => {
-    if (!filteredClientes || !filteredHonorarios || filteredClientes.length === 0) return;
+    if (!filteredHonorarios || filteredHonorarios.length === 0) return;
     setImportingHonorarios(true);
     setHonorariosLogs([]);
     setHonorariosDone(false);
@@ -4085,7 +4089,7 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
             Authorization: `Bearer ${SUPABASE_KEY}`,
           },
           body: JSON.stringify({
-            clientes: filteredClientes,
+            clientes: clientesData ? (filteredClientes || []) : [],
             honorarios: filteredHonorarios,
             mode: "honorarios",
             batch_start: batchStart,
@@ -4223,7 +4227,7 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
       </Card>
 
       {/* ═══════ FASE 2: HONORÁRIOS ═══════ */}
-      <Card className={!clientsDone ? "opacity-60" : ""}>
+      <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Badge variant={honorariosDone ? "default" : "outline"} className="text-xs">FASE 2</Badge>
@@ -4232,19 +4236,11 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
           <CardDescription>
             Carregue TBL_HONORARIOS.xlsx para criar serviços, contratos e registos financeiros
             {syncBitrix && " e actualizar Deals + Smart Invoices no Bitrix24"}
-            {!clientsDone && " — Complete a Fase 1 primeiro (ou importe directamente se os clientes já existem)"}
+            . Os clientes já existentes na base de dados serão usados automaticamente.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label className="text-sm font-medium">TBL_CLIENTE.xlsx</Label>
-              {clientesData ? (
-                <p className="text-xs text-muted-foreground">✅ {clientesData.length} registos (da Fase 1)</p>
-              ) : (
-                <Input type="file" accept=".xlsx,.xls" onChange={handleClientesUpload} disabled={isImporting} />
-              )}
-            </div>
             <div className="space-y-2">
               <Label className="text-sm font-medium">TBL_HONORARIOS.xlsx</Label>
               <Input type="file" accept=".xlsx,.xls" onChange={handleHonorariosUpload} disabled={isImporting} />
@@ -4252,10 +4248,21 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
                 <p className="text-xs text-muted-foreground">✅ {honorariosData.length} registos carregados</p>
               )}
             </div>
+            <div className="space-y-2">
+              <Label className="text-sm font-medium">TBL_CLIENTE.xlsx <span className="text-muted-foreground">(opcional)</span></Label>
+              {clientesData ? (
+                <p className="text-xs text-muted-foreground">✅ {clientesData.length} registos (da Fase 1)</p>
+              ) : (
+                <>
+                  <Input type="file" accept=".xlsx,.xls" onChange={handleClientesUpload} disabled={isImporting} />
+                  <p className="text-xs text-muted-foreground">Opcional — clientes já importados na Fase 1 serão usados da base de dados</p>
+                </>
+              )}
+            </div>
           </div>
 
           {/* Filters (Phase 2 only) */}
-          {clientesData && honorariosData && (
+          {honorariosData && (
             <div className="space-y-3 pt-3 border-t">
               <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Filtros</Label>
               <div className="flex flex-wrap items-end gap-4">
