@@ -4044,9 +4044,28 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
           </div>
 
           {integration && (
-            <div className="flex items-center gap-3">
-              <Switch checked={syncBitrix} onCheckedChange={setSyncBitrix} disabled={importing} />
-              <Label className="text-sm">Sincronizar com Bitrix24 (criar Contactos + Deals + Faturas)</Label>
+            <div className="space-y-3">
+              <div className="flex items-center gap-3">
+                <Switch checked={syncBitrix} onCheckedChange={setSyncBitrix} disabled={importing} />
+                <Label className="text-sm">Sincronizar com Bitrix24 (criar Contactos + Deals + Faturas)</Label>
+              </div>
+              {syncBitrix && (
+                <div className="space-y-1.5 pl-10">
+                  <Label className="text-sm">Pipeline de destino para novos Deals</Label>
+                  <Select value={selectedCategoryId} onValueChange={setSelectedCategoryId} disabled={importing || loadingPipelines}>
+                    <SelectTrigger className="w-full md:w-64">
+                      <SelectValue placeholder={loadingPipelines ? "Carregando..." : "Selecionar pipeline"} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="0">Pipeline Geral (padrão)</SelectItem>
+                      {pipelines.filter(p => p.ID !== "0" && p.ID !== "C0").map(p => (
+                        <SelectItem key={p.ID} value={String(p.ID)}>{p.NAME}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground">Deals existentes mantêm o pipeline actual</p>
+                </div>
+              )}
             </div>
           )}
         </CardContent>
