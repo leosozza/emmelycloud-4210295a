@@ -4120,11 +4120,85 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
         </CardContent>
       </Card>
 
+      {/* Filters */}
+      {clientesData && honorariosData && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2"><Settings className="h-5 w-5" /> Filtros de Importação</CardTitle>
+            <CardDescription>Filtre por data e status para importar subconjuntos menores</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="flex flex-wrap items-end gap-4">
+              {/* Date From */}
+              <div className="space-y-1.5">
+                <Label className="text-xs">Data De (contrato)</Label>
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button variant="outline" size="sm" className={cn("w-[150px] justify-start text-left text-xs gap-1", !filterDateFrom && "text-muted-foreground")}>
+                      <CalendarIcon className="h-3 w-3" />
+                      {filterDateFrom ? format(filterDateFrom, "dd/MM/yyyy") : "Sem limite"}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0" align="start">
+                    <Calendar mode="single" selected={filterDateFrom} onSelect={setFilterDateFrom} className="p-3 pointer-events-auto" />
+                  </PopoverContent>
+                </Popover>
+              </div>
+
+              {/* Date To */}
+              <div className="space-y-1.5">
+                <Label className="text-xs">Data Até</Label>
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button variant="outline" size="sm" className={cn("w-[150px] justify-start text-left text-xs gap-1", !filterDateTo && "text-muted-foreground")}>
+                      <CalendarIcon className="h-3 w-3" />
+                      {filterDateTo ? format(filterDateTo, "dd/MM/yyyy") : "Sem limite"}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0" align="start">
+                    <Calendar mode="single" selected={filterDateTo} onSelect={setFilterDateTo} className="p-3 pointer-events-auto" />
+                  </PopoverContent>
+                </Popover>
+              </div>
+
+              {/* Status */}
+              <div className="space-y-1.5">
+                <Label className="text-xs">Status</Label>
+                <Select value={filterStatus} onValueChange={setFilterStatus}>
+                  <SelectTrigger className="w-[150px] h-9 text-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="todos">Todos</SelectItem>
+                    <SelectItem value="QUITADO">Quitado</SelectItem>
+                    <SelectItem value="ATRASADO">Atrasado</SelectItem>
+                    <SelectItem value="PENDENTE">Pendente/Aberto</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Clear */}
+              {(filterDateFrom || filterDateTo || filterStatus !== "todos") && (
+                <Button variant="ghost" size="sm" className="text-xs" onClick={() => { setFilterDateFrom(undefined); setFilterDateTo(undefined); setFilterStatus("todos"); }}>
+                  <RotateCcw className="h-3 w-3 mr-1" /> Limpar
+                </Button>
+              )}
+
+              {/* Summary */}
+              <div className="ml-auto text-xs text-muted-foreground">
+                {filteredHonorarios ? `${filteredHonorarios.length} de ${honorariosData.length} parcelas` : ""}
+                {filteredClientes ? ` · ${filteredClientes.length} clientes` : ""}
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Preview */}
       {stats && (
         <Card>
           <CardHeader>
-            <CardTitle>Pré-visualização</CardTitle>
+            <CardTitle>Pré-visualização {filterStatus !== "todos" || filterDateFrom || filterDateTo ? "(filtrado)" : ""}</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
