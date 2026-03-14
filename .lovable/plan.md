@@ -1,87 +1,104 @@
 
 
-## Plano: Corrigir importação usando tabelas originais do Access
+## Revisão Arquitetural — Fase 2 Implementada
 
-### Problemas encontrados
+### Mudanças realizadas (Fase 2)
 
-Comparando as tabelas originais (TBL_CLIENTE.xlsx com 1081 registos, TBL_HONORARIOS.xlsx com 5732 parcelas) com o JSON do Manus, identifiquei:
+#### 1. Código morto eliminado
+- `chatbot-reply/index.ts` — **removido** (100% duplicado com flow-engine → ai-process-message)
+- `ai-triage/index.ts` — **removido** (100% duplicado com ai-automation-agent action classify_lead)
 
-1. **Agrupamento errado**: O código actual agrupa honorários por texto da `DESCRICAO`. As tabelas originais têm `SEPARADORID` que agrupa correctamente as parcelas do mesmo serviço. Um cliente pode ter 2 serviços com a mesma descrição "ESTUDO" mas SEPARADORID diferentes.
+#### 2. Janela de contexto expandida
+- `RECENT_MSG_COUNT`: 5 → **15** mensagens recentes completas
+- `HISTORY_LIMIT`: 15 → **30** mensagens totais
+- TOON comprime as 15 mais antigas, mantém as 15 recentes intactas
 
-2. **Valores incorrectos**: O código usa `VALOR_PARCELA` mas ignora:
-   - `VALOR_PARCELA_CORRIGIDO` — valor ajustado (ex: parcela com encargos de atraso)
-   - `TOTALPAGO` — valor efectivamente pago (pode ser diferente do valor da parcela)
-   - `ENCARGOS_ATRASO`, `JUROS`, `MULTA` — encargos adicionais
+#### 3. RAG semântico real (pgvector)
+- Edge function `generate-embeddings` criada — gera embeddings de 768 dimensões via Lovable AI
+- `parse-document` agora chama `generate-embeddings` automaticamente após chunking
+- `ai-process-message` usa `match_chunks()` RPC para busca semântica (threshold 0.5)
+- Fallback para keyword scoring quando embeddings não existem
 
-3. **Campos de cliente em falta**: As tabelas originais têm `FREGUESIA`, `CONSELHO`, `DISTRITO`, `ESTADOCIVIL`, `NIB` que não estão a ser importados.
+#### 4. Router multi-agente
+- Quando agente tem `sub_agent_ids`, classifica intenção via IA rápida (flash-lite)
+- Delega para sub-agente especialista com seu próprio prompt e KB
+- Mantém agente activo em `bot_state.active_sub_agent_id` para consistência
 
-4. **Status ATRASADO**: O JSON do Manus pode ter convertido `ATRASADO` para `PENDENTE`, perdendo a distinção.
+#### 5. Self-evaluation / Reflexão
+- Após gerar resposta, avalia qualidade via flash-lite (score 1-10)
+- Se score < 7, regenera com instrução de correcção (máximo 1 retry)
+- Respostas < 50 chars ignoram avaliação
 
-### Exemplo concreto do problema de valores
+#### 6. Sentiment analysis + Auto-escalação
+- Análise de sentimento via heurística + IA
+- 2x frustração consecutiva → auto-transfere para humano
+- Guarda sentiment em `bot_state.last_sentiment`
+- Regista escalação em `conversation_feedback`
 
-```text
-Honorário ID 5725 (linha 4725):
-  VALOR_PARCELA = 100.00
-  VALOR_PARCELA_CORRIGIDO = 110.20  ← com encargos
-  TOTALPAGO = 100.00                ← pagou só o original
-  ENCARGOS_ATRASO = 10.20
+#### 7. Tools dinâmicas expandidas
+- Novas tools: `search_knowledge`, `get_case_status`, `send_payment_link`
+- Tools desconhecidas verificam `tool_parameters.webhook_url` para chamada webhook genérica
+- Registry pattern: tools são lidas de `agent_tools` table
 
-Honorário ID 5780 (linha 4722):
-  VALOR_PARCELA = 300.00
-  VALOR_PARCELA_CORRIGIDO = 300.00
-  TOTALPAGO = 150.00                ← pagou metade (PARCIAL)
-```
+#### 8. Queue worker auto-trigger
+- Trigger PostgreSQL `AFTER INSERT ON message_queue` chama `pg_net.http_post()` para queue-worker
+- Cron backup via `pg_cron` a cada minuto
 
-### Solução
+#### 9. Melhorias de robustez no sendReply
+- `Promise.allSettled` para operações paralelas (save message + update conversation)
+- Error logging real em vez de fire-and-forget silencioso para message-send e bitrix24-send
+- Extração de memória com tolerância `count % 10 > 1` (mais robusto que `=== 0`)
 
-Actualizar a Edge Function `import-access-data` para aceitar as tabelas em formato raw (2 arrays: clientes + honorarios) e usar os campos correctos:
+### Mudanças realizadas (Fase 2.1 — Consolidação Completa)
 
-**1. Novo formato de input:**
-```json
-{
-  "clientes": [{ "ID": 4, "NOME": "...", "NIFNIPC": "...", ... }],
-  "honorarios": [{ "ID": 57, "SEPARADORID": 4, "CLIENTE": 4, ... }],
-  "member_id": "...",
-  "sync_bitrix": true
-}
-```
+#### Código morto eliminado
+- `chatbot-reply/index.ts` e `ai-triage/index.ts` — diretórios removidos, referências limpas em `config.toml`, `ApiDocs.tsx` e `bitrix24-worker.ts`
+- ApiDocs actualizado para documentar `ai-process-message` em vez de `chatbot-reply`
 
-**2. Agrupamento por SEPARADORID** (em vez de DESCRICAO):
-- Todas as parcelas com o mesmo SEPARADORID pertencem ao mesmo serviço/contrato
-- O Deal no Bitrix24 usa o SEPARADORID para o campo `UF_CRM_1768312831`
+#### Sintaxe corrigida
+- `parse-document/index.ts` — corrigida função `extractWithAI` que estava erroneamente aninhada dentro de `findFileInZip`
 
-**3. Valores correctos:**
-- `installment_value` ← `VALOR_PARCELA_CORRIGIDO || VALOR_PARCELA`
-- `total_paid` no Deal ← soma de `TOTALPAGO` das parcelas
-- Status: `QUITADO` → pago, `PENDENTE` → pendente, `ATRASADO` → atrasado, `PARCIAL` → parcial
+#### Config.toml actualizado
+- Removidas entradas `ai-triage` e `chatbot-reply`
+- Adicionadas entradas para `generate-embeddings`, `parse-document` e `queue-worker`
 
-**4. Campos de cliente adicionais:**
-- `freguesia`, `concelho`, `distrito` → tabela `clients` (já tem estas colunas)
-- `nib` → `clients.nib`
-- `estado_civil` → `clients.notes` (não existe coluna dedicada)
+#### Triggers PostgreSQL criados
+- `on_message_queue_insert` → auto-invoca `queue-worker` via `pg_net`
+- `on_lead_created` → notifica comerciais e admins
+- `on_message_created` → notifica de novas mensagens inbound
+- `on_payment_status_change` → notifica pagamentos recebidos
+- `on_lead_sla_check` → alerta SLA a expirar
+- `on_lead_set_sla` → define SLA automático na criação
+- `on_profile_created` → atribui admin ao primeiro utilizador
+- Cron job `queue-worker-backup` — invoca queue-worker a cada minuto
 
-**5. Frontend**: Actualizar o componente de importação para aceitar 2 ficheiros Excel (TBL_CLIENTE + TBL_HONORARIOS) e fazer o parse com uma lib XLSX no browser antes de enviar à edge function.
+### Estado actual — 8/8 melhorias implementadas ✅
+1. ✅ Código morto eliminado (chatbot-reply + ai-triage)
+2. ✅ Contexto expandido (30 mensagens: 15 recentes + 15 comprimidas TOON)
+3. ✅ RAG semântico (pgvector + match_chunks + generate-embeddings)
+4. ✅ Router multi-agente (sub_agent_ids + classificação de intenção)
+5. ✅ Tools dinâmicas (registry pattern + webhook fallback)
+6. ✅ Reflexão/Auto-avaliação (score 1-10, retry se < 7)
+7. ✅ Sentiment analysis + auto-escalação (2x frustração → humano)
+8. ✅ Queue worker auto-trigger (pg_trigger + pg_cron backup)
 
-### Ficheiros a modificar
+### Mudanças realizadas (Fase 3 — Auditoria Arquitetural)
 
-| Ficheiro | Acção |
-|----------|-------|
-| `supabase/functions/import-access-data/index.ts` | Reescrever para aceitar formato raw com SEPARADORID + valores corrigidos |
-| `src/pages/Bitrix24App.tsx` | Actualizar upload para 2 ficheiros Excel + parse XLSX |
-| `package.json` | Adicionar dependência `xlsx` para parse no browser |
+#### 1. Dashboard de Observabilidade IA
+- Nova página `/observabilidade-ia` com KPIs: requisições, tokens, custo estimado, latência média, taxa fallback, taxa erro, rating feedback
+- Hook `useAiObservability.ts` com agregação de dados
 
-### Mapeamento corrigido
+#### 2. Thumbs up/down no chat de atendimento
+- Botões de feedback em mensagens outbound (bot) no painel de atendimento
 
-```text
-TBL_HONORARIOS                    →  Emmely                    →  Bitrix24
-──────────────────────────────────────────────────────────────────────────────
-SEPARADORID                       →  (agrupa parcelas)          →  UF_CRM_1768312831
-VALOR                             →  total_value                →  Deal OPPORTUNITY
-VALOR_PARCELA_CORRIGIDO > 0       →  installment_value          →  Invoice opportunity
-  senão VALOR_PARCELA             →                             →
-TOTALPAGO                         →  (validação de pago)        →  Invoice paid amount
-ENCARGOS_ATRASO                   →  notes                      →  (info)
-STATUS = ATRASADO                 →  status = atrasado          →  Invoice stage OVERDUE
-STATUS = PARCIAL                  →  status = parcial           →  Invoice stage PARTIAL
-```
+#### 3. Retry com backoff no AI gateway (429/502/503, 2s delay, 1 retry)
 
+#### 4. Cost estimation real (tabela de preços por modelo, cálculo automático)
+
+#### 5. Memory extraction melhorada (cada 15 msgs + em transferência humana)
+
+#### 6. Reorganização do monólito (constantes extraídas, secções delimitadas)
+
+### Próximos passos
+- Batch job para gerar embeddings dos chunks existentes
+- Streaming no PlaygroundIA

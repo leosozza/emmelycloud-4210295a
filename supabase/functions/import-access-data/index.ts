@@ -6,37 +6,89 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-interface AccessClient {
-  id: string;
-  nome: string;
-  documento: string | null;
-  nif: string | null;
-  nascimento: string | null;
-  nacionalidade: string | null;
-  email: string | null;
-  morada: string | null;
-  codigopostal: string | null;
-  pais: string | null;
-  ativo: string | null;
+// ── Types ──────────────────────────────────────────────────────────────────
+
+interface RawClient {
+  ID: number;
+  NOME: string;
+  TIPODOCUMENTO1?: string;
+  NIFNIPC?: string;
+  TIPODOCUMENTO2?: string;
+  DOCUMENTO?: string;
+  VALIDADE?: string;
+  NASCIMENTO?: string;
+  NACIONALIDADE?: string;
+  ESTADOCIVIL?: string;
+  MORADA?: string;
+  CODIGOPOSTAL?: string;
+  FREGUESIA?: string;
+  CONSELHO?: string;
+  DISTRITO?: string;
+  OBSERVACAO?: string;
+  PAIS?: string;
+  NIB?: string;
+  EMAIL?: string;
+  ATIVO?: string;
 }
 
-interface AccessHonorario {
-  id: string;
-  data: string | null;
-  valor: string;
-  descricao: string;
-  parcela: string;
-  valor_parcela: string;
-  data_vencimento: string | null;
-  data_pagamento: string | null;
-  status: string;
-  total_pago: string | null;
+interface RawHonorario {
+  ID: number;
+  SEPARADORID: number;
+  CLIENTE: number;
+  DATA?: string;
+  VALOR?: string;
+  DESCRICAO?: string;
+  DATA_VENC?: string;
+  PARCELA?: string;
+  VALOR_PARCELA?: string;
+  VALOR_PARCELA_CORRIGIDO?: string;
+  TOTALPAGO?: string;
+  DATAPGTO?: string;
+  STATUS?: string;
+  ENCARGOS_ATRASO?: string;
+  JUROS?: string;
+  MULTA?: string;
 }
 
-interface AccessRecord {
-  cliente: AccessClient;
-  honorarios: AccessHonorario[];
+// ── Helpers ────────────────────────────────────────────────────────────────
+
+function parseNum(v: any): number {
+  if (v == null || v === "") return 0;
+  const s = String(v).replace(/,/g, "");
+  return parseFloat(s) || 0;
 }
+
+function parseDate(v: any): string | null {
+  if (!v || v === "") return null;
+  const s = String(v).trim();
+  // Try MM/DD/YY or MM/DD/YYYY
+  const parts = s.split("/");
+  if (parts.length === 3) {
+    const [m, d, y] = parts;
+    const year = y.length === 2 ? `20${y}` : y;
+    const month = m.padStart(2, "0");
+    const day = d.padStart(2, "0");
+    return `${year}-${month}-${day}`;
+  }
+  // Try ISO
+  if (s.includes("T")) return s.split("T")[0];
+  return s;
+}
+
+function cleanStr(v: any): string | null {
+  if (v == null || String(v).trim() === "") return null;
+  return String(v).trim();
+}
+
+function mapStatus(s: string): string {
+  const upper = (s || "").toUpperCase().trim();
+  if (upper === "QUITADO") return "paga";
+  if (upper === "ATRASADO") return "atrasada";
+  if (upper === "PARCIAL") return "atrasada"; // closest enum
+  return "pendente";
+}
+
+// ── Main Handler ───────────────────────────────────────────────────────────
 
 serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -49,23 +101,39 @@ serve(async (req) => {
     const supabase = createClient(supabaseUrl, supabaseKey);
 
     const body = await req.json();
-    const { records, batch_start = 0, batch_size = 10, member_id, sync_bitrix = false } = body as {
-      records: AccessRecord[];
+    const {
+      clientes,
+      honorarios,
+      batch_start = 0,
+      batch_size = 10,
+      member_id,
+      sync_bitrix = false,
+    } = body as {
+      clientes: RawClient[];
+      honorarios: RawHonorario[];
       batch_start?: number;
       batch_size?: number;
       member_id?: string;
       sync_bitrix?: boolean;
     };
 
-    if (!records || !Array.isArray(records)) {
-      return new Response(JSON.stringify({ error: "records array is required" }), {
+    if (!clientes || !honorarios) {
+      return new Response(JSON.stringify({ error: "clientes and honorarios arrays are required" }), {
         status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    const total = records.length;
-    const batch = records.slice(batch_start, batch_start + batch_size);
-    const results: { client_name: string; status: string; error?: string }[] = [];
+    // Build honorarios lookup: clientId -> honorarios[]
+    const honByClient: Record<number, RawHonorario[]> = {};
+    for (const h of honorarios) {
+      const cid = h.CLIENTE;
+      if (!honByClient[cid]) honByClient[cid] = [];
+      honByClient[cid].push(h);
+    }
+
+    const total = clientes.length;
+    const batch = clientes.slice(batch_start, batch_start + batch_size);
+    const results: { client_name: string; status: string; error?: string; details?: string }[] = [];
 
     // Fetch Bitrix24 integration if syncing
     let integration: any = null;
@@ -78,33 +146,34 @@ serve(async (req) => {
       integration = int;
     }
 
-    for (const record of batch) {
+    for (const client of batch) {
       try {
-        const client = record.cliente;
-        const honorarios = record.honorarios || [];
-
-        // Parse NIF — skip very short ones that are just IDs
-        const nif = client.nif && client.nif.length >= 6 ? client.nif : null;
-        const docNumber = nif || client.documento || `ACCESS_${client.id}`;
-
-        // Parse birth date
-        let birthDate: string | null = null;
-        if (client.nascimento) {
-          try { birthDate = client.nascimento.split("T")[0]; } catch { /* ignore */ }
+        const clientName = cleanStr(client.NOME) || "SEM NOME";
+        // Skip placeholder clients (ID 1-3 are system)
+        if (client.ID <= 3) {
+          results.push({ client_name: clientName, status: "skipped", details: "System record" });
+          continue;
         }
 
-        // 1. Upsert client in Emmely
-        const clientData = {
-          name: client.nome?.trim() || "SEM NOME",
+        const nif = cleanStr(client.NIFNIPC);
+        const docNumber = nif || cleanStr(client.DOCUMENTO) || `ACCESS_${client.ID}`;
+
+        // 1. Upsert client
+        const clientData: Record<string, any> = {
+          name: clientName,
           document_number: docNumber,
-          document_type: client.documento ? "passport" : "nif",
-          nationality: client.nacionalidade || null,
-          address: client.morada || null,
-          postal_code: client.codigopostal || null,
-          country: client.pais || "PORTUGAL",
-          birth_date: birthDate,
-          has_active_contract: client.ativo === "SIM",
-          notes: `Importado do Access (ID: ${client.id})`,
+          document_type: client.TIPODOCUMENTO1 ? client.TIPODOCUMENTO1.replace(/:$/, "").trim().toLowerCase() : (nif ? "nif" : "passport"),
+          nationality: cleanStr(client.NACIONALIDADE),
+          address: cleanStr(client.MORADA),
+          postal_code: cleanStr(client.CODIGOPOSTAL),
+          freguesia: cleanStr(client.FREGUESIA),
+          concelho: cleanStr(client.CONSELHO),
+          distrito: cleanStr(client.DISTRITO),
+          country: cleanStr(client.PAIS) || "PORTUGAL",
+          nib: cleanStr(client.NIB),
+          birth_date: parseDate(client.NASCIMENTO),
+          has_active_contract: (client.ATIVO || "").toUpperCase() === "SIM",
+          notes: cleanStr(client.ESTADOCIVIL) ? `Estado civil: ${client.ESTADOCIVIL}. Importado do Access (ID: ${client.ID})` : `Importado do Access (ID: ${client.ID})`,
         };
 
         const { data: existingClients } = await supabase
@@ -127,144 +196,174 @@ serve(async (req) => {
           clientId = newClient!.id;
         }
 
-        // 2. Group honorarios by descricao
-        const groups: Record<string, AccessHonorario[]> = {};
-        for (const h of honorarios) {
-          const key = (h.descricao || "SEM DESCRIÇÃO").trim().toUpperCase();
-          if (!groups[key]) groups[key] = [];
-          groups[key].push(h);
+        // 2. Get client's honorarios and group by SEPARADORID
+        const clientHons = honByClient[client.ID] || [];
+        if (clientHons.length === 0) {
+          results.push({ client_name: clientName, status: "ok", details: "No honorarios" });
+          continue;
         }
 
-        // 3. Create the full chain per service group
-        for (const [desc, installments] of Object.entries(groups)) {
-          const totalValue = parseFloat(installments[0]?.valor || "0");
-          const totalInstallments = installments.length;
-          const allPaid = installments.every(i => i.status === "QUITADO");
-          const accessId = installments[0]?.id || null;
+        const groups: Record<number, RawHonorario[]> = {};
+        for (const h of clientHons) {
+          const sid = h.SEPARADORID;
+          if (!groups[sid]) groups[sid] = [];
+          groups[sid].push(h);
+        }
 
-          // Create lead
-          const { data: lead, error: leadErr } = await supabase
-            .from("leads")
-            .insert({
-              name: client.nome?.trim() || "SEM NOME",
-              client_id: clientId,
-              origin: "outro" as any,
-              funnel_stage: "fechado" as any,
-              notes: `Importado do Access - ${desc}`,
-              sync_source: "access_import",
-            })
-            .select("id")
-            .single();
+        // 3. Create chain per SEPARADORID group
+        let groupsOk = 0;
+        let groupsErr = 0;
 
-          if (leadErr) {
-            console.error(`[import] Lead insert error for ${client.nome} / ${desc}:`, leadErr.message);
-            continue;
-          }
+        for (const [separadorIdStr, installments] of Object.entries(groups)) {
+          const separadorId = parseInt(separadorIdStr);
+          try {
+            const desc = (installments[0]?.DESCRICAO || "SEM DESCRIÇÃO").trim().toUpperCase();
+            const totalValue = parseNum(installments[0]?.VALOR);
+            const totalInstallments = installments.length;
+            const allPaid = installments.every(i => (i.STATUS || "").toUpperCase() === "QUITADO");
+            const totalPaid = installments.reduce((sum, i) => sum + parseNum(i.TOTALPAGO), 0);
 
-          // Create case
-          const { data: caso, error: casoErr } = await supabase
-            .from("cases")
-            .insert({
-              title: desc,
-              lead_id: lead!.id,
-              description: `Serviço importado do Access: ${desc}`,
-              status: "concluido" as any,
-            })
-            .select("id")
-            .single();
+            // Create lead
+            const { data: lead, error: leadErr } = await supabase
+              .from("leads")
+              .insert({
+                name: clientName,
+                client_id: clientId,
+                origin: "outro",
+                funnel_stage: "fechado",
+                notes: `Importado do Access - ${desc} (SeparadorID: ${separadorId})`,
+                sync_source: "access_import",
+              })
+              .select("id")
+              .single();
 
-          if (casoErr) {
-            console.error(`[import] Case insert error for ${client.nome} / ${desc}:`, casoErr.message);
-            continue;
-          }
-
-          // Create proposal
-          const { data: proposal, error: proposalErr } = await supabase
-            .from("proposals")
-            .insert({
-              title: desc,
-              case_id: caso!.id,
-              value: totalValue,
-              installments: totalInstallments,
-              status: (allPaid ? "aceita" : "enviada") as any,
-              client_name: client.nome?.trim(),
-              client_document: docNumber,
-            })
-            .select("id")
-            .single();
-
-          if (proposalErr) {
-            console.error(`[import] Proposal insert error for ${client.nome} / ${desc}:`, proposalErr.message);
-            continue;
-          }
-
-          // Create contract
-          const { data: contract, error: contractErr } = await supabase
-            .from("contracts")
-            .insert({
-              proposal_id: proposal!.id,
-              case_id: caso!.id,
-              status: (allPaid ? "assinado" : "pendente") as any,
-              signer_name: client.nome?.trim(),
-            })
-            .select("id")
-            .single();
-
-          if (contractErr) {
-            console.error(`[import] Contract insert error for ${client.nome} / ${desc}:`, contractErr.message);
-            continue;
-          }
-
-          // Create financial records for each installment
-          for (const inst of installments) {
-            const parcelaParts = inst.parcela?.split("/") || ["1", "1"];
-            const installmentNumber = parseInt(parcelaParts[0]) || 1;
-            const installmentTotal = parseInt(parcelaParts[1]) || totalInstallments;
-
-            let status: string = "pendente";
-            let paidAt: string | null = null;
-            if (inst.status === "QUITADO") {
-              status = "pago";
-              paidAt = inst.data_pagamento || inst.data_vencimento || new Date().toISOString();
+            if (leadErr) {
+              console.error(`[import] Lead error ${clientName}/${desc}:`, leadErr.message);
+              groupsErr++;
+              continue;
             }
 
-            let dueDate: string | null = null;
-            if (inst.data_vencimento) {
-              try { dueDate = inst.data_vencimento.split("T")[0]; } catch { /* */ }
+            // Create case
+            const { data: caso, error: casoErr } = await supabase
+              .from("cases")
+              .insert({
+                title: desc,
+                lead_id: lead!.id,
+                description: `Serviço importado do Access: ${desc} (SeparadorID: ${separadorId})`,
+                status: "concluido",
+              })
+              .select("id")
+              .single();
+
+            if (casoErr) {
+              console.error(`[import] Case error ${clientName}/${desc}:`, casoErr.message);
+              groupsErr++;
+              continue;
             }
 
-            const { error: frErr } = await supabase.from("financial_records").insert({
-              contract_id: contract!.id,
-              description: desc,
-              total_value: totalValue,
-              installment_number: installmentNumber,
-              total_installments: installmentTotal,
-              installment_value: parseFloat(inst.valor_parcela) || 0,
-              status: status as any,
-              due_date: dueDate,
-              paid_at: paidAt,
-              payment_method: "transferencia" as any,
-            });
+            // Create proposal
+            const { data: proposal, error: proposalErr } = await supabase
+              .from("proposals")
+              .insert({
+                title: desc,
+                case_id: caso!.id,
+                value: totalValue,
+                installments: totalInstallments,
+                status: allPaid ? "aceita" : "enviada",
+                client_name: clientName,
+                client_document: docNumber,
+              })
+              .select("id")
+              .single();
 
-            if (frErr) {
-              console.error(`[import] Financial record error for ${client.nome} / ${desc} parcela ${inst.parcela}:`, frErr.message);
+            if (proposalErr) {
+              console.error(`[import] Proposal error ${clientName}/${desc}:`, proposalErr.message);
+              groupsErr++;
+              continue;
             }
-          }
 
-          // 4. Sync to Bitrix24 if enabled
-          if (sync_bitrix && integration?.client_endpoint && integration?.access_token) {
-            try {
-              await syncClientToBitrix(integration, client, desc, installments, accessId);
-            } catch (e) {
-              console.error(`[import] Bitrix sync error for ${client.nome} / ${desc}:`, e);
+            // Create contract
+            const { data: contract, error: contractErr } = await supabase
+              .from("contracts")
+              .insert({
+                proposal_id: proposal!.id,
+                case_id: caso!.id,
+                status: allPaid ? "assinado" : "pendente",
+                signer_name: clientName,
+              })
+              .select("id")
+              .single();
+
+            if (contractErr) {
+              console.error(`[import] Contract error ${clientName}/${desc}:`, contractErr.message);
+              groupsErr++;
+              continue;
             }
+
+            // Create financial records for each installment
+            for (const inst of installments) {
+              const parcelaParts = (inst.PARCELA || "1/1").split("/");
+              const installmentNumber = parseInt(parcelaParts[0]) || 1;
+              const installmentTotal = parseInt(parcelaParts[1]) || totalInstallments;
+
+              // Use corrected value if available, otherwise original
+              const instValue = parseNum(inst.VALOR_PARCELA_CORRIGIDO) || parseNum(inst.VALOR_PARCELA);
+              const paidAmount = parseNum(inst.TOTALPAGO);
+              const status = mapStatus(inst.STATUS || "PENDENTE");
+              const paidAt = status === "paga" ? (parseDate(inst.DATAPGTO) || parseDate(inst.DATA_VENC) || new Date().toISOString()) : null;
+              const dueDate = parseDate(inst.DATA_VENC);
+
+              // Build notes for extra charges
+              const extras: string[] = [];
+              if (parseNum(inst.ENCARGOS_ATRASO) > 0) extras.push(`Encargos: €${parseNum(inst.ENCARGOS_ATRASO).toFixed(2)}`);
+              if (parseNum(inst.JUROS) > 0) extras.push(`Juros: €${parseNum(inst.JUROS).toFixed(2)}`);
+              if (parseNum(inst.MULTA) > 0) extras.push(`Multa: €${parseNum(inst.MULTA).toFixed(2)}`);
+              if (paidAmount > 0 && paidAmount < instValue) extras.push(`Pago parcial: €${paidAmount.toFixed(2)}`);
+
+              const description = extras.length > 0 ? `${desc} | ${extras.join(", ")}` : desc;
+
+              const { error: frErr } = await supabase.from("financial_records").insert({
+                contract_id: contract!.id,
+                description,
+                total_value: totalValue,
+                installment_number: installmentNumber,
+                total_installments: installmentTotal,
+                installment_value: instValue,
+                status: status as any,
+                due_date: dueDate,
+                paid_at: paidAt,
+                payment_method: "transferencia",
+              });
+
+              if (frErr) {
+                console.error(`[import] Financial record error ${clientName}/${desc} parcela ${inst.PARCELA}:`, frErr.message);
+              }
+            }
+
+            // 4. Sync to Bitrix24 if enabled
+            if (sync_bitrix && integration?.client_endpoint && integration?.access_token) {
+              try {
+                await syncClientToBitrix(integration, client, desc, installments, String(separadorId), totalValue, totalPaid, allPaid);
+              } catch (e) {
+                console.error(`[import] Bitrix sync error ${clientName}/${desc}:`, e);
+              }
+            }
+
+            groupsOk++;
+          } catch (e) {
+            console.error(`[import] Group ${separadorIdStr} error for ${clientName}:`, e);
+            groupsErr++;
           }
         }
 
-        results.push({ client_name: client.nome, status: "ok" });
+        results.push({
+          client_name: clientName,
+          status: groupsErr > 0 ? "partial" : "ok",
+          details: `${groupsOk} serviços OK, ${groupsErr} erros`,
+        });
       } catch (e) {
-        console.error(`[import] Error for ${record.cliente?.nome}:`, e);
-        results.push({ client_name: record.cliente?.nome || "?", status: "error", error: String(e) });
+        console.error(`[import] Error for client ${client.NOME}:`, e);
+        results.push({ client_name: client.NOME || "?", status: "error", error: String(e) });
       }
     }
 
@@ -294,14 +393,17 @@ serve(async (req) => {
 
 async function syncClientToBitrix(
   integration: any,
-  client: AccessClient,
+  client: RawClient,
   desc: string,
-  installments: AccessHonorario[],
-  accessId: string | null
+  installments: RawHonorario[],
+  separadorId: string,
+  totalValue: number,
+  totalPaid: number,
+  allPaid: boolean,
 ) {
   const endpoint = integration.client_endpoint;
   const accessToken = integration.access_token;
-  const nif = client.nif && client.nif.length >= 6 ? client.nif : null;
+  const nif = cleanStr(client.NIFNIPC);
 
   // ── Upsert Contact ──
   let contactId: string | null = null;
@@ -322,7 +424,7 @@ async function syncClientToBitrix(
     }
   }
 
-  const nameParts = (client.nome || "").trim().split(/\s+/);
+  const nameParts = (client.NOME || "").trim().split(/\s+/);
   const firstName = nameParts[0] || "";
   const lastName = nameParts.slice(1).join(" ") || "";
 
@@ -330,14 +432,14 @@ async function syncClientToBitrix(
     NAME: firstName,
     LAST_NAME: lastName,
     UF_CRM_EMMELY_NIF: nif || "",
-    UF_CRM_EMMELY_DOCUMENTO: client.documento || "",
+    UF_CRM_EMMELY_DOCUMENTO: cleanStr(client.DOCUMENTO) || "",
   };
 
-  if (client.nascimento) contactFields.BIRTHDATE = client.nascimento.split("T")[0];
-  if (client.morada) contactFields.ADDRESS = client.morada;
-  if (client.codigopostal) contactFields.ADDRESS_POSTAL_CODE = client.codigopostal;
-  if (client.pais) contactFields.ADDRESS_COUNTRY = client.pais;
-  if (client.email) contactFields.EMAIL = [{ VALUE: client.email, VALUE_TYPE: "WORK" }];
+  if (client.NASCIMENTO) contactFields.BIRTHDATE = parseDate(client.NASCIMENTO);
+  if (client.MORADA) contactFields.ADDRESS = client.MORADA;
+  if (client.CODIGOPOSTAL) contactFields.ADDRESS_POSTAL_CODE = client.CODIGOPOSTAL;
+  if (client.PAIS) contactFields.ADDRESS_COUNTRY = client.PAIS;
+  if (client.EMAIL) contactFields.EMAIL = [{ VALUE: client.EMAIL, VALUE_TYPE: "WORK" }];
 
   if (contactId) {
     await fetch(`${endpoint}crm.contact.update`, {
@@ -357,49 +459,41 @@ async function syncClientToBitrix(
 
   if (!contactId) return;
 
-  // ── Upsert Deal using UF_CRM_1768312831 (Access financial ID) ──
-  const totalValue = parseFloat(installments[0]?.valor || "0");
-  const allPaid = installments.every(i => i.status === "QUITADO");
-
+  // ── Upsert Deal using UF_CRM_1768312831 (SEPARADORID) ──
   let dealId: string | null = null;
 
-  // Search for existing deal by Access ID field
-  if (accessId) {
-    const dealSearchRes = await fetch(`${endpoint}crm.deal.list`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        auth: accessToken,
-        filter: { UF_CRM_1768312831: accessId },
-        select: ["ID"],
-      }),
-    });
-    const dealSearchData = await dealSearchRes.json();
-    if (dealSearchData.result?.length > 0) {
-      dealId = dealSearchData.result[0].ID;
-    }
+  const dealSearchRes = await fetch(`${endpoint}crm.deal.list`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      auth: accessToken,
+      filter: { UF_CRM_1768312831: separadorId },
+      select: ["ID"],
+    }),
+  });
+  const dealSearchData = await dealSearchRes.json();
+  if (dealSearchData.result?.length > 0) {
+    dealId = dealSearchData.result[0].ID;
   }
 
   const dealFields: Record<string, any> = {
-    TITLE: `${desc} - ${client.nome}`,
+    TITLE: `${desc} - ${client.NOME}`,
     CONTACT_ID: contactId,
     OPPORTUNITY: totalValue,
     CURRENCY_ID: "EUR",
     STAGE_ID: allPaid ? "WON" : "NEW",
     UF_CRM_EMMELY_NIF: nif || "",
-    UF_CRM_1768312831: accessId || "",
+    UF_CRM_1768312831: separadorId,
   };
 
   if (dealId) {
-    // Update existing deal
     await fetch(`${endpoint}crm.deal.update`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ auth: accessToken, id: dealId, fields: dealFields }),
     });
-    console.log(`[import] Updated existing Bitrix deal ${dealId} for accessId=${accessId}`);
+    console.log(`[import] Updated Bitrix deal ${dealId} for separadorId=${separadorId}`);
   } else {
-    // Create new deal
     const dealRes = await fetch(`${endpoint}crm.deal.add`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -407,26 +501,28 @@ async function syncClientToBitrix(
     });
     const dealData = await dealRes.json();
     dealId = dealData.result ? String(dealData.result) : null;
-    console.log(`[import] Created new Bitrix deal ${dealId} for accessId=${accessId}`);
+    console.log(`[import] Created Bitrix deal ${dealId} for separadorId=${separadorId}`);
   }
 
   if (!dealId) return;
 
   // ── Create Smart Invoices (Type 31) per installment ──
   for (const inst of installments) {
-    const isPaid = inst.status === "QUITADO";
+    const isPaid = (inst.STATUS || "").toUpperCase() === "QUITADO";
+    const instValue = parseNum(inst.VALOR_PARCELA_CORRIGIDO) || parseNum(inst.VALOR_PARCELA);
 
     const invoiceFields: Record<string, any> = {
-      title: `Parcela ${inst.parcela} - ${desc}`,
+      title: `Parcela ${inst.PARCELA} - ${desc}`,
       parentId2: dealId,
-      opportunity: parseFloat(inst.valor_parcela) || 0,
+      opportunity: instValue,
       currencyId: "EUR",
       stageId: isPaid ? "DT31_6:P" : "DT31_6:NEW",
     };
 
-    if (inst.data_vencimento) {
-      invoiceFields.begindate = inst.data_vencimento.split("T")[0];
-      invoiceFields.closedate = inst.data_vencimento.split("T")[0];
+    const dueDate = parseDate(inst.DATA_VENC);
+    if (dueDate) {
+      invoiceFields.begindate = dueDate;
+      invoiceFields.closedate = dueDate;
     }
 
     await fetch(`${endpoint}crm.item.add`, {
