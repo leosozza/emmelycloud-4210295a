@@ -8,8 +8,7 @@ import {
   LayoutDashboard, Users, Briefcase, FileText, FileSignature,
   DollarSign, Zap, BarChart3, Contact, MessageCircle, Map, Plug, Bot, Workflow,
 } from "lucide-react";
-import { Dock, DockIcon, DockItem, DockLabel } from "@/components/ui/dock";
-import { useIsMobile } from "@/hooks/use-mobile";
+import { Dock, DockCard, DockDivider } from "@/components/ui/dock";
 
 const dockItems = [
   { title: "Dashboard", url: "/", icon: LayoutDashboard },
@@ -18,10 +17,12 @@ const dockItems = [
   { title: "Propostas", url: "/propostas", icon: FileText },
   { title: "Contratos", url: "/contratos", icon: FileSignature },
   { title: "Casos", url: "/casos", icon: Briefcase },
+  null, // divider
   { title: "Carteira", url: "/carteira", icon: Contact },
   { title: "Financeiro", url: "/financeiro", icon: DollarSign },
   { title: "Automações", url: "/automacoes", icon: Zap },
   { title: "Relatórios", url: "/relatorios", icon: BarChart3 },
+  null, // divider
   { title: "Integrações", url: "/integracoes", icon: Plug },
   { title: "Agentes", url: "/agentes", icon: Bot },
   { title: "Fluxos", url: "/flows", icon: Workflow },
@@ -31,38 +32,30 @@ const dockItems = [
 function AppDock() {
   const navigate = useNavigate();
   const location = useLocation();
-  const isMobile = useIsMobile();
 
   return (
-    <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-30">
-      <Dock
-        magnification={isMobile ? 52 : 68}
-        panelHeight={isMobile ? 48 : 56}
-        distance={isMobile ? 100 : 150}
-      >
-        {dockItems.map((item) => {
-          const isActive =
-            item.url === "/"
-              ? location.pathname === "/"
-              : location.pathname.startsWith(item.url);
-          return (
-            <DockItem key={item.url} onClick={() => navigate(item.url)}>
-              <DockLabel>{item.title}</DockLabel>
-              <DockIcon>
-                <div className="relative flex items-center justify-center h-full w-full">
-                  <item.icon
-                    className={`h-full w-full ${isActive ? "text-primary" : "text-muted-foreground"}`}
-                  />
-                  {isActive && (
-                    <div className="absolute -bottom-1.5 h-1 w-1 rounded-full bg-primary" />
-                  )}
-                </div>
-              </DockIcon>
-            </DockItem>
-          );
-        })}
-      </Dock>
-    </div>
+    <Dock>
+      {dockItems.map((item, index) => {
+        if (!item) return <DockDivider key={`div-${index}`} />;
+        const isActive =
+          item.url === "/"
+            ? location.pathname === "/"
+            : location.pathname.startsWith(item.url);
+        return (
+          <DockCard
+            key={item.url}
+            id={String(index)}
+            onClick={() => navigate(item.url)}
+            isActive={isActive}
+            label={item.title}
+          >
+            <item.icon
+              className={`h-full w-full ${isActive ? "text-primary" : "text-muted-foreground"}`}
+            />
+          </DockCard>
+        );
+      })}
+    </Dock>
   );
 }
 
