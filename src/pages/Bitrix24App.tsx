@@ -63,7 +63,7 @@ const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
 
 const customNodeTypes = { custom: CustomFlowNode };
 
-type AppView = "loading" | "dashboard" | "agentes" | "training" | "flows" | "playground" | "chatia" | "pagamentos" | "relatorios" | "mapeamento" | "empresas" | "baixa" | "placement" | "importacao";
+type AppView = "loading" | "dashboard" | "agentes" | "training" | "flows" | "playground" | "chatia" | "pagamentos" | "relatorios" | "mapeamento" | "empresas" | "baixa" | "placement" | "importacao" | "configuracoes";
 
 // ==================== MAIN COMPONENT ====================
 const Bitrix24App = () => {
@@ -196,6 +196,12 @@ const Bitrix24App = () => {
         { id: "relatorios", label: "Relatórios", icon: BarChart3 },
       ],
     },
+    {
+      label: "Sistema",
+      items: [
+        { id: "configuracoes", label: "Configurações", icon: Settings },
+      ],
+    },
   ];
 
   // Build flat tabs array with separators between categories
@@ -309,13 +315,271 @@ const Bitrix24App = () => {
         {view === "empresas" && <EmpresasView />}
         {view === "relatorios" && <RelatoriosView />}
         {view === "importacao" && <ImportacaoAccessView integration={integration} memberId={memberId} />}
+        {view === "configuracoes" && (
+          <ConfigView
+            integration={integration}
+            botId={botId}
+            domain={domain}
+            loading={loadingData}
+            onResync={handleResync}
+            onRefresh={() => memberId && fetchData(memberId)}
+          />
+        )}
       </main>
     </div>
   );
 };
 
-// ==================== DASHBOARD VIEW ====================
-function DashboardView({ integration, botId, domain, loading, onResync, onRefresh }: {
+// ==================== DASHBOARD VIEW (NEW) ====================
+function DashboardView({ integration, botId, domain }: {
+  integration: any;
+  botId: string | null;
+  domain: string | null;
+  loading: boolean;
+  onResync: () => void;
+  onRefresh: () => void;
+}) {
+  const [stats, setStats] = useState({ conversations: 0, messagesToday: 0, revenueMonth: 0, pendingPayments: 0 });
+  const [messagesChart, setMessagesChart] = useState<{ day: string; count: number }[]>([]);
+  const [paymentChart, setPaymentChart] = useState<{ status: string; amount: number }[]>([]);
+  const [recentConversations, setRecentConversations] = useState<any[]>([]);
+  const [recentPayments, setRecentPayments] = useState<any[]>([]);
+  const [loadingStats, setLoadingStats] = useState(true);
+
+  useEffect(() => {
+    const headers = { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` };
+    const today = new Date().toISOString().split("T")[0];
+    const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString();
+
+    const fetchAll = async () => {
+      setLoadingStats(true);
+      try {
+        const [convRes, msgTodayRes, revenueRes, pendingRes, recentConvRes, recentPayRes] = await Promise.all([
+          fetch(`${SUPABASE_URL}/rest/v1/conversations?select=id&status=in.(aberta,em_atendimento)`, { headers }).then(r => r.json()),
+          fetch(`${SUPABASE_URL}/rest/v1/messages?select=id&created_at=gte.${today}T00:00:00`, { headers }).then(r => r.json()),
+          fetch(`${SUPABASE_URL}/rest/v1/payment_transactions?select=amount&status=in.(confirmed,paid)&created_at=gte.${monthStart}`, { headers }).then(r => r.json()),
+          fetch(`${SUPABASE_URL}/rest/v1/payment_transactions?select=amount&status=eq.pending`, { headers }).then(r => r.json()),
+          fetch(`${SUPABASE_URL}/rest/v1/conversations?select=id,contact_name,channel,status,last_message_preview,last_message_at&order=last_message_at.desc&limit=5`, { headers }).then(r => r.json()),
+          fetch(`${SUPABASE_URL}/rest/v1/payment_transactions?select=id,amount,currency,status,gateway,created_at&order=created_at.desc&limit=5`, { headers }).then(r => r.json()),
+        ]);
+
+        setStats({
+          conversations: Array.isArray(convRes) ? convRes.length : 0,
+          messagesToday: Array.isArray(msgTodayRes) ? msgTodayRes.length : 0,
+          revenueMonth: (revenueRes || []).reduce((s: number, t: any) => s + Number(t.amount), 0),
+          pendingPayments: (pendingRes || []).reduce((s: number, t: any) => s + Number(t.amount), 0),
+        });
+        setRecentConversations(Array.isArray(recentConvRes) ? recentConvRes : []);
+        setRecentPayments(Array.isArray(recentPayRes) ? recentPayRes : []);
+
+        // Messages per day (last 7 days)
+        const days: { day: string; count: number }[] = [];
+        for (let i = 6; i >= 0; i--) {
+          const d = new Date();
+          d.setDate(d.getDate() - i);
+          const dayStr = d.toISOString().split("T")[0];
+          const nextD = new Date(d);
+          nextD.setDate(nextD.getDate() + 1);
+          const nextStr = nextD.toISOString().split("T")[0];
+          const res = await fetch(`${SUPABASE_URL}/rest/v1/messages?select=id&created_at=gte.${dayStr}T00:00:00&created_at=lt.${nextStr}T00:00:00`, { headers }).then(r => r.json());
+          days.push({ day: dayStr.slice(5), count: Array.isArray(res) ? res.length : 0 });
+        }
+        setMessagesChart(days);
+
+        // Payment totals by status
+        const [paidAll, pendAll, overdueAll] = await Promise.all([
+          fetch(`${SUPABASE_URL}/rest/v1/payment_transactions?select=amount&status=in.(confirmed,paid)`, { headers }).then(r => r.json()),
+          fetch(`${SUPABASE_URL}/rest/v1/payment_transactions?select=amount&status=eq.pending`, { headers }).then(r => r.json()),
+          fetch(`${SUPABASE_URL}/rest/v1/payment_transactions?select=amount&status=eq.overdue`, { headers }).then(r => r.json()),
+        ]);
+        setPaymentChart([
+          { status: "Pago", amount: (paidAll || []).reduce((s: number, t: any) => s + Number(t.amount), 0) },
+          { status: "Pendente", amount: (pendAll || []).reduce((s: number, t: any) => s + Number(t.amount), 0) },
+          { status: "Atrasado", amount: (overdueAll || []).reduce((s: number, t: any) => s + Number(t.amount), 0) },
+        ]);
+      } catch (e) {
+        console.error("[DASHBOARD] Error:", e);
+      } finally {
+        setLoadingStats(false);
+      }
+    };
+    fetchAll();
+  }, []);
+
+  const fmtCur = (v: number) => new Intl.NumberFormat("pt-PT", { style: "currency", currency: "EUR" }).format(v);
+  const BAR_COLORS = ["#22c55e", "#eab308", "#ef4444"];
+
+  return (
+    <div className="p-6 space-y-6">
+      {/* Header */}
+      <div className="b24-view-header">
+        <div className="flex items-center justify-between w-full">
+          <div>
+            <h1 className="text-xl font-bold text-white">Dashboard</h1>
+            <p className="text-white/60 text-sm mt-0.5">Portal: {domain || integration?.domain || "—"}</p>
+          </div>
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-1.5">
+              <div className={cn("w-2 h-2 rounded-full", integration ? "bg-success" : "bg-destructive")} />
+              <span className="text-white/70 text-xs">{integration ? "Conectado" : "Offline"}</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <div className={cn("w-2 h-2 rounded-full", botId ? "bg-success" : "bg-warning")} />
+              <span className="text-white/70 text-xs">{botId ? "Bot OK" : "Sem Bot"}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* KPI Cards */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        {[
+          { title: "Conversas Activas", value: String(stats.conversations), icon: MessageSquare, accent: "border-l-primary" },
+          { title: "Mensagens Hoje", value: String(stats.messagesToday), icon: Zap, accent: "border-l-warning" },
+          { title: "Receita do Mês", value: fmtCur(stats.revenueMonth), icon: DollarSign, accent: "border-l-success" },
+          { title: "Pendente", value: fmtCur(stats.pendingPayments), icon: Clock, accent: "border-l-destructive" },
+        ].map((kpi) => (
+          <Card key={kpi.title} className={cn("border-l-4 hover:shadow-md transition-shadow", kpi.accent)}>
+            <CardContent className="pt-5">
+              <div className="flex items-start justify-between mb-2">
+                <div className="w-10 h-10 rounded-xl flex items-center justify-center bg-primary/10">
+                  <kpi.icon className="h-5 w-5 text-primary" strokeWidth={1.5} />
+                </div>
+              </div>
+              <div className="text-2xl font-extrabold text-foreground">
+                {loadingStats ? <div className="h-7 w-16 bg-muted animate-pulse rounded" /> : kpi.value}
+              </div>
+              <p className="text-xs font-medium text-muted-foreground mt-1">{kpi.title}</p>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+
+      {/* Charts */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-semibold flex items-center gap-2 text-foreground">
+              <Sparkles className="h-4 w-4 text-primary" /> Emmely AI — Mensagens (7 dias)
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {loadingStats ? (
+              <div className="h-48 flex items-center justify-center"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
+            ) : (
+              <ResponsiveContainer width="100%" height={200}>
+                <BarChart data={messagesChart}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                  <XAxis dataKey="day" tick={{ fontSize: 11 }} stroke="hsl(var(--muted-foreground))" />
+                  <YAxis tick={{ fontSize: 11 }} stroke="hsl(var(--muted-foreground))" />
+                  <RechartsTooltip />
+                  <Bar dataKey="count" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} name="Mensagens" />
+                </BarChart>
+              </ResponsiveContainer>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-semibold flex items-center gap-2 text-foreground">
+              <CreditCard className="h-4 w-4 text-primary" /> EmmelyPay — Receita por Status
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {loadingStats ? (
+              <div className="h-48 flex items-center justify-center"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
+            ) : (
+              <ResponsiveContainer width="100%" height={200}>
+                <BarChart data={paymentChart}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                  <XAxis dataKey="status" tick={{ fontSize: 11 }} stroke="hsl(var(--muted-foreground))" />
+                  <YAxis tick={{ fontSize: 11 }} stroke="hsl(var(--muted-foreground))" tickFormatter={(v) => `€${v}`} />
+                  <RechartsTooltip formatter={(value: number) => fmtCur(value)} />
+                  <Bar dataKey="amount" name="Valor" radius={[4, 4, 0, 0]}>
+                    {paymentChart.map((_, i) => (
+                      <Cell key={i} fill={BAR_COLORS[i]} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Recent lists */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-semibold text-foreground">Últimas Conversas</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {loadingStats ? (
+              <div className="space-y-3">{[1,2,3].map(i => <div key={i} className="h-10 bg-muted animate-pulse rounded" />)}</div>
+            ) : recentConversations.length === 0 ? (
+              <p className="text-xs text-muted-foreground py-4 text-center">Nenhuma conversa encontrada</p>
+            ) : (
+              <div className="space-y-2">
+                {recentConversations.map((conv) => (
+                  <div key={conv.id} className="flex items-center justify-between p-2.5 rounded-lg bg-muted/30">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <MessageSquare className="h-4 w-4 text-primary shrink-0" />
+                      <div className="min-w-0">
+                        <p className="text-xs font-medium truncate text-foreground">{conv.contact_name}</p>
+                        <p className="text-[10px] text-muted-foreground truncate">{conv.last_message_preview || conv.channel}</p>
+                      </div>
+                    </div>
+                    <Badge variant="outline" className="text-[10px] shrink-0">{conv.status}</Badge>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-semibold text-foreground">Últimos Pagamentos</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {loadingStats ? (
+              <div className="space-y-3">{[1,2,3].map(i => <div key={i} className="h-10 bg-muted animate-pulse rounded" />)}</div>
+            ) : recentPayments.length === 0 ? (
+              <p className="text-xs text-muted-foreground py-4 text-center">Nenhum pagamento encontrado</p>
+            ) : (
+              <div className="space-y-2">
+                {recentPayments.map((pay) => (
+                  <div key={pay.id} className="flex items-center justify-between p-2.5 rounded-lg bg-muted/30">
+                    <div className="flex items-center gap-2">
+                      <DollarSign className="h-4 w-4 text-primary shrink-0" />
+                      <div>
+                        <p className="text-xs font-medium text-foreground">{fmtCur(Number(pay.amount))}</p>
+                        <p className="text-[10px] text-muted-foreground">{pay.gateway} • {new Date(pay.created_at).toLocaleDateString("pt-PT")}</p>
+                      </div>
+                    </div>
+                    <Badge
+                      variant="outline"
+                      className={cn("text-[10px]",
+                        pay.status === "confirmed" || pay.status === "paid" ? "text-success border-success/30" :
+                        pay.status === "pending" ? "text-warning border-warning/30" : "text-destructive border-destructive/30"
+                      )}
+                    >
+                      {pay.status === "confirmed" || pay.status === "paid" ? "Pago" : pay.status === "pending" ? "Pendente" : pay.status}
+                    </Badge>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+    </div>
+  );
+}
+
+// ==================== CONFIG VIEW (old dashboard content) ====================
+function ConfigView({ integration, botId, domain, loading, onResync, onRefresh }: {
   integration: any;
   botId: string | null;
   domain: string | null;
@@ -340,11 +604,9 @@ function DashboardView({ integration, botId, domain, loading, onResync, onRefres
     fetch(`${SUPABASE_URL}/rest/v1/ai_agents?select=id,name,is_active,is_default&is_active=eq.true&order=name.asc`, {
       headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` },
     }).then(r => r.json()).then(setAgents).catch(console.error);
-
     fetch(`${SUPABASE_URL}/rest/v1/bitrix24_debug_logs?select=event_type,direction,created_at,error&order=created_at.desc&limit=10`, {
       headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` },
     }).then(r => r.json()).then(setLogs).catch(console.error);
-
     fetch(`${SUPABASE_URL}/rest/v1/conversations?select=id,contact_name,contact_phone,channel,attendance_mode&status=in.(aberta,em_atendimento,aguardando)&order=last_message_at.desc&limit=20`, {
       headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` },
     }).then(r => r.json()).then(setOpenConversations).catch(console.error);
@@ -374,20 +636,16 @@ function DashboardView({ integration, botId, domain, loading, onResync, onRefres
       const url = mid
         ? `${SUPABASE_URL}/functions/v1/bitrix24-rebind-events?member_id=${encodeURIComponent(mid)}`
         : `${SUPABASE_URL}/functions/v1/bitrix24-rebind-events`;
-      const res = await fetch(url, {
-        headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` },
-      });
+      const res = await fetch(url, { headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` } });
       const data = await res.json();
       if (data.success) {
         const ok = Object.values(data.results || {}).filter((v) => v === "OK").length;
         const total = Object.keys(data.results || {}).length;
-        setRebindResult(`✅ ${ok}/${total} eventos re-registados com sucesso!`);
+        setRebindResult(`${ok}/${total} eventos re-registados com sucesso!`);
       } else {
-        setRebindResult(`❌ Erro: ${data.error || "Falha desconhecida"}`);
+        setRebindResult(`Erro: ${data.error || "Falha desconhecida"}`);
       }
-    } catch (e) {
-      setRebindResult(`❌ Erro de rede: ${e}`);
-    }
+    } catch (e) { setRebindResult(`Erro de rede: ${e}`); }
     setRebinding(false);
   };
 
@@ -400,36 +658,29 @@ function DashboardView({ integration, botId, domain, loading, onResync, onRefres
       const res = await fetch(`${SUPABASE_URL}/functions/v1/bitrix24-return-to-bot`, {
         method: "POST",
         headers: { "Content-Type": "application/json", apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` },
-        body: JSON.stringify({
-          conversation_id: targetId,
-          member_id: integration?.member_id,
-        }),
+        body: JSON.stringify({ conversation_id: targetId, member_id: integration?.member_id }),
       });
       const data = await res.json();
       if (data.success || res.ok) {
-        setReturnToBotResult(`✅ Conversa devolvida ao bot com sucesso!`);
+        setReturnToBotResult(`Conversa devolvida ao bot com sucesso!`);
         setReturnToBotDialogId("");
         fetch(`${SUPABASE_URL}/rest/v1/conversations?select=id,contact_name,contact_phone,channel,attendance_mode&status=in.(aberta,em_atendimento,aguardando)&order=last_message_at.desc&limit=20`, {
           headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` },
         }).then(r => r.json()).then(setOpenConversations).catch(console.error);
       } else {
-        setReturnToBotResult(`❌ Erro: ${data.error || JSON.stringify(data)}`);
+        setReturnToBotResult(`Erro: ${data.error || JSON.stringify(data)}`);
       }
-    } catch (e) {
-      setReturnToBotResult(`❌ Erro de rede: ${e}`);
-    }
+    } catch (e) { setReturnToBotResult(`Erro de rede: ${e}`); }
     setReturningToBot(false);
   };
 
   return (
     <div className="p-6 space-y-6">
-      {/* View Header */}
       <div className="b24-view-header">
-        <h1 className="text-xl font-bold text-white">Dashboard</h1>
-        <p className="text-white/60 text-sm mt-0.5">Portal: {domain || integration?.domain || "—"}</p>
+        <h1 className="text-xl font-bold text-white">Configurações</h1>
+        <p className="text-white/60 text-sm mt-0.5">Integração e bot — Portal: {domain || integration?.domain || "—"}</p>
       </div>
 
-      {/* Status Cards */}
       <div className="grid grid-cols-2 gap-4">
         <Card className={cn("b24-card", integration ? "b24-status-success" : "b24-status-danger")}>
           <CardContent className="pt-5">
@@ -444,7 +695,6 @@ function DashboardView({ integration, botId, domain, loading, onResync, onRefres
             </div>
           </CardContent>
         </Card>
-
         <Card className={cn("b24-card", botId ? "b24-status-info" : "b24-status-warning")}>
           <CardContent className="pt-5">
             <div className="flex items-center gap-3">
@@ -458,7 +708,6 @@ function DashboardView({ integration, botId, domain, loading, onResync, onRefres
             </div>
           </CardContent>
         </Card>
-
         <Card className={cn("b24-card", integration?.connector_registered ? "b24-status-success" : "b24-status-warning")}>
           <CardContent className="pt-5">
             <div className="flex items-center gap-3">
@@ -472,7 +721,6 @@ function DashboardView({ integration, botId, domain, loading, onResync, onRefres
             </div>
           </CardContent>
         </Card>
-
         <Card className="b24-card b24-status-info">
           <CardContent className="pt-5">
             <div className="flex items-center gap-3">
@@ -488,7 +736,6 @@ function DashboardView({ integration, botId, domain, loading, onResync, onRefres
         </Card>
       </div>
 
-      {/* Início Rápido - stepper */}
       <Card className="b24-card">
         <CardHeader>
           <CardTitle className="text-sm font-semibold text-foreground">Início Rápido</CardTitle>
@@ -518,7 +765,6 @@ function DashboardView({ integration, botId, domain, loading, onResync, onRefres
         </CardContent>
       </Card>
 
-      {/* Agente do Canal Aberto */}
       <Card className="b24-card">
         <CardHeader>
           <CardTitle className="text-sm font-semibold flex items-center gap-2 text-foreground">
@@ -528,29 +774,19 @@ function DashboardView({ integration, botId, domain, loading, onResync, onRefres
         </CardHeader>
         <CardContent className="space-y-3">
           <Select value={selectedAgent} onValueChange={setSelectedAgent}>
-            <SelectTrigger className="rounded-md">
-              <SelectValue placeholder="Selecionar agente..." />
-            </SelectTrigger>
+            <SelectTrigger className="rounded-md"><SelectValue placeholder="Selecionar agente..." /></SelectTrigger>
             <SelectContent>
               {agents.map((a) => (
-                <SelectItem key={a.id} value={a.id}>
-                  {a.name} {a.is_default ? "(padrão)" : ""}
-                </SelectItem>
+                <SelectItem key={a.id} value={a.id}>{a.name} {a.is_default ? "(padrão)" : ""}</SelectItem>
               ))}
             </SelectContent>
           </Select>
-          <Button
-            onClick={handleSaveAgent}
-            disabled={savingAgent || selectedAgent === (integration?.bitrix_agent_id || "")}
-            className="w-full rounded-md"
-            size="sm"
-          >
+          <Button onClick={handleSaveAgent} disabled={savingAgent || selectedAgent === (integration?.bitrix_agent_id || "")} className="w-full rounded-md" size="sm">
             {savingAgent ? <><Loader2 className="h-3.5 w-3.5 mr-2 animate-spin" />Salvando...</> : <><Save className="h-3.5 w-3.5 mr-2" />Salvar Agente</>}
           </Button>
         </CardContent>
       </Card>
 
-      {/* Bot + Events buttons */}
       <div className="space-y-2">
         <Button
           onClick={async () => {
@@ -558,52 +794,24 @@ function DashboardView({ integration, botId, domain, loading, onResync, onRefres
             setReregisterBotResult(null);
             try {
               const auth = (window as any).BX24?.getAuth?.();
-              if (!auth && !integration?.member_id) {
-                setReregisterBotResult("Sem sessão BX24 disponível. Abra o app dentro do Bitrix24.");
-                return;
-              }
+              if (!auth && !integration?.member_id) { setReregisterBotResult("Sem sessão BX24 disponível."); return; }
               const res = await fetch(`${SUPABASE_URL}/functions/v1/bitrix24-install`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json", apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` },
                 body: JSON.stringify({
-                  auth: auth ? {
-                    access_token: auth.access_token,
-                    refresh_token: auth.refresh_token,
-                    member_id: auth.member_id,
-                    domain: auth.domain,
-                    client_endpoint: auth.client_endpoint,
-                    expires_in: String(auth.expires || 3600),
-                  } : {
-                    member_id: integration?.member_id,
-                    access_token: integration?.access_token,
-                    refresh_token: integration?.refresh_token,
-                    client_endpoint: integration?.client_endpoint,
-                    domain: integration?.domain,
-                    expires_in: "3600",
-                  },
+                  auth: auth ? { access_token: auth.access_token, refresh_token: auth.refresh_token, member_id: auth.member_id, domain: auth.domain, client_endpoint: auth.client_endpoint, expires_in: String(auth.expires || 3600) }
+                    : { member_id: integration?.member_id, access_token: integration?.access_token, refresh_token: integration?.refresh_token, client_endpoint: integration?.client_endpoint, domain: integration?.domain, expires_in: "3600" },
                 }),
               });
               const data = await res.json();
-              if (data.success || res.ok) {
-                setReregisterBotResult("Bot re-registado com EVENT_JOIN_CHAT! Verifique o Contact Center → Chatbot → Emmely AI.");
-                if (integration?.member_id) {
-                  setTimeout(() => onRefresh(), 1500);
-                }
-              } else {
-                setReregisterBotResult(`Erro: ${data.error || res.status}`);
-              }
-            } catch (e) {
-              setReregisterBotResult(`Erro de rede: ${e}`);
-            } finally {
-              setReregisteringBot(false);
-            }
+              if (data.success || res.ok) { setReregisterBotResult("Bot re-registado com sucesso!"); if (integration?.member_id) setTimeout(() => onRefresh(), 1500); }
+              else { setReregisterBotResult(`Erro: ${data.error || res.status}`); }
+            } catch (e) { setReregisterBotResult(`Erro de rede: ${e}`); }
+            finally { setReregisteringBot(false); }
           }}
-          disabled={reregisteringBot}
-          className="w-full rounded-md"
+          disabled={reregisteringBot} className="w-full rounded-md"
         >
-          {reregisteringBot
-            ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Re-registando Bot...</>
-            : <><Bot className="h-4 w-4 mr-2" />Re-registar Bot (EVENT_JOIN_CHAT)</>}
+          {reregisteringBot ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Re-registando Bot...</> : <><Bot className="h-4 w-4 mr-2" />Re-registar Bot</>}
         </Button>
         {reregisterBotResult && (
           <div className={cn("text-xs text-center px-3 py-2 rounded-lg flex items-center justify-center gap-1.5", reregisterBotResult.includes("Erro") ? "bg-destructive/10 text-destructive" : "bg-success/10 text-success")}>
@@ -611,9 +819,8 @@ function DashboardView({ integration, botId, domain, loading, onResync, onRefres
             {reregisterBotResult}
           </div>
         )}
-
         <Button onClick={handleRebindEvents} disabled={rebinding} className="w-full rounded-md" variant="outline">
-          {rebinding ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Registando webhooks...</> : <><Zap className="h-4 w-4 mr-2" />Re-registar Webhooks de Eventos</>}
+          {rebinding ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Registando webhooks...</> : <><Zap className="h-4 w-4 mr-2" />Re-registar Webhooks</>}
         </Button>
         {rebindResult && (
           <div className={cn("text-xs text-center px-3 py-2 rounded-lg flex items-center justify-center gap-1.5", rebindResult.includes("Erro") ? "bg-destructive/10 text-destructive" : "bg-success/10 text-success")}>
@@ -626,23 +833,16 @@ function DashboardView({ integration, botId, domain, loading, onResync, onRefres
         </Button>
       </div>
 
-      {/* Logs */}
       {logs.length > 0 && (
         <Card className="b24-card">
-          <CardHeader>
-            <CardTitle className="text-sm font-semibold text-foreground">Últimos Eventos</CardTitle>
-          </CardHeader>
+          <CardHeader><CardTitle className="text-sm font-semibold text-foreground">Últimos Eventos</CardTitle></CardHeader>
           <CardContent>
             <ScrollArea className="h-48">
               <div className="space-y-1">
                 {logs.map((log, i) => (
                   <div key={i} className="flex items-center justify-between py-2 last:border-0 text-xs border-b border-border">
                     <div className="flex items-center gap-2">
-                      {log.direction === "inbound" ? (
-                        <ArrowDownLeft className="h-3.5 w-3.5 text-primary" />
-                      ) : (
-                        <ArrowUpRight className="h-3.5 w-3.5 text-accent" />
-                      )}
+                      {log.direction === "inbound" ? <ArrowDownLeft className="h-3.5 w-3.5 text-primary" /> : <ArrowUpRight className="h-3.5 w-3.5 text-accent" />}
                       <span className="font-medium text-foreground">{log.event_type}</span>
                       {log.error && <AlertCircle className="h-3 w-3 text-destructive" />}
                     </div>
@@ -655,7 +855,6 @@ function DashboardView({ integration, botId, domain, loading, onResync, onRefres
         </Card>
       )}
 
-      {/* Devolver ao Bot */}
       <Card className="b24-card border-l-4 border-l-accent">
         <CardHeader>
           <CardTitle className="text-sm font-semibold flex items-center gap-2 text-foreground">
@@ -671,24 +870,13 @@ function DashboardView({ integration, botId, domain, loading, onResync, onRefres
                 {openConversations.map((conv) => (
                   <div key={conv.id} className="flex items-center justify-between gap-2 p-2.5 rounded-lg transition-colors bg-muted/30">
                     <div className="flex items-center gap-2 flex-1 min-w-0">
-                      <div className={cn(
-                        "w-2.5 h-2.5 rounded-full shrink-0",
-                        conv.attendance_mode === "bot" ? "bg-success b24-pulse" : "bg-warning"
-                      )} />
+                      <div className={cn("w-2.5 h-2.5 rounded-full shrink-0", conv.attendance_mode === "bot" ? "bg-success b24-pulse" : "bg-warning")} />
                       <div className="flex-1 min-w-0">
                         <p className="text-xs font-medium truncate text-foreground">{conv.contact_name}</p>
-                        <p className="text-[10px] text-muted-foreground">
-                          {conv.channel} • {conv.attendance_mode === "bot" ? "Bot ativo" : "Humano/Aguardando"}
-                        </p>
+                        <p className="text-[10px] text-muted-foreground">{conv.channel} • {conv.attendance_mode === "bot" ? "Bot ativo" : "Humano/Aguardando"}</p>
                       </div>
                     </div>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="h-7 text-xs shrink-0 rounded-md"
-                      disabled={returningToBot || conv.attendance_mode === "bot"}
-                      onClick={() => handleReturnToBot(conv.id)}
-                    >
+                    <Button size="sm" variant="outline" className="h-7 text-xs shrink-0 rounded-md" disabled={returningToBot || conv.attendance_mode === "bot"} onClick={() => handleReturnToBot(conv.id)}>
                       {conv.attendance_mode === "bot" ? <><CheckCircle className="h-3 w-3 mr-1 text-success" />Bot</> : <><Bot className="h-3 w-3 mr-1" />Devolver</>}
                     </Button>
                   </div>
@@ -696,22 +884,11 @@ function DashboardView({ integration, botId, domain, loading, onResync, onRefres
               </div>
             </div>
           )}
-
           <div className="space-y-2">
             <p className="text-xs font-medium text-muted-foreground">Ou inserir ID manualmente</p>
             <div className="flex gap-2">
-              <Input
-                value={returnToBotDialogId}
-                onChange={(e) => setReturnToBotDialogId(e.target.value)}
-                placeholder="ID da conversa..."
-                className="text-xs h-9 flex-1 rounded-md"
-              />
-              <Button
-                size="sm"
-                className="h-9 shrink-0 rounded-md"
-                onClick={() => handleReturnToBot()}
-                disabled={returningToBot || !returnToBotDialogId.trim()}
-              >
+              <Input value={returnToBotDialogId} onChange={(e) => setReturnToBotDialogId(e.target.value)} placeholder="ID da conversa..." className="text-xs h-9 flex-1 rounded-md" />
+              <Button size="sm" className="h-9 shrink-0 rounded-md" onClick={() => handleReturnToBot()} disabled={returningToBot || !returnToBotDialogId.trim()}>
                 {returningToBot ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <><Bot className="h-3.5 w-3.5 mr-1.5" />Devolver</>}
               </Button>
             </div>
@@ -728,7 +905,6 @@ function DashboardView({ integration, botId, domain, loading, onResync, onRefres
   );
 }
 
-// ==================== AGENTES / PERSONAS VIEW ====================
 function AgentesView({ botId, integrationId }: { botId: string | null; integrationId?: string }) {
   const [agents, setAgents] = useState<AIAgent[]>([]);
   const [providers, setProviders] = useState<AIProvider[]>([]);
