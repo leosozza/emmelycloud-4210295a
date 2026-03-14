@@ -547,15 +547,21 @@ async function syncClientToBitrix(
 
   // ── Create Smart Invoices (Type 31) per installment ──
   for (const inst of installments) {
-    const isPaid = (inst.STATUS || "").toUpperCase() === "QUITADO";
+    const upperStatus = (inst.STATUS || "").toUpperCase();
+    const isPaid = upperStatus === "QUITADO";
+    const isOverdue = upperStatus === "ATRASADO";
     const instValue = parseNum(inst.VALOR_PARCELA_CORRIGIDO) || parseNum(inst.VALOR_PARCELA);
+
+    let invoiceStage = "DT31_6:NEW";
+    if (isPaid) invoiceStage = "DT31_6:P";
+    else if (isOverdue) invoiceStage = "DT31_6:UC";
 
     const invoiceFields: Record<string, any> = {
       title: `Parcela ${inst.PARCELA} - ${desc}`,
       parentId2: dealId,
       opportunity: instValue,
       currencyId: "EUR",
-      stageId: isPaid ? "DT31_6:P" : "DT31_6:NEW",
+      stageId: invoiceStage,
     };
 
     const dueDate = parseDate(inst.DATA_VENC);
@@ -573,5 +579,23 @@ async function syncClientToBitrix(
         fields: invoiceFields,
       }),
     });
+  }
+
+  // ── Add timeline badge for overdue deals ──
+  if (hasOverdue && dealId) {
+    const badgeText = `⚠️ IMPORTAÇÃO: ${overdueCount} parcela(s) em atraso — Valor em dívida: €${overdueValue.toFixed(2)}`;
+    await fetch(`${endpoint}crm.timeline.comment.add`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        auth: accessToken,
+        fields: {
+          ENTITY_ID: dealId,
+          ENTITY_TYPE: "deal",
+          COMMENT: badgeText,
+        },
+      }),
+    });
+    console.log(`[import] Added overdue badge to deal ${dealId}: ${overdueCount} parcelas, €${overdueValue.toFixed(2)}`);
   }
 }
