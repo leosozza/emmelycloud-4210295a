@@ -1,104 +1,62 @@
 
 
-## Revisão Arquitetural — Fase 2 Implementada
+## Análise Comparativa: Arquitectura ChatGPT vs. Emmely Cloud — Estado Actual
 
-### Mudanças realizadas (Fase 2)
+A arquitectura que o ChatGPT descreveu é exactamente o padrão "estado da arte" para agentes de IA. A boa notícia é que o Emmely Cloud **já implementa ~90% dessa arquitectura**. Abaixo está o mapeamento exacto.
 
-#### 1. Código morto eliminado
-- `chatbot-reply/index.ts` — **removido** (100% duplicado com flow-engine → ai-process-message)
-- `ai-triage/index.ts` — **removido** (100% duplicado com ai-automation-agent action classify_lead)
+---
 
-#### 2. Janela de contexto expandida
-- `RECENT_MSG_COUNT`: 5 → **15** mensagens recentes completas
-- `HISTORY_LIMIT`: 15 → **30** mensagens totais
-- TOON comprime as 15 mais antigas, mantém as 15 recentes intactas
+### O que JÁ ESTÁ implementado (✅)
 
-#### 3. RAG semântico real (pgvector)
-- Edge function `generate-embeddings` criada — gera embeddings de 768 dimensões via Lovable AI
-- `parse-document` agora chama `generate-embeddings` automaticamente após chunking
-- `ai-process-message` usa `match_chunks()` RPC para busca semântica (threshold 0.5)
-- Fallback para keyword scoring quando embeddings não existem
+| Camada ChatGPT | Implementação Emmely | Ficheiro |
+|---|---|---|
+| **1. Interface Omnichannel** | WhatsApp API, Instagram, Webchat, Bitrix24, Email | `whatsapp-webhook`, `instagram-webhook`, `wuzapi-webhook` |
+| **2. Gateway de Mensagens** | Payload padronizado (conversation_id, message_text, channel) | `flow-engine/index.ts` |
+| **3. Classificador de Intenção** | Tool calling com `route_to_agent` + keywords | `ai-process-message` L539-692 |
+| **4. Router de Agentes** | Multi-agente com `sub_agent_ids`, detecção de mudança de tópico | `ai-process-message` L136-692 |
+| **5. Agentes Especializados** | Tabela `ai_agents` com prompt, modelo, temperatura, tools por agente | DB + `ai-process-message` |
+| **6. Memória Curta** | 30 msgs (15 recentes + 15 comprimidas TOON) | `ai-process-message` L39-40, L145-163 |
+| **7. Memória Longa** | `user_memory` com extração automática por IA | `ai-process-message` L1048-1118 |
+| **8. RAG / Memória Semântica** | pgvector 768dim, `match_chunks` RPC, fallback keyword | `ai-process-message` L434-537 |
+| **9. Tools / APIs** | Registry dinâmico (`agent_tools`), webhook fallback, 7 tools built-in | `ai-process-message` L843-958 |
+| **10. Prompt Engine** | System prompt + KB + memória + contexto + sentiment + anti-repetição + auto-lang | `ai-process-message` L269-276 |
+| **11. Sentiment Analysis** | Heurística + IA, 2x frustração → transfere humano | `ai-process-message` L694-727 |
+| **12. Observabilidade** | `ai_usage_logs` (tokens, latência, custo real), dashboard `/observabilidade-ia` | `ObservabilidadeIA.tsx` |
+| **13. Feedback** | `conversation_feedback`, thumbs up/down no chat | `MessageBubble.tsx` |
+| **14. Self-evaluation** | Score 1-10, retry se < 7 | `ai-process-message` L403-404 |
+| **15. Fila Assíncrona** | `message_queue` com debounce, retry, prioridade, pg_trigger + pg_cron | `queue-worker/index.ts` |
+| **16. Segurança** | RLS, roles, auth, service_role para backend | Migrations + políticas |
+| **17. Multi-provider** | Lovable AI, Ollama/Qwen, providers custom | `ai_providers` + `resolveProvider` |
 
-#### 4. Router multi-agente
-- Quando agente tem `sub_agent_ids`, classifica intenção via IA rápida (flash-lite)
-- Delega para sub-agente especialista com seu próprio prompt e KB
-- Mantém agente activo em `bot_state.active_sub_agent_id` para consistência
+---
 
-#### 5. Self-evaluation / Reflexão
-- Após gerar resposta, avalia qualidade via flash-lite (score 1-10)
-- Se score < 7, regenera com instrução de correcção (máximo 1 retry)
-- Respostas < 50 chars ignoram avaliação
+### O que FALTA — Gaps reais (3 itens)
 
-#### 6. Sentiment analysis + Auto-escalação
-- Análise de sentimento via heurística + IA
-- 2x frustração consecutiva → auto-transfere para humano
-- Guarda sentiment em `bot_state.last_sentiment`
-- Regista escalação em `conversation_feedback`
+#### 1. Motor de Personalidade separado (Personality Engine)
+O ChatGPT descreve um motor de personalidade com **estilo, tom, objectivo, estratégia psicológica** por agente. Actualmente, tudo está dentro do `system_prompt` de cada agente — funciona, mas não é configurável via UI de forma granular.
 
-#### 7. Tools dinâmicas expandidas
-- Novas tools: `search_knowledge`, `get_case_status`, `send_payment_link`
-- Tools desconhecidas verificam `tool_parameters.webhook_url` para chamada webhook genérica
-- Registry pattern: tools são lidas de `agent_tools` table
+**Melhoria proposta:** Adicionar campos `personality_style`, `communication_tone`, `strategic_objective` à tabela `ai_agents` e injectá-los automaticamente no prompt engine. Na UI de Agentes, expor estes campos como selectors (ex: tom → "Empático", "Profissional", "Directo").
 
-#### 8. Queue worker auto-trigger
-- Trigger PostgreSQL `AFTER INSERT ON message_queue` chama `pg_net.http_post()` para queue-worker
-- Cron backup via `pg_cron` a cada minuto
+#### 2. Regras de negócio independentes da IA (Rule Engine)
+O ChatGPT menciona um "Sistema de Regras" para decisões que **não devem depender da IA** (ex: "se cliente deve > 30 dias → cobrança forte"). Actualmente, a lógica de regras está distribuída entre flows e o próprio prompt. Não há um engine de regras determinístico separado.
 
-#### 9. Melhorias de robustez no sendReply
-- `Promise.allSettled` para operações paralelas (save message + update conversation)
-- Error logging real em vez de fire-and-forget silencioso para message-send e bitrix24-send
-- Extração de memória com tolerância `count % 10 > 1` (mais robusto que `=== 0`)
+**Melhoria proposta:** Criar uma tabela `business_rules` com condições (field, operator, value) e acções (change_agent, set_priority, auto_reply). O `flow-engine` avalia estas regras **antes** de chamar a IA, garantindo decisões determinísticas.
 
-### Mudanças realizadas (Fase 2.1 — Consolidação Completa)
+#### 3. A/B Testing de Agentes e Auto-aprendizado
+A camada mais avançada descrita — A/B test de agentes, ajuste automático de prompts com base em feedback, e treinamento contínuo — não existe. O sistema recolhe feedback mas não o usa para optimização automática.
 
-#### Código morto eliminado
-- `chatbot-reply/index.ts` e `ai-triage/index.ts` — diretórios removidos, referências limpas em `config.toml`, `ApiDocs.tsx` e `bitrix24-worker.ts`
-- ApiDocs actualizado para documentar `ai-process-message` em vez de `chatbot-reply`
+**Melhoria proposta (futuro):** Criar um job periódico que analisa feedback por agente e sugere ajustes de prompt. Implementar rotação A/B onde 2 variantes do mesmo agente são testadas com distribuição 50/50.
 
-#### Sintaxe corrigida
-- `parse-document/index.ts` — corrigida função `extractWithAI` que estava erroneamente aninhada dentro de `findFileInZip`
+---
 
-#### Config.toml actualizado
-- Removidas entradas `ai-triage` e `chatbot-reply`
-- Adicionadas entradas para `generate-embeddings`, `parse-document` e `queue-worker`
+### Plano de Implementação (2 melhorias práticas)
 
-#### Triggers PostgreSQL criados
-- `on_message_queue_insert` → auto-invoca `queue-worker` via `pg_net`
-- `on_lead_created` → notifica comerciais e admins
-- `on_message_created` → notifica de novas mensagens inbound
-- `on_payment_status_change` → notifica pagamentos recebidos
-- `on_lead_sla_check` → alerta SLA a expirar
-- `on_lead_set_sla` → define SLA automático na criação
-- `on_profile_created` → atribui admin ao primeiro utilizador
-- Cron job `queue-worker-backup` — invoca queue-worker a cada minuto
+| # | Melhoria | Ficheiros | Esforço |
+|---|----------|-----------|---------|
+| 1 | **Personality Engine** — campos `personality_style`, `communication_tone`, `strategic_objective` na tabela `ai_agents` + UI de configuração + injecção automática no prompt | Migration SQL + `AgentFormDialog.tsx` + `ai-process-message` | Médio |
+| 2 | **Business Rules Engine** — tabela `business_rules` com avaliação determinística pré-IA no flow-engine | Migration SQL + `flow-engine/index.ts` + UI básica em Automações | Alto |
 
-### Estado actual — 8/8 melhorias implementadas ✅
-1. ✅ Código morto eliminado (chatbot-reply + ai-triage)
-2. ✅ Contexto expandido (30 mensagens: 15 recentes + 15 comprimidas TOON)
-3. ✅ RAG semântico (pgvector + match_chunks + generate-embeddings)
-4. ✅ Router multi-agente (sub_agent_ids + classificação de intenção)
-5. ✅ Tools dinâmicas (registry pattern + webhook fallback)
-6. ✅ Reflexão/Auto-avaliação (score 1-10, retry se < 7)
-7. ✅ Sentiment analysis + auto-escalação (2x frustração → humano)
-8. ✅ Queue worker auto-trigger (pg_trigger + pg_cron backup)
+### Resumo
 
-### Mudanças realizadas (Fase 3 — Auditoria Arquitetural)
+O Emmely Cloud **já implementa as 12 camadas da arquitectura "estado da arte"** descrita pelo ChatGPT. Os 3 gaps identificados são refinamentos avançados (personalidade granular, regras determinísticas, A/B testing) que elevariam o sistema de "plataforma funcional" para "AgentOS enterprise". A arquitectura core — orquestração, RAG, multi-agente, memória, fila, tools, observabilidade — está sólida e production-ready.
 
-#### 1. Dashboard de Observabilidade IA
-- Nova página `/observabilidade-ia` com KPIs: requisições, tokens, custo estimado, latência média, taxa fallback, taxa erro, rating feedback
-- Hook `useAiObservability.ts` com agregação de dados
-
-#### 2. Thumbs up/down no chat de atendimento
-- Botões de feedback em mensagens outbound (bot) no painel de atendimento
-
-#### 3. Retry com backoff no AI gateway (429/502/503, 2s delay, 1 retry)
-
-#### 4. Cost estimation real (tabela de preços por modelo, cálculo automático)
-
-#### 5. Memory extraction melhorada (cada 15 msgs + em transferência humana)
-
-#### 6. Reorganização do monólito (constantes extraídas, secções delimitadas)
-
-### Próximos passos
-- Batch job para gerar embeddings dos chunks existentes
-- Streaming no PlaygroundIA
