@@ -494,7 +494,7 @@ async function syncClientToBitrix(
     CURRENCY_ID: "EUR",
     STAGE_ID: allPaid ? "WON" : "NEW",
     UF_CRM_EMMELY_NIF: nif || "",
-    UF_CRM_1768312831: separadorId,
+    UF_CRM_1768312831: clientAccessId,
   };
 
   if (dealId) {
