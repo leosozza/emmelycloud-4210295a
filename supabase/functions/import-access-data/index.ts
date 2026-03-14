@@ -433,6 +433,9 @@ async function syncClientToBitrix(
   totalPaid: number,
   allPaid: boolean,
   categoryId: string = "0",
+  hasOverdue: boolean = false,
+  overdueCount: number = 0,
+  overdueValue: number = 0,
 ) {
   const endpoint = integration.client_endpoint;
   const accessToken = integration.access_token;
