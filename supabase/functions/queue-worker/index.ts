@@ -19,7 +19,6 @@ Deno.serve(async (req) => {
     // 1. Group pending messages by conversation (debounce)
     const cutoff = new Date(Date.now() - DEBOUNCE_MS).toISOString();
 
-    // Get distinct conversations with pending messages older than debounce window
     const { data: pendingJobs } = await supabase
       .from("message_queue")
       .select("*")
@@ -79,15 +78,15 @@ Deno.serve(async (req) => {
         interactiveResponse = jobs[0].interactive_response;
         instanceId = jobs[0].instance_id;
       } else {
-        // Group rapid messages: mark extras as "grouped", process combined
+        // Fix #7: Group rapid messages and mark extras as "completed" (not "grouped")
         mergedText = jobs.map(j => j.message_text).join(" ");
         instanceId = jobs[jobs.length - 1].instance_id;
 
-        // Mark grouped messages
+        // Mark grouped messages as completed (they've been merged into the last job)
         const groupedIds = jobIds.slice(0, -1);
         if (groupedIds.length > 0) {
           await supabase.from("message_queue")
-            .update({ status: "grouped" })
+            .update({ status: "completed", completed_at: new Date().toISOString() })
             .in("id", groupedIds);
         }
 

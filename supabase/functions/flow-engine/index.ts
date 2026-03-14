@@ -12,6 +12,26 @@ interface FlowMatch {
   matchType: "keyword" | "button_response" | "input_response" | "all_messages" | "default_flow";
 }
 
+// Fix #6: Business rules cache with 60s TTL (persists across requests in Edge Function workers)
+let cachedRules: any[] | null = null;
+let cacheTimestamp = 0;
+const CACHE_TTL_MS = 60_000;
+
+async function getCachedBusinessRules(supabase: any): Promise<any[]> {
+  const now = Date.now();
+  if (cachedRules && (now - cacheTimestamp) < CACHE_TTL_MS) {
+    return cachedRules;
+  }
+  const { data: rules } = await supabase
+    .from("business_rules")
+    .select("*")
+    .eq("is_active", true)
+    .order("priority", { ascending: false });
+  cachedRules = rules || [];
+  cacheTimestamp = now;
+  return cachedRules;
+}
+
 // ─── MAIN HANDLER ───
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
@@ -43,24 +63,22 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ skipped: "human_mode" }), { headers: jsonHeaders });
     }
 
-    // 3. Anti-loop: Check processing lock (5 second window)
-    const lockWindow = 5000; // 5s
-    if (conversation.processing_lock_at) {
-      const lockAge = Date.now() - new Date(conversation.processing_lock_at).getTime();
-      if (lockAge < lockWindow) {
-        console.log("[FLOW-ENGINE] Processing lock active, skipping");
-        return new Response(JSON.stringify({ skipped: "processing_locked" }), { headers: jsonHeaders });
-      }
-    }
-
-    // 4. Acquire processing lock
-    await supabase
+    // Fix #4: Atomic lock acquisition (prevents race condition)
+    const lockWindow = 5; // 5 seconds
+    const { data: lockResult } = await supabase
       .from("conversations")
-      .update({ 
+      .update({
         processing_lock_at: new Date().toISOString(),
         last_customer_message_at: new Date().toISOString(),
       })
-      .eq("id", conversation_id);
+      .eq("id", conversation_id)
+      .or(`processing_lock_at.is.null,processing_lock_at.lt.${new Date(Date.now() - lockWindow * 1000).toISOString()}`)
+      .select("id");
+
+    if (!lockResult || lockResult.length === 0) {
+      console.log("[FLOW-ENGINE] Could not acquire lock (already processing)");
+      return new Response(JSON.stringify({ skipped: "processing_locked" }), { headers: jsonHeaders });
+    }
 
     const botState = (conversation.bot_state || {}) as Record<string, any>;
     let result: any;
@@ -72,7 +90,6 @@ Deno.serve(async (req) => {
       } else if (botState.waiting_for_input) {
         result = await handleInputResponse(supabase, supabaseUrl, serviceKey, conversation, botState, message_text, instance_id);
       } else if (botState.force_flow_id) {
-        // Resume a specific flow
         const { data: flow } = await supabase.from("flows").select("*").eq("id", botState.force_flow_id).eq("is_active", true).single();
         if (flow) {
           result = await executeFlow(supabase, supabaseUrl, serviceKey, conversation, flow, botState, message_text, instance_id);
@@ -80,7 +97,7 @@ Deno.serve(async (req) => {
           result = await fallbackToAI(supabaseUrl, serviceKey, conversation, message_text, instance_id);
         }
       } else {
-        // 5.5. Evaluate business rules BEFORE flow/AI matching
+        // 5.5. Evaluate business rules BEFORE flow/AI matching (Fix #6: uses cache)
         const ruleResult = await evaluateBusinessRules(supabase, supabaseUrl, serviceKey, conversation, message_text, instance_id);
         if (ruleResult) {
           console.log("[FLOW-ENGINE] Business rule matched:", ruleResult.rule_name);
@@ -112,20 +129,14 @@ Deno.serve(async (req) => {
   }
 });
 
-// ─── BUSINESS RULES ENGINE ───
+// ─── BUSINESS RULES ENGINE (Fix #6: uses cached rules) ───
 async function evaluateBusinessRules(
   supabase: any, supabaseUrl: string, serviceKey: string,
   conversation: any, messageText: string, instanceId: string | null
 ): Promise<any | null> {
-  const { data: rules } = await supabase
-    .from("business_rules")
-    .select("*")
-    .eq("is_active", true)
-    .order("priority", { ascending: false });
+  const rules = await getCachedBusinessRules(supabase);
+  if (rules.length === 0) return null;
 
-  if (!rules || rules.length === 0) return null;
-
-  // Get conversation context for rule evaluation
   const text = (messageText || "").toLowerCase().trim();
   const channel = conversation.channel;
   const contactName = conversation.contact_name || "";
@@ -162,7 +173,6 @@ async function evaluateBusinessRules(
     switch (rule.action_type) {
       case "auto_reply": {
         const reply = config.reply_text || "Mensagem automática.";
-        // Send reply via message-send
         await fetch(`${supabaseUrl}/functions/v1/message-send`, {
           method: "POST",
           headers: { "Content-Type": "application/json", "Authorization": `Bearer ${serviceKey}` },
@@ -177,7 +187,6 @@ async function evaluateBusinessRules(
             bot_state: { ...botState, active_sub_agent_id: config.agent_id },
           }).eq("id", conversation.id);
         }
-        // Continue to AI with the new agent
         return null;
       }
       case "set_priority": {
