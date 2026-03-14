@@ -1454,6 +1454,48 @@ export type Database = {
         }
         Relationships: []
       }
+      import_sessions: {
+        Row: {
+          created_at: string | null
+          file_path: string | null
+          filter_config: Json | null
+          id: string
+          logs: Json | null
+          phase: string
+          processed_items: number | null
+          status: string
+          total_items: number | null
+          updated_at: string | null
+          user_id: string
+        }
+        Insert: {
+          created_at?: string | null
+          file_path?: string | null
+          filter_config?: Json | null
+          id?: string
+          logs?: Json | null
+          phase: string
+          processed_items?: number | null
+          status?: string
+          total_items?: number | null
+          updated_at?: string | null
+          user_id: string
+        }
+        Update: {
+          created_at?: string | null
+          file_path?: string | null
+          filter_config?: Json | null
+          id?: string
+          logs?: Json | null
+          phase?: string
+          processed_items?: number | null
+          status?: string
+          total_items?: number | null
+          updated_at?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
       integration_credentials: {
         Row: {
           created_at: string
