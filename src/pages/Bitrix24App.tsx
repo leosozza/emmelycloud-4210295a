@@ -3873,18 +3873,27 @@ function BaixaCarteiraView({ integration }: { integration: any }) {
 
 // ==================== IMPORTAÇÃO ACCESS VIEW ====================
 function ImportacaoAccessView({ integration, memberId }: { integration: any; memberId: string | null }) {
+  // Phase 1: Clients
   const [clientesData, setClientesData] = useState<any[] | null>(null);
+  const [importingClients, setImportingClients] = useState(false);
+  const [clientsProgress, setClientsProgress] = useState({ processed: 0, total: 0 });
+  const [clientsLogs, setClientsLogs] = useState<{ client_name: string; status: string; error?: string; details?: string }[]>([]);
+  const [clientsDone, setClientsDone] = useState(false);
+
+  // Phase 2: Honorarios
   const [honorariosData, setHonorariosData] = useState<any[] | null>(null);
-  const [importing, setImporting] = useState(false);
-  const [progress, setProgress] = useState({ processed: 0, total: 0 });
-  const [logs, setLogs] = useState<{ client_name: string; status: string; error?: string; details?: string }[]>([]);
+  const [importingHonorarios, setImportingHonorarios] = useState(false);
+  const [honorariosProgress, setHonorariosProgress] = useState({ processed: 0, total: 0 });
+  const [honorariosLogs, setHonorariosLogs] = useState<{ client_name: string; status: string; error?: string; details?: string }[]>([]);
+  const [honorariosDone, setHonorariosDone] = useState(false);
+
+  // Shared
   const [syncBitrix, setSyncBitrix] = useState(!!integration);
-  const [done, setDone] = useState(false);
   const [pipelines, setPipelines] = useState<{ id: string; name: string }[]>([]);
   const [selectedCategoryId, setSelectedCategoryId] = useState("0");
   const [loadingPipelines, setLoadingPipelines] = useState(false);
 
-  // Filter states
+  // Filter states (Phase 2 only)
   const [filterDateFrom, setFilterDateFrom] = useState<Date | undefined>(undefined);
   const [filterDateTo, setFilterDateTo] = useState<Date | undefined>(undefined);
   const [filterStatus, setFilterStatus] = useState("todos");
@@ -3919,8 +3928,8 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
     try {
       const data = await parseXlsx(file);
       setClientesData(data);
-      setLogs([]);
-      setDone(false);
+      setClientsLogs([]);
+      setClientsDone(false);
     } catch {
       alert("Erro ao ler o ficheiro de clientes.");
     }
@@ -3932,8 +3941,8 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
     try {
       const data = await parseXlsx(file);
       setHonorariosData(data);
-      setLogs([]);
-      setDone(false);
+      setHonorariosLogs([]);
+      setHonorariosDone(false);
     } catch {
       alert("Erro ao ler o ficheiro de honorários.");
     }
@@ -3943,7 +3952,6 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
   const parseExcelDate = (val: any): Date | null => {
     if (!val) return null;
     if (typeof val === "number") {
-      // Excel serial date
       const d = new Date(Math.round((val - 25569) * 86400 * 1000));
       return isNaN(d.getTime()) ? null : d;
     }
@@ -3951,18 +3959,67 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
     return isNaN(d.getTime()) ? null : d;
   };
 
-  // Filtered honorarios based on date & status
+  // Valid clients (ID > 3)
+  const validClients = useMemo(() => {
+    if (!clientesData) return null;
+    return clientesData.filter((c: any) => c.ID > 3);
+  }, [clientesData]);
+
+  // ── Phase 1: Import Clients ──
+  const handleImportClients = async () => {
+    if (!validClients || validClients.length === 0) return;
+    setImportingClients(true);
+    setClientsLogs([]);
+    setClientsDone(false);
+
+    const batchSize = 10;
+    let batchStart = 0;
+
+    while (batchStart < validClients.length) {
+      try {
+        const res = await fetch(`${SUPABASE_URL}/functions/v1/import-access-data`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            apikey: SUPABASE_KEY,
+            Authorization: `Bearer ${SUPABASE_KEY}`,
+          },
+          body: JSON.stringify({
+            clientes: validClients,
+            mode: "clients_only",
+            batch_start: batchStart,
+            batch_size: batchSize,
+            member_id: memberId,
+            sync_bitrix: syncBitrix,
+            category_id: syncBitrix ? selectedCategoryId : undefined,
+          }),
+        });
+        const data = await res.json();
+        if (data.results) {
+          setClientsLogs(prev => [...prev, ...data.results]);
+        }
+        setClientsProgress({ processed: data.processed || batchStart + batchSize, total: validClients.length });
+        if (!data.has_more) break;
+        batchStart = data.next_batch_start;
+      } catch (e) {
+        setClientsLogs(prev => [...prev, { client_name: `Batch ${batchStart}`, status: "error", error: String(e) }]);
+        break;
+      }
+    }
+    setClientsDone(true);
+    setImportingClients(false);
+  };
+
+  // ── Phase 2: Filtered honorarios ──
   const filteredHonorarios = useMemo(() => {
     if (!honorariosData) return null;
     return honorariosData.filter((h: any) => {
-      // Status filter
       if (filterStatus !== "todos") {
         const s = (h.STATUS || "").toUpperCase().trim();
         if (filterStatus === "QUITADO" && s !== "QUITADO") return false;
         if (filterStatus === "ATRASADO" && s !== "ATRASADO") return false;
         if (filterStatus === "PENDENTE" && (s === "QUITADO" || s === "ATRASADO")) return false;
       }
-      // Date filter on DATA column
       if (filterDateFrom || filterDateTo) {
         const d = parseExcelDate(h.DATA);
         if (!d) return false;
@@ -3976,7 +4033,7 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
   // Derive filtered clients from filtered honorarios
   const filteredClientes = useMemo(() => {
     if (!clientesData || !filteredHonorarios) return null;
-    const clientIds = new Set(filteredHonorarios.map((h: any) => h.CLIENTEID));
+    const clientIds = new Set(filteredHonorarios.map((h: any) => h.CLIENTE));
     return clientesData.filter((c: any) => c.ID > 3 && clientIds.has(c.ID));
   }, [clientesData, filteredHonorarios]);
 
@@ -4009,17 +4066,16 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
     return { totalClients, activeClients, totalHonorarios, totalValue, paidCount, pendingCount, overdueCount, totalPaid };
   }, [filteredClientes, filteredHonorarios]);
 
-  const handleImport = async () => {
+  const handleImportHonorarios = async () => {
     if (!filteredClientes || !filteredHonorarios || filteredClientes.length === 0) return;
-    setImporting(true);
-    setLogs([]);
-    setDone(false);
+    setImportingHonorarios(true);
+    setHonorariosLogs([]);
+    setHonorariosDone(false);
 
-    const validClients = filteredClientes;
     const batchSize = 10;
     let batchStart = 0;
 
-    while (batchStart < validClients.length) {
+    while (batchStart < filteredClientes.length) {
       try {
         const res = await fetch(`${SUPABASE_URL}/functions/v1/import-access-data`, {
           method: "POST",
@@ -4029,8 +4085,9 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
             Authorization: `Bearer ${SUPABASE_KEY}`,
           },
           body: JSON.stringify({
-            clientes: validClients,
+            clientes: filteredClientes,
             honorarios: filteredHonorarios,
+            mode: "honorarios",
             batch_start: batchStart,
             batch_size: batchSize,
             member_id: memberId,
@@ -4040,23 +4097,29 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
         });
         const data = await res.json();
         if (data.results) {
-          setLogs(prev => [...prev, ...data.results]);
+          setHonorariosLogs(prev => [...prev, ...data.results]);
         }
-        setProgress({ processed: data.processed || batchStart + batchSize, total: validClients.length });
+        setHonorariosProgress({ processed: data.processed || batchStart + batchSize, total: filteredClientes.length });
         if (!data.has_more) break;
         batchStart = data.next_batch_start;
       } catch (e) {
-        setLogs(prev => [...prev, { client_name: `Batch ${batchStart}`, status: "error", error: String(e) }]);
+        setHonorariosLogs(prev => [...prev, { client_name: `Batch ${batchStart}`, status: "error", error: String(e) }]);
         break;
       }
     }
-    setDone(true);
-    setImporting(false);
+    setHonorariosDone(true);
+    setImportingHonorarios(false);
   };
 
-  const errorCount = logs.filter(l => l.status === "error").length;
-  const successCount = logs.filter(l => l.status === "ok" || l.status === "partial").length;
-  const progressPct = progress.total > 0 ? Math.round((progress.processed / progress.total) * 100) : 0;
+  const clientsErrorCount = clientsLogs.filter(l => l.status === "error").length;
+  const clientsSuccessCount = clientsLogs.filter(l => l.status === "ok" || l.status === "partial").length;
+  const clientsProgressPct = clientsProgress.total > 0 ? Math.round((clientsProgress.processed / clientsProgress.total) * 100) : 0;
+
+  const honErrorCount = honorariosLogs.filter(l => l.status === "error").length;
+  const honSuccessCount = honorariosLogs.filter(l => l.status === "ok" || l.status === "partial").length;
+  const honProgressPct = honorariosProgress.total > 0 ? Math.round((honorariosProgress.processed / honorariosProgress.total) * 100) : 0;
+
+  const isImporting = importingClients || importingHonorarios;
 
   return (
     <div className="p-6 space-y-6">
@@ -4065,224 +4128,270 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
         <p className="text-white/60 text-sm mt-0.5">Importar clientes e honorários das tabelas originais do Access</p>
       </div>
 
-      {/* Upload */}
+      {/* Bitrix Settings (shared) */}
+      {integration && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2"><Settings className="h-5 w-5" /> Configurações</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="flex items-center gap-3">
+              <Switch checked={syncBitrix} onCheckedChange={setSyncBitrix} disabled={isImporting} />
+              <Label className="text-sm">Sincronizar com Bitrix24 (criar Contactos + Deals + Faturas)</Label>
+            </div>
+            {syncBitrix && (
+              <div className="space-y-1.5 pl-10">
+                <Label className="text-sm">Pipeline de destino para novos Deals</Label>
+                <Select value={selectedCategoryId} onValueChange={setSelectedCategoryId} disabled={isImporting || loadingPipelines}>
+                  <SelectTrigger className="w-full md:w-64">
+                    <SelectValue placeholder={loadingPipelines ? "Carregando..." : "Selecionar pipeline"} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="0">Pipeline Geral (padrão)</SelectItem>
+                    {pipelines.filter(p => p.id !== "0" && p.id !== "C0").map(p => (
+                      <SelectItem key={p.id} value={String(p.id)}>{p.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">Deals existentes mantêm o pipeline actual</p>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* ═══════ FASE 1: CLIENTES ═══════ */}
       <Card>
         <CardHeader>
-          <CardTitle className="flex items-center gap-2"><Upload className="h-5 w-5" /> Carregar Ficheiros Excel</CardTitle>
-          <CardDescription>Selecione os ficheiros TBL_CLIENTE.xlsx e TBL_HONORARIOS.xlsx</CardDescription>
+          <CardTitle className="flex items-center gap-2">
+            <Badge variant={clientsDone ? "default" : "outline"} className="text-xs">FASE 1</Badge>
+            <Users className="h-5 w-5" /> Importar Clientes
+          </CardTitle>
+          <CardDescription>
+            Carregue TBL_CLIENTE.xlsx para criar/actualizar clientes na base de dados
+            {syncBitrix && " e criar Contactos + Deals vazios no Bitrix24"}
+          </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label className="text-sm font-medium">TBL_CLIENTE.xlsx</Label>
-              <Input type="file" accept=".xlsx,.xls" onChange={handleClientesUpload} disabled={importing} />
-              {clientesData && (
-                <p className="text-xs text-muted-foreground">✅ {clientesData.length} registos carregados</p>
-              )}
-            </div>
-            <div className="space-y-2">
-              <Label className="text-sm font-medium">TBL_HONORARIOS.xlsx</Label>
-              <Input type="file" accept=".xlsx,.xls" onChange={handleHonorariosUpload} disabled={importing} />
-              {honorariosData && (
-                <p className="text-xs text-muted-foreground">✅ {honorariosData.length} registos carregados</p>
-              )}
-            </div>
+          <div className="space-y-2">
+            <Label className="text-sm font-medium">TBL_CLIENTE.xlsx</Label>
+            <Input type="file" accept=".xlsx,.xls" onChange={handleClientesUpload} disabled={isImporting} />
+            {validClients && (
+              <p className="text-xs text-muted-foreground">✅ {validClients.length} clientes válidos carregados (excluindo IDs ≤ 3)</p>
+            )}
           </div>
 
-          {integration && (
-            <div className="space-y-3">
-              <div className="flex items-center gap-3">
-                <Switch checked={syncBitrix} onCheckedChange={setSyncBitrix} disabled={importing} />
-                <Label className="text-sm">Sincronizar com Bitrix24 (criar Contactos + Deals + Faturas)</Label>
+          {validClients && validClients.length > 0 && (
+            <Button onClick={handleImportClients} disabled={isImporting} className="w-full" size="lg">
+              {importingClients ? (
+                <><Loader2 className="h-4 w-4 animate-spin mr-2" /> Importando Clientes... ({clientsProgressPct}%)</>
+              ) : clientsDone ? (
+                <><CheckCircle className="h-4 w-4 mr-2" /> Re-importar {validClients.length} Clientes</>
+              ) : (
+                <><Upload className="h-4 w-4 mr-2" /> Importar {validClients.length} Clientes</>
+              )}
+            </Button>
+          )}
+
+          {/* Phase 1 Progress */}
+          {(importingClients || clientsDone) && (
+            <div className="space-y-3 pt-2 border-t">
+              <div className="w-full bg-muted rounded-full h-2.5">
+                <div className="bg-primary h-2.5 rounded-full transition-all duration-300" style={{ width: `${clientsProgressPct}%` }} />
               </div>
-              {syncBitrix && (
-                <div className="space-y-1.5 pl-10">
-                  <Label className="text-sm">Pipeline de destino para novos Deals</Label>
-                  <Select value={selectedCategoryId} onValueChange={setSelectedCategoryId} disabled={importing || loadingPipelines}>
-                    <SelectTrigger className="w-full md:w-64">
-                      <SelectValue placeholder={loadingPipelines ? "Carregando..." : "Selecionar pipeline"} />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="0">Pipeline Geral (padrão)</SelectItem>
-                      {pipelines.filter(p => p.id !== "0" && p.id !== "C0").map(p => (
-                        <SelectItem key={p.id} value={String(p.id)}>{p.name}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <p className="text-xs text-muted-foreground">Deals existentes mantêm o pipeline actual</p>
+              <p className="text-xs text-muted-foreground text-center">
+                {clientsProgress.processed} / {clientsProgress.total} clientes processados
+              </p>
+              {clientsDone && (
+                <div className="flex gap-3 justify-center">
+                  <Badge variant="default" className="text-xs">✅ {clientsSuccessCount} OK</Badge>
+                  {clientsErrorCount > 0 && <Badge variant="destructive" className="text-xs">❌ {clientsErrorCount} Erros</Badge>}
                 </div>
+              )}
+              {clientsLogs.filter(l => l.status === "error").length > 0 && (
+                <ScrollArea className="h-32 border rounded-lg p-2">
+                  {clientsLogs.filter(l => l.status === "error").map((l, i) => (
+                    <div key={i} className="text-xs text-destructive mb-1">
+                      <strong>{l.client_name}:</strong> {l.error}
+                    </div>
+                  ))}
+                </ScrollArea>
               )}
             </div>
           )}
         </CardContent>
       </Card>
 
-      {/* Filters */}
-      {clientesData && honorariosData && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2"><Settings className="h-5 w-5" /> Filtros de Importação</CardTitle>
-            <CardDescription>Filtre por data e status para importar subconjuntos menores</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="flex flex-wrap items-end gap-4">
-              {/* Date From */}
-              <div className="space-y-1.5">
-                <Label className="text-xs">Data De (contrato)</Label>
-                <Popover>
-                  <PopoverTrigger asChild>
-                    <Button variant="outline" size="sm" className={cn("w-[150px] justify-start text-left text-xs gap-1", !filterDateFrom && "text-muted-foreground")}>
-                      <CalendarIcon className="h-3 w-3" />
-                      {filterDateFrom ? format(filterDateFrom, "dd/MM/yyyy") : "Sem limite"}
-                    </Button>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-auto p-0" align="start">
-                    <Calendar mode="single" selected={filterDateFrom} onSelect={setFilterDateFrom} className="p-3 pointer-events-auto" />
-                  </PopoverContent>
-                </Popover>
-              </div>
-
-              {/* Date To */}
-              <div className="space-y-1.5">
-                <Label className="text-xs">Data Até</Label>
-                <Popover>
-                  <PopoverTrigger asChild>
-                    <Button variant="outline" size="sm" className={cn("w-[150px] justify-start text-left text-xs gap-1", !filterDateTo && "text-muted-foreground")}>
-                      <CalendarIcon className="h-3 w-3" />
-                      {filterDateTo ? format(filterDateTo, "dd/MM/yyyy") : "Sem limite"}
-                    </Button>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-auto p-0" align="start">
-                    <Calendar mode="single" selected={filterDateTo} onSelect={setFilterDateTo} className="p-3 pointer-events-auto" />
-                  </PopoverContent>
-                </Popover>
-              </div>
-
-              {/* Status */}
-              <div className="space-y-1.5">
-                <Label className="text-xs">Status</Label>
-                <Select value={filterStatus} onValueChange={setFilterStatus}>
-                  <SelectTrigger className="w-[150px] h-9 text-xs">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="todos">Todos</SelectItem>
-                    <SelectItem value="QUITADO">Quitado</SelectItem>
-                    <SelectItem value="ATRASADO">Atrasado</SelectItem>
-                    <SelectItem value="PENDENTE">Pendente/Aberto</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {/* Clear */}
-              {(filterDateFrom || filterDateTo || filterStatus !== "todos") && (
-                <Button variant="ghost" size="sm" className="text-xs" onClick={() => { setFilterDateFrom(undefined); setFilterDateTo(undefined); setFilterStatus("todos"); }}>
-                  <RotateCcw className="h-3 w-3 mr-1" /> Limpar
-                </Button>
-              )}
-
-              {/* Summary */}
-              <div className="ml-auto text-xs text-muted-foreground">
-                {filteredHonorarios ? `${filteredHonorarios.length} de ${honorariosData.length} parcelas` : ""}
-                {filteredClientes ? ` · ${filteredClientes.length} clientes` : ""}
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Preview */}
-      {stats && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Pré-visualização {filterStatus !== "todos" || filterDateFrom || filterDateTo ? "(filtrado)" : ""}</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              <div className="text-center p-3 rounded-lg bg-muted">
-                <p className="text-2xl font-bold text-foreground">{stats.totalClients}</p>
-                <p className="text-xs text-muted-foreground">Clientes</p>
-              </div>
-              <div className="text-center p-3 rounded-lg bg-muted">
-                <p className="text-2xl font-bold text-foreground">{stats.activeClients}</p>
-                <p className="text-xs text-muted-foreground">Activos</p>
-              </div>
-              <div className="text-center p-3 rounded-lg bg-muted">
-                <p className="text-2xl font-bold text-foreground">{stats.totalHonorarios}</p>
-                <p className="text-xs text-muted-foreground">Parcelas</p>
-              </div>
-              <div className="text-center p-3 rounded-lg bg-muted">
-                <p className="text-2xl font-bold text-foreground">€{stats.totalValue.toLocaleString("pt-PT", { minimumFractionDigits: 2 })}</p>
-                <p className="text-xs text-muted-foreground">Valor Total (Serviços)</p>
-              </div>
-              <div className="text-center p-3 rounded-lg bg-muted">
-                <p className="text-2xl font-bold text-foreground">€{stats.totalPaid.toLocaleString("pt-PT", { minimumFractionDigits: 2 })}</p>
-                <p className="text-xs text-muted-foreground">Total Pago</p>
-              </div>
-              <div className="text-center p-3 rounded-lg bg-muted">
-                <p className="text-2xl font-bold text-green-500">{stats.paidCount}</p>
-                <p className="text-xs text-muted-foreground">Quitados</p>
-              </div>
-              <div className="text-center p-3 rounded-lg bg-muted">
-                <p className="text-2xl font-bold text-yellow-500">{stats.pendingCount}</p>
-                <p className="text-xs text-muted-foreground">Pendentes</p>
-              </div>
-              <div className="text-center p-3 rounded-lg bg-muted">
-                <p className="text-2xl font-bold text-destructive">{stats.overdueCount}</p>
-                <p className="text-xs text-muted-foreground">Atrasados</p>
-              </div>
-            </div>
-
-            <Button onClick={handleImport} disabled={importing} className="w-full mt-6" size="lg">
-              {importing ? (
-                <><Loader2 className="h-4 w-4 animate-spin mr-2" /> Importando... ({progressPct}%)</>
+      {/* ═══════ FASE 2: HONORÁRIOS ═══════ */}
+      <Card className={!clientsDone ? "opacity-60" : ""}>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Badge variant={honorariosDone ? "default" : "outline"} className="text-xs">FASE 2</Badge>
+            <DollarSign className="h-5 w-5" /> Importar Honorários
+          </CardTitle>
+          <CardDescription>
+            Carregue TBL_HONORARIOS.xlsx para criar serviços, contratos e registos financeiros
+            {syncBitrix && " e actualizar Deals + Smart Invoices no Bitrix24"}
+            {!clientsDone && " — Complete a Fase 1 primeiro (ou importe directamente se os clientes já existem)"}
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label className="text-sm font-medium">TBL_CLIENTE.xlsx</Label>
+              {clientesData ? (
+                <p className="text-xs text-muted-foreground">✅ {clientesData.length} registos (da Fase 1)</p>
               ) : (
-                <><Upload className="h-4 w-4 mr-2" /> Importar {stats.totalClients} Clientes</>
+                <Input type="file" accept=".xlsx,.xls" onChange={handleClientesUpload} disabled={isImporting} />
               )}
-            </Button>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Progress */}
-      {(importing || done) && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              {importing ? <Loader2 className="h-5 w-5 animate-spin" /> : <CheckCircle className="h-5 w-5 text-green-500" />}
-              {importing ? "Importando..." : "Importação Concluída"}
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="w-full bg-muted rounded-full h-3">
-              <div
-                className="bg-primary h-3 rounded-full transition-all duration-300"
-                style={{ width: `${progressPct}%` }}
-              />
             </div>
-            <p className="text-sm text-muted-foreground text-center">
-              {progress.processed} / {progress.total} clientes processados
-            </p>
+            <div className="space-y-2">
+              <Label className="text-sm font-medium">TBL_HONORARIOS.xlsx</Label>
+              <Input type="file" accept=".xlsx,.xls" onChange={handleHonorariosUpload} disabled={isImporting} />
+              {honorariosData && (
+                <p className="text-xs text-muted-foreground">✅ {honorariosData.length} registos carregados</p>
+              )}
+            </div>
+          </div>
 
-            {done && (
-              <div className="flex gap-4 justify-center">
-                <Badge variant="default" className="text-sm">✅ {successCount} OK</Badge>
-                {errorCount > 0 && <Badge variant="destructive" className="text-sm">❌ {errorCount} Erros</Badge>}
+          {/* Filters (Phase 2 only) */}
+          {clientesData && honorariosData && (
+            <div className="space-y-3 pt-3 border-t">
+              <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Filtros</Label>
+              <div className="flex flex-wrap items-end gap-4">
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Data De (contrato)</Label>
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button variant="outline" size="sm" className={cn("w-[150px] justify-start text-left text-xs gap-1", !filterDateFrom && "text-muted-foreground")}>
+                        <CalendarIcon className="h-3 w-3" />
+                        {filterDateFrom ? format(filterDateFrom, "dd/MM/yyyy") : "Sem limite"}
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-0" align="start">
+                      <Calendar mode="single" selected={filterDateFrom} onSelect={setFilterDateFrom} className="p-3 pointer-events-auto" />
+                    </PopoverContent>
+                  </Popover>
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Data Até</Label>
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button variant="outline" size="sm" className={cn("w-[150px] justify-start text-left text-xs gap-1", !filterDateTo && "text-muted-foreground")}>
+                        <CalendarIcon className="h-3 w-3" />
+                        {filterDateTo ? format(filterDateTo, "dd/MM/yyyy") : "Sem limite"}
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-0" align="start">
+                      <Calendar mode="single" selected={filterDateTo} onSelect={setFilterDateTo} className="p-3 pointer-events-auto" />
+                    </PopoverContent>
+                  </Popover>
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Status</Label>
+                  <Select value={filterStatus} onValueChange={setFilterStatus}>
+                    <SelectTrigger className="w-[150px] h-9 text-xs">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="todos">Todos</SelectItem>
+                      <SelectItem value="QUITADO">Quitado</SelectItem>
+                      <SelectItem value="ATRASADO">Atrasado</SelectItem>
+                      <SelectItem value="PENDENTE">Pendente/Aberto</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                {(filterDateFrom || filterDateTo || filterStatus !== "todos") && (
+                  <Button variant="ghost" size="sm" className="text-xs" onClick={() => { setFilterDateFrom(undefined); setFilterDateTo(undefined); setFilterStatus("todos"); }}>
+                    <RotateCcw className="h-3 w-3 mr-1" /> Limpar
+                  </Button>
+                )}
+                <div className="ml-auto text-xs text-muted-foreground">
+                  {filteredHonorarios ? `${filteredHonorarios.length} de ${honorariosData.length} parcelas` : ""}
+                  {filteredClientes ? ` · ${filteredClientes.length} clientes` : ""}
+                </div>
               </div>
-            )}
+            </div>
+          )}
 
-            {logs.filter(l => l.status === "error").length > 0 && (
-              <ScrollArea className="h-40 border rounded-lg p-3">
-                {logs.filter(l => l.status === "error").map((l, i) => (
-                  <div key={i} className="text-xs text-destructive mb-1">
-                    <strong>{l.client_name}:</strong> {l.error}
-                  </div>
-                ))}
-              </ScrollArea>
-            )}
-          </CardContent>
-        </Card>
-      )}
+          {/* Stats Preview */}
+          {stats && (
+            <div className="space-y-4 pt-3 border-t">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                <div className="text-center p-2.5 rounded-lg bg-muted">
+                  <p className="text-xl font-bold text-foreground">{stats.totalClients}</p>
+                  <p className="text-xs text-muted-foreground">Clientes</p>
+                </div>
+                <div className="text-center p-2.5 rounded-lg bg-muted">
+                  <p className="text-xl font-bold text-foreground">{stats.totalHonorarios}</p>
+                  <p className="text-xs text-muted-foreground">Parcelas</p>
+                </div>
+                <div className="text-center p-2.5 rounded-lg bg-muted">
+                  <p className="text-xl font-bold text-foreground">€{stats.totalValue.toLocaleString("pt-PT", { minimumFractionDigits: 2 })}</p>
+                  <p className="text-xs text-muted-foreground">Valor Total</p>
+                </div>
+                <div className="text-center p-2.5 rounded-lg bg-muted">
+                  <p className="text-xl font-bold text-foreground">€{stats.totalPaid.toLocaleString("pt-PT", { minimumFractionDigits: 2 })}</p>
+                  <p className="text-xs text-muted-foreground">Total Pago</p>
+                </div>
+                <div className="text-center p-2.5 rounded-lg bg-muted">
+                  <p className="text-xl font-bold text-green-500">{stats.paidCount}</p>
+                  <p className="text-xs text-muted-foreground">Quitados</p>
+                </div>
+                <div className="text-center p-2.5 rounded-lg bg-muted">
+                  <p className="text-xl font-bold text-yellow-500">{stats.pendingCount}</p>
+                  <p className="text-xs text-muted-foreground">Pendentes</p>
+                </div>
+                <div className="text-center p-2.5 rounded-lg bg-muted">
+                  <p className="text-xl font-bold text-destructive">{stats.overdueCount}</p>
+                  <p className="text-xs text-muted-foreground">Atrasados</p>
+                </div>
+                <div className="text-center p-2.5 rounded-lg bg-muted">
+                  <p className="text-xl font-bold text-foreground">{stats.activeClients}</p>
+                  <p className="text-xs text-muted-foreground">Activos</p>
+                </div>
+              </div>
+
+              <Button onClick={handleImportHonorarios} disabled={isImporting} className="w-full" size="lg">
+                {importingHonorarios ? (
+                  <><Loader2 className="h-4 w-4 animate-spin mr-2" /> Importando Honorários... ({honProgressPct}%)</>
+                ) : honorariosDone ? (
+                  <><CheckCircle className="h-4 w-4 mr-2" /> Re-importar {stats.totalClients} Clientes ({stats.totalHonorarios} parcelas)</>
+                ) : (
+                  <><Upload className="h-4 w-4 mr-2" /> Importar {stats.totalClients} Clientes ({stats.totalHonorarios} parcelas)</>
+                )}
+              </Button>
+            </div>
+          )}
+
+          {/* Phase 2 Progress */}
+          {(importingHonorarios || honorariosDone) && (
+            <div className="space-y-3 pt-2 border-t">
+              <div className="w-full bg-muted rounded-full h-2.5">
+                <div className="bg-primary h-2.5 rounded-full transition-all duration-300" style={{ width: `${honProgressPct}%` }} />
+              </div>
+              <p className="text-xs text-muted-foreground text-center">
+                {honorariosProgress.processed} / {honorariosProgress.total} clientes processados
+              </p>
+              {honorariosDone && (
+                <div className="flex gap-3 justify-center">
+                  <Badge variant="default" className="text-xs">✅ {honSuccessCount} OK</Badge>
+                  {honErrorCount > 0 && <Badge variant="destructive" className="text-xs">❌ {honErrorCount} Erros</Badge>}
+                </div>
+              )}
+              {honorariosLogs.filter(l => l.status === "error").length > 0 && (
+                <ScrollArea className="h-32 border rounded-lg p-2">
+                  {honorariosLogs.filter(l => l.status === "error").map((l, i) => (
+                    <div key={i} className="text-xs text-destructive mb-1">
+                      <strong>{l.client_name}:</strong> {l.error}
+                    </div>
+                  ))}
+                </ScrollArea>
+              )}
+            </div>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }
