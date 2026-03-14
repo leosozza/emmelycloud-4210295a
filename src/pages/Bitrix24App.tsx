@@ -4089,7 +4089,7 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
             Authorization: `Bearer ${SUPABASE_KEY}`,
           },
           body: JSON.stringify({
-            clientes: filteredClientes,
+            clientes: clientesData ? (filteredClientes || []) : [],
             honorarios: filteredHonorarios,
             mode: "honorarios",
             batch_start: batchStart,
