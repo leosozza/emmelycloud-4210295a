@@ -51,6 +51,8 @@ import { AgentFormDialog } from "@/components/agentes/AgentFormDialog";
 import { Switch } from "@/components/ui/switch";
 import { Slider } from "@/components/ui/slider";
 import { Separator } from "@/components/ui/separator";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { ChatBubble, ChatBubbleAvatar, ChatBubbleMessage, ChatBubbleAction, ChatBubbleActionWrapper } from "@/components/ui/chat-bubble";
 import { ChatInput } from "@/components/ui/chat-input";
 import { ChatMessageList } from "@/components/ui/chat-message-list";
@@ -316,7 +318,7 @@ const Bitrix24App = () => {
         {view === "empresas" && <EmpresasView />}
         {view === "relatorios" && <RelatoriosView />}
         {view === "importacao" && <ImportacaoAccessView integration={integration} memberId={memberId} />}
-        {view === "carteira" && <CarteiraAccessView integration={integration} />}
+        {view === "carteira" && <CarteiraAccessView integration={integration} memberId={memberId} />}
         {view === "configuracoes" && (
           <ConfigView
             integration={integration}
@@ -4050,31 +4052,30 @@ function BaixaCarteiraView({ integration }: { integration: any }) {
 }
 
 // ==================== CARTEIRA ACCESS VIEW ====================
-function CarteiraAccessView({ integration }: { integration: any }) {
-  const [clients, setClients] = useState<any[]>([]);
+interface ClientFinancials {
+  client: any;
+  accessId: string | null;
+  leads: any[];
+  totalValue: number;
+  totalPaid: number;
+  totalPending: number;
+  totalOverdue: number;
+  serviceCount: number;
+  allRecords: any[];
+}
+
+function CarteiraAccessView({ integration, memberId }: { integration: any; memberId: string | null }) {
+  const [clientsData, setClientsData] = useState<ClientFinancials[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [bitrixModalClient, setBitrixModalClient] = useState<ClientFinancials | null>(null);
+  const [bitrixDeals, setBitrixDeals] = useState<any[]>([]);
+  const [bitrixUsers, setBitrixUsers] = useState<Record<string, string>>({});
+  const [loadingBitrix, setLoadingBitrix] = useState(false);
+  const [syncingDealId, setSyncingDealId] = useState<string | null>(null);
+  const [creatingContact, setCreatingContact] = useState(false);
   const domain = integration?.domain;
-
-  useEffect(() => {
-    fetchClients();
-  }, []);
-
-  const fetchClients = async () => {
-    setLoading(true);
-    try {
-      const res = await fetch(`${SUPABASE_URL}/rest/v1/clients?notes=ilike.*Access*&order=name.asc&limit=500`, {
-        headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` },
-      });
-      const data = await res.json();
-      setClients(Array.isArray(data) ? data : []);
-    } catch (e) {
-      console.error("[Carteira] Error fetching clients:", e);
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const extractAccessId = (notes: string | null) => {
     if (!notes) return null;
@@ -4082,16 +4083,281 @@ function CarteiraAccessView({ integration }: { integration: any }) {
     return match ? match[1] : null;
   };
 
+  const fetchAll = async () => {
+    setLoading(true);
+    try {
+      const clientsRes = await fetch(`${SUPABASE_URL}/rest/v1/clients?notes=ilike.*Access*&order=name.asc&limit=500`, {
+        headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` },
+      });
+      const clients = await clientsRes.json();
+      if (!Array.isArray(clients)) { setClientsData([]); return; }
+
+      const clientIds = clients.map((c: any) => c.id);
+      if (clientIds.length === 0) { setClientsData([]); return; }
+
+      // Fetch leads with nested cases > contracts > financial_records
+      const leadsRes = await fetch(
+        `${SUPABASE_URL}/rest/v1/leads?client_id=in.(${clientIds.join(",")})&sync_source=eq.access_import&select=id,name,notes,client_id,cases(id,title,contracts(id,status,financial_records(id,description,installment_number,total_installments,installment_value,total_value,status,due_date,paid_at,created_at)))`,
+        { headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` } }
+      );
+      const leads = await leadsRes.json();
+      const leadsArr = Array.isArray(leads) ? leads : [];
+
+      // Group leads by client_id
+      const leadsByClient: Record<string, any[]> = {};
+      for (const l of leadsArr) {
+        if (!leadsByClient[l.client_id]) leadsByClient[l.client_id] = [];
+        leadsByClient[l.client_id].push(l);
+      }
+
+      const result: ClientFinancials[] = clients.map((c: any) => {
+        const cLeads = leadsByClient[c.id] || [];
+        let totalValue = 0, totalPaid = 0, totalPending = 0, totalOverdue = 0;
+        const allRecords: any[] = [];
+        const now = new Date();
+
+        for (const lead of cLeads) {
+          for (const cas of (lead.cases || [])) {
+            for (const contract of (cas.contracts || [])) {
+              for (const fr of (contract.financial_records || [])) {
+                allRecords.push({ ...fr, caseName: cas.title, leadName: lead.name });
+                const val = parseFloat(fr.installment_value) || 0;
+                totalValue += val;
+                if (fr.status === "paga") totalPaid += val;
+                else if (fr.due_date && new Date(fr.due_date) < now && fr.status !== "paga") {
+                  totalOverdue += val;
+                } else {
+                  totalPending += val;
+                }
+              }
+            }
+          }
+        }
+
+        return {
+          client: c,
+          accessId: extractAccessId(c.notes),
+          leads: cLeads,
+          totalValue,
+          totalPaid,
+          totalPending,
+          totalOverdue,
+          serviceCount: cLeads.length,
+          allRecords,
+        };
+      });
+
+      setClientsData(result);
+    } catch (e) {
+      console.error("[Carteira] Error:", e);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { fetchAll(); }, []);
+
   const filtered = useMemo(() => {
-    if (!search.trim()) return clients;
+    if (!search.trim()) return clientsData;
     const q = search.toLowerCase();
-    return clients.filter(
-      (c) =>
-        c.name?.toLowerCase().includes(q) ||
-        c.document_number?.toLowerCase().includes(q) ||
-        c.nationality?.toLowerCase().includes(q)
+    return clientsData.filter(
+      (cf) =>
+        cf.client.name?.toLowerCase().includes(q) ||
+        cf.client.document_number?.toLowerCase().includes(q) ||
+        cf.accessId?.includes(q)
     );
-  }, [clients, search]);
+  }, [clientsData, search]);
+
+  const totals = useMemo(() => {
+    return clientsData.reduce(
+      (acc, cf) => ({
+        value: acc.value + cf.totalValue,
+        paid: acc.paid + cf.totalPaid,
+        pending: acc.pending + cf.totalPending,
+        overdue: acc.overdue + cf.totalOverdue,
+      }),
+      { value: 0, paid: 0, pending: 0, overdue: 0 }
+    );
+  }, [clientsData]);
+
+  const fmt = (v: number) => v.toLocaleString("pt-PT", { style: "currency", currency: "EUR" });
+
+  const getStatusBadge = (cf: ClientFinancials) => {
+    if (cf.totalOverdue > 0) return <Badge className="bg-red-500/10 text-red-500 border-red-500/20 text-[10px]">Em atraso</Badge>;
+    if (cf.totalPending > 0) return <Badge className="bg-amber-500/10 text-amber-500 border-amber-500/20 text-[10px]">Pendente</Badge>;
+    if (cf.totalPaid > 0) return <Badge className="bg-emerald-500/10 text-emerald-500 border-emerald-500/20 text-[10px]">Quitado</Badge>;
+    return <Badge variant="outline" className="text-[10px]">Sem dados</Badge>;
+  };
+
+  // ── Bitrix modal ──
+  const openBitrixModal = async (cf: ClientFinancials) => {
+    setBitrixModalClient(cf);
+    setBitrixDeals([]);
+    setBitrixUsers({});
+    if (!cf.accessId || !memberId) return;
+    setLoadingBitrix(true);
+    try {
+      // Fetch deals filtered by UF_CRM_1768312831 = accessId
+      const res = await fetch(`${SUPABASE_URL}/functions/v1/bitrix24-fetch-entities?action=items&entity=deal&member_id=${encodeURIComponent(memberId)}&access_id=${encodeURIComponent(cf.accessId)}`, {
+        headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` },
+      });
+      const data = await res.json();
+
+      // If the edge function doesn't support access_id filter, we do it via direct Bitrix call
+      if (data.items) {
+        setBitrixDeals(data.items);
+      } else {
+        // Fallback: call Bitrix directly via the integration tokens
+        const dealRes = await fetch(`${SUPABASE_URL}/functions/v1/bitrix24-send`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` },
+          body: JSON.stringify({
+            member_id: memberId,
+            method: "crm.deal.list",
+            params: {
+              filter: { "UF_CRM_1768312831": cf.accessId },
+              select: ["ID", "TITLE", "OPPORTUNITY", "CURRENCY_ID", "STAGE_ID", "CONTACT_ID", "ASSIGNED_BY_ID", "DATE_CREATE",
+                "UF_CRM_EMMELY_STATUS", "UF_CRM_EMMELY_GATEWAY", "UF_CRM_EMMELY_PARCELAS", "UF_CRM_EMMELY_VALOR_TOTAL",
+                "UF_CRM_EMMELY_VALOR_RECEBIDO", "UF_CRM_EMMELY_VENCIMENTO"],
+            },
+          }),
+        });
+        const dealData = await dealRes.json();
+        const deals = dealData.result || [];
+        setBitrixDeals(deals);
+
+        // Fetch user names for ASSIGNED_BY_ID
+        const userIds = [...new Set(deals.map((d: any) => d.ASSIGNED_BY_ID).filter(Boolean))];
+        if (userIds.length > 0) {
+          const usersRes = await fetch(`${SUPABASE_URL}/functions/v1/bitrix24-send`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` },
+            body: JSON.stringify({
+              member_id: memberId,
+              method: "user.get",
+              params: { ID: userIds },
+            }),
+          });
+          const usersData = await usersRes.json();
+          const uMap: Record<string, string> = {};
+          for (const u of (usersData.result || [])) {
+            uMap[String(u.ID)] = [u.NAME, u.LAST_NAME].filter(Boolean).join(" ");
+          }
+          setBitrixUsers(uMap);
+        }
+      }
+    } catch (e) {
+      console.error("[Carteira] Bitrix fetch error:", e);
+    } finally {
+      setLoadingBitrix(false);
+    }
+  };
+
+  const handleSyncDeal = async (deal: any) => {
+    if (!memberId) return;
+    setSyncingDealId(deal.ID || deal.id);
+    try {
+      await fetch(`${SUPABASE_URL}/functions/v1/bitrix24-update-deal-payment`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` },
+        body: JSON.stringify({ member_id: memberId, deal_id: deal.ID || deal.id }),
+      });
+    } catch (e) {
+      console.error("[Carteira] Sync error:", e);
+    } finally {
+      setSyncingDealId(null);
+    }
+  };
+
+  const handleCreateContact = async (cf: ClientFinancials) => {
+    if (!memberId) return;
+    setCreatingContact(true);
+    try {
+      await fetch(`${SUPABASE_URL}/functions/v1/bitrix24-send`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` },
+        body: JSON.stringify({
+          member_id: memberId,
+          method: "crm.contact.add",
+          params: {
+            fields: {
+              NAME: cf.client.name?.split(" ")[0] || cf.client.name,
+              LAST_NAME: cf.client.name?.split(" ").slice(1).join(" ") || "",
+              UF_CRM_1768312831: cf.accessId,
+              COMMENTS: `Importado do Access (ID: ${cf.accessId}). Doc: ${cf.client.document_number || "—"}`,
+            },
+          },
+        }),
+      });
+    } catch (e) {
+      console.error("[Carteira] Create contact error:", e);
+    } finally {
+      setCreatingContact(false);
+    }
+  };
+
+  // ── Render expanded service details ──
+  const renderServiceDetails = (cf: ClientFinancials) => {
+    const now = new Date();
+    return (
+      <div className="space-y-3">
+        {cf.leads.length === 0 && (
+          <p className="text-xs text-muted-foreground">Sem serviços/honorários importados para este cliente.</p>
+        )}
+        {cf.leads.map((lead) => {
+          const cases = lead.cases || [];
+          return cases.map((cas: any) => {
+            const contracts = cas.contracts || [];
+            const records = contracts.flatMap((ct: any) => ct.financial_records || []);
+            const svcTotal = records.reduce((s: number, r: any) => s + (parseFloat(r.installment_value) || 0), 0);
+            const svcPaid = records.filter((r: any) => r.status === "paga").length;
+            return (
+              <Card key={cas.id} className="border-l-4 border-l-primary/50">
+                <CardContent className="p-3">
+                  <div className="flex items-center justify-between mb-2">
+                    <div>
+                      <p className="text-sm font-semibold text-foreground">{cas.title || lead.name}</p>
+                      <p className="text-xs text-muted-foreground">{fmt(svcTotal)} • {svcPaid}/{records.length} pagas</p>
+                    </div>
+                    {svcPaid === records.length && records.length > 0 ? (
+                      <Badge className="bg-emerald-500/10 text-emerald-500 border-emerald-500/20 text-[10px]">✓ Quitado</Badge>
+                    ) : (
+                      <Badge className="bg-amber-500/10 text-amber-500 border-amber-500/20 text-[10px]">Em aberto</Badge>
+                    )}
+                  </div>
+                  {records.length > 0 && (
+                    <div className="mt-2 space-y-1">
+                      {records
+                        .sort((a: any, b: any) => (a.installment_number || 0) - (b.installment_number || 0))
+                        .map((fr: any) => {
+                          const isOverdue = fr.status !== "paga" && fr.due_date && new Date(fr.due_date) < now;
+                          return (
+                            <div key={fr.id} className="flex items-center gap-2 text-xs py-1 border-t border-border/50">
+                              <span className="w-10 text-muted-foreground">{fr.installment_number}/{fr.total_installments}</span>
+                              <span className="w-16 font-medium text-foreground">{fmt(parseFloat(fr.installment_value) || 0)}</span>
+                              <span className="w-20 text-muted-foreground">{fr.due_date ? new Date(fr.due_date).toLocaleDateString("pt-PT") : "—"}</span>
+                              {fr.status === "paga" ? (
+                                <Badge className="bg-emerald-500/10 text-emerald-500 border-emerald-500/20 text-[10px]">
+                                  ✅ {fr.paid_at ? new Date(fr.paid_at).toLocaleDateString("pt-PT") : "Paga"}
+                                </Badge>
+                              ) : isOverdue ? (
+                                <Badge className="bg-red-500/10 text-red-500 border-red-500/20 text-[10px]">🔴 Atrasada</Badge>
+                              ) : (
+                                <Badge variant="outline" className="text-[10px]">Pendente</Badge>
+                              )}
+                            </div>
+                          );
+                        })}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            );
+          });
+        })}
+      </div>
+    );
+  };
 
   return (
     <div className="space-y-4">
@@ -4099,19 +4365,20 @@ function CarteiraAccessView({ integration }: { integration: any }) {
       <div className="b24-view-header">
         <h1 className="text-xl font-bold text-white">Carteira de Clientes</h1>
         <p className="text-white/60 text-sm mt-0.5">
-          {clients.length} clientes importados do Access
+          {clientsData.length} clientes • {fmt(totals.value)} total • {fmt(totals.paid)} pago • {fmt(totals.pending)} pendente
+          {totals.overdue > 0 && <span className="text-red-300"> • {fmt(totals.overdue)} em atraso</span>}
         </p>
       </div>
 
       {/* Search */}
       <div className="flex items-center gap-3">
         <Input
-          placeholder="Pesquisar por nome, documento ou nacionalidade..."
+          placeholder="Pesquisar por nome, documento ou Access ID..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           className="max-w-md"
         />
-        <Button variant="outline" size="sm" onClick={fetchClients} disabled={loading}>
+        <Button variant="outline" size="sm" onClick={fetchAll} disabled={loading}>
           <RefreshCw className={cn("h-4 w-4", loading && "animate-spin")} />
         </Button>
         <Badge variant="secondary">{filtered.length} resultado(s)</Badge>
@@ -4137,103 +4404,58 @@ function CarteiraAccessView({ integration }: { integration: any }) {
                 <tr className="border-b bg-muted/50">
                   <th className="text-left p-3 font-medium text-muted-foreground">Nome</th>
                   <th className="text-left p-3 font-medium text-muted-foreground">Documento</th>
-                  <th className="text-left p-3 font-medium text-muted-foreground">Nacionalidade</th>
-                  <th className="text-left p-3 font-medium text-muted-foreground">Contrato</th>
-                  <th className="text-left p-3 font-medium text-muted-foreground">Access ID</th>
-                  {domain && <th className="text-left p-3 font-medium text-muted-foreground">Bitrix24</th>}
+                  <th className="text-center p-3 font-medium text-muted-foreground">Serviços</th>
+                  <th className="text-right p-3 font-medium text-muted-foreground">V. Total</th>
+                  <th className="text-right p-3 font-medium text-muted-foreground">Pago</th>
+                  <th className="text-right p-3 font-medium text-muted-foreground">Pendente</th>
+                  <th className="text-center p-3 font-medium text-muted-foreground">Status</th>
+                  <th className="text-center p-3 font-medium text-muted-foreground">Ações</th>
                 </tr>
               </thead>
               <tbody>
-                {filtered.map((client) => {
-                  const accessId = extractAccessId(client.notes);
-                  const isExpanded = expandedId === client.id;
+                {filtered.map((cf) => {
+                  const isExpanded = expandedId === cf.client.id;
                   return (
-                    <Fragment key={client.id}>
+                    <Fragment key={cf.client.id}>
                       <tr
                         className="border-b hover:bg-muted/30 cursor-pointer transition-colors"
-                        onClick={() => setExpandedId(isExpanded ? null : client.id)}
+                        onClick={() => setExpandedId(isExpanded ? null : cf.client.id)}
                       >
                         <td className="p-3 font-medium text-foreground">
                           <div className="flex items-center gap-2">
                             <ChevronRight className={cn("h-4 w-4 transition-transform text-muted-foreground", isExpanded && "rotate-90")} />
-                            {client.name}
+                            <div>
+                              <p>{cf.client.name}</p>
+                              {cf.accessId && <p className="text-[10px] text-muted-foreground">Access ID: {cf.accessId}</p>}
+                            </div>
                           </div>
                         </td>
-                        <td className="p-3 text-muted-foreground">{client.document_number || "—"}</td>
-                        <td className="p-3 text-muted-foreground">{client.nationality || "—"}</td>
-                        <td className="p-3">
-                          {client.has_active_contract ? (
-                            <Badge className="bg-emerald-500/10 text-emerald-500 border-emerald-500/20">Ativo</Badge>
-                          ) : (
-                            <Badge variant="outline" className="text-muted-foreground">Inativo</Badge>
-                          )}
+                        <td className="p-3 text-muted-foreground text-xs">{cf.client.document_number || "—"}</td>
+                        <td className="p-3 text-center">
+                          <Badge variant="secondary" className="text-[10px]">{cf.serviceCount}</Badge>
                         </td>
-                        <td className="p-3">
-                          {accessId ? (
-                            <Badge variant="secondary">ID {accessId}</Badge>
-                          ) : "—"}
+                        <td className="p-3 text-right font-medium text-foreground text-xs">{fmt(cf.totalValue)}</td>
+                        <td className="p-3 text-right text-emerald-600 text-xs">{fmt(cf.totalPaid)}</td>
+                        <td className="p-3 text-right text-amber-600 text-xs">{cf.totalPending > 0 ? fmt(cf.totalPending) : "—"}</td>
+                        <td className="p-3 text-center">{getStatusBadge(cf)}</td>
+                        <td className="p-3 text-center">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 gap-1 text-xs"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              openBitrixModal(cf);
+                            }}
+                          >
+                            <RefreshCw className="h-3 w-3" /> Bitrix
+                          </Button>
                         </td>
-                        {domain && (
-                          <td className="p-3">
-                            {accessId && (
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                className="h-7 gap-1 text-xs"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  window.open(`https://${domain}/crm/contact/details/0/?search=${encodeURIComponent(client.name)}`, "_blank");
-                                }}
-                              >
-                                <ExternalLink className="h-3 w-3" /> CRM
-                              </Button>
-                            )}
-                          </td>
-                        )}
                       </tr>
                       {isExpanded && (
                         <tr>
-                          <td colSpan={domain ? 6 : 5} className="bg-muted/20 px-6 py-4">
-                            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-xs">
-                              <div>
-                                <span className="text-muted-foreground">Tipo Doc:</span>
-                                <p className="font-medium text-foreground">{client.document_type || "—"}</p>
-                              </div>
-                              <div>
-                                <span className="text-muted-foreground">Data Nascimento:</span>
-                                <p className="font-medium text-foreground">{client.birth_date || "—"}</p>
-                              </div>
-                              <div>
-                                <span className="text-muted-foreground">Morada:</span>
-                                <p className="font-medium text-foreground">{client.address || "—"}</p>
-                              </div>
-                              <div>
-                                <span className="text-muted-foreground">Código Postal:</span>
-                                <p className="font-medium text-foreground">{client.postal_code || "—"}</p>
-                              </div>
-                              <div>
-                                <span className="text-muted-foreground">Freguesia:</span>
-                                <p className="font-medium text-foreground">{client.freguesia || "—"}</p>
-                              </div>
-                              <div>
-                                <span className="text-muted-foreground">Concelho:</span>
-                                <p className="font-medium text-foreground">{client.concelho || "—"}</p>
-                              </div>
-                              <div>
-                                <span className="text-muted-foreground">Distrito:</span>
-                                <p className="font-medium text-foreground">{client.distrito || "—"}</p>
-                              </div>
-                              <div>
-                                <span className="text-muted-foreground">NIB:</span>
-                                <p className="font-medium text-foreground">{client.nib || "—"}</p>
-                              </div>
-                              {client.notes && (
-                                <div className="col-span-2 md:col-span-4">
-                                  <span className="text-muted-foreground">Notas:</span>
-                                  <p className="font-medium text-foreground">{client.notes}</p>
-                                </div>
-                              )}
-                            </div>
+                          <td colSpan={8} className="bg-muted/20 px-6 py-4">
+                            {renderServiceDetails(cf)}
                           </td>
                         </tr>
                       )}
@@ -4245,6 +4467,112 @@ function CarteiraAccessView({ integration }: { integration: any }) {
           </div>
         </Card>
       )}
+
+      {/* ── Bitrix Modal ── */}
+      <Dialog open={!!bitrixModalClient} onOpenChange={(open) => !open && setBitrixModalClient(null)}>
+        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Deals no Bitrix24 — {bitrixModalClient?.client.name}</DialogTitle>
+            <DialogDescription>
+              Access ID: {bitrixModalClient?.accessId || "—"} • {bitrixDeals.length} deal(s) encontrado(s)
+            </DialogDescription>
+          </DialogHeader>
+
+          {loadingBitrix ? (
+            <div className="flex items-center justify-center py-8">
+              <Loader2 className="h-5 w-5 animate-spin text-primary" />
+              <span className="ml-2 text-sm text-muted-foreground">A buscar dados do Bitrix24...</span>
+            </div>
+          ) : bitrixDeals.length === 0 ? (
+            <div className="text-center py-6 space-y-3">
+              <AlertCircle className="h-8 w-8 mx-auto text-amber-500 opacity-60" />
+              <p className="text-sm text-muted-foreground">Nenhum Deal encontrado no Bitrix24 para este cliente.</p>
+              {bitrixModalClient && bitrixModalClient.totalPaid > 0 && bitrixModalClient.totalPending === 0 && bitrixModalClient.totalOverdue === 0 && (
+                <div className="pt-2">
+                  <p className="text-xs text-muted-foreground mb-2">Cliente quitado — criar apenas Contacto no CRM?</p>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={creatingContact}
+                    onClick={() => bitrixModalClient && handleCreateContact(bitrixModalClient)}
+                  >
+                    {creatingContact ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : <Users className="h-3 w-3 mr-1" />}
+                    Criar Contacto no Bitrix
+                  </Button>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {bitrixDeals.map((deal: any) => {
+                const dealId = deal.ID || deal.id;
+                const opportunity = parseFloat(deal.OPPORTUNITY || deal.opportunity) || 0;
+                const assignedName = bitrixUsers[String(deal.ASSIGNED_BY_ID)] || `User #${deal.ASSIGNED_BY_ID || "—"}`;
+                const contactId = deal.CONTACT_ID || deal.contact_id;
+                const parcelas = deal.UF_CRM_EMMELY_PARCELAS;
+                const valorRecebido = parseFloat(deal.UF_CRM_EMMELY_VALOR_RECEBIDO) || 0;
+                const valorTotal = parseFloat(deal.UF_CRM_EMMELY_VALOR_TOTAL) || opportunity;
+                const isSyncing = syncingDealId === dealId;
+
+                return (
+                  <Card key={dealId} className="border-l-4 border-l-primary">
+                    <CardContent className="p-4 space-y-2">
+                      <div className="flex items-start justify-between">
+                        <div>
+                          <p className="font-semibold text-foreground">Deal #{dealId}: {deal.TITLE || deal.title}</p>
+                          <p className="text-xs text-muted-foreground">
+                            Contacto: {contactId ? `ID ${contactId}` : "—"} • Responsável: {assignedName}
+                          </p>
+                        </div>
+                        {domain && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 text-xs gap-1"
+                            onClick={() => window.open(`https://${domain}/crm/deal/details/${dealId}/`, "_blank")}
+                          >
+                            <ExternalLink className="h-3 w-3" /> Abrir
+                          </Button>
+                        )}
+                      </div>
+
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs">
+                        <div className="bg-muted/50 rounded p-2">
+                          <span className="text-muted-foreground">Valor</span>
+                          <p className="font-semibold text-foreground">{fmt(valorTotal)}</p>
+                        </div>
+                        <div className="bg-muted/50 rounded p-2">
+                          <span className="text-muted-foreground">Recebido</span>
+                          <p className="font-semibold text-emerald-600">{fmt(valorRecebido)}</p>
+                        </div>
+                        <div className="bg-muted/50 rounded p-2">
+                          <span className="text-muted-foreground">Parcelas</span>
+                          <p className="font-semibold text-foreground">{parcelas || "—"}</p>
+                        </div>
+                        <div className="bg-muted/50 rounded p-2">
+                          <span className="text-muted-foreground">Em aberto</span>
+                          <p className="font-semibold text-amber-600">{fmt(valorTotal - valorRecebido)}</p>
+                        </div>
+                      </div>
+
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="w-full mt-2"
+                        disabled={isSyncing}
+                        onClick={() => handleSyncDeal(deal)}
+                      >
+                        {isSyncing ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : <RefreshCw className="h-3 w-3 mr-1" />}
+                        Sincronizar Parcelas
+                      </Button>
+                    </CardContent>
+                  </Card>
+                );
+              })}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
