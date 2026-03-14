@@ -5142,7 +5142,16 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
     setHonorariosDone(false);
 
     const batchSize = 10;
-    let batchStart = 0;
+    let batchStart = honorariosSessionId && honorariosProgress.processed > 0 ? honorariosProgress.processed : 0;
+    const allLogs: any[] = batchStart > 0 ? [...honorariosLogs] : [];
+
+    // Update session filter config
+    if (honorariosSessionId) {
+      await supabase.from("import_sessions" as any).update({
+        filter_config: { dateFrom: filterDateFrom?.toISOString(), dateTo: filterDateTo?.toISOString(), status: filterStatus } as any,
+        total_items: filteredClientes?.length || 0,
+      } as any).eq("id", honorariosSessionId);
+    }
 
     while (batchStart < (filteredClientes?.length || 0)) {
       try {
@@ -5163,18 +5172,53 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
         });
         const data = await res.json();
         if (data.results) {
-          setHonorariosLogs(prev => [...prev, ...data.results]);
+          allLogs.push(...data.results);
+          setHonorariosLogs([...allLogs]);
         }
-        setHonorariosProgress({ processed: data.processed || batchStart + batchSize, total: filteredClientes?.length || 0 });
+        const processed = data.processed || batchStart + batchSize;
+        setHonorariosProgress({ processed, total: filteredClientes?.length || 0 });
+
+        // Checkpoint
+        if (honorariosSessionId) {
+          await saveSessionProgress(honorariosSessionId, processed, allLogs);
+        }
+
         if (!data.has_more) break;
         batchStart = data.next_batch_start;
       } catch (e) {
-        setHonorariosLogs(prev => [...prev, { client_name: `Batch ${batchStart}`, status: "error", error: String(e) }]);
+        const errLog = { client_name: `Batch ${batchStart}`, status: "error", error: String(e) };
+        allLogs.push(errLog);
+        setHonorariosLogs([...allLogs]);
+        if (honorariosSessionId) {
+          await saveSessionProgress(honorariosSessionId, batchStart, allLogs);
+        }
         break;
       }
     }
     setHonorariosDone(true);
     setImportingHonorarios(false);
+    if (honorariosSessionId) await markSessionDone(honorariosSessionId);
+  };
+
+  // ── Clear session helper ──
+  const handleClearSession = async (phase: "clients" | "honorarios") => {
+    if (phase === "clients" && clientsSessionId) {
+      const { data: session } = await supabase.from("import_sessions" as any).select("file_path").eq("id", clientsSessionId).single() as any;
+      await clearSession(clientsSessionId, session?.file_path);
+      setClientesData(null);
+      setClientsLogs([]);
+      setClientsProgress({ processed: 0, total: 0 });
+      setClientsDone(false);
+      setClientsSessionId(null);
+    } else if (phase === "honorarios" && honorariosSessionId) {
+      const { data: session } = await supabase.from("import_sessions" as any).select("file_path").eq("id", honorariosSessionId).single() as any;
+      await clearSession(honorariosSessionId, session?.file_path);
+      setHonorariosData(null);
+      setHonorariosLogs([]);
+      setHonorariosProgress({ processed: 0, total: 0 });
+      setHonorariosDone(false);
+      setHonorariosSessionId(null);
+    }
   };
 
   // ── Phase 3: Load clients for sync ──
