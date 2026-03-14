@@ -290,6 +290,7 @@ serve(async (req) => {
                 status: allPaid ? "aceita" : "enviada",
                 client_name: clientName,
                 client_document: docNumber,
+                created_at: serviceDate,
               })
               .select("id")
               .single();
