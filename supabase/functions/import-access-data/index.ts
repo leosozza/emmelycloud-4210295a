@@ -355,7 +355,7 @@ serve(async (req) => {
             // 4. Sync to Bitrix24 if enabled
             if (sync_bitrix && integration?.client_endpoint && integration?.access_token) {
               try {
-                await syncClientToBitrix(integration, client, desc, installments, String(separadorId), totalValue, totalPaid, allPaid);
+                await syncClientToBitrix(integration, client, desc, installments, String(separadorId), totalValue, totalPaid, allPaid, category_id);
               } catch (e) {
                 console.error(`[import] Bitrix sync error ${clientName}/${desc}:`, e);
               }
