@@ -354,6 +354,7 @@ serve(async (req) => {
                 due_date: dueDate,
                 paid_at: paidAt,
                 payment_method: "transferencia",
+                created_at: serviceDate,
               });
 
               if (frErr) {
