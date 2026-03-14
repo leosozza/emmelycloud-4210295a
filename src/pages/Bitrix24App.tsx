@@ -308,6 +308,7 @@ const Bitrix24App = () => {
         {view === "placement" && <PlacementPreviewView integration={integration} memberId={memberId} />}
         {view === "empresas" && <EmpresasView />}
         {view === "relatorios" && <RelatoriosView />}
+        {view === "importacao" && <ImportacaoAccessView integration={integration} memberId={memberId} />}
       </main>
     </div>
   );
