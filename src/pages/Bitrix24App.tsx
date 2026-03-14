@@ -334,6 +334,26 @@ const Bitrix24App = () => {
   );
 };
 
+// ==================== PERIOD HELPERS ====================
+const PERIOD_PRESETS = [
+  { label: "7d", days: 7 },
+  { label: "30d", days: 30 },
+  { label: "Mês", days: 0 },
+  { label: "Trim", days: 90 },
+  { label: "Ano", days: 365 },
+];
+function getDateRange(preset: string): { start: Date; end: Date } {
+  const now = new Date();
+  const end = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59);
+  if (preset === "Mês") return { start: new Date(now.getFullYear(), now.getMonth(), 1), end };
+  const p = PERIOD_PRESETS.find((pp) => pp.label === preset);
+  const days = p?.days || 30;
+  const start = new Date(now);
+  start.setDate(start.getDate() - days);
+  start.setHours(0, 0, 0, 0);
+  return { start, end };
+}
+
 // ==================== DASHBOARD VIEW (NEW) ====================
 function DashboardView({ integration, botId, domain }: {
   integration: any;
@@ -343,35 +363,58 @@ function DashboardView({ integration, botId, domain }: {
   onResync: () => void;
   onRefresh: () => void;
 }) {
-  const [stats, setStats] = useState({ conversations: 0, messagesToday: 0, revenueMonth: 0, pendingPayments: 0 });
+  const [period, setPeriod] = useState("30d");
+  const [customStart, setCustomStart] = useState<Date | undefined>(undefined);
+  const [customEnd, setCustomEnd] = useState<Date | undefined>(undefined);
+
+  const dateRange = useMemo(() => {
+    if (customStart && customEnd) return { start: customStart, end: customEnd };
+    return getDateRange(period);
+  }, [period, customStart, customEnd]);
+
+  const startISO = dateRange.start.toISOString();
+  const endISO = dateRange.end.toISOString();
+
+  const [stats, setStats] = useState({ conversations: 0, messagesToday: 0, revenueReceived: 0, revenuePending: 0, clientsCount: 0, messagesInPeriod: 0 });
   const [messagesChart, setMessagesChart] = useState<{ day: string; count: number }[]>([]);
   const [paymentChart, setPaymentChart] = useState<{ status: string; amount: number }[]>([]);
   const [recentConversations, setRecentConversations] = useState<any[]>([]);
   const [recentPayments, setRecentPayments] = useState<any[]>([]);
+  const [ranking, setRanking] = useState<{ name: string; count: number; total: number }[]>([]);
   const [loadingStats, setLoadingStats] = useState(true);
 
   useEffect(() => {
-    const headers = { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` };
+    const headers: Record<string, string> = { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` };
     const today = new Date().toISOString().split("T")[0];
-    const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString();
 
     const fetchAll = async () => {
       setLoadingStats(true);
       try {
-        const [convRes, msgTodayRes, revenueRes, pendingRes, recentConvRes, recentPayRes] = await Promise.all([
+        const [convRes, msgTodayRes, revenueRes, pendingRes, recentConvRes, recentPayRes, clientsRes] = await Promise.all([
           fetch(`${SUPABASE_URL}/rest/v1/conversations?select=id&status=in.(aberta,em_atendimento)`, { headers }).then(r => r.json()),
           fetch(`${SUPABASE_URL}/rest/v1/messages?select=id&created_at=gte.${today}T00:00:00`, { headers }).then(r => r.json()),
-          fetch(`${SUPABASE_URL}/rest/v1/payment_transactions?select=amount&status=in.(confirmed,paid)&created_at=gte.${monthStart}`, { headers }).then(r => r.json()),
-          fetch(`${SUPABASE_URL}/rest/v1/payment_transactions?select=amount&status=eq.pending`, { headers }).then(r => r.json()),
+          fetch(`${SUPABASE_URL}/rest/v1/payment_transactions?select=amount&status=in.(confirmed,paid)&created_at=gte.${startISO}&created_at=lte.${endISO}`, { headers }).then(r => r.json()),
+          fetch(`${SUPABASE_URL}/rest/v1/payment_transactions?select=amount&status=eq.pending&created_at=gte.${startISO}&created_at=lte.${endISO}`, { headers }).then(r => r.json()),
           fetch(`${SUPABASE_URL}/rest/v1/conversations?select=id,contact_name,channel,status,last_message_preview,last_message_at&order=last_message_at.desc&limit=5`, { headers }).then(r => r.json()),
           fetch(`${SUPABASE_URL}/rest/v1/payment_transactions?select=id,amount,currency,status,gateway,created_at&order=created_at.desc&limit=5`, { headers }).then(r => r.json()),
+          fetch(`${SUPABASE_URL}/rest/v1/clients?select=id`, { headers: { ...headers, Prefer: "count=exact", Range: "0-0" } }),
         ]);
+
+        const clientsCount = parseInt(clientsRes.headers?.get?.("content-range")?.split("/")?.[1] || "0", 10) || (Array.isArray(await clientsRes.json?.()) ? 0 : 0);
+        // Fallback: count from array
+        let clientsTotal = clientsCount;
+        if (!clientsTotal) {
+          const cArr = await fetch(`${SUPABASE_URL}/rest/v1/clients?select=id`, { headers }).then(r => r.json());
+          clientsTotal = Array.isArray(cArr) ? cArr.length : 0;
+        }
 
         setStats({
           conversations: Array.isArray(convRes) ? convRes.length : 0,
           messagesToday: Array.isArray(msgTodayRes) ? msgTodayRes.length : 0,
-          revenueMonth: (revenueRes || []).reduce((s: number, t: any) => s + Number(t.amount), 0),
-          pendingPayments: (pendingRes || []).reduce((s: number, t: any) => s + Number(t.amount), 0),
+          revenueReceived: (revenueRes || []).reduce((s: number, t: any) => s + Number(t.amount), 0),
+          revenuePending: (pendingRes || []).reduce((s: number, t: any) => s + Number(t.amount), 0),
+          clientsCount: clientsTotal,
+          messagesInPeriod: Array.isArray(msgTodayRes) ? msgTodayRes.length : 0,
         });
         setRecentConversations(Array.isArray(recentConvRes) ? recentConvRes : []);
         setRecentPayments(Array.isArray(recentPayRes) ? recentPayRes : []);
@@ -390,17 +433,53 @@ function DashboardView({ integration, botId, domain }: {
         }
         setMessagesChart(days);
 
-        // Payment totals by status
+        // Payment totals by status (in period)
         const [paidAll, pendAll, overdueAll] = await Promise.all([
-          fetch(`${SUPABASE_URL}/rest/v1/payment_transactions?select=amount&status=in.(confirmed,paid)`, { headers }).then(r => r.json()),
-          fetch(`${SUPABASE_URL}/rest/v1/payment_transactions?select=amount&status=eq.pending`, { headers }).then(r => r.json()),
-          fetch(`${SUPABASE_URL}/rest/v1/payment_transactions?select=amount&status=eq.overdue`, { headers }).then(r => r.json()),
+          fetch(`${SUPABASE_URL}/rest/v1/payment_transactions?select=amount&status=in.(confirmed,paid)&created_at=gte.${startISO}&created_at=lte.${endISO}`, { headers }).then(r => r.json()),
+          fetch(`${SUPABASE_URL}/rest/v1/payment_transactions?select=amount&status=eq.pending&created_at=gte.${startISO}&created_at=lte.${endISO}`, { headers }).then(r => r.json()),
+          fetch(`${SUPABASE_URL}/rest/v1/payment_transactions?select=amount&status=eq.overdue&created_at=gte.${startISO}&created_at=lte.${endISO}`, { headers }).then(r => r.json()),
         ]);
         setPaymentChart([
           { status: "Pago", amount: (paidAll || []).reduce((s: number, t: any) => s + Number(t.amount), 0) },
           { status: "Pendente", amount: (pendAll || []).reduce((s: number, t: any) => s + Number(t.amount), 0) },
           { status: "Atrasado", amount: (overdueAll || []).reduce((s: number, t: any) => s + Number(t.amount), 0) },
         ]);
+
+        // Ranking: proposals accepted in period grouped by created_by
+        const proposalsRes = await fetch(
+          `${SUPABASE_URL}/rest/v1/proposals?select=id,value,created_by,accepted_at&status=eq.aceita&accepted_at=gte.${startISO}&accepted_at=lte.${endISO}`,
+          { headers }
+        ).then(r => r.json());
+
+        if (Array.isArray(proposalsRes) && proposalsRes.length > 0) {
+          const byPerson: Record<string, { count: number; total: number }> = {};
+          proposalsRes.forEach((p: any) => {
+            const key = p.created_by || "unknown";
+            if (!byPerson[key]) byPerson[key] = { count: 0, total: 0 };
+            byPerson[key].count++;
+            byPerson[key].total += Number(p.value);
+          });
+
+          // Fetch profile names
+          const profileIds = Object.keys(byPerson).filter(k => k !== "unknown");
+          let profileMap: Record<string, string> = {};
+          if (profileIds.length > 0) {
+            const profilesRes = await fetch(
+              `${SUPABASE_URL}/rest/v1/profiles?select=id,full_name&id=in.(${profileIds.join(",")})`,
+              { headers }
+            ).then(r => r.json());
+            if (Array.isArray(profilesRes)) {
+              profilesRes.forEach((pr: any) => { profileMap[pr.id] = pr.full_name || "Sem nome"; });
+            }
+          }
+
+          const rankingData = Object.entries(byPerson)
+            .map(([id, data]) => ({ name: profileMap[id] || "Desconhecido", ...data }))
+            .sort((a, b) => b.total - a.total);
+          setRanking(rankingData);
+        } else {
+          setRanking([]);
+        }
       } catch (e) {
         console.error("[DASHBOARD] Error:", e);
       } finally {
@@ -408,10 +487,17 @@ function DashboardView({ integration, botId, domain }: {
       }
     };
     fetchAll();
-  }, []);
+  }, [startISO, endISO]);
 
   const fmtCur = (v: number) => new Intl.NumberFormat("pt-PT", { style: "currency", currency: "EUR" }).format(v);
   const BAR_COLORS = ["#22c55e", "#eab308", "#ef4444"];
+  const MEDALS = ["🥇", "🥈", "🥉"];
+
+  const handlePreset = (label: string) => {
+    setPeriod(label);
+    setCustomStart(undefined);
+    setCustomEnd(undefined);
+  };
 
   return (
     <div className="p-6 space-y-6">
@@ -435,25 +521,68 @@ function DashboardView({ integration, botId, domain }: {
         </div>
       </div>
 
-      {/* KPI Cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      {/* Period Filter Bar */}
+      <Card>
+        <CardContent className="py-3 px-4">
+          <div className="flex flex-wrap items-center gap-2">
+            {PERIOD_PRESETS.map((p) => (
+              <Button
+                key={p.label}
+                variant={period === p.label && !customStart ? "default" : "outline"}
+                size="sm"
+                className="text-xs h-7"
+                onClick={() => handlePreset(p.label)}
+              >
+                {p.label}
+              </Button>
+            ))}
+            <div className="h-5 w-px bg-border mx-1" />
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button variant="outline" size="sm" className="text-xs h-7 gap-1">
+                  <CalendarIcon className="h-3 w-3" />
+                  {customStart ? format(customStart, "dd/MM/yy") : "Início"}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-auto p-0" align="start">
+                <Calendar mode="single" selected={customStart} onSelect={(d) => { setCustomStart(d || undefined); if (d && !customEnd) setCustomEnd(new Date()); }} className="p-3 pointer-events-auto" />
+              </PopoverContent>
+            </Popover>
+            <span className="text-xs text-muted-foreground">—</span>
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button variant="outline" size="sm" className="text-xs h-7 gap-1">
+                  <CalendarIcon className="h-3 w-3" />
+                  {customEnd ? format(customEnd, "dd/MM/yy") : "Fim"}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-auto p-0" align="start">
+                <Calendar mode="single" selected={customEnd} onSelect={(d) => { setCustomEnd(d || undefined); }} className="p-3 pointer-events-auto" />
+              </PopoverContent>
+            </Popover>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* KPI Cards — 6 columns */}
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
         {[
+          { title: "Clientes na Carteira", value: String(stats.clientsCount), icon: Users, accent: "border-l-primary" },
+          { title: "Cobranças Recebidas", value: fmtCur(stats.revenueReceived), icon: ArrowDownLeft, accent: "border-l-success" },
+          { title: "Cobranças a Receber", value: fmtCur(stats.revenuePending), icon: ArrowUpRight, accent: "border-l-warning" },
+          { title: "Receita Total", value: fmtCur(stats.revenueReceived), icon: DollarSign, accent: "border-l-success" },
           { title: "Conversas Activas", value: String(stats.conversations), icon: MessageSquare, accent: "border-l-primary" },
           { title: "Mensagens Hoje", value: String(stats.messagesToday), icon: Zap, accent: "border-l-warning" },
-          { title: "Receita do Mês", value: fmtCur(stats.revenueMonth), icon: DollarSign, accent: "border-l-success" },
-          { title: "Pendente", value: fmtCur(stats.pendingPayments), icon: Clock, accent: "border-l-destructive" },
         ].map((kpi) => (
           <Card key={kpi.title} className={cn("border-l-4 hover:shadow-md transition-shadow", kpi.accent)}>
-            <CardContent className="pt-5">
-              <div className="flex items-start justify-between mb-2">
-                <div className="w-10 h-10 rounded-xl flex items-center justify-center bg-primary/10">
-                  <kpi.icon className="h-5 w-5 text-primary" strokeWidth={1.5} />
-                </div>
+            <CardContent className="pt-4 pb-3">
+              <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-primary/10 mb-2">
+                <kpi.icon className="h-4 w-4 text-primary" strokeWidth={1.5} />
               </div>
-              <div className="text-2xl font-extrabold text-foreground">
-                {loadingStats ? <div className="h-7 w-16 bg-muted animate-pulse rounded" /> : kpi.value}
+              <div className="text-lg font-extrabold text-foreground leading-tight">
+                {loadingStats ? <div className="h-6 w-14 bg-muted animate-pulse rounded" /> : kpi.value}
               </div>
-              <p className="text-xs font-medium text-muted-foreground mt-1">{kpi.title}</p>
+              <p className="text-[10px] font-medium text-muted-foreground mt-0.5">{kpi.title}</p>
             </CardContent>
           </Card>
         ))}
@@ -511,6 +640,44 @@ function DashboardView({ integration, botId, domain }: {
           </CardContent>
         </Card>
       </div>
+
+      {/* Ranking */}
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm font-semibold flex items-center gap-2 text-foreground">
+            <TrendingUp className="h-4 w-4 text-primary" /> Ranking de Negócios Fechados
+          </CardTitle>
+          <CardDescription className="text-xs">Propostas aceitas no período seleccionado</CardDescription>
+        </CardHeader>
+        <CardContent>
+          {loadingStats ? (
+            <div className="space-y-3">{[1,2,3].map(i => <div key={i} className="h-10 bg-muted animate-pulse rounded" />)}</div>
+          ) : ranking.length === 0 ? (
+            <p className="text-xs text-muted-foreground py-6 text-center">Nenhuma proposta aceita no período</p>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="w-12">#</TableHead>
+                  <TableHead>Responsável</TableHead>
+                  <TableHead className="text-right">Propostas</TableHead>
+                  <TableHead className="text-right">Valor Total</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {ranking.map((r, i) => (
+                  <TableRow key={i} className={i < 3 ? "bg-primary/5" : ""}>
+                    <TableCell className="font-bold text-lg">{MEDALS[i] || `#${i + 1}`}</TableCell>
+                    <TableCell className="font-medium text-foreground">{r.name}</TableCell>
+                    <TableCell className="text-right text-muted-foreground">{r.count}</TableCell>
+                    <TableCell className="text-right font-semibold text-foreground">{fmtCur(r.total)}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+        </CardContent>
+      </Card>
 
       {/* Recent lists */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
