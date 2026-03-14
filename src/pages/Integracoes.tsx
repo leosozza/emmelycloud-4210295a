@@ -62,6 +62,7 @@ import { Switch } from "@/components/ui/switch";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+import { calculateLateFees } from "@/lib/lateFeeCalc";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
