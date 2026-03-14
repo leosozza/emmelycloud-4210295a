@@ -670,9 +670,7 @@ async function syncClientOnlyToBitrix(
 async function syncHonorariosToBitrix(
   integration: any,
   client: RawClient,
-  desc: string,
-  installments: RawHonorario[],
-  separadorId: string,
+  allInstallments: RawHonorario[],
   totalValue: number,
   totalPaid: number,
   allPaid: boolean,
@@ -684,8 +682,10 @@ async function syncHonorariosToBitrix(
   const endpoint = integration.client_endpoint;
   const accessToken = integration.access_token;
   const nif = cleanStr(client.NIFNIPC);
+  const clientAccessId = String(client.ID);
+  const clientName = cleanStr(client.NOME) || "SEM NOME";
 
-  // ── Upsert Contact ──
+  // ── Find existing Contact ──
   let contactId: string | null = null;
 
   if (nif) {
@@ -704,30 +704,23 @@ async function syncHonorariosToBitrix(
     }
   }
 
-  const nameParts = (client.NOME || "").trim().split(/\s+/);
-  const firstName = nameParts[0] || "";
-  const lastName = nameParts.slice(1).join(" ") || "";
+  // If no contact found by NIF, try to create/find
+  if (!contactId) {
+    const nameParts = (client.NOME || "").trim().split(/\s+/);
+    const firstName = nameParts[0] || "";
+    const lastName = nameParts.slice(1).join(" ") || "";
 
-  const contactFields: Record<string, any> = {
-    NAME: firstName,
-    LAST_NAME: lastName,
-    UF_CRM_EMMELY_NIF: nif || "",
-    UF_CRM_EMMELY_DOCUMENTO: cleanStr(client.DOCUMENTO) || "",
-  };
+    const contactFields: Record<string, any> = {
+      NAME: firstName,
+      LAST_NAME: lastName,
+      UF_CRM_EMMELY_NIF: nif || "",
+      UF_CRM_EMMELY_DOCUMENTO: cleanStr(client.DOCUMENTO) || "",
+    };
 
-  if (client.NASCIMENTO) contactFields.BIRTHDATE = parseDate(client.NASCIMENTO);
-  if (client.MORADA) contactFields.ADDRESS = client.MORADA;
-  if (client.CODIGOPOSTAL) contactFields.ADDRESS_POSTAL_CODE = client.CODIGOPOSTAL;
-  if (client.PAIS) contactFields.ADDRESS_COUNTRY = client.PAIS;
-  if (client.EMAIL) contactFields.EMAIL = [{ VALUE: client.EMAIL, VALUE_TYPE: "WORK" }];
+    if (client.NASCIMENTO) contactFields.BIRTHDATE = parseDate(client.NASCIMENTO);
+    if (client.MORADA) contactFields.ADDRESS = client.MORADA;
+    if (client.EMAIL) contactFields.EMAIL = [{ VALUE: client.EMAIL, VALUE_TYPE: "WORK" }];
 
-  if (contactId) {
-    await fetch(`${endpoint}crm.contact.update`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ auth: accessToken, id: contactId, fields: contactFields }),
-    });
-  } else {
     const createRes = await fetch(`${endpoint}crm.contact.add`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -739,17 +732,16 @@ async function syncHonorariosToBitrix(
 
   if (!contactId) return;
 
-  // ── Upsert Deal ──
+  // ── Find Deal by UF_CRM_1768312831 = id_access (NO title filter) ──
   let dealId: string | null = null;
-  const clientAccessId = String(client.ID);
 
   const dealSearchRes = await fetch(`${endpoint}crm.deal.list`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       auth: accessToken,
-      filter: { UF_CRM_1768312831: clientAccessId, "%TITLE": desc },
-      select: ["ID", "TITLE"],
+      filter: { UF_CRM_1768312831: clientAccessId },
+      select: ["ID", "TITLE", "OPPORTUNITY"],
     }),
   });
   const dealSearchData = await dealSearchRes.json();
@@ -757,12 +749,18 @@ async function syncHonorariosToBitrix(
     dealId = dealSearchData.result[0].ID;
   }
 
+  // Build service descriptions summary
+  const serviceDescs = [...new Set(allInstallments.map(i => (i.DESCRICAO || "").trim().toUpperCase()).filter(Boolean))];
+  const dealTitle = serviceDescs.length === 1
+    ? `${serviceDescs[0]} - ${clientName}`
+    : `${serviceDescs.length} SERVIÇOS - ${clientName}`;
+
   const dealFields: Record<string, any> = {
-    TITLE: `${desc} - ${client.NOME}`,
+    TITLE: dealTitle,
     CONTACT_ID: contactId,
     OPPORTUNITY: totalValue,
     CURRENCY_ID: "EUR",
-    STAGE_ID: allPaid ? "WON" : "NEW",
+    STAGE_ID: allPaid ? "WON" : (hasOverdue ? "EXECUTING" : "NEW"),
     UF_CRM_EMMELY_NIF: nif || "",
     UF_CRM_1768312831: clientAccessId,
   };
@@ -773,51 +771,29 @@ async function syncHonorariosToBitrix(
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ auth: accessToken, id: dealId, fields: dealFields }),
     });
-    console.log(`[import] Updated Bitrix deal ${dealId} for separadorId=${separadorId}`);
+    console.log(`[import] Updated Bitrix deal ${dealId} for client ${clientName} (id_access=${clientAccessId}), total=€${totalValue}`);
   } else {
-    // Check if there's an empty placeholder deal for this client
-    const placeholderRes = await fetch(`${endpoint}crm.deal.list`, {
+    // Create new deal
+    dealFields.CATEGORY_ID = categoryId;
+    const dealRes = await fetch(`${endpoint}crm.deal.add`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        auth: accessToken,
-        filter: { UF_CRM_1768312831: clientAccessId, OPPORTUNITY: 0 },
-        select: ["ID"],
-      }),
+      body: JSON.stringify({ auth: accessToken, fields: dealFields }),
     });
-    const placeholderData = await placeholderRes.json();
-    
-    if (placeholderData.result?.length > 0) {
-      // Update the placeholder deal
-      dealId = placeholderData.result[0].ID;
-      await fetch(`${endpoint}crm.deal.update`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ auth: accessToken, id: dealId, fields: dealFields }),
-      });
-      console.log(`[import] Updated placeholder deal ${dealId} for separadorId=${separadorId}`);
-    } else {
-      // Create new deal
-      dealFields.CATEGORY_ID = categoryId;
-      const dealRes = await fetch(`${endpoint}crm.deal.add`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ auth: accessToken, fields: dealFields }),
-      });
-      const dealData = await dealRes.json();
-      dealId = dealData.result ? String(dealData.result) : null;
-      console.log(`[import] Created Bitrix deal ${dealId} in category=${categoryId} for separadorId=${separadorId}`);
-    }
+    const dealData = await dealRes.json();
+    dealId = dealData.result ? String(dealData.result) : null;
+    console.log(`[import] Created Bitrix deal ${dealId} for client ${clientName} (id_access=${clientAccessId}), total=€${totalValue}`);
   }
 
   if (!dealId) return;
 
   // ── Create Smart Invoices (Type 31) per installment ──
-  for (const inst of installments) {
+  for (const inst of allInstallments) {
     const upperStatus = (inst.STATUS || "").toUpperCase();
     const isPaid = upperStatus === "QUITADO";
     const isOverdue = upperStatus === "ATRASADO";
     const instValue = parseNum(inst.VALOR_PARCELA_CORRIGIDO) || parseNum(inst.VALOR_PARCELA);
+    const desc = (inst.DESCRICAO || "").trim().toUpperCase();
 
     let invoiceStage = "DT31_6:NEW";
     if (isPaid) invoiceStage = "DT31_6:P";
