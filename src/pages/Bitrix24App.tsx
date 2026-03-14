@@ -3880,6 +3880,25 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
   const [logs, setLogs] = useState<{ client_name: string; status: string; error?: string; details?: string }[]>([]);
   const [syncBitrix, setSyncBitrix] = useState(!!integration);
   const [done, setDone] = useState(false);
+  const [pipelines, setPipelines] = useState<{ ID: string; NAME: string }[]>([]);
+  const [selectedCategoryId, setSelectedCategoryId] = useState("0");
+  const [loadingPipelines, setLoadingPipelines] = useState(false);
+
+  // Load pipelines when syncBitrix is enabled
+  useEffect(() => {
+    if (!syncBitrix || !memberId || !integration) return;
+    setLoadingPipelines(true);
+    fetch(`${SUPABASE_URL}/functions/v1/bitrix24-fetch-entities?action=pipelines&entity=deal&member_id=${encodeURIComponent(memberId)}`, {
+      headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` },
+    })
+      .then(r => r.json())
+      .then(data => {
+        const list = data.result || data.pipelines || data || [];
+        if (Array.isArray(list)) setPipelines(list);
+      })
+      .catch(console.error)
+      .finally(() => setLoadingPipelines(false));
+  }, [syncBitrix, memberId, integration]);
 
   const parseXlsx = async (file: File): Promise<any[]> => {
     const XLSX = await import("xlsx");
