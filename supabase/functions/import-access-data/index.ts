@@ -508,6 +508,8 @@ async function syncClientToBitrix(
     });
     console.log(`[import] Updated Bitrix deal ${dealId} for separadorId=${separadorId}`);
   } else {
+    // Add CATEGORY_ID only for new deals
+    dealFields.CATEGORY_ID = categoryId;
     const dealRes = await fetch(`${endpoint}crm.deal.add`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -515,7 +517,7 @@ async function syncClientToBitrix(
     });
     const dealData = await dealRes.json();
     dealId = dealData.result ? String(dealData.result) : null;
-    console.log(`[import] Created Bitrix deal ${dealId} for separadorId=${separadorId}`);
+    console.log(`[import] Created Bitrix deal ${dealId} in category=${categoryId} for separadorId=${separadorId}`);
   }
 
   if (!dealId) return;

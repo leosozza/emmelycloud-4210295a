@@ -3990,6 +3990,7 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
             batch_size: batchSize,
             member_id: memberId,
             sync_bitrix: syncBitrix,
+            category_id: syncBitrix ? selectedCategoryId : undefined,
           }),
         });
         const data = await res.json();
