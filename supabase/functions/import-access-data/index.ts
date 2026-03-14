@@ -469,16 +469,17 @@ async function syncClientToBitrix(
 
   if (!contactId) return;
 
-  // ── Upsert Deal using UF_CRM_1768312831 (SEPARADORID) ──
+  // ── Upsert Deal using UF_CRM_1768312831 (Client ID from Access) ──
   let dealId: string | null = null;
+  const clientAccessId = String(client.ID);
 
   const dealSearchRes = await fetch(`${endpoint}crm.deal.list`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       auth: accessToken,
-      filter: { UF_CRM_1768312831: separadorId },
-      select: ["ID"],
+      filter: { UF_CRM_1768312831: clientAccessId, "%TITLE": desc },
+      select: ["ID", "TITLE"],
     }),
   });
   const dealSearchData = await dealSearchRes.json();
