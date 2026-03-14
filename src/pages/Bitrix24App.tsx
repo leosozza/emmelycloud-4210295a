@@ -4774,8 +4774,11 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
   const [honorariosLogs, setHonorariosLogs] = useState<{ client_name: string; status: string; error?: string; details?: string }[]>([]);
   const [honorariosDone, setHonorariosDone] = useState(false);
 
-  // Shared
-  const [syncBitrix, setSyncBitrix] = useState(!!integration);
+  // Phase 3: Sync Bitrix
+  const [syncingBitrix, setSyncingBitrix] = useState(false);
+  const [syncProgress, setSyncProgress] = useState({ processed: 0, total: 0 });
+  const [syncLogs, setSyncLogs] = useState<{ client_name: string; status: string; error?: string; details?: string }[]>([]);
+  const [syncDone, setSyncDone] = useState(false);
   const [pipelines, setPipelines] = useState<{ id: string; name: string }[]>([]);
   const [selectedCategoryId, setSelectedCategoryId] = useState("0");
   const [loadingPipelines, setLoadingPipelines] = useState(false);
@@ -4785,9 +4788,9 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
   const [filterDateTo, setFilterDateTo] = useState<Date | undefined>(undefined);
   const [filterStatus, setFilterStatus] = useState("todos");
 
-  // Load pipelines when syncBitrix is enabled
+  // Load pipelines when integration available
   useEffect(() => {
-    if (!syncBitrix || !memberId || !integration) return;
+    if (!memberId || !integration) return;
     setLoadingPipelines(true);
     fetch(`${SUPABASE_URL}/functions/v1/bitrix24-fetch-entities?action=pipelines&entity=deal&member_id=${encodeURIComponent(memberId)}`, {
       headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` },
@@ -4799,7 +4802,7 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
       })
       .catch(console.error)
       .finally(() => setLoadingPipelines(false));
-  }, [syncBitrix, memberId, integration]);
+  }, [memberId, integration]);
 
   const parseXlsx = async (file: File): Promise<any[]> => {
     const XLSX = await import("xlsx");
@@ -4835,7 +4838,6 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
     }
   };
 
-  // Helper to parse Excel serial date or string date
   const parseExcelDate = (val: any): Date | null => {
     if (!val) return null;
     if (typeof val === "number") {
@@ -4846,13 +4848,12 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
     return isNaN(d.getTime()) ? null : d;
   };
 
-  // Valid clients (ID > 3)
   const validClients = useMemo(() => {
     if (!clientesData) return null;
     return clientesData.filter((c: any) => c.ID > 3);
   }, [clientesData]);
 
-  // ── Phase 1: Import Clients ──
+  // ── Phase 1: Import Clients (Supabase only) ──
   const handleImportClients = async () => {
     if (!validClients || validClients.length === 0) return;
     setImportingClients(true);
@@ -4876,9 +4877,6 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
             mode: "clients_only",
             batch_start: batchStart,
             batch_size: batchSize,
-            member_id: memberId,
-            sync_bitrix: syncBitrix,
-            category_id: syncBitrix ? selectedCategoryId : undefined,
           }),
         });
         const data = await res.json();
@@ -4917,14 +4915,12 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
     });
   }, [honorariosData, filterStatus, filterDateFrom, filterDateTo]);
 
-  // Derive filtered clients from filtered honorarios (clientesData is optional in Phase 2)
   const filteredClientes = useMemo(() => {
     if (!filteredHonorarios) return null;
     const clientIds = [...new Set(filteredHonorarios.map((h: any) => h.CLIENTE))];
     if (clientesData) {
       return clientesData.filter((c: any) => c.ID > 3 && clientIds.includes(c.ID));
     }
-    // No client file: derive stubs from honorários
     return clientIds.map(id => ({ ID: id, NOME: `Cliente ${id}`, ATIVO: "SIM" }));
   }, [clientesData, filteredHonorarios]);
 
@@ -4966,7 +4962,7 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
     const batchSize = 10;
     let batchStart = 0;
 
-    while (batchStart < filteredClientes.length) {
+    while (batchStart < (filteredClientes?.length || 0)) {
       try {
         const res = await fetch(`${SUPABASE_URL}/functions/v1/import-access-data`, {
           method: "POST",
@@ -4981,16 +4977,13 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
             mode: "honorarios",
             batch_start: batchStart,
             batch_size: batchSize,
-            member_id: memberId,
-            sync_bitrix: syncBitrix,
-            category_id: syncBitrix ? selectedCategoryId : undefined,
           }),
         });
         const data = await res.json();
         if (data.results) {
           setHonorariosLogs(prev => [...prev, ...data.results]);
         }
-        setHonorariosProgress({ processed: data.processed || batchStart + batchSize, total: filteredClientes.length });
+        setHonorariosProgress({ processed: data.processed || batchStart + batchSize, total: filteredClientes?.length || 0 });
         if (!data.has_more) break;
         batchStart = data.next_batch_start;
       } catch (e) {
@@ -5002,6 +4995,57 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
     setImportingHonorarios(false);
   };
 
+  // ── Phase 3: Sync to Bitrix24 ──
+  const handleSyncBitrix = async () => {
+    if (!memberId || !integration) return;
+    setSyncingBitrix(true);
+    setSyncLogs([]);
+    setSyncDone(false);
+
+    const batchSize = 5; // Smaller batches for Bitrix API calls
+    let batchStart = 0;
+    let totalClients = 0;
+
+    // Loop until no more
+    while (true) {
+      try {
+        const res = await fetch(`${SUPABASE_URL}/functions/v1/import-access-data`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            apikey: SUPABASE_KEY,
+            Authorization: `Bearer ${SUPABASE_KEY}`,
+          },
+          body: JSON.stringify({
+            clientes: [],
+            mode: "sync_bitrix",
+            batch_start: batchStart,
+            batch_size: batchSize,
+            member_id: memberId,
+            category_id: selectedCategoryId,
+          }),
+        });
+        const data = await res.json();
+        if (!data.success) {
+          setSyncLogs(prev => [...prev, { client_name: "Erro", status: "error", error: data.error || "Erro desconhecido" }]);
+          break;
+        }
+        if (data.results) {
+          setSyncLogs(prev => [...prev, ...data.results]);
+        }
+        totalClients = data.total || totalClients;
+        setSyncProgress({ processed: data.processed || batchStart + batchSize, total: totalClients });
+        if (!data.has_more) break;
+        batchStart = data.next_batch_start;
+      } catch (e) {
+        setSyncLogs(prev => [...prev, { client_name: `Batch ${batchStart}`, status: "error", error: String(e) }]);
+        break;
+      }
+    }
+    setSyncDone(true);
+    setSyncingBitrix(false);
+  };
+
   const clientsErrorCount = clientsLogs.filter(l => l.status === "error").length;
   const clientsSuccessCount = clientsLogs.filter(l => l.status === "ok" || l.status === "partial").length;
   const clientsProgressPct = clientsProgress.total > 0 ? Math.round((clientsProgress.processed / clientsProgress.total) * 100) : 0;
@@ -5010,7 +5054,12 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
   const honSuccessCount = honorariosLogs.filter(l => l.status === "ok" || l.status === "partial").length;
   const honProgressPct = honorariosProgress.total > 0 ? Math.round((honorariosProgress.processed / honorariosProgress.total) * 100) : 0;
 
-  const isImporting = importingClients || importingHonorarios;
+  const syncErrorCount = syncLogs.filter(l => l.status === "error").length;
+  const syncSuccessCount = syncLogs.filter(l => l.status === "ok" || l.status === "partial").length;
+  const syncSkippedCount = syncLogs.filter(l => l.status === "skipped").length;
+  const syncProgressPct = syncProgress.total > 0 ? Math.round((syncProgress.processed / syncProgress.total) * 100) : 0;
+
+  const isImporting = importingClients || importingHonorarios || syncingBitrix;
 
   return (
     <div className="p-6 space-y-6">
@@ -5018,38 +5067,6 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
         <h1 className="text-xl font-bold text-white">Importação Access</h1>
         <p className="text-white/60 text-sm mt-0.5">Importar clientes e honorários das tabelas originais do Access</p>
       </div>
-
-      {/* Bitrix Settings (shared) */}
-      {integration && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2"><Settings className="h-5 w-5" /> Configurações</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <div className="flex items-center gap-3">
-              <Switch checked={syncBitrix} onCheckedChange={setSyncBitrix} disabled={isImporting} />
-              <Label className="text-sm">Sincronizar com Bitrix24 (criar Contactos + Deals + Faturas)</Label>
-            </div>
-            {syncBitrix && (
-              <div className="space-y-1.5 pl-10">
-                <Label className="text-sm">Pipeline de destino para novos Deals</Label>
-                <Select value={selectedCategoryId} onValueChange={setSelectedCategoryId} disabled={isImporting || loadingPipelines}>
-                  <SelectTrigger className="w-full md:w-64">
-                    <SelectValue placeholder={loadingPipelines ? "Carregando..." : "Selecionar pipeline"} />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="0">Pipeline Geral (padrão)</SelectItem>
-                    {pipelines.filter(p => p.id !== "0" && p.id !== "C0").map(p => (
-                      <SelectItem key={p.id} value={String(p.id)}>{p.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <p className="text-xs text-muted-foreground">Deals existentes mantêm o pipeline actual</p>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      )}
 
       {/* ═══════ FASE 1: CLIENTES ═══════ */}
       <Card>
@@ -5059,8 +5076,7 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
             <Users className="h-5 w-5" /> Importar Clientes
           </CardTitle>
           <CardDescription>
-            Carregue TBL_CLIENTE.xlsx para criar/actualizar clientes na base de dados
-            {syncBitrix && " e criar Contactos + Deals vazios no Bitrix24"}
+            Carregue TBL_CLIENTE.xlsx para criar/actualizar clientes na base de dados local
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -5121,9 +5137,8 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
             <DollarSign className="h-5 w-5" /> Importar Honorários
           </CardTitle>
           <CardDescription>
-            Carregue TBL_HONORARIOS.xlsx para criar serviços, contratos e registos financeiros
-            {syncBitrix && " e actualizar Deals + Smart Invoices no Bitrix24"}
-            . Os clientes já existentes na base de dados serão usados automaticamente.
+            Carregue TBL_HONORARIOS.xlsx para criar serviços, contratos e registos financeiros na base de dados local.
+            Os clientes já existentes serão usados automaticamente.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -5136,7 +5151,7 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
             <p className="text-xs text-muted-foreground">Os clientes importados na Fase 1 serão usados automaticamente da base de dados.</p>
           </div>
 
-          {/* Filters (Phase 2 only) */}
+          {/* Filters */}
           {honorariosData && (
             <div className="space-y-3 pt-3 border-t">
               <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Filtros</Label>
@@ -5271,6 +5286,84 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
                 </ScrollArea>
               )}
             </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* ═══════ FASE 3: SINCRONIZAR BITRIX24 ═══════ */}
+      <Card className={cn(!integration && "opacity-50")}>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Badge variant={syncDone ? "default" : "outline"} className="text-xs">FASE 3</Badge>
+            <RefreshCw className="h-5 w-5" /> Sincronizar com Bitrix24
+          </CardTitle>
+          <CardDescription>
+            {integration
+              ? "Busca clientes importados na base de dados e sincroniza com o Bitrix24: cria/actualiza Contactos, Deals e Smart Invoices. Procura por campo UF (id_access), NIF/CPF ou telefone."
+              : "Integração com Bitrix24 não disponível. Configure a integração nas Configurações."
+            }
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {!integration ? (
+            <p className="text-sm text-muted-foreground">⚠️ Sem integração Bitrix24 activa.</p>
+          ) : (
+            <>
+              <div className="space-y-1.5">
+                <Label className="text-sm">Pipeline de destino para novos Deals</Label>
+                <Select value={selectedCategoryId} onValueChange={setSelectedCategoryId} disabled={isImporting || loadingPipelines}>
+                  <SelectTrigger className="w-full md:w-64">
+                    <SelectValue placeholder={loadingPipelines ? "Carregando..." : "Selecionar pipeline"} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="0">Pipeline Geral (padrão)</SelectItem>
+                    {pipelines.filter(p => p.id !== "0" && p.id !== "C0").map(p => (
+                      <SelectItem key={p.id} value={String(p.id)}>{p.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">Deals existentes mantêm o pipeline actual. A busca usa: campo UF (id_access) → NIF/CPF → Telefone.</p>
+              </div>
+
+              <Button onClick={handleSyncBitrix} disabled={isImporting} className="w-full" size="lg" variant="default">
+                {syncingBitrix ? (
+                  <><Loader2 className="h-4 w-4 animate-spin mr-2" /> Sincronizando... ({syncProgressPct}%)</>
+                ) : syncDone ? (
+                  <><CheckCircle className="h-4 w-4 mr-2" /> Re-sincronizar com Bitrix24</>
+                ) : (
+                  <><RefreshCw className="h-4 w-4 mr-2" /> Sincronizar com Bitrix24</>
+                )}
+              </Button>
+
+              {/* Phase 3 Progress */}
+              {(syncingBitrix || syncDone) && (
+                <div className="space-y-3 pt-2 border-t">
+                  <div className="w-full bg-muted rounded-full h-2.5">
+                    <div className="bg-primary h-2.5 rounded-full transition-all duration-300" style={{ width: `${syncProgressPct}%` }} />
+                  </div>
+                  <p className="text-xs text-muted-foreground text-center">
+                    {syncProgress.processed} / {syncProgress.total} clientes processados
+                  </p>
+                  {syncDone && (
+                    <div className="flex gap-3 justify-center flex-wrap">
+                      <Badge variant="default" className="text-xs">✅ {syncSuccessCount} Sincronizados</Badge>
+                      {syncSkippedCount > 0 && <Badge variant="secondary" className="text-xs">⏭️ {syncSkippedCount} Sem dados</Badge>}
+                      {syncErrorCount > 0 && <Badge variant="destructive" className="text-xs">❌ {syncErrorCount} Erros</Badge>}
+                    </div>
+                  )}
+                  {/* Detailed logs */}
+                  {syncLogs.length > 0 && (
+                    <ScrollArea className="h-48 border rounded-lg p-2">
+                      {syncLogs.map((l, i) => (
+                        <div key={i} className={cn("text-xs mb-1", l.status === "error" ? "text-destructive" : l.status === "skipped" ? "text-muted-foreground" : "text-foreground")}>
+                          <strong>{l.client_name}:</strong> {l.status === "error" ? l.error : l.details}
+                        </div>
+                      ))}
+                    </ScrollArea>
+                  )}
+                </div>
+              )}
+            </>
           )}
         </CardContent>
       </Card>
