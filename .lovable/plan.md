@@ -1,51 +1,104 @@
 
 
-## Plano: Corrigir Importação — Usar campo `UF_CRM_1768312831` nos Deals
+## Revisão Arquitetural — Fase 2 Implementada
 
-### Problema actual
+### Mudanças realizadas (Fase 2)
 
-1. **Enums incorrectos** fazem a cadeia lead→caso→proposta→contrato→financial_records falhar silenciosamente (valores inválidos para `funnel_stage`, `proposal.status`, `contract.status`)
-2. **Deals duplicados** — o código cria Deals novos em vez de procurar os existentes pelo campo `UF_CRM_1768312831` (ID do controle financeiro do Access)
-3. **Valores não batem** — como os financial_records não são criados (enum fail), os totais ficam a zero
+#### 1. Código morto eliminado
+- `chatbot-reply/index.ts` — **removido** (100% duplicado com flow-engine → ai-process-message)
+- `ai-triage/index.ts` — **removido** (100% duplicado com ai-automation-agent action classify_lead)
 
-### Correcções em `supabase/functions/import-access-data/index.ts`
+#### 2. Janela de contexto expandida
+- `RECENT_MSG_COUNT`: 5 → **15** mensagens recentes completas
+- `HISTORY_LIMIT`: 15 → **30** mensagens totais
+- TOON comprime as 15 mais antigas, mantém as 15 recentes intactas
 
-**1. Corrigir enums da cadeia Emmely:**
+#### 3. RAG semântico real (pgvector)
+- Edge function `generate-embeddings` criada — gera embeddings de 768 dimensões via Lovable AI
+- `parse-document` agora chama `generate-embeddings` automaticamente após chunking
+- `ai-process-message` usa `match_chunks()` RPC para busca semântica (threshold 0.5)
+- Fallback para keyword scoring quando embeddings não existem
 
-| Campo | Valor errado | Valor correcto |
-|-------|-------------|----------------|
-| `leads.funnel_stage` | `"convertido"` | `"fechado"` |
-| `cases.status` | `"concluido"` | `"concluido"` (verificar enum real) |
-| `proposals.status` | `"aceite"` | `"aceita"` |
-| `contracts.status` | `"concluido"` / `"ativo"` | `"assinado"` / `"pendente"` |
+#### 4. Router multi-agente
+- Quando agente tem `sub_agent_ids`, classifica intenção via IA rápida (flash-lite)
+- Delega para sub-agente especialista com seu próprio prompt e KB
+- Mantém agente activo em `bot_state.active_sub_agent_id` para consistência
 
-**2. Bitrix24 — Buscar Deal existente por `UF_CRM_1768312831`:**
+#### 5. Self-evaluation / Reflexão
+- Após gerar resposta, avalia qualidade via flash-lite (score 1-10)
+- Se score < 7, regenera com instrução de correcção (máximo 1 retry)
+- Respostas < 50 chars ignoram avaliação
 
-Em `syncClientToBitrix`, antes de criar um Deal novo para cada grupo de honorários:
-- Buscar `crm.deal.list` com filtro `{ UF_CRM_1768312831: honorarioId }`
-- Se encontrar → **update** o Deal existente (valor, stage, contacto)
-- Se não encontrar → criar novo Deal **com** `UF_CRM_1768312831` preenchido
+#### 6. Sentiment analysis + Auto-escalação
+- Análise de sentimento via heurística + IA
+- 2x frustração consecutiva → auto-transfere para humano
+- Guarda sentiment em `bot_state.last_sentiment`
+- Regista escalação em `conversation_feedback`
 
-**3. Passar o `honorario.id` do Access para a função de sync:**
+#### 7. Tools dinâmicas expandidas
+- Novas tools: `search_knowledge`, `get_case_status`, `send_payment_link`
+- Tools desconhecidas verificam `tool_parameters.webhook_url` para chamada webhook genérica
+- Registry pattern: tools são lidas de `agent_tools` table
 
-O `id` de cada honorário no JSON serve como chave de ligação com o campo `UF_CRM_1768312831` do Deal. Ajustar a assinatura de `syncClientToBitrix` para receber os IDs e usá-los no filtro/criação.
+#### 8. Queue worker auto-trigger
+- Trigger PostgreSQL `AFTER INSERT ON message_queue` chama `pg_net.http_post()` para queue-worker
+- Cron backup via `pg_cron` a cada minuto
 
-**4. Adicionar error logging detalhado** em cada insert da cadeia para não falhar silenciosamente.
+#### 9. Melhorias de robustez no sendReply
+- `Promise.allSettled` para operações paralelas (save message + update conversation)
+- Error logging real em vez de fire-and-forget silencioso para message-send e bitrix24-send
+- Extração de memória com tolerância `count % 10 > 1` (mais robusto que `=== 0`)
 
-### Lógica actualizada do sync Bitrix24
+### Mudanças realizadas (Fase 2.1 — Consolidação Completa)
 
-```text
-Para cada grupo de honorários (desc):
-  1. Pegar o ID do Access do primeiro honorário do grupo
-  2. Buscar Deal: crm.deal.list { UF_CRM_1768312831: accessId }
-  3. Se encontrar → crm.deal.update (actualizar valor, stage, contacto)
-  4. Se não → crm.deal.add com UF_CRM_1768312831 = accessId
-  5. Smart Invoices: manter lógica actual (criar por parcela)
-```
+#### Código morto eliminado
+- `chatbot-reply/index.ts` e `ai-triage/index.ts` — diretórios removidos, referências limpas em `config.toml`, `ApiDocs.tsx` e `bitrix24-worker.ts`
+- ApiDocs actualizado para documentar `ai-process-message` em vez de `chatbot-reply`
 
-### Ficheiro a modificar
+#### Sintaxe corrigida
+- `parse-document/index.ts` — corrigida função `extractWithAI` que estava erroneamente aninhada dentro de `findFileInZip`
 
-| Ficheiro | Acção |
-|----------|-------|
-| `supabase/functions/import-access-data/index.ts` | Corrigir enums + usar `UF_CRM_1768312831` para dedup de Deals + error logging |
+#### Config.toml actualizado
+- Removidas entradas `ai-triage` e `chatbot-reply`
+- Adicionadas entradas para `generate-embeddings`, `parse-document` e `queue-worker`
 
+#### Triggers PostgreSQL criados
+- `on_message_queue_insert` → auto-invoca `queue-worker` via `pg_net`
+- `on_lead_created` → notifica comerciais e admins
+- `on_message_created` → notifica de novas mensagens inbound
+- `on_payment_status_change` → notifica pagamentos recebidos
+- `on_lead_sla_check` → alerta SLA a expirar
+- `on_lead_set_sla` → define SLA automático na criação
+- `on_profile_created` → atribui admin ao primeiro utilizador
+- Cron job `queue-worker-backup` — invoca queue-worker a cada minuto
+
+### Estado actual — 8/8 melhorias implementadas ✅
+1. ✅ Código morto eliminado (chatbot-reply + ai-triage)
+2. ✅ Contexto expandido (30 mensagens: 15 recentes + 15 comprimidas TOON)
+3. ✅ RAG semântico (pgvector + match_chunks + generate-embeddings)
+4. ✅ Router multi-agente (sub_agent_ids + classificação de intenção)
+5. ✅ Tools dinâmicas (registry pattern + webhook fallback)
+6. ✅ Reflexão/Auto-avaliação (score 1-10, retry se < 7)
+7. ✅ Sentiment analysis + auto-escalação (2x frustração → humano)
+8. ✅ Queue worker auto-trigger (pg_trigger + pg_cron backup)
+
+### Mudanças realizadas (Fase 3 — Auditoria Arquitetural)
+
+#### 1. Dashboard de Observabilidade IA
+- Nova página `/observabilidade-ia` com KPIs: requisições, tokens, custo estimado, latência média, taxa fallback, taxa erro, rating feedback
+- Hook `useAiObservability.ts` com agregação de dados
+
+#### 2. Thumbs up/down no chat de atendimento
+- Botões de feedback em mensagens outbound (bot) no painel de atendimento
+
+#### 3. Retry com backoff no AI gateway (429/502/503, 2s delay, 1 retry)
+
+#### 4. Cost estimation real (tabela de preços por modelo, cálculo automático)
+
+#### 5. Memory extraction melhorada (cada 15 msgs + em transferência humana)
+
+#### 6. Reorganização do monólito (constantes extraídas, secções delimitadas)
+
+### Próximos passos
+- Batch job para gerar embeddings dos chunks existentes
+- Streaming no PlaygroundIA
