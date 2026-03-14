@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useRef, lazy, Suspense, useMemo } from "react";
+import { useEffect, useState, useCallback, useRef, lazy, Suspense, useMemo, Fragment } from "react";
 import { useBitrix24Theme } from "@/hooks/useBitrix24Theme";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -63,7 +63,7 @@ const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
 
 const customNodeTypes = { custom: CustomFlowNode };
 
-type AppView = "loading" | "dashboard" | "agentes" | "training" | "flows" | "playground" | "chatia" | "pagamentos" | "relatorios" | "mapeamento" | "empresas" | "baixa" | "placement" | "importacao" | "configuracoes";
+type AppView = "loading" | "dashboard" | "agentes" | "training" | "flows" | "playground" | "chatia" | "pagamentos" | "relatorios" | "mapeamento" | "empresas" | "baixa" | "placement" | "importacao" | "carteira" | "configuracoes";
 
 // ==================== MAIN COMPONENT ====================
 const Bitrix24App = () => {
@@ -189,6 +189,7 @@ const Bitrix24App = () => {
       label: "Emmely Pay",
       items: [
         { id: "pagamentos", label: "Pagamentos", icon: CreditCard },
+        { id: "carteira", label: "Carteira", icon: Users },
         { id: "baixa", label: "Baixa Carteira", icon: FileDown },
         { id: "importacao", label: "Importação", icon: Upload },
         { id: "placement", label: "Placement", icon: ExternalLink },
@@ -315,6 +316,7 @@ const Bitrix24App = () => {
         {view === "empresas" && <EmpresasView />}
         {view === "relatorios" && <RelatoriosView />}
         {view === "importacao" && <ImportacaoAccessView integration={integration} memberId={memberId} />}
+        {view === "carteira" && <CarteiraAccessView integration={integration} />}
         {view === "configuracoes" && (
           <ConfigView
             integration={integration}
@@ -4043,6 +4045,206 @@ function BaixaCarteiraView({ integration }: { integration: any }) {
           )}
         </CardContent>
       </Card>
+    </div>
+  );
+}
+
+// ==================== CARTEIRA ACCESS VIEW ====================
+function CarteiraAccessView({ integration }: { integration: any }) {
+  const [clients, setClients] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState("");
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const domain = integration?.domain;
+
+  useEffect(() => {
+    fetchClients();
+  }, []);
+
+  const fetchClients = async () => {
+    setLoading(true);
+    try {
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/clients?notes=ilike.*Access*&order=name.asc&limit=500`, {
+        headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` },
+      });
+      const data = await res.json();
+      setClients(Array.isArray(data) ? data : []);
+    } catch (e) {
+      console.error("[Carteira] Error fetching clients:", e);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const extractAccessId = (notes: string | null) => {
+    if (!notes) return null;
+    const match = notes.match(/Access \(ID:\s*(\d+)\)/);
+    return match ? match[1] : null;
+  };
+
+  const filtered = useMemo(() => {
+    if (!search.trim()) return clients;
+    const q = search.toLowerCase();
+    return clients.filter(
+      (c) =>
+        c.name?.toLowerCase().includes(q) ||
+        c.document_number?.toLowerCase().includes(q) ||
+        c.nationality?.toLowerCase().includes(q)
+    );
+  }, [clients, search]);
+
+  return (
+    <div className="space-y-4">
+      {/* Header */}
+      <div className="b24-view-header">
+        <h1 className="text-xl font-bold text-white">Carteira de Clientes</h1>
+        <p className="text-white/60 text-sm mt-0.5">
+          {clients.length} clientes importados do Access
+        </p>
+      </div>
+
+      {/* Search */}
+      <div className="flex items-center gap-3">
+        <Input
+          placeholder="Pesquisar por nome, documento ou nacionalidade..."
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          className="max-w-md"
+        />
+        <Button variant="outline" size="sm" onClick={fetchClients} disabled={loading}>
+          <RefreshCw className={cn("h-4 w-4", loading && "animate-spin")} />
+        </Button>
+        <Badge variant="secondary">{filtered.length} resultado(s)</Badge>
+      </div>
+
+      {loading ? (
+        <div className="flex items-center justify-center py-12">
+          <Loader2 className="h-6 w-6 animate-spin text-primary" />
+        </div>
+      ) : filtered.length === 0 ? (
+        <Card>
+          <CardContent className="py-12 text-center text-muted-foreground">
+            <Users className="h-10 w-10 mx-auto mb-3 opacity-40" />
+            <p>Nenhum cliente importado encontrado.</p>
+            <p className="text-xs mt-1">Importe clientes na aba "Importação" primeiro.</p>
+          </CardContent>
+        </Card>
+      ) : (
+        <Card>
+          <div className="overflow-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b bg-muted/50">
+                  <th className="text-left p-3 font-medium text-muted-foreground">Nome</th>
+                  <th className="text-left p-3 font-medium text-muted-foreground">Documento</th>
+                  <th className="text-left p-3 font-medium text-muted-foreground">Nacionalidade</th>
+                  <th className="text-left p-3 font-medium text-muted-foreground">Contrato</th>
+                  <th className="text-left p-3 font-medium text-muted-foreground">Access ID</th>
+                  {domain && <th className="text-left p-3 font-medium text-muted-foreground">Bitrix24</th>}
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.map((client) => {
+                  const accessId = extractAccessId(client.notes);
+                  const isExpanded = expandedId === client.id;
+                  return (
+                    <Fragment key={client.id}>
+                      <tr
+                        className="border-b hover:bg-muted/30 cursor-pointer transition-colors"
+                        onClick={() => setExpandedId(isExpanded ? null : client.id)}
+                      >
+                        <td className="p-3 font-medium text-foreground">
+                          <div className="flex items-center gap-2">
+                            <ChevronRight className={cn("h-4 w-4 transition-transform text-muted-foreground", isExpanded && "rotate-90")} />
+                            {client.name}
+                          </div>
+                        </td>
+                        <td className="p-3 text-muted-foreground">{client.document_number || "—"}</td>
+                        <td className="p-3 text-muted-foreground">{client.nationality || "—"}</td>
+                        <td className="p-3">
+                          {client.has_active_contract ? (
+                            <Badge className="bg-emerald-500/10 text-emerald-500 border-emerald-500/20">Ativo</Badge>
+                          ) : (
+                            <Badge variant="outline" className="text-muted-foreground">Inativo</Badge>
+                          )}
+                        </td>
+                        <td className="p-3">
+                          {accessId ? (
+                            <Badge variant="secondary">ID {accessId}</Badge>
+                          ) : "—"}
+                        </td>
+                        {domain && (
+                          <td className="p-3">
+                            {accessId && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-7 gap-1 text-xs"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  window.open(`https://${domain}/crm/contact/details/0/?search=${encodeURIComponent(client.name)}`, "_blank");
+                                }}
+                              >
+                                <ExternalLink className="h-3 w-3" /> CRM
+                              </Button>
+                            )}
+                          </td>
+                        )}
+                      </tr>
+                      {isExpanded && (
+                        <tr>
+                          <td colSpan={domain ? 6 : 5} className="bg-muted/20 px-6 py-4">
+                            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-xs">
+                              <div>
+                                <span className="text-muted-foreground">Tipo Doc:</span>
+                                <p className="font-medium text-foreground">{client.document_type || "—"}</p>
+                              </div>
+                              <div>
+                                <span className="text-muted-foreground">Data Nascimento:</span>
+                                <p className="font-medium text-foreground">{client.birth_date || "—"}</p>
+                              </div>
+                              <div>
+                                <span className="text-muted-foreground">Morada:</span>
+                                <p className="font-medium text-foreground">{client.address || "—"}</p>
+                              </div>
+                              <div>
+                                <span className="text-muted-foreground">Código Postal:</span>
+                                <p className="font-medium text-foreground">{client.postal_code || "—"}</p>
+                              </div>
+                              <div>
+                                <span className="text-muted-foreground">Freguesia:</span>
+                                <p className="font-medium text-foreground">{client.freguesia || "—"}</p>
+                              </div>
+                              <div>
+                                <span className="text-muted-foreground">Concelho:</span>
+                                <p className="font-medium text-foreground">{client.concelho || "—"}</p>
+                              </div>
+                              <div>
+                                <span className="text-muted-foreground">Distrito:</span>
+                                <p className="font-medium text-foreground">{client.distrito || "—"}</p>
+                              </div>
+                              <div>
+                                <span className="text-muted-foreground">NIB:</span>
+                                <p className="font-medium text-foreground">{client.nib || "—"}</p>
+                              </div>
+                              {client.notes && (
+                                <div className="col-span-2 md:col-span-4">
+                                  <span className="text-muted-foreground">Notas:</span>
+                                  <p className="font-medium text-foreground">{client.notes}</p>
+                                </div>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </Fragment>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      )}
     </div>
   );
 }
