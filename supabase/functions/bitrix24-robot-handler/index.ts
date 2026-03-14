@@ -534,20 +534,55 @@ async function handleGenerateProposal(
     const finalTitle = manualTitle || entityTitle || "Proposta";
     const finalDescription = manualDescription || serviceDescription || "";
 
-    // 5. Create case to link proposal
-    const { data: caseData } = await supabase
-      .from("cases")
-      .insert({
-        title: finalTitle,
-        description: `Caso criado automaticamente via Bitrix24 (${entityType} #${entityId})`,
-        legal_area: "outro",
-        status: "aberto",
-      })
-      .select("id")
-      .single();
+    // 5. Find existing case or create one — avoid ghost cases
+    let caseId: string;
 
-    if (!caseData) {
-      return { proposal_url: "", pdf_url: "", proposal_id: "", status: "error", error: "Failed to create case" };
+    // Try to find existing lead by bitrix24_id
+    const { data: existingLead } = await supabase
+      .from("leads")
+      .select("id")
+      .eq("bitrix24_id", String(entityId))
+      .maybeSingle();
+
+    if (existingLead) {
+      // Check if there's already a case for this lead
+      const { data: existingCase } = await supabase
+        .from("cases")
+        .select("id")
+        .eq("lead_id", existingLead.id)
+        .maybeSingle();
+
+      if (existingCase) {
+        caseId = existingCase.id;
+      } else {
+        const { data: newCase } = await supabase
+          .from("cases")
+          .insert({
+            title: finalTitle,
+            description: `Caso criado via Bitrix24 (${entityType} #${entityId})`,
+            legal_area: "outro",
+            status: "aberto",
+            lead_id: existingLead.id,
+          })
+          .select("id")
+          .single();
+        if (!newCase) return { proposal_url: "", pdf_url: "", proposal_id: "", status: "error", error: "Failed to create case" };
+        caseId = newCase.id;
+      }
+    } else {
+      // No existing lead — create case without lead link
+      const { data: newCase } = await supabase
+        .from("cases")
+        .insert({
+          title: finalTitle,
+          description: `Caso criado via Bitrix24 (${entityType} #${entityId})`,
+          legal_area: "outro",
+          status: "aberto",
+        })
+        .select("id")
+        .single();
+      if (!newCase) return { proposal_url: "", pdf_url: "", proposal_id: "", status: "error", error: "Failed to create case" };
+      caseId = newCase.id;
     }
 
     // 6. Insert proposal
