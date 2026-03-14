@@ -59,7 +59,17 @@ function parseNum(v: any): number {
 }
 
 function parseDate(v: any): string | null {
-  if (!v || v === "") return null;
+  if (v == null || v === "") return null;
+
+  // Excel serial number (number or numeric string)
+  const num = typeof v === "number" ? v : Number(v);
+  if (!isNaN(num) && num > 1000 && num < 100000) {
+    // Excel epoch: 1899-12-30 (accounting for the 1900 leap year bug)
+    const epoch = new Date(Date.UTC(1899, 11, 30));
+    epoch.setUTCDate(epoch.getUTCDate() + num);
+    return epoch.toISOString().split("T")[0];
+  }
+
   const s = String(v).trim();
   // Try MM/DD/YY or MM/DD/YYYY
   const parts = s.split("/");
@@ -459,16 +469,17 @@ async function syncClientToBitrix(
 
   if (!contactId) return;
 
-  // ── Upsert Deal using UF_CRM_1768312831 (SEPARADORID) ──
+  // ── Upsert Deal using UF_CRM_1768312831 (Client ID from Access) ──
   let dealId: string | null = null;
+  const clientAccessId = String(client.ID);
 
   const dealSearchRes = await fetch(`${endpoint}crm.deal.list`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       auth: accessToken,
-      filter: { UF_CRM_1768312831: separadorId },
-      select: ["ID"],
+      filter: { UF_CRM_1768312831: clientAccessId, "%TITLE": desc },
+      select: ["ID", "TITLE"],
     }),
   });
   const dealSearchData = await dealSearchRes.json();
@@ -483,7 +494,7 @@ async function syncClientToBitrix(
     CURRENCY_ID: "EUR",
     STAGE_ID: allPaid ? "WON" : "NEW",
     UF_CRM_EMMELY_NIF: nif || "",
-    UF_CRM_1768312831: separadorId,
+    UF_CRM_1768312831: clientAccessId,
   };
 
   if (dealId) {

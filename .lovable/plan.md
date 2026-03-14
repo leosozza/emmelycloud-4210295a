@@ -1,40 +1,104 @@
 
 
-## Plano: Corrigir mapeamento do campo EF (UF_CRM_1768312831)
+## Revisão Arquitetural — Fase 2 Implementada
 
-### Problema
+### Mudanças realizadas (Fase 2)
 
-O campo `UF_CRM_1768312831` no Bitrix24 (campo EF) armazena o **ID do Cliente** da tabela TBL_CLIENTE (coluna A), não o SEPARADORID como está implementado actualmente.
+#### 1. Código morto eliminado
+- `chatbot-reply/index.ts` — **removido** (100% duplicado com flow-engine → ai-process-message)
+- `ai-triage/index.ts` — **removido** (100% duplicado com ai-automation-agent action classify_lead)
 
-Relação correcta:
-- `TBL_CLIENTE.ID` → `UF_CRM_1768312831` (EF no Bitrix24)
-- `TBL_HONORARIOS.CLIENTE` → referencia `TBL_CLIENTE.ID`
+#### 2. Janela de contexto expandida
+- `RECENT_MSG_COUNT`: 5 → **15** mensagens recentes completas
+- `HISTORY_LIMIT`: 15 → **30** mensagens totais
+- TOON comprime as 15 mais antigas, mantém as 15 recentes intactas
 
-### Impacto
+#### 3. RAG semântico real (pgvector)
+- Edge function `generate-embeddings` criada — gera embeddings de 768 dimensões via Lovable AI
+- `parse-document` agora chama `generate-embeddings` automaticamente após chunking
+- `ai-process-message` usa `match_chunks()` RPC para busca semântica (threshold 0.5)
+- Fallback para keyword scoring quando embeddings não existem
 
-Actualmente o código:
-1. Busca Deals por `UF_CRM_1768312831 = separadorId` — **errado**
-2. Cria Deals com `UF_CRM_1768312831 = separadorId` — **errado**
-3. Cria **um Deal por SEPARADORID** — pode estar correcto (um Deal por serviço), mas o EF deve ser o ID do cliente
+#### 4. Router multi-agente
+- Quando agente tem `sub_agent_ids`, classifica intenção via IA rápida (flash-lite)
+- Delega para sub-agente especialista com seu próprio prompt e KB
+- Mantém agente activo em `bot_state.active_sub_agent_id` para consistência
 
-### Correcção em `supabase/functions/import-access-data/index.ts`
+#### 5. Self-evaluation / Reflexão
+- Após gerar resposta, avalia qualidade via flash-lite (score 1-10)
+- Se score < 7, regenera com instrução de correcção (máximo 1 retry)
+- Respostas < 50 chars ignoram avaliação
 
-**1. Passar `client.ID` para `syncClientToBitrix`** em vez de usar SEPARADORID como valor do EF.
+#### 6. Sentiment analysis + Auto-escalação
+- Análise de sentimento via heurística + IA
+- 2x frustração consecutiva → auto-transfere para humano
+- Guarda sentiment em `bot_state.last_sentiment`
+- Regista escalação em `conversation_feedback`
 
-**2. Busca de Deals existentes**: filtrar por `UF_CRM_1768312831 = client.ID` (ID do cliente Access).
+#### 7. Tools dinâmicas expandidas
+- Novas tools: `search_knowledge`, `get_case_status`, `send_payment_link`
+- Tools desconhecidas verificam `tool_parameters.webhook_url` para chamada webhook genérica
+- Registry pattern: tools são lidas de `agent_tools` table
 
-**3. Um cliente pode ter múltiplos Deals** (um por SEPARADORID/serviço). A lógica de agrupamento por SEPARADORID para criar Deals separados continua correcta, mas o campo EF em todos eles deve conter o ID do cliente.
+#### 8. Queue worker auto-trigger
+- Trigger PostgreSQL `AFTER INSERT ON message_queue` chama `pg_net.http_post()` para queue-worker
+- Cron backup via `pg_cron` a cada minuto
 
-**4. Actualizar `dealFields`**:
-```
-UF_CRM_1768312831: String(client.ID)  // EF = Client ID do Access
-```
+#### 9. Melhorias de robustez no sendReply
+- `Promise.allSettled` para operações paralelas (save message + update conversation)
+- Error logging real em vez de fire-and-forget silencioso para message-send e bitrix24-send
+- Extração de memória com tolerância `count % 10 > 1` (mais robusto que `=== 0`)
 
-**5. Busca de Deal existente**: como múltiplos Deals podem ter o mesmo EF (mesmo cliente), a busca deve incluir o título ou outro critério para encontrar o Deal correcto do serviço. Opção: buscar por `UF_CRM_1768312831 = clientId` + `TITLE contains desc`.
+### Mudanças realizadas (Fase 2.1 — Consolidação Completa)
 
-### Ficheiro a modificar
+#### Código morto eliminado
+- `chatbot-reply/index.ts` e `ai-triage/index.ts` — diretórios removidos, referências limpas em `config.toml`, `ApiDocs.tsx` e `bitrix24-worker.ts`
+- ApiDocs actualizado para documentar `ai-process-message` em vez de `chatbot-reply`
 
-| Ficheiro | Acção |
-|----------|-------|
-| `supabase/functions/import-access-data/index.ts` | Alterar `UF_CRM_1768312831` de SEPARADORID para Client ID em toda a lógica de sync Bitrix24 |
+#### Sintaxe corrigida
+- `parse-document/index.ts` — corrigida função `extractWithAI` que estava erroneamente aninhada dentro de `findFileInZip`
 
+#### Config.toml actualizado
+- Removidas entradas `ai-triage` e `chatbot-reply`
+- Adicionadas entradas para `generate-embeddings`, `parse-document` e `queue-worker`
+
+#### Triggers PostgreSQL criados
+- `on_message_queue_insert` → auto-invoca `queue-worker` via `pg_net`
+- `on_lead_created` → notifica comerciais e admins
+- `on_message_created` → notifica de novas mensagens inbound
+- `on_payment_status_change` → notifica pagamentos recebidos
+- `on_lead_sla_check` → alerta SLA a expirar
+- `on_lead_set_sla` → define SLA automático na criação
+- `on_profile_created` → atribui admin ao primeiro utilizador
+- Cron job `queue-worker-backup` — invoca queue-worker a cada minuto
+
+### Estado actual — 8/8 melhorias implementadas ✅
+1. ✅ Código morto eliminado (chatbot-reply + ai-triage)
+2. ✅ Contexto expandido (30 mensagens: 15 recentes + 15 comprimidas TOON)
+3. ✅ RAG semântico (pgvector + match_chunks + generate-embeddings)
+4. ✅ Router multi-agente (sub_agent_ids + classificação de intenção)
+5. ✅ Tools dinâmicas (registry pattern + webhook fallback)
+6. ✅ Reflexão/Auto-avaliação (score 1-10, retry se < 7)
+7. ✅ Sentiment analysis + auto-escalação (2x frustração → humano)
+8. ✅ Queue worker auto-trigger (pg_trigger + pg_cron backup)
+
+### Mudanças realizadas (Fase 3 — Auditoria Arquitetural)
+
+#### 1. Dashboard de Observabilidade IA
+- Nova página `/observabilidade-ia` com KPIs: requisições, tokens, custo estimado, latência média, taxa fallback, taxa erro, rating feedback
+- Hook `useAiObservability.ts` com agregação de dados
+
+#### 2. Thumbs up/down no chat de atendimento
+- Botões de feedback em mensagens outbound (bot) no painel de atendimento
+
+#### 3. Retry com backoff no AI gateway (429/502/503, 2s delay, 1 retry)
+
+#### 4. Cost estimation real (tabela de preços por modelo, cálculo automático)
+
+#### 5. Memory extraction melhorada (cada 15 msgs + em transferência humana)
+
+#### 6. Reorganização do monólito (constantes extraídas, secções delimitadas)
+
+### Próximos passos
+- Batch job para gerar embeddings dos chunks existentes
+- Streaming no PlaygroundIA
