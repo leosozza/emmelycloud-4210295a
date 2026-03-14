@@ -189,6 +189,7 @@ const Bitrix24App = () => {
       label: "Emmely Pay",
       items: [
         { id: "pagamentos", label: "Pagamentos", icon: CreditCard },
+        { id: "carteira", label: "Carteira", icon: Users },
         { id: "baixa", label: "Baixa Carteira", icon: FileDown },
         { id: "importacao", label: "Importação", icon: Upload },
         { id: "placement", label: "Placement", icon: ExternalLink },
