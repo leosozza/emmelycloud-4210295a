@@ -190,6 +190,7 @@ const Bitrix24App = () => {
       items: [
         { id: "pagamentos", label: "Pagamentos", icon: CreditCard },
         { id: "baixa", label: "Baixa Carteira", icon: FileDown },
+        { id: "importacao", label: "Importação", icon: Upload },
         { id: "placement", label: "Placement", icon: ExternalLink },
         { id: "empresas", label: "Empresas", icon: Building2 },
         { id: "relatorios", label: "Relatórios", icon: BarChart3 },
