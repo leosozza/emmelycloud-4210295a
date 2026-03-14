@@ -142,3 +142,6 @@ verify_jwt = false
 
 [functions.queue-worker]
 verify_jwt = false
+
+[functions.proposal-accept]
+verify_jwt = false
