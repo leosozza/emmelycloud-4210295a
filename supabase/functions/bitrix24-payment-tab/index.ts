@@ -1207,7 +1207,220 @@ function renderPaymentTab(opts: {
 </html>`;
 }
 
-Deno.serve(async (req) => {
+function renderContactPaymentTab(opts: {
+  contactName: string;
+  contactId: string;
+  deals: Array<{
+    id: string; title: string; amount: number; currency: string;
+    responsible: string; gateway: string; paymentMethod: string;
+    totalValue: number; paidValue: number; openValue: number; overdueValue: number;
+    installments: InstallmentData[];
+    paidCount: number; pendingCount: number; overdueCount: number;
+  }>;
+  supabaseUrl: string;
+  memberId: string;
+  totalValue: number;
+  paidValue: number;
+  openValue: number;
+  currency: string;
+}): string {
+  const { contactName, deals, totalValue, paidValue, openValue, currency } = opts;
+  const EUR_TO_BRL = 6.10;
+  const paidPct = totalValue > 0 ? Math.round((paidValue / totalValue) * 100) : 0;
+
+  const dealCards = deals.map((deal) => {
+    const dealPaidPct = deal.totalValue > 0 ? Math.round((deal.paidValue / deal.totalValue) * 100) : 0;
+    const allPaid = deal.installments.length > 0 && deal.installments.every(i => i.status === "paga");
+    const hasOverdue = deal.installments.some(i => i.status === "atrasada");
+    const statusIcon = allPaid ? "✅" : hasOverdue ? "🔴" : "⏳";
+    const statusLabel = allPaid ? "Quitado" : hasOverdue ? "Em Atraso" : "Pendente";
+    const statusColor = allPaid ? "var(--accent-paid)" : hasOverdue ? "var(--accent-overdue)" : "var(--accent-pending)";
+
+    const installmentPills = deal.installments.map((inst) => {
+      const s = getStatusColor(inst.status);
+      const label = inst.is_down_payment ? "Entrada" : `${inst.number}/${inst.total}`;
+      return `<span class="b24-contact-pill" style="--pill-bg:${s.bg};--pill-text:${s.text}" title="${s.label} — ${formatCurrency(inst.value, inst.currency)}${inst.due_date ? ' — Vence: ' + formatDate(inst.due_date) : ''}">${label} ${formatCurrency(inst.value, inst.currency)} ${inst.status === "paga" ? "✅" : inst.status === "atrasada" ? "🔴" : "⏳"}</span>`;
+    }).join("");
+
+    return `
+      <div class="b24-deal-card" style="--deal-border:${statusColor}">
+        <div class="b24-deal-header" onclick="this.parentElement.classList.toggle('expanded')">
+          <div class="b24-deal-title-row">
+            <span class="b24-deal-arrow">▶</span>
+            <span class="b24-deal-title">Deal #${deal.id}: ${(deal.title || "").replace(/</g, "&lt;")}</span>
+            <span class="b24-deal-amount">${formatCurrency(deal.totalValue, deal.currency)}</span>
+            <span class="b24-deal-status" style="color:${statusColor}">${statusIcon} ${statusLabel}</span>
+          </div>
+          <div class="b24-deal-summary-row">
+            <span>Pago: <strong style="color:var(--value-paid)">${formatCurrency(deal.paidValue, deal.currency)}</strong></span>
+            <span>Aberto: <strong style="color:${deal.openValue > 0 ? 'var(--value-open)' : 'var(--value-paid)'}">${formatCurrency(deal.openValue, deal.currency)}</strong></span>
+            <span>${deal.paidCount} quitadas · ${deal.pendingCount} pendentes${deal.overdueCount > 0 ? ` · ${deal.overdueCount} atrasadas` : ""}</span>
+            ${deal.responsible ? `<span>${icon("building", 12)} ${deal.responsible}</span>` : ""}
+          </div>
+          <div class="b24-deal-progress">
+            <div class="b24-deal-progress-fill" style="width:${dealPaidPct}%"></div>
+          </div>
+        </div>
+        <div class="b24-deal-body">
+          <div class="b24-deal-pills">${installmentPills}</div>
+          ${deal.gateway ? `<div class="b24-deal-meta"><span>${icon("bank", 12)} ${deal.gateway}</span></div>` : ""}
+          ${deal.paymentMethod ? `<div class="b24-deal-meta"><span>${icon("credit-card", 12)} ${deal.paymentMethod}</span></div>` : ""}
+        </div>
+      </div>`;
+  }).join("");
+
+  const noDealsHtml = `
+    <div class="b24-empty">
+      <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
+      <div class="b24-empty-title">Nenhum negócio encontrado</div>
+      <div class="b24-empty-desc">Este contacto ainda não possui negócios com registos financeiros.</div>
+    </div>`;
+
+  return `<!DOCTYPE html>
+<html lang="pt">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Emmely Pay — Contacto</title>
+  <link href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;600;700&display=swap" rel="stylesheet">
+  <script src="https://api.bitrix24.com/api/v1/"></script>
+  <style>
+    :root {
+      --bg-page: #f4f6f8; --bg-card: #ffffff; --text-primary: #111827; --text-secondary: #6b7280;
+      --text-tertiary: #9ca3af; --border-color: #e5e7eb; --border-light: #f3f4f6;
+      --progress-bg: #e5e7eb; --progress-fill: linear-gradient(90deg, #3b82f6, #06b6d4);
+      --progress-fill-flat: #3b82f6; --link-color: #2563eb;
+      --value-paid: #059669; --value-open: #dc2626;
+      --accent-paid: #10b981; --accent-pending: #f59e0b; --accent-overdue: #ef4444; --accent-default: #cbd5e1;
+      --shadow-sm: 0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
+      --shadow-md: 0 4px 12px rgba(0,0,0,0.08);
+      --radius: 10px; --radius-sm: 6px;
+      --stat-total-bg: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%);
+      --stat-total-icon: #3b82f6;
+      --stat-paid-bg: linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%);
+      --stat-paid-icon: #10b981;
+      --stat-open-bg: linear-gradient(135deg, #fef2f2 0%, #fecaca 100%);
+      --stat-open-icon: #ef4444;
+    }
+    body.dark {
+      --bg-page: #0f172a; --bg-card: #1e293b; --text-primary: #f1f5f9; --text-secondary: #94a3b8;
+      --text-tertiary: #64748b; --border-color: #334155; --border-light: #1e293b;
+      --progress-bg: #334155; --progress-fill: linear-gradient(90deg, #60a5fa, #22d3ee);
+      --progress-fill-flat: #60a5fa; --link-color: #60a5fa;
+      --value-paid: #34d399; --value-open: #f87171;
+      --accent-paid: #34d399; --accent-pending: #fbbf24; --accent-overdue: #f87171; --accent-default: #475569;
+      --shadow-sm: 0 1px 3px rgba(0,0,0,0.2); --shadow-md: 0 4px 12px rgba(0,0,0,0.3);
+      --stat-total-bg: linear-gradient(135deg, #1e293b 0%, #1e3a5f 100%); --stat-total-icon: #60a5fa;
+      --stat-paid-bg: linear-gradient(135deg, #1e293b 0%, #064e3b 100%); --stat-paid-icon: #34d399;
+      --stat-open-bg: linear-gradient(135deg, #1e293b 0%, #7f1d1d 100%); --stat-open-icon: #f87171;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: "Open Sans", -apple-system, sans-serif; font-size: 13px; background: var(--bg-page); color: var(--text-primary); line-height: 1.5; -webkit-font-smoothing: antialiased; }
+
+    .b24-contact-summary { background: var(--bg-card); border-bottom: 1px solid var(--border-color); padding: 20px 24px 16px; }
+    .b24-contact-title { font-size: 15px; font-weight: 700; margin-bottom: 14px; display: flex; align-items: center; gap: 8px; letter-spacing: -0.01em; }
+    .b24-contact-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 14px; }
+    .b24-contact-stat { border-radius: var(--radius); padding: 14px 16px; position: relative; overflow: hidden; }
+    .b24-contact-stat.stat-total { background: var(--stat-total-bg); }
+    .b24-contact-stat.stat-paid { background: var(--stat-paid-bg); }
+    .b24-contact-stat.stat-open { background: var(--stat-open-bg); }
+    .b24-contact-stat-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.6px; color: var(--text-tertiary); margin-bottom: 4px; }
+    .b24-contact-stat-value { font-size: 18px; font-weight: 800; letter-spacing: -0.02em; }
+    .b24-contact-stat .b24-dual-currency { font-size: 10px; color: var(--text-tertiary); font-weight: 400; margin-top: 2px; display: block; }
+
+    .b24-contact-progress { display: flex; align-items: center; gap: 10px; }
+    .b24-contact-progress-bar { flex: 1; height: 8px; background: var(--progress-bg); border-radius: 4px; overflow: hidden; }
+    .b24-contact-progress-fill { height: 100%; background: var(--progress-fill); border-radius: 4px; transition: width 0.8s cubic-bezier(0.22,1,0.36,1); position: relative; }
+    .b24-contact-progress-fill::after { content: ''; position: absolute; inset: 0; background: linear-gradient(90deg, rgba(255,255,255,0) 0%, rgba(255,255,255,0.2) 50%, rgba(255,255,255,0) 100%); animation: shimmer 2s infinite; }
+    @keyframes shimmer { 0% { transform: translateX(-100%); } 100% { transform: translateX(100%); } }
+    .b24-contact-progress-label { font-size: 12px; font-weight: 800; min-width: 36px; text-align: right; }
+    .b24-contact-meta { font-size: 12px; color: var(--text-secondary); margin-top: 10px; display: flex; gap: 16px; }
+
+    .b24-deals-list { padding: 16px 24px; display: flex; flex-direction: column; gap: 12px; }
+    .b24-deal-card { background: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--radius); border-left: 5px solid var(--deal-border, var(--accent-default)); box-shadow: 0 1px 2px rgba(0,0,0,0.04); overflow: hidden; transition: box-shadow 0.2s; }
+    .b24-deal-card:hover { box-shadow: var(--shadow-sm); }
+    .b24-deal-header { padding: 14px 18px; cursor: pointer; user-select: none; }
+    .b24-deal-title-row { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; flex-wrap: wrap; }
+    .b24-deal-arrow { font-size: 10px; color: var(--text-tertiary); transition: transform 0.2s; }
+    .b24-deal-card.expanded .b24-deal-arrow { transform: rotate(90deg); }
+    .b24-deal-title { font-size: 13px; font-weight: 700; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .b24-deal-amount { font-size: 14px; font-weight: 800; letter-spacing: -0.02em; }
+    .b24-deal-status { font-size: 11px; font-weight: 700; white-space: nowrap; }
+    .b24-deal-summary-row { display: flex; gap: 14px; font-size: 11px; color: var(--text-secondary); flex-wrap: wrap; align-items: center; margin-bottom: 6px; }
+    .b24-deal-summary-row strong { color: inherit; }
+    .b24-deal-progress { height: 4px; background: var(--progress-bg); border-radius: 2px; overflow: hidden; }
+    .b24-deal-progress-fill { height: 100%; background: var(--progress-fill); border-radius: 2px; }
+    .b24-deal-body { display: none; padding: 0 18px 14px; border-top: 1px solid var(--border-light); }
+    .b24-deal-card.expanded .b24-deal-body { display: block; padding-top: 12px; }
+    .b24-deal-pills { display: flex; gap: 6px; flex-wrap: wrap; }
+    .b24-contact-pill { display: inline-flex; align-items: center; gap: 4px; background: var(--pill-bg); color: var(--pill-text); border-radius: 16px; padding: 4px 12px; font-size: 11px; font-weight: 600; white-space: nowrap; cursor: default; }
+    body.dark .b24-contact-pill { opacity: 0.9; }
+    .b24-deal-meta { font-size: 11px; color: var(--text-secondary); margin-top: 8px; display: flex; gap: 12px; align-items: center; }
+    .b24-dual-currency { font-size: 10px; color: var(--text-tertiary); font-weight: 400; white-space: nowrap; }
+
+    .b24-empty { text-align: center; padding: 72px 24px; color: var(--text-secondary); }
+    .b24-empty svg { margin: 0 auto 20px; display: block; opacity: 0.2; }
+    .b24-empty-title { font-size: 16px; font-weight: 800; margin-bottom: 8px; color: var(--text-primary); }
+    .b24-empty-desc { font-size: 13px; max-width: 300px; margin: 0 auto; line-height: 1.6; }
+  </style>
+</head>
+<body>
+<div id="app">
+  ${deals.length === 0 ? noDealsHtml : `
+  <div class="b24-contact-summary">
+    <div class="b24-contact-title">${icon("bank", 16)} Emmely Pay — ${contactName.replace(/</g, "&lt;")}</div>
+    <div class="b24-contact-stats">
+      <div class="b24-contact-stat stat-total">
+        <div class="b24-contact-stat-label">Total</div>
+        <div class="b24-contact-stat-value">${formatCurrency(totalValue, currency)}</div>
+        <span class="b24-dual-currency">≈ ${formatCurrency(totalValue * EUR_TO_BRL, "BRL")}</span>
+      </div>
+      <div class="b24-contact-stat stat-paid">
+        <div class="b24-contact-stat-label">Pago</div>
+        <div class="b24-contact-stat-value" style="color:var(--value-paid)">${formatCurrency(paidValue, currency)}</div>
+        <span class="b24-dual-currency">≈ ${formatCurrency(paidValue * EUR_TO_BRL, "BRL")}</span>
+      </div>
+      <div class="b24-contact-stat stat-open">
+        <div class="b24-contact-stat-label">Em Aberto</div>
+        <div class="b24-contact-stat-value" style="color:${openValue > 0 ? 'var(--value-open)' : 'var(--value-paid)'}">${formatCurrency(openValue, currency)}</div>
+        <span class="b24-dual-currency">≈ ${formatCurrency(openValue * EUR_TO_BRL, "BRL")}</span>
+      </div>
+    </div>
+    <div class="b24-contact-progress">
+      <div class="b24-contact-progress-bar">
+        <div class="b24-contact-progress-fill" style="width:${paidPct}%"></div>
+      </div>
+      <div class="b24-contact-progress-label">${paidPct}%</div>
+    </div>
+    <div class="b24-contact-meta">
+      <span>${deals.length} negócio${deals.length !== 1 ? "s" : ""}</span>
+      <span>${deals.reduce((s, d) => s + d.installments.length, 0)} parcelas</span>
+    </div>
+  </div>
+  <div class="b24-deals-list">
+    ${dealCards}
+  </div>
+  `}
+</div>
+<script>
+  function applyTheme(isDark) { document.body.classList.toggle('dark', isDark); }
+  if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) applyTheme(true);
+  window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', function(e) { applyTheme(e.matches); });
+  window.addEventListener('message', function(e) {
+    if (!e.data || typeof e.data !== 'object') return;
+    var d = e.data;
+    if (d.action === 'ChangeColorScheme' || d.action === 'themeChange') { var s = d.scheme || d.colorScheme || d.theme; if (s) applyTheme(s === 'dark'); }
+    else if (d.type === 'B24Frame:theme' && d.payload && d.payload.type) applyTheme(d.payload.type === 'dark');
+    else if (d.colorScheme) applyTheme(d.colorScheme === 'dark');
+    else if (d.theme === 'dark' || d.theme === 'light') applyTheme(d.theme === 'dark');
+  });
+  try { BX24.init(function() { BX24.fitWindow(); }); } catch(e) {}
+</script>
+</body>
+</html>`;
+}
+
+
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   const supabase = createClient(
@@ -1268,6 +1481,154 @@ Deno.serve(async (req) => {
     let accessToken = bodyAuthToken || await ensureValidToken(supabase, integration);
     const endpoint = integration.client_endpoint;
 
+    // Gateway / method display name maps
+    const gwNames: Record<string, string> = { stripe_pt: "Stripe PT", stripe_br: "Stripe BR", asaas: "Asaas", direto: "Direto", stripe: "Stripe" };
+    const methodNames: Record<string, string> = { card: "Cartão", pix: "PIX", boleto: "Boleto", multibanco: "Multibanco", mb_way: "MB Way", direto: "Direto", parcelado_direto: "Direto", sepa_debit: "SEPA" };
+
+    // ==========================================
+    // CONTACT VIEW — entityTypeId === "3"
+    // ==========================================
+    if (entityTypeId === "3") {
+      console.log("[PAYMENT-TAB] Contact mode — fetching deals for contact:", entityId);
+
+      let contactName = "Contacto";
+      try {
+        const contactResult = await callBitrix(endpoint, accessToken, "crm.contact.get", { ID: entityId });
+        const contact = contactResult.result || {};
+        contactName = [contact.NAME, contact.SECOND_NAME, contact.LAST_NAME].filter(Boolean).join(" ") || "Contacto";
+      } catch (e) {
+        console.error("[PAYMENT-TAB] Error fetching contact:", e);
+      }
+
+      // Fetch all deals linked to this contact
+      let deals: any[] = [];
+      try {
+        const dealListResult = await callBitrix(endpoint, accessToken, "crm.deal.list", {
+          filter: { CONTACT_ID: entityId },
+          select: ["ID", "TITLE", "OPPORTUNITY", "CURRENCY_ID", "STAGE_ID", "DATE_CREATE", "ASSIGNED_BY_ID",
+                   "UF_CRM_EMMELY_GATEWAY", "UF_CRM_EMMELY_PAYMENT_METHOD", "UF_CRM_EMMELY_PAYMENT_STATUS"],
+          order: { DATE_CREATE: "DESC" },
+        });
+        deals = dealListResult.result || [];
+      } catch (e) {
+        console.error("[PAYMENT-TAB] Error fetching deals for contact:", e);
+      }
+
+      if (deals.length === 0) {
+        return new Response(renderContactPaymentTab({
+          contactName, contactId: entityId, deals: [], supabaseUrl, memberId,
+          totalValue: 0, paidValue: 0, openValue: 0, currency: "EUR",
+        }), { headers: htmlHeaders });
+      }
+
+      // Fetch all transactions
+      const { data: allTransactions } = await supabase
+        .from("payment_transactions")
+        .select("*")
+        .order("created_at", { ascending: true });
+
+      // Fetch responsible users
+      const assignedIds = [...new Set(deals.map((d: any) => d.ASSIGNED_BY_ID).filter(Boolean))];
+      const userMap: Record<string, string> = {};
+      if (assignedIds.length > 0) {
+        try {
+          const usersResult = await callBitrix(endpoint, accessToken, "user.get", { ID: assignedIds });
+          for (const u of (usersResult.result || [])) {
+            userMap[String(u.ID)] = [u.NAME, u.LAST_NAME].filter(Boolean).join(" ");
+          }
+        } catch (e) { console.error("[PAYMENT-TAB] Error fetching users:", e); }
+      }
+
+      // Build deal summaries
+      interface DealSummary {
+        id: string; title: string; amount: number; currency: string; stageId: string;
+        createdAt: string; responsible: string; gateway: string; paymentMethod: string;
+        totalValue: number; paidValue: number; openValue: number; overdueValue: number;
+        installments: InstallmentData[]; paidCount: number; pendingCount: number; overdueCount: number;
+      }
+
+      let grandTotal = 0, grandPaid = 0, grandOpen = 0;
+      const dealSummaries: DealSummary[] = [];
+
+      for (const deal of deals) {
+        const dealId = String(deal.ID);
+        const dealCurrency = deal.CURRENCY_ID || "EUR";
+        const dealAmount = parseFloat(deal.OPPORTUNITY || "0");
+
+        // Find transactions for this deal
+        const dealTxs = (allTransactions || []).filter((tx: any) => {
+          const meta = tx.metadata || {};
+          return meta.bitrix_deal_id === dealId || meta.bitrix_deal_id === String(dealId) ||
+                 meta.bitrix_entity_id === dealId || meta.bitrix_entity_id === String(dealId);
+        });
+
+        // Build installments from transactions or synthetic
+        let installments: InstallmentData[] = [];
+        let totalValue = 0, paidValue = 0;
+
+        if (dealTxs.length > 0) {
+          totalValue = dealTxs.reduce((s: number, tx: any) => s + (tx.amount || 0), 0);
+          installments = dealTxs.map((tx: any, idx: number) => {
+            let status = "pendente";
+            if (tx.status === "paid" || tx.status === "confirmed" || tx.status === "succeeded") status = "paga";
+            else if (tx.status === "overdue" || tx.status === "failed") status = "atrasada";
+            else if (tx.metadata?.due_date && new Date(tx.metadata.due_date) < new Date()) status = "atrasada";
+            const meta = tx.metadata || {};
+            return {
+              id: tx.id, number: meta.installment_number ?? (idx + 1),
+              total: meta.total_installments || dealTxs.length,
+              value: tx.amount || 0, status,
+              due_date: meta.due_date || tx.created_at,
+              paid_at: status === "paga" ? tx.updated_at : null,
+              currency: tx.currency || dealCurrency, description: "",
+              transaction_id: tx.id, payment_url: tx.payment_url,
+              is_down_payment: meta.is_down_payment === true,
+              invoice_id: meta.bitrix_invoice_id || null,
+              payment_method: tx.payment_method,
+              metadata: meta,
+            };
+          });
+          paidValue = installments.filter(i => i.status === "paga").reduce((s, i) => s + i.value, 0);
+        } else if (dealAmount > 0) {
+          totalValue = dealAmount;
+          installments = [{
+            id: `deal-${dealId}`, number: 1, total: 1, value: dealAmount,
+            status: "pendente", due_date: null, paid_at: null, currency: dealCurrency,
+            description: deal.TITLE || "",
+          }];
+        }
+
+        const openValue = totalValue - paidValue;
+        const overdueValue = installments.filter(i => i.status === "atrasada").reduce((s, i) => s + i.value, 0);
+
+        grandTotal += totalValue;
+        grandPaid += paidValue;
+        grandOpen += openValue;
+
+        dealSummaries.push({
+          id: dealId, title: deal.TITLE || `Deal #${dealId}`,
+          amount: dealAmount, currency: dealCurrency, stageId: deal.STAGE_ID || "",
+          createdAt: deal.DATE_CREATE || "", responsible: userMap[String(deal.ASSIGNED_BY_ID)] || "",
+          gateway: gwNames[deal.UF_CRM_EMMELY_GATEWAY || ""] || "",
+          paymentMethod: methodNames[deal.UF_CRM_EMMELY_PAYMENT_METHOD || ""] || "",
+          totalValue, paidValue, openValue, overdueValue, installments,
+          paidCount: installments.filter(i => i.status === "paga").length,
+          pendingCount: installments.filter(i => i.status === "pendente").length,
+          overdueCount: installments.filter(i => i.status === "atrasada").length,
+        });
+      }
+
+      return new Response(renderContactPaymentTab({
+        contactName, contactId: entityId, deals: dealSummaries,
+        supabaseUrl, memberId,
+        totalValue: grandTotal, paidValue: grandPaid, openValue: grandOpen,
+        currency: "EUR",
+      }), { headers: htmlHeaders });
+    }
+
+    // ==========================================
+    // DEAL VIEW (existing logic) — entityTypeId !== "3"
+    // ==========================================
     let dealTitle = "Negócio";
     let dealAmount = 0;
     let dealCurrency = "EUR";
@@ -1285,11 +1646,9 @@ Deno.serve(async (req) => {
       dealCurrency = deal.CURRENCY_ID || "EUR";
       contactId = deal.CONTACT_ID || "";
       dealCreatedAt = deal.DATE_CREATE || deal.CREATED_DATE || "";
-      // Read UF_CRM_EMMELY_* fields (list fields return item IDs, not labels)
       const rawGateway = deal.UF_CRM_EMMELY_GATEWAY || "";
       const rawMethod = deal.UF_CRM_EMMELY_PAYMENT_METHOD || "";
 
-      // Resolve list field IDs to display values
       if (rawGateway || rawMethod) {
         try {
           const fieldsResult = await callBitrix(endpoint, accessToken, "crm.deal.fields", {});
@@ -1301,7 +1660,6 @@ Deno.serve(async (req) => {
               const match = items.find((item: any) => String(item.ID) === String(rawVal) || String(item.VALUE) === String(rawVal));
               if (match) return match.VALUE || match.value || rawVal;
             }
-            // If the raw value is purely numeric, it's an unresolved list ID — return empty
             if (/^\d+$/.test(rawVal)) return "";
             return rawVal;
           };
@@ -1309,7 +1667,6 @@ Deno.serve(async (req) => {
           dealPaymentMethod = resolveListValue(fields.UF_CRM_EMMELY_PAYMENT_METHOD, rawMethod);
         } catch (e) {
           console.error("[PAYMENT-TAB] Error resolving list fields:", e);
-          // Fallback: if numeric, skip; otherwise use raw
           dealGateway = /^\d+$/.test(rawGateway) ? "" : rawGateway;
           dealPaymentMethod = /^\d+$/.test(rawMethod) ? "" : rawMethod;
         }
@@ -1423,20 +1780,14 @@ Deno.serve(async (req) => {
       .from("flows").select("id, name").eq("is_active", true).order("name");
     const flows = (activeFlows || []).map((f: any) => ({ id: f.id, name: f.name }));
 
-    // Compute next due date from pending installments
     const pendingInstallments = installments.filter(i => i.status !== "paga" && i.due_date);
     const nextDueDate = pendingInstallments.length > 0
       ? pendingInstallments.sort((a, b) => new Date(a.due_date!).getTime() - new Date(b.due_date!).getTime())[0].due_date
       : null;
 
-    // Determine gateway/method from transactions or deal fields
     const displayGateway = dealGateway || (dealTransactions.length > 0 ? dealTransactions[0].gateway : "") || "";
     const displayMethod = dealPaymentMethod || (dealTransactions.length > 0 ? dealTransactions[0].payment_method : "") || "";
     const displayCreatedAt = dealCreatedAt || (dealTransactions.length > 0 ? dealTransactions[0].created_at : "") || "";
-
-    // Gateway display name map
-    const gwNames: Record<string, string> = { stripe_pt: "Stripe PT", stripe_br: "Stripe BR", asaas: "Asaas", direto: "Direto", stripe: "Stripe" };
-    const methodNames: Record<string, string> = { card: "Cartão", pix: "PIX", boleto: "Boleto", multibanco: "Multibanco", mb_way: "MB Way", direto: "Direto", parcelado_direto: "Direto", sepa_debit: "SEPA" };
 
     return new Response(renderPaymentTab({
       entityId, dealTitle, totalValue, paidValue, openValue, currency,
