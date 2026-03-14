@@ -3154,6 +3154,9 @@ function PlacementPreviewView({ integration, memberId }: { integration: any; mem
       case "payment-tab":
         placementOptions = JSON.stringify({ ID: dealId });
         break;
+      case "payment-tab-contact":
+        placementOptions = JSON.stringify({ ID: contactId });
+        break;
       case "crm-tab":
         placementOptions = JSON.stringify({ ID: leadId });
         break;
