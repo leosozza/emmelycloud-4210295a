@@ -21,6 +21,7 @@ import {
   MessageSquare,
   FileCode,
   BookOpen,
+  Activity,
 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import {

@@ -24,12 +24,14 @@ export function MessageBubble({ id, content, direction, senderName, createdAt, r
   const handleFeedback = async (rating: number) => {
     if (!conversationId || feedbackGiven !== null) return;
     setFeedbackGiven(rating);
-    await supabase.from("conversation_feedback").insert({
-      conversation_id: conversationId,
-      message_id: id || null,
-      rating,
-      comment: rating >= 4 ? "thumbs_up" : "thumbs_down",
-    } as any).catch(() => {});
+    try {
+      await supabase.from("conversation_feedback").insert({
+        conversation_id: conversationId,
+        message_id: id || null,
+        rating,
+        comment: rating >= 4 ? "thumbs_up" : "thumbs_down",
+      } as any);
+    } catch {}
   };
 
   const renderStatusIcon = () => {

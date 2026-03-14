@@ -77,6 +77,7 @@ const App = () => (
             <Route path="/api-docs" element={<ApiDocsPage />} />
             <Route path="/manual" element={<ManualPage />} />
             <Route path="/chat" element={<ChatIAPage />} />
+            <Route path="/observabilidade-ia" element={<ObservabilidadeIAPage />} />
           </Route>
           <Route path="*" element={<NotFound />} />
         </Routes>

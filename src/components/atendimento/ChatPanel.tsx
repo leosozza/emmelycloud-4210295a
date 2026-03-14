@@ -151,12 +151,15 @@ export function ChatPanel({ conversation, messages, quickReplies, onSendMessage,
             {group.messages.map((msg) => (
               <MessageBubble
                 key={msg.id}
+                id={msg.id}
                 content={msg.content}
                 direction={msg.direction}
                 senderName={msg.sender_name ?? undefined}
                 createdAt={msg.created_at}
                 readAt={msg.read_at}
                 deliveryStatus={msg.delivery_status}
+                conversationId={conversation.id}
+                showFeedback={msg.direction === "outbound"}
               />
             ))}
           </div>
