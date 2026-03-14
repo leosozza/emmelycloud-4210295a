@@ -145,3 +145,6 @@ verify_jwt = false
 
 [functions.proposal-accept]
 verify_jwt = false
+
+[functions.import-access-data]
+verify_jwt = false

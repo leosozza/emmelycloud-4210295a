@@ -63,7 +63,7 @@ const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
 
 const customNodeTypes = { custom: CustomFlowNode };
 
-type AppView = "loading" | "dashboard" | "agentes" | "training" | "flows" | "playground" | "chatia" | "pagamentos" | "relatorios" | "mapeamento" | "empresas" | "baixa" | "placement";
+type AppView = "loading" | "dashboard" | "agentes" | "training" | "flows" | "playground" | "chatia" | "pagamentos" | "relatorios" | "mapeamento" | "empresas" | "baixa" | "placement" | "importacao";
 
 // ==================== MAIN COMPONENT ====================
 const Bitrix24App = () => {
@@ -190,6 +190,7 @@ const Bitrix24App = () => {
       items: [
         { id: "pagamentos", label: "Pagamentos", icon: CreditCard },
         { id: "baixa", label: "Baixa Carteira", icon: FileDown },
+        { id: "importacao", label: "Importação", icon: Upload },
         { id: "placement", label: "Placement", icon: ExternalLink },
         { id: "empresas", label: "Empresas", icon: Building2 },
         { id: "relatorios", label: "Relatórios", icon: BarChart3 },
@@ -307,6 +308,7 @@ const Bitrix24App = () => {
         {view === "placement" && <PlacementPreviewView integration={integration} memberId={memberId} />}
         {view === "empresas" && <EmpresasView />}
         {view === "relatorios" && <RelatoriosView />}
+        {view === "importacao" && <ImportacaoAccessView integration={integration} memberId={memberId} />}
       </main>
     </div>
   );
@@ -3869,4 +3871,218 @@ function BaixaCarteiraView({ integration }: { integration: any }) {
   );
 }
 
+// ==================== IMPORTAÇÃO ACCESS VIEW ====================
+function ImportacaoAccessView({ integration, memberId }: { integration: any; memberId: string | null }) {
+  const [jsonData, setJsonData] = useState<any[] | null>(null);
+  const [importing, setImporting] = useState(false);
+  const [progress, setProgress] = useState({ processed: 0, total: 0 });
+  const [logs, setLogs] = useState<{ client_name: string; status: string; error?: string }[]>([]);
+  const [syncBitrix, setSyncBitrix] = useState(!!integration);
+  const [done, setDone] = useState(false);
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const data = JSON.parse(ev.target?.result as string);
+        if (Array.isArray(data)) {
+          setJsonData(data);
+          setLogs([]);
+          setDone(false);
+          setProgress({ processed: 0, total: data.length });
+        } else {
+          alert("O ficheiro deve conter um array JSON de clientes.");
+        }
+      } catch {
+        alert("Erro ao ler o ficheiro JSON.");
+      }
+    };
+    reader.readAsText(file);
+  };
+
+  const stats = useMemo(() => {
+    if (!jsonData) return null;
+    const totalClients = jsonData.length;
+    const activeClients = jsonData.filter((r: any) => r.cliente?.ativo === "SIM").length;
+    const totalHonorarios = jsonData.reduce((acc: number, r: any) => acc + (r.honorarios?.length || 0), 0);
+    const totalValue = jsonData.reduce((acc: number, r: any) => {
+      const seen = new Set<string>();
+      for (const h of (r.honorarios || [])) {
+        const key = `${h.descricao}_${h.valor}`;
+        if (!seen.has(key)) {
+          seen.add(key);
+          acc += parseFloat(h.valor) || 0;
+        }
+      }
+      return acc;
+    }, 0);
+    const paidCount = jsonData.reduce((acc: number, r: any) =>
+      acc + (r.honorarios || []).filter((h: any) => h.status === "QUITADO").length, 0);
+    const pendingCount = totalHonorarios - paidCount;
+    return { totalClients, activeClients, totalHonorarios, totalValue, paidCount, pendingCount };
+  }, [jsonData]);
+
+  const handleImport = async () => {
+    if (!jsonData) return;
+    setImporting(true);
+    setLogs([]);
+    setDone(false);
+    const batchSize = 10;
+    let batchStart = 0;
+
+    while (batchStart < jsonData.length) {
+      try {
+        const res = await fetch(`${SUPABASE_URL}/functions/v1/import-access-data`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            apikey: SUPABASE_KEY,
+            Authorization: `Bearer ${SUPABASE_KEY}`,
+          },
+          body: JSON.stringify({
+            records: jsonData,
+            batch_start: batchStart,
+            batch_size: batchSize,
+            member_id: memberId,
+            sync_bitrix: syncBitrix,
+          }),
+        });
+        const data = await res.json();
+        if (data.results) {
+          setLogs(prev => [...prev, ...data.results]);
+        }
+        setProgress({ processed: data.processed || batchStart + batchSize, total: jsonData.length });
+        if (!data.has_more) break;
+        batchStart = data.next_batch_start;
+      } catch (e) {
+        setLogs(prev => [...prev, { client_name: `Batch ${batchStart}`, status: "error", error: String(e) }]);
+        break;
+      }
+    }
+    setDone(true);
+    setImporting(false);
+  };
+
+  const errorCount = logs.filter(l => l.status === "error").length;
+  const successCount = logs.filter(l => l.status === "ok").length;
+  const progressPct = progress.total > 0 ? Math.round((progress.processed / progress.total) * 100) : 0;
+
+  return (
+    <div className="p-6 space-y-6">
+      <div className="b24-view-header">
+        <h1 className="text-xl font-bold text-white">Importação Access</h1>
+        <p className="text-white/60 text-sm mt-0.5">Importar clientes e honorários do ficheiro Access/Manus</p>
+      </div>
+
+      {/* Upload */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2"><Upload className="h-5 w-5" /> Carregar Ficheiro JSON</CardTitle>
+          <CardDescription>Selecione o ficheiro TABELA_CONSOLIDADA_ESTRUTURADA.json gerado pelo Manus</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <Input type="file" accept=".json" onChange={handleFileUpload} disabled={importing} />
+
+          {integration && (
+            <div className="flex items-center gap-3">
+              <Switch checked={syncBitrix} onCheckedChange={setSyncBitrix} disabled={importing} />
+              <Label className="text-sm">Sincronizar com Bitrix24 (criar Contactos + Deals + Faturas)</Label>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Preview */}
+      {stats && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Pré-visualização</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+              <div className="text-center p-3 rounded-lg bg-muted">
+                <p className="text-2xl font-bold text-foreground">{stats.totalClients}</p>
+                <p className="text-xs text-muted-foreground">Clientes</p>
+              </div>
+              <div className="text-center p-3 rounded-lg bg-muted">
+                <p className="text-2xl font-bold text-foreground">{stats.activeClients}</p>
+                <p className="text-xs text-muted-foreground">Activos</p>
+              </div>
+              <div className="text-center p-3 rounded-lg bg-muted">
+                <p className="text-2xl font-bold text-foreground">{stats.totalHonorarios}</p>
+                <p className="text-xs text-muted-foreground">Parcelas</p>
+              </div>
+              <div className="text-center p-3 rounded-lg bg-muted">
+                <p className="text-2xl font-bold text-foreground">€{stats.totalValue.toLocaleString("pt-PT", { minimumFractionDigits: 2 })}</p>
+                <p className="text-xs text-muted-foreground">Valor Total</p>
+              </div>
+              <div className="text-center p-3 rounded-lg bg-muted">
+                <p className="text-2xl font-bold text-success">{stats.paidCount}</p>
+                <p className="text-xs text-muted-foreground">Quitados</p>
+              </div>
+              <div className="text-center p-3 rounded-lg bg-muted">
+                <p className="text-2xl font-bold text-destructive">{stats.pendingCount}</p>
+                <p className="text-xs text-muted-foreground">Pendentes</p>
+              </div>
+            </div>
+
+            <Button onClick={handleImport} disabled={importing} className="w-full mt-6" size="lg">
+              {importing ? (
+                <><Loader2 className="h-4 w-4 animate-spin mr-2" /> Importando... ({progressPct}%)</>
+              ) : (
+                <><Upload className="h-4 w-4 mr-2" /> Importar {stats.totalClients} Clientes</>
+              )}
+            </Button>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Progress */}
+      {(importing || done) && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              {importing ? <Loader2 className="h-5 w-5 animate-spin" /> : <CheckCircle className="h-5 w-5 text-success" />}
+              {importing ? "Importando..." : "Importação Concluída"}
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {/* Progress bar */}
+            <div className="w-full bg-muted rounded-full h-3">
+              <div
+                className="bg-primary h-3 rounded-full transition-all duration-300"
+                style={{ width: `${progressPct}%` }}
+              />
+            </div>
+            <p className="text-sm text-muted-foreground text-center">
+              {progress.processed} / {progress.total} clientes processados
+            </p>
+
+            {done && (
+              <div className="flex gap-4 justify-center">
+                <Badge variant="default" className="text-sm">✅ {successCount} OK</Badge>
+                {errorCount > 0 && <Badge variant="destructive" className="text-sm">❌ {errorCount} Erros</Badge>}
+              </div>
+            )}
+
+            {/* Error log */}
+            {logs.filter(l => l.status === "error").length > 0 && (
+              <ScrollArea className="h-40 border rounded-lg p-3">
+                {logs.filter(l => l.status === "error").map((l, i) => (
+                  <div key={i} className="text-xs text-destructive mb-1">
+                    <strong>{l.client_name}:</strong> {l.error}
+                  </div>
+                ))}
+              </ScrollArea>
+            )}
+          </CardContent>
+        </Card>
+      )}
+    </div>
+  );
+}
+
 export default Bitrix24App;
+
