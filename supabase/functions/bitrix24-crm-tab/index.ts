@@ -92,7 +92,6 @@ function extractEmails(entity: any): string[] {
 async function findConversationByPhone(supabase: any, phones: string[]): Promise<any> {
   for (const phone of phones) {
     if (phone.length < 8) continue;
-    // Try with different prefix lengths for flexibility
     const suffixes = [phone, phone.slice(-9), phone.slice(-8)].filter((s, i, arr) => arr.indexOf(s) === i);
     for (const suffix of suffixes) {
       const { data: conv } = await supabase
@@ -149,7 +148,6 @@ async function findConversationByBotState(supabase: any, entityId: string): Prom
 
 async function findConversationByName(supabase: any, name: string): Promise<any> {
   if (!name || name.length < 5) return null;
-  // Use first significant word (skip common words)
   const words = name.split(/[\s:,]+/).filter(w => w.length > 4);
   for (const word of words.slice(0, 3)) {
     const { data: conv } = await supabase
@@ -165,7 +163,6 @@ async function findConversationByName(supabase: any, name: string): Promise<any>
   return null;
 }
 
-// SVG icons (Bitrix24 b24icons style)
 const B24_ICONS = {
   message: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>`,
   robot: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="10" rx="2"/><circle cx="12" cy="5" r="2"/><line x1="12" y1="7" x2="12" y2="11"/><line x1="1" y1="16" x2="3" y2="16"/><line x1="21" y1="16" x2="23" y2="16"/><circle cx="8.5" cy="15.5" r="1"/><circle cx="15.5" cy="15.5" r="1"/></svg>`,
@@ -180,6 +177,8 @@ const B24_ICONS = {
   botBadge: `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="10" rx="2"/><circle cx="12" cy="5" r="2"/><line x1="12" y1="7" x2="12" y2="11"/></svg>`,
   user: `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>`,
   notepad: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>`,
+  use: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>`,
+  at: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M16 8v5a3 3 0 0 0 6 0v-1a10 10 0 1 0-3.92 7.94"/></svg>`,
 };
 
 function renderHtml(opts: {
@@ -197,11 +196,13 @@ function renderHtml(opts: {
   emails: string[];
   whatsappEnabled: boolean;
   instagramEnabled: boolean;
+  quickReplies: any[];
+  agents: any[];
 }): string {
   const {
     contactName, attendanceMode, channel, messages, conversationId,
     supabaseUrl, memberId, integrationId, phones, emails,
-    whatsappEnabled, instagramEnabled,
+    whatsappEnabled, instagramEnabled, quickReplies, agents,
   } = opts;
 
   const isBot = attendanceMode === "bot";
@@ -230,57 +231,71 @@ function renderHtml(opts: {
 
   const returnToBotBtn = conversationId && !isBot ? `
     <button onclick="returnToBot()" style="
-      background:#2283d8;color:#fff;border:none;padding:10px 20px;border-radius:8px;
-      cursor:pointer;font-size:13px;font-weight:600;width:100%;margin-top:8px;
+      background:#2283d8;color:#fff;border:none;padding:8px 16px;border-radius:8px;
+      cursor:pointer;font-size:12px;font-weight:600;width:100%;
       display:flex;align-items:center;justify-content:center;gap:6px;
       transition:background 0.15s" onmouseover="this.style.background='#1b6cb8'" onmouseout="this.style.background='#2283d8'">
       ${B24_ICONS.botBadge} Devolver ao Bot
     </button>` : "";
 
-  // Build "Start Conversation" UI when no conversation found
+  // Build quick reply template options
+  const templateOptionsHtml = quickReplies.map((qr: any) =>
+    `<option value="${(qr.content || "").replace(/"/g, "&quot;")}">${(qr.title || "").replace(/</g, "&lt;")}</option>`
+  ).join("");
+
+  // Build "Start Conversation" UI with template selector
   const primaryPhone = phones[0] || "";
   const canStartWhatsApp = whatsappEnabled && primaryPhone.length >= 8;
   const canStartInstagram = instagramEnabled;
 
-  const startBtns = !conversationId ? (() => {
-    let btns = "";
-    if (canStartWhatsApp) {
-      btns += `
-        <button onclick="startConversation('whatsapp','${primaryPhone}')" style="
-          background:#25D366;color:#fff;border:none;padding:10px 16px;border-radius:8px;
-          cursor:pointer;font-size:13px;font-weight:600;width:100%;margin-top:8px;
-          transition:opacity 0.2s" onmouseover="this.style.opacity='0.85'" onmouseout="this.style.opacity='1'">
-          ${B24_ICONS.message} Iniciar Conversa no WhatsApp${primaryPhone ? " (" + primaryPhone.slice(-9) + ")" : ""}
-        </button>`;
-    }
-    if (canStartInstagram) {
-      btns += `
-        <button onclick="startConversation('instagram','')" style="
-          background:#E1306C;color:#fff;border:none;padding:10px 16px;border-radius:8px;
-          cursor:pointer;font-size:13px;font-weight:600;width:100%;margin-top:8px;
-          transition:opacity 0.2s" onmouseover="this.style.opacity='0.85'" onmouseout="this.style.opacity='1'">
-          ${B24_ICONS.message} Iniciar Conversa no Instagram
-        </button>`;
-    }
-    return btns;
-  })() : "";
-
-  const noConvHtml = `
-    <div style="text-align:center;padding:32px 16px">
+  const startConvHtml = !conversationId ? `
+    <div style="text-align:center;padding:24px 16px">
       <div style="margin-bottom:12px;color:#c4cdd5">${B24_ICONS.search}</div>
       <h3 style="color:#333840;margin:0 0 6px;font-size:14px">Nenhuma conversa ativa encontrada</h3>
       <p style="color:#959ca4;font-size:12px;margin:0 0 12px">
-        Pesquisa por telefone, email e nome não encontrou resultados.
+        Inicie uma conversa com o cliente.
       </p>
       ${phones.length ? `<p style="color:#333840;font-size:12px;margin:0 0 4px;display:flex;align-items:center;justify-content:center;gap:4px">${B24_ICONS.phone} ${phones.map(p => "+" + p).join(", ")}</p>` : ""}
-      ${emails.length ? `<p style="color:#333840;font-size:12px;margin:0;display:flex;align-items:center;justify-content:center;gap:4px">${B24_ICONS.mail} ${emails.join(", ")}</p>` : ""}
-    </div>`;
+      ${emails.length ? `<p style="color:#333840;font-size:12px;margin:0 0 12px;display:flex;align-items:center;justify-content:center;gap:4px">${B24_ICONS.mail} ${emails.join(", ")}</p>` : ""}
+      
+      ${templateOptionsHtml ? `
+        <div style="margin:12px 0;text-align:left">
+          <label style="font-size:11px;color:#959ca4;display:block;margin-bottom:4px">Template de mensagem</label>
+          <select id="template-select" style="width:100%;padding:8px 10px;border:1px solid #dfe0e3;border-radius:8px;font-size:13px;color:#333840;background:#fff;outline:none;cursor:pointer">
+            <option value="">Mensagem personalizada...</option>
+            ${templateOptionsHtml}
+          </select>
+        </div>
+      ` : ""}
+      
+      <div style="margin:8px 0">
+        <textarea id="start-msg-input" placeholder="Escreva a mensagem inicial..." style="width:100%;padding:8px 12px;border:1px solid #dfe0e3;border-radius:8px;font-size:13px;color:#333840;resize:none;height:60px;outline:none;font-family:inherit">Olá! Em que posso ajudar?</textarea>
+      </div>
+
+      ${canStartWhatsApp ? `
+        <button onclick="startConversation('whatsapp','${primaryPhone}')" style="
+          background:#25D366;color:#fff;border:none;padding:10px 16px;border-radius:8px;
+          cursor:pointer;font-size:13px;font-weight:600;width:100%;margin-top:4px;
+          transition:opacity 0.2s" onmouseover="this.style.opacity='0.85'" onmouseout="this.style.opacity='1'">
+          ${B24_ICONS.message} Iniciar no WhatsApp${primaryPhone ? " (" + primaryPhone.slice(-9) + ")" : ""}
+        </button>` : ""}
+      ${canStartInstagram ? `
+        <button onclick="startConversation('instagram','')" style="
+          background:#E1306C;color:#fff;border:none;padding:10px 16px;border-radius:8px;
+          cursor:pointer;font-size:13px;font-weight:600;width:100%;margin-top:4px;
+          transition:opacity 0.2s" onmouseover="this.style.opacity='0.85'" onmouseout="this.style.opacity='1'">
+          ${B24_ICONS.message} Iniciar no Instagram
+        </button>` : ""}
+    </div>` : "";
 
   // Build conversation history summary for AI context
   const convSummary = messages.slice(-10).map(m => {
     const role = m.direction === "inbound" ? "Cliente" : "Bot";
     return `${role}: ${(m.content || "").substring(0, 150)}`;
   }).join("\\n");
+
+  // Agents JSON for JS
+  const agentsJson = JSON.stringify(agents.map((a: any) => ({ id: a.id, name: a.name })));
 
   return `<!DOCTYPE html>
 <html lang="pt">
@@ -294,95 +309,116 @@ function renderHtml(opts: {
     body { font-family: "Helvetica Neue", Helvetica, Arial, sans-serif; background: #f5f7fa; color: #333840; }
     #app { display: flex; flex-direction: column; height: 100vh; }
 
-    /* Tab bar */
-    .tab-bar { display: flex; background: #fff; border-bottom: 1px solid #dfe0e3; padding: 0 16px; gap: 0; }
-    .tab { padding: 10px 16px; font-size: 13px; font-weight: 600; color: #959ca4; cursor: pointer; border-bottom: 2px solid transparent; transition: all .2s; user-select: none; display: flex; align-items: center; gap: 6px; }
-    .tab:hover { color: #333840; }
-    .tab.active { color: #2283d8; border-bottom-color: #2283d8; }
-    .tab-content { display: none; flex: 1; flex-direction: column; overflow: hidden; }
-    .tab-content.active { display: flex; }
-
-    /* Existing conversation styles */
-    #header { background: #fff; border-bottom: 1px solid #dfe0e3; padding: 12px 16px; }
-    #header-top { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
-    #avatar { width: 36px; height: 36px; border-radius: 50%; background: linear-gradient(135deg, #2283d8, #7b5ea7); display: flex; align-items: center; justify-content: center; font-weight: 700; color: #fff; font-size: 15px; flex-shrink: 0; }
+    /* Header */
+    #header { background: #fff; border-bottom: 1px solid #dfe0e3; padding: 10px 16px; }
+    #header-top { display: flex; align-items: center; gap: 10px; }
+    #avatar { width: 32px; height: 32px; border-radius: 50%; background: linear-gradient(135deg, #2283d8, #7b5ea7); display: flex; align-items: center; justify-content: center; font-weight: 700; color: #fff; font-size: 14px; flex-shrink: 0; }
     #contact-info { flex: 1; }
-    #contact-name { font-weight: 600; font-size: 15px; color: #333840; }
-    #contact-meta { font-size: 12px; color: #959ca4; margin-top: 2px; display: flex; align-items: center; gap: 4px; }
-    #mode-badge { display: inline-flex; align-items: center; gap: 4px; background: ${modeColor}15; color: ${modeColor}; border: 1px solid ${modeColor}33; border-radius: 20px; padding: 3px 10px; font-size: 11px; font-weight: 600; }
-    #messages { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; }
-    #footer { background: #fff; border-top: 1px solid #dfe0e3; padding: 12px 16px; }
-    #status-msg { font-size: 12px; color: #959ca4; text-align: center; margin-top: 6px; min-height: 16px; }
+    #contact-name { font-weight: 600; font-size: 14px; color: #333840; }
+    #contact-meta { font-size: 11px; color: #959ca4; margin-top: 1px; display: flex; align-items: center; gap: 4px; }
+    #mode-badge { display: inline-flex; align-items: center; gap: 4px; background: ${modeColor}15; color: ${modeColor}; border: 1px solid ${modeColor}33; border-radius: 20px; padding: 2px 8px; font-size: 10px; font-weight: 600; }
 
-    /* AI Chat tab styles */
-    .ai-panel { display: flex; flex-direction: column; flex: 1; overflow: hidden; }
-    .ai-suggestions { display: flex; flex-wrap: wrap; gap: 6px; padding: 12px 16px; background: #fff; border-bottom: 1px solid #dfe0e3; }
-    .ai-suggestions button { background: #f5f7fa; color: #333840; border: 1px solid #dfe0e3; padding: 6px 12px; border-radius: 6px; font-size: 12px; font-weight: 500; cursor: pointer; transition: all .15s; white-space: nowrap; display: flex; align-items: center; gap: 4px; }
+    /* Conversation area */
+    #conv-area { flex: 1; display: flex; flex-direction: column; overflow: hidden; min-height: 0; }
+    #messages { flex: 1; overflow-y: auto; padding: 12px 16px; display: flex; flex-direction: column; }
+
+    /* Client send bar */
+    #client-send-bar { background: #fff; border-top: 1px solid #dfe0e3; padding: 8px 12px; display: flex; gap: 8px; align-items: flex-end; }
+    #client-send-bar textarea { flex: 1; border: 1px solid #dfe0e3; border-radius: 8px; padding: 8px 12px; font-size: 13px; outline: none; color: #333840; font-family: inherit; resize: none; min-height: 36px; max-height: 80px; }
+    #client-send-bar textarea:focus { border-color: #2283d8; }
+    #client-send-bar button { background: #2283d8; color: #fff; border: none; border-radius: 8px; padding: 8px 12px; cursor: pointer; transition: background .15s; display: flex; align-items: center; gap: 4px; font-size: 12px; font-weight: 600; white-space: nowrap; }
+    #client-send-bar button:hover { background: #1b6cb8; }
+    #client-send-bar button:disabled { opacity: .5; cursor: not-allowed; }
+    #status-msg { font-size: 11px; color: #959ca4; text-align: center; padding: 2px 16px; min-height: 14px; }
+
+    /* AI Panel (bottom collapsible) */
+    #ai-panel { background: #fff; border-top: 2px solid #2283d8; display: flex; flex-direction: column; max-height: 45vh; min-height: 40px; transition: max-height .3s; }
+    #ai-panel.collapsed { max-height: 40px; overflow: hidden; }
+    #ai-header { display: flex; align-items: center; gap: 6px; padding: 8px 16px; cursor: pointer; user-select: none; font-size: 13px; font-weight: 600; color: #2283d8; }
+    #ai-header:hover { background: #f0f7ff; }
+    #ai-toggle { margin-left: auto; font-size: 16px; transition: transform .2s; }
+    #ai-panel.collapsed #ai-toggle { transform: rotate(180deg); }
+    .ai-suggestions { display: flex; flex-wrap: wrap; gap: 4px; padding: 4px 16px 8px; }
+    .ai-suggestions button { background: #f5f7fa; color: #333840; border: 1px solid #dfe0e3; padding: 4px 10px; border-radius: 6px; font-size: 11px; font-weight: 500; cursor: pointer; transition: all .15s; white-space: nowrap; display: flex; align-items: center; gap: 3px; }
     .ai-suggestions button:hover { background: #e8f4fd; color: #2283d8; border-color: #2283d8; }
-    .ai-messages { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 10px; }
-    .ai-msg { max-width: 88%; padding: 10px 14px; border-radius: 12px; font-size: 13px; line-height: 1.5; word-break: break-word; white-space: pre-wrap; }
+    #ai-messages { flex: 1; overflow-y: auto; padding: 8px 16px; display: flex; flex-direction: column; gap: 8px; min-height: 0; }
+    .ai-msg { max-width: 90%; padding: 8px 12px; border-radius: 10px; font-size: 12px; line-height: 1.5; word-break: break-word; white-space: pre-wrap; }
     .ai-msg.user { align-self: flex-end; background: #2283d8; color: #fff; }
-    .ai-msg.assistant { align-self: flex-start; background: #fff; color: #333840; border: 1px solid #dfe0e3; }
-    .ai-msg.assistant .typing-dots { display: inline-block; }
-    .ai-msg.assistant .typing-dots::after { content: '...'; animation: dots 1.2s steps(4,end) infinite; }
+    .ai-msg.assistant { align-self: flex-start; background: #f5f7fa; color: #333840; border: 1px solid #dfe0e3; }
+    .ai-msg .typing-dots::after { content: '...'; animation: dots 1.2s steps(4,end) infinite; }
     @keyframes dots { 0%,20%{content:'.'} 40%{content:'..'} 60%,100%{content:'...'} }
-    .ai-input-area { display: flex; gap: 8px; padding: 12px 16px; background: #fff; border-top: 1px solid #dfe0e3; align-items: flex-end; }
-    .ai-input-area input { flex: 1; border: 1px solid #dfe0e3; border-radius: 8px; padding: 8px 12px; font-size: 13px; outline: none; color: #333840; font-family: inherit; }
-    .ai-input-area input:focus { border-color: #2283d8; }
-    .ai-input-area button { background: #2283d8; color: #fff; border: none; border-radius: 8px; padding: 8px 14px; font-size: 13px; font-weight: 600; cursor: pointer; transition: background .15s; white-space: nowrap; display: flex; align-items: center; gap: 4px; }
-    .ai-input-area button:hover { background: #1b6cb8; }
-    .ai-input-area button:disabled { opacity: .5; cursor: not-allowed; }
-    .ai-context-banner { background: #e8f4fd; color: #2283d8; padding: 8px 16px; font-size: 11px; border-bottom: 1px solid #c4dff0; display: flex; align-items: center; gap: 6px; }
+    .use-response-btn { display: inline-flex; align-items: center; gap: 4px; background: #e8f4fd; color: #2283d8; border: 1px solid #c4dff0; border-radius: 6px; padding: 3px 8px; font-size: 11px; cursor: pointer; margin-top: 6px; transition: all .15s; }
+    .use-response-btn:hover { background: #2283d8; color: #fff; }
+
+    /* AI input with @mention */
+    #ai-input-area { display: flex; gap: 6px; padding: 8px 12px; background: #fff; border-top: 1px solid #eee; align-items: flex-end; position: relative; }
+    #ai-input { flex: 1; border: 1px solid #dfe0e3; border-radius: 8px; padding: 8px 12px; font-size: 12px; outline: none; color: #333840; font-family: inherit; }
+    #ai-input:focus { border-color: #2283d8; }
+    #ai-send-btn { background: #2283d8; color: #fff; border: none; border-radius: 8px; padding: 8px 12px; font-size: 12px; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 4px; }
+    #ai-send-btn:hover { background: #1b6cb8; }
+    #ai-send-btn:disabled { opacity: .5; cursor: not-allowed; }
+
+    /* Agent dropdown */
+    #agent-dropdown { position: absolute; bottom: 100%; left: 12px; right: 60px; background: #fff; border: 1px solid #dfe0e3; border-radius: 8px; box-shadow: 0 -4px 16px rgba(0,0,0,.12); display: none; max-height: 180px; overflow-y: auto; z-index: 100; }
+    #agent-dropdown.visible { display: block; }
+    .agent-option { padding: 8px 12px; font-size: 12px; cursor: pointer; display: flex; align-items: center; gap: 6px; color: #333840; }
+    .agent-option:hover { background: #e8f4fd; color: #2283d8; }
+    .agent-option .agent-icon { width: 20px; height: 20px; border-radius: 50%; background: linear-gradient(135deg, #7b5ea7, #2283d8); display: flex; align-items: center; justify-content: center; color: #fff; font-size: 10px; font-weight: 700; flex-shrink: 0; }
 
     ::-webkit-scrollbar { width: 4px; } ::-webkit-scrollbar-thumb { background: #dfe0e3; border-radius: 4px; }
   </style>
 </head>
 <body>
 <div id="app">
-  <!-- Tab Bar -->
-  <div class="tab-bar">
-    <div class="tab active" onclick="switchTab('conversa')">${B24_ICONS.message} Conversa</div>
-    <div class="tab" onclick="switchTab('ia')">${B24_ICONS.robot} Consultar IA</div>
-  </div>
-
-  <!-- Tab 1: Conversa (existing) -->
-  <div class="tab-content active" id="tab-conversa">
-    <div id="header">
-      <div id="header-top">
-        <div id="avatar">${(contactName || "?").charAt(0).toUpperCase()}</div>
-        <div id="contact-info">
-          <div id="contact-name">${(contactName || "Cliente").replace(/</g, "&lt;")}</div>
-          <div id="contact-meta">${conversationId ? (channelLabel) : (phones.length ? phones[0] : "sem contacto")}</div>
-        </div>
-        ${conversationId ? `<span id="mode-badge">${modeIcon} ${modeLabel}</span>` : ""}
+  <!-- Header -->
+  <div id="header">
+    <div id="header-top">
+      <div id="avatar">${(contactName || "?").charAt(0).toUpperCase()}</div>
+      <div id="contact-info">
+        <div id="contact-name">${(contactName || "Cliente").replace(/</g, "&lt;")}</div>
+        <div id="contact-meta">${conversationId ? channelLabel : (phones.length ? phones[0] : "sem contacto")}</div>
       </div>
-    </div>
-    <div id="messages">
-      ${conversationId ? messagesHtml : noConvHtml}
-    </div>
-    <div id="footer">
-      ${conversationId ? returnToBotBtn : startBtns}
-      <div id="status-msg"></div>
+      ${conversationId ? `<span id="mode-badge">${modeIcon} ${modeLabel}</span>` : ""}
     </div>
   </div>
 
-  <!-- Tab 2: Consultar IA -->
-  <div class="tab-content" id="tab-ia">
-    <div class="ai-context-banner">
-      ${B24_ICONS.notepad} Contexto: <strong>${(contactName || "Cliente").replace(/</g, "&lt;")}</strong>
-      ${channel ? " · " + channelLabel : ""}
-      ${messages.length ? " · " + messages.length + " msgs" : ""}
+  <!-- Conversation Area -->
+  <div id="conv-area">
+    <div id="messages">
+      ${conversationId ? messagesHtml : startConvHtml}
+    </div>
+    
+    ${conversationId ? `
+    <!-- Client Send Bar -->
+    <div id="client-send-bar">
+      <textarea id="client-input" rows="1" placeholder="Escreva ao cliente..." oninput="autoResize(this)"></textarea>
+      <button onclick="sendClientMessage()" id="send-client-btn">${B24_ICONS.send} Enviar</button>
+    </div>
+    <div style="background:#fff;padding:0 12px 4px;display:flex;gap:6px;align-items:center">
+      ${returnToBotBtn}
+    </div>
+    ` : ""}
+    <div id="status-msg"></div>
+  </div>
+
+  <!-- AI Panel -->
+  <div id="ai-panel">
+    <div id="ai-header" onclick="toggleAiPanel()">
+      ${B24_ICONS.robot} Emmely AI
+      <span style="font-weight:400;font-size:11px;color:#959ca4;margin-left:4px">${messages.length ? messages.length + " msgs contexto" : ""}</span>
+      <span id="ai-toggle">▼</span>
     </div>
     <div class="ai-suggestions">
       <button onclick="quickAsk('Faz um resumo desta conversa com o cliente')">${B24_ICONS.clipboard} Resumir</button>
-      <button onclick="quickAsk('Qual é o procedimento recomendado para este caso?')">${B24_ICONS.list} Procedimento</button>
-      <button onclick="quickAsk('Sugere uma resposta profissional para enviar ao cliente')">${B24_ICONS.lightbulb} Sugerir Resposta</button>
+      <button onclick="quickAsk('Sugere uma resposta profissional para enviar ao cliente')">${B24_ICONS.lightbulb} Sugerir</button>
       <button onclick="quickAsk('Analisa o sentimento do cliente nesta conversa')">${B24_ICONS.smile} Sentimento</button>
+      <button onclick="quickAsk('Qual é o procedimento recomendado para este caso?')">${B24_ICONS.list} Procedimento</button>
     </div>
-    <div class="ai-messages" id="ai-messages"></div>
-    <div class="ai-input-area">
-      <input type="text" id="ai-input" placeholder="Pergunte à Emmely AI..." onkeydown="if(event.key==='Enter')sendAiMessage()">
-      <button id="ai-send-btn" onclick="sendAiMessage()">${B24_ICONS.send} Enviar</button>
+    <div id="ai-messages"></div>
+    <div id="ai-input-area">
+      <div id="agent-dropdown"></div>
+      <input type="text" id="ai-input" placeholder="@agente pergunta... ou escreva directamente" oninput="handleAiInput(event)" onkeydown="if(event.key==='Enter')sendAiMessage()">
+      <button id="ai-send-btn" onclick="sendAiMessage()">${B24_ICONS.send}</button>
     </div>
   </div>
 </div>
@@ -396,55 +432,173 @@ function renderHtml(opts: {
   var CONTACT_NAME = "${(contactName || "Cliente").replace(/'/g, "\\'")}";
   var CHANNEL = "${channel || ""}";
   var CONV_SUMMARY = ${JSON.stringify(convSummary)};
+  var AGENTS = ${agentsJson};
+  var selectedAgentId = null;
+  var selectedAgentName = '';
 
+  // Scroll messages to bottom
   var msgBox = document.getElementById('messages');
   if (msgBox) msgBox.scrollTop = msgBox.scrollHeight;
 
-  // ── Tab switching ──
-  function switchTab(tab) {
-    document.querySelectorAll('.tab').forEach(function(t,i) {
-      t.classList.toggle('active', (tab === 'conversa' ? i === 0 : i === 1));
+  // Template select → populate textarea
+  var tplSelect = document.getElementById('template-select');
+  if (tplSelect) {
+    tplSelect.addEventListener('change', function() {
+      var ta = document.getElementById('start-msg-input');
+      if (this.value && ta) ta.value = this.value;
     });
-    document.getElementById('tab-conversa').classList.toggle('active', tab === 'conversa');
-    document.getElementById('tab-ia').classList.toggle('active', tab === 'ia');
-    if (tab === 'ia') {
-      var inp = document.getElementById('ai-input');
-      if (inp) setTimeout(function(){ inp.focus(); }, 100);
-    }
   }
 
-  // ── AI Chat ──
+  // Auto-resize textarea
+  function autoResize(el) {
+    el.style.height = 'auto';
+    el.style.height = Math.min(el.scrollHeight, 80) + 'px';
+  }
+
+  // ── AI Panel toggle ──
+  function toggleAiPanel() {
+    document.getElementById('ai-panel').classList.toggle('collapsed');
+  }
+
+  // ── Send message to client ──
+  function sendClientMessage() {
+    var input = document.getElementById('client-input');
+    var text = (input.value || '').trim();
+    if (!text || !CONVERSATION_ID) return;
+
+    var btn = document.getElementById('send-client-btn');
+    btn.disabled = true;
+    input.value = '';
+    input.style.height = 'auto';
+
+    // Optimistic: add message to chat
+    var msgContainer = document.getElementById('messages');
+    var div = document.createElement('div');
+    div.style.cssText = 'display:flex;flex-direction:column;align-items:flex-end;margin-bottom:10px';
+    div.innerHTML = '<div style="font-size:10px;color:#959ca4;margin-bottom:2px;padding:0 4px">Eu · agora</div>' +
+      '<div style="background:#2283d8;color:#fff;padding:8px 12px;border-radius:12px;max-width:80%;font-size:13px;line-height:1.4;word-break:break-word">' +
+      text.replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\\n/g,'<br>') + '</div>';
+    msgContainer.appendChild(div);
+    msgContainer.scrollTop = msgContainer.scrollHeight;
+
+    fetch(SUPABASE_URL + '/functions/v1/message-send', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_KEY },
+      body: JSON.stringify({ conversation_id: CONVERSATION_ID, content: text, direction: 'outbound', sender_name: 'Operador Bitrix24' })
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      if (d.error) setStatus('❌ ' + d.error, '#ef4444');
+      else setStatus('✅ Enviada', '#22c55e');
+    })
+    .catch(function(e) { setStatus('❌ ' + e.message, '#ef4444'); })
+    .finally(function() { btn.disabled = false; input.focus(); });
+  }
+
+  // ── AI Chat with @agent support ──
   var aiHistory = [];
   var aiSending = false;
 
-  function appendAiMsg(role, text) {
+  function handleAiInput(e) {
+    var val = e.target.value;
+    var atIdx = val.lastIndexOf('@');
+    var dropdown = document.getElementById('agent-dropdown');
+    
+    if (atIdx >= 0) {
+      var query = val.substring(atIdx + 1).toLowerCase();
+      var filtered = AGENTS.filter(function(a) { return a.name.toLowerCase().indexOf(query) >= 0; });
+      
+      if (filtered.length > 0 && !selectedAgentId) {
+        dropdown.innerHTML = filtered.map(function(a) {
+          return '<div class="agent-option" onclick="selectAgent(\\'' + a.id + '\\',\\'' + a.name.replace(/'/g,"\\\\'") + '\\')">' +
+            '<span class="agent-icon">' + a.name.charAt(0).toUpperCase() + '</span>' + a.name + '</div>';
+        }).join('');
+        dropdown.classList.add('visible');
+      } else {
+        dropdown.classList.remove('visible');
+      }
+    } else {
+      dropdown.classList.remove('visible');
+    }
+  }
+
+  function selectAgent(id, name) {
+    selectedAgentId = id;
+    selectedAgentName = name;
+    var input = document.getElementById('ai-input');
+    var val = input.value;
+    var atIdx = val.lastIndexOf('@');
+    input.value = val.substring(0, atIdx) + '@' + name + ' ';
+    document.getElementById('agent-dropdown').classList.remove('visible');
+    input.focus();
+  }
+
+  function appendAiMsg(role, text, showUseBtn) {
     var container = document.getElementById('ai-messages');
+    var wrapper = document.createElement('div');
+    wrapper.style.cssText = 'display:flex;flex-direction:column;' + (role === 'user' ? 'align-items:flex-end' : 'align-items:flex-start');
+    
     var div = document.createElement('div');
     div.className = 'ai-msg ' + role;
     div.textContent = text;
-    container.appendChild(div);
+    wrapper.appendChild(div);
+
+    if (showUseBtn && role === 'assistant' && text) {
+      var btn = document.createElement('button');
+      btn.className = 'use-response-btn';
+      btn.innerHTML = '${B24_ICONS.use} Usar resposta';
+      btn.onclick = function() { useResponse(text); };
+      wrapper.appendChild(btn);
+    }
+
+    container.appendChild(wrapper);
     container.scrollTop = container.scrollHeight;
     return div;
   }
 
+  function useResponse(text) {
+    var clientInput = document.getElementById('client-input');
+    if (clientInput) {
+      clientInput.value = text;
+      autoResize(clientInput);
+      clientInput.focus();
+      // Scroll to make sure client input is visible
+      clientInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      setStatus('Resposta copiada para o campo de envio', '#2283d8');
+    } else {
+      setStatus('Sem campo de envio disponível (inicie uma conversa primeiro)', '#f59e0b');
+    }
+  }
+
   function quickAsk(text) {
     document.getElementById('ai-input').value = text;
+    // Expand AI panel if collapsed
+    var panel = document.getElementById('ai-panel');
+    if (panel.classList.contains('collapsed')) panel.classList.remove('collapsed');
     sendAiMessage();
   }
 
   function sendAiMessage() {
     if (aiSending) return;
     var input = document.getElementById('ai-input');
-    var text = (input.value || '').trim();
-    if (!text) return;
+    var rawText = (input.value || '').trim();
+    if (!rawText) return;
+
+    // Extract question text (remove @AgentName prefix)
+    var questionText = rawText;
+    if (selectedAgentId && rawText.indexOf('@' + selectedAgentName) === 0) {
+      questionText = rawText.substring(('@' + selectedAgentName).length).trim();
+    }
+    if (!questionText) { setStatus('Escreva uma pergunta após @' + selectedAgentName, '#f59e0b'); return; }
 
     input.value = '';
     aiSending = true;
     document.getElementById('ai-send-btn').disabled = true;
 
-    appendAiMsg('user', text);
+    var displayText = selectedAgentName ? '@' + selectedAgentName + ' ' + questionText : questionText;
+    appendAiMsg('user', displayText, false);
 
-    // Add context prefix for first message
+    // Build context prefix
     var contextPrefix = '';
     if (aiHistory.length === 0) {
       contextPrefix = '[CONTEXTO INTERNO - NÃO ENVIAR AO CLIENTE]\\n';
@@ -454,45 +608,61 @@ function renderHtml(opts: {
       contextPrefix += '---\\nPergunta do operador: ';
     }
 
-    var fullText = contextPrefix + text;
+    var fullText = contextPrefix + questionText;
     aiHistory.push({ role: 'user', content: fullText });
 
-    // Show typing indicator
-    var typingDiv = appendAiMsg('assistant', '');
+    var typingDiv = appendAiMsg('assistant', '', false);
     typingDiv.innerHTML = '<span class="typing-dots"></span>';
 
-    var payload = {
-      message_text: fullText,
-      skip_send: true
-    };
-    if (CONVERSATION_ID) payload.conversation_id = CONVERSATION_ID;
+    // Choose endpoint: if agent selected, use ai-playground; else ai-process-message
+    var useAgentEndpoint = !!selectedAgentId;
+    var url, payload;
 
-    fetch(SUPABASE_URL + '/functions/v1/ai-process-message', {
+    if (useAgentEndpoint) {
+      url = SUPABASE_URL + '/functions/v1/ai-playground';
+      payload = {
+        agent_id: selectedAgentId,
+        messages: aiHistory
+      };
+    } else {
+      url = SUPABASE_URL + '/functions/v1/ai-process-message';
+      payload = {
+        message_text: fullText,
+        skip_send: true
+      };
+      if (CONVERSATION_ID) payload.conversation_id = CONVERSATION_ID;
+    }
+
+    fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + SUPABASE_KEY },
       body: JSON.stringify(payload)
     })
     .then(function(r) { return r.json(); })
     .then(function(d) {
-      typingDiv.remove();
-      var reply = d.reply || d.error || 'Sem resposta da IA';
-      appendAiMsg('assistant', reply);
+      typingDiv.parentElement.remove();
+      var reply = d.content || d.reply || d.error || 'Sem resposta da IA';
+      appendAiMsg('assistant', reply, true);
       aiHistory.push({ role: 'assistant', content: reply });
     })
     .catch(function(e) {
-      typingDiv.remove();
-      appendAiMsg('assistant', 'Erro: ' + e.message);
+      typingDiv.parentElement.remove();
+      appendAiMsg('assistant', 'Erro: ' + e.message, false);
     })
     .finally(function() {
       aiSending = false;
       document.getElementById('ai-send-btn').disabled = false;
-      document.getElementById('ai-input').focus();
+      input.focus();
+      // Reset agent selection after send
+      selectedAgentId = null;
+      selectedAgentName = '';
     });
   }
 
   function setStatus(msg, color) {
     var el = document.getElementById('status-msg');
     if (el) { el.textContent = msg; el.style.color = color || '#888'; }
+    if (msg) setTimeout(function() { if (el && el.textContent === msg) el.textContent = ''; }, 4000);
   }
 
   function returnToBot() {
@@ -508,38 +678,38 @@ function renderHtml(opts: {
       setStatus('Emmely AI retomou o atendimento!', '#22c55e');
       var badge = document.getElementById('mode-badge');
       if (badge) { badge.textContent = 'Bot Ativo'; badge.style.color = '#22c55e'; badge.style.borderColor = '#22c55e33'; badge.style.background = '#22c55e15'; }
-      var btn = document.querySelector('#footer button');
-      if (btn) btn.style.display = 'none';
     })
     .catch(function(e) { setStatus('❌ Erro: ' + e.message, '#ef4444'); });
   }
 
   function startConversation(channel, phone) {
+    var msgInput = document.getElementById('start-msg-input');
+    var message = msgInput ? msgInput.value.trim() : 'Olá! Em que posso ajudar?';
+    if (!message) { setStatus('Escreva uma mensagem', '#f59e0b'); return; }
+
     setStatus('A iniciar conversa...', '#888');
-    var payload = {
-      channel: channel,
-      contact_phone: phone || undefined,
-      message: 'Olá! Em que posso ajudar?'
-    };
     fetch(SUPABASE_URL + '/functions/v1/message-send', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_KEY },
-      body: JSON.stringify(payload)
+      body: JSON.stringify({ channel: channel, contact_phone: phone || undefined, message: message })
     })
     .then(function(r) { return r.json(); })
     .then(function(d) {
       if (d.error) throw new Error(d.error);
-      setStatus('✅ Conversa iniciada com sucesso! Recarregue a aba.', '#22c55e');
-      var btns = document.querySelectorAll('#footer button');
-      btns.forEach(function(b) { b.disabled = true; b.style.opacity = '0.5'; });
+      setStatus('✅ Conversa iniciada! Recarregue a aba.', '#22c55e');
     })
-    .catch(function(e) { setStatus('❌ Erro: ' + e.message, '#ef4444'); });
+    .catch(function(e) { setStatus('❌ ' + e.message, '#ef4444'); });
   }
 
+  // Close dropdown on click outside
+  document.addEventListener('click', function(e) {
+    if (!e.target.closest('#ai-input-area')) {
+      document.getElementById('agent-dropdown').classList.remove('visible');
+    }
+  });
+
   try {
-    BX24.init(function() {
-      BX24.fitWindow();
-    });
+    BX24.init(function() { BX24.fitWindow(); });
   } catch(e) {}
 </script>
 </body>
@@ -568,11 +738,9 @@ Deno.serve(async (req) => {
     }
 
     console.log("[CRM-TAB] Body keys:", Object.keys(body));
-    console.log("[CRM-TAB] Raw (600):", bodyText.substring(0, 600));
 
     const memberId = body.member_id || body.MEMBER_ID || "";
 
-    // Parse PLACEMENT_OPTIONS
     let placementOptions: Record<string, any> = {};
     if (body.PLACEMENT_OPTIONS) {
       try {
@@ -582,7 +750,6 @@ Deno.serve(async (req) => {
       } catch { placementOptions = {}; }
     }
 
-    // FIX 1: Bitrix24 sends "ID" not "ENTITY_ID" in PLACEMENT_OPTIONS
     const entityId =
       placementOptions.ID ||
       placementOptions.ENTITY_ID ||
@@ -604,16 +771,28 @@ Deno.serve(async (req) => {
       integration = data;
     }
 
+    // Fetch agents and quick_replies in parallel
+    const [agentsRes, qrRes, channelSettingsRes] = await Promise.all([
+      supabase.from("ai_agents").select("id, name").eq("is_active", true),
+      supabase.from("quick_replies").select("id, title, content, category").order("created_at"),
+      supabase.from("chatbot_channel_settings").select("channel, enabled").eq("enabled", true),
+    ]);
+
+    const agents = agentsRes.data || [];
+    const quickReplies = qrRes.data || [];
+    const whatsappEnabled = (channelSettingsRes.data || []).some((s: any) => s.channel === "whatsapp");
+    const instagramEnabled = (channelSettingsRes.data || []).some((s: any) => s.channel === "instagram");
+
     if (!integration) {
       return new Response(renderHtml({
         entityId, entityType: entityTypeId, contactName: "Desconhecido",
         attendanceMode: "bot", channel: "", messages: [], conversationId: null,
         supabaseUrl, memberId, integrationId: "",
         phones: [], emails: [], whatsappEnabled: false, instagramEnabled: false,
+        quickReplies, agents,
       }), { headers: htmlHeaders });
     }
 
-    // FIX 2: Use AUTH_ID from body as direct token (valid 1h, faster)
     const bodyAuthToken = body.AUTH_ID || body.auth_id || "";
     const bodyServerEndpoint = body.SERVER_ENDPOINT
       ? decodeURIComponent(body.SERVER_ENDPOINT)
@@ -625,18 +804,6 @@ Deno.serve(async (req) => {
     if (!accessToken) {
       accessToken = await ensureValidToken(supabase, integration);
     }
-
-    console.log("[CRM-TAB] Using token source:", bodyAuthToken ? "AUTH_ID from body" : "integration DB");
-    console.log("[CRM-TAB] Endpoint:", endpoint);
-
-    // Get active channel settings in parallel
-    const { data: channelSettings } = await supabase
-      .from("chatbot_channel_settings")
-      .select("channel, enabled")
-      .eq("enabled", true);
-
-    const whatsappEnabled = (channelSettings || []).some((s: any) => s.channel === "whatsapp");
-    const instagramEnabled = (channelSettings || []).some((s: any) => s.channel === "instagram");
 
     // --- Lookup conversation ---
     let conversation: any = null;
@@ -655,22 +822,16 @@ Deno.serve(async (req) => {
         const crmData = await callBitrix(endpoint, accessToken, crmMethod, { ID: entityId });
         const entity = crmData.result;
 
-        console.log("[CRM-TAB] CRM entity keys:", Object.keys(entity || {}).join(","));
-
-        // Extract name
         if (entityTypeNum === 3) {
           contactName = [entity?.NAME, entity?.LAST_NAME].filter(Boolean).join(" ");
         } else {
           contactName = entity?.NAME || entity?.TITLE || "";
         }
 
-        // Extract phones & emails from primary entity
         allPhones = extractPhones(entity);
         allEmails = extractEmails(entity);
 
-        console.log("[CRM-TAB] Phones:", allPhones, "Emails:", allEmails, "Name:", contactName);
-
-        // For Deal: also fetch linked Contact's phones/emails
+        // For Deal: also fetch linked Contact
         if (entityTypeNum === 2 && entity?.CONTACT_ID) {
           try {
             const contactData = await callBitrix(endpoint, accessToken, "crm.contact.get", { ID: entity.CONTACT_ID });
@@ -682,38 +843,25 @@ Deno.serve(async (req) => {
               if (!contactName && contactFullName) contactName = contactFullName;
               allPhones = [...new Set([...allPhones, ...contactPhones])];
               allEmails = [...new Set([...allEmails, ...contactEmails])];
-              console.log("[CRM-TAB] Deal linked contact phones:", contactPhones, "emails:", contactEmails);
             }
           } catch (e) {
             console.warn("[CRM-TAB] Failed to fetch linked contact:", e);
           }
         }
 
-        // FIX 3: Exhaustive sequential lookup
-        // Strategy 1: by phone
+        // Exhaustive sequential lookup
         if (!conversation && allPhones.length > 0) {
           conversation = await findConversationByPhone(supabase, allPhones);
-          if (conversation) console.log("[CRM-TAB] Found via phone:", conversation.id);
         }
-
-        // Strategy 2: by email
         if (!conversation && allEmails.length > 0) {
           conversation = await findConversationByEmail(supabase, allEmails);
-          if (conversation) console.log("[CRM-TAB] Found via email:", conversation.id);
         }
-
-        // Strategy 3: by bot_state bitrix entity id
         if (!conversation) {
           conversation = await findConversationByBotState(supabase, entityId);
-          if (conversation) console.log("[CRM-TAB] Found via bot_state:", conversation.id);
         }
-
-        // Strategy 4: by name (last resort)
         if (!conversation && contactName) {
           conversation = await findConversationByName(supabase, contactName);
-          if (conversation) console.log("[CRM-TAB] Found via name:", conversation.id);
         }
-
         if (conversation && !contactName) contactName = conversation.contact_name;
 
       } catch (crmErr) {
@@ -749,6 +897,8 @@ Deno.serve(async (req) => {
       emails: allEmails,
       whatsappEnabled,
       instagramEnabled,
+      quickReplies,
+      agents,
     }), { headers: htmlHeaders });
 
   } catch (e) {
