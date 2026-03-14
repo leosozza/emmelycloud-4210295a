@@ -4071,7 +4071,7 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
   }, [filteredClientes, filteredHonorarios]);
 
   const handleImportHonorarios = async () => {
-    if (!filteredClientes || !filteredHonorarios || filteredClientes.length === 0) return;
+    if (!filteredHonorarios || filteredHonorarios.length === 0) return;
     setImportingHonorarios(true);
     setHonorariosLogs([]);
     setHonorariosDone(false);
