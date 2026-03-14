@@ -412,6 +412,7 @@ async function syncClientToBitrix(
   totalValue: number,
   totalPaid: number,
   allPaid: boolean,
+  categoryId: string = "0",
 ) {
   const endpoint = integration.client_endpoint;
   const accessToken = integration.access_token;
