@@ -5351,6 +5351,17 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
 
   const isImporting = importingClients || importingHonorarios || syncingSingle || syncingBatch || loadingSyncClients;
 
+  if (resumingPhase) {
+    return (
+      <div className="p-6 flex items-center justify-center min-h-[300px]">
+        <div className="text-center space-y-3">
+          <Loader2 className="h-8 w-8 animate-spin text-primary mx-auto" />
+          <p className="text-sm text-muted-foreground">Restaurando sessão de importação ({resumingPhase})...</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="p-6 space-y-6">
       <div className="b24-view-header">
