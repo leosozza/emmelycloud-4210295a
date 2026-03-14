@@ -235,6 +235,10 @@ serve(async (req) => {
             const allPaid = installments.every(i => (i.STATUS || "").toUpperCase() === "QUITADO");
             const totalPaid = installments.reduce((sum, i) => sum + parseNum(i.TOTALPAGO), 0);
 
+            // Extract service/contract date from DATA column
+            const serviceDateRaw = parseDate(installments[0]?.DATA);
+            const serviceDate = serviceDateRaw ? `${serviceDateRaw}T00:00:00Z` : new Date().toISOString();
+
             // Create lead
             const { data: lead, error: leadErr } = await supabase
               .from("leads")
@@ -245,6 +249,7 @@ serve(async (req) => {
                 funnel_stage: "fechado",
                 notes: `Importado do Access - ${desc} (SeparadorID: ${separadorId})`,
                 sync_source: "access_import",
+                created_at: serviceDate,
               })
               .select("id")
               .single();
@@ -263,6 +268,7 @@ serve(async (req) => {
                 lead_id: lead!.id,
                 description: `Serviço importado do Access: ${desc} (SeparadorID: ${separadorId})`,
                 status: "concluido",
+                created_at: serviceDate,
               })
               .select("id")
               .single();
@@ -284,6 +290,7 @@ serve(async (req) => {
                 status: allPaid ? "aceita" : "enviada",
                 client_name: clientName,
                 client_document: docNumber,
+                created_at: serviceDate,
               })
               .select("id")
               .single();
@@ -302,6 +309,8 @@ serve(async (req) => {
                 case_id: caso!.id,
                 status: allPaid ? "assinado" : "pendente",
                 signer_name: clientName,
+                created_at: serviceDate,
+                signed_at: allPaid ? serviceDate : null,
               })
               .select("id")
               .single();
@@ -345,6 +354,7 @@ serve(async (req) => {
                 due_date: dueDate,
                 paid_at: paidAt,
                 payment_method: "transferencia",
+                created_at: serviceDate,
               });
 
               if (frErr) {
