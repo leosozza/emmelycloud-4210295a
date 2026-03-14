@@ -3146,7 +3146,7 @@ function PlacementPreviewView({ integration, memberId }: { integration: any; mem
         break;
     }
     return formData;
-  }, [placementType, resolvedMemberId, dealId, leadId, dialogId, messageId]);
+  }, [placementType, resolvedMemberId, dealId, contactId, leadId, dialogId, messageId]);
 
   const buildBx24Mock = useCallback(() => {
     let placementOptions = "{}";
