@@ -865,6 +865,116 @@ export type Database = {
         }
         Relationships: []
       }
+      commission_entries: {
+        Row: {
+          base_amount: number
+          commission_amount: number
+          created_at: string | null
+          currency: string
+          id: string
+          paid_at: string | null
+          percentage: number
+          profile_id: string
+          proposal_id: string | null
+          rule_id: string | null
+          status: string
+          transaction_id: string | null
+        }
+        Insert: {
+          base_amount?: number
+          commission_amount?: number
+          created_at?: string | null
+          currency?: string
+          id?: string
+          paid_at?: string | null
+          percentage?: number
+          profile_id: string
+          proposal_id?: string | null
+          rule_id?: string | null
+          status?: string
+          transaction_id?: string | null
+        }
+        Update: {
+          base_amount?: number
+          commission_amount?: number
+          created_at?: string | null
+          currency?: string
+          id?: string
+          paid_at?: string | null
+          percentage?: number
+          profile_id?: string
+          proposal_id?: string | null
+          rule_id?: string | null
+          status?: string
+          transaction_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "commission_entries_profile_id_fkey"
+            columns: ["profile_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "commission_entries_proposal_id_fkey"
+            columns: ["proposal_id"]
+            isOneToOne: false
+            referencedRelation: "proposals"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "commission_entries_rule_id_fkey"
+            columns: ["rule_id"]
+            isOneToOne: false
+            referencedRelation: "commission_rules"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "commission_entries_transaction_id_fkey"
+            columns: ["transaction_id"]
+            isOneToOne: false
+            referencedRelation: "payment_transactions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      commission_rules: {
+        Row: {
+          created_at: string | null
+          id: string
+          is_active: boolean | null
+          legal_area: Database["public"]["Enums"]["legal_area"] | null
+          max_value: number | null
+          min_value: number | null
+          percentage: number
+          role: Database["public"]["Enums"]["app_role"]
+          updated_at: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string
+          is_active?: boolean | null
+          legal_area?: Database["public"]["Enums"]["legal_area"] | null
+          max_value?: number | null
+          min_value?: number | null
+          percentage?: number
+          role?: Database["public"]["Enums"]["app_role"]
+          updated_at?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          is_active?: boolean | null
+          legal_area?: Database["public"]["Enums"]["legal_area"] | null
+          max_value?: number | null
+          min_value?: number | null
+          percentage?: number
+          role?: Database["public"]["Enums"]["app_role"]
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
       companies: {
         Row: {
           address: string | null
