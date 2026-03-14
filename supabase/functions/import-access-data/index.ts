@@ -229,11 +229,21 @@ serve(async (req) => {
         for (const [separadorIdStr, installments] of Object.entries(groups)) {
           const separadorId = parseInt(separadorIdStr);
           try {
-            const desc = (installments[0]?.DESCRICAO || "SEM DESCRIÇÃO").trim().toUpperCase();
+        const desc = (installments[0]?.DESCRICAO || "SEM DESCRIÇÃO").trim().toUpperCase();
             const totalValue = parseNum(installments[0]?.VALOR);
-            const totalInstallments = installments.length;
+            
+            // Extract total installments from PARCELA field (e.g. "1;2" or "1/2" → total=2)
+            const firstParcelaRaw = installments[0]?.PARCELA || "1/1";
+            const firstParcelaParts = firstParcelaRaw.split(/[;/]/);
+            const totalInstallments = parseInt(firstParcelaParts[1]) || installments.length;
+            
             const allPaid = installments.every(i => (i.STATUS || "").toUpperCase() === "QUITADO");
+            const hasOverdue = installments.some(i => (i.STATUS || "").toUpperCase() === "ATRASADO");
             const totalPaid = installments.reduce((sum, i) => sum + parseNum(i.TOTALPAGO), 0);
+            const overdueCount = installments.filter(i => (i.STATUS || "").toUpperCase() === "ATRASADO").length;
+            const overdueValue = installments
+              .filter(i => (i.STATUS || "").toUpperCase() === "ATRASADO")
+              .reduce((sum, i) => sum + (parseNum(i.VALOR_PARCELA_CORRIGIDO) || parseNum(i.VALOR_PARCELA)) - parseNum(i.TOTALPAGO), 0);
 
             // Extract service/contract date from DATA column
             const serviceDateRaw = parseDate(installments[0]?.DATA);
