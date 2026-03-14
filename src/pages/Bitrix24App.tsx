@@ -196,6 +196,12 @@ const Bitrix24App = () => {
         { id: "relatorios", label: "Relatórios", icon: BarChart3 },
       ],
     },
+    {
+      label: "Sistema",
+      items: [
+        { id: "configuracoes", label: "Configurações", icon: Settings },
+      ],
+    },
   ];
 
   // Build flat tabs array with separators between categories
