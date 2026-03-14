@@ -136,7 +136,7 @@ const FinanceiroPage = () => {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{transactions.length}</div>
-            <p className="text-xs text-muted-foreground">recebimentos diretos</p>
+            <p className="text-xs text-muted-foreground">transações no período</p>
           </CardContent>
         </Card>
         <Card>
