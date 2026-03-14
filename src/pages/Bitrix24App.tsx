@@ -315,6 +315,16 @@ const Bitrix24App = () => {
         {view === "empresas" && <EmpresasView />}
         {view === "relatorios" && <RelatoriosView />}
         {view === "importacao" && <ImportacaoAccessView integration={integration} memberId={memberId} />}
+        {view === "configuracoes" && (
+          <ConfigView
+            integration={integration}
+            botId={botId}
+            domain={domain}
+            loading={loadingData}
+            onResync={handleResync}
+            onRefresh={() => memberId && fetchData(memberId)}
+          />
+        )}
       </main>
     </div>
   );
