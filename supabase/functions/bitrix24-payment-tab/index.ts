@@ -1268,6 +1268,154 @@ Deno.serve(async (req) => {
     let accessToken = bodyAuthToken || await ensureValidToken(supabase, integration);
     const endpoint = integration.client_endpoint;
 
+    // Gateway / method display name maps
+    const gwNames: Record<string, string> = { stripe_pt: "Stripe PT", stripe_br: "Stripe BR", asaas: "Asaas", direto: "Direto", stripe: "Stripe" };
+    const methodNames: Record<string, string> = { card: "Cartão", pix: "PIX", boleto: "Boleto", multibanco: "Multibanco", mb_way: "MB Way", direto: "Direto", parcelado_direto: "Direto", sepa_debit: "SEPA" };
+
+    // ==========================================
+    // CONTACT VIEW — entityTypeId === "3"
+    // ==========================================
+    if (entityTypeId === "3") {
+      console.log("[PAYMENT-TAB] Contact mode — fetching deals for contact:", entityId);
+
+      let contactName = "Contacto";
+      try {
+        const contactResult = await callBitrix(endpoint, accessToken, "crm.contact.get", { ID: entityId });
+        const contact = contactResult.result || {};
+        contactName = [contact.NAME, contact.SECOND_NAME, contact.LAST_NAME].filter(Boolean).join(" ") || "Contacto";
+      } catch (e) {
+        console.error("[PAYMENT-TAB] Error fetching contact:", e);
+      }
+
+      // Fetch all deals linked to this contact
+      let deals: any[] = [];
+      try {
+        const dealListResult = await callBitrix(endpoint, accessToken, "crm.deal.list", {
+          filter: { CONTACT_ID: entityId },
+          select: ["ID", "TITLE", "OPPORTUNITY", "CURRENCY_ID", "STAGE_ID", "DATE_CREATE", "ASSIGNED_BY_ID",
+                   "UF_CRM_EMMELY_GATEWAY", "UF_CRM_EMMELY_PAYMENT_METHOD", "UF_CRM_EMMELY_PAYMENT_STATUS"],
+          order: { DATE_CREATE: "DESC" },
+        });
+        deals = dealListResult.result || [];
+      } catch (e) {
+        console.error("[PAYMENT-TAB] Error fetching deals for contact:", e);
+      }
+
+      if (deals.length === 0) {
+        return new Response(renderContactPaymentTab({
+          contactName, contactId: entityId, deals: [], supabaseUrl, memberId,
+          totalValue: 0, paidValue: 0, openValue: 0, currency: "EUR",
+        }), { headers: htmlHeaders });
+      }
+
+      // Fetch all transactions
+      const { data: allTransactions } = await supabase
+        .from("payment_transactions")
+        .select("*")
+        .order("created_at", { ascending: true });
+
+      // Fetch responsible users
+      const assignedIds = [...new Set(deals.map((d: any) => d.ASSIGNED_BY_ID).filter(Boolean))];
+      const userMap: Record<string, string> = {};
+      if (assignedIds.length > 0) {
+        try {
+          const usersResult = await callBitrix(endpoint, accessToken, "user.get", { ID: assignedIds });
+          for (const u of (usersResult.result || [])) {
+            userMap[String(u.ID)] = [u.NAME, u.LAST_NAME].filter(Boolean).join(" ");
+          }
+        } catch (e) { console.error("[PAYMENT-TAB] Error fetching users:", e); }
+      }
+
+      // Build deal summaries
+      interface DealSummary {
+        id: string; title: string; amount: number; currency: string; stageId: string;
+        createdAt: string; responsible: string; gateway: string; paymentMethod: string;
+        totalValue: number; paidValue: number; openValue: number; overdueValue: number;
+        installments: InstallmentData[]; paidCount: number; pendingCount: number; overdueCount: number;
+      }
+
+      let grandTotal = 0, grandPaid = 0, grandOpen = 0;
+      const dealSummaries: DealSummary[] = [];
+
+      for (const deal of deals) {
+        const dealId = String(deal.ID);
+        const dealCurrency = deal.CURRENCY_ID || "EUR";
+        const dealAmount = parseFloat(deal.OPPORTUNITY || "0");
+
+        // Find transactions for this deal
+        const dealTxs = (allTransactions || []).filter((tx: any) => {
+          const meta = tx.metadata || {};
+          return meta.bitrix_deal_id === dealId || meta.bitrix_deal_id === String(dealId) ||
+                 meta.bitrix_entity_id === dealId || meta.bitrix_entity_id === String(dealId);
+        });
+
+        // Build installments from transactions or synthetic
+        let installments: InstallmentData[] = [];
+        let totalValue = 0, paidValue = 0;
+
+        if (dealTxs.length > 0) {
+          totalValue = dealTxs.reduce((s: number, tx: any) => s + (tx.amount || 0), 0);
+          installments = dealTxs.map((tx: any, idx: number) => {
+            let status = "pendente";
+            if (tx.status === "paid" || tx.status === "confirmed" || tx.status === "succeeded") status = "paga";
+            else if (tx.status === "overdue" || tx.status === "failed") status = "atrasada";
+            else if (tx.metadata?.due_date && new Date(tx.metadata.due_date) < new Date()) status = "atrasada";
+            const meta = tx.metadata || {};
+            return {
+              id: tx.id, number: meta.installment_number ?? (idx + 1),
+              total: meta.total_installments || dealTxs.length,
+              value: tx.amount || 0, status,
+              due_date: meta.due_date || tx.created_at,
+              paid_at: status === "paga" ? tx.updated_at : null,
+              currency: tx.currency || dealCurrency, description: "",
+              transaction_id: tx.id, payment_url: tx.payment_url,
+              is_down_payment: meta.is_down_payment === true,
+              invoice_id: meta.bitrix_invoice_id || null,
+              payment_method: tx.payment_method,
+              metadata: meta,
+            };
+          });
+          paidValue = installments.filter(i => i.status === "paga").reduce((s, i) => s + i.value, 0);
+        } else if (dealAmount > 0) {
+          totalValue = dealAmount;
+          installments = [{
+            id: `deal-${dealId}`, number: 1, total: 1, value: dealAmount,
+            status: "pendente", due_date: null, paid_at: null, currency: dealCurrency,
+            description: deal.TITLE || "",
+          }];
+        }
+
+        const openValue = totalValue - paidValue;
+        const overdueValue = installments.filter(i => i.status === "atrasada").reduce((s, i) => s + i.value, 0);
+
+        grandTotal += totalValue;
+        grandPaid += paidValue;
+        grandOpen += openValue;
+
+        dealSummaries.push({
+          id: dealId, title: deal.TITLE || `Deal #${dealId}`,
+          amount: dealAmount, currency: dealCurrency, stageId: deal.STAGE_ID || "",
+          createdAt: deal.DATE_CREATE || "", responsible: userMap[String(deal.ASSIGNED_BY_ID)] || "",
+          gateway: gwNames[deal.UF_CRM_EMMELY_GATEWAY || ""] || "",
+          paymentMethod: methodNames[deal.UF_CRM_EMMELY_PAYMENT_METHOD || ""] || "",
+          totalValue, paidValue, openValue, overdueValue, installments,
+          paidCount: installments.filter(i => i.status === "paga").length,
+          pendingCount: installments.filter(i => i.status === "pendente").length,
+          overdueCount: installments.filter(i => i.status === "atrasada").length,
+        });
+      }
+
+      return new Response(renderContactPaymentTab({
+        contactName, contactId: entityId, deals: dealSummaries,
+        supabaseUrl, memberId,
+        totalValue: grandTotal, paidValue: grandPaid, openValue: grandOpen,
+        currency: "EUR",
+      }), { headers: htmlHeaders });
+    }
+
+    // ==========================================
+    // DEAL VIEW (existing logic) — entityTypeId !== "3"
+    // ==========================================
     let dealTitle = "Negócio";
     let dealAmount = 0;
     let dealCurrency = "EUR";
@@ -1285,11 +1433,9 @@ Deno.serve(async (req) => {
       dealCurrency = deal.CURRENCY_ID || "EUR";
       contactId = deal.CONTACT_ID || "";
       dealCreatedAt = deal.DATE_CREATE || deal.CREATED_DATE || "";
-      // Read UF_CRM_EMMELY_* fields (list fields return item IDs, not labels)
       const rawGateway = deal.UF_CRM_EMMELY_GATEWAY || "";
       const rawMethod = deal.UF_CRM_EMMELY_PAYMENT_METHOD || "";
 
-      // Resolve list field IDs to display values
       if (rawGateway || rawMethod) {
         try {
           const fieldsResult = await callBitrix(endpoint, accessToken, "crm.deal.fields", {});
@@ -1301,7 +1447,6 @@ Deno.serve(async (req) => {
               const match = items.find((item: any) => String(item.ID) === String(rawVal) || String(item.VALUE) === String(rawVal));
               if (match) return match.VALUE || match.value || rawVal;
             }
-            // If the raw value is purely numeric, it's an unresolved list ID — return empty
             if (/^\d+$/.test(rawVal)) return "";
             return rawVal;
           };
@@ -1309,7 +1454,6 @@ Deno.serve(async (req) => {
           dealPaymentMethod = resolveListValue(fields.UF_CRM_EMMELY_PAYMENT_METHOD, rawMethod);
         } catch (e) {
           console.error("[PAYMENT-TAB] Error resolving list fields:", e);
-          // Fallback: if numeric, skip; otherwise use raw
           dealGateway = /^\d+$/.test(rawGateway) ? "" : rawGateway;
           dealPaymentMethod = /^\d+$/.test(rawMethod) ? "" : rawMethod;
         }
@@ -1423,20 +1567,14 @@ Deno.serve(async (req) => {
       .from("flows").select("id, name").eq("is_active", true).order("name");
     const flows = (activeFlows || []).map((f: any) => ({ id: f.id, name: f.name }));
 
-    // Compute next due date from pending installments
     const pendingInstallments = installments.filter(i => i.status !== "paga" && i.due_date);
     const nextDueDate = pendingInstallments.length > 0
       ? pendingInstallments.sort((a, b) => new Date(a.due_date!).getTime() - new Date(b.due_date!).getTime())[0].due_date
       : null;
 
-    // Determine gateway/method from transactions or deal fields
     const displayGateway = dealGateway || (dealTransactions.length > 0 ? dealTransactions[0].gateway : "") || "";
     const displayMethod = dealPaymentMethod || (dealTransactions.length > 0 ? dealTransactions[0].payment_method : "") || "";
     const displayCreatedAt = dealCreatedAt || (dealTransactions.length > 0 ? dealTransactions[0].created_at : "") || "";
-
-    // Gateway display name map
-    const gwNames: Record<string, string> = { stripe_pt: "Stripe PT", stripe_br: "Stripe BR", asaas: "Asaas", direto: "Direto", stripe: "Stripe" };
-    const methodNames: Record<string, string> = { card: "Cartão", pix: "PIX", boleto: "Boleto", multibanco: "Multibanco", mb_way: "MB Way", direto: "Direto", parcelado_direto: "Direto", sepa_debit: "SEPA" };
 
     return new Response(renderPaymentTab({
       entityId, dealTitle, totalValue, paidValue, openValue, currency,
