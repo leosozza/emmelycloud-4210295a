@@ -1,104 +1,110 @@
 
 
-## Revisão Arquitetural — Fase 2 Implementada
+## Plano: EmmeyPay — Gestor Financeiro Completo
 
-### Mudanças realizadas (Fase 2)
+### Estado Actual
 
-#### 1. Código morto eliminado
-- `chatbot-reply/index.ts` — **removido** (100% duplicado com flow-engine → ai-process-message)
-- `ai-triage/index.ts` — **removido** (100% duplicado com ai-automation-agent action classify_lead)
+O módulo financeiro actual (`/financeiro`) é apenas uma lista de transações com KPIs básicos (total recebido, pendente, taxa de confirmação). Os relatórios (`/relatorios > Financeiro`) mostram receita mensal e por gateway. A performance (`/relatorios > Performance`) mostra leads/casos por comercial/advogado, mas **sem dados financeiros vinculados**. Não existe nenhuma infraestrutura de comissões.
 
-#### 2. Janela de contexto expandida
-- `RECENT_MSG_COUNT`: 5 → **15** mensagens recentes completas
-- `HISTORY_LIMIT`: 15 → **30** mensagens totais
-- TOON comprime as 15 mais antigas, mantém as 15 recentes intactas
+### O que será construído
 
-#### 3. RAG semântico real (pgvector)
-- Edge function `generate-embeddings` criada — gera embeddings de 768 dimensões via Lovable AI
-- `parse-document` agora chama `generate-embeddings` automaticamente após chunking
-- `ai-process-message` usa `match_chunks()` RPC para busca semântica (threshold 0.5)
-- Fallback para keyword scoring quando embeddings não existem
+```text
+/financeiro (reestruturado com tabs)
+├── Visão Geral      ← Dashboard financeiro com KPIs avançados
+├── Recebimentos     ← Tabela actual de transações (já existe)
+├── Inadimplência    ← Contas a receber vencidas, aging report
+├── Comissões        ← Cálculo e gestão de comissões por vendedor
+└── Ranking          ← Quem fechou mais propostas/receita (Bitrix24 + local)
+```
 
-#### 4. Router multi-agente
-- Quando agente tem `sub_agent_ids`, classifica intenção via IA rápida (flash-lite)
-- Delega para sub-agente especialista com seu próprio prompt e KB
-- Mantém agente activo em `bot_state.active_sub_agent_id` para consistência
+### Implementação por componente
 
-#### 5. Self-evaluation / Reflexão
-- Após gerar resposta, avalia qualidade via flash-lite (score 1-10)
-- Se score < 7, regenera com instrução de correcção (máximo 1 retry)
-- Respostas < 50 chars ignoram avaliação
+**1. Nova tabela `commission_rules` + `commission_entries`**
 
-#### 6. Sentiment analysis + Auto-escalação
-- Análise de sentimento via heurística + IA
-- 2x frustração consecutiva → auto-transfere para humano
-- Guarda sentiment em `bot_state.last_sentiment`
-- Regista escalação em `conversation_feedback`
+- `commission_rules`: define regras de comissão (percentagem por papel, por área jurídica, escalonamento por faixa de valor)
+- `commission_entries`: registo de cada comissão calculada (vinculada a `payment_transactions` + `profiles`)
+- Trigger: quando uma transação muda para `confirmed/paid`, calcula automaticamente a comissão do comercial/advogado atribuído ao lead/caso
 
-#### 7. Tools dinâmicas expandidas
-- Novas tools: `search_knowledge`, `get_case_status`, `send_payment_link`
-- Tools desconhecidas verificam `tool_parameters.webhook_url` para chamada webhook genérica
-- Registry pattern: tools são lidas de `agent_tools` table
+**2. Reestruturar `/financeiro` com Tabs**
 
-#### 8. Queue worker auto-trigger
-- Trigger PostgreSQL `AFTER INSERT ON message_queue` chama `pg_net.http_post()` para queue-worker
-- Cron backup via `pg_cron` a cada minuto
+- **Visão Geral**: KPIs expandidos (receita total, pendente, vencido, ticket médio, receita por área jurídica, receita por advogado)
+- **Recebimentos**: tabela actual (já funciona)
+- **Inadimplência**: filtrar `payment_transactions` com `status = pending` e `metadata.due_date < now()`, aging buckets (1-30d, 31-60d, 61-90d, 90d+)
+- **Comissões**: tabela de comissões calculadas, com filtro por período e vendedor, resumo por pessoa, botão de exportar
+- **Ranking**: ranking de propostas aceitas e receita gerada por utilizador (comercial e advogado), com dados do Bitrix24 quando disponíveis
 
-#### 9. Melhorias de robustez no sendReply
-- `Promise.allSettled` para operações paralelas (save message + update conversation)
-- Error logging real em vez de fire-and-forget silencioso para message-send e bitrix24-send
-- Extração de memória com tolerância `count % 10 > 1` (mais robusto que `=== 0`)
+**3. Hook `useFinancialDashboard`**
 
-### Mudanças realizadas (Fase 2.1 — Consolidação Completa)
+Novo hook que agrega:
+- Receita por área jurídica (join `payment_transactions` → `contracts` → `cases.legal_area`)
+- Receita por advogado/comercial (join via `leads.assigned_*_id`)
+- Aging report (agrupar pendentes por dias de atraso)
+- Ranking de propostas aceitas por utilizador
 
-#### Código morto eliminado
-- `chatbot-reply/index.ts` e `ai-triage/index.ts` — diretórios removidos, referências limpas em `config.toml`, `ApiDocs.tsx` e `bitrix24-worker.ts`
-- ApiDocs actualizado para documentar `ai-process-message` em vez de `chatbot-reply`
+**4. Relatório de Comissões exportável**
 
-#### Sintaxe corrigida
-- `parse-document/index.ts` — corrigida função `extractWithAI` que estava erroneamente aninhada dentro de `findFileInZip`
+- CSV e PDF com: nome do vendedor, proposta, valor da transação, percentagem, valor da comissão, data
+- Totais por vendedor e período
 
-#### Config.toml actualizado
-- Removidas entradas `ai-triage` e `chatbot-reply`
-- Adicionadas entradas para `generate-embeddings`, `parse-document` e `queue-worker`
+**5. Ranking Bitrix24**
 
-#### Triggers PostgreSQL criados
-- `on_message_queue_insert` → auto-invoca `queue-worker` via `pg_net`
-- `on_lead_created` → notifica comerciais e admins
-- `on_message_created` → notifica de novas mensagens inbound
-- `on_payment_status_change` → notifica pagamentos recebidos
-- `on_lead_sla_check` → alerta SLA a expirar
-- `on_lead_set_sla` → define SLA automático na criação
-- `on_profile_created` → atribui admin ao primeiro utilizador
-- Cron job `queue-worker-backup` — invoca queue-worker a cada minuto
+- Para propostas originadas do Bitrix24, o `bitrix24_id` do lead já existe
+- O ranking cruza `proposals.status = 'aceita'` com `leads.assigned_commercial_id` e `profiles.full_name`
 
-### Estado actual — 8/8 melhorias implementadas ✅
-1. ✅ Código morto eliminado (chatbot-reply + ai-triage)
-2. ✅ Contexto expandido (30 mensagens: 15 recentes + 15 comprimidas TOON)
-3. ✅ RAG semântico (pgvector + match_chunks + generate-embeddings)
-4. ✅ Router multi-agente (sub_agent_ids + classificação de intenção)
-5. ✅ Tools dinâmicas (registry pattern + webhook fallback)
-6. ✅ Reflexão/Auto-avaliação (score 1-10, retry se < 7)
-7. ✅ Sentiment analysis + auto-escalação (2x frustração → humano)
-8. ✅ Queue worker auto-trigger (pg_trigger + pg_cron backup)
+### Tabelas a criar (migration)
 
-### Mudanças realizadas (Fase 3 — Auditoria Arquitetural)
+```sql
+-- Regras de comissão configuráveis
+CREATE TABLE commission_rules (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  role app_role NOT NULL DEFAULT 'comercial',
+  legal_area legal_area NULL, -- NULL = aplica a todas
+  percentage NUMERIC NOT NULL DEFAULT 10,
+  min_value NUMERIC DEFAULT 0,
+  max_value NUMERIC DEFAULT NULL,
+  is_active BOOLEAN DEFAULT true,
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now()
+);
 
-#### 1. Dashboard de Observabilidade IA
-- Nova página `/observabilidade-ia` com KPIs: requisições, tokens, custo estimado, latência média, taxa fallback, taxa erro, rating feedback
-- Hook `useAiObservability.ts` com agregação de dados
+-- Comissões calculadas
+CREATE TABLE commission_entries (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  profile_id UUID NOT NULL, -- references profiles.id
+  transaction_id UUID, -- references payment_transactions.id
+  proposal_id UUID, -- references proposals.id
+  rule_id UUID, -- references commission_rules.id
+  base_amount NUMERIC NOT NULL DEFAULT 0,
+  percentage NUMERIC NOT NULL DEFAULT 0,
+  commission_amount NUMERIC NOT NULL DEFAULT 0,
+  currency TEXT NOT NULL DEFAULT 'EUR',
+  status TEXT NOT NULL DEFAULT 'pending', -- pending, approved, paid
+  paid_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+```
 
-#### 2. Thumbs up/down no chat de atendimento
-- Botões de feedback em mensagens outbound (bot) no painel de atendimento
+### Ficheiros a criar/modificar
 
-#### 3. Retry com backoff no AI gateway (429/502/503, 2s delay, 1 retry)
+| Ficheiro | Acção |
+|----------|-------|
+| Migration SQL | Criar `commission_rules` + `commission_entries` com RLS |
+| `src/pages/Financeiro.tsx` | Reestruturar com 5 tabs |
+| `src/components/financeiro/FinanceiroOverview.tsx` | Novo — dashboard com KPIs avançados |
+| `src/components/financeiro/InadimplenciaTab.tsx` | Novo — aging report |
+| `src/components/financeiro/ComissoesTab.tsx` | Novo — gestão de comissões |
+| `src/components/financeiro/RankingTab.tsx` | Novo — ranking de vendedores |
+| `src/components/financeiro/ComissaoRulesDialog.tsx` | Novo — configurar regras de comissão |
+| `src/hooks/useFinancialDashboard.ts` | Novo — dados agregados para o dashboard |
+| `src/hooks/useCommissions.ts` | Novo — CRUD comissões + cálculo |
+| `src/components/relatorios/FinancialReport.tsx` | Expandir com receita por área/advogado |
+| `src/hooks/useReportsData.ts` | Expandir `useFinancialReport` e `usePerformanceReport` com dados financeiros |
 
-#### 4. Cost estimation real (tabela de preços por modelo, cálculo automático)
+### Ordem de implementação
 
-#### 5. Memory extraction melhorada (cada 15 msgs + em transferência humana)
+1. Migration: criar tabelas `commission_rules` e `commission_entries` com RLS
+2. Hooks: `useFinancialDashboard` e `useCommissions`
+3. Componentes: Overview, Inadimplência, Comissões, Ranking
+4. Reestruturar `Financeiro.tsx` com tabs
+5. Expandir relatórios existentes com dados financeiros cruzados
 
-#### 6. Reorganização do monólito (constantes extraídas, secções delimitadas)
-
-### Próximos passos
-- Batch job para gerar embeddings dos chunks existentes
-- Streaming no PlaygroundIA
