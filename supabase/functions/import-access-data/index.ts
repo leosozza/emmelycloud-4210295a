@@ -118,6 +118,7 @@ serve(async (req) => {
       batch_size = 10,
       member_id,
       sync_bitrix = false,
+      category_id = "0",
     } = body as {
       clientes: RawClient[];
       honorarios: RawHonorario[];
@@ -125,6 +126,7 @@ serve(async (req) => {
       batch_size?: number;
       member_id?: string;
       sync_bitrix?: boolean;
+      category_id?: string;
     };
 
     if (!clientes || !honorarios) {
