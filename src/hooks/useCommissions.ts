@@ -100,6 +100,21 @@ export function useSaveCommissionRule() {
   });
 }
 
+export function useDeleteCommissionRule() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase.from("commission_rules").delete().eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["commission-rules"] });
+      toast.success("Regra eliminada");
+    },
+    onError: (e: any) => toast.error(e.message),
+  });
+}
+
 export function useUpdateCommissionStatus() {
   const qc = useQueryClient();
   return useMutation({
