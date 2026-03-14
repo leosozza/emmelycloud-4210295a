@@ -1337,6 +1337,36 @@ Deno.serve(async (req) => {
         console.error("[INSTALL] Payment tab placement error:", payTabErr);
       }
 
+      // --- Register Emmely Pay tab on CRM_CONTACT_DETAIL_TAB ---
+      try {
+        await callBitrix(clientEndpoint, accessToken, "placement.unbind", {
+          PLACEMENT: "CRM_CONTACT_DETAIL_TAB",
+          HANDLER: paymentTabUrl,
+        });
+
+        const payContactResult = await callBitrix(clientEndpoint, accessToken, "placement.bind", {
+          PLACEMENT: "CRM_CONTACT_DETAIL_TAB",
+          HANDLER: paymentTabUrl,
+          TITLE: "Emmely Pay",
+          DESCRIPTION: "Controlo de pagamentos do contacto",
+          LANG_ALL: {
+            pt: { TITLE: "Emmely Pay", DESCRIPTION: "Controlo de pagamentos do contacto" },
+            en: { TITLE: "Emmely Pay", DESCRIPTION: "Contact payment control" },
+            es: { TITLE: "Emmely Pay", DESCRIPTION: "Control de pagos del contacto" },
+          },
+        });
+
+        const payContactErr = payContactResult.error || "";
+        if (payContactErr && !String(payContactErr).toLowerCase().includes("already")) {
+          console.error("[INSTALL] placement.bind CRM_CONTACT_DETAIL_TAB (pay) error:", payContactErr);
+        } else {
+          console.log("[INSTALL] placement.bind CRM_CONTACT_DETAIL_TAB (Emmely Pay): OK");
+          installSummary.placements_registered.push("CRM_CONTACT_DETAIL_TAB_PAY");
+        }
+      } catch (payContactErr) {
+        console.error("[INSTALL] Contact Payment tab placement error:", payContactErr);
+      }
+
       installSummary.installed_modules.push("crm_tabs");
       await debugLog(supabase, integrationId, "crm_tab_placements_bind", "outbound", {
         placements: crmPlacements,
