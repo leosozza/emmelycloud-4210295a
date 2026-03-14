@@ -4059,8 +4059,8 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="0">Pipeline Geral (padrão)</SelectItem>
-                      {pipelines.filter(p => p.ID !== "0" && p.ID !== "C0").map(p => (
-                        <SelectItem key={p.ID} value={String(p.ID)}>{p.NAME}</SelectItem>
+                      {pipelines.filter(p => p.id !== "0" && p.id !== "C0").map(p => (
+                        <SelectItem key={p.id} value={String(p.id)}>{p.name}</SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
