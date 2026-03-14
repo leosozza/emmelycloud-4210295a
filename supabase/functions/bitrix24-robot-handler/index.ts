@@ -592,7 +592,7 @@ async function handleGenerateProposal(
       .from("proposals")
       .insert({
         title: finalTitle,
-        case_id: caseData.id,
+        case_id: caseId,
         value: finalValue,
         payment_type: paymentType,
         installments,
