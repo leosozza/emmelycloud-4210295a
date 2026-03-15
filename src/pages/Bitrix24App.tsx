@@ -4268,31 +4268,38 @@ function CarteiraAccessView({ integration, memberId }: { integration: any; membe
   const fetchAll = async () => {
     setLoading(true);
     try {
-      const clientsRes = await fetch(`${SUPABASE_URL}/rest/v1/clients?notes=ilike.*Access*&order=name.asc&limit=500`, {
-        headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` },
-      });
-      const clients = await clientsRes.json();
-      if (!Array.isArray(clients)) { setClientsData([]); return; }
+      const { data: clients, error: clientsErr } = await supabase
+        .from("clients")
+        .select("*")
+        .ilike("notes", "%Access%")
+        .order("name", { ascending: true })
+        .limit(2000);
 
-      const clientIds = clients.map((c: any) => c.id);
-      if (clientIds.length === 0) { setClientsData([]); return; }
+      if (clientsErr || !clients || clients.length === 0) {
+        console.error("[Carteira] Clients error:", clientsErr);
+        setClientsData([]);
+        return;
+      }
 
-      // Fetch leads with nested cases > contracts > financial_records
-      const leadsRes = await fetch(
-        `${SUPABASE_URL}/rest/v1/leads?client_id=in.(${clientIds.join(",")})&sync_source=eq.access_import&select=id,name,notes,client_id,cases(id,title,contracts(id,status,financial_records(id,description,installment_number,total_installments,installment_value,total_value,status,due_date,paid_at,created_at)))`,
-        { headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` } }
-      );
-      const leads = await leadsRes.json();
-      const leadsArr = Array.isArray(leads) ? leads : [];
+      const clientIds = clients.map((c) => c.id);
+
+      const { data: leadsArr, error: leadsErr } = await supabase
+        .from("leads")
+        .select("id, name, notes, client_id, cases(id, title, contracts(id, status, financial_records(id, description, installment_number, total_installments, installment_value, total_value, status, due_date, paid_at, created_at)))")
+        .in("client_id", clientIds)
+        .eq("sync_source", "access_import");
+
+      if (leadsErr) console.error("[Carteira] Leads error:", leadsErr);
+      const leads = leadsArr || [];
 
       // Group leads by client_id
       const leadsByClient: Record<string, any[]> = {};
-      for (const l of leadsArr) {
-        if (!leadsByClient[l.client_id]) leadsByClient[l.client_id] = [];
-        leadsByClient[l.client_id].push(l);
+      for (const l of leads) {
+        if (!leadsByClient[l.client_id!]) leadsByClient[l.client_id!] = [];
+        leadsByClient[l.client_id!].push(l);
       }
 
-      const result: ClientFinancials[] = clients.map((c: any) => {
+      const result: ClientFinancials[] = clients.map((c) => {
         const cLeads = leadsByClient[c.id] || [];
         let totalValue = 0, totalPaid = 0, totalPending = 0, totalOverdue = 0;
         const allRecords: any[] = [];
