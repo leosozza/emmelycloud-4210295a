@@ -2736,35 +2736,39 @@ function RelatoriosView() {
       .finally(() => setLoading(false));
   }, []);
 
-  const gateways = Array.from(new Set(transactions.map((t) => t.gateway).filter(Boolean))).sort();
-  const clients = Array.from(new Set(transactions.map((t) => t.clients?.name).filter(Boolean))).sort() as string[];
-  const companies = Array.from(new Set(transactions.map((t) => t.companies?.name).filter(Boolean))).sort() as string[];
+  const gateways: string[] = [];
+  const clients: string[] = [];
+  const companies: string[] = [];
 
   const filtered = useMemo(() => {
     let data = transactions;
-    // Date filtering
+    // Date filtering using paid_at for paid, due_date for pending/overdue
     if (period === "custom" && dateRange.from) {
       const from = new Date(dateRange.from);
       from.setHours(0, 0, 0, 0);
       const to = dateRange.to ? new Date(dateRange.to) : new Date(dateRange.from);
       to.setHours(23, 59, 59, 999);
-      data = data.filter((t) => { const d = new Date(t.created_at); return d >= from && d <= to; });
+      data = data.filter((t) => {
+        const refDate = t.status === "paga" && t.paid_at ? new Date(t.paid_at) : t.due_date ? new Date(t.due_date) : new Date(t.created_at);
+        return refDate >= from && refDate <= to;
+      });
     } else if (period !== "all") {
       const now = new Date();
       const ms: Record<string, number> = { "7d": 7, "30d": 30, "90d": 90, year: 365 };
       const cutoff = new Date(now.getTime() - (ms[period] || 30) * 86400000);
-      data = data.filter((t) => new Date(t.created_at) >= cutoff);
+      data = data.filter((t) => {
+        const refDate = t.status === "paga" && t.paid_at ? new Date(t.paid_at) : t.due_date ? new Date(t.due_date) : new Date(t.created_at);
+        return refDate >= cutoff;
+      });
     }
-    if (gatewayFilter !== "all") data = data.filter((t) => t.gateway === gatewayFilter);
-    if (clientFilter !== "all") data = data.filter((t) => (t.clients?.name || "") === clientFilter);
-    if (companyFilter !== "all") data = data.filter((t) => (t.companies?.name || "") === companyFilter);
     return data;
-  }, [transactions, period, dateRange, gatewayFilter, clientFilter, companyFilter]);
+  }, [transactions, period, dateRange]);
 
   const today = new Date();
   const classify = (t: any) => {
-    if (t.status === "confirmed") return "confirmed";
-    if (t.status === "pending" && t.metadata?.due_date && new Date(t.metadata.due_date) < today) return "overdue";
+    if (t.status === "paga") return "confirmed";
+    if (t.status === "atrasada") return "overdue";
+    if (t.status === "pendente" && t.due_date && new Date(t.due_date) < today) return "overdue";
     return "pending";
   };
 
@@ -2772,10 +2776,10 @@ function RelatoriosView() {
   const pending = filtered.filter((t) => classify(t) === "pending");
   const overdue = filtered.filter((t) => classify(t) === "overdue");
 
-  const totalCharged = filtered.reduce((s, t) => s + Number(t.amount || 0), 0);
-  const totalPaid = confirmed.reduce((s, t) => s + Number(t.amount || 0), 0);
-  const openAmount = pending.reduce((s, t) => s + Number(t.amount || 0), 0);
-  const overdueAmount = overdue.reduce((s, t) => s + Number(t.amount || 0), 0);
+  const totalCharged = filtered.reduce((s, t) => s + Number(t.installment_value || 0), 0);
+  const totalPaid = confirmed.reduce((s, t) => s + Number(t.installment_value || 0), 0);
+  const openAmount = pending.reduce((s, t) => s + Number(t.installment_value || 0), 0);
+  const overdueAmount = overdue.reduce((s, t) => s + Number(t.installment_value || 0), 0);
   const paymentRate = filtered.length ? Math.round((confirmed.length / filtered.length) * 100) : 0;
 
   const fmt = (v: number) =>
