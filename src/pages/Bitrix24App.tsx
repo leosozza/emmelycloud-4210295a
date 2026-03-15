@@ -566,22 +566,67 @@ function DashboardView({ integration, botId, domain }: {
                 {p.label}
               </Button>
             ))}
+
+            {/* Month Picker */}
+            {showMonthPicker && period === "Mês" && (
+              <>
+                <div className="h-5 w-px bg-border mx-1" />
+                <Select value={String(selectedMonth)} onValueChange={(v) => setSelectedMonth(Number(v))}>
+                  <SelectTrigger className="h-7 w-[110px] text-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"].map((m, i) => (
+                      <SelectItem key={i} value={String(i)} className="text-xs">{m}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Select value={String(selectedYear)} onValueChange={(v) => setSelectedYear(Number(v))}>
+                  <SelectTrigger className="h-7 w-[80px] text-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {Array.from({ length: 6 }, (_, i) => new Date().getFullYear() - i).map((y) => (
+                      <SelectItem key={y} value={String(y)} className="text-xs">{y}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </>
+            )}
+
+            {/* Year Picker */}
+            {showYearPicker && period === "Ano" && (
+              <>
+                <div className="h-5 w-px bg-border mx-1" />
+                <Select value={String(selectedYear)} onValueChange={(v) => setSelectedYear(Number(v))}>
+                  <SelectTrigger className="h-7 w-[80px] text-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {Array.from({ length: 6 }, (_, i) => new Date().getFullYear() - i).map((y) => (
+                      <SelectItem key={y} value={String(y)} className="text-xs">{y}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </>
+            )}
+
             <div className="h-5 w-px bg-border mx-1" />
             <Popover>
               <PopoverTrigger asChild>
-                <Button variant="outline" size="sm" className="text-xs h-7 gap-1">
+                <Button variant={customStart ? "default" : "outline"} size="sm" className="text-xs h-7 gap-1">
                   <CalendarIcon className="h-3 w-3" />
                   {customStart ? format(customStart, "dd/MM/yy") : "Início"}
                 </Button>
               </PopoverTrigger>
               <PopoverContent className="w-auto p-0" align="start">
-                <Calendar mode="single" selected={customStart} onSelect={(d) => { setCustomStart(d || undefined); if (d && !customEnd) setCustomEnd(new Date()); }} className="p-3 pointer-events-auto" />
+                <Calendar mode="single" selected={customStart} onSelect={(d) => { setCustomStart(d || undefined); setShowMonthPicker(false); setShowYearPicker(false); if (d && !customEnd) setCustomEnd(new Date()); }} className="p-3 pointer-events-auto" />
               </PopoverContent>
             </Popover>
             <span className="text-xs text-muted-foreground">—</span>
             <Popover>
               <PopoverTrigger asChild>
-                <Button variant="outline" size="sm" className="text-xs h-7 gap-1">
+                <Button variant={customEnd ? "default" : "outline"} size="sm" className="text-xs h-7 gap-1">
                   <CalendarIcon className="h-3 w-3" />
                   {customEnd ? format(customEnd, "dd/MM/yy") : "Fim"}
                 </Button>
