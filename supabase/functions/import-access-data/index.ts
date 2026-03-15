@@ -647,6 +647,36 @@ serve(async (req) => {
           }
         }
       }
+      // Lookup by email
+      if (!dealId && !contactId && emails.length > 0) {
+        for (const email of emails) {
+          const contactRes = await bitrixCall("crm.contact.list", { filter: { EMAIL: email }, select: ["ID"] });
+          if (contactRes.result?.length > 0) {
+            contactId = contactRes.result[0].ID;
+            const dealRes = await bitrixCall("crm.deal.list", { filter: { CONTACT_ID: contactId }, select: ["ID", "CONTACT_ID"] });
+            if (dealRes.result?.length > 0) {
+              dealId = dealRes.result[0].ID;
+            }
+            break;
+          }
+        }
+      }
+      // Lookup by full name
+      if (!dealId && !contactId && clientName && clientName !== "SEM NOME") {
+        const nameParts = clientName.trim().split(/\s+/);
+        const firstName = nameParts[0] || "";
+        const lastName = nameParts.slice(1).join(" ") || "";
+        const nameFilter: Record<string, any> = { NAME: firstName };
+        if (lastName) nameFilter.LAST_NAME = lastName;
+        const contactRes = await bitrixCall("crm.contact.list", { filter: nameFilter, select: ["ID"] });
+        if (contactRes.result?.length > 0) {
+          contactId = contactRes.result[0].ID;
+          const dealRes = await bitrixCall("crm.deal.list", { filter: { CONTACT_ID: contactId }, select: ["ID", "CONTACT_ID"] });
+          if (dealRes.result?.length > 0) {
+            dealId = dealRes.result[0].ID;
+          }
+        }
+      }
 
       const results: string[] = [];
 
