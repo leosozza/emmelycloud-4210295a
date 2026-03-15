@@ -335,16 +335,33 @@ const Bitrix24App = () => {
 
 // ==================== PERIOD HELPERS ====================
 const PERIOD_PRESETS = [
+  { label: "Hoje", days: 0 },
   { label: "7d", days: 7 },
   { label: "30d", days: 30 },
   { label: "Mês", days: 0 },
   { label: "Trim", days: 90 },
-  { label: "Ano", days: 365 },
+  { label: "Ano", days: 0 },
+  { label: "Tudo", days: 0 },
 ];
-function getDateRange(preset: string): { start: Date; end: Date } {
+function getDateRange(preset: string, selectedMonth?: number, selectedYear?: number): { start: Date; end: Date } {
   const now = new Date();
   const end = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59);
-  if (preset === "Mês") return { start: new Date(now.getFullYear(), now.getMonth(), 1), end };
+  if (preset === "Hoje") {
+    const start = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0);
+    return { start, end };
+  }
+  if (preset === "Tudo") {
+    return { start: new Date(2020, 0, 1), end };
+  }
+  if (preset === "Mês") {
+    const m = selectedMonth ?? now.getMonth();
+    const y = selectedYear ?? now.getFullYear();
+    return { start: new Date(y, m, 1), end: new Date(y, m + 1, 0, 23, 59, 59) };
+  }
+  if (preset === "Ano") {
+    const y = selectedYear ?? now.getFullYear();
+    return { start: new Date(y, 0, 1), end: new Date(y, 11, 31, 23, 59, 59) };
+  }
   const p = PERIOD_PRESETS.find((pp) => pp.label === preset);
   const days = p?.days || 30;
   const start = new Date(now);
@@ -365,11 +382,15 @@ function DashboardView({ integration, botId, domain }: {
   const [period, setPeriod] = useState("30d");
   const [customStart, setCustomStart] = useState<Date | undefined>(undefined);
   const [customEnd, setCustomEnd] = useState<Date | undefined>(undefined);
+  const [selectedMonth, setSelectedMonth] = useState<number>(new Date().getMonth());
+  const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
+  const [showMonthPicker, setShowMonthPicker] = useState(false);
+  const [showYearPicker, setShowYearPicker] = useState(false);
 
   const dateRange = useMemo(() => {
     if (customStart && customEnd) return { start: customStart, end: customEnd };
-    return getDateRange(period);
-  }, [period, customStart, customEnd]);
+    return getDateRange(period, selectedMonth, selectedYear);
+  }, [period, customStart, customEnd, selectedMonth, selectedYear]);
 
   const startISO = dateRange.start.toISOString();
   const endISO = dateRange.end.toISOString();
@@ -493,9 +514,19 @@ function DashboardView({ integration, botId, domain }: {
   const MEDALS = ["🥇", "🥈", "🥉"];
 
   const handlePreset = (label: string) => {
-    setPeriod(label);
     setCustomStart(undefined);
     setCustomEnd(undefined);
+    setShowMonthPicker(false);
+    setShowYearPicker(false);
+    if (label === "Mês") {
+      setPeriod(label);
+      setShowMonthPicker(true);
+    } else if (label === "Ano") {
+      setPeriod(label);
+      setShowYearPicker(true);
+    } else {
+      setPeriod(label);
+    }
   };
 
   return (
@@ -535,22 +566,67 @@ function DashboardView({ integration, botId, domain }: {
                 {p.label}
               </Button>
             ))}
+
+            {/* Month Picker */}
+            {showMonthPicker && period === "Mês" && (
+              <>
+                <div className="h-5 w-px bg-border mx-1" />
+                <Select value={String(selectedMonth)} onValueChange={(v) => setSelectedMonth(Number(v))}>
+                  <SelectTrigger className="h-7 w-[110px] text-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"].map((m, i) => (
+                      <SelectItem key={i} value={String(i)} className="text-xs">{m}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Select value={String(selectedYear)} onValueChange={(v) => setSelectedYear(Number(v))}>
+                  <SelectTrigger className="h-7 w-[80px] text-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {Array.from({ length: 6 }, (_, i) => new Date().getFullYear() - i).map((y) => (
+                      <SelectItem key={y} value={String(y)} className="text-xs">{y}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </>
+            )}
+
+            {/* Year Picker */}
+            {showYearPicker && period === "Ano" && (
+              <>
+                <div className="h-5 w-px bg-border mx-1" />
+                <Select value={String(selectedYear)} onValueChange={(v) => setSelectedYear(Number(v))}>
+                  <SelectTrigger className="h-7 w-[80px] text-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {Array.from({ length: 6 }, (_, i) => new Date().getFullYear() - i).map((y) => (
+                      <SelectItem key={y} value={String(y)} className="text-xs">{y}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </>
+            )}
+
             <div className="h-5 w-px bg-border mx-1" />
             <Popover>
               <PopoverTrigger asChild>
-                <Button variant="outline" size="sm" className="text-xs h-7 gap-1">
+                <Button variant={customStart ? "default" : "outline"} size="sm" className="text-xs h-7 gap-1">
                   <CalendarIcon className="h-3 w-3" />
                   {customStart ? format(customStart, "dd/MM/yy") : "Início"}
                 </Button>
               </PopoverTrigger>
               <PopoverContent className="w-auto p-0" align="start">
-                <Calendar mode="single" selected={customStart} onSelect={(d) => { setCustomStart(d || undefined); if (d && !customEnd) setCustomEnd(new Date()); }} className="p-3 pointer-events-auto" />
+                <Calendar mode="single" selected={customStart} onSelect={(d) => { setCustomStart(d || undefined); setShowMonthPicker(false); setShowYearPicker(false); if (d && !customEnd) setCustomEnd(new Date()); }} className="p-3 pointer-events-auto" />
               </PopoverContent>
             </Popover>
             <span className="text-xs text-muted-foreground">—</span>
             <Popover>
               <PopoverTrigger asChild>
-                <Button variant="outline" size="sm" className="text-xs h-7 gap-1">
+                <Button variant={customEnd ? "default" : "outline"} size="sm" className="text-xs h-7 gap-1">
                   <CalendarIcon className="h-3 w-3" />
                   {customEnd ? format(customEnd, "dd/MM/yy") : "Fim"}
                 </Button>
