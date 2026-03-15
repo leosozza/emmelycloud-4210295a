@@ -555,9 +555,9 @@ serve(async (req) => {
         }
       }
 
-      // Step 6: Match each client in the batch with match_type tracking
+      // Step 6: Match each client with match_type tracking (all clients, no batching)
       const clientsList: any[] = [];
-      for (const info of batch) {
+      for (const info of clientsWithFinancials) {
         let bitrix_contact_id: string | null = null;
         let bitrix_deal_id: string | null = null;
         let match_type: string = "new";
