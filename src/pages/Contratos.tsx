@@ -135,14 +135,49 @@ const ContratosPage = () => {
     },
   });
 
+  // Cancel dialog state
+  const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
+  const [cancelTargetId, setCancelTargetId] = useState<string | null>(null);
+  const [cancelReason, setCancelReason] = useState("desistencia");
+  const [cancelHasRefund, setCancelHasRefund] = useState(false);
+  const [cancelRefundAmount, setCancelRefundAmount] = useState(0);
+  const [cancelNotes, setCancelNotes] = useState("");
+
+  const openCancelDialog = (id: string) => {
+    setCancelTargetId(id);
+    setCancelReason("desistencia");
+    setCancelHasRefund(false);
+    setCancelRefundAmount(0);
+    setCancelNotes("");
+    setCancelDialogOpen(true);
+  };
+
   const cancelMutation = useMutation({
-    mutationFn: async (id: string) => {
-      const { error } = await supabase.from("contracts").update({ status: "cancelado" as any }).eq("id", id);
+    mutationFn: async ({ id, reason, refundAmount, notes }: { id: string; reason: string; refundAmount: number; notes: string }) => {
+      const reasonLabels: Record<string, string> = {
+        desistencia: "Desistência do cliente",
+        incumprimento: "Incumprimento",
+        acordo_mutuo: "Acordo mútuo",
+        erro_admin: "Erro administrativo",
+        outro: "Outro",
+      };
+      const fullReason = `${reasonLabels[reason] || reason}${notes ? ` — ${notes}` : ""}`;
+      const { error } = await supabase.from("contracts").update({
+        status: "cancelado" as any,
+        cancelled_at: new Date().toISOString(),
+        cancel_reason: fullReason,
+        refund_amount: refundAmount,
+      } as any).eq("id", id);
       if (error) throw error;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["contracts"] });
+      setCancelDialogOpen(false);
+      setCancelTargetId(null);
       toast({ title: "Contrato cancelado" });
+    },
+    onError: (e: any) => {
+      toast({ title: "Erro", description: e.message, variant: "destructive" });
     },
   });
 
