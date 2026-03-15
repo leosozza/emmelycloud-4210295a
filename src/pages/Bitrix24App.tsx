@@ -305,6 +305,7 @@ const Bitrix24App = () => {
             loading={loadingData}
             onResync={handleResync}
             onRefresh={() => memberId && fetchData(memberId)}
+            onCachePortfolio={setCachedPortfolio}
           />
         )}
         {view === "agentes" && <AgentesView botId={botId} integrationId={integration?.id} />}
