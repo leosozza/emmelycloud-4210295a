@@ -4442,15 +4442,66 @@ function CarteiraAccessView({ integration, memberId }: { integration: any; membe
     }
   };
 
+  // ── Fetch detail for expanded client ──
+  const fetchClientDetail = async (clientId: string) => {
+    if (expandedDetail[clientId]) return; // already loaded
+    setLoadingDetail(clientId);
+    try {
+      const url = `${SUPABASE_URL}/functions/v1/bitrix24-fetch-portfolio?member_id=${encodeURIComponent(resolvedMemberId)}&client_id=${encodeURIComponent(clientId)}`;
+      const res = await fetch(url, {
+        headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` },
+      });
+      const data = await res.json();
+      if (data.success) {
+        setExpandedDetail((prev) => ({ ...prev, [clientId]: data.leads || [] }));
+      }
+    } catch (e) {
+      console.error("[Carteira] Detail error:", e);
+    } finally {
+      setLoadingDetail(null);
+    }
+  };
+
+  const handleExpandToggle = (clientId: string) => {
+    if (loadingDetail === clientId) return;
+    const currentlyExpanded = expandedDetail[clientId] !== undefined && loadingDetail !== clientId;
+    // If already showing, just collapse by removing from state is optional; we keep data cached
+    // Toggle via a separate expandedId-like approach using loadingDetail as signal
+    if (!expandedDetail[clientId]) {
+      fetchClientDetail(clientId);
+    }
+    // Toggle visibility
+    setExpandedDetail((prev) => {
+      if (prev[clientId]) {
+        const next = { ...prev };
+        delete next[clientId];
+        return next;
+      }
+      return prev;
+    });
+  };
+
   // ── Render expanded service details ──
   const renderServiceDetails = (cf: ClientFinancials) => {
+    const clientId = cf.client.id;
+    const leads = expandedDetail[clientId];
     const now = new Date();
+
+    if (loadingDetail === clientId || !leads) {
+      return (
+        <div className="flex items-center justify-center py-6">
+          <Loader2 className="h-5 w-5 animate-spin text-primary mr-2" />
+          <span className="text-sm text-muted-foreground">Carregando detalhes...</span>
+        </div>
+      );
+    }
+
     return (
       <div className="space-y-3">
-        {cf.leads.length === 0 && (
+        {leads.length === 0 && (
           <p className="text-xs text-muted-foreground">Sem serviços/honorários importados para este cliente.</p>
         )}
-        {cf.leads.map((lead) => {
+        {leads.map((lead: any) => {
           const cases = lead.cases || [];
           return cases.map((cas: any) => {
             const contracts = cas.contracts || [];
