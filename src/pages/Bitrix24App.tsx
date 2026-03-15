@@ -5940,10 +5940,10 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
     });
   };
 
-  // Primary segmentation: existing in Bitrix vs new
+  // Primary segmentation: existing in Bitrix (has Deal) vs new (no Deal)
   const [syncSegment, setSyncSegment] = useState<"existing" | "new">("existing");
-  const existingClients = syncClients.filter(c => c.bitrix_deal_id || c.bitrix_contact_id);
-  const newClients = syncClients.filter(c => !c.bitrix_deal_id && !c.bitrix_contact_id);
+  const existingClients = syncClients.filter(c => !!c.bitrix_deal_id);
+  const newClients = syncClients.filter(c => !c.bitrix_deal_id);
   const segmentedClients = syncSegment === "existing" ? existingClients : newClients;
 
   const filteredSyncClients = segmentedClients.filter(c => c.status_class === activeTab);
