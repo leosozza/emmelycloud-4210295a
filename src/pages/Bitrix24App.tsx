@@ -417,34 +417,41 @@ function DashboardView({ integration, botId, domain, onCachePortfolio }: {
       try {
         const mid = integration?.member_id;
         const memberParam = mid ? `?member_id=${encodeURIComponent(mid)}` : "";
-        const [convRes, msgTodayRes, revenueRes, pendingRes, recentConvRes, recentPayRes, portfolioRes] = await Promise.all([
+        const [convRes, msgTodayRes, recentConvRes, portfolioRes] = await Promise.all([
           fetch(`${SUPABASE_URL}/rest/v1/conversations?select=id&status=in.(aberta,em_atendimento)`, { headers }).then(r => r.json()),
           fetch(`${SUPABASE_URL}/rest/v1/messages?select=id&created_at=gte.${today}T00:00:00`, { headers }).then(r => r.json()),
-          fetch(`${SUPABASE_URL}/rest/v1/payment_transactions?select=amount&status=in.(confirmed,paid)&created_at=gte.${startISO}&created_at=lte.${endISO}`, { headers }).then(r => r.json()),
-          fetch(`${SUPABASE_URL}/rest/v1/payment_transactions?select=amount&status=eq.pending&created_at=gte.${startISO}&created_at=lte.${endISO}`, { headers }).then(r => r.json()),
           fetch(`${SUPABASE_URL}/rest/v1/conversations?select=id,contact_name,channel,status,last_message_preview,last_message_at&order=last_message_at.desc&limit=5`, { headers }).then(r => r.json()),
-          fetch(`${SUPABASE_URL}/rest/v1/payment_transactions?select=id,amount,currency,status,gateway,created_at&order=created_at.desc&limit=5`, { headers }).then(r => r.json()),
           fetch(`${SUPABASE_URL}/functions/v1/bitrix24-fetch-portfolio${memberParam}`, { headers }).then(r => r.json()),
         ]);
 
         onCachePortfolio?.(portfolioRes);
         const clientsTotal = portfolioRes?.meta?.clientCount ?? (Array.isArray(portfolioRes?.clients) ? portfolioRes.clients.length : 0);
 
-        const ptReceived = (revenueRes || []).reduce((s: number, t: any) => s + Number(t.amount), 0);
-        const ptPending = (pendingRes || []).reduce((s: number, t: any) => s + Number(t.amount), 0);
-        const portfolioPaid = portfolioRes?.totals?.paid ?? 0;
-        const portfolioPending = (portfolioRes?.totals?.pending ?? 0) + (portfolioRes?.totals?.overdue ?? 0);
+        // Financial data from financial_records (imported Access data)
+        const startDateOnly = startISO.split("T")[0];
+        const endDateOnly = endISO.split("T")[0];
+
+        const [paidRes, pendingRes, overdueRes, recentFinRes] = await Promise.all([
+          fetch(`${SUPABASE_URL}/rest/v1/financial_records?select=installment_value&status=eq.paga&paid_at=gte.${startISO}&paid_at=lte.${endISO}`, { headers }).then(r => r.json()),
+          fetch(`${SUPABASE_URL}/rest/v1/financial_records?select=installment_value&status=eq.pendente&due_date=gte.${startDateOnly}&due_date=lte.${endDateOnly}`, { headers }).then(r => r.json()),
+          fetch(`${SUPABASE_URL}/rest/v1/financial_records?select=installment_value&status=eq.atrasada&due_date=lte.${endDateOnly}`, { headers }).then(r => r.json()),
+          fetch(`${SUPABASE_URL}/rest/v1/financial_records?select=id,installment_value,status,payment_method,due_date,paid_at,created_at&order=paid_at.desc.nullslast&limit=5`, { headers }).then(r => r.json()),
+        ]);
+
+        const ptReceived = (paidRes || []).reduce((s: number, t: any) => s + Number(t.installment_value || 0), 0);
+        const ptPending = (pendingRes || []).reduce((s: number, t: any) => s + Number(t.installment_value || 0), 0);
+        const ptOverdue = (overdueRes || []).reduce((s: number, t: any) => s + Number(t.installment_value || 0), 0);
 
         setStats({
           conversations: Array.isArray(convRes) ? convRes.length : 0,
           messagesToday: Array.isArray(msgTodayRes) ? msgTodayRes.length : 0,
-          revenueReceived: ptReceived + portfolioPaid,
-          revenuePending: ptPending + portfolioPending,
+          revenueReceived: ptReceived,
+          revenuePending: ptPending + ptOverdue,
           clientsCount: clientsTotal,
           messagesInPeriod: Array.isArray(msgTodayRes) ? msgTodayRes.length : 0,
         });
         setRecentConversations(Array.isArray(recentConvRes) ? recentConvRes : []);
-        setRecentPayments(Array.isArray(recentPayRes) ? recentPayRes : []);
+        setRecentPayments(Array.isArray(recentFinRes) ? recentFinRes : []);
 
         // Messages per day (last 7 days)
         const days: { day: string; count: number }[] = [];
@@ -460,19 +467,11 @@ function DashboardView({ integration, botId, domain, onCachePortfolio }: {
         }
         setMessagesChart(days);
 
-        // Payment totals by status (in period)
-        const [paidAll, pendAll, overdueAll] = await Promise.all([
-          fetch(`${SUPABASE_URL}/rest/v1/payment_transactions?select=amount&status=in.(confirmed,paid)&created_at=gte.${startISO}&created_at=lte.${endISO}`, { headers }).then(r => r.json()),
-          fetch(`${SUPABASE_URL}/rest/v1/payment_transactions?select=amount&status=eq.pending&created_at=gte.${startISO}&created_at=lte.${endISO}`, { headers }).then(r => r.json()),
-          fetch(`${SUPABASE_URL}/rest/v1/payment_transactions?select=amount&status=eq.overdue&created_at=gte.${startISO}&created_at=lte.${endISO}`, { headers }).then(r => r.json()),
-        ]);
-        const ptPaidChart = (paidAll || []).reduce((s: number, t: any) => s + Number(t.amount), 0);
-        const ptPendChart = (pendAll || []).reduce((s: number, t: any) => s + Number(t.amount), 0);
-        const ptOverdueChart = (overdueAll || []).reduce((s: number, t: any) => s + Number(t.amount), 0);
+        // Payment chart by status (from financial_records)
         setPaymentChart([
-          { status: "Pago", amount: ptPaidChart + (portfolioRes?.totals?.paid ?? 0) },
-          { status: "Pendente", amount: ptPendChart + (portfolioRes?.totals?.pending ?? 0) },
-          { status: "Atrasado", amount: ptOverdueChart + (portfolioRes?.totals?.overdue ?? 0) },
+          { status: "Pago", amount: ptReceived },
+          { status: "Pendente", amount: ptPending },
+          { status: "Atrasado", amount: ptOverdue },
         ]);
 
         // Ranking: proposals accepted in period grouped by created_by
@@ -2728,7 +2727,7 @@ function RelatoriosView() {
   useEffect(() => {
     setLoading(true);
     fetch(
-      `${SUPABASE_URL}/rest/v1/payment_transactions?select=*,clients(name),companies(name)&order=created_at.desc&limit=1000`,
+      `${SUPABASE_URL}/rest/v1/financial_records?select=id,installment_value,total_value,status,payment_method,due_date,paid_at,created_at,contract_id,description&order=paid_at.desc.nullslast&limit=1000`,
       { headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` } }
     )
       .then((r) => r.json())
@@ -2737,35 +2736,39 @@ function RelatoriosView() {
       .finally(() => setLoading(false));
   }, []);
 
-  const gateways = Array.from(new Set(transactions.map((t) => t.gateway).filter(Boolean))).sort();
-  const clients = Array.from(new Set(transactions.map((t) => t.clients?.name).filter(Boolean))).sort() as string[];
-  const companies = Array.from(new Set(transactions.map((t) => t.companies?.name).filter(Boolean))).sort() as string[];
+  const gateways: string[] = [];
+  const clients: string[] = [];
+  const companies: string[] = [];
 
   const filtered = useMemo(() => {
     let data = transactions;
-    // Date filtering
+    // Date filtering using paid_at for paid, due_date for pending/overdue
     if (period === "custom" && dateRange.from) {
       const from = new Date(dateRange.from);
       from.setHours(0, 0, 0, 0);
       const to = dateRange.to ? new Date(dateRange.to) : new Date(dateRange.from);
       to.setHours(23, 59, 59, 999);
-      data = data.filter((t) => { const d = new Date(t.created_at); return d >= from && d <= to; });
+      data = data.filter((t) => {
+        const refDate = t.status === "paga" && t.paid_at ? new Date(t.paid_at) : t.due_date ? new Date(t.due_date) : new Date(t.created_at);
+        return refDate >= from && refDate <= to;
+      });
     } else if (period !== "all") {
       const now = new Date();
       const ms: Record<string, number> = { "7d": 7, "30d": 30, "90d": 90, year: 365 };
       const cutoff = new Date(now.getTime() - (ms[period] || 30) * 86400000);
-      data = data.filter((t) => new Date(t.created_at) >= cutoff);
+      data = data.filter((t) => {
+        const refDate = t.status === "paga" && t.paid_at ? new Date(t.paid_at) : t.due_date ? new Date(t.due_date) : new Date(t.created_at);
+        return refDate >= cutoff;
+      });
     }
-    if (gatewayFilter !== "all") data = data.filter((t) => t.gateway === gatewayFilter);
-    if (clientFilter !== "all") data = data.filter((t) => (t.clients?.name || "") === clientFilter);
-    if (companyFilter !== "all") data = data.filter((t) => (t.companies?.name || "") === companyFilter);
     return data;
-  }, [transactions, period, dateRange, gatewayFilter, clientFilter, companyFilter]);
+  }, [transactions, period, dateRange]);
 
   const today = new Date();
   const classify = (t: any) => {
-    if (t.status === "confirmed") return "confirmed";
-    if (t.status === "pending" && t.metadata?.due_date && new Date(t.metadata.due_date) < today) return "overdue";
+    if (t.status === "paga") return "confirmed";
+    if (t.status === "atrasada") return "overdue";
+    if (t.status === "pendente" && t.due_date && new Date(t.due_date) < today) return "overdue";
     return "pending";
   };
 
@@ -2773,10 +2776,10 @@ function RelatoriosView() {
   const pending = filtered.filter((t) => classify(t) === "pending");
   const overdue = filtered.filter((t) => classify(t) === "overdue");
 
-  const totalCharged = filtered.reduce((s, t) => s + Number(t.amount || 0), 0);
-  const totalPaid = confirmed.reduce((s, t) => s + Number(t.amount || 0), 0);
-  const openAmount = pending.reduce((s, t) => s + Number(t.amount || 0), 0);
-  const overdueAmount = overdue.reduce((s, t) => s + Number(t.amount || 0), 0);
+  const totalCharged = filtered.reduce((s, t) => s + Number(t.installment_value || 0), 0);
+  const totalPaid = confirmed.reduce((s, t) => s + Number(t.installment_value || 0), 0);
+  const openAmount = pending.reduce((s, t) => s + Number(t.installment_value || 0), 0);
+  const overdueAmount = overdue.reduce((s, t) => s + Number(t.installment_value || 0), 0);
   const paymentRate = filtered.length ? Math.round((confirmed.length / filtered.length) * 100) : 0;
 
   const fmt = (v: number) =>
@@ -2786,11 +2789,11 @@ function RelatoriosView() {
     const months: Record<string, { month: string; pago: number; pendente: number }> = {};
     const monthNames = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
     filtered.forEach((t) => {
-      const d = new Date(t.created_at);
-      const key = `${d.getFullYear()}-${String(d.getMonth()).padStart(2, "0")}`;
-      if (!months[key]) months[key] = { month: `${monthNames[d.getMonth()]} ${d.getFullYear()}`, pago: 0, pendente: 0 };
-      if (classify(t) === "confirmed") months[key].pago += Number(t.amount || 0);
-      else months[key].pendente += Number(t.amount || 0);
+      const refDate = t.status === "paga" && t.paid_at ? new Date(t.paid_at) : t.due_date ? new Date(t.due_date) : new Date(t.created_at);
+      const key = `${refDate.getFullYear()}-${String(refDate.getMonth()).padStart(2, "0")}`;
+      if (!months[key]) months[key] = { month: `${monthNames[refDate.getMonth()]} ${refDate.getFullYear()}`, pago: 0, pendente: 0 };
+      if (classify(t) === "confirmed") months[key].pago += Number(t.installment_value || 0);
+      else months[key].pendente += Number(t.installment_value || 0);
     });
     return Object.entries(months).sort(([a], [b]) => a.localeCompare(b)).map(([, v]) => v);
   }, [filtered]);
@@ -2805,7 +2808,7 @@ function RelatoriosView() {
     const map: Record<string, number> = {};
     filtered.forEach((t) => {
       const m = t.payment_method || "outro";
-      map[m] = (map[m] || 0) + Number(t.amount || 0);
+      map[m] = (map[m] || 0) + Number(t.installment_value || 0);
     });
     return Object.entries(map).map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value);
   }, [filtered]);
@@ -2813,8 +2816,8 @@ function RelatoriosView() {
   const clientData = useMemo(() => {
     const map: Record<string, number> = {};
     filtered.forEach((t) => {
-      const name = t.clients?.name || "Sem cliente";
-      map[name] = (map[name] || 0) + Number(t.amount || 0);
+      const name = t.description || "Sem descrição";
+      map[name] = (map[name] || 0) + Number(t.installment_value || 0);
     });
     return Object.entries(map).map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value).slice(0, 5);
   }, [filtered]);
@@ -2823,11 +2826,11 @@ function RelatoriosView() {
   const sellerData = useMemo(() => {
     const map: Record<string, { name: string; total: number; paid: number; count: number }> = {};
     filtered.forEach((t) => {
-      const seller = (t.metadata as any)?.responsible_name || "Sem responsável";
+      const seller = "Geral";
       if (!map[seller]) map[seller] = { name: seller, total: 0, paid: 0, count: 0 };
-      map[seller].total += Number(t.amount || 0);
+      map[seller].total += Number(t.installment_value || 0);
       map[seller].count += 1;
-      if (classify(t) === "confirmed") map[seller].paid += Number(t.amount || 0);
+      if (classify(t) === "confirmed") map[seller].paid += Number(t.installment_value || 0);
     });
     return Object.values(map).sort((a, b) => b.total - a.total);
   }, [filtered]);
@@ -2861,14 +2864,12 @@ function RelatoriosView() {
     sellerData,
     transactions: filtered.map((t) => ({
       created_at: t.created_at,
-      client_name: t.clients?.name || null,
-      company_name: t.companies?.name || null,
-      responsible: (t.metadata as any)?.responsible_name || null,
-      amount: Number(t.amount || 0),
+      due_date: t.due_date || null,
+      paid_at: t.paid_at || null,
+      description: t.description || null,
+      amount: Number(t.installment_value || 0),
       payment_method: t.payment_method,
-      gateway: t.gateway,
       status: t.status,
-      due_date: (t.metadata as any)?.due_date || null,
     })),
   });
 
