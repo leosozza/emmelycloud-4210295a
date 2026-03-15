@@ -5119,6 +5119,52 @@ function CarteiraAccessView({ integration, memberId, cachedPortfolio }: { integr
         </DialogContent>
       </Dialog>
       {renderBaixaDialog()}
+
+      {/* Cancel Contract Dialog */}
+      <Dialog open={!!cancelTarget} onOpenChange={(o) => !o && setCancelTarget(null)}>
+        <DialogContent className="max-w-md" onClick={(e) => e.stopPropagation()}>
+          <DialogHeader>
+            <DialogTitle>Cancelar Contrato</DialogTitle>
+            <DialogDescription>Indique o motivo e se houve devolução de valores.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-1.5">
+              <Label className="text-xs">Motivo do cancelamento</Label>
+              <Select value={cancelReason} onValueChange={setCancelReason}>
+                <SelectTrigger className="h-9 text-sm"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="desistencia">Desistência do cliente</SelectItem>
+                  <SelectItem value="incumprimento">Incumprimento</SelectItem>
+                  <SelectItem value="acordo_mutuo">Acordo mútuo</SelectItem>
+                  <SelectItem value="erro_admin">Erro administrativo</SelectItem>
+                  <SelectItem value="outro">Outro</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex items-center gap-3">
+              <Switch checked={cancelHasRefund} onCheckedChange={setCancelHasRefund} />
+              <Label className="text-sm">Houve devolução de valor?</Label>
+            </div>
+            {cancelHasRefund && (
+              <div className="space-y-1.5">
+                <Label className="text-xs">Valor devolvido (€)</Label>
+                <Input type="number" step="0.01" className="h-9 text-sm" value={cancelRefundAmount} onChange={(e) => setCancelRefundAmount(parseFloat(e.target.value) || 0)} />
+              </div>
+            )}
+            <div className="space-y-1.5">
+              <Label className="text-xs">Notas adicionais (opcional)</Label>
+              <Textarea className="text-sm" rows={2} value={cancelNotes} onChange={(e) => setCancelNotes(e.target.value)} placeholder="Detalhes sobre o cancelamento..." />
+            </div>
+            <div className="flex gap-2 pt-2">
+              <Button variant="outline" className="flex-1" onClick={() => setCancelTarget(null)} disabled={cancelSaving}>Voltar</Button>
+              <Button variant="destructive" className="flex-1" disabled={cancelSaving} onClick={handleCancelContractConfirm}>
+                {cancelSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Ban className="h-4 w-4" />}
+                Confirmar Cancelamento
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
