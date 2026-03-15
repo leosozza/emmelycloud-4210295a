@@ -4265,13 +4265,26 @@ function CarteiraAccessView({ integration, memberId }: { integration: any; membe
     return match ? match[1] : null;
   };
 
-  const fetchAll = async () => {
+  const resolvedMemberId = memberId || integration?.member_id || "";
+
+  const fetchAll = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch(
-        `${SUPABASE_URL}/functions/v1/bitrix24-fetch-portfolio?member_id=${encodeURIComponent(memberId || "")}`,
-        { headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` } }
-      );
+      const url = resolvedMemberId
+        ? `${SUPABASE_URL}/functions/v1/bitrix24-fetch-portfolio?member_id=${encodeURIComponent(resolvedMemberId)}`
+        : `${SUPABASE_URL}/functions/v1/bitrix24-fetch-portfolio`;
+
+      const res = await fetch(url, {
+        headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` },
+      });
+
+      if (!res.ok) {
+        const text = await res.text();
+        console.error("[Carteira] Portfolio HTTP error:", res.status, text);
+        setClientsData([]);
+        return;
+      }
+
       const data = await res.json();
       if (!data.success || !data.clients) {
         console.error("[Carteira] Portfolio error:", data.error);
@@ -4281,12 +4294,15 @@ function CarteiraAccessView({ integration, memberId }: { integration: any; membe
       setClientsData(data.clients as ClientFinancials[]);
     } catch (e) {
       console.error("[Carteira] Error:", e);
+      setClientsData([]);
     } finally {
       setLoading(false);
     }
-  };
+  }, [resolvedMemberId]);
 
-  useEffect(() => { fetchAll(); }, []);
+  useEffect(() => {
+    fetchAll();
+  }, [fetchAll]);
 
   const filtered = useMemo(() => {
     if (!search.trim()) return clientsData;
@@ -4729,6 +4745,8 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
 
   // Resuming state
   const [resumingPhase, setResumingPhase] = useState<string | null>(null);
+  const [autoResumeClientsPending, setAutoResumeClientsPending] = useState(false);
+  const [autoResumeHonorariosPending, setAutoResumeHonorariosPending] = useState(false);
 
   // Phase 3: Interactive Sync
   type SyncClient = {
@@ -4820,6 +4838,9 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
 
       if (!sessions || sessions.length === 0) return;
 
+      let shouldAutoResumeClients = false;
+      let shouldAutoResumeHonorarios = false;
+
       for (const session of sessions as any[]) {
         if (!session.file_path) continue;
         setResumingPhase(session.phase);
@@ -4843,30 +4864,45 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
           const rows = XLSX.utils.sheet_to_json(sheet, { defval: "" });
 
           const savedLogs = Array.isArray(session.logs) ? session.logs : [];
+          const processedItems = session.processed_items || 0;
+          const totalItems = session.total_items || rows.length || 0;
 
           if (session.phase === "clients") {
             setClientesData(rows);
             setClientsSessionId(session.id);
             setClientsLogs(savedLogs);
-            setClientsProgress({ processed: session.processed_items || 0, total: session.total_items || rows.length });
-            if (session.status === "done") setClientsDone(true);
+            setClientsProgress({ processed: processedItems, total: totalItems });
+            if (processedItems >= totalItems && totalItems > 0) {
+              setClientsDone(true);
+            } else {
+              setClientsDone(false);
+              shouldAutoResumeClients = true;
+            }
           } else if (session.phase === "honorarios") {
             setHonorariosData(rows);
             setHonorariosSessionId(session.id);
             setHonorariosLogs(savedLogs);
-            setHonorariosProgress({ processed: session.processed_items || 0, total: session.total_items || 0 });
+            setHonorariosProgress({ processed: processedItems, total: totalItems });
             if (session.filter_config) {
               const fc = session.filter_config as any;
               if (fc.dateFrom) setFilterDateFrom(new Date(fc.dateFrom));
               if (fc.dateTo) setFilterDateTo(new Date(fc.dateTo));
               if (fc.status) setFilterStatus(fc.status);
             }
-            if (session.status === "done") setHonorariosDone(true);
+            if (processedItems >= totalItems && totalItems > 0) {
+              setHonorariosDone(true);
+            } else {
+              setHonorariosDone(false);
+              shouldAutoResumeHonorarios = true;
+            }
           }
         } catch (e) {
           console.error("[resume] Error restoring session:", e);
         }
       }
+
+      if (shouldAutoResumeClients) setAutoResumeClientsPending(true);
+      if (shouldAutoResumeHonorarios) setAutoResumeHonorariosPending(true);
       setResumingPhase(null);
     };
 
@@ -4972,13 +5008,12 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
   const handleImportClients = async () => {
     if (!validClients || validClients.length === 0) return;
     setImportingClients(true);
-    setClientsLogs([]);
     setClientsDone(false);
 
     const batchSize = 10;
-    // Resume from saved progress
     let batchStart = clientsSessionId && clientsProgress.processed > 0 ? clientsProgress.processed : 0;
     const allLogs: any[] = batchStart > 0 ? [...clientsLogs] : [];
+    let consecutiveErrors = 0;
 
     while (batchStart < validClients.length) {
       try {
@@ -4996,34 +5031,56 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
             batch_size: batchSize,
           }),
         });
+
+        if (!res.ok) {
+          throw new Error(`HTTP ${res.status}`);
+        }
+
         const data = await res.json();
         if (data.results) {
           allLogs.push(...data.results);
           setClientsLogs([...allLogs]);
         }
-        const processed = data.processed || batchStart + batchSize;
+
+        const processed = typeof data.processed === "number" ? data.processed : batchStart + batchSize;
         setClientsProgress({ processed, total: validClients.length });
 
-        // Checkpoint to database
         if (clientsSessionId) {
           await saveSessionProgress(clientsSessionId, processed, allLogs);
         }
 
-        if (!data.has_more) break;
-        batchStart = data.next_batch_start;
+        consecutiveErrors = 0;
+
+        if (!data.has_more || processed >= validClients.length) {
+          batchStart = validClients.length;
+          break;
+        }
+
+        const nextBatchStart = typeof data.next_batch_start === "number" ? data.next_batch_start : processed;
+        batchStart = nextBatchStart > batchStart ? nextBatchStart : batchStart + batchSize;
       } catch (e) {
-        const errLog = { client_name: `Batch ${batchStart}`, status: "error", error: String(e) };
+        consecutiveErrors += 1;
+        const errLog = {
+          client_name: `Batch ${batchStart}`,
+          status: "error",
+          error: `Tentativa ${consecutiveErrors}: ${String(e)}`,
+        };
         allLogs.push(errLog);
         setClientsLogs([...allLogs]);
+
         if (clientsSessionId) {
           await saveSessionProgress(clientsSessionId, batchStart, allLogs);
         }
-        break;
+
+        const waitMs = Math.min(15000, 1500 * consecutiveErrors);
+        await new Promise((resolve) => setTimeout(resolve, waitMs));
       }
     }
-    setClientsDone(true);
+
+    const completed = batchStart >= validClients.length;
+    setClientsDone(completed);
     setImportingClients(false);
-    if (clientsSessionId) await markSessionDone(clientsSessionId);
+    if (clientsSessionId && completed) await markSessionDone(clientsSessionId);
   };
 
   // ── Phase 2: Filtered honorarios ──
@@ -5086,23 +5143,27 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
 
   const handleImportHonorarios = async () => {
     if (!filteredHonorarios || filteredHonorarios.length === 0) return;
+
+    const totalClients = filteredClientes?.length || 0;
+    if (totalClients === 0) return;
+
     setImportingHonorarios(true);
-    setHonorariosLogs([]);
     setHonorariosDone(false);
 
     const batchSize = 10;
     let batchStart = honorariosSessionId && honorariosProgress.processed > 0 ? honorariosProgress.processed : 0;
     const allLogs: any[] = batchStart > 0 ? [...honorariosLogs] : [];
+    let consecutiveErrors = 0;
 
     // Update session filter config
     if (honorariosSessionId) {
       await supabase.from("import_sessions" as any).update({
         filter_config: { dateFrom: filterDateFrom?.toISOString(), dateTo: filterDateTo?.toISOString(), status: filterStatus } as any,
-        total_items: filteredClientes?.length || 0,
+        total_items: totalClients,
       } as any).eq("id", honorariosSessionId);
     }
 
-    while (batchStart < (filteredClientes?.length || 0)) {
+    while (batchStart < totalClients) {
       try {
         const res = await fetch(`${SUPABASE_URL}/functions/v1/import-access-data`, {
           method: "POST",
@@ -5119,35 +5180,92 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
             batch_size: batchSize,
           }),
         });
+
+        if (!res.ok) {
+          throw new Error(`HTTP ${res.status}`);
+        }
+
         const data = await res.json();
         if (data.results) {
           allLogs.push(...data.results);
           setHonorariosLogs([...allLogs]);
         }
-        const processed = data.processed || batchStart + batchSize;
-        setHonorariosProgress({ processed, total: filteredClientes?.length || 0 });
 
-        // Checkpoint
+        const processed = typeof data.processed === "number" ? data.processed : batchStart + batchSize;
+        setHonorariosProgress({ processed, total: totalClients });
+
         if (honorariosSessionId) {
           await saveSessionProgress(honorariosSessionId, processed, allLogs);
         }
 
-        if (!data.has_more) break;
-        batchStart = data.next_batch_start;
+        consecutiveErrors = 0;
+
+        if (!data.has_more || processed >= totalClients) {
+          batchStart = totalClients;
+          break;
+        }
+
+        const nextBatchStart = typeof data.next_batch_start === "number" ? data.next_batch_start : processed;
+        batchStart = nextBatchStart > batchStart ? nextBatchStart : batchStart + batchSize;
       } catch (e) {
-        const errLog = { client_name: `Batch ${batchStart}`, status: "error", error: String(e) };
+        consecutiveErrors += 1;
+        const errLog = {
+          client_name: `Batch ${batchStart}`,
+          status: "error",
+          error: `Tentativa ${consecutiveErrors}: ${String(e)}`,
+        };
         allLogs.push(errLog);
         setHonorariosLogs([...allLogs]);
+
         if (honorariosSessionId) {
           await saveSessionProgress(honorariosSessionId, batchStart, allLogs);
         }
-        break;
+
+        const waitMs = Math.min(15000, 1500 * consecutiveErrors);
+        await new Promise((resolve) => setTimeout(resolve, waitMs));
       }
     }
-    setHonorariosDone(true);
+
+    const completed = batchStart >= totalClients;
+    setHonorariosDone(completed);
     setImportingHonorarios(false);
-    if (honorariosSessionId) await markSessionDone(honorariosSessionId);
+    if (honorariosSessionId && completed) await markSessionDone(honorariosSessionId);
   };
+
+  useEffect(() => {
+    if (
+      autoResumeClientsPending &&
+      !resumingPhase &&
+      !importingClients &&
+      !!validClients?.length &&
+      clientsProgress.processed < validClients.length
+    ) {
+      setAutoResumeClientsPending(false);
+      void handleImportClients();
+    }
+  }, [autoResumeClientsPending, resumingPhase, importingClients, validClients, clientsProgress.processed]);
+
+  useEffect(() => {
+    const totalClients = filteredClientes?.length || 0;
+    if (
+      autoResumeHonorariosPending &&
+      !resumingPhase &&
+      !importingHonorarios &&
+      !!filteredHonorarios?.length &&
+      totalClients > 0 &&
+      honorariosProgress.processed < totalClients
+    ) {
+      setAutoResumeHonorariosPending(false);
+      void handleImportHonorarios();
+    }
+  }, [
+    autoResumeHonorariosPending,
+    resumingPhase,
+    importingHonorarios,
+    filteredHonorarios,
+    filteredClientes,
+    honorariosProgress.processed,
+  ]);
 
   // ── Clear session helper ──
   const handleClearSession = async (phase: "clients" | "honorarios") => {
@@ -5335,7 +5453,7 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
             <div className="flex items-center gap-2 p-3 rounded-lg bg-primary/10 border border-primary/20">
               <AlertCircle className="h-4 w-4 text-primary shrink-0" />
               <p className="text-xs text-foreground flex-1">
-                Sessão anterior encontrada: {clientsProgress.processed}/{clientsProgress.total} clientes processados. Clique em "Importar" para retomar.
+                Sessão anterior encontrada: {clientsProgress.processed}/{clientsProgress.total} clientes processados. A retomada é automática.
               </p>
               <Button variant="ghost" size="sm" className="text-xs h-7 shrink-0" onClick={() => handleClearSession("clients")}>
                 <Trash2 className="h-3 w-3 mr-1" /> Limpar
@@ -5419,7 +5537,7 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
             <div className="flex items-center gap-2 p-3 rounded-lg bg-primary/10 border border-primary/20">
               <AlertCircle className="h-4 w-4 text-primary shrink-0" />
               <p className="text-xs text-foreground flex-1">
-                Sessão anterior encontrada: {honorariosProgress.processed}/{honorariosProgress.total} clientes processados. Clique em "Importar" para retomar.
+                Sessão anterior encontrada: {honorariosProgress.processed}/{honorariosProgress.total} clientes processados. A retomada é automática.
               </p>
               <Button variant="ghost" size="sm" className="text-xs h-7 shrink-0" onClick={() => handleClearSession("honorarios")}>
                 <Trash2 className="h-3 w-3 mr-1" /> Limpar
