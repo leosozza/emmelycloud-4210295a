@@ -21,11 +21,13 @@ function getPeriodRange(period: string) {
   const now = new Date();
   let start: Date;
   switch (period) {
+    case "today": start = new Date(now.getFullYear(), now.getMonth(), now.getDate()); break;
     case "7d": start = new Date(now); start.setDate(now.getDate() - 7); break;
     case "30d": start = new Date(now); start.setDate(now.getDate() - 30); break;
     case "month": start = new Date(now.getFullYear(), now.getMonth(), 1); break;
     case "quarter": start = new Date(now); start.setMonth(now.getMonth() - 3); break;
     case "year": start = new Date(now.getFullYear(), 0, 1); break;
+    case "all": start = new Date(2020, 0, 1); break;
     default: start = new Date(now); start.setDate(now.getDate() - 30);
   }
   return { start: start.toISOString(), end: now.toISOString() };
