@@ -2864,14 +2864,12 @@ function RelatoriosView() {
     sellerData,
     transactions: filtered.map((t) => ({
       created_at: t.created_at,
-      client_name: t.clients?.name || null,
-      company_name: t.companies?.name || null,
-      responsible: (t.metadata as any)?.responsible_name || null,
-      amount: Number(t.amount || 0),
+      due_date: t.due_date || null,
+      paid_at: t.paid_at || null,
+      description: t.description || null,
+      amount: Number(t.installment_value || 0),
       payment_method: t.payment_method,
-      gateway: t.gateway,
       status: t.status,
-      due_date: (t.metadata as any)?.due_date || null,
     })),
   });
 
