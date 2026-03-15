@@ -4237,13 +4237,11 @@ function BaixaCarteiraView({ integration }: { integration: any }) {
 interface ClientFinancials {
   client: any;
   accessId: string | null;
-  leads: any[];
   totalValue: number;
   totalPaid: number;
   totalPending: number;
   totalOverdue: number;
   serviceCount: number;
-  allRecords: any[];
 }
 
 function CarteiraAccessView({ integration, memberId }: { integration: any; memberId: string | null }) {
