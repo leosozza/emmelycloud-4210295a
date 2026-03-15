@@ -812,11 +812,38 @@ serve(async (req) => {
             ? `${info.services.length} SERVIÇOS - ${clientName}`
             : `CLIENTE - ${clientName}`;
 
+        // Resolve correct STAGE_ID for the target pipeline
+        let stageId = info.all_paid ? "WON" : (info.has_overdue ? "EXECUTING" : "NEW");
+        if (category_id && category_id !== "0") {
+          try {
+            const stagesRes = await bitrixCall("crm.dealcategory.stage.list", { id: parseInt(category_id) });
+            const stages = stagesRes.result || [];
+            if (stages.length > 0) {
+              if (info.all_paid) {
+                // Find success stage (SEMANTICS: "S")
+                const successStage = stages.find((s: any) => s.SEMANTICS === "S");
+                if (successStage) stageId = successStage.STATUS_ID;
+              } else if (info.has_overdue) {
+                // Find process stage (SEMANTICS: "P" but not first)
+                const processStages = stages.filter((s: any) => s.SEMANTICS === "P");
+                stageId = processStages.length > 1 ? processStages[1].STATUS_ID : processStages[0]?.STATUS_ID || stageId;
+              } else {
+                // Find first/new stage (first with SEMANTICS: "P" or first overall)
+                const firstStage = stages.find((s: any) => s.SEMANTICS === "P") || stages[0];
+                if (firstStage) stageId = firstStage.STATUS_ID;
+              }
+              console.log(`[sync_single_client] Pipeline ${category_id} resolved stage: ${stageId} (all_paid=${info.all_paid})`);
+            }
+          } catch (e) {
+            console.error("[sync_single_client] Failed to fetch pipeline stages, using fallback:", e);
+          }
+        }
+
         const dealFields: Record<string, any> = {
           TITLE: dealTitle,
           OPPORTUNITY: info.total_value,
           CURRENCY_ID: "EUR",
-          STAGE_ID: info.all_paid ? "WON" : (info.has_overdue ? "EXECUTING" : "NEW"),
+          STAGE_ID: stageId,
           UF_CRM_EMMELY_NIF: docNumber || "",
         };
         if (info.access_id) dealFields.UF_CRM_1768312831 = info.access_id;
@@ -830,12 +857,12 @@ serve(async (req) => {
           // Don't overwrite BEGINDATE on existing deals
           delete dealFields.BEGINDATE;
           await bitrixCall("crm.deal.update", { id: dealId, fields: dealFields });
-          results.push(`Deal ${dealId} actualizado`);
+          results.push(`Deal ${dealId} actualizado (stage: ${stageId})`);
         } else {
           dealFields.CATEGORY_ID = category_id;
           const dealRes = await bitrixCall("crm.deal.add", { fields: dealFields });
           dealId = dealRes.result ? String(dealRes.result) : null;
-          results.push(`Deal ${dealId} criado`);
+          results.push(`Deal ${dealId} criado (pipeline: ${category_id}, stage: ${stageId})`);
         }
       }
 
