@@ -5978,7 +5978,8 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
   };
 
   // Primary segmentation: existing in Bitrix (has Deal) vs new (no Deal)
-  const [syncSegment, setSyncSegment] = useState<"existing" | "new">("existing");
+  // NOTE: syncSegment state moved to before handleLoadSyncClients for auto-select
+  const existingClients = syncClients.filter(c => !!c.bitrix_deal_id);
   const existingClients = syncClients.filter(c => !!c.bitrix_deal_id);
   const newClients = syncClients.filter(c => !c.bitrix_deal_id);
   const segmentedClients = syncSegment === "existing" ? existingClients : newClients;
