@@ -5585,15 +5585,24 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
                 </div>
               </div>
 
-              <Button onClick={handleImportHonorarios} disabled={isImporting} className="w-full" size="lg">
-                {importingHonorarios ? (
-                  <><Loader2 className="h-4 w-4 animate-spin mr-2" /> Importando Honorários... ({honProgressPct}%)</>
-                ) : honorariosDone ? (
-                  <><CheckCircle className="h-4 w-4 mr-2" /> Re-importar {stats.totalClients} Clientes ({stats.totalHonorarios} parcelas)</>
-                ) : (
-                  <><Upload className="h-4 w-4 mr-2" /> Importar {stats.totalClients} Clientes ({stats.totalHonorarios} parcelas)</>
+              <div className="flex gap-2">
+                <Button onClick={handleImportHonorarios} disabled={isImporting} className="flex-1" size="lg">
+                  {importingHonorarios ? (
+                    <><Loader2 className="h-4 w-4 animate-spin mr-2" /> Importando Honorários... ({honProgressPct}%)</>
+                  ) : honorariosProgress.processed > 0 && !honorariosDone ? (
+                    <><RefreshCw className="h-4 w-4 mr-2" /> Retomar ({honorariosProgress.processed}/{stats.totalClients})</>
+                  ) : honorariosDone ? (
+                    <><CheckCircle className="h-4 w-4 mr-2" /> Re-importar {stats.totalClients} Clientes ({stats.totalHonorarios} parcelas)</>
+                  ) : (
+                    <><Upload className="h-4 w-4 mr-2" /> Importar {stats.totalClients} Clientes ({stats.totalHonorarios} parcelas)</>
+                  )}
+                </Button>
+                {honorariosSessionId && (
+                  <Button variant="outline" size="lg" onClick={() => handleClearSession("honorarios")} disabled={isImporting} title="Limpar sessão e ficheiro">
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
                 )}
-              </Button>
+              </div>
             </div>
           )}
 
