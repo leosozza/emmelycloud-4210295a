@@ -6272,6 +6272,9 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
                     ))}
                   </SelectContent>
                 </Select>
+                {pipelinesFeedback && !loadingPipelines && (
+                  <p className="text-xs text-muted-foreground">ℹ️ {pipelinesFeedback}</p>
+                )}
               </div>
 
               {/* Load clients button */}
