@@ -4462,23 +4462,17 @@ function CarteiraAccessView({ integration, memberId }: { integration: any; membe
     }
   };
 
+  const [expandedClientId, setExpandedClientId] = useState<string | null>(null);
+
   const handleExpandToggle = (clientId: string) => {
-    if (loadingDetail === clientId) return;
-    const currentlyExpanded = expandedDetail[clientId] !== undefined && loadingDetail !== clientId;
-    // If already showing, just collapse by removing from state is optional; we keep data cached
-    // Toggle via a separate expandedId-like approach using loadingDetail as signal
+    if (expandedClientId === clientId) {
+      setExpandedClientId(null);
+      return;
+    }
+    setExpandedClientId(clientId);
     if (!expandedDetail[clientId]) {
       fetchClientDetail(clientId);
     }
-    // Toggle visibility
-    setExpandedDetail((prev) => {
-      if (prev[clientId]) {
-        const next = { ...prev };
-        delete next[clientId];
-        return next;
-      }
-      return prev;
-    });
   };
 
   // ── Render expanded service details ──
