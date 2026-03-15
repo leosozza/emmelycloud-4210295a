@@ -4807,7 +4807,7 @@ function CarteiraAccessView({ integration, memberId }: { integration: any; membe
                                   disabled={markingPaidId === fr.id}
                                   onClick={(e) => {
                                     e.stopPropagation();
-                                    handleBaixaParcela(fr, clientId);
+                                    openBaixaModal(fr, clientId);
                                   }}
                                 >
                                   {markingPaidId === fr.id ? (
