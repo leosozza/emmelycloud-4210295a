@@ -6420,9 +6420,21 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
                             <TableCell className="text-right text-xs">€{client.total_paid.toLocaleString("pt-PT", { minimumFractionDigits: 2 })}</TableCell>
                             <TableCell>
                               {client.bitrix_deal_id ? (
-                                <Badge variant="outline" className="text-[10px]">Deal #{client.bitrix_deal_id}</Badge>
+                                <div className="flex flex-col gap-0.5">
+                                  <Badge variant="outline" className="text-[10px]">Deal #{client.bitrix_deal_id}</Badge>
+                                  <span className="text-[9px] text-muted-foreground">
+                                    via {client.match_type === "access_id" ? "Access ID" : client.match_type === "nif" ? "NIF" : client.match_type === "phone" ? "Telefone" : client.match_type === "email" ? "Email" : client.match_type === "name" ? "Nome" : "—"}
+                                  </span>
+                                </div>
+                              ) : client.bitrix_contact_id ? (
+                                <div className="flex flex-col gap-0.5">
+                                  <Badge variant="secondary" className="text-[10px]">Contacto #{client.bitrix_contact_id}</Badge>
+                                  <span className="text-[9px] text-muted-foreground">
+                                    via {client.match_type === "phone" ? "Telefone" : client.match_type === "email" ? "Email" : client.match_type === "name" ? "Nome" : "—"}
+                                  </span>
+                                </div>
                               ) : (
-                                <span className="text-[10px] text-muted-foreground">Novo</span>
+                                <Badge variant="outline" className="text-[10px] border-dashed">Novo</Badge>
                               )}
                             </TableCell>
                             <TableCell>
