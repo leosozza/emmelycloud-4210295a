@@ -2789,11 +2789,11 @@ function RelatoriosView() {
     const months: Record<string, { month: string; pago: number; pendente: number }> = {};
     const monthNames = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
     filtered.forEach((t) => {
-      const d = new Date(t.created_at);
-      const key = `${d.getFullYear()}-${String(d.getMonth()).padStart(2, "0")}`;
-      if (!months[key]) months[key] = { month: `${monthNames[d.getMonth()]} ${d.getFullYear()}`, pago: 0, pendente: 0 };
-      if (classify(t) === "confirmed") months[key].pago += Number(t.amount || 0);
-      else months[key].pendente += Number(t.amount || 0);
+      const refDate = t.status === "paga" && t.paid_at ? new Date(t.paid_at) : t.due_date ? new Date(t.due_date) : new Date(t.created_at);
+      const key = `${refDate.getFullYear()}-${String(refDate.getMonth()).padStart(2, "0")}`;
+      if (!months[key]) months[key] = { month: `${monthNames[refDate.getMonth()]} ${refDate.getFullYear()}`, pago: 0, pendente: 0 };
+      if (classify(t) === "confirmed") months[key].pago += Number(t.installment_value || 0);
+      else months[key].pendente += Number(t.installment_value || 0);
     });
     return Object.entries(months).sort(([a], [b]) => a.localeCompare(b)).map(([, v]) => v);
   }, [filtered]);
@@ -2808,7 +2808,7 @@ function RelatoriosView() {
     const map: Record<string, number> = {};
     filtered.forEach((t) => {
       const m = t.payment_method || "outro";
-      map[m] = (map[m] || 0) + Number(t.amount || 0);
+      map[m] = (map[m] || 0) + Number(t.installment_value || 0);
     });
     return Object.entries(map).map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value);
   }, [filtered]);
