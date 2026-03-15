@@ -79,9 +79,10 @@ export function useFinancialReport(filters: ReportFilters) {
   return useQuery({
     queryKey: ["reports-financial", filters.startDate, filters.endDate, filters.legalArea],
     queryFn: async () => {
-      const { data: transactions, error } = await supabase
-        .from("payment_transactions")
-        .select("id, amount, currency, status, gateway, created_at, company_id")
+      // Use financial_records (imported from Access) as the primary data source
+      const { data: records, error } = await supabase
+        .from("financial_records")
+        .select("id, installment_value, total_value, status, payment_method, due_date, paid_at, created_at, contract_id")
         .gte("created_at", filters.startDate.toISOString())
         .lte("created_at", filters.endDate.toISOString());
 
@@ -93,46 +94,53 @@ export function useFinancialReport(filters: ReportFilters) {
       prevStart.setDate(prevStart.getDate() - periodDays);
       const prevEnd = new Date(filters.startDate);
 
-      const { data: prevTransactions } = await supabase
-        .from("payment_transactions")
-        .select("id, amount, status")
+      const { data: prevRecords } = await supabase
+        .from("financial_records")
+        .select("id, installment_value, status")
         .gte("created_at", prevStart.toISOString())
         .lte("created_at", prevEnd.toISOString());
 
-      const confirmed = transactions?.filter((t) => t.status === "confirmed" || t.status === "paid") || [];
-      const pending = transactions?.filter((t) => t.status === "pending") || [];
-      const prevConfirmed = prevTransactions?.filter((t) => t.status === "confirmed" || t.status === "paid") || [];
+      const paid = records?.filter((r) => r.status === "paga") || [];
+      const pending = records?.filter((r) => r.status === "pendente" || r.status === "atrasada") || [];
+      const overdue = records?.filter((r) => r.status === "atrasada") || [];
+      const prevPaid = prevRecords?.filter((r) => r.status === "paga") || [];
 
-      const totalReceived = confirmed.reduce((s, t) => s + Number(t.amount), 0);
-      const totalPending = pending.reduce((s, t) => s + Number(t.amount), 0);
-      const prevTotal = prevConfirmed.reduce((s, t) => s + Number(t.amount), 0);
+      const totalReceived = paid.reduce((s, r) => s + Number(r.installment_value || 0), 0);
+      const totalPending = pending.reduce((s, r) => s + Number(r.installment_value || 0), 0);
+      const totalOverdue = overdue.reduce((s, r) => s + Number(r.installment_value || 0), 0);
+      const prevTotal = prevPaid.reduce((s, r) => s + Number(r.installment_value || 0), 0);
       const growth = prevTotal > 0 ? Math.round(((totalReceived - prevTotal) / prevTotal) * 100) : 0;
 
-      // Monthly breakdown
+      // Monthly breakdown (by created_at which holds the contract date from Access DATA column)
       const monthlyMap: Record<string, number> = {};
-      confirmed.forEach((t) => {
-        const month = format(new Date(t.created_at), "yyyy-MM");
-        monthlyMap[month] = (monthlyMap[month] || 0) + Number(t.amount);
+      paid.forEach((r) => {
+        const month = format(new Date(r.created_at), "yyyy-MM");
+        monthlyMap[month] = (monthlyMap[month] || 0) + Number(r.installment_value || 0);
       });
       const monthlyData = Object.entries(monthlyMap)
         .sort(([a], [b]) => a.localeCompare(b))
         .map(([month, value]) => ({ month, value }));
 
-      // By gateway
-      const gatewayMap: Record<string, number> = {};
-      confirmed.forEach((t) => {
-        gatewayMap[t.gateway] = (gatewayMap[t.gateway] || 0) + Number(t.amount);
+      // By status breakdown (replaces gateway)
+      const statusMap: Record<string, number> = {};
+      records?.forEach((r) => {
+        const label = r.status === "paga" ? "Paga" : r.status === "atrasada" ? "Em Atraso" : "Pendente";
+        statusMap[label] = (statusMap[label] || 0) + Number(r.installment_value || 0);
       });
-      const gatewayData = Object.entries(gatewayMap).map(([name, value]) => ({ name, value }));
+      const statusData = Object.entries(statusMap).map(([name, value]) => ({ name, value }));
 
       return {
         totalReceived,
         totalPending,
-        totalTransactions: transactions?.length || 0,
+        totalOverdue,
+        totalTransactions: records?.length || 0,
+        paidCount: paid.length,
+        pendingCount: pending.length,
+        overdueCount: overdue.length,
         growth,
         monthlyData,
-        gatewayData,
-        transactions: transactions || [],
+        statusData,
+        records: records || [],
       };
     },
   });
