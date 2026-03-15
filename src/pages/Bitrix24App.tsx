@@ -4545,6 +4545,17 @@ function CarteiraAccessView({ integration, memberId }: { integration: any; membe
   const [baixaForm, setBaixaForm] = useState({ paidAmount: 0, paymentDate: new Date(), paymentMethod: "transferencia", proofFile: null as File | null });
   const [baixaSaving, setBaixaSaving] = useState(false);
 
+  const handleExpandToggle = (clientId: string) => {
+    if (expandedClientId === clientId) {
+      setExpandedClientId(null);
+      return;
+    }
+    setExpandedClientId(clientId);
+    if (!expandedDetail[clientId]) {
+      fetchClientDetail(clientId);
+    }
+  };
+
   const openBaixaModal = (fr: any, clientId: string) => {
     const now = new Date();
     const dueDate = fr.due_date ? new Date(fr.due_date) : null;
