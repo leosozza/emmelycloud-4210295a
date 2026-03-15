@@ -469,7 +469,6 @@ serve(async (req) => {
       }
 
       const total = clientsWithFinancials.length;
-      const batch = clientsWithFinancials.slice(batch_start, batch_start + batch_size);
 
       // Step 5: Batch Bitrix lookup — load deals with UF_CRM_1768312831 and UF_CRM_EMMELY_NIF in bulk
       let bitrixDealsByAccessId: Record<string, { dealId: string; contactId: string | null }> = {};
