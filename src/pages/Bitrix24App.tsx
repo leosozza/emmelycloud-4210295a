@@ -5046,6 +5046,7 @@ function CarteiraAccessView({ integration, memberId }: { integration: any; membe
           )}
         </DialogContent>
       </Dialog>
+      {renderBaixaDialog()}
     </div>
   );
 }
