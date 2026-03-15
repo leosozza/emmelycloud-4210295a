@@ -411,7 +411,8 @@ function DashboardView({ integration, botId, domain }: {
     const fetchAll = async () => {
       setLoadingStats(true);
       try {
-        const memberParam = memberId ? `?member_id=${memberId}` : "";
+        const mid = integration?.member_id;
+        const memberParam = mid ? `?member_id=${encodeURIComponent(mid)}` : "";
         const [convRes, msgTodayRes, revenueRes, pendingRes, recentConvRes, recentPayRes, portfolioRes] = await Promise.all([
           fetch(`${SUPABASE_URL}/rest/v1/conversations?select=id&status=in.(aberta,em_atendimento)`, { headers }).then(r => r.json()),
           fetch(`${SUPABASE_URL}/rest/v1/messages?select=id&created_at=gte.${today}T00:00:00`, { headers }).then(r => r.json()),
