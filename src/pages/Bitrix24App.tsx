@@ -6313,7 +6313,27 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
               {/* Tabs + Client list */}
               {syncClientsLoaded && syncClients.length > 0 && (
                 <div className="space-y-4 pt-3 border-t">
-                  {/* Status tabs */}
+                  {/* Primary segmentation: Existing vs New */}
+                  <div className="flex gap-2 mb-2">
+                    <Button
+                      variant={syncSegment === "existing" ? "default" : "outline"}
+                      size="sm"
+                      onClick={() => { setSyncSegment("existing"); setSelectedIds(new Set()); }}
+                      className="text-xs"
+                    >
+                      <RefreshCw className="h-3.5 w-3.5 mr-1" /> Etapa A: Sincronizar existentes ({existingClients.length})
+                    </Button>
+                    <Button
+                      variant={syncSegment === "new" ? "default" : "outline"}
+                      size="sm"
+                      onClick={() => { setSyncSegment("new"); setSelectedIds(new Set()); }}
+                      className="text-xs"
+                    >
+                      <Plus className="h-3.5 w-3.5 mr-1" /> Etapa B: Cadastrar novos ({newClients.length})
+                    </Button>
+                  </div>
+
+                  {/* Status tabs (secondary filter) */}
                   <div className="flex gap-2">
                     <Button
                       variant={activeTab === "atrasado" ? "default" : "outline"}
