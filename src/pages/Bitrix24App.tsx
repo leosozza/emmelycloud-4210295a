@@ -314,7 +314,7 @@ const Bitrix24App = () => {
         {view === "flows" && <FlowsView />}
         {view === "playground" && <PlaygroundView />}
         {view === "chatia" && <ChatIABitrixView />}
-        {view === "mapeamento" && <MapeamentoView integrationId={integration?.id} memberId={memberId || undefined} />}
+        {view === "mapeamento" && <MapeamentoView integrationId={integration?.id} memberId={memberId || integration?.member_id || undefined} />}
         {view === "pagamentos" && <PagamentosView integration={integration} onRefresh={() => memberId && fetchData(memberId)} />}
         {view === "baixa" && <BaixaCarteiraView integration={integration} />}
         {view === "placement" && <PlacementPreviewView integration={integration} memberId={memberId} />}
@@ -5940,10 +5940,10 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
     });
   };
 
-  // Primary segmentation: existing in Bitrix vs new
+  // Primary segmentation: existing in Bitrix (has Deal) vs new (no Deal)
   const [syncSegment, setSyncSegment] = useState<"existing" | "new">("existing");
-  const existingClients = syncClients.filter(c => c.bitrix_deal_id || c.bitrix_contact_id);
-  const newClients = syncClients.filter(c => !c.bitrix_deal_id && !c.bitrix_contact_id);
+  const existingClients = syncClients.filter(c => !!c.bitrix_deal_id);
+  const newClients = syncClients.filter(c => !c.bitrix_deal_id);
   const segmentedClients = syncSegment === "existing" ? existingClients : newClients;
 
   const filteredSyncClients = segmentedClients.filter(c => c.status_class === activeTab);

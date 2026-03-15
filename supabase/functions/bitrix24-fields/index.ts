@@ -24,6 +24,7 @@ async function ensureValidToken(supabase: any, integration: any): Promise<string
     return integration.access_token;
   }
 
+  console.log("[FIELDS] Token expired, refreshing...");
   const response = await fetch("https://oauth.bitrix.info/oauth/token/", {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -95,27 +96,36 @@ Deno.serve(async (req) => {
 
   try {
     const url = new URL(req.url);
-    const entity = url.searchParams.get("entity") || "lead"; // lead, deal, spa
+    const entity = url.searchParams.get("entity") || "lead";
     const spaEntityTypeId = url.searchParams.get("spaEntityTypeId") || "";
     const memberIdParam = url.searchParams.get("member_id") || "";
 
-    // Get integration by member_id or first active
-    let integrationQuery = supabase
-      .from("bitrix24_integrations")
-      .select("*");
+    // Get integration: by member_id if provided, otherwise most recent by updated_at
+    let integration: any = null;
 
     if (memberIdParam) {
-      integrationQuery = integrationQuery.eq("member_id", memberIdParam);
-    } else {
-      integrationQuery = integrationQuery.eq("connector_active", true);
+      const { data } = await supabase
+        .from("bitrix24_integrations")
+        .select("*")
+        .eq("member_id", memberIdParam)
+        .limit(1)
+        .maybeSingle();
+      integration = data;
     }
 
-    const { data: integration } = await integrationQuery
-      .limit(1)
-      .maybeSingle();
+    if (!integration) {
+      // Fallback: get most recently updated integration (regardless of connector_active)
+      const { data } = await supabase
+        .from("bitrix24_integrations")
+        .select("*")
+        .order("updated_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      integration = data;
+    }
 
     if (!integration) {
-      return new Response(JSON.stringify({ error: "No active Bitrix24 integration", fields: [] }), {
+      return new Response(JSON.stringify({ error: "No Bitrix24 integration found", fields: [] }), {
         status: 200,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
@@ -140,7 +150,7 @@ Deno.serve(async (req) => {
         break;
     }
 
-    console.log(`[FIELDS] Fetching ${apiMethod} with params:`, params);
+    console.log(`[FIELDS] Fetching ${apiMethod} for integration ${integration.member_id}`);
 
     const response = await callBitrix(integration.client_endpoint, accessToken, apiMethod, params);
 
@@ -152,7 +162,6 @@ Deno.serve(async (req) => {
       });
     }
 
-    // crm.item.fields returns { fields: {...} }, others return { result: {...} }
     const rawFields = entity === "spa" ? (response.result?.fields || response.result || {}) : (response.result || {});
     const fields = parseFields(rawFields);
 

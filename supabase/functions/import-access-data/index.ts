@@ -294,47 +294,84 @@ serve(async (req) => {
     }
     // ══════════════════════════════════════════════════════════════════
     if (mode === "list_sync_clients") {
-      // Step 1: Fetch ALL imported clients with financial data via aggregated query
-      const { data: allClients, error: clientsErr } = await supabase
-        .from("clients")
-        .select("id, name, document_number, document_type, notes, address, postal_code, country, birth_date, nationality")
-        .like("notes", "%Importado do Access%")
-        .order("name");
+      // Step 1: Fetch ALL imported clients with pagination to bypass 1000 limit
+      const allClients: any[] = [];
+      let rangeStart = 0;
+      const pageSize = 1000;
+      while (true) {
+        const { data: batch, error: batchErr } = await supabase
+          .from("clients")
+          .select("id, name, document_number, document_type, notes, address, postal_code, country, birth_date, nationality")
+          .like("notes", "%Importado do Access%")
+          .order("name")
+          .range(rangeStart, rangeStart + pageSize - 1);
 
-      if (clientsErr) {
-        return new Response(JSON.stringify({ error: `Failed to fetch clients: ${clientsErr.message}` }), {
-          status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
+        if (batchErr) {
+          return new Response(JSON.stringify({ error: `Failed to fetch clients: ${batchErr.message}` }), {
+            status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+        if (!batch || batch.length === 0) break;
+        allClients.push(...batch);
+        if (batch.length < pageSize) break;
+        rangeStart += pageSize;
       }
 
-      const clientIds = (allClients || []).map((c: any) => c.id);
+      const clientIds = allClients.map((c: any) => c.id);
       if (clientIds.length === 0) {
         return new Response(JSON.stringify({ success: true, mode: "list_sync_clients", clients: [], processed: 0, total: 0, has_more: false, next_batch_start: null }), {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
 
-      // Step 2: Batch fetch ALL leads with financial chain for these clients
-      const { data: allLeads } = await supabase
-        .from("leads")
-        .select(`
-          id, name, client_id, phone, email,
-          cases!cases_lead_id_fkey (
-            id, title,
-            proposals!proposals_case_id_fkey (
-              id, title, value, installments, status,
-              contracts!contracts_proposal_id_fkey (
-                id, created_at,
-                financial_records!financial_records_contract_id_fkey (
-                  id, description, total_value, installment_number, total_installments,
-                  installment_value, status, due_date, paid_at, created_at
+      // Step 2: Batch fetch ALL leads with financial chain (paginated)
+      const allLeads: any[] = [];
+      // Process in chunks of 200 client IDs to avoid query limits
+      const chunkSize = 200;
+      for (let i = 0; i < clientIds.length; i += chunkSize) {
+        const chunk = clientIds.slice(i, i + chunkSize);
+        const { data: leadsChunk } = await supabase
+          .from("leads")
+          .select(`
+            id, name, client_id, phone, email,
+            cases!cases_lead_id_fkey (
+              id, title,
+              proposals!proposals_case_id_fkey (
+                id, title, value, installments, status,
+                contracts!contracts_proposal_id_fkey (
+                  id, created_at,
+                  financial_records!financial_records_contract_id_fkey (
+                    id, description, total_value, installment_number, total_installments,
+                    installment_value, status, due_date, paid_at, created_at
+                  )
                 )
               )
             )
-          )
-        `)
-        .in("client_id", clientIds)
-        .eq("sync_source", "access_import");
+          `)
+          .in("client_id", chunk)
+          .eq("sync_source", "access_import");
+        if (leadsChunk) allLeads.push(...leadsChunk);
+      }
+
+      // Step 2b: Also fetch client_contacts for phone/email enrichment
+      const allContacts: any[] = [];
+      for (let i = 0; i < clientIds.length; i += chunkSize) {
+        const chunk = clientIds.slice(i, i + chunkSize);
+        const { data: contactsChunk } = await supabase
+          .from("client_contacts")
+          .select("client_id, phone, mobile, email")
+          .in("client_id", chunk);
+        if (contactsChunk) allContacts.push(...contactsChunk);
+      }
+
+      // Build contacts map
+      const contactsMap: Record<string, { phones: string[]; emails: string[] }> = {};
+      for (const cc of allContacts) {
+        if (!contactsMap[cc.client_id]) contactsMap[cc.client_id] = { phones: [], emails: [] };
+        if (cc.phone && !contactsMap[cc.client_id].phones.includes(cc.phone)) contactsMap[cc.client_id].phones.push(cc.phone);
+        if (cc.mobile && !contactsMap[cc.client_id].phones.includes(cc.mobile)) contactsMap[cc.client_id].phones.push(cc.mobile);
+        if (cc.email && !contactsMap[cc.client_id].emails.includes(cc.email)) contactsMap[cc.client_id].emails.push(cc.email);
+      }
 
       // Step 3: Build a map of client_id -> financial summary
       const financialMap: Record<string, any> = {};
@@ -379,6 +416,20 @@ serve(async (req) => {
               }
             }
           }
+        }
+      }
+
+      // Enrich financialMap with client_contacts data
+      for (const cid of clientIds) {
+        const cc = contactsMap[cid];
+        if (!cc) continue;
+        if (!financialMap[cid]) continue;
+        const fm = financialMap[cid];
+        for (const phone of cc.phones) {
+          if (!fm.phones.includes(phone)) fm.phones.push(phone);
+        }
+        for (const email of cc.emails) {
+          if (!fm.emails.includes(email)) fm.emails.push(email);
         }
       }
 
