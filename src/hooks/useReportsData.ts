@@ -79,16 +79,38 @@ export function useFinancialReport(filters: ReportFilters) {
   return useQuery({
     queryKey: ["reports-financial", filters.startDate, filters.endDate, filters.legalArea],
     queryFn: async () => {
-      // Use financial_records (imported from Access) as the primary data source
-      const { data: records, error } = await supabase
+      const startISO = filters.startDate.toISOString();
+      const endISO = filters.endDate.toISOString();
+
+      // Paid records: filter by paid_at (actual payment date)
+      const { data: paidRecords } = await supabase
         .from("financial_records")
         .select("id, installment_value, total_value, status, payment_method, due_date, paid_at, created_at, contract_id")
-        .gte("created_at", filters.startDate.toISOString())
-        .lte("created_at", filters.endDate.toISOString());
+        .eq("status", "paga")
+        .gte("paid_at", startISO)
+        .lte("paid_at", endISO);
 
-      if (error) throw error;
+      // Pending records: filter by due_date (installment due date)
+      const { data: pendingRecords } = await supabase
+        .from("financial_records")
+        .select("id, installment_value, total_value, status, payment_method, due_date, paid_at, created_at, contract_id")
+        .eq("status", "pendente")
+        .gte("due_date", filters.startDate.toISOString().split("T")[0])
+        .lte("due_date", filters.endDate.toISOString().split("T")[0]);
 
-      // Previous period for comparison
+      // Overdue records: due_date in period AND status = atrasada
+      const { data: overdueRecords } = await supabase
+        .from("financial_records")
+        .select("id, installment_value, total_value, status, payment_method, due_date, paid_at, created_at, contract_id")
+        .eq("status", "atrasada")
+        .lte("due_date", filters.endDate.toISOString().split("T")[0]);
+
+      const paid = paidRecords || [];
+      const pending = pendingRecords || [];
+      const overdue = overdueRecords || [];
+      const allRecords = [...paid, ...pending, ...overdue];
+
+      // Previous period for comparison (paid only)
       const periodDays = Math.ceil((filters.endDate.getTime() - filters.startDate.getTime()) / (1000 * 60 * 60 * 24));
       const prevStart = new Date(filters.startDate);
       prevStart.setDate(prevStart.getDate() - periodDays);
@@ -97,13 +119,11 @@ export function useFinancialReport(filters: ReportFilters) {
       const { data: prevRecords } = await supabase
         .from("financial_records")
         .select("id, installment_value, status")
-        .gte("created_at", prevStart.toISOString())
-        .lte("created_at", prevEnd.toISOString());
+        .eq("status", "paga")
+        .gte("paid_at", prevStart.toISOString())
+        .lte("paid_at", prevEnd.toISOString());
 
-      const paid = records?.filter((r) => r.status === "paga") || [];
-      const pending = records?.filter((r) => r.status === "pendente" || r.status === "atrasada") || [];
-      const overdue = records?.filter((r) => r.status === "atrasada") || [];
-      const prevPaid = prevRecords?.filter((r) => r.status === "paga") || [];
+      const prevPaid = prevRecords || [];
 
       const totalReceived = paid.reduce((s, r) => s + Number(r.installment_value || 0), 0);
       const totalPending = pending.reduce((s, r) => s + Number(r.installment_value || 0), 0);
@@ -111,19 +131,21 @@ export function useFinancialReport(filters: ReportFilters) {
       const prevTotal = prevPaid.reduce((s, r) => s + Number(r.installment_value || 0), 0);
       const growth = prevTotal > 0 ? Math.round(((totalReceived - prevTotal) / prevTotal) * 100) : 0;
 
-      // Monthly breakdown (by created_at which holds the contract date from Access DATA column)
+      // Monthly breakdown by paid_at (actual payment date)
       const monthlyMap: Record<string, number> = {};
       paid.forEach((r) => {
-        const month = format(new Date(r.created_at), "yyyy-MM");
-        monthlyMap[month] = (monthlyMap[month] || 0) + Number(r.installment_value || 0);
+        if (r.paid_at) {
+          const month = format(new Date(r.paid_at), "yyyy-MM");
+          monthlyMap[month] = (monthlyMap[month] || 0) + Number(r.installment_value || 0);
+        }
       });
       const monthlyData = Object.entries(monthlyMap)
         .sort(([a], [b]) => a.localeCompare(b))
         .map(([month, value]) => ({ month, value }));
 
-      // By status breakdown (replaces gateway)
+      // By status breakdown
       const statusMap: Record<string, number> = {};
-      records?.forEach((r) => {
+      allRecords.forEach((r) => {
         const label = r.status === "paga" ? "Paga" : r.status === "atrasada" ? "Em Atraso" : "Pendente";
         statusMap[label] = (statusMap[label] || 0) + Number(r.installment_value || 0);
       });
@@ -133,14 +155,14 @@ export function useFinancialReport(filters: ReportFilters) {
         totalReceived,
         totalPending,
         totalOverdue,
-        totalTransactions: records?.length || 0,
+        totalTransactions: allRecords.length,
         paidCount: paid.length,
         pendingCount: pending.length,
         overdueCount: overdue.length,
         growth,
         monthlyData,
         statusData,
-        records: records || [],
+        records: allRecords,
       };
     },
   });

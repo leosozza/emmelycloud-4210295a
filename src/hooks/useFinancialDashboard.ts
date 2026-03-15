@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-import { differenceInDays } from "date-fns";
+import { differenceInDays, format } from "date-fns";
 
 export interface AgingBucket {
   label: string;
@@ -32,22 +32,42 @@ export function useFinancialDashboard(startDate: string, endDate: string) {
   return useQuery({
     queryKey: ["financial-dashboard", startDate, endDate],
     queryFn: async () => {
-      // Fetch transactions in period
-      const { data: transactions } = await supabase
-        .from("payment_transactions")
-        .select("id, amount, currency, status, gateway, created_at, updated_at, metadata, financial_record_id, contract_id, client_id")
-        .gte("created_at", startDate)
-        .lte("created_at", endDate);
+      const startDateOnly = startDate.split("T")[0];
+      const endDateOnly = endDate.split("T")[0];
 
-      const txs = transactions || [];
-      const confirmed = txs.filter((t) => t.status === "confirmed" || t.status === "paid");
-      const pending = txs.filter((t) => t.status === "pending");
+      // Paid records: filter by paid_at
+      const { data: paidRecords } = await supabase
+        .from("financial_records")
+        .select("id, installment_value, status, paid_at, due_date, contract_id, payment_method, created_at")
+        .eq("status", "paga")
+        .gte("paid_at", startDate)
+        .lte("paid_at", endDate);
 
-      const totalReceived = confirmed.reduce((s, t) => s + Number(t.amount), 0);
-      const totalPending = pending.reduce((s, t) => s + Number(t.amount), 0);
+      // Pending records: filter by due_date
+      const { data: pendingRecords } = await supabase
+        .from("financial_records")
+        .select("id, installment_value, status, paid_at, due_date, contract_id, payment_method, created_at")
+        .eq("status", "pendente")
+        .gte("due_date", startDateOnly)
+        .lte("due_date", endDateOnly);
+
+      // Overdue records: due_date up to endDate
+      const { data: overdueRecords } = await supabase
+        .from("financial_records")
+        .select("id, installment_value, status, paid_at, due_date, contract_id, payment_method, created_at")
+        .eq("status", "atrasada")
+        .lte("due_date", endDateOnly);
+
+      const confirmed = paidRecords || [];
+      const pending = pendingRecords || [];
+      const overdue = overdueRecords || [];
+      const allTxs = [...confirmed, ...pending, ...overdue];
+
+      const totalReceived = confirmed.reduce((s, t) => s + Number(t.installment_value || 0), 0);
+      const totalPending = pending.reduce((s, t) => s + Number(t.installment_value || 0), 0);
       const ticketMedio = confirmed.length > 0 ? totalReceived / confirmed.length : 0;
 
-      // Aging buckets for overdue pending
+      // Aging buckets for overdue
       const now = new Date();
       const agingBuckets: AgingBucket[] = [
         { label: "1-30 dias", count: 0, amount: 0 },
@@ -56,12 +76,10 @@ export function useFinancialDashboard(startDate: string, endDate: string) {
         { label: "90+ dias", count: 0, amount: 0 },
       ];
 
-      pending.forEach((t) => {
-        const meta = (t.metadata || {}) as Record<string, any>;
-        const dueDate = meta.due_date ? new Date(meta.due_date) : new Date(t.created_at);
-        if (dueDate > now) return; // not overdue
+      overdue.forEach((t) => {
+        const dueDate = t.due_date ? new Date(t.due_date) : new Date(t.created_at);
         const days = differenceInDays(now, dueDate);
-        const amt = Number(t.amount);
+        const amt = Number(t.installment_value || 0);
         if (days <= 30) { agingBuckets[0].count++; agingBuckets[0].amount += amt; }
         else if (days <= 60) { agingBuckets[1].count++; agingBuckets[1].amount += amt; }
         else if (days <= 90) { agingBuckets[2].count++; agingBuckets[2].amount += amt; }
@@ -95,7 +113,7 @@ export function useFinancialDashboard(startDate: string, endDate: string) {
             if (!t.contract_id) return;
             const caseId = contractCaseMap.get(t.contract_id);
             const area = caseId ? caseMap.get(caseId) || "outro" : "outro";
-            areaAmounts[area] = (areaAmounts[area] || 0) + Number(t.amount);
+            areaAmounts[area] = (areaAmounts[area] || 0) + Number(t.installment_value || 0);
           });
           Object.entries(areaAmounts).forEach(([area, amount]) => {
             revenueByArea.push({ area, amount });
@@ -113,7 +131,6 @@ export function useFinancialDashboard(startDate: string, endDate: string) {
 
       const { data: profiles } = await supabase.from("profiles").select("id, full_name, user_id");
 
-      // Get case → lead → assigned_commercial mapping
       const proposalCaseIds = [...new Set((proposals || []).filter((p) => p.case_id).map((p) => p.case_id!))];
       const ranking: RankingEntry[] = [];
 
@@ -159,14 +176,14 @@ export function useFinancialDashboard(startDate: string, endDate: string) {
         totalPending,
         totalOverdue,
         ticketMedio,
-        totalTransactions: txs.length,
+        totalTransactions: allTxs.length,
         confirmedCount: confirmed.length,
         pendingCount: pending.length,
         agingBuckets,
         revenueByArea,
         ranking,
-        transactions: txs,
-        currency: confirmed[0]?.currency || pending[0]?.currency || "EUR",
+        transactions: allTxs,
+        currency: "EUR",
       };
     },
   });
