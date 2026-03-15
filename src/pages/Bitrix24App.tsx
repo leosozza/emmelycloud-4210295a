@@ -5250,7 +5250,7 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
   const [autoResumeHonorariosPending, setAutoResumeHonorariosPending] = useState(false);
 
   // Phase 3: Interactive Sync
-  type SyncClient = {
+   type SyncClient = {
     client_id: string;
     name: string;
     nif: string;
@@ -5263,6 +5263,8 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
     records_count: number;
     bitrix_contact_id: string | null;
     bitrix_deal_id: string | null;
+    match_type: "access_id" | "nif" | "phone" | "email" | "name" | "new";
+    contract_date: string | null;
     synced?: boolean;
     syncResult?: string;
   };
