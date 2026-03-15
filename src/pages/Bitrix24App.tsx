@@ -411,23 +411,19 @@ function DashboardView({ integration, botId, domain }: {
     const fetchAll = async () => {
       setLoadingStats(true);
       try {
-        const [convRes, msgTodayRes, revenueRes, pendingRes, recentConvRes, recentPayRes, clientsRes] = await Promise.all([
+        const mid = integration?.member_id;
+        const memberParam = mid ? `?member_id=${encodeURIComponent(mid)}` : "";
+        const [convRes, msgTodayRes, revenueRes, pendingRes, recentConvRes, recentPayRes, portfolioRes] = await Promise.all([
           fetch(`${SUPABASE_URL}/rest/v1/conversations?select=id&status=in.(aberta,em_atendimento)`, { headers }).then(r => r.json()),
           fetch(`${SUPABASE_URL}/rest/v1/messages?select=id&created_at=gte.${today}T00:00:00`, { headers }).then(r => r.json()),
           fetch(`${SUPABASE_URL}/rest/v1/payment_transactions?select=amount&status=in.(confirmed,paid)&created_at=gte.${startISO}&created_at=lte.${endISO}`, { headers }).then(r => r.json()),
           fetch(`${SUPABASE_URL}/rest/v1/payment_transactions?select=amount&status=eq.pending&created_at=gte.${startISO}&created_at=lte.${endISO}`, { headers }).then(r => r.json()),
           fetch(`${SUPABASE_URL}/rest/v1/conversations?select=id,contact_name,channel,status,last_message_preview,last_message_at&order=last_message_at.desc&limit=5`, { headers }).then(r => r.json()),
           fetch(`${SUPABASE_URL}/rest/v1/payment_transactions?select=id,amount,currency,status,gateway,created_at&order=created_at.desc&limit=5`, { headers }).then(r => r.json()),
-          fetch(`${SUPABASE_URL}/rest/v1/clients?select=id`, { headers: { ...headers, Prefer: "count=exact", Range: "0-0" } }),
+          fetch(`${SUPABASE_URL}/functions/v1/bitrix24-fetch-portfolio${memberParam}`, { headers }).then(r => r.json()),
         ]);
 
-        const clientsCount = parseInt(clientsRes.headers?.get?.("content-range")?.split("/")?.[1] || "0", 10) || (Array.isArray(await clientsRes.json?.()) ? 0 : 0);
-        // Fallback: count from array
-        let clientsTotal = clientsCount;
-        if (!clientsTotal) {
-          const cArr = await fetch(`${SUPABASE_URL}/rest/v1/clients?select=id`, { headers }).then(r => r.json());
-          clientsTotal = Array.isArray(cArr) ? cArr.length : 0;
-        }
+        const clientsTotal = portfolioRes?.meta?.clientCount ?? (Array.isArray(portfolioRes?.clients) ? portfolioRes.clients.length : 0);
 
         setStats({
           conversations: Array.isArray(convRes) ? convRes.length : 0,
