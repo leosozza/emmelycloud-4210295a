@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback, useRef, lazy, Suspense, useMemo, Fragment } from "react";
+import { supabase } from "@/integrations/supabase/client";
 import { useBitrix24Theme } from "@/hooks/useBitrix24Theme";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -4766,6 +4767,8 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
   const [clientsProgress, setClientsProgress] = useState({ processed: 0, total: 0 });
   const [clientsLogs, setClientsLogs] = useState<{ client_name: string; status: string; error?: string; details?: string }[]>([]);
   const [clientsDone, setClientsDone] = useState(false);
+  const [clientsSessionId, setClientsSessionId] = useState<string | null>(null);
+  const [clientsFileRef, setClientsFileRef] = useState<File | null>(null);
 
   // Phase 2: Honorarios
   const [honorariosData, setHonorariosData] = useState<any[] | null>(null);
@@ -4773,6 +4776,10 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
   const [honorariosProgress, setHonorariosProgress] = useState({ processed: 0, total: 0 });
   const [honorariosLogs, setHonorariosLogs] = useState<{ client_name: string; status: string; error?: string; details?: string }[]>([]);
   const [honorariosDone, setHonorariosDone] = useState(false);
+  const [honorariosSessionId, setHonorariosSessionId] = useState<string | null>(null);
+
+  // Resuming state
+  const [resumingPhase, setResumingPhase] = useState<string | null>(null);
 
   // Phase 3: Interactive Sync
   type SyncClient = {
@@ -4813,6 +4820,110 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
   const [filterDateTo, setFilterDateTo] = useState<Date | undefined>(undefined);
   const [filterStatus, setFilterStatus] = useState("todos");
 
+  // ── Session persistence helpers ──
+  const saveSessionProgress = async (sessionId: string, processed: number, logs: any[]) => {
+    await supabase.from("import_sessions" as any).update({
+      processed_items: processed,
+      logs: logs as any,
+      updated_at: new Date().toISOString(),
+    } as any).eq("id", sessionId);
+  };
+
+  const createSession = async (phase: string, filePath: string, totalItems: number, filterCfg?: any): Promise<string | null> => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return null;
+    const { data, error } = await supabase.from("import_sessions" as any).insert({
+      user_id: user.id,
+      phase,
+      status: "in_progress",
+      file_path: filePath,
+      total_items: totalItems,
+      processed_items: 0,
+      logs: [] as any,
+      filter_config: (filterCfg || {}) as any,
+    } as any).select("id").single();
+    if (error) { console.error("[createSession]", error); return null; }
+    return (data as any)?.id || null;
+  };
+
+  const markSessionDone = async (sessionId: string) => {
+    await supabase.from("import_sessions" as any).update({ status: "done", updated_at: new Date().toISOString() } as any).eq("id", sessionId);
+  };
+
+  const clearSession = async (sessionId: string, filePath?: string) => {
+    if (filePath) {
+      await supabase.storage.from("import-files").remove([filePath]);
+    }
+    await supabase.from("import_sessions" as any).delete().eq("id", sessionId);
+  };
+
+  // ── Resume active sessions on mount ──
+  useEffect(() => {
+    const resumeSessions = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      const { data: sessions } = await supabase
+        .from("import_sessions" as any)
+        .select("*")
+        .eq("user_id", user.id)
+        .eq("status", "in_progress") as any;
+
+      if (!sessions || sessions.length === 0) return;
+
+      for (const session of sessions as any[]) {
+        if (!session.file_path) continue;
+        setResumingPhase(session.phase);
+
+        try {
+          // Download file from storage
+          const { data: fileData, error: dlError } = await supabase.storage
+            .from("import-files")
+            .download(session.file_path);
+
+          if (dlError || !fileData) {
+            console.error("[resume] Failed to download file:", dlError);
+            continue;
+          }
+
+          // Parse XLSX from blob
+          const XLSX = await import("xlsx");
+          const buffer = await fileData.arrayBuffer();
+          const wb = XLSX.read(buffer, { type: "array" });
+          const sheet = wb.Sheets[wb.SheetNames[0]];
+          const rows = XLSX.utils.sheet_to_json(sheet, { defval: "" });
+
+          const savedLogs = Array.isArray(session.logs) ? session.logs : [];
+
+          if (session.phase === "clients") {
+            setClientesData(rows);
+            setClientsSessionId(session.id);
+            setClientsLogs(savedLogs);
+            setClientsProgress({ processed: session.processed_items || 0, total: session.total_items || rows.length });
+            if (session.status === "done") setClientsDone(true);
+          } else if (session.phase === "honorarios") {
+            setHonorariosData(rows);
+            setHonorariosSessionId(session.id);
+            setHonorariosLogs(savedLogs);
+            setHonorariosProgress({ processed: session.processed_items || 0, total: session.total_items || 0 });
+            if (session.filter_config) {
+              const fc = session.filter_config as any;
+              if (fc.dateFrom) setFilterDateFrom(new Date(fc.dateFrom));
+              if (fc.dateTo) setFilterDateTo(new Date(fc.dateTo));
+              if (fc.status) setFilterStatus(fc.status);
+            }
+            if (session.status === "done") setHonorariosDone(true);
+          }
+        } catch (e) {
+          console.error("[resume] Error restoring session:", e);
+        }
+      }
+      setResumingPhase(null);
+    };
+
+    resumeSessions();
+  }, []);
+
   // Load pipelines when integration available
   useEffect(() => {
     if (!memberId || !integration) return;
@@ -4837,6 +4948,16 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
     return XLSX.utils.sheet_to_json(sheet, { defval: "" });
   };
 
+  const uploadFileToStorage = async (file: File, phase: string): Promise<string | null> => {
+    const filePath = `${phase}_${Date.now()}.xlsx`;
+    const { error } = await supabase.storage.from("import-files").upload(filePath, file, {
+      contentType: file.type || "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      upsert: false,
+    });
+    if (error) { console.error("[uploadFile]", error); return null; }
+    return filePath;
+  };
+
   const handleClientesUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -4845,6 +4966,15 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
       setClientesData(data);
       setClientsLogs([]);
       setClientsDone(false);
+      setClientsFileRef(file);
+
+      // Upload to storage and create session
+      const filePath = await uploadFileToStorage(file, "clients");
+      if (filePath) {
+        const validCount = data.filter((c: any) => c.ID > 3).length;
+        const sessionId = await createSession("clients", filePath, validCount);
+        if (sessionId) setClientsSessionId(sessionId);
+      }
     } catch {
       alert("Erro ao ler o ficheiro de clientes.");
     }
@@ -4858,6 +4988,17 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
       setHonorariosData(data);
       setHonorariosLogs([]);
       setHonorariosDone(false);
+
+      // Upload to storage and create session
+      const filePath = await uploadFileToStorage(file, "honorarios");
+      if (filePath) {
+        const sessionId = await createSession("honorarios", filePath, data.length, {
+          dateFrom: filterDateFrom?.toISOString(),
+          dateTo: filterDateTo?.toISOString(),
+          status: filterStatus,
+        });
+        if (sessionId) setHonorariosSessionId(sessionId);
+      }
     } catch {
       alert("Erro ao ler o ficheiro de honorários.");
     }
@@ -4886,7 +5027,9 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
     setClientsDone(false);
 
     const batchSize = 10;
-    let batchStart = 0;
+    // Resume from saved progress
+    let batchStart = clientsSessionId && clientsProgress.processed > 0 ? clientsProgress.processed : 0;
+    const allLogs: any[] = batchStart > 0 ? [...clientsLogs] : [];
 
     while (batchStart < validClients.length) {
       try {
@@ -4906,18 +5049,32 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
         });
         const data = await res.json();
         if (data.results) {
-          setClientsLogs(prev => [...prev, ...data.results]);
+          allLogs.push(...data.results);
+          setClientsLogs([...allLogs]);
         }
-        setClientsProgress({ processed: data.processed || batchStart + batchSize, total: validClients.length });
+        const processed = data.processed || batchStart + batchSize;
+        setClientsProgress({ processed, total: validClients.length });
+
+        // Checkpoint to database
+        if (clientsSessionId) {
+          await saveSessionProgress(clientsSessionId, processed, allLogs);
+        }
+
         if (!data.has_more) break;
         batchStart = data.next_batch_start;
       } catch (e) {
-        setClientsLogs(prev => [...prev, { client_name: `Batch ${batchStart}`, status: "error", error: String(e) }]);
+        const errLog = { client_name: `Batch ${batchStart}`, status: "error", error: String(e) };
+        allLogs.push(errLog);
+        setClientsLogs([...allLogs]);
+        if (clientsSessionId) {
+          await saveSessionProgress(clientsSessionId, batchStart, allLogs);
+        }
         break;
       }
     }
     setClientsDone(true);
     setImportingClients(false);
+    if (clientsSessionId) await markSessionDone(clientsSessionId);
   };
 
   // ── Phase 2: Filtered honorarios ──
@@ -4985,7 +5142,16 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
     setHonorariosDone(false);
 
     const batchSize = 10;
-    let batchStart = 0;
+    let batchStart = honorariosSessionId && honorariosProgress.processed > 0 ? honorariosProgress.processed : 0;
+    const allLogs: any[] = batchStart > 0 ? [...honorariosLogs] : [];
+
+    // Update session filter config
+    if (honorariosSessionId) {
+      await supabase.from("import_sessions" as any).update({
+        filter_config: { dateFrom: filterDateFrom?.toISOString(), dateTo: filterDateTo?.toISOString(), status: filterStatus } as any,
+        total_items: filteredClientes?.length || 0,
+      } as any).eq("id", honorariosSessionId);
+    }
 
     while (batchStart < (filteredClientes?.length || 0)) {
       try {
@@ -5006,18 +5172,53 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
         });
         const data = await res.json();
         if (data.results) {
-          setHonorariosLogs(prev => [...prev, ...data.results]);
+          allLogs.push(...data.results);
+          setHonorariosLogs([...allLogs]);
         }
-        setHonorariosProgress({ processed: data.processed || batchStart + batchSize, total: filteredClientes?.length || 0 });
+        const processed = data.processed || batchStart + batchSize;
+        setHonorariosProgress({ processed, total: filteredClientes?.length || 0 });
+
+        // Checkpoint
+        if (honorariosSessionId) {
+          await saveSessionProgress(honorariosSessionId, processed, allLogs);
+        }
+
         if (!data.has_more) break;
         batchStart = data.next_batch_start;
       } catch (e) {
-        setHonorariosLogs(prev => [...prev, { client_name: `Batch ${batchStart}`, status: "error", error: String(e) }]);
+        const errLog = { client_name: `Batch ${batchStart}`, status: "error", error: String(e) };
+        allLogs.push(errLog);
+        setHonorariosLogs([...allLogs]);
+        if (honorariosSessionId) {
+          await saveSessionProgress(honorariosSessionId, batchStart, allLogs);
+        }
         break;
       }
     }
     setHonorariosDone(true);
     setImportingHonorarios(false);
+    if (honorariosSessionId) await markSessionDone(honorariosSessionId);
+  };
+
+  // ── Clear session helper ──
+  const handleClearSession = async (phase: "clients" | "honorarios") => {
+    if (phase === "clients" && clientsSessionId) {
+      const { data: session } = await supabase.from("import_sessions" as any).select("file_path").eq("id", clientsSessionId).single() as any;
+      await clearSession(clientsSessionId, session?.file_path);
+      setClientesData(null);
+      setClientsLogs([]);
+      setClientsProgress({ processed: 0, total: 0 });
+      setClientsDone(false);
+      setClientsSessionId(null);
+    } else if (phase === "honorarios" && honorariosSessionId) {
+      const { data: session } = await supabase.from("import_sessions" as any).select("file_path").eq("id", honorariosSessionId).single() as any;
+      await clearSession(honorariosSessionId, session?.file_path);
+      setHonorariosData(null);
+      setHonorariosLogs([]);
+      setHonorariosProgress({ processed: 0, total: 0 });
+      setHonorariosDone(false);
+      setHonorariosSessionId(null);
+    }
   };
 
   // ── Phase 3: Load clients for sync ──
@@ -5150,6 +5351,17 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
 
   const isImporting = importingClients || importingHonorarios || syncingSingle || syncingBatch || loadingSyncClients;
 
+  if (resumingPhase) {
+    return (
+      <div className="p-6 flex items-center justify-center min-h-[300px]">
+        <div className="text-center space-y-3">
+          <Loader2 className="h-8 w-8 animate-spin text-primary mx-auto" />
+          <p className="text-sm text-muted-foreground">Restaurando sessão de importação ({resumingPhase})...</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="p-6 space-y-6">
       <div className="b24-view-header">
@@ -5169,24 +5381,46 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
+          {/* Resume banner */}
+          {clientsSessionId && clientsProgress.processed > 0 && !clientsDone && !importingClients && (
+            <div className="flex items-center gap-2 p-3 rounded-lg bg-primary/10 border border-primary/20">
+              <AlertCircle className="h-4 w-4 text-primary shrink-0" />
+              <p className="text-xs text-foreground flex-1">
+                Sessão anterior encontrada: {clientsProgress.processed}/{clientsProgress.total} clientes processados. Clique em "Importar" para retomar.
+              </p>
+              <Button variant="ghost" size="sm" className="text-xs h-7 shrink-0" onClick={() => handleClearSession("clients")}>
+                <Trash2 className="h-3 w-3 mr-1" /> Limpar
+              </Button>
+            </div>
+          )}
+
           <div className="space-y-2">
             <Label className="text-sm font-medium">TBL_CLIENTE.xlsx</Label>
             <Input type="file" accept=".xlsx,.xls" onChange={handleClientesUpload} disabled={isImporting} />
             {validClients && (
-              <p className="text-xs text-muted-foreground">✅ {validClients.length} clientes válidos carregados (excluindo IDs ≤ 3)</p>
+              <p className="text-xs text-muted-foreground">✅ {validClients.length} clientes válidos carregados (excluindo IDs ≤ 3){clientsSessionId ? " · 📁 Ficheiro guardado" : ""}</p>
             )}
           </div>
 
           {validClients && validClients.length > 0 && (
-            <Button onClick={handleImportClients} disabled={isImporting} className="w-full" size="lg">
-              {importingClients ? (
-                <><Loader2 className="h-4 w-4 animate-spin mr-2" /> Importando Clientes... ({clientsProgressPct}%)</>
-              ) : clientsDone ? (
-                <><CheckCircle className="h-4 w-4 mr-2" /> Re-importar {validClients.length} Clientes</>
-              ) : (
-                <><Upload className="h-4 w-4 mr-2" /> Importar {validClients.length} Clientes</>
+            <div className="flex gap-2">
+              <Button onClick={handleImportClients} disabled={isImporting} className="flex-1" size="lg">
+                {importingClients ? (
+                  <><Loader2 className="h-4 w-4 animate-spin mr-2" /> Importando Clientes... ({clientsProgressPct}%)</>
+                ) : clientsProgress.processed > 0 && !clientsDone ? (
+                  <><RefreshCw className="h-4 w-4 mr-2" /> Retomar ({clientsProgress.processed}/{validClients.length})</>
+                ) : clientsDone ? (
+                  <><CheckCircle className="h-4 w-4 mr-2" /> Re-importar {validClients.length} Clientes</>
+                ) : (
+                  <><Upload className="h-4 w-4 mr-2" /> Importar {validClients.length} Clientes</>
+                )}
+              </Button>
+              {clientsSessionId && (
+                <Button variant="outline" size="lg" onClick={() => handleClearSession("clients")} disabled={isImporting} title="Limpar sessão e ficheiro">
+                  <Trash2 className="h-4 w-4" />
+                </Button>
               )}
-            </Button>
+            </div>
           )}
 
           {/* Phase 1 Progress */}
@@ -5231,11 +5465,24 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
+          {/* Resume banner */}
+          {honorariosSessionId && honorariosProgress.processed > 0 && !honorariosDone && !importingHonorarios && (
+            <div className="flex items-center gap-2 p-3 rounded-lg bg-primary/10 border border-primary/20">
+              <AlertCircle className="h-4 w-4 text-primary shrink-0" />
+              <p className="text-xs text-foreground flex-1">
+                Sessão anterior encontrada: {honorariosProgress.processed}/{honorariosProgress.total} clientes processados. Clique em "Importar" para retomar.
+              </p>
+              <Button variant="ghost" size="sm" className="text-xs h-7 shrink-0" onClick={() => handleClearSession("honorarios")}>
+                <Trash2 className="h-3 w-3 mr-1" /> Limpar
+              </Button>
+            </div>
+          )}
+
           <div className="space-y-2">
             <Label className="text-sm font-medium">TBL_HONORARIOS.xlsx</Label>
             <Input type="file" accept=".xlsx,.xls" onChange={handleHonorariosUpload} disabled={isImporting} />
             {honorariosData && (
-              <p className="text-xs text-muted-foreground">✅ {honorariosData.length} registos carregados</p>
+              <p className="text-xs text-muted-foreground">✅ {honorariosData.length} registos carregados{honorariosSessionId ? " · 📁 Ficheiro guardado" : ""}</p>
             )}
             <p className="text-xs text-muted-foreground">Os clientes importados na Fase 1 serão usados automaticamente da base de dados.</p>
           </div>
@@ -5338,15 +5585,24 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
                 </div>
               </div>
 
-              <Button onClick={handleImportHonorarios} disabled={isImporting} className="w-full" size="lg">
-                {importingHonorarios ? (
-                  <><Loader2 className="h-4 w-4 animate-spin mr-2" /> Importando Honorários... ({honProgressPct}%)</>
-                ) : honorariosDone ? (
-                  <><CheckCircle className="h-4 w-4 mr-2" /> Re-importar {stats.totalClients} Clientes ({stats.totalHonorarios} parcelas)</>
-                ) : (
-                  <><Upload className="h-4 w-4 mr-2" /> Importar {stats.totalClients} Clientes ({stats.totalHonorarios} parcelas)</>
+              <div className="flex gap-2">
+                <Button onClick={handleImportHonorarios} disabled={isImporting} className="flex-1" size="lg">
+                  {importingHonorarios ? (
+                    <><Loader2 className="h-4 w-4 animate-spin mr-2" /> Importando Honorários... ({honProgressPct}%)</>
+                  ) : honorariosProgress.processed > 0 && !honorariosDone ? (
+                    <><RefreshCw className="h-4 w-4 mr-2" /> Retomar ({honorariosProgress.processed}/{stats.totalClients})</>
+                  ) : honorariosDone ? (
+                    <><CheckCircle className="h-4 w-4 mr-2" /> Re-importar {stats.totalClients} Clientes ({stats.totalHonorarios} parcelas)</>
+                  ) : (
+                    <><Upload className="h-4 w-4 mr-2" /> Importar {stats.totalClients} Clientes ({stats.totalHonorarios} parcelas)</>
+                  )}
+                </Button>
+                {honorariosSessionId && (
+                  <Button variant="outline" size="lg" onClick={() => handleClearSession("honorarios")} disabled={isImporting} title="Limpar sessão e ficheiro">
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
                 )}
-              </Button>
+              </div>
             </div>
           )}
 
