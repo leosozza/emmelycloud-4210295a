@@ -4611,12 +4611,12 @@ function CarteiraAccessView({ integration, memberId }: { integration: any; membe
               </thead>
               <tbody>
                 {filtered.map((cf) => {
-                  const isExpanded = expandedId === cf.client.id;
+                  const isExpanded = !!expandedDetail[cf.client.id];
                   return (
                     <Fragment key={cf.client.id}>
                       <tr
                         className="border-b hover:bg-muted/30 cursor-pointer transition-colors"
-                        onClick={() => setExpandedId(isExpanded ? null : cf.client.id)}
+                        onClick={() => handleExpandToggle(cf.client.id)}
                       >
                         <td className="p-3 font-medium text-foreground">
                           <div className="flex items-center gap-2">
