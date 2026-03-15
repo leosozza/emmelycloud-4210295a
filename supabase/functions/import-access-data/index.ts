@@ -629,15 +629,13 @@ serve(async (req) => {
         });
       }
 
-      const processed = batch_start + batch.length;
       return new Response(JSON.stringify({
         success: true,
         mode: "list_sync_clients",
         clients: clientsList,
-        processed,
+        processed: total,
         total,
-        has_more: processed < total,
-        next_batch_start: processed < total ? processed : null,
+        has_more: false,
       }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
