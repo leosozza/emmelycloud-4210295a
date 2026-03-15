@@ -14,6 +14,11 @@ import { Plus, Search, Pencil, Trash2, FileSignature, Ban, Link2, Copy, Download
 import { useToast } from "@/hooks/use-toast";
 import { Tables, Constants } from "@/integrations/supabase/types";
 import { ContratoForm } from "@/components/contratos/ContratoForm";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { Textarea } from "@/components/ui/textarea";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { format, parseISO } from "date-fns";
 import { PageHeader } from "@/components/PageHeader";
 import { EntityBreadcrumb } from "@/components/EntityBreadcrumb";
