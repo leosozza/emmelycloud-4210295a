@@ -436,12 +436,11 @@ serve(async (req) => {
             return res.json();
           };
 
-          // Batch load ALL deals with UF_CRM_1768312831 (access ID)
+           // Batch load ALL deals (not just those with access ID)
           try {
             let start = 0;
             while (true) {
               const res = await bitrixCall("crm.deal.list", {
-                filter: { "!UF_CRM_1768312831": "" },
                 select: ["ID", "CONTACT_ID", "UF_CRM_1768312831", "UF_CRM_EMMELY_NIF"],
                 start,
               });
@@ -451,6 +450,10 @@ serve(async (req) => {
                 }
                 if (deal.UF_CRM_EMMELY_NIF) {
                   bitrixDealsByNif[deal.UF_CRM_EMMELY_NIF] = { dealId: deal.ID, contactId: deal.CONTACT_ID || null };
+                }
+                // Index by contact ID to resolve deals from contact matches
+                if (deal.CONTACT_ID) {
+                  bitrixDealsByContactId[deal.CONTACT_ID] = deal.ID;
                 }
               }
               if (!res.next) break;
