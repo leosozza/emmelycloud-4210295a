@@ -4558,6 +4558,50 @@ function CarteiraAccessView({ integration, memberId, cachedPortfolio }: { integr
   const [baixaForm, setBaixaForm] = useState({ paidAmount: 0, paymentDate: new Date(), paymentMethod: "transferencia", proofFile: null as File | null });
   const [baixaSaving, setBaixaSaving] = useState(false);
 
+  // Cancel contract state
+  const [cancelTarget, setCancelTarget] = useState<{ contractId: string; clientId: string } | null>(null);
+  const [cancelReason, setCancelReason] = useState("desistencia");
+  const [cancelHasRefund, setCancelHasRefund] = useState(false);
+  const [cancelRefundAmount, setCancelRefundAmount] = useState(0);
+  const [cancelNotes, setCancelNotes] = useState("");
+  const [cancelSaving, setCancelSaving] = useState(false);
+
+  const openCancelContractModal = (contractId: string, clientId: string) => {
+    setCancelTarget({ contractId, clientId });
+    setCancelReason("desistencia");
+    setCancelHasRefund(false);
+    setCancelRefundAmount(0);
+    setCancelNotes("");
+  };
+
+  const handleCancelContractConfirm = async () => {
+    if (!cancelTarget) return;
+    setCancelSaving(true);
+    const reasonLabels: Record<string, string> = {
+      desistencia: "Desistência do cliente", incumprimento: "Incumprimento",
+      acordo_mutuo: "Acordo mútuo", erro_admin: "Erro administrativo", outro: "Outro",
+    };
+    const fullReason = `${reasonLabels[cancelReason] || cancelReason}${cancelNotes ? ` — ${cancelNotes}` : ""}`;
+    try {
+      const { error } = await supabase.from("contracts").update({
+        status: "cancelado" as any,
+        cancelled_at: new Date().toISOString(),
+        cancel_reason: fullReason,
+        refund_amount: cancelHasRefund ? cancelRefundAmount : 0,
+      } as any).eq("id", cancelTarget.contractId);
+      if (error) throw error;
+      // Refresh detail
+      setExpandedDetail((prev) => { const copy = { ...prev }; delete copy[cancelTarget.clientId]; return copy; });
+      await fetchClientDetail(cancelTarget.clientId);
+      await fetchAll();
+      setCancelTarget(null);
+    } catch (e) {
+      console.error("[Carteira] Cancel error:", e);
+    } finally {
+      setCancelSaving(false);
+    }
+  };
+
   const handleExpandToggle = (clientId: string) => {
     if (expandedClientId === clientId) {
       setExpandedClientId(null);
