@@ -461,10 +461,13 @@ function DashboardView({ integration, botId, domain }: {
           fetch(`${SUPABASE_URL}/rest/v1/payment_transactions?select=amount&status=eq.pending&created_at=gte.${startISO}&created_at=lte.${endISO}`, { headers }).then(r => r.json()),
           fetch(`${SUPABASE_URL}/rest/v1/payment_transactions?select=amount&status=eq.overdue&created_at=gte.${startISO}&created_at=lte.${endISO}`, { headers }).then(r => r.json()),
         ]);
+        const ptPaidChart = (paidAll || []).reduce((s: number, t: any) => s + Number(t.amount), 0);
+        const ptPendChart = (pendAll || []).reduce((s: number, t: any) => s + Number(t.amount), 0);
+        const ptOverdueChart = (overdueAll || []).reduce((s: number, t: any) => s + Number(t.amount), 0);
         setPaymentChart([
-          { status: "Pago", amount: (paidAll || []).reduce((s: number, t: any) => s + Number(t.amount), 0) },
-          { status: "Pendente", amount: (pendAll || []).reduce((s: number, t: any) => s + Number(t.amount), 0) },
-          { status: "Atrasado", amount: (overdueAll || []).reduce((s: number, t: any) => s + Number(t.amount), 0) },
+          { status: "Pago", amount: ptPaidChart + (portfolioRes?.totals?.paid ?? 0) },
+          { status: "Pendente", amount: ptPendChart + (portfolioRes?.totals?.pending ?? 0) },
+          { status: "Atrasado", amount: ptOverdueChart + (portfolioRes?.totals?.overdue ?? 0) },
         ]);
 
         // Ranking: proposals accepted in period grouped by created_by
