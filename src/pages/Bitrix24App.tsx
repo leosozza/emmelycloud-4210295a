@@ -4248,7 +4248,8 @@ function CarteiraAccessView({ integration, memberId }: { integration: any; membe
   const [clientsData, setClientsData] = useState<ClientFinancials[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
-  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [expandedDetail, setExpandedDetail] = useState<Record<string, any[]>>({});
+  const [loadingDetail, setLoadingDetail] = useState<string | null>(null);
   const [bitrixModalClient, setBitrixModalClient] = useState<ClientFinancials | null>(null);
   const [bitrixDeals, setBitrixDeals] = useState<any[]>([]);
   const [bitrixUsers, setBitrixUsers] = useState<Record<string, string>>({});
