@@ -2727,7 +2727,7 @@ function RelatoriosView() {
   useEffect(() => {
     setLoading(true);
     fetch(
-      `${SUPABASE_URL}/rest/v1/payment_transactions?select=*,clients(name),companies(name)&order=created_at.desc&limit=1000`,
+      `${SUPABASE_URL}/rest/v1/financial_records?select=id,installment_value,total_value,status,payment_method,due_date,paid_at,created_at,contract_id,description&order=paid_at.desc.nullslast&limit=1000`,
       { headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` } }
     )
       .then((r) => r.json())
