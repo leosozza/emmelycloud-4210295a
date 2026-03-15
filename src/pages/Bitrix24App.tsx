@@ -5439,12 +5439,15 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
 
   const [pipelinesFeedback, setPipelinesFeedback] = useState<string>("");
 
+   // Resolved member ID: fallback to integration.member_id
+  const resolvedMemberId = memberId || integration?.member_id || null;
+
   // Load pipelines when integration available
   useEffect(() => {
-    if (!memberId || !integration) return;
+    if (!resolvedMemberId || !integration) return;
     setLoadingPipelines(true);
     setPipelinesFeedback("");
-    fetch(`${SUPABASE_URL}/functions/v1/bitrix24-fetch-entities?action=pipelines&entity=deal&member_id=${encodeURIComponent(memberId)}`, {
+    fetch(`${SUPABASE_URL}/functions/v1/bitrix24-fetch-entities?action=pipelines&entity=deal&member_id=${encodeURIComponent(resolvedMemberId)}`, {
       headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` },
     })
       .then(r => r.json())
@@ -5458,7 +5461,7 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
       })
       .catch(console.error)
       .finally(() => setLoadingPipelines(false));
-  }, [memberId, integration]);
+  }, [resolvedMemberId, integration]);
 
   const parseXlsx = async (file: File): Promise<any[]> => {
     const XLSX = await import("xlsx");
