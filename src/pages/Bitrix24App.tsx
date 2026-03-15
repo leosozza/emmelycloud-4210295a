@@ -400,7 +400,6 @@ function DashboardView({ integration, botId, domain, onCachePortfolio }: {
 
   const [stats, setStats] = useState({ conversations: 0, messagesToday: 0, revenueReceived: 0, revenuePending: 0, clientsCount: 0, messagesInPeriod: 0 });
   const [messagesChart, setMessagesChart] = useState<{ day: string; count: number }[]>([]);
-  const [messagesChart, setMessagesChart] = useState<{ day: string; count: number }[]>([]);
   const [paymentChart, setPaymentChart] = useState<{ status: string; amount: number }[]>([]);
   const [recentConversations, setRecentConversations] = useState<any[]>([]);
   const [recentPayments, setRecentPayments] = useState<any[]>([]);
