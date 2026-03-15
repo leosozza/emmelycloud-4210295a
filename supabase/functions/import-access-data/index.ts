@@ -494,17 +494,19 @@ serve(async (req) => {
         }
       }
 
-      // Step 6: Match each client in the batch
+      // Step 6: Match each client in the batch with match_type tracking
       const clientsList: any[] = [];
       for (const info of batch) {
         let bitrix_contact_id: string | null = null;
         let bitrix_deal_id: string | null = null;
+        let match_type: string = "new";
 
         // Match 1: by Access ID
         if (info.access_id && bitrixDealsByAccessId[info.access_id]) {
           const match = bitrixDealsByAccessId[info.access_id];
           bitrix_deal_id = match.dealId;
           bitrix_contact_id = match.contactId;
+          match_type = "access_id";
         }
 
         // Match 2: by NIF
@@ -512,35 +514,49 @@ serve(async (req) => {
           const match = bitrixDealsByNif[info.nif];
           bitrix_deal_id = match.dealId;
           bitrix_contact_id = match.contactId;
+          match_type = "nif";
         }
 
-        // Match 3: by Phone
-        if (!bitrix_deal_id && info.phones.length > 0) {
+        // Match 3: by Phone (contact match → resolve deal)
+        if (!bitrix_deal_id && !bitrix_contact_id && info.phones.length > 0) {
           for (const phone of info.phones) {
             const normalized = phone.replace(/\D/g, "");
-            if (bitrixContactsByPhone[normalized]) {
+            if (normalized && bitrixContactsByPhone[normalized]) {
               bitrix_contact_id = bitrixContactsByPhone[normalized];
+              if (bitrixDealsByContactId[bitrix_contact_id]) {
+                bitrix_deal_id = bitrixDealsByContactId[bitrix_contact_id];
+              }
+              match_type = "phone";
               break;
             }
           }
         }
 
-        // Match 4: by Email
+        // Match 4: by Email (contact match → resolve deal)
         if (!bitrix_contact_id && info.emails.length > 0) {
           for (const email of info.emails) {
             const norm = email.toLowerCase();
-            if (bitrixContactsByEmail[norm]) {
+            if (norm && bitrixContactsByEmail[norm]) {
               bitrix_contact_id = bitrixContactsByEmail[norm];
+              if (!bitrix_deal_id && bitrixDealsByContactId[bitrix_contact_id]) {
+                bitrix_deal_id = bitrixDealsByContactId[bitrix_contact_id];
+              }
+              match_type = "email";
               break;
             }
           }
         }
 
-        // Match 5: by Full Name
+        // Match 5: by Full Name (only if name has at least 2 words = name + surname)
         if (!bitrix_contact_id && info.name) {
           const nameUpper = info.name.toUpperCase().trim();
-          if (bitrixContactsByName[nameUpper]) {
+          const nameParts = nameUpper.split(/\s+/).filter(Boolean);
+          if (nameParts.length >= 2 && bitrixContactsByName[nameUpper]) {
             bitrix_contact_id = bitrixContactsByName[nameUpper];
+            if (!bitrix_deal_id && bitrixDealsByContactId[bitrix_contact_id]) {
+              bitrix_deal_id = bitrixDealsByContactId[bitrix_contact_id];
+            }
+            match_type = "name";
           }
         }
 
@@ -548,6 +564,7 @@ serve(async (req) => {
           ...info,
           bitrix_contact_id,
           bitrix_deal_id,
+          match_type,
         });
       }
 
