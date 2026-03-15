@@ -647,7 +647,7 @@ function DashboardView({ integration, botId, domain }: {
           { title: "Clientes na Carteira", value: String(stats.clientsCount), icon: Users, accent: "border-l-primary" },
           { title: "Cobranças Recebidas", value: fmtCur(stats.revenueReceived), icon: ArrowDownLeft, accent: "border-l-success" },
           { title: "Cobranças a Receber", value: fmtCur(stats.revenuePending), icon: ArrowUpRight, accent: "border-l-warning" },
-          { title: "Receita Total", value: fmtCur(stats.revenueReceived), icon: DollarSign, accent: "border-l-success" },
+          { title: "Receita Total", value: fmtCur(stats.revenueReceived + stats.revenuePending), icon: DollarSign, accent: "border-l-success" },
           { title: "Conversas Activas", value: String(stats.conversations), icon: MessageSquare, accent: "border-l-primary" },
           { title: "Mensagens Hoje", value: String(stats.messagesToday), icon: Zap, accent: "border-l-warning" },
         ].map((kpi) => (
