@@ -770,8 +770,14 @@ serve(async (req) => {
         };
         if (info.access_id) dealFields.UF_CRM_1768312831 = info.access_id;
         if (contactId) dealFields.CONTACT_ID = contactId;
+        // Set historical contract date (Column F from Access)
+        if (info.contract_date) {
+          dealFields.BEGINDATE = info.contract_date;
+        }
 
         if (dealId) {
+          // Don't overwrite BEGINDATE on existing deals
+          delete dealFields.BEGINDATE;
           await bitrixCall("crm.deal.update", { id: dealId, fields: dealFields });
           results.push(`Deal ${dealId} actualizado`);
         } else {
