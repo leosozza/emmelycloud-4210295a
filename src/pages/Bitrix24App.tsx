@@ -4830,11 +4830,31 @@ function CarteiraAccessView({ integration, memberId, cachedPortfolio }: { integr
                       <p className="text-sm font-semibold text-foreground">{cas.title || lead.name}</p>
                       <p className="text-xs text-muted-foreground">{fmt(svcTotal)} • {svcPaid}/{records.length} pagas</p>
                     </div>
-                    {svcPaid === records.length && records.length > 0 ? (
-                      <Badge className="bg-emerald-500/10 text-emerald-500 border-emerald-500/20 text-[10px]">✓ Quitado</Badge>
-                    ) : (
-                      <Badge className="bg-amber-500/10 text-amber-500 border-amber-500/20 text-[10px]">Em aberto</Badge>
-                    )}
+                    <div className="flex items-center gap-2">
+                      {contracts.some((ct: any) => ct.status === "cancelado") ? (
+                        <Badge className="bg-destructive/10 text-destructive border-destructive/20 text-[10px]">Cancelado</Badge>
+                      ) : svcPaid === records.length && records.length > 0 ? (
+                        <Badge className="bg-emerald-500/10 text-emerald-500 border-emerald-500/20 text-[10px]">✓ Quitado</Badge>
+                      ) : (
+                        <>
+                          <Badge className="bg-amber-500/10 text-amber-500 border-amber-500/20 text-[10px]">Em aberto</Badge>
+                          {contracts.length > 0 && contracts[0].status === "pendente" && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="h-5 px-2 text-[10px] gap-1 text-destructive border-destructive/30 hover:bg-destructive/10"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                openCancelContractModal(contracts[0].id, clientId);
+                              }}
+                            >
+                              <Ban className="h-3 w-3" />
+                              Cancelar
+                            </Button>
+                          )}
+                        </>
+                      )}
+                    </div>
                   </div>
                   {records.length > 0 && (
                     <div className="mt-2 space-y-1">
