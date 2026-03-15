@@ -5837,23 +5837,71 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
     setSyncLoadProgress({ processed: 0, total: 0 });
 
     try {
-      const res = await fetch(`${SUPABASE_URL}/functions/v1/import-access-data`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          apikey: SUPABASE_KEY,
-          Authorization: `Bearer ${SUPABASE_KEY}`,
-        },
-        body: JSON.stringify({
-          clientes: [],
-          mode: "list_sync_clients",
-          member_id: resolvedMemberId,
-        }),
-      });
-      const data = await res.json();
-      if (data.success && data.clients) {
-        setSyncClients(data.clients);
-        setSyncLoadProgress({ processed: data.total || data.clients.length, total: data.total || data.clients.length });
+      let allClients: SyncClient[] = [];
+      let hasMore = true;
+      let batchStart = 0;
+
+      while (hasMore) {
+        const res = await fetch(`${SUPABASE_URL}/functions/v1/import-access-data`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            apikey: SUPABASE_KEY,
+            Authorization: `Bearer ${SUPABASE_KEY}`,
+          },
+          body: JSON.stringify({
+            clientes: [],
+            mode: "list_sync_clients",
+            member_id: resolvedMemberId,
+            ...(batchStart > 0 ? { batch_start: batchStart } : {}),
+          }),
+        });
+
+        if (!res.ok) {
+          console.error("[loadSyncClients] HTTP error:", res.status);
+          break;
+        }
+
+        const data = await res.json();
+        if (!data.success) {
+          console.error("[loadSyncClients] API error:", data.error);
+          break;
+        }
+
+        if (data.clients?.length) {
+          // Deduplicate by client_id
+          const existingIds = new Set(allClients.map(c => c.client_id));
+          const newOnes = data.clients.filter((c: SyncClient) => !existingIds.has(c.client_id));
+          allClients = [...allClients, ...newOnes];
+          setSyncLoadProgress({ processed: allClients.length, total: data.total || allClients.length });
+        }
+
+        // Support both old (paginated) and new (single response) API
+        hasMore = !!data.has_more;
+        if (data.next_batch_start != null) {
+          batchStart = data.next_batch_start;
+        } else {
+          hasMore = false;
+        }
+      }
+
+      setSyncClients(allClients);
+      setSyncLoadProgress({ processed: allClients.length, total: allClients.length });
+
+      // Auto-select segment and tab that have data
+      if (allClients.length > 0) {
+        const existing = allClients.filter(c => !!c.bitrix_deal_id);
+        const newOnes = allClients.filter(c => !c.bitrix_deal_id);
+        const bestSegment = existing.length > 0 ? "existing" : "new";
+        setSyncSegment(bestSegment);
+
+        const segData = bestSegment === "existing" ? existing : newOnes;
+        const atrasado = segData.filter(c => c.status_class === "atrasado").length;
+        const aberto = segData.filter(c => c.status_class === "aberto").length;
+        const quitado = segData.filter(c => c.status_class === "quitado").length;
+        if (atrasado > 0) setActiveTab("atrasado");
+        else if (aberto > 0) setActiveTab("aberto");
+        else if (quitado > 0) setActiveTab("quitado");
       }
     } catch (e) {
       console.error("[loadSyncClients]", e);
