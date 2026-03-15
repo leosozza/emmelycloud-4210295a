@@ -5143,23 +5143,27 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
 
   const handleImportHonorarios = async () => {
     if (!filteredHonorarios || filteredHonorarios.length === 0) return;
+
+    const totalClients = filteredClientes?.length || 0;
+    if (totalClients === 0) return;
+
     setImportingHonorarios(true);
-    setHonorariosLogs([]);
     setHonorariosDone(false);
 
     const batchSize = 10;
     let batchStart = honorariosSessionId && honorariosProgress.processed > 0 ? honorariosProgress.processed : 0;
     const allLogs: any[] = batchStart > 0 ? [...honorariosLogs] : [];
+    let consecutiveErrors = 0;
 
     // Update session filter config
     if (honorariosSessionId) {
       await supabase.from("import_sessions" as any).update({
         filter_config: { dateFrom: filterDateFrom?.toISOString(), dateTo: filterDateTo?.toISOString(), status: filterStatus } as any,
-        total_items: filteredClientes?.length || 0,
+        total_items: totalClients,
       } as any).eq("id", honorariosSessionId);
     }
 
-    while (batchStart < (filteredClientes?.length || 0)) {
+    while (batchStart < totalClients) {
       try {
         const res = await fetch(`${SUPABASE_URL}/functions/v1/import-access-data`, {
           method: "POST",
@@ -5176,34 +5180,56 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
             batch_size: batchSize,
           }),
         });
+
+        if (!res.ok) {
+          throw new Error(`HTTP ${res.status}`);
+        }
+
         const data = await res.json();
         if (data.results) {
           allLogs.push(...data.results);
           setHonorariosLogs([...allLogs]);
         }
-        const processed = data.processed || batchStart + batchSize;
-        setHonorariosProgress({ processed, total: filteredClientes?.length || 0 });
 
-        // Checkpoint
+        const processed = typeof data.processed === "number" ? data.processed : batchStart + batchSize;
+        setHonorariosProgress({ processed, total: totalClients });
+
         if (honorariosSessionId) {
           await saveSessionProgress(honorariosSessionId, processed, allLogs);
         }
 
-        if (!data.has_more) break;
-        batchStart = data.next_batch_start;
+        consecutiveErrors = 0;
+
+        if (!data.has_more || processed >= totalClients) {
+          batchStart = totalClients;
+          break;
+        }
+
+        const nextBatchStart = typeof data.next_batch_start === "number" ? data.next_batch_start : processed;
+        batchStart = nextBatchStart > batchStart ? nextBatchStart : batchStart + batchSize;
       } catch (e) {
-        const errLog = { client_name: `Batch ${batchStart}`, status: "error", error: String(e) };
+        consecutiveErrors += 1;
+        const errLog = {
+          client_name: `Batch ${batchStart}`,
+          status: "error",
+          error: `Tentativa ${consecutiveErrors}: ${String(e)}`,
+        };
         allLogs.push(errLog);
         setHonorariosLogs([...allLogs]);
+
         if (honorariosSessionId) {
           await saveSessionProgress(honorariosSessionId, batchStart, allLogs);
         }
-        break;
+
+        const waitMs = Math.min(15000, 1500 * consecutiveErrors);
+        await new Promise((resolve) => setTimeout(resolve, waitMs));
       }
     }
-    setHonorariosDone(true);
+
+    const completed = batchStart >= totalClients;
+    setHonorariosDone(completed);
     setImportingHonorarios(false);
-    if (honorariosSessionId) await markSessionDone(honorariosSessionId);
+    if (honorariosSessionId && completed) await markSessionDone(honorariosSessionId);
   };
 
   // ── Clear session helper ──
