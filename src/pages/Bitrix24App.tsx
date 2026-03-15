@@ -5156,7 +5156,7 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
         .from("import_sessions" as any)
         .select("*")
         .eq("user_id", user.id)
-        .eq("status", "in_progress") as any;
+        .in("status", ["in_progress", "done"]) as any;
 
       if (!sessions || sessions.length === 0) return;
 
@@ -5164,6 +5164,31 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
       let shouldAutoResumeHonorarios = false;
 
       for (const session of sessions as any[]) {
+        // For completed sessions, just restore the visual state without re-downloading
+        if (session.status === "done") {
+          const savedLogs = Array.isArray(session.logs) ? session.logs : [];
+          const totalItems = session.total_items || 0;
+          if (session.phase === "clients") {
+            setClientsSessionId(session.id);
+            setClientsLogs(savedLogs);
+            setClientsProgress({ processed: totalItems, total: totalItems });
+            setClientsDone(true);
+          } else if (session.phase === "honorarios") {
+            setHonorariosSessionId(session.id);
+            setHonorariosLogs(savedLogs);
+            setHonorariosProgress({ processed: totalItems, total: totalItems });
+            setHonorariosDone(true);
+            if (session.filter_config) {
+              const fc = session.filter_config as any;
+              if (fc.dateFrom) setFilterDateFrom(new Date(fc.dateFrom));
+              if (fc.dateTo) setFilterDateTo(new Date(fc.dateTo));
+              if (fc.status) setFilterStatus(fc.status);
+            }
+          }
+          continue;
+        }
+
+        // For in_progress sessions, download and resume
         if (!session.file_path) continue;
         setResumingPhase(session.phase);
 
