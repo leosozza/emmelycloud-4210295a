@@ -892,7 +892,8 @@ serve(async (req) => {
           if (contactId) invoiceFields.contactId = contactId;
           if (fr.due_date) {
             invoiceFields.begindate = fr.due_date;
-            invoiceFields.closedate = fr.due_date;
+            // Use paid_at (Column P - DATAPAGTO) as closedate for paid invoices
+            invoiceFields.closedate = (isPaid && fr.paid_at) ? fr.paid_at.split("T")[0] : fr.due_date;
           }
 
           const existingRes = await bitrixCall("crm.item.list", {
