@@ -514,9 +514,19 @@ function DashboardView({ integration, botId, domain }: {
   const MEDALS = ["🥇", "🥈", "🥉"];
 
   const handlePreset = (label: string) => {
-    setPeriod(label);
     setCustomStart(undefined);
     setCustomEnd(undefined);
+    setShowMonthPicker(false);
+    setShowYearPicker(false);
+    if (label === "Mês") {
+      setPeriod(label);
+      setShowMonthPicker(true);
+    } else if (label === "Ano") {
+      setPeriod(label);
+      setShowYearPicker(true);
+    } else {
+      setPeriod(label);
+    }
   };
 
   return (
