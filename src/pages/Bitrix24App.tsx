@@ -4605,7 +4605,7 @@ function CarteiraAccessView({ integration, memberId }: { integration: any; membe
               </thead>
               <tbody>
                 {filtered.map((cf) => {
-                  const isExpanded = !!expandedDetail[cf.client.id];
+                  const isExpanded = expandedClientId === cf.client.id;
                   return (
                     <Fragment key={cf.client.id}>
                       <tr
