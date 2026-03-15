@@ -5008,13 +5008,12 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
   const handleImportClients = async () => {
     if (!validClients || validClients.length === 0) return;
     setImportingClients(true);
-    setClientsLogs([]);
     setClientsDone(false);
 
     const batchSize = 10;
-    // Resume from saved progress
     let batchStart = clientsSessionId && clientsProgress.processed > 0 ? clientsProgress.processed : 0;
     const allLogs: any[] = batchStart > 0 ? [...clientsLogs] : [];
+    let consecutiveErrors = 0;
 
     while (batchStart < validClients.length) {
       try {
@@ -5032,34 +5031,56 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
             batch_size: batchSize,
           }),
         });
+
+        if (!res.ok) {
+          throw new Error(`HTTP ${res.status}`);
+        }
+
         const data = await res.json();
         if (data.results) {
           allLogs.push(...data.results);
           setClientsLogs([...allLogs]);
         }
-        const processed = data.processed || batchStart + batchSize;
+
+        const processed = typeof data.processed === "number" ? data.processed : batchStart + batchSize;
         setClientsProgress({ processed, total: validClients.length });
 
-        // Checkpoint to database
         if (clientsSessionId) {
           await saveSessionProgress(clientsSessionId, processed, allLogs);
         }
 
-        if (!data.has_more) break;
-        batchStart = data.next_batch_start;
+        consecutiveErrors = 0;
+
+        if (!data.has_more || processed >= validClients.length) {
+          batchStart = validClients.length;
+          break;
+        }
+
+        const nextBatchStart = typeof data.next_batch_start === "number" ? data.next_batch_start : processed;
+        batchStart = nextBatchStart > batchStart ? nextBatchStart : batchStart + batchSize;
       } catch (e) {
-        const errLog = { client_name: `Batch ${batchStart}`, status: "error", error: String(e) };
+        consecutiveErrors += 1;
+        const errLog = {
+          client_name: `Batch ${batchStart}`,
+          status: "error",
+          error: `Tentativa ${consecutiveErrors}: ${String(e)}`,
+        };
         allLogs.push(errLog);
         setClientsLogs([...allLogs]);
+
         if (clientsSessionId) {
           await saveSessionProgress(clientsSessionId, batchStart, allLogs);
         }
-        break;
+
+        const waitMs = Math.min(15000, 1500 * consecutiveErrors);
+        await new Promise((resolve) => setTimeout(resolve, waitMs));
       }
     }
-    setClientsDone(true);
+
+    const completed = batchStart >= validClients.length;
+    setClientsDone(completed);
     setImportingClients(false);
-    if (clientsSessionId) await markSessionDone(clientsSessionId);
+    if (clientsSessionId && completed) await markSessionDone(clientsSessionId);
   };
 
   // ── Phase 2: Filtered honorarios ──
