@@ -53,6 +53,7 @@ import { AgentFormDialog } from "@/components/agentes/AgentFormDialog";
 import { Switch } from "@/components/ui/switch";
 import { Slider } from "@/components/ui/slider";
 import { Separator } from "@/components/ui/separator";
+import { Progress } from "@/components/ui/progress";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { ChatBubble, ChatBubbleAvatar, ChatBubbleMessage, ChatBubbleAction, ChatBubbleActionWrapper } from "@/components/ui/chat-bubble";
@@ -5434,17 +5435,24 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
     resumeSessions();
   }, []);
 
+  const [pipelinesFeedback, setPipelinesFeedback] = useState<string>("");
+
   // Load pipelines when integration available
   useEffect(() => {
     if (!memberId || !integration) return;
     setLoadingPipelines(true);
+    setPipelinesFeedback("");
     fetch(`${SUPABASE_URL}/functions/v1/bitrix24-fetch-entities?action=pipelines&entity=deal&member_id=${encodeURIComponent(memberId)}`, {
       headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` },
     })
       .then(r => r.json())
       .then(data => {
         const list = data.pipelines || [];
-        if (Array.isArray(list)) setPipelines(list);
+        if (Array.isArray(list)) {
+          setPipelines(list);
+          const extra = list.filter((p: any) => p.id !== "0" && p.id !== "C0").length;
+          setPipelinesFeedback(extra > 0 ? `${extra + 1} pipelines encontradas` : "Apenas o Pipeline Geral encontrado no Bitrix24");
+        }
       })
       .catch(console.error)
       .finally(() => setLoadingPipelines(false));
@@ -5814,13 +5822,16 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
   };
 
   // ── Phase 3: Load clients for sync ──
+  const [syncLoadProgress, setSyncLoadProgress] = useState({ processed: 0, total: 0 });
+
   const handleLoadSyncClients = async () => {
     setLoadingSyncClients(true);
     setSyncClients([]);
     setSyncClientsLoaded(false);
+    setSyncLoadProgress({ processed: 0, total: 0 });
 
     let batchStart = 0;
-    const batchSize = 20;
+    const batchSize = 50; // Larger batches since matching is now server-side in-memory
     const allClients: SyncClient[] = [];
 
     while (true) {
@@ -5843,6 +5854,8 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
         const data = await res.json();
         if (!data.success) break;
         if (data.clients) allClients.push(...data.clients);
+        setSyncLoadProgress({ processed: data.processed || allClients.length, total: data.total || 0 });
+        setSyncClients([...allClients]); // Update progressively
         if (!data.has_more) break;
         batchStart = data.next_batch_start;
       } catch (e) {
@@ -6260,18 +6273,31 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
                     ))}
                   </SelectContent>
                 </Select>
+                {pipelinesFeedback && !loadingPipelines && (
+                  <p className="text-xs text-muted-foreground">ℹ️ {pipelinesFeedback}</p>
+                )}
               </div>
 
               {/* Load clients button */}
               <Button onClick={handleLoadSyncClients} disabled={isImporting} className="w-full" size="lg" variant="outline">
                 {loadingSyncClients ? (
-                  <><Loader2 className="h-4 w-4 animate-spin mr-2" /> Carregando clientes...</>
+                  <><Loader2 className="h-4 w-4 animate-spin mr-2" /> Carregando clientes... {syncLoadProgress.total > 0 ? `(${syncLoadProgress.processed}/${syncLoadProgress.total})` : ""}</>
                 ) : syncClientsLoaded ? (
                   <><RefreshCw className="h-4 w-4 mr-2" /> Recarregar ({syncClients.length} clientes)</>
                 ) : (
                   <><Users className="h-4 w-4 mr-2" /> Carregar Clientes para Sincronização</>
                 )}
               </Button>
+
+              {/* Loading progress bar */}
+              {loadingSyncClients && syncLoadProgress.total > 0 && (
+                <div className="space-y-1">
+                  <Progress value={Math.round((syncLoadProgress.processed / syncLoadProgress.total) * 100)} className="h-2" />
+                  <p className="text-xs text-muted-foreground text-center">
+                    {syncLoadProgress.processed} / {syncLoadProgress.total} clientes carregados ({syncClients.length} com dados financeiros)
+                  </p>
+                </div>
+              )}
 
               {/* Tabs + Client list */}
               {syncClientsLoaded && syncClients.length > 0 && (
