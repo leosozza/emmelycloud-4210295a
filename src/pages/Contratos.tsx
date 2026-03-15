@@ -261,7 +261,23 @@ const ContratosPage = () => {
                   ) : "—"}
                 </TableCell>
                 <TableCell>
-                  <Badge className={`text-xs ${statusColors[c.status]}`}>{statusLabels[c.status]}</Badge>
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <div>
+                          <Badge className={`text-xs ${statusColors[c.status]}`}>{statusLabels[c.status]}</Badge>
+                          {c.status === "cancelado" && (c as any).refund_amount > 0 && (
+                            <Badge variant="outline" className="text-[10px] ml-1">Devolvido: €{(c as any).refund_amount}</Badge>
+                          )}
+                        </div>
+                      </TooltipTrigger>
+                      {c.status === "cancelado" && (c as any).cancel_reason && (
+                        <TooltipContent>
+                          <p className="text-xs">{(c as any).cancel_reason}</p>
+                        </TooltipContent>
+                      )}
+                    </Tooltip>
+                  </TooltipProvider>
                 </TableCell>
                 <TableCell className="text-xs text-muted-foreground">{fmtDate(c.starts_at)}</TableCell>
                 <TableCell className="text-xs text-muted-foreground">{fmtDate(c.expires_at)}</TableCell>
