@@ -417,34 +417,41 @@ function DashboardView({ integration, botId, domain, onCachePortfolio }: {
       try {
         const mid = integration?.member_id;
         const memberParam = mid ? `?member_id=${encodeURIComponent(mid)}` : "";
-        const [convRes, msgTodayRes, revenueRes, pendingRes, recentConvRes, recentPayRes, portfolioRes] = await Promise.all([
+        const [convRes, msgTodayRes, recentConvRes, portfolioRes] = await Promise.all([
           fetch(`${SUPABASE_URL}/rest/v1/conversations?select=id&status=in.(aberta,em_atendimento)`, { headers }).then(r => r.json()),
           fetch(`${SUPABASE_URL}/rest/v1/messages?select=id&created_at=gte.${today}T00:00:00`, { headers }).then(r => r.json()),
-          fetch(`${SUPABASE_URL}/rest/v1/payment_transactions?select=amount&status=in.(confirmed,paid)&created_at=gte.${startISO}&created_at=lte.${endISO}`, { headers }).then(r => r.json()),
-          fetch(`${SUPABASE_URL}/rest/v1/payment_transactions?select=amount&status=eq.pending&created_at=gte.${startISO}&created_at=lte.${endISO}`, { headers }).then(r => r.json()),
           fetch(`${SUPABASE_URL}/rest/v1/conversations?select=id,contact_name,channel,status,last_message_preview,last_message_at&order=last_message_at.desc&limit=5`, { headers }).then(r => r.json()),
-          fetch(`${SUPABASE_URL}/rest/v1/payment_transactions?select=id,amount,currency,status,gateway,created_at&order=created_at.desc&limit=5`, { headers }).then(r => r.json()),
           fetch(`${SUPABASE_URL}/functions/v1/bitrix24-fetch-portfolio${memberParam}`, { headers }).then(r => r.json()),
         ]);
 
         onCachePortfolio?.(portfolioRes);
         const clientsTotal = portfolioRes?.meta?.clientCount ?? (Array.isArray(portfolioRes?.clients) ? portfolioRes.clients.length : 0);
 
-        const ptReceived = (revenueRes || []).reduce((s: number, t: any) => s + Number(t.amount), 0);
-        const ptPending = (pendingRes || []).reduce((s: number, t: any) => s + Number(t.amount), 0);
-        const portfolioPaid = portfolioRes?.totals?.paid ?? 0;
-        const portfolioPending = (portfolioRes?.totals?.pending ?? 0) + (portfolioRes?.totals?.overdue ?? 0);
+        // Financial data from financial_records (imported Access data)
+        const startDateOnly = startISO.split("T")[0];
+        const endDateOnly = endISO.split("T")[0];
+
+        const [paidRes, pendingRes, overdueRes, recentFinRes] = await Promise.all([
+          fetch(`${SUPABASE_URL}/rest/v1/financial_records?select=installment_value&status=eq.paga&paid_at=gte.${startISO}&paid_at=lte.${endISO}`, { headers }).then(r => r.json()),
+          fetch(`${SUPABASE_URL}/rest/v1/financial_records?select=installment_value&status=eq.pendente&due_date=gte.${startDateOnly}&due_date=lte.${endDateOnly}`, { headers }).then(r => r.json()),
+          fetch(`${SUPABASE_URL}/rest/v1/financial_records?select=installment_value&status=eq.atrasada&due_date=lte.${endDateOnly}`, { headers }).then(r => r.json()),
+          fetch(`${SUPABASE_URL}/rest/v1/financial_records?select=id,installment_value,status,payment_method,due_date,paid_at,created_at&order=paid_at.desc.nullslast&limit=5`, { headers }).then(r => r.json()),
+        ]);
+
+        const ptReceived = (paidRes || []).reduce((s: number, t: any) => s + Number(t.installment_value || 0), 0);
+        const ptPending = (pendingRes || []).reduce((s: number, t: any) => s + Number(t.installment_value || 0), 0);
+        const ptOverdue = (overdueRes || []).reduce((s: number, t: any) => s + Number(t.installment_value || 0), 0);
 
         setStats({
           conversations: Array.isArray(convRes) ? convRes.length : 0,
           messagesToday: Array.isArray(msgTodayRes) ? msgTodayRes.length : 0,
-          revenueReceived: ptReceived + portfolioPaid,
-          revenuePending: ptPending + portfolioPending,
+          revenueReceived: ptReceived,
+          revenuePending: ptPending + ptOverdue,
           clientsCount: clientsTotal,
           messagesInPeriod: Array.isArray(msgTodayRes) ? msgTodayRes.length : 0,
         });
         setRecentConversations(Array.isArray(recentConvRes) ? recentConvRes : []);
-        setRecentPayments(Array.isArray(recentPayRes) ? recentPayRes : []);
+        setRecentPayments(Array.isArray(recentFinRes) ? recentFinRes : []);
 
         // Messages per day (last 7 days)
         const days: { day: string; count: number }[] = [];
@@ -460,19 +467,11 @@ function DashboardView({ integration, botId, domain, onCachePortfolio }: {
         }
         setMessagesChart(days);
 
-        // Payment totals by status (in period)
-        const [paidAll, pendAll, overdueAll] = await Promise.all([
-          fetch(`${SUPABASE_URL}/rest/v1/payment_transactions?select=amount&status=in.(confirmed,paid)&created_at=gte.${startISO}&created_at=lte.${endISO}`, { headers }).then(r => r.json()),
-          fetch(`${SUPABASE_URL}/rest/v1/payment_transactions?select=amount&status=eq.pending&created_at=gte.${startISO}&created_at=lte.${endISO}`, { headers }).then(r => r.json()),
-          fetch(`${SUPABASE_URL}/rest/v1/payment_transactions?select=amount&status=eq.overdue&created_at=gte.${startISO}&created_at=lte.${endISO}`, { headers }).then(r => r.json()),
-        ]);
-        const ptPaidChart = (paidAll || []).reduce((s: number, t: any) => s + Number(t.amount), 0);
-        const ptPendChart = (pendAll || []).reduce((s: number, t: any) => s + Number(t.amount), 0);
-        const ptOverdueChart = (overdueAll || []).reduce((s: number, t: any) => s + Number(t.amount), 0);
+        // Payment chart by status (from financial_records)
         setPaymentChart([
-          { status: "Pago", amount: ptPaidChart + (portfolioRes?.totals?.paid ?? 0) },
-          { status: "Pendente", amount: ptPendChart + (portfolioRes?.totals?.pending ?? 0) },
-          { status: "Atrasado", amount: ptOverdueChart + (portfolioRes?.totals?.overdue ?? 0) },
+          { status: "Pago", amount: ptReceived },
+          { status: "Pendente", amount: ptPending },
+          { status: "Atrasado", amount: ptOverdue },
         ]);
 
         // Ranking: proposals accepted in period grouped by created_by
