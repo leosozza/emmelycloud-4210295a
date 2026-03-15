@@ -4539,6 +4539,7 @@ function CarteiraAccessView({ integration, memberId }: { integration: any; membe
   };
 
   const [expandedClientId, setExpandedClientId] = useState<string | null>(null);
+  const [markingPaidId, setMarkingPaidId] = useState<string | null>(null);
 
   const handleExpandToggle = (clientId: string) => {
     if (expandedClientId === clientId) {
@@ -4548,6 +4549,30 @@ function CarteiraAccessView({ integration, memberId }: { integration: any; membe
     setExpandedClientId(clientId);
     if (!expandedDetail[clientId]) {
       fetchClientDetail(clientId);
+    }
+  };
+
+  const handleBaixaParcela = async (fr: any, clientId: string) => {
+    setMarkingPaidId(fr.id);
+    try {
+      const { error } = await supabase
+        .from("financial_records")
+        .update({ status: "paga", paid_at: new Date().toISOString() })
+        .eq("id", fr.id);
+      if (error) throw error;
+      // Refresh detail for this client
+      setExpandedDetail((prev) => {
+        const copy = { ...prev };
+        delete copy[clientId];
+        return copy;
+      });
+      await fetchClientDetail(clientId);
+      // Refresh totals
+      await fetchAll();
+    } catch (e) {
+      console.error("[Carteira] Baixa error:", e);
+    } finally {
+      setMarkingPaidId(null);
     }
   };
 
@@ -4611,6 +4636,25 @@ function CarteiraAccessView({ integration, memberId }: { integration: any; membe
                                 <Badge className="bg-red-500/10 text-red-500 border-red-500/20 text-[10px]">🔴 Atrasada</Badge>
                               ) : (
                                 <Badge variant="outline" className="text-[10px]">Pendente</Badge>
+                              )}
+                              {fr.status !== "paga" && (
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className="h-5 px-2 text-[10px] gap-1 ml-auto"
+                                  disabled={markingPaidId === fr.id}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleBaixaParcela(fr, clientId);
+                                  }}
+                                >
+                                  {markingPaidId === fr.id ? (
+                                    <Loader2 className="h-3 w-3 animate-spin" />
+                                  ) : (
+                                    <CheckCircle className="h-3 w-3" />
+                                  )}
+                                  Baixa
+                                </Button>
                               )}
                             </div>
                           );
