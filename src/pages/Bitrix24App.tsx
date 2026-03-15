@@ -4745,6 +4745,8 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
 
   // Resuming state
   const [resumingPhase, setResumingPhase] = useState<string | null>(null);
+  const [autoResumeClientsPending, setAutoResumeClientsPending] = useState(false);
+  const [autoResumeHonorariosPending, setAutoResumeHonorariosPending] = useState(false);
 
   // Phase 3: Interactive Sync
   type SyncClient = {
