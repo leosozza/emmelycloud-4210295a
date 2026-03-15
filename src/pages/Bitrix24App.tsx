@@ -335,16 +335,33 @@ const Bitrix24App = () => {
 
 // ==================== PERIOD HELPERS ====================
 const PERIOD_PRESETS = [
+  { label: "Hoje", days: 0 },
   { label: "7d", days: 7 },
   { label: "30d", days: 30 },
   { label: "Mês", days: 0 },
   { label: "Trim", days: 90 },
-  { label: "Ano", days: 365 },
+  { label: "Ano", days: 0 },
+  { label: "Tudo", days: 0 },
 ];
-function getDateRange(preset: string): { start: Date; end: Date } {
+function getDateRange(preset: string, selectedMonth?: number, selectedYear?: number): { start: Date; end: Date } {
   const now = new Date();
   const end = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59);
-  if (preset === "Mês") return { start: new Date(now.getFullYear(), now.getMonth(), 1), end };
+  if (preset === "Hoje") {
+    const start = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0);
+    return { start, end };
+  }
+  if (preset === "Tudo") {
+    return { start: new Date(2020, 0, 1), end };
+  }
+  if (preset === "Mês") {
+    const m = selectedMonth ?? now.getMonth();
+    const y = selectedYear ?? now.getFullYear();
+    return { start: new Date(y, m, 1), end: new Date(y, m + 1, 0, 23, 59, 59) };
+  }
+  if (preset === "Ano") {
+    const y = selectedYear ?? now.getFullYear();
+    return { start: new Date(y, 0, 1), end: new Date(y, 11, 31, 23, 59, 59) };
+  }
   const p = PERIOD_PRESETS.find((pp) => pp.label === preset);
   const days = p?.days || 30;
   const start = new Date(now);
