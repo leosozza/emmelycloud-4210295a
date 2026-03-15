@@ -1043,6 +1043,8 @@ export type Database = {
       }
       contracts: {
         Row: {
+          cancel_reason: string | null
+          cancelled_at: string | null
           case_id: string | null
           created_at: string
           expires_at: string | null
@@ -1050,6 +1052,7 @@ export type Database = {
           id: string
           notes: string | null
           proposal_id: string
+          refund_amount: number | null
           sign_token: string | null
           signed_at: string | null
           signer_email: string | null
@@ -1060,6 +1063,8 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          cancel_reason?: string | null
+          cancelled_at?: string | null
           case_id?: string | null
           created_at?: string
           expires_at?: string | null
@@ -1067,6 +1072,7 @@ export type Database = {
           id?: string
           notes?: string | null
           proposal_id: string
+          refund_amount?: number | null
           sign_token?: string | null
           signed_at?: string | null
           signer_email?: string | null
@@ -1077,6 +1083,8 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          cancel_reason?: string | null
+          cancelled_at?: string | null
           case_id?: string | null
           created_at?: string
           expires_at?: string | null
@@ -1084,6 +1092,7 @@ export type Database = {
           id?: string
           notes?: string | null
           proposal_id?: string
+          refund_amount?: number | null
           sign_token?: string | null
           signed_at?: string | null
           signer_email?: string | null

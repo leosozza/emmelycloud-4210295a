@@ -1,0 +1,4 @@
+ALTER TABLE public.contracts 
+  ADD COLUMN IF NOT EXISTS cancelled_at TIMESTAMPTZ,
+  ADD COLUMN IF NOT EXISTS cancel_reason TEXT,
+  ADD COLUMN IF NOT EXISTS refund_amount NUMERIC DEFAULT 0;
