@@ -48,14 +48,44 @@ serve(async (req) => {
       );
     }
 
+    // Token refresh if expired
     const ep = integration.client_endpoint;
-    const auth = integration.access_token;
+    let auth = integration.access_token;
 
     if (!ep || !auth) {
       return new Response(
         JSON.stringify({ error: "Missing Bitrix24 credentials" }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
+    }
+
+    const expiresAt = new Date(integration.expires_at);
+    const bufferMs = 5 * 60 * 1000;
+    if (expiresAt.getTime() - Date.now() <= bufferMs) {
+      try {
+        console.log("[fetch-entities] Token expired, refreshing...");
+        const tokenRes = await fetch("https://oauth.bitrix.info/oauth/token/", {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body: new URLSearchParams({
+            grant_type: "refresh_token",
+            client_id: Deno.env.get("BITRIX24_CLIENT_ID")!,
+            client_secret: Deno.env.get("BITRIX24_CLIENT_SECRET")!,
+            refresh_token: integration.refresh_token,
+          }),
+        });
+        const tokenData = await tokenRes.json();
+        if (!tokenData.error) {
+          auth = tokenData.access_token;
+          await supabase.from("bitrix24_integrations").update({
+            access_token: tokenData.access_token,
+            refresh_token: tokenData.refresh_token,
+            expires_at: new Date(Date.now() + tokenData.expires_in * 1000).toISOString(),
+          }).eq("id", integration.id);
+        }
+      } catch (e) {
+        console.error("[fetch-entities] Token refresh failed:", e);
+      }
     }
 
     const bitrixCall = async (method: string, body: Record<string, any> = {}) => {
