@@ -78,6 +78,7 @@ const Bitrix24App = () => {
   const [integration, setIntegration] = useState<any | null>(null);
   const [botId, setBotId] = useState<string | null>(null);
   const [loadingData, setLoadingData] = useState(false);
+  const [cachedPortfolio, setCachedPortfolio] = useState<any>(null);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -304,6 +305,7 @@ const Bitrix24App = () => {
             loading={loadingData}
             onResync={handleResync}
             onRefresh={() => memberId && fetchData(memberId)}
+            onCachePortfolio={setCachedPortfolio}
           />
         )}
         {view === "agentes" && <AgentesView botId={botId} integrationId={integration?.id} />}
@@ -318,7 +320,7 @@ const Bitrix24App = () => {
         {view === "empresas" && <EmpresasView />}
         {view === "relatorios" && <RelatoriosView />}
         {view === "importacao" && <ImportacaoAccessView integration={integration} memberId={memberId} />}
-        {view === "carteira" && <CarteiraAccessView integration={integration} memberId={memberId} />}
+        {view === "carteira" && <CarteiraAccessView integration={integration} memberId={memberId} cachedPortfolio={cachedPortfolio} />}
         {view === "configuracoes" && (
           <ConfigView
             integration={integration}
@@ -372,13 +374,14 @@ function getDateRange(preset: string, selectedMonth?: number, selectedYear?: num
 }
 
 // ==================== DASHBOARD VIEW (NEW) ====================
-function DashboardView({ integration, botId, domain }: {
+function DashboardView({ integration, botId, domain, onCachePortfolio }: {
   integration: any;
   botId: string | null;
   domain: string | null;
   loading: boolean;
   onResync: () => void;
   onRefresh: () => void;
+  onCachePortfolio?: (data: any) => void;
 }) {
   const [period, setPeriod] = useState("30d");
   const [customStart, setCustomStart] = useState<Date | undefined>(undefined);
@@ -423,6 +426,7 @@ function DashboardView({ integration, botId, domain }: {
           fetch(`${SUPABASE_URL}/functions/v1/bitrix24-fetch-portfolio${memberParam}`, { headers }).then(r => r.json()),
         ]);
 
+        onCachePortfolio?.(portfolioRes);
         const clientsTotal = portfolioRes?.meta?.clientCount ?? (Array.isArray(portfolioRes?.clients) ? portfolioRes.clients.length : 0);
 
         const ptReceived = (revenueRes || []).reduce((s: number, t: any) => s + Number(t.amount), 0);
@@ -4325,7 +4329,7 @@ interface ClientFinancials {
   serviceCount: number;
 }
 
-function CarteiraAccessView({ integration, memberId }: { integration: any; memberId: string | null }) {
+function CarteiraAccessView({ integration, memberId, cachedPortfolio }: { integration: any; memberId: string | null; cachedPortfolio?: any }) {
   const [clientsData, setClientsData] = useState<ClientFinancials[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -4381,8 +4385,13 @@ function CarteiraAccessView({ integration, memberId }: { integration: any; membe
   }, [resolvedMemberId]);
 
   useEffect(() => {
+    if (cachedPortfolio?.success && Array.isArray(cachedPortfolio.clients)) {
+      setClientsData(cachedPortfolio.clients as ClientFinancials[]);
+      setLoading(false);
+      return;
+    }
     fetchAll();
-  }, [fetchAll]);
+  }, [cachedPortfolio, fetchAll]);
 
   const filtered = useMemo(() => {
     if (!search.trim()) return clientsData;
