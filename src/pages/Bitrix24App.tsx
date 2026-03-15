@@ -4540,40 +4540,190 @@ function CarteiraAccessView({ integration, memberId }: { integration: any; membe
 
   const [expandedClientId, setExpandedClientId] = useState<string | null>(null);
   const [markingPaidId, setMarkingPaidId] = useState<string | null>(null);
+  const [baixaTarget, setBaixaTarget] = useState<{ fr: any; clientId: string } | null>(null);
+  const [baixaForm, setBaixaForm] = useState({ paidAmount: 0, paymentDate: new Date(), paymentMethod: "transferencia", proofFile: null as File | null });
+  const [baixaSaving, setBaixaSaving] = useState(false);
 
-  const handleExpandToggle = (clientId: string) => {
-    if (expandedClientId === clientId) {
-      setExpandedClientId(null);
-      return;
+  const openBaixaModal = (fr: any, clientId: string) => {
+    const now = new Date();
+    const dueDate = fr.due_date ? new Date(fr.due_date) : null;
+    const originalVal = parseFloat(fr.installment_value) || 0;
+    let totalWithFees = originalVal;
+    if (dueDate && dueDate < now && fr.status !== "paga") {
+      const diffMs = now.getTime() - dueDate.getTime();
+      const daysLate = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+      const fees = calculateLateFees(originalVal, daysLate);
+      totalWithFees = fees.total;
     }
-    setExpandedClientId(clientId);
-    if (!expandedDetail[clientId]) {
-      fetchClientDetail(clientId);
-    }
+    setBaixaTarget({ fr, clientId });
+    setBaixaForm({ paidAmount: totalWithFees, paymentDate: new Date(), paymentMethod: "transferencia", proofFile: null });
   };
 
-  const handleBaixaParcela = async (fr: any, clientId: string) => {
-    setMarkingPaidId(fr.id);
+  const handleBaixaConfirm = async () => {
+    if (!baixaTarget) return;
+    setBaixaSaving(true);
+    const { fr, clientId } = baixaTarget;
     try {
+      let receiptUrl = fr.receipt_url || "";
+      // Upload proof file if provided
+      if (baixaForm.proofFile) {
+        const ext = baixaForm.proofFile.name.split(".").pop() || "pdf";
+        const path = `payment-proofs/${fr.id}.${ext}`;
+        const { error: upErr } = await supabase.storage.from("signatures").upload(path, baixaForm.proofFile, { upsert: true });
+        if (!upErr) {
+          const { data: urlData } = supabase.storage.from("signatures").getPublicUrl(path);
+          receiptUrl = urlData?.publicUrl || receiptUrl;
+        }
+      }
       const { error } = await supabase
         .from("financial_records")
-        .update({ status: "paga", paid_at: new Date().toISOString() })
+        .update({
+          status: "paga" as any,
+          paid_at: baixaForm.paymentDate.toISOString(),
+          payment_method: baixaForm.paymentMethod as any,
+          installment_value: baixaForm.paidAmount,
+          receipt_url: receiptUrl,
+        })
         .eq("id", fr.id);
       if (error) throw error;
-      // Refresh detail for this client
       setExpandedDetail((prev) => {
         const copy = { ...prev };
         delete copy[clientId];
         return copy;
       });
       await fetchClientDetail(clientId);
-      // Refresh totals
       await fetchAll();
+      setBaixaTarget(null);
     } catch (e) {
       console.error("[Carteira] Baixa error:", e);
     } finally {
-      setMarkingPaidId(null);
+      setBaixaSaving(false);
     }
+  };
+
+  const renderBaixaDialog = () => {
+    if (!baixaTarget) return null;
+    const { fr } = baixaTarget;
+    const originalVal = parseFloat(fr.installment_value) || 0;
+    const now = new Date();
+    const dueDate = fr.due_date ? new Date(fr.due_date) : null;
+    let daysLate = 0;
+    let feesResult: any = null;
+    if (dueDate && dueDate < now) {
+      const diffMs = now.getTime() - dueDate.getTime();
+      daysLate = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+      feesResult = calculateLateFees(originalVal, daysLate);
+    }
+
+    return (
+      <Dialog open={!!baixaTarget} onOpenChange={(o) => !o && setBaixaTarget(null)}>
+        <DialogContent className="max-w-md" onClick={(e) => e.stopPropagation()}>
+          <DialogHeader>
+            <DialogTitle>Dar Baixa — Parcela {fr.installment_number}/{fr.total_installments}</DialogTitle>
+            <DialogDescription>Confirme os dados do pagamento</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            {/* Original value */}
+            <div className="rounded-lg border p-3 space-y-1 bg-muted/30">
+              <div className="flex justify-between text-sm">
+                <span className="text-muted-foreground">Valor original</span>
+                <span className="font-medium">{fmt(originalVal)}</span>
+              </div>
+              {feesResult && daysLate > 0 && (
+                <>
+                  <div className="flex justify-between text-sm text-red-500">
+                    <span>Multa ({daysLate}d atraso)</span>
+                    <span>+{fmt(feesResult.penalty)}</span>
+                  </div>
+                  <div className="flex justify-between text-sm text-red-500">
+                    <span>Juros</span>
+                    <span>+{fmt(feesResult.interest)}</span>
+                  </div>
+                  <Separator />
+                  <div className="flex justify-between text-sm font-semibold">
+                    <span>Total c/ encargos</span>
+                    <span>{fmt(feesResult.total)}</span>
+                  </div>
+                </>
+              )}
+            </div>
+
+            {/* Payment method */}
+            <div className="space-y-1.5">
+              <Label className="text-xs">Forma de pagamento</Label>
+              <Select value={baixaForm.paymentMethod} onValueChange={(v) => setBaixaForm((p) => ({ ...p, paymentMethod: v }))}>
+                <SelectTrigger className="h-9 text-sm"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="transferencia">Transferência</SelectItem>
+                  <SelectItem value="stripe">Stripe</SelectItem>
+                  <SelectItem value="parcelado_direto">Parcelado Direto</SelectItem>
+                  <SelectItem value="mbway">MBWay</SelectItem>
+                  <SelectItem value="multibanco">Multibanco</SelectItem>
+                  <SelectItem value="pix">PIX</SelectItem>
+                  <SelectItem value="dinheiro">Dinheiro</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Paid amount */}
+            <div className="space-y-1.5">
+              <Label className="text-xs">Valor pago (€)</Label>
+              <Input
+                type="number"
+                step="0.01"
+                className="h-9 text-sm"
+                value={baixaForm.paidAmount}
+                onChange={(e) => setBaixaForm((p) => ({ ...p, paidAmount: parseFloat(e.target.value) || 0 }))}
+              />
+            </div>
+
+            {/* Payment date */}
+            <div className="space-y-1.5">
+              <Label className="text-xs">Data do pagamento</Label>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button variant="outline" className="w-full h-9 justify-start text-sm font-normal">
+                    <CalendarIcon className="mr-2 h-3.5 w-3.5" />
+                    {format(baixaForm.paymentDate, "dd/MM/yyyy")}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0" align="start">
+                  <Calendar
+                    mode="single"
+                    selected={baixaForm.paymentDate}
+                    onSelect={(d) => d && setBaixaForm((p) => ({ ...p, paymentDate: d }))}
+                    className="p-3 pointer-events-auto"
+                  />
+                </PopoverContent>
+              </Popover>
+            </div>
+
+            {/* Proof upload */}
+            <div className="space-y-1.5">
+              <Label className="text-xs">Comprovante (opcional)</Label>
+              <Input
+                type="file"
+                accept="image/*,.pdf"
+                className="h-9 text-sm"
+                onChange={(e) => setBaixaForm((p) => ({ ...p, proofFile: e.target.files?.[0] || null }))}
+              />
+              {baixaForm.proofFile && (
+                <p className="text-[10px] text-muted-foreground">{baixaForm.proofFile.name}</p>
+              )}
+            </div>
+
+            {/* Actions */}
+            <div className="flex gap-2 pt-2">
+              <Button variant="outline" className="flex-1" onClick={() => setBaixaTarget(null)} disabled={baixaSaving}>Cancelar</Button>
+              <Button className="flex-1 gap-1" onClick={handleBaixaConfirm} disabled={baixaSaving}>
+                {baixaSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle className="h-4 w-4" />}
+                Confirmar Baixa
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+    );
   };
 
   // ── Render expanded service details ──
