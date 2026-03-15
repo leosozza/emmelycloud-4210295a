@@ -4268,75 +4268,17 @@ function CarteiraAccessView({ integration, memberId }: { integration: any; membe
   const fetchAll = async () => {
     setLoading(true);
     try {
-      const { data: clients, error: clientsErr } = await supabase
-        .from("clients")
-        .select("*")
-        .ilike("notes", "%Access%")
-        .order("name", { ascending: true })
-        .limit(2000);
-
-      if (clientsErr || !clients || clients.length === 0) {
-        console.error("[Carteira] Clients error:", clientsErr);
+      const res = await fetch(
+        `${SUPABASE_URL}/functions/v1/bitrix24-fetch-portfolio?member_id=${encodeURIComponent(memberId || "")}`,
+        { headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` } }
+      );
+      const data = await res.json();
+      if (!data.success || !data.clients) {
+        console.error("[Carteira] Portfolio error:", data.error);
         setClientsData([]);
         return;
       }
-
-      const clientIds = clients.map((c) => c.id);
-
-      const { data: leadsArr, error: leadsErr } = await supabase
-        .from("leads")
-        .select("id, name, notes, client_id, cases(id, title, contracts(id, status, financial_records(id, description, installment_number, total_installments, installment_value, total_value, status, due_date, paid_at, created_at)))")
-        .in("client_id", clientIds)
-        .eq("sync_source", "access_import");
-
-      if (leadsErr) console.error("[Carteira] Leads error:", leadsErr);
-      const leads = leadsArr || [];
-
-      // Group leads by client_id
-      const leadsByClient: Record<string, any[]> = {};
-      for (const l of leads) {
-        if (!leadsByClient[l.client_id!]) leadsByClient[l.client_id!] = [];
-        leadsByClient[l.client_id!].push(l);
-      }
-
-      const result: ClientFinancials[] = clients.map((c) => {
-        const cLeads = leadsByClient[c.id] || [];
-        let totalValue = 0, totalPaid = 0, totalPending = 0, totalOverdue = 0;
-        const allRecords: any[] = [];
-        const now = new Date();
-
-        for (const lead of cLeads) {
-          for (const cas of (lead.cases || [])) {
-            for (const contract of (cas.contracts || [])) {
-              for (const fr of (contract.financial_records || [])) {
-                allRecords.push({ ...fr, caseName: cas.title, leadName: lead.name });
-                const val = parseFloat(fr.installment_value) || 0;
-                totalValue += val;
-                if (fr.status === "paga") totalPaid += val;
-                else if (fr.due_date && new Date(fr.due_date) < now && fr.status !== "paga") {
-                  totalOverdue += val;
-                } else {
-                  totalPending += val;
-                }
-              }
-            }
-          }
-        }
-
-        return {
-          client: c,
-          accessId: extractAccessId(c.notes),
-          leads: cLeads,
-          totalValue,
-          totalPaid,
-          totalPending,
-          totalOverdue,
-          serviceCount: cLeads.length,
-          allRecords,
-        };
-      });
-
-      setClientsData(result);
+      setClientsData(data.clients as ClientFinancials[]);
     } catch (e) {
       console.error("[Carteira] Error:", e);
     } finally {
