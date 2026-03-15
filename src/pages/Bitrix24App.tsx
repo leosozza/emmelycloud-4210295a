@@ -5232,6 +5232,41 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
     if (honorariosSessionId && completed) await markSessionDone(honorariosSessionId);
   };
 
+  useEffect(() => {
+    if (
+      autoResumeClientsPending &&
+      !resumingPhase &&
+      !importingClients &&
+      !!validClients?.length &&
+      clientsProgress.processed < validClients.length
+    ) {
+      setAutoResumeClientsPending(false);
+      void handleImportClients();
+    }
+  }, [autoResumeClientsPending, resumingPhase, importingClients, validClients, clientsProgress.processed]);
+
+  useEffect(() => {
+    const totalClients = filteredClientes?.length || 0;
+    if (
+      autoResumeHonorariosPending &&
+      !resumingPhase &&
+      !importingHonorarios &&
+      !!filteredHonorarios?.length &&
+      totalClients > 0 &&
+      honorariosProgress.processed < totalClients
+    ) {
+      setAutoResumeHonorariosPending(false);
+      void handleImportHonorarios();
+    }
+  }, [
+    autoResumeHonorariosPending,
+    resumingPhase,
+    importingHonorarios,
+    filteredHonorarios,
+    filteredClientes,
+    honorariosProgress.processed,
+  ]);
+
   // ── Clear session helper ──
   const handleClearSession = async (phase: "clients" | "honorarios") => {
     if (phase === "clients" && clientsSessionId) {
