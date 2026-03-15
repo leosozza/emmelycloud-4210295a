@@ -1,104 +1,44 @@
 
+Diagnóstico objetivo (com evidência):
+- A Fase 3 não está “vazia” de dados no banco: existem 1.019 clientes importados com financeiro.
+- O endpoint de Fase 3 atualmente está devolvendo apenas 10 por chamada (`processed: 10`, `has_more: true`, `next_batch_start: 10`), enquanto o frontend foi alterado para chamada única.
+- Resultado: a tela parece “não carregar” (ou carregar pouco), e ainda pode abrir em combinação de filtros sem itens (Etapa A + Atrasados), dando impressão de zero.
 
-## Revisão Arquitetural — Fase 2 Implementada
+Plano de correção:
 
-### Mudanças realizadas (Fase 2)
+1) Corrigir contrato da API da Fase 3 (backend function)
+- Ajustar `import-access-data` (`mode: list_sync_clients`) para retornar o conjunto completo em uma resposta (sem paginação externa).
+- Garantir resposta consistente:
+  - `clients`: lista completa
+  - `total`: total real
+  - `has_more: false`
+  - sem `next_batch_start` para esse modo
+- Incluir log resumido de execução (total clientes, duração, contagem por status) para diagnóstico rápido.
 
-#### 1. Código morto eliminado
-- `chatbot-reply/index.ts` — **removido** (100% duplicado com flow-engine → ai-process-message)
-- `ai-triage/index.ts` — **removido** (100% duplicado com ai-automation-agent action classify_lead)
+2) Tornar frontend resiliente a versões antigas da função
+- Em `handleLoadSyncClients` (`Bitrix24App.tsx`), implementar fallback compatível:
+  - Se vier `has_more: true`, continuar paginando até completar (deduplicando por `client_id`).
+  - Se vier resposta nova (`has_more: false`), mantém fluxo de chamada única.
+- Isso evita quebra mesmo se houver atraso de deploy ou cache de versão.
 
-#### 2. Janela de contexto expandida
-- `RECENT_MSG_COUNT`: 5 → **15** mensagens recentes completas
-- `HISTORY_LIMIT`: 15 → **30** mensagens totais
-- TOON comprime as 15 mais antigas, mantém as 15 recentes intactas
+3) Melhorar UX para não parecer “sem dados”
+- Após carregar clientes:
+  - Auto-selecionar segmento com dados (se Etapa A = 0 e Etapa B > 0, abrir Etapa B automaticamente).
+  - Auto-selecionar status com contagem > 0 (Atrasado/Em Aberto/Quitado).
+- Adicionar empty-state explícito quando filtro atual não tem itens:
+  - “Há X clientes carregados, mas nenhum neste filtro. Clique em Etapa B / Quitados etc.”
 
-#### 3. RAG semântico real (pgvector)
-- Edge function `generate-embeddings` criada — gera embeddings de 768 dimensões via Lovable AI
-- `parse-document` agora chama `generate-embeddings` automaticamente após chunking
-- `ai-process-message` usa `match_chunks()` RPC para busca semântica (threshold 0.5)
-- Fallback para keyword scoring quando embeddings não existem
+4) Robustez de erro e timeout
+- Tratar `res.ok` + payload de erro no frontend.
+- Mostrar feedback de erro claro (“Falha ao carregar Fase 3”) com botão de tentativa.
+- Preservar `syncClients` anterior se a recarga falhar (evita “sumir tudo” por falha transitória).
 
-#### 4. Router multi-agente
-- Quando agente tem `sub_agent_ids`, classifica intenção via IA rápida (flash-lite)
-- Delega para sub-agente especialista com seu próprio prompt e KB
-- Mantém agente activo em `bot_state.active_sub_agent_id` para consistência
+Validação (aceite):
+- Carregar Fase 3 e confirmar total próximo de 1.019 clientes (não 10).
+- Confirmar que a primeira tela já mostra clientes sem precisar trocar manualmente abas.
+- Confirmar tempos de carregamento e logs da função sem loops redundantes.
+- Teste ponta a ponta: carregar Fase 3 → filtrar por status → sincronizar 1 cliente (existente e novo) com sucesso.
 
-#### 5. Self-evaluation / Reflexão
-- Após gerar resposta, avalia qualidade via flash-lite (score 1-10)
-- Se score < 7, regenera com instrução de correcção (máximo 1 retry)
-- Respostas < 50 chars ignoram avaliação
-
-#### 6. Sentiment analysis + Auto-escalação
-- Análise de sentimento via heurística + IA
-- 2x frustração consecutiva → auto-transfere para humano
-- Guarda sentiment em `bot_state.last_sentiment`
-- Regista escalação em `conversation_feedback`
-
-#### 7. Tools dinâmicas expandidas
-- Novas tools: `search_knowledge`, `get_case_status`, `send_payment_link`
-- Tools desconhecidas verificam `tool_parameters.webhook_url` para chamada webhook genérica
-- Registry pattern: tools são lidas de `agent_tools` table
-
-#### 8. Queue worker auto-trigger
-- Trigger PostgreSQL `AFTER INSERT ON message_queue` chama `pg_net.http_post()` para queue-worker
-- Cron backup via `pg_cron` a cada minuto
-
-#### 9. Melhorias de robustez no sendReply
-- `Promise.allSettled` para operações paralelas (save message + update conversation)
-- Error logging real em vez de fire-and-forget silencioso para message-send e bitrix24-send
-- Extração de memória com tolerância `count % 10 > 1` (mais robusto que `=== 0`)
-
-### Mudanças realizadas (Fase 2.1 — Consolidação Completa)
-
-#### Código morto eliminado
-- `chatbot-reply/index.ts` e `ai-triage/index.ts` — diretórios removidos, referências limpas em `config.toml`, `ApiDocs.tsx` e `bitrix24-worker.ts`
-- ApiDocs actualizado para documentar `ai-process-message` em vez de `chatbot-reply`
-
-#### Sintaxe corrigida
-- `parse-document/index.ts` — corrigida função `extractWithAI` que estava erroneamente aninhada dentro de `findFileInZip`
-
-#### Config.toml actualizado
-- Removidas entradas `ai-triage` e `chatbot-reply`
-- Adicionadas entradas para `generate-embeddings`, `parse-document` e `queue-worker`
-
-#### Triggers PostgreSQL criados
-- `on_message_queue_insert` → auto-invoca `queue-worker` via `pg_net`
-- `on_lead_created` → notifica comerciais e admins
-- `on_message_created` → notifica de novas mensagens inbound
-- `on_payment_status_change` → notifica pagamentos recebidos
-- `on_lead_sla_check` → alerta SLA a expirar
-- `on_lead_set_sla` → define SLA automático na criação
-- `on_profile_created` → atribui admin ao primeiro utilizador
-- Cron job `queue-worker-backup` — invoca queue-worker a cada minuto
-
-### Estado actual — 8/8 melhorias implementadas ✅
-1. ✅ Código morto eliminado (chatbot-reply + ai-triage)
-2. ✅ Contexto expandido (30 mensagens: 15 recentes + 15 comprimidas TOON)
-3. ✅ RAG semântico (pgvector + match_chunks + generate-embeddings)
-4. ✅ Router multi-agente (sub_agent_ids + classificação de intenção)
-5. ✅ Tools dinâmicas (registry pattern + webhook fallback)
-6. ✅ Reflexão/Auto-avaliação (score 1-10, retry se < 7)
-7. ✅ Sentiment analysis + auto-escalação (2x frustração → humano)
-8. ✅ Queue worker auto-trigger (pg_trigger + pg_cron backup)
-
-### Mudanças realizadas (Fase 3 — Auditoria Arquitetural)
-
-#### 1. Dashboard de Observabilidade IA
-- Nova página `/observabilidade-ia` com KPIs: requisições, tokens, custo estimado, latência média, taxa fallback, taxa erro, rating feedback
-- Hook `useAiObservability.ts` com agregação de dados
-
-#### 2. Thumbs up/down no chat de atendimento
-- Botões de feedback em mensagens outbound (bot) no painel de atendimento
-
-#### 3. Retry com backoff no AI gateway (429/502/503, 2s delay, 1 retry)
-
-#### 4. Cost estimation real (tabela de preços por modelo, cálculo automático)
-
-#### 5. Memory extraction melhorada (cada 15 msgs + em transferência humana)
-
-#### 6. Reorganização do monólito (constantes extraídas, secções delimitadas)
-
-### Próximos passos
-- Batch job para gerar embeddings dos chunks existentes
-- Streaming no PlaygroundIA
+Arquivos a ajustar:
+- `supabase/functions/import-access-data/index.ts`
+- `src/pages/Bitrix24App.tsx`
