@@ -4397,15 +4397,30 @@ function CarteiraAccessView({ integration, memberId, cachedPortfolio }: { integr
   }, [cachedPortfolio, fetchAll]);
 
   const filtered = useMemo(() => {
-    if (!search.trim()) return clientsData;
-    const q = search.toLowerCase();
-    return clientsData.filter(
-      (cf) =>
-        cf.client.name?.toLowerCase().includes(q) ||
-        cf.client.document_number?.toLowerCase().includes(q) ||
-        cf.accessId?.includes(q)
-    );
-  }, [clientsData, search]);
+    let result = clientsData;
+    // Text search
+    if (search.trim()) {
+      const q = search.toLowerCase();
+      result = result.filter(
+        (cf) =>
+          cf.client.name?.toLowerCase().includes(q) ||
+          cf.client.document_number?.toLowerCase().includes(q) ||
+          cf.accessId?.includes(q)
+      );
+    }
+    // Status filter
+    if (statusFilter === "overdue") result = result.filter((cf) => cf.totalOverdue > 0);
+    else if (statusFilter === "pending") result = result.filter((cf) => cf.totalPending > 0 && cf.totalOverdue === 0);
+    else if (statusFilter === "paid") result = result.filter((cf) => cf.totalPaid > 0 && cf.totalPending === 0 && cf.totalOverdue === 0);
+    else if (statusFilter === "empty") result = result.filter((cf) => cf.totalValue === 0);
+    // Date filter (by client created_at)
+    if (dateFrom) result = result.filter((cf) => cf.client.created_at && new Date(cf.client.created_at) >= dateFrom);
+    if (dateTo) {
+      const end = new Date(dateTo); end.setHours(23, 59, 59, 999);
+      result = result.filter((cf) => cf.client.created_at && new Date(cf.client.created_at) <= end);
+    }
+    return result;
+  }, [clientsData, search, statusFilter, dateFrom, dateTo]);
 
   const totals = useMemo(() => {
     return clientsData.reduce(
