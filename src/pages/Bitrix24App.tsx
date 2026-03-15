@@ -5250,7 +5250,7 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
   const [autoResumeHonorariosPending, setAutoResumeHonorariosPending] = useState(false);
 
   // Phase 3: Interactive Sync
-  type SyncClient = {
+   type SyncClient = {
     client_id: string;
     name: string;
     nif: string;
@@ -5263,6 +5263,8 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
     records_count: number;
     bitrix_contact_id: string | null;
     bitrix_deal_id: string | null;
+    match_type: "access_id" | "nif" | "phone" | "email" | "name" | "new";
+    contract_date: string | null;
     synced?: boolean;
     syncResult?: string;
   };
@@ -5437,12 +5439,15 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
 
   const [pipelinesFeedback, setPipelinesFeedback] = useState<string>("");
 
+   // Resolved member ID: fallback to integration.member_id
+  const resolvedMemberId = memberId || integration?.member_id || null;
+
   // Load pipelines when integration available
   useEffect(() => {
-    if (!memberId || !integration) return;
+    if (!resolvedMemberId || !integration) return;
     setLoadingPipelines(true);
     setPipelinesFeedback("");
-    fetch(`${SUPABASE_URL}/functions/v1/bitrix24-fetch-entities?action=pipelines&entity=deal&member_id=${encodeURIComponent(memberId)}`, {
+    fetch(`${SUPABASE_URL}/functions/v1/bitrix24-fetch-entities?action=pipelines&entity=deal&member_id=${encodeURIComponent(resolvedMemberId)}`, {
       headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` },
     })
       .then(r => r.json())
@@ -5456,7 +5461,7 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
       })
       .catch(console.error)
       .finally(() => setLoadingPipelines(false));
-  }, [memberId, integration]);
+  }, [resolvedMemberId, integration]);
 
   const parseXlsx = async (file: File): Promise<any[]> => {
     const XLSX = await import("xlsx");
@@ -5848,7 +5853,7 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
             mode: "list_sync_clients",
             batch_start: batchStart,
             batch_size: batchSize,
-            member_id: memberId,
+            member_id: resolvedMemberId,
           }),
         });
         const data = await res.json();
@@ -5883,7 +5888,7 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
           clientes: [],
           mode: "sync_single_client",
           client_id: client.client_id,
-          member_id: memberId,
+          member_id: resolvedMemberId,
           category_id: selectedCategoryId,
           actions: actionsOverride || editActions,
           overrides: overridesOverride || { name: editName, phone: editPhone, nif: editNif },
@@ -5935,10 +5940,16 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
     });
   };
 
-  const filteredSyncClients = syncClients.filter(c => c.status_class === activeTab);
-  const quitadoCount = syncClients.filter(c => c.status_class === "quitado").length;
-  const abertoCount = syncClients.filter(c => c.status_class === "aberto").length;
-  const atrasadoCount = syncClients.filter(c => c.status_class === "atrasado").length;
+  // Primary segmentation: existing in Bitrix vs new
+  const [syncSegment, setSyncSegment] = useState<"existing" | "new">("existing");
+  const existingClients = syncClients.filter(c => c.bitrix_deal_id || c.bitrix_contact_id);
+  const newClients = syncClients.filter(c => !c.bitrix_deal_id && !c.bitrix_contact_id);
+  const segmentedClients = syncSegment === "existing" ? existingClients : newClients;
+
+  const filteredSyncClients = segmentedClients.filter(c => c.status_class === activeTab);
+  const quitadoCount = segmentedClients.filter(c => c.status_class === "quitado").length;
+  const abertoCount = segmentedClients.filter(c => c.status_class === "aberto").length;
+  const atrasadoCount = segmentedClients.filter(c => c.status_class === "atrasado").length;
 
   const selectAllInTab = () => {
     const ids = filteredSyncClients.filter(c => !c.synced).map(c => c.client_id);
@@ -6302,7 +6313,27 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
               {/* Tabs + Client list */}
               {syncClientsLoaded && syncClients.length > 0 && (
                 <div className="space-y-4 pt-3 border-t">
-                  {/* Status tabs */}
+                  {/* Primary segmentation: Existing vs New */}
+                  <div className="flex gap-2 mb-2">
+                    <Button
+                      variant={syncSegment === "existing" ? "default" : "outline"}
+                      size="sm"
+                      onClick={() => { setSyncSegment("existing"); setSelectedIds(new Set()); }}
+                      className="text-xs"
+                    >
+                      <RefreshCw className="h-3.5 w-3.5 mr-1" /> Etapa A: Sincronizar existentes ({existingClients.length})
+                    </Button>
+                    <Button
+                      variant={syncSegment === "new" ? "default" : "outline"}
+                      size="sm"
+                      onClick={() => { setSyncSegment("new"); setSelectedIds(new Set()); }}
+                      className="text-xs"
+                    >
+                      <Plus className="h-3.5 w-3.5 mr-1" /> Etapa B: Cadastrar novos ({newClients.length})
+                    </Button>
+                  </div>
+
+                  {/* Status tabs (secondary filter) */}
                   <div className="flex gap-2">
                     <Button
                       variant={activeTab === "atrasado" ? "default" : "outline"}
@@ -6389,9 +6420,21 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
                             <TableCell className="text-right text-xs">€{client.total_paid.toLocaleString("pt-PT", { minimumFractionDigits: 2 })}</TableCell>
                             <TableCell>
                               {client.bitrix_deal_id ? (
-                                <Badge variant="outline" className="text-[10px]">Deal #{client.bitrix_deal_id}</Badge>
+                                <div className="flex flex-col gap-0.5">
+                                  <Badge variant="outline" className="text-[10px]">Deal #{client.bitrix_deal_id}</Badge>
+                                  <span className="text-[9px] text-muted-foreground">
+                                    via {client.match_type === "access_id" ? "Access ID" : client.match_type === "nif" ? "NIF" : client.match_type === "phone" ? "Telefone" : client.match_type === "email" ? "Email" : client.match_type === "name" ? "Nome" : "—"}
+                                  </span>
+                                </div>
+                              ) : client.bitrix_contact_id ? (
+                                <div className="flex flex-col gap-0.5">
+                                  <Badge variant="secondary" className="text-[10px]">Contacto #{client.bitrix_contact_id}</Badge>
+                                  <span className="text-[9px] text-muted-foreground">
+                                    via {client.match_type === "phone" ? "Telefone" : client.match_type === "email" ? "Email" : client.match_type === "name" ? "Nome" : "—"}
+                                  </span>
+                                </div>
                               ) : (
-                                <span className="text-[10px] text-muted-foreground">Novo</span>
+                                <Badge variant="outline" className="text-[10px] border-dashed">Novo</Badge>
                               )}
                             </TableCell>
                             <TableCell>

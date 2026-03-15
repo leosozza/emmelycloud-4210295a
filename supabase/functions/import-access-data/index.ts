@@ -196,16 +196,16 @@ serve(async (req) => {
       const { data: financialData } = await supabase
         .from("leads")
         .select(`
-          id, name,
+          id, name, phone, email,
           cases!cases_lead_id_fkey (
             id, title,
             proposals!proposals_case_id_fkey (
               id, title, value, installments, status,
               contracts!contracts_proposal_id_fkey (
-                id,
+                id, created_at,
                 financial_records!financial_records_contract_id_fkey (
                   id, description, total_value, installment_number, total_installments,
-                  installment_value, status, due_date, paid_at
+                  installment_value, status, due_date, paid_at, created_at
                 )
               )
             )
@@ -214,6 +214,12 @@ serve(async (req) => {
         .eq("client_id", client.id)
         .eq("sync_source", "access_import");
 
+      // Also collect phones/emails from leads
+      for (const lead of (financialData || [])) {
+        if (lead.phone && !phones.includes(lead.phone)) phones.push(lead.phone);
+        if (lead.email && !emails.includes(lead.email)) emails.push(lead.email);
+      }
+
       const allRecords: any[] = [];
       let totalValue = 0;
       let totalPaid = 0;
@@ -221,6 +227,7 @@ serve(async (req) => {
       let hasOverdue = false;
       let overdueCount = 0;
       let overdueValue = 0;
+      let contractDate: string | null = null;
       const serviceDescs: string[] = [];
 
       for (const lead of (financialData || [])) {
@@ -231,6 +238,12 @@ serve(async (req) => {
           for (const proposal of (caso.proposals || [])) {
             totalValue += Number(proposal.value) || 0;
             for (const contract of (proposal.contracts || [])) {
+              // Track earliest contract date (Column F)
+              if (contract.created_at) {
+                if (!contractDate || contract.created_at < contractDate) {
+                  contractDate = contract.created_at;
+                }
+              }
               for (const fr of (contract.financial_records || [])) {
                 allRecords.push(fr);
                 if (fr.status === "paga") {
@@ -276,11 +289,9 @@ serve(async (req) => {
         all_paid: allPaid,
         address: client.address,
         birth_date: client.birth_date,
+        contract_date: contractDate ? contractDate.split("T")[0] : null,
       };
     }
-
-    // ══════════════════════════════════════════════════════════════════
-    // MODE: list_sync_clients — Batch-optimized: aggregated SQL + batch Bitrix lookup
     // ══════════════════════════════════════════════════════════════════
     if (mode === "list_sync_clients") {
       // Step 1: Fetch ALL imported clients with financial data via aggregated query
@@ -313,10 +324,10 @@ serve(async (req) => {
             proposals!proposals_case_id_fkey (
               id, title, value, installments, status,
               contracts!contracts_proposal_id_fkey (
-                id,
+                id, created_at,
                 financial_records!financial_records_contract_id_fkey (
                   id, description, total_value, installment_number, total_installments,
-                  installment_value, status, due_date, paid_at
+                  installment_value, status, due_date, paid_at, created_at
                 )
               )
             )
@@ -334,7 +345,7 @@ serve(async (req) => {
           financialMap[cid] = {
             totalValue: 0, totalPaid: 0, allPaid: true, hasOverdue: false,
             overdueCount: 0, overdueValue: 0, services: [], recordsCount: 0,
-            phones: [], emails: [],
+            phones: [], emails: [], contractDate: null as string | null,
           };
         }
         const fm = financialMap[cid];
@@ -347,6 +358,12 @@ serve(async (req) => {
           for (const proposal of (caso.proposals || [])) {
             fm.totalValue += Number(proposal.value) || 0;
             for (const contract of (proposal.contracts || [])) {
+              // Track earliest contract date (Column F - DATA)
+              if (contract.created_at) {
+                if (!fm.contractDate || contract.created_at < fm.contractDate) {
+                  fm.contractDate = contract.created_at;
+                }
+              }
               for (const fr of (contract.financial_records || [])) {
                 fm.recordsCount++;
                 if (fr.status === "paga") {
@@ -396,6 +413,7 @@ serve(async (req) => {
           all_paid: fm.allPaid,
           address: client.address,
           birth_date: client.birth_date,
+          contract_date: fm.contractDate ? fm.contractDate.split("T")[0] : null,
         });
       }
 
@@ -405,6 +423,7 @@ serve(async (req) => {
       // Step 5: Batch Bitrix lookup — load deals with UF_CRM_1768312831 and UF_CRM_EMMELY_NIF in bulk
       let bitrixDealsByAccessId: Record<string, { dealId: string; contactId: string | null }> = {};
       let bitrixDealsByNif: Record<string, { dealId: string; contactId: string | null }> = {};
+      let bitrixDealsByContactId: Record<string, string> = {}; // contactId -> dealId
       let bitrixContactsByName: Record<string, string> = {};
       let bitrixContactsByPhone: Record<string, string> = {};
       let bitrixContactsByEmail: Record<string, string> = {};
@@ -428,12 +447,11 @@ serve(async (req) => {
             return res.json();
           };
 
-          // Batch load ALL deals with UF_CRM_1768312831 (access ID)
+           // Batch load ALL deals (not just those with access ID)
           try {
             let start = 0;
             while (true) {
               const res = await bitrixCall("crm.deal.list", {
-                filter: { "!UF_CRM_1768312831": "" },
                 select: ["ID", "CONTACT_ID", "UF_CRM_1768312831", "UF_CRM_EMMELY_NIF"],
                 start,
               });
@@ -443,6 +461,10 @@ serve(async (req) => {
                 }
                 if (deal.UF_CRM_EMMELY_NIF) {
                   bitrixDealsByNif[deal.UF_CRM_EMMELY_NIF] = { dealId: deal.ID, contactId: deal.CONTACT_ID || null };
+                }
+                // Index by contact ID to resolve deals from contact matches
+                if (deal.CONTACT_ID) {
+                  bitrixDealsByContactId[deal.CONTACT_ID] = deal.ID;
                 }
               }
               if (!res.next) break;
@@ -483,17 +505,19 @@ serve(async (req) => {
         }
       }
 
-      // Step 6: Match each client in the batch
+      // Step 6: Match each client in the batch with match_type tracking
       const clientsList: any[] = [];
       for (const info of batch) {
         let bitrix_contact_id: string | null = null;
         let bitrix_deal_id: string | null = null;
+        let match_type: string = "new";
 
         // Match 1: by Access ID
         if (info.access_id && bitrixDealsByAccessId[info.access_id]) {
           const match = bitrixDealsByAccessId[info.access_id];
           bitrix_deal_id = match.dealId;
           bitrix_contact_id = match.contactId;
+          match_type = "access_id";
         }
 
         // Match 2: by NIF
@@ -501,35 +525,49 @@ serve(async (req) => {
           const match = bitrixDealsByNif[info.nif];
           bitrix_deal_id = match.dealId;
           bitrix_contact_id = match.contactId;
+          match_type = "nif";
         }
 
-        // Match 3: by Phone
-        if (!bitrix_deal_id && info.phones.length > 0) {
+        // Match 3: by Phone (contact match → resolve deal)
+        if (!bitrix_deal_id && !bitrix_contact_id && info.phones.length > 0) {
           for (const phone of info.phones) {
             const normalized = phone.replace(/\D/g, "");
-            if (bitrixContactsByPhone[normalized]) {
+            if (normalized && bitrixContactsByPhone[normalized]) {
               bitrix_contact_id = bitrixContactsByPhone[normalized];
+              if (bitrixDealsByContactId[bitrix_contact_id]) {
+                bitrix_deal_id = bitrixDealsByContactId[bitrix_contact_id];
+              }
+              match_type = "phone";
               break;
             }
           }
         }
 
-        // Match 4: by Email
+        // Match 4: by Email (contact match → resolve deal)
         if (!bitrix_contact_id && info.emails.length > 0) {
           for (const email of info.emails) {
             const norm = email.toLowerCase();
-            if (bitrixContactsByEmail[norm]) {
+            if (norm && bitrixContactsByEmail[norm]) {
               bitrix_contact_id = bitrixContactsByEmail[norm];
+              if (!bitrix_deal_id && bitrixDealsByContactId[bitrix_contact_id]) {
+                bitrix_deal_id = bitrixDealsByContactId[bitrix_contact_id];
+              }
+              match_type = "email";
               break;
             }
           }
         }
 
-        // Match 5: by Full Name
+        // Match 5: by Full Name (only if name has at least 2 words = name + surname)
         if (!bitrix_contact_id && info.name) {
           const nameUpper = info.name.toUpperCase().trim();
-          if (bitrixContactsByName[nameUpper]) {
+          const nameParts = nameUpper.split(/\s+/).filter(Boolean);
+          if (nameParts.length >= 2 && bitrixContactsByName[nameUpper]) {
             bitrix_contact_id = bitrixContactsByName[nameUpper];
+            if (!bitrix_deal_id && bitrixDealsByContactId[bitrix_contact_id]) {
+              bitrix_deal_id = bitrixDealsByContactId[bitrix_contact_id];
+            }
+            match_type = "name";
           }
         }
 
@@ -537,6 +575,7 @@ serve(async (req) => {
           ...info,
           bitrix_contact_id,
           bitrix_deal_id,
+          match_type,
         });
       }
 
@@ -731,8 +770,14 @@ serve(async (req) => {
         };
         if (info.access_id) dealFields.UF_CRM_1768312831 = info.access_id;
         if (contactId) dealFields.CONTACT_ID = contactId;
+        // Set historical contract date (Column F from Access)
+        if (info.contract_date) {
+          dealFields.BEGINDATE = info.contract_date;
+        }
 
         if (dealId) {
+          // Don't overwrite BEGINDATE on existing deals
+          delete dealFields.BEGINDATE;
           await bitrixCall("crm.deal.update", { id: dealId, fields: dealFields });
           results.push(`Deal ${dealId} actualizado`);
         } else {

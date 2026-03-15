@@ -1,77 +1,104 @@
 
-Objetivo: corrigir a Fase 3 para (1) carregar todas as pipelines corretamente, (2) separar claramente clientes com Deal já existente vs clientes novos no Bitrix, usando matching por Telefone/Email/NIF-CPF/Nome+Sobrenome, e (3) respeitar a data de contrato (coluna F de honorários).
 
-Diagnóstico atual (com base no código + requests):
-1) A Fase 3 está a enviar `member_id: null` em `list_sync_clients`, então o backend não faz lookup no Bitrix e tudo aparece como “novo”.
-2) O carregamento de pipelines na UI depende de `memberId` e não de fallback para `integration.member_id`, por isso pode não carregar categorias reais.
-3) O matching em lote atual não cobre bem “Deal existente” porque carrega Deals com filtro `!UF_CRM_1768312831` (limitando o universo), e por Email/Nome ele encontra contato mas nem sempre resolve o Deal associado.
-4) A UI ainda não separa “já existe no Bitrix” vs “não existe”.
-5) A data histórica já é preservada localmente no import (created_at baseado em `DATA`), mas essa data não está a ser aplicada de forma explícita no Deal sincronizado no Bitrix.
+## Revisão Arquitetural — Fase 2 Implementada
 
-Plano de implementação
+### Mudanças realizadas (Fase 2)
 
-1) Corrigir resolução de `member_id` na Fase 3 (frontend)
-- Em `src/pages/Bitrix24App.tsx`, criar `resolvedMemberId = memberId || integration?.member_id`.
-- Usar `resolvedMemberId` em:
-  - carregar pipelines,
-  - `list_sync_clients`,
-  - `sync_single_client`.
-- Se não houver `resolvedMemberId`, mostrar erro orientativo e bloquear botão de sync.
-Resultado esperado: pipelines e matching passam a consultar o Bitrix corretamente.
+#### 1. Código morto eliminado
+- `chatbot-reply/index.ts` — **removido** (100% duplicado com flow-engine → ai-process-message)
+- `ai-triage/index.ts` — **removido** (100% duplicado com ai-automation-agent action classify_lead)
 
-2) Garantir carregamento completo de pipelines (backend + frontend)
-- Em `supabase/functions/bitrix24-fetch-entities/index.ts`:
-  - Paginar `crm.dealcategory.list` (loop com `start`) para trazer todas as categorias.
-  - Retornar metadados (`total_pipelines`, opcionalmente IDs).
-- Em `Bitrix24App.tsx`:
-  - Exibir contador real (“X pipelines encontradas”).
-Resultado esperado: lista de pipeline de destino completa e confiável.
+#### 2. Janela de contexto expandida
+- `RECENT_MSG_COUNT`: 5 → **15** mensagens recentes completas
+- `HISTORY_LIMIT`: 15 → **30** mensagens totais
+- TOON comprime as 15 mais antigas, mantém as 15 recentes intactas
 
-3) Reforçar matching para identificar Deal existente com precisão
-- Em `supabase/functions/import-access-data/index.ts` (modo `list_sync_clients`):
-  - Buscar Deals em lote sem restringir apenas ao campo de Access ID.
-  - Indexar Deals por:
-    - Access ID (`UF_CRM_1768312831`)
-    - NIF/CPF (`UF_CRM_EMMELY_NIF`)
-    - Contact ID (para resolver match via contato).
-  - Indexar contatos por telefone normalizado, email normalizado e nome completo normalizado.
-  - Regra de nome: só considerar match quando tiver pelo menos nome + sobrenome.
-  - Sequência de matching: Access ID → NIF/CPF → Telefone → Email → Nome completo.
-  - Após match de contato, tentar resolver Deal existente pelo contato.
-  - Retornar campos extras: `match_type`, `exists_deal`, `exists_contact_only`, `is_new`.
-- Aplicar mesma lógica em `sync_single_client` para consistência.
-Resultado esperado: separação real entre “já existe Deal” e “não existe Deal”.
+#### 3. RAG semântico real (pgvector)
+- Edge function `generate-embeddings` criada — gera embeddings de 768 dimensões via Lovable AI
+- `parse-document` agora chama `generate-embeddings` automaticamente após chunking
+- `ai-process-message` usa `match_chunks()` RPC para busca semântica (threshold 0.5)
+- Fallback para keyword scoring quando embeddings não existem
 
-4) Separar fluxo em 2 etapas na UI da Fase 3
-- Em `src/pages/Bitrix24App.tsx`:
-  - Adicionar segmentação principal:
-    - “Etapa A: Sincronizar existentes (Deal já existe)”
-    - “Etapa B: Cadastrar novos (sem Deal)”
-  - Manter status financeiro (Atrasado/Em Aberto/Quitado) como filtro secundário.
-  - Mostrar badge de tipo de match por linha (Access/NIF/Telefone/Email/Nome/Novo).
-  - Batch actions aplicadas por etapa atual.
-Resultado esperado: operação mais segura e clara para equipa (atualizar existentes vs criar novos).
+#### 4. Router multi-agente
+- Quando agente tem `sub_agent_ids`, classifica intenção via IA rápida (flash-lite)
+- Delega para sub-agente especialista com seu próprio prompt e KB
+- Mantém agente activo em `bot_state.active_sub_agent_id` para consistência
 
-5) Respeitar data de contrato na sincronização
-- Em `import-access-data`:
-  - Incluir no payload do cliente a data contratual histórica (ex.: menor `created_at` dos registos importados daquele serviço/cliente).
-- Em `sync_single_client`:
-  - Ao criar Deal novo: enviar essa data como campo de data de início do negócio (ex.: `BEGINDATE`).
-  - Ao atualizar Deal existente: atualizar data apenas quando fizer sentido (não sobrescrever indevidamente histórico se já estiver preenchido).
-  - Manter `due_date` das parcelas para vencimento de faturas (já existente).
-Resultado esperado: Bitrix refletir cronologia original da contratação (coluna F).
+#### 5. Self-evaluation / Reflexão
+- Após gerar resposta, avalia qualidade via flash-lite (score 1-10)
+- Se score < 7, regenera com instrução de correcção (máximo 1 retry)
+- Respostas < 50 chars ignoram avaliação
 
-Arquivos previstos
-- `src/pages/Bitrix24App.tsx`
-- `supabase/functions/import-access-data/index.ts`
-- `supabase/functions/bitrix24-fetch-entities/index.ts`
-- Sem migração de base de dados para esta correção.
+#### 6. Sentiment analysis + Auto-escalação
+- Análise de sentimento via heurística + IA
+- 2x frustração consecutiva → auto-transfere para humano
+- Guarda sentiment em `bot_state.last_sentiment`
+- Regista escalação em `conversation_feedback`
 
-Validação (fim a fim)
-1) Abrir Fase 3 e confirmar pipelines reais carregadas (contagem > “Pipeline Geral”, quando houver).
-2) Carregar clientes e validar que aparecem dois grupos:
-   - com Deal existente,
-   - novos sem Deal.
-3) Testar 1 cliente por cada match_type (telefone, email, NIF/CPF, nome+sobrenome).
-4) Sincronizar em lote cada etapa e validar resultado no Bitrix.
-5) Confirmar que Deal novo ficou com data de contrato histórica correta.
+#### 7. Tools dinâmicas expandidas
+- Novas tools: `search_knowledge`, `get_case_status`, `send_payment_link`
+- Tools desconhecidas verificam `tool_parameters.webhook_url` para chamada webhook genérica
+- Registry pattern: tools são lidas de `agent_tools` table
+
+#### 8. Queue worker auto-trigger
+- Trigger PostgreSQL `AFTER INSERT ON message_queue` chama `pg_net.http_post()` para queue-worker
+- Cron backup via `pg_cron` a cada minuto
+
+#### 9. Melhorias de robustez no sendReply
+- `Promise.allSettled` para operações paralelas (save message + update conversation)
+- Error logging real em vez de fire-and-forget silencioso para message-send e bitrix24-send
+- Extração de memória com tolerância `count % 10 > 1` (mais robusto que `=== 0`)
+
+### Mudanças realizadas (Fase 2.1 — Consolidação Completa)
+
+#### Código morto eliminado
+- `chatbot-reply/index.ts` e `ai-triage/index.ts` — diretórios removidos, referências limpas em `config.toml`, `ApiDocs.tsx` e `bitrix24-worker.ts`
+- ApiDocs actualizado para documentar `ai-process-message` em vez de `chatbot-reply`
+
+#### Sintaxe corrigida
+- `parse-document/index.ts` — corrigida função `extractWithAI` que estava erroneamente aninhada dentro de `findFileInZip`
+
+#### Config.toml actualizado
+- Removidas entradas `ai-triage` e `chatbot-reply`
+- Adicionadas entradas para `generate-embeddings`, `parse-document` e `queue-worker`
+
+#### Triggers PostgreSQL criados
+- `on_message_queue_insert` → auto-invoca `queue-worker` via `pg_net`
+- `on_lead_created` → notifica comerciais e admins
+- `on_message_created` → notifica de novas mensagens inbound
+- `on_payment_status_change` → notifica pagamentos recebidos
+- `on_lead_sla_check` → alerta SLA a expirar
+- `on_lead_set_sla` → define SLA automático na criação
+- `on_profile_created` → atribui admin ao primeiro utilizador
+- Cron job `queue-worker-backup` — invoca queue-worker a cada minuto
+
+### Estado actual — 8/8 melhorias implementadas ✅
+1. ✅ Código morto eliminado (chatbot-reply + ai-triage)
+2. ✅ Contexto expandido (30 mensagens: 15 recentes + 15 comprimidas TOON)
+3. ✅ RAG semântico (pgvector + match_chunks + generate-embeddings)
+4. ✅ Router multi-agente (sub_agent_ids + classificação de intenção)
+5. ✅ Tools dinâmicas (registry pattern + webhook fallback)
+6. ✅ Reflexão/Auto-avaliação (score 1-10, retry se < 7)
+7. ✅ Sentiment analysis + auto-escalação (2x frustração → humano)
+8. ✅ Queue worker auto-trigger (pg_trigger + pg_cron backup)
+
+### Mudanças realizadas (Fase 3 — Auditoria Arquitetural)
+
+#### 1. Dashboard de Observabilidade IA
+- Nova página `/observabilidade-ia` com KPIs: requisições, tokens, custo estimado, latência média, taxa fallback, taxa erro, rating feedback
+- Hook `useAiObservability.ts` com agregação de dados
+
+#### 2. Thumbs up/down no chat de atendimento
+- Botões de feedback em mensagens outbound (bot) no painel de atendimento
+
+#### 3. Retry com backoff no AI gateway (429/502/503, 2s delay, 1 retry)
+
+#### 4. Cost estimation real (tabela de preços por modelo, cálculo automático)
+
+#### 5. Memory extraction melhorada (cada 15 msgs + em transferência humana)
+
+#### 6. Reorganização do monólito (constantes extraídas, secções delimitadas)
+
+### Próximos passos
+- Batch job para gerar embeddings dos chunks existentes
+- Streaming no PlaygroundIA

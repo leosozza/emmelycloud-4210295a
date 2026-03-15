@@ -83,12 +83,21 @@ serve(async (req) => {
       }
 
       if (entity === "deal") {
-        const data = await bitrixCall("crm.dealcategory.list");
+        // Paginate to get ALL deal categories
+        const allCategories: any[] = [];
+        let start = 0;
+        while (true) {
+          const data = await bitrixCall("crm.dealcategory.list", { start });
+          const items = data.result || [];
+          allCategories.push(...items);
+          if (!data.next) break;
+          start = data.next;
+        }
         const categories = [
           { id: "0", name: "Pipeline Geral" },
-          ...((data.result || []).map((c: any) => ({ id: String(c.ID), name: c.NAME }))),
+          ...allCategories.map((c: any) => ({ id: String(c.ID), name: c.NAME })),
         ];
-        return json({ success: true, pipelines: categories });
+        return json({ success: true, pipelines: categories, total_pipelines: categories.length });
       }
 
       if (entity === "spa") {
