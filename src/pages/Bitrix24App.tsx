@@ -5453,7 +5453,7 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
             <div className="flex items-center gap-2 p-3 rounded-lg bg-primary/10 border border-primary/20">
               <AlertCircle className="h-4 w-4 text-primary shrink-0" />
               <p className="text-xs text-foreground flex-1">
-                Sessão anterior encontrada: {clientsProgress.processed}/{clientsProgress.total} clientes processados. Clique em "Importar" para retomar.
+                Sessão anterior encontrada: {clientsProgress.processed}/{clientsProgress.total} clientes processados. A retomada é automática.
               </p>
               <Button variant="ghost" size="sm" className="text-xs h-7 shrink-0" onClick={() => handleClearSession("clients")}>
                 <Trash2 className="h-3 w-3 mr-1" /> Limpar
