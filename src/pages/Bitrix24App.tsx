@@ -425,11 +425,16 @@ function DashboardView({ integration, botId, domain }: {
 
         const clientsTotal = portfolioRes?.meta?.clientCount ?? (Array.isArray(portfolioRes?.clients) ? portfolioRes.clients.length : 0);
 
+        const ptReceived = (revenueRes || []).reduce((s: number, t: any) => s + Number(t.amount), 0);
+        const ptPending = (pendingRes || []).reduce((s: number, t: any) => s + Number(t.amount), 0);
+        const portfolioPaid = portfolioRes?.totals?.paid ?? 0;
+        const portfolioPending = (portfolioRes?.totals?.pending ?? 0) + (portfolioRes?.totals?.overdue ?? 0);
+
         setStats({
           conversations: Array.isArray(convRes) ? convRes.length : 0,
           messagesToday: Array.isArray(msgTodayRes) ? msgTodayRes.length : 0,
-          revenueReceived: (revenueRes || []).reduce((s: number, t: any) => s + Number(t.amount), 0),
-          revenuePending: (pendingRes || []).reduce((s: number, t: any) => s + Number(t.amount), 0),
+          revenueReceived: ptReceived + portfolioPaid,
+          revenuePending: ptPending + portfolioPending,
           clientsCount: clientsTotal,
           messagesInPeriod: Array.isArray(msgTodayRes) ? msgTodayRes.length : 0,
         });
@@ -456,10 +461,13 @@ function DashboardView({ integration, botId, domain }: {
           fetch(`${SUPABASE_URL}/rest/v1/payment_transactions?select=amount&status=eq.pending&created_at=gte.${startISO}&created_at=lte.${endISO}`, { headers }).then(r => r.json()),
           fetch(`${SUPABASE_URL}/rest/v1/payment_transactions?select=amount&status=eq.overdue&created_at=gte.${startISO}&created_at=lte.${endISO}`, { headers }).then(r => r.json()),
         ]);
+        const ptPaidChart = (paidAll || []).reduce((s: number, t: any) => s + Number(t.amount), 0);
+        const ptPendChart = (pendAll || []).reduce((s: number, t: any) => s + Number(t.amount), 0);
+        const ptOverdueChart = (overdueAll || []).reduce((s: number, t: any) => s + Number(t.amount), 0);
         setPaymentChart([
-          { status: "Pago", amount: (paidAll || []).reduce((s: number, t: any) => s + Number(t.amount), 0) },
-          { status: "Pendente", amount: (pendAll || []).reduce((s: number, t: any) => s + Number(t.amount), 0) },
-          { status: "Atrasado", amount: (overdueAll || []).reduce((s: number, t: any) => s + Number(t.amount), 0) },
+          { status: "Pago", amount: ptPaidChart + (portfolioRes?.totals?.paid ?? 0) },
+          { status: "Pendente", amount: ptPendChart + (portfolioRes?.totals?.pending ?? 0) },
+          { status: "Atrasado", amount: ptOverdueChart + (portfolioRes?.totals?.overdue ?? 0) },
         ]);
 
         // Ranking: proposals accepted in period grouped by created_by
@@ -642,7 +650,7 @@ function DashboardView({ integration, botId, domain }: {
           { title: "Clientes na Carteira", value: String(stats.clientsCount), icon: Users, accent: "border-l-primary" },
           { title: "Cobranças Recebidas", value: fmtCur(stats.revenueReceived), icon: ArrowDownLeft, accent: "border-l-success" },
           { title: "Cobranças a Receber", value: fmtCur(stats.revenuePending), icon: ArrowUpRight, accent: "border-l-warning" },
-          { title: "Receita Total", value: fmtCur(stats.revenueReceived), icon: DollarSign, accent: "border-l-success" },
+          { title: "Receita Total", value: fmtCur(stats.revenueReceived + stats.revenuePending), icon: DollarSign, accent: "border-l-success" },
           { title: "Conversas Activas", value: String(stats.conversations), icon: MessageSquare, accent: "border-l-primary" },
           { title: "Mensagens Hoje", value: String(stats.messagesToday), icon: Zap, accent: "border-l-warning" },
         ].map((kpi) => (
