@@ -382,11 +382,15 @@ function DashboardView({ integration, botId, domain }: {
   const [period, setPeriod] = useState("30d");
   const [customStart, setCustomStart] = useState<Date | undefined>(undefined);
   const [customEnd, setCustomEnd] = useState<Date | undefined>(undefined);
+  const [selectedMonth, setSelectedMonth] = useState<number>(new Date().getMonth());
+  const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
+  const [showMonthPicker, setShowMonthPicker] = useState(false);
+  const [showYearPicker, setShowYearPicker] = useState(false);
 
   const dateRange = useMemo(() => {
     if (customStart && customEnd) return { start: customStart, end: customEnd };
-    return getDateRange(period);
-  }, [period, customStart, customEnd]);
+    return getDateRange(period, selectedMonth, selectedYear);
+  }, [period, customStart, customEnd, selectedMonth, selectedYear]);
 
   const startISO = dateRange.start.toISOString();
   const endISO = dateRange.end.toISOString();
