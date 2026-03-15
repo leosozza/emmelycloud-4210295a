@@ -412,6 +412,7 @@ serve(async (req) => {
       // Step 5: Batch Bitrix lookup — load deals with UF_CRM_1768312831 and UF_CRM_EMMELY_NIF in bulk
       let bitrixDealsByAccessId: Record<string, { dealId: string; contactId: string | null }> = {};
       let bitrixDealsByNif: Record<string, { dealId: string; contactId: string | null }> = {};
+      let bitrixDealsByContactId: Record<string, string> = {}; // contactId -> dealId
       let bitrixContactsByName: Record<string, string> = {};
       let bitrixContactsByPhone: Record<string, string> = {};
       let bitrixContactsByEmail: Record<string, string> = {};
