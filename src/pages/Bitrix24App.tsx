@@ -4265,13 +4265,26 @@ function CarteiraAccessView({ integration, memberId }: { integration: any; membe
     return match ? match[1] : null;
   };
 
-  const fetchAll = async () => {
+  const resolvedMemberId = memberId || integration?.member_id || "";
+
+  const fetchAll = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch(
-        `${SUPABASE_URL}/functions/v1/bitrix24-fetch-portfolio?member_id=${encodeURIComponent(memberId || "")}`,
-        { headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` } }
-      );
+      const url = resolvedMemberId
+        ? `${SUPABASE_URL}/functions/v1/bitrix24-fetch-portfolio?member_id=${encodeURIComponent(resolvedMemberId)}`
+        : `${SUPABASE_URL}/functions/v1/bitrix24-fetch-portfolio`;
+
+      const res = await fetch(url, {
+        headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` },
+      });
+
+      if (!res.ok) {
+        const text = await res.text();
+        console.error("[Carteira] Portfolio HTTP error:", res.status, text);
+        setClientsData([]);
+        return;
+      }
+
       const data = await res.json();
       if (!data.success || !data.clients) {
         console.error("[Carteira] Portfolio error:", data.error);
@@ -4281,12 +4294,15 @@ function CarteiraAccessView({ integration, memberId }: { integration: any; membe
       setClientsData(data.clients as ClientFinancials[]);
     } catch (e) {
       console.error("[Carteira] Error:", e);
+      setClientsData([]);
     } finally {
       setLoading(false);
     }
-  };
+  }, [resolvedMemberId]);
 
-  useEffect(() => { fetchAll(); }, []);
+  useEffect(() => {
+    fetchAll();
+  }, [fetchAll]);
 
   const filtered = useMemo(() => {
     if (!search.trim()) return clientsData;
