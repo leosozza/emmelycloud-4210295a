@@ -313,10 +313,10 @@ serve(async (req) => {
             proposals!proposals_case_id_fkey (
               id, title, value, installments, status,
               contracts!contracts_proposal_id_fkey (
-                id,
+                id, created_at,
                 financial_records!financial_records_contract_id_fkey (
                   id, description, total_value, installment_number, total_installments,
-                  installment_value, status, due_date, paid_at
+                  installment_value, status, due_date, paid_at, created_at
                 )
               )
             )
@@ -334,7 +334,7 @@ serve(async (req) => {
           financialMap[cid] = {
             totalValue: 0, totalPaid: 0, allPaid: true, hasOverdue: false,
             overdueCount: 0, overdueValue: 0, services: [], recordsCount: 0,
-            phones: [], emails: [],
+            phones: [], emails: [], contractDate: null as string | null,
           };
         }
         const fm = financialMap[cid];
@@ -347,6 +347,12 @@ serve(async (req) => {
           for (const proposal of (caso.proposals || [])) {
             fm.totalValue += Number(proposal.value) || 0;
             for (const contract of (proposal.contracts || [])) {
+              // Track earliest contract date (Column F - DATA)
+              if (contract.created_at) {
+                if (!fm.contractDate || contract.created_at < fm.contractDate) {
+                  fm.contractDate = contract.created_at;
+                }
+              }
               for (const fr of (contract.financial_records || [])) {
                 fm.recordsCount++;
                 if (fr.status === "paga") {
