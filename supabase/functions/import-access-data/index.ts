@@ -280,10 +280,10 @@ serve(async (req) => {
     }
 
     // ══════════════════════════════════════════════════════════════════
-    // MODE: list_sync_clients — List clients classified by status + Bitrix lookup
+    // MODE: list_sync_clients — Batch-optimized: aggregated SQL + batch Bitrix lookup
     // ══════════════════════════════════════════════════════════════════
     if (mode === "list_sync_clients") {
-      // Fetch clients from Supabase
+      // Step 1: Fetch ALL imported clients with financial data via aggregated query
       const { data: allClients, error: clientsErr } = await supabase
         .from("clients")
         .select("id, name, document_number, document_type, notes, address, postal_code, country, birth_date, nationality")
@@ -296,22 +296,130 @@ serve(async (req) => {
         });
       }
 
-      const total = allClients?.length || 0;
-      const batch = (allClients || []).slice(batch_start, batch_start + batch_size);
-      const clientsList: any[] = [];
+      const clientIds = (allClients || []).map((c: any) => c.id);
+      if (clientIds.length === 0) {
+        return new Response(JSON.stringify({ success: true, mode: "list_sync_clients", clients: [], processed: 0, total: 0, has_more: false, next_batch_start: null }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
 
-      // Optional Bitrix lookup
-      let bitrixCall: ((method: string, payload?: Record<string, any>) => Promise<any>) | null = null;
+      // Step 2: Batch fetch ALL leads with financial chain for these clients
+      const { data: allLeads } = await supabase
+        .from("leads")
+        .select(`
+          id, name, client_id, phone, email,
+          cases!cases_lead_id_fkey (
+            id, title,
+            proposals!proposals_case_id_fkey (
+              id, title, value, installments, status,
+              contracts!contracts_proposal_id_fkey (
+                id,
+                financial_records!financial_records_contract_id_fkey (
+                  id, description, total_value, installment_number, total_installments,
+                  installment_value, status, due_date, paid_at
+                )
+              )
+            )
+          )
+        `)
+        .in("client_id", clientIds)
+        .eq("sync_source", "access_import");
+
+      // Step 3: Build a map of client_id -> financial summary
+      const financialMap: Record<string, any> = {};
+      for (const lead of (allLeads || [])) {
+        const cid = lead.client_id;
+        if (!cid) continue;
+        if (!financialMap[cid]) {
+          financialMap[cid] = {
+            totalValue: 0, totalPaid: 0, allPaid: true, hasOverdue: false,
+            overdueCount: 0, overdueValue: 0, services: [], recordsCount: 0,
+            phones: [], emails: [],
+          };
+        }
+        const fm = financialMap[cid];
+        // Collect phones/emails from leads
+        if (lead.phone && !fm.phones.includes(lead.phone)) fm.phones.push(lead.phone);
+        if (lead.email && !fm.emails.includes(lead.email)) fm.emails.push(lead.email);
+
+        for (const caso of (lead.cases || [])) {
+          if (caso.title && !fm.services.includes(caso.title)) fm.services.push(caso.title);
+          for (const proposal of (caso.proposals || [])) {
+            fm.totalValue += Number(proposal.value) || 0;
+            for (const contract of (proposal.contracts || [])) {
+              for (const fr of (contract.financial_records || [])) {
+                fm.recordsCount++;
+                if (fr.status === "paga") {
+                  fm.totalPaid += Number(fr.installment_value) || 0;
+                } else {
+                  fm.allPaid = false;
+                  if (fr.status === "atrasada") {
+                    fm.hasOverdue = true;
+                    fm.overdueCount++;
+                    fm.overdueValue += Number(fr.installment_value) || 0;
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+
+      // Step 4: Filter clients that have financial records, classify, and paginate
+      const clientsWithFinancials: any[] = [];
+      for (const client of (allClients || [])) {
+        const fm = financialMap[client.id];
+        if (!fm || fm.recordsCount === 0) continue;
+
+        const accessIdMatch = (client.notes || "").match(/ID:\s*(\d+)/);
+        const accessId = accessIdMatch ? accessIdMatch[1] : null;
+
+        let statusClass = "aberto";
+        if (fm.recordsCount > 0 && fm.allPaid) statusClass = "quitado";
+        else if (fm.hasOverdue) statusClass = "atrasado";
+
+        clientsWithFinancials.push({
+          client_id: client.id,
+          name: client.name,
+          nif: client.document_number,
+          phones: fm.phones,
+          emails: fm.emails,
+          total_value: fm.totalValue,
+          total_paid: fm.totalPaid,
+          status_class: statusClass,
+          services: fm.services,
+          records_count: fm.recordsCount,
+          access_id: accessId,
+          has_overdue: fm.hasOverdue,
+          overdue_count: fm.overdueCount,
+          overdue_value: fm.overdueValue,
+          all_paid: fm.allPaid,
+          address: client.address,
+          birth_date: client.birth_date,
+        });
+      }
+
+      const total = clientsWithFinancials.length;
+      const batch = clientsWithFinancials.slice(batch_start, batch_start + batch_size);
+
+      // Step 5: Batch Bitrix lookup — load deals with UF_CRM_1768312831 and UF_CRM_EMMELY_NIF in bulk
+      let bitrixDealsByAccessId: Record<string, { dealId: string; contactId: string | null }> = {};
+      let bitrixDealsByNif: Record<string, { dealId: string; contactId: string | null }> = {};
+      let bitrixContactsByName: Record<string, string> = {};
+      let bitrixContactsByPhone: Record<string, string> = {};
+      let bitrixContactsByEmail: Record<string, string> = {};
+
       if (member_id) {
         const { data: integration } = await supabase
           .from("bitrix24_integrations")
           .select("*")
           .eq("member_id", member_id)
           .single();
+
         if (integration?.client_endpoint && integration?.access_token) {
           const endpoint = integration.client_endpoint;
           const accessToken = integration.access_token;
-          bitrixCall = async (method: string, payload: Record<string, any> = {}) => {
+          const bitrixCall = async (method: string, payload: Record<string, any> = {}) => {
             const res = await fetch(`${endpoint}${method}`, {
               method: "POST",
               headers: { "Content-Type": "application/json" },
@@ -319,74 +427,117 @@ serve(async (req) => {
             });
             return res.json();
           };
-        }
-      }
 
-      for (const client of batch) {
-        try {
-          const info = await fetchClientWithFinancials(supabase, client);
-          
-          // Skip clients with no financial records
-          if (info.records_count === 0) continue;
-
-          let bitrix_contact_id: string | null = null;
-          let bitrix_deal_id: string | null = null;
-
-          if (bitrixCall) {
-            // Lookup by UF (access id)
-            if (info.access_id) {
+          // Batch load ALL deals with UF_CRM_1768312831 (access ID)
+          try {
+            let start = 0;
+            while (true) {
               const res = await bitrixCall("crm.deal.list", {
-                filter: { UF_CRM_1768312831: info.access_id },
-                select: ["ID", "CONTACT_ID"],
+                filter: { "!UF_CRM_1768312831": "" },
+                select: ["ID", "CONTACT_ID", "UF_CRM_1768312831", "UF_CRM_EMMELY_NIF"],
+                start,
               });
-              if (res.result?.length > 0) {
-                bitrix_deal_id = res.result[0].ID;
-                bitrix_contact_id = res.result[0].CONTACT_ID || null;
+              for (const deal of (res.result || [])) {
+                if (deal.UF_CRM_1768312831) {
+                  bitrixDealsByAccessId[deal.UF_CRM_1768312831] = { dealId: deal.ID, contactId: deal.CONTACT_ID || null };
+                }
+                if (deal.UF_CRM_EMMELY_NIF) {
+                  bitrixDealsByNif[deal.UF_CRM_EMMELY_NIF] = { dealId: deal.ID, contactId: deal.CONTACT_ID || null };
+                }
               }
+              if (!res.next) break;
+              start = res.next;
             }
-            // Lookup by NIF
-            if (!bitrix_deal_id && info.nif && !info.nif.startsWith("ACCESS_")) {
-              const res = await bitrixCall("crm.deal.list", {
-                filter: { UF_CRM_EMMELY_NIF: info.nif },
-                select: ["ID", "CONTACT_ID"],
+          } catch (e) {
+            console.error("[list_sync_clients] Batch deal fetch error:", e);
+          }
+
+          // Batch load contacts for matching by phone, email, name
+          try {
+            let start = 0;
+            while (true) {
+              const res = await bitrixCall("crm.contact.list", {
+                select: ["ID", "NAME", "LAST_NAME", "PHONE", "EMAIL"],
+                start,
               });
-              if (res.result?.length > 0) {
-                bitrix_deal_id = res.result[0].ID;
-                bitrix_contact_id = res.result[0].CONTACT_ID || null;
-              }
-            }
-            // Lookup by phone
-            if (!bitrix_deal_id && info.phones.length > 0) {
-              for (const phone of info.phones) {
-                const contactRes = await bitrixCall("crm.contact.list", {
-                  filter: { PHONE: phone },
-                  select: ["ID"],
-                });
-                if (contactRes.result?.length > 0) {
-                  const foundContactId = contactRes.result[0].ID;
-                  const dealRes = await bitrixCall("crm.deal.list", {
-                    filter: { CONTACT_ID: foundContactId },
-                    select: ["ID", "CONTACT_ID"],
-                  });
-                  if (dealRes.result?.length > 0) {
-                    bitrix_deal_id = dealRes.result[0].ID;
-                    bitrix_contact_id = foundContactId;
-                    break;
+              for (const contact of (res.result || [])) {
+                const fullName = [contact.NAME, contact.LAST_NAME].filter(Boolean).join(" ").toUpperCase().trim();
+                if (fullName) bitrixContactsByName[fullName] = contact.ID;
+                if (contact.PHONE) {
+                  for (const p of contact.PHONE) {
+                    if (p.VALUE) bitrixContactsByPhone[p.VALUE.replace(/\D/g, "")] = contact.ID;
+                  }
+                }
+                if (contact.EMAIL) {
+                  for (const e of contact.EMAIL) {
+                    if (e.VALUE) bitrixContactsByEmail[e.VALUE.toLowerCase()] = contact.ID;
                   }
                 }
               }
+              if (!res.next) break;
+              start = res.next;
+            }
+          } catch (e) {
+            console.error("[list_sync_clients] Batch contact fetch error:", e);
+          }
+        }
+      }
+
+      // Step 6: Match each client in the batch
+      const clientsList: any[] = [];
+      for (const info of batch) {
+        let bitrix_contact_id: string | null = null;
+        let bitrix_deal_id: string | null = null;
+
+        // Match 1: by Access ID
+        if (info.access_id && bitrixDealsByAccessId[info.access_id]) {
+          const match = bitrixDealsByAccessId[info.access_id];
+          bitrix_deal_id = match.dealId;
+          bitrix_contact_id = match.contactId;
+        }
+
+        // Match 2: by NIF
+        if (!bitrix_deal_id && info.nif && !info.nif.startsWith("ACCESS_") && bitrixDealsByNif[info.nif]) {
+          const match = bitrixDealsByNif[info.nif];
+          bitrix_deal_id = match.dealId;
+          bitrix_contact_id = match.contactId;
+        }
+
+        // Match 3: by Phone
+        if (!bitrix_deal_id && info.phones.length > 0) {
+          for (const phone of info.phones) {
+            const normalized = phone.replace(/\D/g, "");
+            if (bitrixContactsByPhone[normalized]) {
+              bitrix_contact_id = bitrixContactsByPhone[normalized];
+              break;
             }
           }
-
-          clientsList.push({
-            ...info,
-            records: undefined, // Don't send raw records to frontend
-            bitrix_contact_id,
-            bitrix_deal_id,
-          });
-        } catch (e) {
-          console.error(`[list_sync_clients] Error for ${client.name}:`, e);
         }
+
+        // Match 4: by Email
+        if (!bitrix_contact_id && info.emails.length > 0) {
+          for (const email of info.emails) {
+            const norm = email.toLowerCase();
+            if (bitrixContactsByEmail[norm]) {
+              bitrix_contact_id = bitrixContactsByEmail[norm];
+              break;
+            }
+          }
+        }
+
+        // Match 5: by Full Name
+        if (!bitrix_contact_id && info.name) {
+          const nameUpper = info.name.toUpperCase().trim();
+          if (bitrixContactsByName[nameUpper]) {
+            bitrix_contact_id = bitrixContactsByName[nameUpper];
+          }
+        }
+
+        clientsList.push({
+          ...info,
+          bitrix_contact_id,
+          bitrix_deal_id,
+        });
       }
 
       const processed = batch_start + batch.length;

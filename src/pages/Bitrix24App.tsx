@@ -5434,17 +5434,24 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
     resumeSessions();
   }, []);
 
+  const [pipelinesFeedback, setPipelinesFeedback] = useState<string>("");
+
   // Load pipelines when integration available
   useEffect(() => {
     if (!memberId || !integration) return;
     setLoadingPipelines(true);
+    setPipelinesFeedback("");
     fetch(`${SUPABASE_URL}/functions/v1/bitrix24-fetch-entities?action=pipelines&entity=deal&member_id=${encodeURIComponent(memberId)}`, {
       headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` },
     })
       .then(r => r.json())
       .then(data => {
         const list = data.pipelines || [];
-        if (Array.isArray(list)) setPipelines(list);
+        if (Array.isArray(list)) {
+          setPipelines(list);
+          const extra = list.filter((p: any) => p.id !== "0" && p.id !== "C0").length;
+          setPipelinesFeedback(extra > 0 ? `${extra + 1} pipelines encontradas` : "Apenas o Pipeline Geral encontrado no Bitrix24");
+        }
       })
       .catch(console.error)
       .finally(() => setLoadingPipelines(false));
