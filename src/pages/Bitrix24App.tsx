@@ -4327,7 +4327,7 @@ interface ClientFinancials {
   serviceCount: number;
 }
 
-function CarteiraAccessView({ integration, memberId }: { integration: any; memberId: string | null }) {
+function CarteiraAccessView({ integration, memberId, cachedPortfolio }: { integration: any; memberId: string | null; cachedPortfolio?: any }) {
   const [clientsData, setClientsData] = useState<ClientFinancials[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -4383,8 +4383,13 @@ function CarteiraAccessView({ integration, memberId }: { integration: any; membe
   }, [resolvedMemberId]);
 
   useEffect(() => {
+    if (cachedPortfolio?.success && Array.isArray(cachedPortfolio.clients)) {
+      setClientsData(cachedPortfolio.clients as ClientFinancials[]);
+      setLoading(false);
+      return;
+    }
     fetchAll();
-  }, [fetchAll]);
+  }, [cachedPortfolio, fetchAll]);
 
   const filtered = useMemo(() => {
     if (!search.trim()) return clientsData;
