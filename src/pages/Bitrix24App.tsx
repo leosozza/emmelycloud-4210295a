@@ -5853,7 +5853,7 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
             mode: "list_sync_clients",
             batch_start: batchStart,
             batch_size: batchSize,
-            member_id: memberId,
+            member_id: resolvedMemberId,
           }),
         });
         const data = await res.json();
