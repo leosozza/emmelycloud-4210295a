@@ -5273,6 +5273,7 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
   const [loadingSyncClients, setLoadingSyncClients] = useState(false);
   const [syncClientsLoaded, setSyncClientsLoaded] = useState(false);
   const [activeTab, setActiveTab] = useState<"quitado" | "aberto" | "atrasado">("atrasado");
+  const [syncSegment, setSyncSegment] = useState<"existing" | "new">("existing");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [editingClient, setEditingClient] = useState<SyncClient | null>(null);
   const [editName, setEditName] = useState("");
