@@ -5156,7 +5156,7 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
         .from("import_sessions" as any)
         .select("*")
         .eq("user_id", user.id)
-        .eq("status", "in_progress") as any;
+        .in("status", ["in_progress", "done"]) as any;
 
       if (!sessions || sessions.length === 0) return;
 
