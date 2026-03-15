@@ -227,6 +227,7 @@ serve(async (req) => {
       let hasOverdue = false;
       let overdueCount = 0;
       let overdueValue = 0;
+      let contractDate: string | null = null;
       const serviceDescs: string[] = [];
 
       for (const lead of (financialData || [])) {
