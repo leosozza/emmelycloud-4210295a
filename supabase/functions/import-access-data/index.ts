@@ -196,16 +196,16 @@ serve(async (req) => {
       const { data: financialData } = await supabase
         .from("leads")
         .select(`
-          id, name,
+          id, name, phone, email,
           cases!cases_lead_id_fkey (
             id, title,
             proposals!proposals_case_id_fkey (
               id, title, value, installments, status,
               contracts!contracts_proposal_id_fkey (
-                id,
+                id, created_at,
                 financial_records!financial_records_contract_id_fkey (
                   id, description, total_value, installment_number, total_installments,
-                  installment_value, status, due_date, paid_at
+                  installment_value, status, due_date, paid_at, created_at
                 )
               )
             )
@@ -213,6 +213,12 @@ serve(async (req) => {
         `)
         .eq("client_id", client.id)
         .eq("sync_source", "access_import");
+
+      // Also collect phones/emails from leads
+      for (const lead of (financialData || [])) {
+        if (lead.phone && !phones.includes(lead.phone)) phones.push(lead.phone);
+        if (lead.email && !emails.includes(lead.email)) emails.push(lead.email);
+      }
 
       const allRecords: any[] = [];
       let totalValue = 0;
