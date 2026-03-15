@@ -419,6 +419,20 @@ serve(async (req) => {
         }
       }
 
+      // Enrich financialMap with client_contacts data
+      for (const cid of clientIds) {
+        const cc = contactsMap[cid];
+        if (!cc) continue;
+        if (!financialMap[cid]) continue;
+        const fm = financialMap[cid];
+        for (const phone of cc.phones) {
+          if (!fm.phones.includes(phone)) fm.phones.push(phone);
+        }
+        for (const email of cc.emails) {
+          if (!fm.emails.includes(email)) fm.emails.push(email);
+        }
+      }
+
       // Step 4: Filter clients that have financial records, classify, and paginate
       const clientsWithFinancials: any[] = [];
       for (const client of (allClients || [])) {
