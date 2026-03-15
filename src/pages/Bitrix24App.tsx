@@ -5465,11 +5465,24 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
+          {/* Resume banner */}
+          {honorariosSessionId && honorariosProgress.processed > 0 && !honorariosDone && !importingHonorarios && (
+            <div className="flex items-center gap-2 p-3 rounded-lg bg-primary/10 border border-primary/20">
+              <AlertCircle className="h-4 w-4 text-primary shrink-0" />
+              <p className="text-xs text-foreground flex-1">
+                Sessão anterior encontrada: {honorariosProgress.processed}/{honorariosProgress.total} clientes processados. Clique em "Importar" para retomar.
+              </p>
+              <Button variant="ghost" size="sm" className="text-xs h-7 shrink-0" onClick={() => handleClearSession("honorarios")}>
+                <Trash2 className="h-3 w-3 mr-1" /> Limpar
+              </Button>
+            </div>
+          )}
+
           <div className="space-y-2">
             <Label className="text-sm font-medium">TBL_HONORARIOS.xlsx</Label>
             <Input type="file" accept=".xlsx,.xls" onChange={handleHonorariosUpload} disabled={isImporting} />
             {honorariosData && (
-              <p className="text-xs text-muted-foreground">✅ {honorariosData.length} registos carregados</p>
+              <p className="text-xs text-muted-foreground">✅ {honorariosData.length} registos carregados{honorariosSessionId ? " · 📁 Ficheiro guardado" : ""}</p>
             )}
             <p className="text-xs text-muted-foreground">Os clientes importados na Fase 1 serão usados automaticamente da base de dados.</p>
           </div>
