@@ -314,7 +314,7 @@ const Bitrix24App = () => {
         {view === "flows" && <FlowsView />}
         {view === "playground" && <PlaygroundView />}
         {view === "chatia" && <ChatIABitrixView />}
-        {view === "mapeamento" && <MapeamentoView integrationId={integration?.id} memberId={memberId || undefined} />}
+        {view === "mapeamento" && <MapeamentoView integrationId={integration?.id} memberId={memberId || integration?.member_id || undefined} />}
         {view === "pagamentos" && <PagamentosView integration={integration} onRefresh={() => memberId && fetchData(memberId)} />}
         {view === "baixa" && <BaixaCarteiraView integration={integration} />}
         {view === "placement" && <PlacementPreviewView integration={integration} memberId={memberId} />}
