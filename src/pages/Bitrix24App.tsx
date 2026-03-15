@@ -423,7 +423,7 @@ function DashboardView({ integration, botId, domain }: {
           fetch(`${SUPABASE_URL}/functions/v1/bitrix24-fetch-portfolio${memberParam}`, { headers }).then(r => r.json()),
         ]);
 
-        const clientsTotal = Array.isArray(portfolioRes?.clients) ? portfolioRes.clients.length : (portfolioRes?.total_clients ?? 0);
+        const clientsTotal = portfolioRes?.meta?.clientCount ?? (Array.isArray(portfolioRes?.clients) ? portfolioRes.clients.length : 0);
 
         setStats({
           conversations: Array.isArray(convRes) ? convRes.length : 0,
