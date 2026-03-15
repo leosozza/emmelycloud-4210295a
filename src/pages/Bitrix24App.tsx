@@ -424,6 +424,7 @@ function DashboardView({ integration, botId, domain }: {
           fetch(`${SUPABASE_URL}/functions/v1/bitrix24-fetch-portfolio${memberParam}`, { headers }).then(r => r.json()),
         ]);
 
+        setCachedPortfolio(portfolioRes);
         const clientsTotal = portfolioRes?.meta?.clientCount ?? (Array.isArray(portfolioRes?.clients) ? portfolioRes.clients.length : 0);
 
         const ptReceived = (revenueRes || []).reduce((s: number, t: any) => s + Number(t.amount), 0);
