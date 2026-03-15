@@ -6280,13 +6280,23 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
               {/* Load clients button */}
               <Button onClick={handleLoadSyncClients} disabled={isImporting} className="w-full" size="lg" variant="outline">
                 {loadingSyncClients ? (
-                  <><Loader2 className="h-4 w-4 animate-spin mr-2" /> Carregando clientes...</>
+                  <><Loader2 className="h-4 w-4 animate-spin mr-2" /> Carregando clientes... {syncLoadProgress.total > 0 ? `(${syncLoadProgress.processed}/${syncLoadProgress.total})` : ""}</>
                 ) : syncClientsLoaded ? (
                   <><RefreshCw className="h-4 w-4 mr-2" /> Recarregar ({syncClients.length} clientes)</>
                 ) : (
                   <><Users className="h-4 w-4 mr-2" /> Carregar Clientes para Sincronização</>
                 )}
               </Button>
+
+              {/* Loading progress bar */}
+              {loadingSyncClients && syncLoadProgress.total > 0 && (
+                <div className="space-y-1">
+                  <Progress value={Math.round((syncLoadProgress.processed / syncLoadProgress.total) * 100)} className="h-2" />
+                  <p className="text-xs text-muted-foreground text-center">
+                    {syncLoadProgress.processed} / {syncLoadProgress.total} clientes carregados ({syncClients.length} com dados financeiros)
+                  </p>
+                </div>
+              )}
 
               {/* Tabs + Client list */}
               {syncClientsLoaded && syncClients.length > 0 && (
