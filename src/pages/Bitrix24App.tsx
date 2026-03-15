@@ -5814,13 +5814,16 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
   };
 
   // ── Phase 3: Load clients for sync ──
+  const [syncLoadProgress, setSyncLoadProgress] = useState({ processed: 0, total: 0 });
+
   const handleLoadSyncClients = async () => {
     setLoadingSyncClients(true);
     setSyncClients([]);
     setSyncClientsLoaded(false);
+    setSyncLoadProgress({ processed: 0, total: 0 });
 
     let batchStart = 0;
-    const batchSize = 20;
+    const batchSize = 50; // Larger batches since matching is now server-side in-memory
     const allClients: SyncClient[] = [];
 
     while (true) {
@@ -5843,6 +5846,8 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
         const data = await res.json();
         if (!data.success) break;
         if (data.clients) allClients.push(...data.clients);
+        setSyncLoadProgress({ processed: data.processed || allClients.length, total: data.total || 0 });
+        setSyncClients([...allClients]); // Update progressively
         if (!data.has_more) break;
         batchStart = data.next_batch_start;
       } catch (e) {
