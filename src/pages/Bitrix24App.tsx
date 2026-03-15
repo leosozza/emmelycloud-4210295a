@@ -373,13 +373,14 @@ function getDateRange(preset: string, selectedMonth?: number, selectedYear?: num
 }
 
 // ==================== DASHBOARD VIEW (NEW) ====================
-function DashboardView({ integration, botId, domain }: {
+function DashboardView({ integration, botId, domain, onCachePortfolio }: {
   integration: any;
   botId: string | null;
   domain: string | null;
   loading: boolean;
   onResync: () => void;
   onRefresh: () => void;
+  onCachePortfolio?: (data: any) => void;
 }) {
   const [period, setPeriod] = useState("30d");
   const [customStart, setCustomStart] = useState<Date | undefined>(undefined);
