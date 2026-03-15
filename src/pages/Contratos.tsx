@@ -14,6 +14,11 @@ import { Plus, Search, Pencil, Trash2, FileSignature, Ban, Link2, Copy, Download
 import { useToast } from "@/hooks/use-toast";
 import { Tables, Constants } from "@/integrations/supabase/types";
 import { ContratoForm } from "@/components/contratos/ContratoForm";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { Textarea } from "@/components/ui/textarea";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { format, parseISO } from "date-fns";
 import { PageHeader } from "@/components/PageHeader";
 import { EntityBreadcrumb } from "@/components/EntityBreadcrumb";
@@ -130,14 +135,49 @@ const ContratosPage = () => {
     },
   });
 
+  // Cancel dialog state
+  const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
+  const [cancelTargetId, setCancelTargetId] = useState<string | null>(null);
+  const [cancelReason, setCancelReason] = useState("desistencia");
+  const [cancelHasRefund, setCancelHasRefund] = useState(false);
+  const [cancelRefundAmount, setCancelRefundAmount] = useState(0);
+  const [cancelNotes, setCancelNotes] = useState("");
+
+  const openCancelDialog = (id: string) => {
+    setCancelTargetId(id);
+    setCancelReason("desistencia");
+    setCancelHasRefund(false);
+    setCancelRefundAmount(0);
+    setCancelNotes("");
+    setCancelDialogOpen(true);
+  };
+
   const cancelMutation = useMutation({
-    mutationFn: async (id: string) => {
-      const { error } = await supabase.from("contracts").update({ status: "cancelado" as any }).eq("id", id);
+    mutationFn: async ({ id, reason, refundAmount, notes }: { id: string; reason: string; refundAmount: number; notes: string }) => {
+      const reasonLabels: Record<string, string> = {
+        desistencia: "Desistência do cliente",
+        incumprimento: "Incumprimento",
+        acordo_mutuo: "Acordo mútuo",
+        erro_admin: "Erro administrativo",
+        outro: "Outro",
+      };
+      const fullReason = `${reasonLabels[reason] || reason}${notes ? ` — ${notes}` : ""}`;
+      const { error } = await supabase.from("contracts").update({
+        status: "cancelado" as any,
+        cancelled_at: new Date().toISOString(),
+        cancel_reason: fullReason,
+        refund_amount: refundAmount,
+      } as any).eq("id", id);
       if (error) throw error;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["contracts"] });
+      setCancelDialogOpen(false);
+      setCancelTargetId(null);
       toast({ title: "Contrato cancelado" });
+    },
+    onError: (e: any) => {
+      toast({ title: "Erro", description: e.message, variant: "destructive" });
     },
   });
 
@@ -221,7 +261,23 @@ const ContratosPage = () => {
                   ) : "—"}
                 </TableCell>
                 <TableCell>
-                  <Badge className={`text-xs ${statusColors[c.status]}`}>{statusLabels[c.status]}</Badge>
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <div>
+                          <Badge className={`text-xs ${statusColors[c.status]}`}>{statusLabels[c.status]}</Badge>
+                          {c.status === "cancelado" && (c as any).refund_amount > 0 && (
+                            <Badge variant="outline" className="text-[10px] ml-1">Devolvido: €{(c as any).refund_amount}</Badge>
+                          )}
+                        </div>
+                      </TooltipTrigger>
+                      {c.status === "cancelado" && (c as any).cancel_reason && (
+                        <TooltipContent>
+                          <p className="text-xs">{(c as any).cancel_reason}</p>
+                        </TooltipContent>
+                      )}
+                    </Tooltip>
+                  </TooltipProvider>
                 </TableCell>
                 <TableCell className="text-xs text-muted-foreground">{fmtDate(c.starts_at)}</TableCell>
                 <TableCell className="text-xs text-muted-foreground">{fmtDate(c.expires_at)}</TableCell>
@@ -247,7 +303,7 @@ const ContratosPage = () => {
                         <Button variant="ghost" size="icon" title="Assinar (interno)" onClick={() => signMutation.mutate(c.id)}>
                           <FileSignature className="h-4 w-4 text-success" />
                         </Button>
-                        <Button variant="ghost" size="icon" title="Cancelar" onClick={() => cancelMutation.mutate(c.id)}>
+                        <Button variant="ghost" size="icon" title="Cancelar" onClick={() => openCancelDialog(c.id)}>
                           <Ban className="h-4 w-4 text-destructive" />
                         </Button>
                       </>
@@ -271,6 +327,55 @@ const ContratosPage = () => {
           </TableBody>
         </Table>
       </div>
+
+      {/* Cancel Dialog */}
+      <Dialog open={cancelDialogOpen} onOpenChange={(o) => !o && setCancelDialogOpen(false)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Cancelar Contrato</DialogTitle>
+            <DialogDescription>Indique o motivo e se houve devolução de valores.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-1.5">
+              <Label className="text-xs">Motivo do cancelamento</Label>
+              <Select value={cancelReason} onValueChange={setCancelReason}>
+                <SelectTrigger className="h-9 text-sm"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="desistencia">Desistência do cliente</SelectItem>
+                  <SelectItem value="incumprimento">Incumprimento</SelectItem>
+                  <SelectItem value="acordo_mutuo">Acordo mútuo</SelectItem>
+                  <SelectItem value="erro_admin">Erro administrativo</SelectItem>
+                  <SelectItem value="outro">Outro</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="flex items-center gap-3">
+              <Switch checked={cancelHasRefund} onCheckedChange={setCancelHasRefund} />
+              <Label className="text-sm">Houve devolução de valor?</Label>
+            </div>
+
+            {cancelHasRefund && (
+              <div className="space-y-1.5">
+                <Label className="text-xs">Valor devolvido (€)</Label>
+                <Input type="number" step="0.01" className="h-9 text-sm" value={cancelRefundAmount} onChange={(e) => setCancelRefundAmount(parseFloat(e.target.value) || 0)} />
+              </div>
+            )}
+
+            <div className="space-y-1.5">
+              <Label className="text-xs">Notas adicionais (opcional)</Label>
+              <Textarea className="text-sm" rows={2} value={cancelNotes} onChange={(e) => setCancelNotes(e.target.value)} placeholder="Detalhes sobre o cancelamento..." />
+            </div>
+
+            <div className="flex gap-2 pt-2">
+              <Button variant="outline" className="flex-1" onClick={() => setCancelDialogOpen(false)} disabled={cancelMutation.isPending}>Voltar</Button>
+              <Button variant="destructive" className="flex-1" disabled={cancelMutation.isPending} onClick={() => cancelTargetId && cancelMutation.mutate({ id: cancelTargetId, reason: cancelReason, refundAmount: cancelHasRefund ? cancelRefundAmount : 0, notes: cancelNotes })}>
+                {cancelMutation.isPending ? "A cancelar..." : "Confirmar Cancelamento"}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <ContratoForm
         open={formOpen}

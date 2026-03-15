@@ -1,47 +1,104 @@
 
 
-## Cancelamento de Contrato com Devolução e Motivo
+## Revisão Arquitetural — Fase 2 Implementada
 
-### Problema
-Atualmente, o cancelamento de contrato apenas muda o status para "cancelado" sem registar se houve devolução de valores ou o motivo do cancelamento. O utilizador precisa desta informação para controlo financeiro e auditoria.
+### Mudanças realizadas (Fase 2)
 
-### Alterações
+#### 1. Código morto eliminado
+- `chatbot-reply/index.ts` — **removido** (100% duplicado com flow-engine → ai-process-message)
+- `ai-triage/index.ts` — **removido** (100% duplicado com ai-automation-agent action classify_lead)
 
-#### 1. Migração SQL — Novos campos na tabela `contracts`
-Adicionar 3 colunas:
-- `cancelled_at` (timestamptz, nullable) — data do cancelamento
-- `cancel_reason` (text, nullable) — motivo do cancelamento
-- `refund_amount` (numeric, nullable, default 0) — valor devolvido
+#### 2. Janela de contexto expandida
+- `RECENT_MSG_COUNT`: 5 → **15** mensagens recentes completas
+- `HISTORY_LIMIT`: 15 → **30** mensagens totais
+- TOON comprime as 15 mais antigas, mantém as 15 recentes intactas
 
-```sql
-ALTER TABLE public.contracts 
-  ADD COLUMN cancelled_at TIMESTAMPTZ,
-  ADD COLUMN cancel_reason TEXT,
-  ADD COLUMN refund_amount NUMERIC DEFAULT 0;
-```
+#### 3. RAG semântico real (pgvector)
+- Edge function `generate-embeddings` criada — gera embeddings de 768 dimensões via Lovable AI
+- `parse-document` agora chama `generate-embeddings` automaticamente após chunking
+- `ai-process-message` usa `match_chunks()` RPC para busca semântica (threshold 0.5)
+- Fallback para keyword scoring quando embeddings não existem
 
-#### 2. Dialog de Cancelamento — `src/pages/Contratos.tsx`
-Substituir a chamada directa `cancelMutation.mutate(c.id)` por um modal de cancelamento que pede:
-- **Motivo** (select): "Desistência do cliente", "Incumprimento", "Acordo mútuo", "Erro administrativo", "Outro"
-- **Houve devolução?** (switch/checkbox)
-- **Valor devolvido** (input numérico, visível apenas se sim)
-- **Notas adicionais** (textarea opcional)
+#### 4. Router multi-agente
+- Quando agente tem `sub_agent_ids`, classifica intenção via IA rápida (flash-lite)
+- Delega para sub-agente especialista com seu próprio prompt e KB
+- Mantém agente activo em `bot_state.active_sub_agent_id` para consistência
 
-O modal envia update com: `status: "cancelado"`, `cancelled_at: now()`, `cancel_reason`, `refund_amount`.
+#### 5. Self-evaluation / Reflexão
+- Após gerar resposta, avalia qualidade via flash-lite (score 1-10)
+- Se score < 7, regenera com instrução de correcção (máximo 1 retry)
+- Respostas < 50 chars ignoram avaliação
 
-#### 3. Tabela — Mostrar info de cancelamento
-Na lista de contratos, quando o status é "cancelado":
-- Mostrar o motivo no hover/tooltip ou numa coluna extra
-- Se houve devolução, mostrar badge "Devolvido: €X"
+#### 6. Sentiment analysis + Auto-escalação
+- Análise de sentimento via heurística + IA
+- 2x frustração consecutiva → auto-transfere para humano
+- Guarda sentiment em `bot_state.last_sentiment`
+- Regista escalação em `conversation_feedback`
 
-#### 4. CarteiraAccessView — Botão de Cancelamento (`src/pages/Bitrix24App.tsx`)
-Na vista expandida de cada serviço/caso, ao lado do botão "Baixa" nas parcelas, adicionar um botão "Cancelar Contrato" ao nível do contrato (não da parcela). Ao cancelar:
-- Abre o mesmo modal de cancelamento
-- Atualiza o contrato para "cancelado"
-- Marca parcelas pendentes como "cancelada" (se o enum permitir, senão mantém pendente com nota)
+#### 7. Tools dinâmicas expandidas
+- Novas tools: `search_knowledge`, `get_case_status`, `send_payment_link`
+- Tools desconhecidas verificam `tool_parameters.webhook_url` para chamada webhook genérica
+- Registry pattern: tools são lidas de `agent_tools` table
 
-### Ficheiros alterados
-- **Migração SQL**: nova migração para os 3 campos
-- **`src/pages/Contratos.tsx`**: dialog de cancelamento + exibição de motivo/devolução
-- **`src/pages/Bitrix24App.tsx`**: botão de cancelar contrato na CarteiraAccessView com o mesmo dialog
+#### 8. Queue worker auto-trigger
+- Trigger PostgreSQL `AFTER INSERT ON message_queue` chama `pg_net.http_post()` para queue-worker
+- Cron backup via `pg_cron` a cada minuto
 
+#### 9. Melhorias de robustez no sendReply
+- `Promise.allSettled` para operações paralelas (save message + update conversation)
+- Error logging real em vez de fire-and-forget silencioso para message-send e bitrix24-send
+- Extração de memória com tolerância `count % 10 > 1` (mais robusto que `=== 0`)
+
+### Mudanças realizadas (Fase 2.1 — Consolidação Completa)
+
+#### Código morto eliminado
+- `chatbot-reply/index.ts` e `ai-triage/index.ts` — diretórios removidos, referências limpas em `config.toml`, `ApiDocs.tsx` e `bitrix24-worker.ts`
+- ApiDocs actualizado para documentar `ai-process-message` em vez de `chatbot-reply`
+
+#### Sintaxe corrigida
+- `parse-document/index.ts` — corrigida função `extractWithAI` que estava erroneamente aninhada dentro de `findFileInZip`
+
+#### Config.toml actualizado
+- Removidas entradas `ai-triage` e `chatbot-reply`
+- Adicionadas entradas para `generate-embeddings`, `parse-document` e `queue-worker`
+
+#### Triggers PostgreSQL criados
+- `on_message_queue_insert` → auto-invoca `queue-worker` via `pg_net`
+- `on_lead_created` → notifica comerciais e admins
+- `on_message_created` → notifica de novas mensagens inbound
+- `on_payment_status_change` → notifica pagamentos recebidos
+- `on_lead_sla_check` → alerta SLA a expirar
+- `on_lead_set_sla` → define SLA automático na criação
+- `on_profile_created` → atribui admin ao primeiro utilizador
+- Cron job `queue-worker-backup` — invoca queue-worker a cada minuto
+
+### Estado actual — 8/8 melhorias implementadas ✅
+1. ✅ Código morto eliminado (chatbot-reply + ai-triage)
+2. ✅ Contexto expandido (30 mensagens: 15 recentes + 15 comprimidas TOON)
+3. ✅ RAG semântico (pgvector + match_chunks + generate-embeddings)
+4. ✅ Router multi-agente (sub_agent_ids + classificação de intenção)
+5. ✅ Tools dinâmicas (registry pattern + webhook fallback)
+6. ✅ Reflexão/Auto-avaliação (score 1-10, retry se < 7)
+7. ✅ Sentiment analysis + auto-escalação (2x frustração → humano)
+8. ✅ Queue worker auto-trigger (pg_trigger + pg_cron backup)
+
+### Mudanças realizadas (Fase 3 — Auditoria Arquitetural)
+
+#### 1. Dashboard de Observabilidade IA
+- Nova página `/observabilidade-ia` com KPIs: requisições, tokens, custo estimado, latência média, taxa fallback, taxa erro, rating feedback
+- Hook `useAiObservability.ts` com agregação de dados
+
+#### 2. Thumbs up/down no chat de atendimento
+- Botões de feedback em mensagens outbound (bot) no painel de atendimento
+
+#### 3. Retry com backoff no AI gateway (429/502/503, 2s delay, 1 retry)
+
+#### 4. Cost estimation real (tabela de preços por modelo, cálculo automático)
+
+#### 5. Memory extraction melhorada (cada 15 msgs + em transferência humana)
+
+#### 6. Reorganização do monólito (constantes extraídas, secções delimitadas)
+
+### Próximos passos
+- Batch job para gerar embeddings dos chunks existentes
+- Streaming no PlaygroundIA

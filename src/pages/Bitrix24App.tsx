@@ -58,7 +58,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { ChatBubble, ChatBubbleAvatar, ChatBubbleMessage, ChatBubbleAction, ChatBubbleActionWrapper } from "@/components/ui/chat-bubble";
 import { ChatInput } from "@/components/ui/chat-input";
 import { ChatMessageList } from "@/components/ui/chat-message-list";
-import { Copy } from "lucide-react";
+import { Copy, Ban } from "lucide-react";
 import type { AIAgent, AIProvider, FlowOption, DocOption, CollectionOption } from "@/pages/Agentes";
 import { defaultAgent } from "@/pages/Agentes";
 
@@ -4558,6 +4558,50 @@ function CarteiraAccessView({ integration, memberId, cachedPortfolio }: { integr
   const [baixaForm, setBaixaForm] = useState({ paidAmount: 0, paymentDate: new Date(), paymentMethod: "transferencia", proofFile: null as File | null });
   const [baixaSaving, setBaixaSaving] = useState(false);
 
+  // Cancel contract state
+  const [cancelTarget, setCancelTarget] = useState<{ contractId: string; clientId: string } | null>(null);
+  const [cancelReason, setCancelReason] = useState("desistencia");
+  const [cancelHasRefund, setCancelHasRefund] = useState(false);
+  const [cancelRefundAmount, setCancelRefundAmount] = useState(0);
+  const [cancelNotes, setCancelNotes] = useState("");
+  const [cancelSaving, setCancelSaving] = useState(false);
+
+  const openCancelContractModal = (contractId: string, clientId: string) => {
+    setCancelTarget({ contractId, clientId });
+    setCancelReason("desistencia");
+    setCancelHasRefund(false);
+    setCancelRefundAmount(0);
+    setCancelNotes("");
+  };
+
+  const handleCancelContractConfirm = async () => {
+    if (!cancelTarget) return;
+    setCancelSaving(true);
+    const reasonLabels: Record<string, string> = {
+      desistencia: "Desistência do cliente", incumprimento: "Incumprimento",
+      acordo_mutuo: "Acordo mútuo", erro_admin: "Erro administrativo", outro: "Outro",
+    };
+    const fullReason = `${reasonLabels[cancelReason] || cancelReason}${cancelNotes ? ` — ${cancelNotes}` : ""}`;
+    try {
+      const { error } = await supabase.from("contracts").update({
+        status: "cancelado" as any,
+        cancelled_at: new Date().toISOString(),
+        cancel_reason: fullReason,
+        refund_amount: cancelHasRefund ? cancelRefundAmount : 0,
+      } as any).eq("id", cancelTarget.contractId);
+      if (error) throw error;
+      // Refresh detail
+      setExpandedDetail((prev) => { const copy = { ...prev }; delete copy[cancelTarget.clientId]; return copy; });
+      await fetchClientDetail(cancelTarget.clientId);
+      await fetchAll();
+      setCancelTarget(null);
+    } catch (e) {
+      console.error("[Carteira] Cancel error:", e);
+    } finally {
+      setCancelSaving(false);
+    }
+  };
+
   const handleExpandToggle = (clientId: string) => {
     if (expandedClientId === clientId) {
       setExpandedClientId(null);
@@ -4786,11 +4830,31 @@ function CarteiraAccessView({ integration, memberId, cachedPortfolio }: { integr
                       <p className="text-sm font-semibold text-foreground">{cas.title || lead.name}</p>
                       <p className="text-xs text-muted-foreground">{fmt(svcTotal)} • {svcPaid}/{records.length} pagas</p>
                     </div>
-                    {svcPaid === records.length && records.length > 0 ? (
-                      <Badge className="bg-emerald-500/10 text-emerald-500 border-emerald-500/20 text-[10px]">✓ Quitado</Badge>
-                    ) : (
-                      <Badge className="bg-amber-500/10 text-amber-500 border-amber-500/20 text-[10px]">Em aberto</Badge>
-                    )}
+                    <div className="flex items-center gap-2">
+                      {contracts.some((ct: any) => ct.status === "cancelado") ? (
+                        <Badge className="bg-destructive/10 text-destructive border-destructive/20 text-[10px]">Cancelado</Badge>
+                      ) : svcPaid === records.length && records.length > 0 ? (
+                        <Badge className="bg-emerald-500/10 text-emerald-500 border-emerald-500/20 text-[10px]">✓ Quitado</Badge>
+                      ) : (
+                        <>
+                          <Badge className="bg-amber-500/10 text-amber-500 border-amber-500/20 text-[10px]">Em aberto</Badge>
+                          {contracts.length > 0 && contracts[0].status === "pendente" && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="h-5 px-2 text-[10px] gap-1 text-destructive border-destructive/30 hover:bg-destructive/10"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                openCancelContractModal(contracts[0].id, clientId);
+                              }}
+                            >
+                              <Ban className="h-3 w-3" />
+                              Cancelar
+                            </Button>
+                          )}
+                        </>
+                      )}
+                    </div>
                   </div>
                   {records.length > 0 && (
                     <div className="mt-2 space-y-1">
@@ -5055,6 +5119,52 @@ function CarteiraAccessView({ integration, memberId, cachedPortfolio }: { integr
         </DialogContent>
       </Dialog>
       {renderBaixaDialog()}
+
+      {/* Cancel Contract Dialog */}
+      <Dialog open={!!cancelTarget} onOpenChange={(o) => !o && setCancelTarget(null)}>
+        <DialogContent className="max-w-md" onClick={(e) => e.stopPropagation()}>
+          <DialogHeader>
+            <DialogTitle>Cancelar Contrato</DialogTitle>
+            <DialogDescription>Indique o motivo e se houve devolução de valores.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-1.5">
+              <Label className="text-xs">Motivo do cancelamento</Label>
+              <Select value={cancelReason} onValueChange={setCancelReason}>
+                <SelectTrigger className="h-9 text-sm"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="desistencia">Desistência do cliente</SelectItem>
+                  <SelectItem value="incumprimento">Incumprimento</SelectItem>
+                  <SelectItem value="acordo_mutuo">Acordo mútuo</SelectItem>
+                  <SelectItem value="erro_admin">Erro administrativo</SelectItem>
+                  <SelectItem value="outro">Outro</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex items-center gap-3">
+              <Switch checked={cancelHasRefund} onCheckedChange={setCancelHasRefund} />
+              <Label className="text-sm">Houve devolução de valor?</Label>
+            </div>
+            {cancelHasRefund && (
+              <div className="space-y-1.5">
+                <Label className="text-xs">Valor devolvido (€)</Label>
+                <Input type="number" step="0.01" className="h-9 text-sm" value={cancelRefundAmount} onChange={(e) => setCancelRefundAmount(parseFloat(e.target.value) || 0)} />
+              </div>
+            )}
+            <div className="space-y-1.5">
+              <Label className="text-xs">Notas adicionais (opcional)</Label>
+              <Textarea className="text-sm" rows={2} value={cancelNotes} onChange={(e) => setCancelNotes(e.target.value)} placeholder="Detalhes sobre o cancelamento..." />
+            </div>
+            <div className="flex gap-2 pt-2">
+              <Button variant="outline" className="flex-1" onClick={() => setCancelTarget(null)} disabled={cancelSaving}>Voltar</Button>
+              <Button variant="destructive" className="flex-1" disabled={cancelSaving} onClick={handleCancelContractConfirm}>
+                {cancelSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Ban className="h-4 w-4" />}
+                Confirmar Cancelamento
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
