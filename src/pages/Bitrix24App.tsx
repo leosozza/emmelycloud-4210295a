@@ -5888,7 +5888,7 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
           clientes: [],
           mode: "sync_single_client",
           client_id: client.client_id,
-          member_id: memberId,
+          member_id: resolvedMemberId,
           category_id: selectedCategoryId,
           actions: actionsOverride || editActions,
           overrides: overridesOverride || { name: editName, phone: editPhone, nif: editNif },
