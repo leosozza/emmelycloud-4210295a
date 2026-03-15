@@ -287,7 +287,7 @@ const ContratosPage = () => {
                         <Button variant="ghost" size="icon" title="Assinar (interno)" onClick={() => signMutation.mutate(c.id)}>
                           <FileSignature className="h-4 w-4 text-success" />
                         </Button>
-                        <Button variant="ghost" size="icon" title="Cancelar" onClick={() => cancelMutation.mutate(c.id)}>
+                        <Button variant="ghost" size="icon" title="Cancelar" onClick={() => openCancelDialog(c.id)}>
                           <Ban className="h-4 w-4 text-destructive" />
                         </Button>
                       </>
