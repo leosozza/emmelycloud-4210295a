@@ -5940,10 +5940,16 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
     });
   };
 
-  const filteredSyncClients = syncClients.filter(c => c.status_class === activeTab);
-  const quitadoCount = syncClients.filter(c => c.status_class === "quitado").length;
-  const abertoCount = syncClients.filter(c => c.status_class === "aberto").length;
-  const atrasadoCount = syncClients.filter(c => c.status_class === "atrasado").length;
+  // Primary segmentation: existing in Bitrix vs new
+  const [syncSegment, setSyncSegment] = useState<"existing" | "new">("existing");
+  const existingClients = syncClients.filter(c => c.bitrix_deal_id || c.bitrix_contact_id);
+  const newClients = syncClients.filter(c => !c.bitrix_deal_id && !c.bitrix_contact_id);
+  const segmentedClients = syncSegment === "existing" ? existingClients : newClients;
+
+  const filteredSyncClients = segmentedClients.filter(c => c.status_class === activeTab);
+  const quitadoCount = segmentedClients.filter(c => c.status_class === "quitado").length;
+  const abertoCount = segmentedClients.filter(c => c.status_class === "aberto").length;
+  const atrasadoCount = segmentedClients.filter(c => c.status_class === "atrasado").length;
 
   const selectAllInTab = () => {
     const ids = filteredSyncClients.filter(c => !c.synced).map(c => c.client_id);
