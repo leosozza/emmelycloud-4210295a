@@ -2816,8 +2816,8 @@ function RelatoriosView() {
   const clientData = useMemo(() => {
     const map: Record<string, number> = {};
     filtered.forEach((t) => {
-      const name = t.clients?.name || "Sem cliente";
-      map[name] = (map[name] || 0) + Number(t.amount || 0);
+      const name = t.description || "Sem descrição";
+      map[name] = (map[name] || 0) + Number(t.installment_value || 0);
     });
     return Object.entries(map).map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value).slice(0, 5);
   }, [filtered]);
@@ -2826,11 +2826,11 @@ function RelatoriosView() {
   const sellerData = useMemo(() => {
     const map: Record<string, { name: string; total: number; paid: number; count: number }> = {};
     filtered.forEach((t) => {
-      const seller = (t.metadata as any)?.responsible_name || "Sem responsável";
+      const seller = "Geral";
       if (!map[seller]) map[seller] = { name: seller, total: 0, paid: 0, count: 0 };
-      map[seller].total += Number(t.amount || 0);
+      map[seller].total += Number(t.installment_value || 0);
       map[seller].count += 1;
-      if (classify(t) === "confirmed") map[seller].paid += Number(t.amount || 0);
+      if (classify(t) === "confirmed") map[seller].paid += Number(t.installment_value || 0);
     });
     return Object.values(map).sort((a, b) => b.total - a.total);
   }, [filtered]);
