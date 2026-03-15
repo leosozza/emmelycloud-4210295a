@@ -4637,6 +4637,25 @@ function CarteiraAccessView({ integration, memberId }: { integration: any; membe
                               ) : (
                                 <Badge variant="outline" className="text-[10px]">Pendente</Badge>
                               )}
+                              {fr.status !== "paga" && (
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className="h-5 px-2 text-[10px] gap-1 ml-auto"
+                                  disabled={markingPaidId === fr.id}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleBaixaParcela(fr, clientId);
+                                  }}
+                                >
+                                  {markingPaidId === fr.id ? (
+                                    <Loader2 className="h-3 w-3 animate-spin" />
+                                  ) : (
+                                    <CheckCircle className="h-3 w-3" />
+                                  )}
+                                  Baixa
+                                </Button>
+                              )}
                             </div>
                           );
                         })}
