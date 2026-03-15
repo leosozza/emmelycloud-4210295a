@@ -78,6 +78,7 @@ const Bitrix24App = () => {
   const [integration, setIntegration] = useState<any | null>(null);
   const [botId, setBotId] = useState<string | null>(null);
   const [loadingData, setLoadingData] = useState(false);
+  const [cachedPortfolio, setCachedPortfolio] = useState<any>(null);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
