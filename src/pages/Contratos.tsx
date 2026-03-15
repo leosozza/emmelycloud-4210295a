@@ -328,6 +328,55 @@ const ContratosPage = () => {
         </Table>
       </div>
 
+      {/* Cancel Dialog */}
+      <Dialog open={cancelDialogOpen} onOpenChange={(o) => !o && setCancelDialogOpen(false)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Cancelar Contrato</DialogTitle>
+            <DialogDescription>Indique o motivo e se houve devolução de valores.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-1.5">
+              <Label className="text-xs">Motivo do cancelamento</Label>
+              <Select value={cancelReason} onValueChange={setCancelReason}>
+                <SelectTrigger className="h-9 text-sm"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="desistencia">Desistência do cliente</SelectItem>
+                  <SelectItem value="incumprimento">Incumprimento</SelectItem>
+                  <SelectItem value="acordo_mutuo">Acordo mútuo</SelectItem>
+                  <SelectItem value="erro_admin">Erro administrativo</SelectItem>
+                  <SelectItem value="outro">Outro</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="flex items-center gap-3">
+              <Switch checked={cancelHasRefund} onCheckedChange={setCancelHasRefund} />
+              <Label className="text-sm">Houve devolução de valor?</Label>
+            </div>
+
+            {cancelHasRefund && (
+              <div className="space-y-1.5">
+                <Label className="text-xs">Valor devolvido (€)</Label>
+                <Input type="number" step="0.01" className="h-9 text-sm" value={cancelRefundAmount} onChange={(e) => setCancelRefundAmount(parseFloat(e.target.value) || 0)} />
+              </div>
+            )}
+
+            <div className="space-y-1.5">
+              <Label className="text-xs">Notas adicionais (opcional)</Label>
+              <Textarea className="text-sm" rows={2} value={cancelNotes} onChange={(e) => setCancelNotes(e.target.value)} placeholder="Detalhes sobre o cancelamento..." />
+            </div>
+
+            <div className="flex gap-2 pt-2">
+              <Button variant="outline" className="flex-1" onClick={() => setCancelDialogOpen(false)} disabled={cancelMutation.isPending}>Voltar</Button>
+              <Button variant="destructive" className="flex-1" disabled={cancelMutation.isPending} onClick={() => cancelTargetId && cancelMutation.mutate({ id: cancelTargetId, reason: cancelReason, refundAmount: cancelHasRefund ? cancelRefundAmount : 0, notes: cancelNotes })}>
+                {cancelMutation.isPending ? "A cancelar..." : "Confirmar Cancelamento"}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       <ContratoForm
         open={formOpen}
         onOpenChange={setFormOpen}
