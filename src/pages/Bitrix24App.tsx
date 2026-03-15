@@ -5836,41 +5836,29 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
     setSyncClientsLoaded(false);
     setSyncLoadProgress({ processed: 0, total: 0 });
 
-    let batchStart = 0;
-    const batchSize = 50; // Larger batches since matching is now server-side in-memory
-    const allClients: SyncClient[] = [];
-
-    while (true) {
-      try {
-        const res = await fetch(`${SUPABASE_URL}/functions/v1/import-access-data`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            apikey: SUPABASE_KEY,
-            Authorization: `Bearer ${SUPABASE_KEY}`,
-          },
-          body: JSON.stringify({
-            clientes: [],
-            mode: "list_sync_clients",
-            batch_start: batchStart,
-            batch_size: batchSize,
-            member_id: resolvedMemberId,
-          }),
-        });
-        const data = await res.json();
-        if (!data.success) break;
-        if (data.clients) allClients.push(...data.clients);
-        setSyncLoadProgress({ processed: data.processed || allClients.length, total: data.total || 0 });
-        setSyncClients([...allClients]); // Update progressively
-        if (!data.has_more) break;
-        batchStart = data.next_batch_start;
-      } catch (e) {
-        console.error("[loadSyncClients]", e);
-        break;
+    try {
+      const res = await fetch(`${SUPABASE_URL}/functions/v1/import-access-data`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          apikey: SUPABASE_KEY,
+          Authorization: `Bearer ${SUPABASE_KEY}`,
+        },
+        body: JSON.stringify({
+          clientes: [],
+          mode: "list_sync_clients",
+          member_id: resolvedMemberId,
+        }),
+      });
+      const data = await res.json();
+      if (data.success && data.clients) {
+        setSyncClients(data.clients);
+        setSyncLoadProgress({ processed: data.total || data.clients.length, total: data.total || data.clients.length });
       }
+    } catch (e) {
+      console.error("[loadSyncClients]", e);
     }
 
-    setSyncClients(allClients);
     setSyncClientsLoaded(true);
     setLoadingSyncClients(false);
   };

@@ -469,7 +469,6 @@ serve(async (req) => {
       }
 
       const total = clientsWithFinancials.length;
-      const batch = clientsWithFinancials.slice(batch_start, batch_start + batch_size);
 
       // Step 5: Batch Bitrix lookup — load deals with UF_CRM_1768312831 and UF_CRM_EMMELY_NIF in bulk
       let bitrixDealsByAccessId: Record<string, { dealId: string; contactId: string | null }> = {};
@@ -556,9 +555,9 @@ serve(async (req) => {
         }
       }
 
-      // Step 6: Match each client in the batch with match_type tracking
+      // Step 6: Match each client with match_type tracking (all clients, no batching)
       const clientsList: any[] = [];
-      for (const info of batch) {
+      for (const info of clientsWithFinancials) {
         let bitrix_contact_id: string | null = null;
         let bitrix_deal_id: string | null = null;
         let match_type: string = "new";
@@ -630,15 +629,13 @@ serve(async (req) => {
         });
       }
 
-      const processed = batch_start + batch.length;
       return new Response(JSON.stringify({
         success: true,
         mode: "list_sync_clients",
         clients: clientsList,
-        processed,
+        processed: total,
         total,
-        has_more: processed < total,
-        next_batch_start: processed < total ? processed : null,
+        has_more: false,
       }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
