@@ -289,11 +289,9 @@ serve(async (req) => {
         all_paid: allPaid,
         address: client.address,
         birth_date: client.birth_date,
+        contract_date: contractDate ? contractDate.split("T")[0] : null,
       };
     }
-
-    // ══════════════════════════════════════════════════════════════════
-    // MODE: list_sync_clients — Batch-optimized: aggregated SQL + batch Bitrix lookup
     // ══════════════════════════════════════════════════════════════════
     if (mode === "list_sync_clients") {
       // Step 1: Fetch ALL imported clients with financial data via aggregated query
