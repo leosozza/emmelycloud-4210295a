@@ -2,15 +2,17 @@ import { useState } from "react";
 import { CalendarDays } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
-  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
 
 const periods = [
+  { label: "Hoje", value: "today" },
   { label: "Últimos 7 dias", value: "7d" },
   { label: "Últimos 30 dias", value: "30d" },
   { label: "Este mês", value: "month" },
   { label: "Último trimestre", value: "quarter" },
   { label: "Este ano", value: "year" },
+  { label: "Todo período", value: "all" },
 ];
 
 interface Props {
