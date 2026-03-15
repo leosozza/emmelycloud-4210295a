@@ -36,40 +36,62 @@ function getPeriodRange(period: string) {
 const FinanceiroPage = () => {
   const [period, setPeriod] = useState("30d");
   const [sendingReminder, setSendingReminder] = useState<string | null>(null);
-  const [gatewayFilter, setGatewayFilter] = useState("all");
+  const [statusFilter, setStatusFilter] = useState("all");
   const range = getPeriodRange(period);
+  const startDateOnly = range.start.split("T")[0];
+  const endDateOnly = range.end.split("T")[0];
 
   const { data: transactions = [], isLoading } = useQuery({
-    queryKey: ["all-payments", period, gatewayFilter],
+    queryKey: ["all-payments", period, statusFilter],
     queryFn: async () => {
-      let query = supabase
-        .from("payment_transactions")
-        .select("*, clients(name)")
-        .gte("created_at", range.start)
-        .lte("created_at", range.end)
-        .order("updated_at", { ascending: false });
-      if (gatewayFilter !== "all") query = query.eq("gateway", gatewayFilter);
-      const { data, error } = await query;
-      if (error) throw error;
-      return data || [];
+      // Fetch paid (by paid_at), pending (by due_date), overdue (by due_date) from financial_records
+      const queries = [];
+
+      // Paid records
+      let paidQ = supabase
+        .from("financial_records")
+        .select("id, installment_value, total_value, status, payment_method, due_date, paid_at, created_at, contract_id, description")
+        .eq("status", "paga")
+        .gte("paid_at", range.start)
+        .lte("paid_at", range.end)
+        .order("paid_at", { ascending: false });
+
+      // Pending records
+      let pendingQ = supabase
+        .from("financial_records")
+        .select("id, installment_value, total_value, status, payment_method, due_date, paid_at, created_at, contract_id, description")
+        .eq("status", "pendente")
+        .gte("due_date", startDateOnly)
+        .lte("due_date", endDateOnly)
+        .order("due_date", { ascending: false });
+
+      // Overdue records
+      let overdueQ = supabase
+        .from("financial_records")
+        .select("id, installment_value, total_value, status, payment_method, due_date, paid_at, created_at, contract_id, description")
+        .eq("status", "atrasada")
+        .lte("due_date", endDateOnly)
+        .order("due_date", { ascending: false });
+
+      const [paidRes, pendingRes, overdueRes] = await Promise.all([
+        paidQ, pendingQ, overdueQ,
+      ]);
+
+      let all = [
+        ...(paidRes.data || []),
+        ...(pendingRes.data || []),
+        ...(overdueRes.data || []),
+      ];
+
+      if (statusFilter === "paga") all = all.filter((r) => r.status === "paga");
+      else if (statusFilter === "pendente") all = all.filter((r) => r.status === "pendente");
+      else if (statusFilter === "atrasada") all = all.filter((r) => r.status === "atrasada");
+
+      return all;
     },
   });
 
-  const { data: reminderCount = 0 } = useQuery({
-    queryKey: ["reminders-sent", period],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("payment_transactions")
-        .select("id, metadata")
-        .gte("created_at", range.start)
-        .lte("created_at", range.end);
-      if (error) throw error;
-      return (data || []).filter((tx) => {
-        const meta = (tx.metadata || {}) as Record<string, any>;
-        return !!meta.reminder_sent_at;
-      }).length;
-    },
-  });
+  const reminderCount = 0; // Simplified — no metadata tracking on financial_records
 
   const handleSendReminder = async (financialRecordId: string) => {
     setSendingReminder(financialRecordId);
@@ -86,6 +108,8 @@ const FinanceiroPage = () => {
       setSendingReminder(null);
     }
   };
+
+  const fmtCurrency = (v: number) => v.toLocaleString("pt-PT", { style: "currency", currency: "EUR" });
 
   return (
     <div>
@@ -119,12 +143,12 @@ const FinanceiroPage = () => {
         <TabsContent value="recebimentos">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between">
-              <CardTitle className="text-base">Transações</CardTitle>
+              <CardTitle className="text-base">Parcelas</CardTitle>
               <div className="flex gap-1">
-                {["all", "direto", "stripe_pt", "stripe_br", "asaas"].map((gw) => (
-                  <Button key={gw} size="sm" variant={gatewayFilter === gw ? "default" : "outline"} className="text-xs h-7 px-2"
-                    onClick={() => setGatewayFilter(gw)}>
-                    {gw === "all" ? "Todos" : gw === "direto" ? "Direto" : gw === "stripe_pt" ? "Stripe PT" : gw === "stripe_br" ? "Stripe BR" : "Asaas"}
+                {["all", "paga", "pendente", "atrasada"].map((st) => (
+                  <Button key={st} size="sm" variant={statusFilter === st ? "default" : "outline"} className="text-xs h-7 px-2"
+                    onClick={() => setStatusFilter(st)}>
+                    {st === "all" ? "Todos" : st === "paga" ? "Pagas" : st === "pendente" ? "Pendentes" : "Atrasadas"}
                   </Button>
                 ))}
               </div>
@@ -133,62 +157,63 @@ const FinanceiroPage = () => {
               {isLoading ? (
                 <div className="p-8 text-center text-muted-foreground">Carregando...</div>
               ) : transactions.length === 0 ? (
-                <div className="p-8 text-center text-muted-foreground">Nenhuma transação neste período.</div>
+                <div className="p-8 text-center text-muted-foreground">Nenhuma parcela neste período.</div>
               ) : (
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Data</TableHead>
-                      <TableHead>Cliente</TableHead>
+                      <TableHead>Vencimento</TableHead>
                       <TableHead>Descrição</TableHead>
                       <TableHead className="text-right">Valor</TableHead>
                       <TableHead>Método</TableHead>
                       <TableHead>Status</TableHead>
-                      <TableHead>Baixa em</TableHead>
+                      <TableHead>Pago em</TableHead>
                       <TableHead>Ações</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {transactions.map((tx) => {
-                      const meta = (tx.metadata || {}) as Record<string, any>;
-                      const clientName = (tx as any).clients?.name;
-                      const paidAt = tx.status === "confirmed" ? tx.updated_at : null;
-                      const isPending = tx.status === "pending";
+                    {transactions.slice(0, 200).map((rec) => {
+                      const isPending = rec.status === "pendente" || rec.status === "atrasada";
                       return (
-                        <TableRow key={tx.id}>
+                        <TableRow key={rec.id}>
                           <TableCell className="whitespace-nowrap">
-                            {format(new Date(tx.created_at), "dd/MM/yyyy", { locale: pt })}
+                            {rec.due_date ? format(new Date(rec.due_date), "dd/MM/yyyy", { locale: pt }) : "—"}
                           </TableCell>
-                          <TableCell>{clientName || "—"}</TableCell>
                           <TableCell className="max-w-[200px] truncate">
-                            {meta.installment_number
-                              ? `Parcela ${meta.installment_number}/${meta.total_installments}`
-                              : meta.is_down_payment ? "Entrada" : "Recebimento direto"}
+                            {rec.description || `Parcela ${rec.installment_value}`}
                           </TableCell>
                           <TableCell className="text-right font-medium whitespace-nowrap">
-                            {Number(tx.amount).toLocaleString("pt-PT", { style: "currency", currency: tx.currency })}
+                            {fmtCurrency(Number(rec.installment_value || 0))}
                           </TableCell>
                           <TableCell>
                             <Badge variant="outline" className="text-xs">
-                              {tx.payment_method === "parcelado_direto" ? "Parcelado" : "Direto"}
+                              {rec.payment_method || "—"}
                             </Badge>
                           </TableCell>
                           <TableCell>
-                            <Badge variant={tx.status === "confirmed" ? "default" : "secondary"}
-                              className={tx.status === "confirmed" ? "bg-emerald-500/15 text-emerald-700 border-emerald-200" : ""}>
-                              {tx.status === "confirmed" ? "Pago" : "Pendente"}
+                            <Badge
+                              variant={rec.status === "paga" ? "default" : "secondary"}
+                              className={
+                                rec.status === "paga"
+                                  ? "bg-emerald-500/15 text-emerald-700 border-emerald-200"
+                                  : rec.status === "atrasada"
+                                  ? "bg-destructive/15 text-destructive border-destructive/20"
+                                  : ""
+                              }
+                            >
+                              {rec.status === "paga" ? "Paga" : rec.status === "atrasada" ? "Atrasada" : "Pendente"}
                             </Badge>
                           </TableCell>
                           <TableCell className="whitespace-nowrap text-muted-foreground text-xs">
-                            {paidAt ? format(new Date(paidAt), "dd/MM/yyyy HH:mm", { locale: pt }) : "—"}
+                            {rec.paid_at ? format(new Date(rec.paid_at), "dd/MM/yyyy", { locale: pt }) : "—"}
                           </TableCell>
                           <TableCell>
-                            {isPending && tx.financial_record_id && (
+                            {isPending && (
                               <Button size="sm" variant="outline" className="gap-1"
-                                disabled={sendingReminder === tx.financial_record_id}
-                                onClick={() => handleSendReminder(tx.financial_record_id!)}>
+                                disabled={sendingReminder === rec.id}
+                                onClick={() => handleSendReminder(rec.id)}>
                                 <Send className="h-3 w-3" />
-                                {sendingReminder === tx.financial_record_id ? "Enviando..." : "Cobrar"}
+                                {sendingReminder === rec.id ? "Enviando..." : "Cobrar"}
                               </Button>
                             )}
                           </TableCell>
