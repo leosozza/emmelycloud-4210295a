@@ -4237,20 +4237,19 @@ function BaixaCarteiraView({ integration }: { integration: any }) {
 interface ClientFinancials {
   client: any;
   accessId: string | null;
-  leads: any[];
   totalValue: number;
   totalPaid: number;
   totalPending: number;
   totalOverdue: number;
   serviceCount: number;
-  allRecords: any[];
 }
 
 function CarteiraAccessView({ integration, memberId }: { integration: any; memberId: string | null }) {
   const [clientsData, setClientsData] = useState<ClientFinancials[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
-  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [expandedDetail, setExpandedDetail] = useState<Record<string, any[]>>({});
+  const [loadingDetail, setLoadingDetail] = useState<string | null>(null);
   const [bitrixModalClient, setBitrixModalClient] = useState<ClientFinancials | null>(null);
   const [bitrixDeals, setBitrixDeals] = useState<any[]>([]);
   const [bitrixUsers, setBitrixUsers] = useState<Record<string, string>>({});
@@ -4443,15 +4442,60 @@ function CarteiraAccessView({ integration, memberId }: { integration: any; membe
     }
   };
 
+  // ── Fetch detail for expanded client ──
+  const fetchClientDetail = async (clientId: string) => {
+    if (expandedDetail[clientId]) return; // already loaded
+    setLoadingDetail(clientId);
+    try {
+      const url = `${SUPABASE_URL}/functions/v1/bitrix24-fetch-portfolio?member_id=${encodeURIComponent(resolvedMemberId)}&client_id=${encodeURIComponent(clientId)}`;
+      const res = await fetch(url, {
+        headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` },
+      });
+      const data = await res.json();
+      if (data.success) {
+        setExpandedDetail((prev) => ({ ...prev, [clientId]: data.leads || [] }));
+      }
+    } catch (e) {
+      console.error("[Carteira] Detail error:", e);
+    } finally {
+      setLoadingDetail(null);
+    }
+  };
+
+  const [expandedClientId, setExpandedClientId] = useState<string | null>(null);
+
+  const handleExpandToggle = (clientId: string) => {
+    if (expandedClientId === clientId) {
+      setExpandedClientId(null);
+      return;
+    }
+    setExpandedClientId(clientId);
+    if (!expandedDetail[clientId]) {
+      fetchClientDetail(clientId);
+    }
+  };
+
   // ── Render expanded service details ──
   const renderServiceDetails = (cf: ClientFinancials) => {
+    const clientId = cf.client.id;
+    const leads = expandedDetail[clientId];
     const now = new Date();
+
+    if (loadingDetail === clientId || !leads) {
+      return (
+        <div className="flex items-center justify-center py-6">
+          <Loader2 className="h-5 w-5 animate-spin text-primary mr-2" />
+          <span className="text-sm text-muted-foreground">Carregando detalhes...</span>
+        </div>
+      );
+    }
+
     return (
       <div className="space-y-3">
-        {cf.leads.length === 0 && (
+        {leads.length === 0 && (
           <p className="text-xs text-muted-foreground">Sem serviços/honorários importados para este cliente.</p>
         )}
-        {cf.leads.map((lead) => {
+        {leads.map((lead: any) => {
           const cases = lead.cases || [];
           return cases.map((cas: any) => {
             const contracts = cas.contracts || [];
@@ -4561,12 +4605,12 @@ function CarteiraAccessView({ integration, memberId }: { integration: any; membe
               </thead>
               <tbody>
                 {filtered.map((cf) => {
-                  const isExpanded = expandedId === cf.client.id;
+                  const isExpanded = expandedClientId === cf.client.id;
                   return (
                     <Fragment key={cf.client.id}>
                       <tr
                         className="border-b hover:bg-muted/30 cursor-pointer transition-colors"
-                        onClick={() => setExpandedId(isExpanded ? null : cf.client.id)}
+                        onClick={() => handleExpandToggle(cf.client.id)}
                       >
                         <td className="p-3 font-medium text-foreground">
                           <div className="flex items-center gap-2">

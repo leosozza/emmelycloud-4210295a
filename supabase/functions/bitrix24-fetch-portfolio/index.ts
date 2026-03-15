@@ -16,6 +16,7 @@ serve(async (req) => {
   try {
     const url = new URL(req.url);
     const memberId = url.searchParams.get("member_id");
+    const clientDetailId = url.searchParams.get("client_id");
 
     if (!memberId) {
       return json({ error: "member_id is required" }, 400);
@@ -36,95 +37,143 @@ serve(async (req) => {
       return json({ error: "Integration not found" }, 404);
     }
 
-    // Fetch clients imported from Access
-    const { data: clients, error: clientsErr } = await supabase
-      .from("clients")
-      .select("id, name, document_number, notes")
-      .ilike("notes", "%Access%")
-      .order("name", { ascending: true })
-      .limit(2000);
-
-    if (clientsErr || !clients || clients.length === 0) {
-      return json({ success: true, clients: [], totals: { value: 0, paid: 0, pending: 0, overdue: 0 } });
+    // ── MODE: Client detail (lazy-load on expand) ──
+    if (clientDetailId) {
+      return await handleClientDetail(supabase, clientDetailId);
     }
 
-    const clientIds = clients.map((c) => c.id);
-
-    // Fetch leads with nested cases -> contracts -> financial_records
-    // Batch clientIds in chunks of 200 to avoid URL length limits
-    const allLeads: any[] = [];
-    for (let i = 0; i < clientIds.length; i += 200) {
-      const chunk = clientIds.slice(i, i + 200);
-      const { data: leadsChunk } = await supabase
-        .from("leads")
-        .select("id, name, notes, client_id, cases(id, title, contracts(id, status, financial_records(id, description, installment_number, total_installments, installment_value, total_value, status, due_date, paid_at, created_at)))")
-        .in("client_id", chunk)
-        .eq("sync_source", "access_import");
-      if (leadsChunk) allLeads.push(...leadsChunk);
-    }
-
-    // Group leads by client_id
-    const leadsByClient: Record<string, any[]> = {};
-    for (const l of allLeads) {
-      if (!leadsByClient[l.client_id]) leadsByClient[l.client_id] = [];
-      leadsByClient[l.client_id].push(l);
-    }
-
-    const now = new Date();
-    let totalValue = 0, totalPaid = 0, totalPending = 0, totalOverdue = 0;
-
-    const result = clients.map((c) => {
-      const cLeads = leadsByClient[c.id] || [];
-      let cv = 0, cp = 0, cpn = 0, co = 0;
-      const allRecords: any[] = [];
-
-      for (const lead of cLeads) {
-        for (const cas of (lead.cases || [])) {
-          for (const contract of (cas.contracts || [])) {
-            for (const fr of (contract.financial_records || [])) {
-              const val = parseFloat(fr.installment_value) || 0;
-              cv += val;
-              if (fr.status === "paga") cp += val;
-              else if (fr.due_date && new Date(fr.due_date) < now && fr.status !== "paga") co += val;
-              else cpn += val;
-              allRecords.push({ ...fr, caseName: cas.title, leadName: lead.name });
-            }
-          }
-        }
-      }
-
-      totalValue += cv;
-      totalPaid += cp;
-      totalPending += cpn;
-      totalOverdue += co;
-
-      // Extract Access ID from notes
-      const match = c.notes?.match(/Access \(ID:\s*(\d+)\)/);
-      const accessId = match ? match[1] : null;
-
-      return {
-        client: c,
-        accessId,
-        leads: cLeads,
-        totalValue: cv,
-        totalPaid: cp,
-        totalPending: cpn,
-        totalOverdue: co,
-        serviceCount: cLeads.length,
-        allRecords,
-      };
-    });
-
-    return json({
-      success: true,
-      clients: result,
-      totals: { value: totalValue, paid: totalPaid, pending: totalPending, overdue: totalOverdue },
-    });
+    // ── MODE: Full portfolio (aggregated, no allRecords) ──
+    return await handleFullPortfolio(supabase);
   } catch (error) {
     console.error("[bitrix24-fetch-portfolio] Error:", error);
     return json({ error: String(error) }, 500);
   }
 });
+
+async function handleClientDetail(supabase: any, clientId: string) {
+  // Fetch leads for this specific client with nested data
+  const { data: leads, error } = await supabase
+    .from("leads")
+    .select("id, name, notes, client_id, cases(id, title, contracts(id, status, financial_records(id, description, installment_number, total_installments, installment_value, total_value, status, due_date, paid_at, created_at)))")
+    .eq("client_id", clientId)
+    .eq("sync_source", "access_import")
+    .limit(500);
+
+  if (error) {
+    console.error("[detail] leads error:", error);
+    return json({ error: "Failed to fetch client detail" }, 500);
+  }
+
+  return json({ success: true, leads: leads || [] });
+}
+
+async function handleFullPortfolio(supabase: any) {
+  // 1. Fetch ALL clients with pagination (bypass 1000 limit)
+  const allClients: any[] = [];
+  let offset = 0;
+  const PAGE_SIZE = 999;
+  while (true) {
+    const { data: chunk, error } = await supabase
+      .from("clients")
+      .select("id, name, document_number, notes")
+      .ilike("notes", "%Access%")
+      .order("name", { ascending: true })
+      .range(offset, offset + PAGE_SIZE);
+
+    if (error) {
+      console.error("[portfolio] clients error:", error);
+      break;
+    }
+    if (!chunk || chunk.length === 0) break;
+    allClients.push(...chunk);
+    if (chunk.length <= PAGE_SIZE) break; // last page
+    offset += PAGE_SIZE + 1;
+  }
+
+  if (allClients.length === 0) {
+    return json({ success: true, clients: [], totals: { value: 0, paid: 0, pending: 0, overdue: 0 } });
+  }
+
+  const clientIds = allClients.map((c) => c.id);
+
+  // 2. Fetch ALL leads with pagination in small chunks
+  const allLeads: any[] = [];
+  const CHUNK_SIZE = 50;
+  for (let i = 0; i < clientIds.length; i += CHUNK_SIZE) {
+    const idsChunk = clientIds.slice(i, i + CHUNK_SIZE);
+    let leadOffset = 0;
+    while (true) {
+      const { data: leadsPage } = await supabase
+        .from("leads")
+        .select("id, name, client_id, cases(id, title, contracts(id, financial_records(id, installment_value, status, due_date)))")
+        .in("client_id", idsChunk)
+        .eq("sync_source", "access_import")
+        .range(leadOffset, leadOffset + PAGE_SIZE);
+
+      if (!leadsPage || leadsPage.length === 0) break;
+      allLeads.push(...leadsPage);
+      if (leadsPage.length <= PAGE_SIZE) break;
+      leadOffset += PAGE_SIZE + 1;
+    }
+  }
+
+  // 3. Group leads by client_id and aggregate
+  const leadsByClient: Record<string, any[]> = {};
+  for (const l of allLeads) {
+    if (!leadsByClient[l.client_id]) leadsByClient[l.client_id] = [];
+    leadsByClient[l.client_id].push(l);
+  }
+
+  const now = new Date();
+  let totalValue = 0, totalPaid = 0, totalPending = 0, totalOverdue = 0;
+
+  const result = allClients.map((c) => {
+    const cLeads = leadsByClient[c.id] || [];
+    let cv = 0, cp = 0, cpn = 0, co = 0;
+    let serviceCount = 0;
+
+    for (const lead of cLeads) {
+      for (const cas of (lead.cases || [])) {
+        serviceCount++;
+        for (const contract of (cas.contracts || [])) {
+          for (const fr of (contract.financial_records || [])) {
+            const val = parseFloat(fr.installment_value) || 0;
+            cv += val;
+            if (fr.status === "paga") cp += val;
+            else if (fr.due_date && new Date(fr.due_date) < now && fr.status !== "paga") co += val;
+            else cpn += val;
+          }
+        }
+      }
+    }
+
+    totalValue += cv;
+    totalPaid += cp;
+    totalPending += cpn;
+    totalOverdue += co;
+
+    // Extract Access ID from notes
+    const match = c.notes?.match(/Access \(ID:\s*(\d+)\)/);
+    const accessId = match ? match[1] : null;
+
+    return {
+      client: { id: c.id, name: c.name, document_number: c.document_number },
+      accessId,
+      totalValue: cv,
+      totalPaid: cp,
+      totalPending: cpn,
+      totalOverdue: co,
+      serviceCount: serviceCount || cLeads.length,
+    };
+  });
+
+  return json({
+    success: true,
+    clients: result,
+    totals: { value: totalValue, paid: totalPaid, pending: totalPending, overdue: totalOverdue },
+    meta: { clientCount: allClients.length, leadCount: allLeads.length },
+  });
+}
 
 function json(data: any, status = 200) {
   return new Response(JSON.stringify(data), {
