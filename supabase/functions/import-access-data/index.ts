@@ -238,6 +238,12 @@ serve(async (req) => {
           for (const proposal of (caso.proposals || [])) {
             totalValue += Number(proposal.value) || 0;
             for (const contract of (proposal.contracts || [])) {
+              // Track earliest contract date (Column F)
+              if (contract.created_at) {
+                if (!contractDate || contract.created_at < contractDate) {
+                  contractDate = contract.created_at;
+                }
+              }
               for (const fr of (contract.financial_records || [])) {
                 allRecords.push(fr);
                 if (fr.status === "paga") {
