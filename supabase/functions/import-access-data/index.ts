@@ -402,6 +402,7 @@ serve(async (req) => {
           all_paid: fm.allPaid,
           address: client.address,
           birth_date: client.birth_date,
+          contract_date: fm.contractDate ? fm.contractDate.split("T")[0] : null,
         });
       }
 
