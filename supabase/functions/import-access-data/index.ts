@@ -878,13 +878,14 @@ serve(async (req) => {
           if (isPaid) invoiceStage = "DT31_6:P";
           else if (isOverdue) invoiceStage = "DT31_6:UC";
 
-          const invoiceTitle = `Parcela ${fr.installment_number}/${fr.total_installments} - ${desc}`;
+          const invoiceTitle = `Parcela ${fr.installment_number}/${fr.total_installments} - ${desc} - ${clientName}`;
           const invoiceFields: Record<string, any> = {
             title: invoiceTitle,
             parentId2: dealId,
             opportunity: instValue,
             currencyId: "EUR",
             stageId: invoiceStage,
+            isManualOpportunity: "Y",
           };
           if (contactId) invoiceFields.contactId = contactId;
           if (fr.due_date) {
@@ -893,6 +894,7 @@ serve(async (req) => {
             invoiceFields.closedate = (isPaid && fr.paid_at) ? fr.paid_at.split("T")[0] : fr.due_date;
           }
 
+          // Dedup: search by parcel number prefix (matches old and new title formats)
           const existingRes = await bitrixCall("crm.item.list", {
             entityTypeId: 31,
             filter: { parentId2: dealId, "%title": `Parcela ${fr.installment_number}/${fr.total_installments}` },
@@ -903,7 +905,24 @@ serve(async (req) => {
             await bitrixCall("crm.item.update", { entityTypeId: 31, id: existing.id, fields: invoiceFields });
             invoicesUpdated++;
           } else {
-            await bitrixCall("crm.item.add", { entityTypeId: 31, fields: invoiceFields });
+            const addRes = await bitrixCall("crm.item.add", { entityTypeId: 31, fields: invoiceFields });
+            const newInvoiceId = addRes.result?.item?.id;
+            // Add product row with service name and installment value
+            if (newInvoiceId && instValue > 0) {
+              try {
+                await bitrixCall("crm.item.productrow.set", {
+                  ownerType: "Tb6",
+                  ownerId: newInvoiceId,
+                  productRows: [{
+                    PRODUCT_NAME: desc || "Honorários",
+                    PRICE: instValue,
+                    QUANTITY: 1,
+                  }],
+                });
+              } catch (e) {
+                console.warn("[SYNC] Product row error:", e);
+              }
+            }
             invoicesCreated++;
           }
         }
