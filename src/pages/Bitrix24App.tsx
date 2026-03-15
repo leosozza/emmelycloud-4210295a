@@ -425,11 +425,16 @@ function DashboardView({ integration, botId, domain }: {
 
         const clientsTotal = portfolioRes?.meta?.clientCount ?? (Array.isArray(portfolioRes?.clients) ? portfolioRes.clients.length : 0);
 
+        const ptReceived = (revenueRes || []).reduce((s: number, t: any) => s + Number(t.amount), 0);
+        const ptPending = (pendingRes || []).reduce((s: number, t: any) => s + Number(t.amount), 0);
+        const portfolioPaid = portfolioRes?.totals?.paid ?? 0;
+        const portfolioPending = (portfolioRes?.totals?.pending ?? 0) + (portfolioRes?.totals?.overdue ?? 0);
+
         setStats({
           conversations: Array.isArray(convRes) ? convRes.length : 0,
           messagesToday: Array.isArray(msgTodayRes) ? msgTodayRes.length : 0,
-          revenueReceived: (revenueRes || []).reduce((s: number, t: any) => s + Number(t.amount), 0),
-          revenuePending: (pendingRes || []).reduce((s: number, t: any) => s + Number(t.amount), 0),
+          revenueReceived: ptReceived + portfolioPaid,
+          revenuePending: ptPending + portfolioPending,
           clientsCount: clientsTotal,
           messagesInPeriod: Array.isArray(msgTodayRes) ? msgTodayRes.length : 0,
         });
