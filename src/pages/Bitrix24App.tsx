@@ -4838,6 +4838,9 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
 
       if (!sessions || sessions.length === 0) return;
 
+      let shouldAutoResumeClients = false;
+      let shouldAutoResumeHonorarios = false;
+
       for (const session of sessions as any[]) {
         if (!session.file_path) continue;
         setResumingPhase(session.phase);
@@ -4861,30 +4864,45 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
           const rows = XLSX.utils.sheet_to_json(sheet, { defval: "" });
 
           const savedLogs = Array.isArray(session.logs) ? session.logs : [];
+          const processedItems = session.processed_items || 0;
+          const totalItems = session.total_items || rows.length || 0;
 
           if (session.phase === "clients") {
             setClientesData(rows);
             setClientsSessionId(session.id);
             setClientsLogs(savedLogs);
-            setClientsProgress({ processed: session.processed_items || 0, total: session.total_items || rows.length });
-            if (session.status === "done") setClientsDone(true);
+            setClientsProgress({ processed: processedItems, total: totalItems });
+            if (processedItems >= totalItems && totalItems > 0) {
+              setClientsDone(true);
+            } else {
+              setClientsDone(false);
+              shouldAutoResumeClients = true;
+            }
           } else if (session.phase === "honorarios") {
             setHonorariosData(rows);
             setHonorariosSessionId(session.id);
             setHonorariosLogs(savedLogs);
-            setHonorariosProgress({ processed: session.processed_items || 0, total: session.total_items || 0 });
+            setHonorariosProgress({ processed: processedItems, total: totalItems });
             if (session.filter_config) {
               const fc = session.filter_config as any;
               if (fc.dateFrom) setFilterDateFrom(new Date(fc.dateFrom));
               if (fc.dateTo) setFilterDateTo(new Date(fc.dateTo));
               if (fc.status) setFilterStatus(fc.status);
             }
-            if (session.status === "done") setHonorariosDone(true);
+            if (processedItems >= totalItems && totalItems > 0) {
+              setHonorariosDone(true);
+            } else {
+              setHonorariosDone(false);
+              shouldAutoResumeHonorarios = true;
+            }
           }
         } catch (e) {
           console.error("[resume] Error restoring session:", e);
         }
       }
+
+      if (shouldAutoResumeClients) setAutoResumeClientsPending(true);
+      if (shouldAutoResumeHonorarios) setAutoResumeHonorariosPending(true);
       setResumingPhase(null);
     };
 
