@@ -148,3 +148,6 @@ verify_jwt = false
 
 [functions.import-access-data]
 verify_jwt = false
+
+[functions.bitrix24-dashboard-stats]
+verify_jwt = false

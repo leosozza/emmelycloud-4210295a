@@ -410,105 +410,35 @@ function DashboardView({ integration, botId, domain, onCachePortfolio }: {
 
   useEffect(() => {
     const headers: Record<string, string> = { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` };
-    const today = new Date().toISOString().split("T")[0];
 
     const fetchAll = async () => {
       setLoadingStats(true);
       try {
         const mid = integration?.member_id;
         const memberParam = mid ? `?member_id=${encodeURIComponent(mid)}` : "";
-        const [convRes, msgTodayRes, recentConvRes, portfolioRes] = await Promise.all([
-          fetch(`${SUPABASE_URL}/rest/v1/conversations?select=id&status=in.(aberta,em_atendimento)`, { headers }).then(r => r.json()),
-          fetch(`${SUPABASE_URL}/rest/v1/messages?select=id&created_at=gte.${today}T00:00:00`, { headers }).then(r => r.json()),
-          fetch(`${SUPABASE_URL}/rest/v1/conversations?select=id,contact_name,channel,status,last_message_preview,last_message_at&order=last_message_at.desc&limit=5`, { headers }).then(r => r.json()),
+
+        // Fetch portfolio (already uses service_role internally) and dashboard stats in parallel
+        const [portfolioRes, dashRes] = await Promise.all([
           fetch(`${SUPABASE_URL}/functions/v1/bitrix24-fetch-portfolio${memberParam}`, { headers }).then(r => r.json()),
+          fetch(`${SUPABASE_URL}/functions/v1/bitrix24-dashboard-stats?start=${encodeURIComponent(startISO)}&end=${encodeURIComponent(endISO)}`, { headers }).then(r => r.json()),
         ]);
 
         onCachePortfolio?.(portfolioRes);
         const clientsTotal = portfolioRes?.meta?.clientCount ?? (Array.isArray(portfolioRes?.clients) ? portfolioRes.clients.length : 0);
 
-        // Financial data from financial_records (imported Access data)
-        const startDateOnly = startISO.split("T")[0];
-        const endDateOnly = endISO.split("T")[0];
-
-        const [paidRes, pendingRes, overdueRes, recentFinRes] = await Promise.all([
-          fetch(`${SUPABASE_URL}/rest/v1/financial_records?select=installment_value&status=eq.paga&paid_at=gte.${startISO}&paid_at=lte.${endISO}`, { headers }).then(r => r.json()),
-          fetch(`${SUPABASE_URL}/rest/v1/financial_records?select=installment_value&status=eq.pendente&due_date=gte.${startDateOnly}&due_date=lte.${endDateOnly}`, { headers }).then(r => r.json()),
-          fetch(`${SUPABASE_URL}/rest/v1/financial_records?select=installment_value&status=eq.atrasada&due_date=lte.${endDateOnly}`, { headers }).then(r => r.json()),
-          fetch(`${SUPABASE_URL}/rest/v1/financial_records?select=id,installment_value,status,payment_method,due_date,paid_at,created_at&order=paid_at.desc.nullslast&limit=5`, { headers }).then(r => r.json()),
-        ]);
-
-        const ptReceived = (paidRes || []).reduce((s: number, t: any) => s + Number(t.installment_value || 0), 0);
-        const ptPending = (pendingRes || []).reduce((s: number, t: any) => s + Number(t.installment_value || 0), 0);
-        const ptOverdue = (overdueRes || []).reduce((s: number, t: any) => s + Number(t.installment_value || 0), 0);
-
         setStats({
-          conversations: Array.isArray(convRes) ? convRes.length : 0,
-          messagesToday: Array.isArray(msgTodayRes) ? msgTodayRes.length : 0,
-          revenueReceived: ptReceived,
-          revenuePending: ptPending + ptOverdue,
+          conversations: dashRes.conversations || 0,
+          messagesToday: dashRes.messagesToday || 0,
+          revenueReceived: dashRes.revenueReceived || 0,
+          revenuePending: (dashRes.revenuePending || 0) + (dashRes.revenueOverdue || 0),
           clientsCount: clientsTotal,
-          messagesInPeriod: Array.isArray(msgTodayRes) ? msgTodayRes.length : 0,
+          messagesInPeriod: dashRes.messagesToday || 0,
         });
-        setRecentConversations(Array.isArray(recentConvRes) ? recentConvRes : []);
-        setRecentPayments(Array.isArray(recentFinRes) ? recentFinRes : []);
-
-        // Messages per day (last 7 days)
-        const days: { day: string; count: number }[] = [];
-        for (let i = 6; i >= 0; i--) {
-          const d = new Date();
-          d.setDate(d.getDate() - i);
-          const dayStr = d.toISOString().split("T")[0];
-          const nextD = new Date(d);
-          nextD.setDate(nextD.getDate() + 1);
-          const nextStr = nextD.toISOString().split("T")[0];
-          const res = await fetch(`${SUPABASE_URL}/rest/v1/messages?select=id&created_at=gte.${dayStr}T00:00:00&created_at=lt.${nextStr}T00:00:00`, { headers }).then(r => r.json());
-          days.push({ day: dayStr.slice(5), count: Array.isArray(res) ? res.length : 0 });
-        }
-        setMessagesChart(days);
-
-        // Payment chart by status (from financial_records)
-        setPaymentChart([
-          { status: "Pago", amount: ptReceived },
-          { status: "Pendente", amount: ptPending },
-          { status: "Atrasado", amount: ptOverdue },
-        ]);
-
-        // Ranking: proposals accepted in period grouped by created_by
-        const proposalsRes = await fetch(
-          `${SUPABASE_URL}/rest/v1/proposals?select=id,value,created_by,accepted_at&status=eq.aceita&accepted_at=gte.${startISO}&accepted_at=lte.${endISO}`,
-          { headers }
-        ).then(r => r.json());
-
-        if (Array.isArray(proposalsRes) && proposalsRes.length > 0) {
-          const byPerson: Record<string, { count: number; total: number }> = {};
-          proposalsRes.forEach((p: any) => {
-            const key = p.created_by || "unknown";
-            if (!byPerson[key]) byPerson[key] = { count: 0, total: 0 };
-            byPerson[key].count++;
-            byPerson[key].total += Number(p.value);
-          });
-
-          // Fetch profile names
-          const profileIds = Object.keys(byPerson).filter(k => k !== "unknown");
-          let profileMap: Record<string, string> = {};
-          if (profileIds.length > 0) {
-            const profilesRes = await fetch(
-              `${SUPABASE_URL}/rest/v1/profiles?select=id,full_name&id=in.(${profileIds.join(",")})`,
-              { headers }
-            ).then(r => r.json());
-            if (Array.isArray(profilesRes)) {
-              profilesRes.forEach((pr: any) => { profileMap[pr.id] = pr.full_name || "Sem nome"; });
-            }
-          }
-
-          const rankingData = Object.entries(byPerson)
-            .map(([id, data]) => ({ name: profileMap[id] || "Desconhecido", ...data }))
-            .sort((a, b) => b.total - a.total);
-          setRanking(rankingData);
-        } else {
-          setRanking([]);
-        }
+        setRecentConversations(dashRes.recentConversations || []);
+        setRecentPayments(dashRes.recentPayments || []);
+        setMessagesChart(dashRes.messagesChart || []);
+        setPaymentChart(dashRes.paymentChart || []);
+        setRanking((dashRes.ranking || []).map((r: any) => ({ name: r.name, count: r.count, total: r.total })));
       } catch (e) {
         console.error("[DASHBOARD] Error:", e);
       } finally {
