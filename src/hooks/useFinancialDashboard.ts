@@ -46,7 +46,7 @@ export function useFinancialDashboard(startDate: string, endDate: string) {
       // Pending records: filter by due_date
       const { data: pendingRecords } = await supabase
         .from("financial_records")
-        .select("id, installment_value, status, paid_at, due_date, contract_id, payment_method, created_at")
+        .select("id, installment_value, status, paid_at, due_date, contract_id, payment_method, created_at, proposal_id")
         .eq("status", "pendente")
         .gte("due_date", startDateOnly)
         .lte("due_date", endDateOnly);
