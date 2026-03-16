@@ -6454,6 +6454,27 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
                     )}
                   </div>
 
+                  {/* Batch progress panel */}
+                  {syncingBatch && batchProgress.total > 0 && (
+                    <div className="border rounded-lg p-3 bg-muted/30 space-y-2">
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="font-medium text-foreground">
+                          Sincronizando {batchProgress.current}/{batchProgress.total} — {batchProgress.currentName}
+                        </span>
+                        <span className="text-muted-foreground">{Math.round((batchProgress.current / batchProgress.total) * 100)}%</span>
+                      </div>
+                      <Progress value={(batchProgress.current / batchProgress.total) * 100} className="h-2" />
+                      <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                        <span className="flex items-center gap-1"><Users className="h-3.5 w-3.5" /> Contacts: <span className="font-semibold text-foreground">{batchProgress.contacts}</span></span>
+                        <span className="flex items-center gap-1"><FileText className="h-3.5 w-3.5" /> Deals: <span className="font-semibold text-foreground">{batchProgress.deals}</span></span>
+                        <span className="flex items-center gap-1"><CreditCard className="h-3.5 w-3.5" /> Faturas: <span className="font-semibold text-foreground">{batchProgress.invoices}</span></span>
+                        {batchProgress.errors > 0 && (
+                          <span className="flex items-center gap-1 text-destructive"><XCircle className="h-3.5 w-3.5" /> Erros: <span className="font-semibold">{batchProgress.errors}</span></span>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
                   {/* Client list */}
                   <ScrollArea className="h-[400px] border rounded-lg">
                     <Table>
