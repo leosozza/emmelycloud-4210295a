@@ -1023,8 +1023,9 @@ serve(async (req) => {
         // ── Deal Product Rows ── Link products from Bitrix24 catalog
         if (dealId && info.services.length > 0) {
           try {
+            const servicesMap = await loadServicesCache(supabase);
             const productRows = info.services.map((svc: string) => {
-              const productId = resolveBitrixProductId(svc);
+              const productId = resolveBitrixProductId(svc, servicesMap);
               const row: Record<string, any> = {
                 PRODUCT_NAME: svc,
                 PRICE: info.total_value / info.services.length,
