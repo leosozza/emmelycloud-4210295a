@@ -82,6 +82,46 @@ serve(async (req) => {
     const companies = await selectInChunks(supabase, "companies", "id, name", "id", companyIds);
     const companyMap = new Map(companies.map((company: any) => [company.id, company.name]));
 
+    // Fetch client names from clients table via payment_transactions.client_id
+    const ptClientIds = unique(paymentTransactions.map((t: any) => t.client_id));
+    const ptClients = await selectInChunks(supabase, "clients", "id, name", "id", ptClientIds);
+    const ptClientMap = new Map(ptClients.map((c: any) => [c.id, c.name]));
+
+    // Also resolve clients via proposals -> cases -> leads -> client_id
+    const caseIds = unique(proposals.map((p: any) => p.case_id));
+    const casesData = await selectInChunks(supabase, "cases", "id, lead_id", "id", caseIds);
+    const leadIds = unique(casesData.map((c: any) => c.lead_id));
+    const leadsData = await selectInChunks(supabase, "leads", "id, client_id, name", "id", leadIds);
+    const leadClientIds = unique(leadsData.map((l: any) => l.client_id));
+    const leadClients = await selectInChunks(supabase, "clients", "id, name", "id", leadClientIds);
+    const clientMap = new Map([...ptClients, ...leadClients].map((c: any) => [c.id, c.name]));
+
+    // Build proposal -> client name resolution chain
+    const caseLeadMap = new Map(casesData.map((c: any) => [c.id, c.lead_id]));
+    const leadMap = new Map(leadsData.map((l: any) => [l.id, { client_id: l.client_id, name: l.name }]));
+
+    function resolveClientName(proposal: any, payment: any) {
+      // 1. From payment_transactions.client_id -> clients.name
+      if (payment?.client_id && clientMap.has(payment.client_id)) {
+        return clientMap.get(payment.client_id);
+      }
+      // 2. From proposal -> case -> lead -> client_id -> clients.name
+      if (proposal?.case_id) {
+        const leadId = caseLeadMap.get(proposal.case_id);
+        if (leadId) {
+          const lead = leadMap.get(leadId);
+          if (lead?.client_id && clientMap.has(lead.client_id)) {
+            return clientMap.get(lead.client_id);
+          }
+          // 3. Fallback to lead name
+          if (lead?.name) return lead.name;
+        }
+      }
+      // 4. Fallback to proposal.client_name
+      if (proposal?.client_name) return proposal.client_name;
+      return "Sem cliente";
+    }
+
     const profileIds = unique(proposals.map((proposal: any) => proposal.created_by));
     const profiles = await selectInChunks(supabase, "profiles", "id, full_name", "id", profileIds);
     const profileMap = new Map(profiles.map((profile: any) => [profile.id, profile.full_name]));
