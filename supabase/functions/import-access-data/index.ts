@@ -911,17 +911,17 @@ serve(async (req) => {
         }
         if (!dealId && docNumber && !docNumber.startsWith("ACCESS_")) {
           const res = await bitrixCall("crm.deal.list", {
-            filter: { UF_CRM_EMMELY_NIF: docNumber },
-            select: ["ID", "CONTACT_ID", "UF_CRM_EMMELY_NIF"],
+            filter: { UF_CRM_1733687549802: docNumber },
+            select: ["ID", "CONTACT_ID", "UF_CRM_1733687549802"],
           });
           if (res.result?.length > 0 && (res.total || res.result.length) <= 5) {
             const match = res.result[0];
-            if (match.UF_CRM_EMMELY_NIF === docNumber) {
+            if (match.UF_CRM_1733687549802 === docNumber) {
               dealId = match.ID;
               contactId = match.CONTACT_ID || null;
               console.log(`[sync_single_client] Matched deal ${dealId} by NIF=${docNumber}`);
             } else {
-              console.warn(`[sync_single_client] NIF filter returned field mismatch — skipping (expected=${docNumber}, got=${match.UF_CRM_EMMELY_NIF})`);
+              console.warn(`[sync_single_client] NIF filter returned field mismatch — skipping (expected=${docNumber}, got=${match.UF_CRM_1733687549802})`);
             }
           } else if (res.result?.length > 0) {
             console.warn(`[sync_single_client] NIF filter returned ${res.total} results — filter likely ignored, skipping`);
