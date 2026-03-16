@@ -324,6 +324,7 @@ serve(async (req) => {
       client_id,
       actions,
       overrides,
+      force_create = false,
     } = body as {
       clientes: RawClient[];
       honorarios?: RawHonorario[];
@@ -335,6 +336,7 @@ serve(async (req) => {
       client_id?: string;
       actions?: { contact?: boolean; deal?: boolean; invoices?: boolean };
       overrides?: { name?: string; phone?: string; nif?: string };
+      force_create?: boolean;
     };
 
     // ══════════════════════════════════════════════════════════════════
