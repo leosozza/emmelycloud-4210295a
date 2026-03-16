@@ -6422,7 +6422,7 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
                         </div>
                         {syncingBatch ? (
                           <Button size="sm" variant="destructive" onClick={handleCancelBatch} className="text-xs ml-auto">
-                            <StopCircle className="h-3.5 w-3.5 mr-1" /> Parar Sincronização
+                            <XCircle className="h-3.5 w-3.5 mr-1" /> Parar Sincronização
                           </Button>
                         ) : (
                           <Button size="sm" onClick={handleSyncBatch} disabled={selectedIds.size === 0} className="text-xs ml-auto">
