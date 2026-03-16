@@ -5277,6 +5277,7 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
   const [editActions, setEditActions] = useState({ contact: true, deal: true, invoices: true });
   const [syncingSingle, setSyncingSingle] = useState(false);
   const [syncingBatch, setSyncingBatch] = useState(false);
+  const batchAbortRef = useRef(false);
   const [batchActions, setBatchActions] = useState({ contact: true, deal: true, invoices: true });
   const [pipelines, setPipelines] = useState<{ id: string; name: string }[]>([]);
   const [selectedCategoryId, setSelectedCategoryId] = useState("0");
@@ -5946,14 +5947,24 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
   const handleSyncBatch = async () => {
     if (selectedIds.size === 0) return;
     setSyncingBatch(true);
+    batchAbortRef.current = false;
     const ids = Array.from(selectedIds);
     for (const id of ids) {
+      if (batchAbortRef.current) {
+        console.log("[syncBatch] Aborted by user");
+        break;
+      }
       const client = syncClients.find(c => c.client_id === id);
       if (!client || client.synced) continue;
       await handleSyncSingleClient(client, batchActions, { name: client.name, phone: client.phones[0] || "", nif: client.nif || "" });
     }
     setSyncingBatch(false);
+    batchAbortRef.current = false;
     setSelectedIds(new Set());
+  };
+
+  const handleCancelBatch = () => {
+    batchAbortRef.current = true;
   };
 
   const openEditDialog = (client: SyncClient) => {
@@ -6409,9 +6420,15 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
                           <label className="flex items-center gap-1"><input type="checkbox" checked={batchActions.deal} onChange={e => setBatchActions(p => ({ ...p, deal: e.target.checked }))} className="h-3 w-3" /> Deal</label>
                           <label className="flex items-center gap-1"><input type="checkbox" checked={batchActions.invoices} onChange={e => setBatchActions(p => ({ ...p, invoices: e.target.checked }))} className="h-3 w-3" /> Faturas</label>
                         </div>
-                        <Button size="sm" onClick={handleSyncBatch} disabled={syncingBatch} className="text-xs ml-auto">
-                          {syncingBatch ? <><Loader2 className="h-3.5 w-3.5 animate-spin mr-1" /> Sincronizando...</> : <><RefreshCw className="h-3.5 w-3.5 mr-1" /> Sincronizar {selectedIds.size} seleccionados</>}
-                        </Button>
+                        {syncingBatch ? (
+                          <Button size="sm" variant="destructive" onClick={handleCancelBatch} className="text-xs ml-auto">
+                            <XCircle className="h-3.5 w-3.5 mr-1" /> Parar Sincronização
+                          </Button>
+                        ) : (
+                          <Button size="sm" onClick={handleSyncBatch} disabled={selectedIds.size === 0} className="text-xs ml-auto">
+                            <RefreshCw className="h-3.5 w-3.5 mr-1" /> Sincronizar {selectedIds.size} seleccionados
+                          </Button>
+                        )}
                       </>
                     )}
                   </div>
