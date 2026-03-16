@@ -1,104 +1,58 @@
 
 
-## Revisão Arquitetural — Fase 2 Implementada
+## Diagnóstico: Dashboard KPIs todos a zero
 
-### Mudanças realizadas (Fase 2)
+### Causa raiz
 
-#### 1. Código morto eliminado
-- `chatbot-reply/index.ts` — **removido** (100% duplicado com flow-engine → ai-process-message)
-- `ai-triage/index.ts` — **removido** (100% duplicado com ai-automation-agent action classify_lead)
+O dashboard faz queries REST diretas às tabelas usando a **anon key** (linha 412):
 
-#### 2. Janela de contexto expandida
-- `RECENT_MSG_COUNT`: 5 → **15** mensagens recentes completas
-- `HISTORY_LIMIT`: 15 → **30** mensagens totais
-- TOON comprime as 15 mais antigas, mantém as 15 recentes intactas
+```typescript
+const headers = { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` };
+```
 
-#### 3. RAG semântico real (pgvector)
-- Edge function `generate-embeddings` criada — gera embeddings de 768 dimensões via Lovable AI
-- `parse-document` agora chama `generate-embeddings` automaticamente após chunking
-- `ai-process-message` usa `match_chunks()` RPC para busca semântica (threshold 0.5)
-- Fallback para keyword scoring quando embeddings não existem
+Mas as tabelas têm RLS que exige roles autenticados:
 
-#### 4. Router multi-agente
-- Quando agente tem `sub_agent_ids`, classifica intenção via IA rápida (flash-lite)
-- Delega para sub-agente especialista com seu próprio prompt e KB
-- Mantém agente activo em `bot_state.active_sub_agent_id` para consistência
+| KPI | Tabela | RLS exigida | Resultado com anon key |
+|-----|--------|-------------|----------------------|
+| Cobranças Recebidas | `financial_records` | `is_admin()`, `is_financeiro()`, etc. | **0 registos** |
+| Cobranças a Receber | `financial_records` | idem | **0 registos** |
+| Conversas Activas | `conversations` | `authenticated` | **0 registos** |
+| Mensagens Hoje | `messages` | `authenticated` | **0 registos** |
+| Clientes na Carteira | `bitrix24-fetch-portfolio` (edge fn) | `service_role` interno | **Funciona ✓** |
 
-#### 5. Self-evaluation / Reflexão
-- Após gerar resposta, avalia qualidade via flash-lite (score 1-10)
-- Se score < 7, regenera com instrução de correcção (máximo 1 retry)
-- Respostas < 50 chars ignoram avaliação
+O único KPI que funciona é "Clientes na Carteira" porque usa uma Edge Function que internamente usa `service_role`. Todos os outros falham silenciosamente (a REST API retorna `[]` quando RLS bloqueia).
 
-#### 6. Sentiment analysis + Auto-escalação
-- Análise de sentimento via heurística + IA
-- 2x frustração consecutiva → auto-transfere para humano
-- Guarda sentiment em `bot_state.last_sentiment`
-- Regista escalação em `conversation_feedback`
+### Solução
 
-#### 7. Tools dinâmicas expandidas
-- Novas tools: `search_knowledge`, `get_case_status`, `send_payment_link`
-- Tools desconhecidas verificam `tool_parameters.webhook_url` para chamada webhook genérica
-- Registry pattern: tools são lidas de `agent_tools` table
+Criar uma **Edge Function `bitrix24-dashboard-stats`** que centraliza todas as queries do dashboard usando `service_role`, eliminando o problema de RLS. O frontend faz uma única chamada em vez de 8+ chamadas REST individuais.
 
-#### 8. Queue worker auto-trigger
-- Trigger PostgreSQL `AFTER INSERT ON message_queue` chama `pg_net.http_post()` para queue-worker
-- Cron backup via `pg_cron` a cada minuto
+### Alterações
 
-#### 9. Melhorias de robustez no sendReply
-- `Promise.allSettled` para operações paralelas (save message + update conversation)
-- Error logging real em vez de fire-and-forget silencioso para message-send e bitrix24-send
-- Extração de memória com tolerância `count % 10 > 1` (mais robusto que `=== 0`)
+**1. Nova Edge Function `bitrix24-dashboard-stats`**
+- Recebe `member_id`, `start_date`, `end_date` como parâmetros
+- Usa `service_role` para consultar:
+  - `financial_records` — soma de `installment_value` por status (paga/pendente/atrasada) com filtros de data
+  - `conversations` — count de status `aberta`/`em_atendimento`
+  - `messages` — count de hoje
+  - `conversations` — últimas 5 (para lista recente)
+  - `financial_records` — últimos 5 pagamentos (para lista recente)
+  - `messages` — count por dia nos últimos 7 dias (para gráfico)
+  - `proposals` — aceitas no período (para ranking)
+  - `profiles` — nomes para o ranking
+- Retorna tudo num único JSON
 
-### Mudanças realizadas (Fase 2.1 — Consolidação Completa)
+**2. Frontend `Bitrix24App.tsx`**
+- Substituir as 8+ chamadas `fetch` REST individuais por uma única chamada à nova Edge Function
+- Manter a chamada separada ao `bitrix24-fetch-portfolio` (já funciona e é cacheada)
+- Simplificar o `useEffect` do dashboard
 
-#### Código morto eliminado
-- `chatbot-reply/index.ts` e `ai-triage/index.ts` — diretórios removidos, referências limpas em `config.toml`, `ApiDocs.tsx` e `bitrix24-worker.ts`
-- ApiDocs actualizado para documentar `ai-process-message` em vez de `chatbot-reply`
+### Resultado esperado
+- Todos os 6 KPIs passam a mostrar valores reais
+- Gráficos de mensagens e pagamentos populados
+- Ranking de propostas visível
+- Performance melhorada (1 chamada vs 8+)
 
-#### Sintaxe corrigida
-- `parse-document/index.ts` — corrigida função `extractWithAI` que estava erroneamente aninhada dentro de `findFileInZip`
+### Ficheiros
+- `supabase/functions/bitrix24-dashboard-stats/index.ts` (novo)
+- `src/pages/Bitrix24App.tsx` (refactor do `fetchAll`)
 
-#### Config.toml actualizado
-- Removidas entradas `ai-triage` e `chatbot-reply`
-- Adicionadas entradas para `generate-embeddings`, `parse-document` e `queue-worker`
-
-#### Triggers PostgreSQL criados
-- `on_message_queue_insert` → auto-invoca `queue-worker` via `pg_net`
-- `on_lead_created` → notifica comerciais e admins
-- `on_message_created` → notifica de novas mensagens inbound
-- `on_payment_status_change` → notifica pagamentos recebidos
-- `on_lead_sla_check` → alerta SLA a expirar
-- `on_lead_set_sla` → define SLA automático na criação
-- `on_profile_created` → atribui admin ao primeiro utilizador
-- Cron job `queue-worker-backup` — invoca queue-worker a cada minuto
-
-### Estado actual — 8/8 melhorias implementadas ✅
-1. ✅ Código morto eliminado (chatbot-reply + ai-triage)
-2. ✅ Contexto expandido (30 mensagens: 15 recentes + 15 comprimidas TOON)
-3. ✅ RAG semântico (pgvector + match_chunks + generate-embeddings)
-4. ✅ Router multi-agente (sub_agent_ids + classificação de intenção)
-5. ✅ Tools dinâmicas (registry pattern + webhook fallback)
-6. ✅ Reflexão/Auto-avaliação (score 1-10, retry se < 7)
-7. ✅ Sentiment analysis + auto-escalação (2x frustração → humano)
-8. ✅ Queue worker auto-trigger (pg_trigger + pg_cron backup)
-
-### Mudanças realizadas (Fase 3 — Auditoria Arquitetural)
-
-#### 1. Dashboard de Observabilidade IA
-- Nova página `/observabilidade-ia` com KPIs: requisições, tokens, custo estimado, latência média, taxa fallback, taxa erro, rating feedback
-- Hook `useAiObservability.ts` com agregação de dados
-
-#### 2. Thumbs up/down no chat de atendimento
-- Botões de feedback em mensagens outbound (bot) no painel de atendimento
-
-#### 3. Retry com backoff no AI gateway (429/502/503, 2s delay, 1 retry)
-
-#### 4. Cost estimation real (tabela de preços por modelo, cálculo automático)
-
-#### 5. Memory extraction melhorada (cada 15 msgs + em transferência humana)
-
-#### 6. Reorganização do monólito (constantes extraídas, secções delimitadas)
-
-### Próximos passos
-- Batch job para gerar embeddings dos chunks existentes
-- Streaming no PlaygroundIA
