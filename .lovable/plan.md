@@ -1,104 +1,57 @@
 
 
-## Revisão Arquitetural — Fase 2 Implementada
+## Bug: Todos os clientes sincronizam para o mesmo Contact 1687 / Deal 13
 
-### Mudanças realizadas (Fase 2)
+### Análise
 
-#### 1. Código morto eliminado
-- `chatbot-reply/index.ts` — **removido** (100% duplicado com flow-engine → ai-process-message)
-- `ai-triage/index.ts` — **removido** (100% duplicado com ai-automation-agent action classify_lead)
+Dos network requests, **todos os clientes diferentes** retornam:
+- `"Contacto 1687 actualizado"` + `"Deal 13 actualizado (stage: C15:NEW)"`
 
-#### 2. Janela de contexto expandida
-- `RECENT_MSG_COUNT`: 5 → **15** mensagens recentes completas
-- `HISTORY_LIMIT`: 15 → **30** mensagens totais
-- TOON comprime as 15 mais antigas, mantém as 15 recentes intactas
+Excepto "Cliente 1081" (NIF=`ACCESS_1081`) que corretamente **criou** Contact 113469 e Deal 12315.
 
-#### 3. RAG semântico real (pgvector)
-- Edge function `generate-embeddings` criada — gera embeddings de 768 dimensões via Lovable AI
-- `parse-document` agora chama `generate-embeddings` automaticamente após chunking
-- `ai-process-message` usa `match_chunks()` RPC para busca semântica (threshold 0.5)
-- Fallback para keyword scoring quando embeddings não existem
+**Causa raiz**: O campo `UF_CRM_1768312831` (Access ID) provavelmente **não existe** no Bitrix24 ou o campo `UF_CRM_EMMELY_NIF` não existe. Quando o Bitrix24 recebe um filtro com um campo UF inexistente, **ignora o filtro** e retorna TODOS os deals — o código pega o primeiro (Deal 13) e assume que é match.
 
-#### 4. Router multi-agente
-- Quando agente tem `sub_agent_ids`, classifica intenção via IA rápida (flash-lite)
-- Delega para sub-agente especialista com seu próprio prompt e KB
-- Mantém agente activo em `bot_state.active_sub_agent_id` para consistência
+O mesmo acontece com `all_paid=false` para clientes Quitados — mas isso é um problema secundário (provavelmente os `financial_records` não têm status `paga` ou o filtro `sync_source = 'access_import'` não encontra os leads).
 
-#### 5. Self-evaluation / Reflexão
-- Após gerar resposta, avalia qualidade via flash-lite (score 1-10)
-- Se score < 7, regenera com instrução de correcção (máximo 1 retry)
-- Respostas < 50 chars ignoram avaliação
+### Solução
 
-#### 6. Sentiment analysis + Auto-escalação
-- Análise de sentimento via heurística + IA
-- 2x frustração consecutiva → auto-transfere para humano
-- Guarda sentiment em `bot_state.last_sentiment`
-- Regista escalação em `conversation_feedback`
+#### 1. Validar resultados do lookup antes de aceitar
 
-#### 7. Tools dinâmicas expandidas
-- Novas tools: `search_knowledge`, `get_case_status`, `send_payment_link`
-- Tools desconhecidas verificam `tool_parameters.webhook_url` para chamada webhook genérica
-- Registry pattern: tools são lidas de `agent_tools` table
+Após cada `crm.deal.list`, verificar que o resultado **realmente contém** o valor filtrado. Se o campo UF não existir no resultado, ignorar o match:
 
-#### 8. Queue worker auto-trigger
-- Trigger PostgreSQL `AFTER INSERT ON message_queue` chama `pg_net.http_post()` para queue-worker
-- Cron backup via `pg_cron` a cada minuto
+```typescript
+// Antes (buggy):
+if (res.result?.length > 0) {
+  dealId = res.result[0].ID;
+}
 
-#### 9. Melhorias de robustez no sendReply
-- `Promise.allSettled` para operações paralelas (save message + update conversation)
-- Error logging real em vez de fire-and-forget silencioso para message-send e bitrix24-send
-- Extração de memória com tolerância `count % 10 > 1` (mais robusto que `=== 0`)
+// Depois (safe):
+if (res.result?.length > 0) {
+  const match = res.result[0];
+  // Validate the field actually matches
+  if (match.UF_CRM_1768312831 === info.access_id) {
+    dealId = match.ID;
+  }
+}
+```
 
-### Mudanças realizadas (Fase 2.1 — Consolidação Completa)
+No entanto, `crm.deal.list` por defeito não retorna campos UF no `select`. A abordagem mais segura é:
 
-#### Código morto eliminado
-- `chatbot-reply/index.ts` e `ai-triage/index.ts` — diretórios removidos, referências limpas em `config.toml`, `ApiDocs.tsx` e `bitrix24-worker.ts`
-- ApiDocs actualizado para documentar `ai-process-message` em vez de `chatbot-reply`
+**Adicionar validação de contagem**: Se o filtro retorna muitos resultados (>5), provavelmente o campo não existe e o filtro foi ignorado — rejeitar o match.
 
-#### Sintaxe corrigida
-- `parse-document/index.ts` — corrigida função `extractWithAI` que estava erroneamente aninhada dentro de `findFileInZip`
+#### 2. Para o `sync_single_client` (Etapa B - novos), forçar criação
 
-#### Config.toml actualizado
-- Removidas entradas `ai-triage` e `chatbot-reply`
-- Adicionadas entradas para `generate-embeddings`, `parse-document` e `queue-worker`
+Quando o utilizador está na Etapa B (clientes sem Deal), o sistema deve **saltar o lookup** e criar directamente. Adicionar um parâmetro `force_create` ao payload.
 
-#### Triggers PostgreSQL criados
-- `on_message_queue_insert` → auto-invoca `queue-worker` via `pg_net`
-- `on_lead_created` → notifica comerciais e admins
-- `on_message_created` → notifica de novas mensagens inbound
-- `on_payment_status_change` → notifica pagamentos recebidos
-- `on_lead_sla_check` → alerta SLA a expirar
-- `on_lead_set_sla` → define SLA automático na criação
-- `on_profile_created` → atribui admin ao primeiro utilizador
-- Cron job `queue-worker-backup` — invoca queue-worker a cada minuto
+#### 3. Corrigir `all_paid` para clientes Quitados
 
-### Estado actual — 8/8 melhorias implementadas ✅
-1. ✅ Código morto eliminado (chatbot-reply + ai-triage)
-2. ✅ Contexto expandido (30 mensagens: 15 recentes + 15 comprimidas TOON)
-3. ✅ RAG semântico (pgvector + match_chunks + generate-embeddings)
-4. ✅ Router multi-agente (sub_agent_ids + classificação de intenção)
-5. ✅ Tools dinâmicas (registry pattern + webhook fallback)
-6. ✅ Reflexão/Auto-avaliação (score 1-10, retry se < 7)
-7. ✅ Sentiment analysis + auto-escalação (2x frustração → humano)
-8. ✅ Queue worker auto-trigger (pg_trigger + pg_cron backup)
+Adicionar log para debug e verificar que a query `sync_source = 'access_import'` está a encontrar os leads corretos com `financial_records.status = 'paga'`.
 
-### Mudanças realizadas (Fase 3 — Auditoria Arquitetural)
+### Alterações
 
-#### 1. Dashboard de Observabilidade IA
-- Nova página `/observabilidade-ia` com KPIs: requisições, tokens, custo estimado, latência média, taxa fallback, taxa erro, rating feedback
-- Hook `useAiObservability.ts` com agregação de dados
+- **`supabase/functions/import-access-data/index.ts`**:
+  - Nas 4 lookup queries (access_id, NIF, phone, email/name), adicionar validação: rejeitar se `res.total > 5` (indica filtro ignorado) ou se retorna 0 resultados reais
+  - Incluir o campo filtrado no `select` para validação cruzada
+  - Adicionar `force_create` flag que salta todo o lookup (para Etapa B)
+  - Adicionar logs detalhados no `fetchClientWithFinancials` para debug do `all_paid`
 
-#### 2. Thumbs up/down no chat de atendimento
-- Botões de feedback em mensagens outbound (bot) no painel de atendimento
-
-#### 3. Retry com backoff no AI gateway (429/502/503, 2s delay, 1 retry)
-
-#### 4. Cost estimation real (tabela de preços por modelo, cálculo automático)
-
-#### 5. Memory extraction melhorada (cada 15 msgs + em transferência humana)
-
-#### 6. Reorganização do monólito (constantes extraídas, secções delimitadas)
-
-### Próximos passos
-- Batch job para gerar embeddings dos chunks existentes
-- Streaming no PlaygroundIA
