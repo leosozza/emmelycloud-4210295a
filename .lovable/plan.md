@@ -1,104 +1,68 @@
 
 
-## Revisão Arquitetural — Fase 2 Implementada
+## Optimizar Carregamento da Fase 3 — Diagnóstico e Plano
 
-### Mudanças realizadas (Fase 2)
+### Problema
+O `list_sync_clients` faz **duas paginações completas da API Bitrix24** a cada chamada:
+1. `crm.deal.list` — carrega TODOS os deals (50 por página)
+2. `crm.contact.list` — carrega TODOS os contactos (50 por página)
 
-#### 1. Código morto eliminado
-- `chatbot-reply/index.ts` — **removido** (100% duplicado com flow-engine → ai-process-message)
-- `ai-triage/index.ts` — **removido** (100% duplicado com ai-automation-agent action classify_lead)
+Para um CRM com 2000 deals e 3000 contactos, isso significa ~100 chamadas HTTP sequenciais ao Bitrix24 **cada vez que o utilizador clica "Carregar Clientes"**, resultando em 30-60+ segundos de espera (e possível timeout da Edge Function a 60s).
 
-#### 2. Janela de contexto expandida
-- `RECENT_MSG_COUNT`: 5 → **15** mensagens recentes completas
-- `HISTORY_LIMIT`: 15 → **30** mensagens totais
-- TOON comprime as 15 mais antigas, mantém as 15 recentes intactas
+### Solução: Cache Bitrix24 no Backend
 
-#### 3. RAG semântico real (pgvector)
-- Edge function `generate-embeddings` criada — gera embeddings de 768 dimensões via Lovable AI
-- `parse-document` agora chama `generate-embeddings` automaticamente após chunking
-- `ai-process-message` usa `match_chunks()` RPC para busca semântica (threshold 0.5)
-- Fallback para keyword scoring quando embeddings não existem
+Guardar os dados do Bitrix (deals e contactos) numa tabela de cache local, e apenas refrescar quando necessário.
 
-#### 4. Router multi-agente
-- Quando agente tem `sub_agent_ids`, classifica intenção via IA rápida (flash-lite)
-- Delega para sub-agente especialista com seu próprio prompt e KB
-- Mantém agente activo em `bot_state.active_sub_agent_id` para consistência
+### Alterações
 
-#### 5. Self-evaluation / Reflexão
-- Após gerar resposta, avalia qualidade via flash-lite (score 1-10)
-- Se score < 7, regenera com instrução de correcção (máximo 1 retry)
-- Respostas < 50 chars ignoram avaliação
+#### 1. Nova tabela `bitrix24_sync_cache`
+```sql
+CREATE TABLE public.bitrix24_sync_cache (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  member_id text NOT NULL,
+  cache_type text NOT NULL, -- 'deals' | 'contacts'
+  data jsonb NOT NULL DEFAULT '{}',
+  fetched_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE(member_id, cache_type)
+);
+ALTER TABLE public.bitrix24_sync_cache ENABLE ROW LEVEL SECURITY;
+-- Service role only
+CREATE POLICY "Service role full access" ON public.bitrix24_sync_cache FOR ALL TO service_role USING (true) WITH CHECK (true);
+```
 
-#### 6. Sentiment analysis + Auto-escalação
-- Análise de sentimento via heurística + IA
-- 2x frustração consecutiva → auto-transfere para humano
-- Guarda sentiment em `bot_state.last_sentiment`
-- Regista escalação em `conversation_feedback`
+#### 2. Backend (`import-access-data/index.ts`) — `list_sync_clients`
 
-#### 7. Tools dinâmicas expandidas
-- Novas tools: `search_knowledge`, `get_case_status`, `send_payment_link`
-- Tools desconhecidas verificam `tool_parameters.webhook_url` para chamada webhook genérica
-- Registry pattern: tools são lidas de `agent_tools` table
+**a) Cache-first para dados Bitrix:**
+- Antes de chamar a API Bitrix, verificar se existe cache com `fetched_at` < 30 minutos
+- Se existir cache válido, usar os dados do cache (instantâneo)
+- Se não existir ou expirado, fazer o fetch completo e guardar no cache
+- Adicionar parâmetro `force_refresh=true` para forçar recarga
 
-#### 8. Queue worker auto-trigger
-- Trigger PostgreSQL `AFTER INSERT ON message_queue` chama `pg_net.http_post()` para queue-worker
-- Cron backup via `pg_cron` a cada minuto
+**b) Filtrar clientes já sincronizados no backend:**
+- Clientes com `synced=true` continuam na resposta mas são excluídos do matching Bitrix (poupando processamento)
+- Isto reduz o dataset a processar
 
-#### 9. Melhorias de robustez no sendReply
-- `Promise.allSettled` para operações paralelas (save message + update conversation)
-- Error logging real em vez de fire-and-forget silencioso para message-send e bitrix24-send
-- Extração de memória com tolerância `count % 10 > 1` (mais robusto que `=== 0`)
+**c) Progresso parcial via streaming (opcional, fase 2):**
+- Responder primeiro com dados do Supabase (rápido, ~2s)
+- Depois carregar Bitrix em background
 
-### Mudanças realizadas (Fase 2.1 — Consolidação Completa)
+#### 3. Frontend (`Bitrix24App.tsx`)
 
-#### Código morto eliminado
-- `chatbot-reply/index.ts` e `ai-triage/index.ts` — diretórios removidos, referências limpas em `config.toml`, `ApiDocs.tsx` e `bitrix24-worker.ts`
-- ApiDocs actualizado para documentar `ai-process-message` em vez de `chatbot-reply`
+**a) Indicador de progresso mais detalhado:**
+- Mostrar "A carregar clientes do banco de dados..." → "A carregar dados do Bitrix24..." → "A fazer correspondência..."
+- Usar SSE ou polling para estados intermédios
 
-#### Sintaxe corrigida
-- `parse-document/index.ts` — corrigida função `extractWithAI` que estava erroneamente aninhada dentro de `findFileInZip`
+**b) Botão "Forçar actualização Bitrix":**
+- Por defeito usa cache (carrega em ~3s)
+- Botão secundário para forçar refresh do cache quando necessário
 
-#### Config.toml actualizado
-- Removidas entradas `ai-triage` e `chatbot-reply`
-- Adicionadas entradas para `generate-embeddings`, `parse-document` e `queue-worker`
+### Impacto Esperado
+- **1ª carga** (sem cache): mesma velocidade actual (~30-60s), mas guarda cache
+- **Cargas seguintes** (com cache): **2-5 segundos** em vez de 30-60s
+- **Após refresh de página**: usa cache, retoma instantaneamente
 
-#### Triggers PostgreSQL criados
-- `on_message_queue_insert` → auto-invoca `queue-worker` via `pg_net`
-- `on_lead_created` → notifica comerciais e admins
-- `on_message_created` → notifica de novas mensagens inbound
-- `on_payment_status_change` → notifica pagamentos recebidos
-- `on_lead_sla_check` → alerta SLA a expirar
-- `on_lead_set_sla` → define SLA automático na criação
-- `on_profile_created` → atribui admin ao primeiro utilizador
-- Cron job `queue-worker-backup` — invoca queue-worker a cada minuto
+### Ficheiros a Alterar
+1. **Migração SQL** — criar tabela `bitrix24_sync_cache`
+2. **`supabase/functions/import-access-data/index.ts`** — lógica cache-first nos Steps 5-6
+3. **`src/pages/Bitrix24App.tsx`** — UI com indicador de progresso e botão de refresh
 
-### Estado actual — 8/8 melhorias implementadas ✅
-1. ✅ Código morto eliminado (chatbot-reply + ai-triage)
-2. ✅ Contexto expandido (30 mensagens: 15 recentes + 15 comprimidas TOON)
-3. ✅ RAG semântico (pgvector + match_chunks + generate-embeddings)
-4. ✅ Router multi-agente (sub_agent_ids + classificação de intenção)
-5. ✅ Tools dinâmicas (registry pattern + webhook fallback)
-6. ✅ Reflexão/Auto-avaliação (score 1-10, retry se < 7)
-7. ✅ Sentiment analysis + auto-escalação (2x frustração → humano)
-8. ✅ Queue worker auto-trigger (pg_trigger + pg_cron backup)
-
-### Mudanças realizadas (Fase 3 — Auditoria Arquitetural)
-
-#### 1. Dashboard de Observabilidade IA
-- Nova página `/observabilidade-ia` com KPIs: requisições, tokens, custo estimado, latência média, taxa fallback, taxa erro, rating feedback
-- Hook `useAiObservability.ts` com agregação de dados
-
-#### 2. Thumbs up/down no chat de atendimento
-- Botões de feedback em mensagens outbound (bot) no painel de atendimento
-
-#### 3. Retry com backoff no AI gateway (429/502/503, 2s delay, 1 retry)
-
-#### 4. Cost estimation real (tabela de preços por modelo, cálculo automático)
-
-#### 5. Memory extraction melhorada (cada 15 msgs + em transferência humana)
-
-#### 6. Reorganização do monólito (constantes extraídas, secções delimitadas)
-
-### Próximos passos
-- Batch job para gerar embeddings dos chunks existentes
-- Streaming no PlaygroundIA
