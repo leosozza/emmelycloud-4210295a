@@ -1451,7 +1451,7 @@ serve(async (req) => {
             TITLE: dealTitle,
             OPPORTUNITY: totalValue,
             CURRENCY_ID: "EUR",
-            STAGE_ID: allPaid ? "WON" : (hasOverdue ? "EXECUTING" : "NEW"),
+            STAGE_ID: allPaid ? "C15:WON" : (hasOverdue ? "C15:UC_S7RLFB" : "C15:NEW"),
             UF_CRM_1733687549802: docNumber || "",
           };
           if (accessId) dealFields.UF_CRM_1768312831 = accessId;
