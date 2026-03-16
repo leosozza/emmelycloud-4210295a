@@ -5277,6 +5277,7 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
   const [editActions, setEditActions] = useState({ contact: true, deal: true, invoices: true });
   const [syncingSingle, setSyncingSingle] = useState(false);
   const [syncingBatch, setSyncingBatch] = useState(false);
+  const batchAbortRef = useRef(false);
   const [batchActions, setBatchActions] = useState({ contact: true, deal: true, invoices: true });
   const [pipelines, setPipelines] = useState<{ id: string; name: string }[]>([]);
   const [selectedCategoryId, setSelectedCategoryId] = useState("0");
