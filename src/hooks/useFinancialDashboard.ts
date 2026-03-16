@@ -38,7 +38,7 @@ export function useFinancialDashboard(startDate: string, endDate: string) {
       // Paid records: filter by paid_at
       const { data: paidRecords } = await supabase
         .from("financial_records")
-        .select("id, installment_value, status, paid_at, due_date, contract_id, payment_method, created_at")
+        .select("id, installment_value, status, paid_at, due_date, contract_id, payment_method, created_at, proposal_id")
         .eq("status", "paga")
         .gte("paid_at", startDate)
         .lte("paid_at", endDate);
