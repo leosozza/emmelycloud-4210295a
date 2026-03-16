@@ -65,7 +65,7 @@ serve(async (req) => {
     const paymentTransactions = await selectInChunks(
       supabase,
       "payment_transactions",
-      "id, financial_record_id, gateway, payment_method, company_id, created_at, metadata",
+      "id, financial_record_id, gateway, payment_method, company_id, client_id, created_at, metadata",
       "financial_record_id",
       financialRecordIds,
       { column: "created_at", ascending: false },
