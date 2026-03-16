@@ -4533,8 +4533,8 @@ function CarteiraAccessView({ integration, memberId, cachedPortfolio }: { integr
     };
     const fullReason = `${reasonLabels[cancelReason] || cancelReason}${cancelNotes ? ` — ${cancelNotes}` : ""}`;
     try {
-      const { error } = await supabase.from("contracts").update({
-        status: "cancelado" as any,
+      const { error } = await supabase.from("proposals").update({
+        contract_status: "cancelado",
         cancelled_at: new Date().toISOString(),
         cancel_reason: fullReason,
         refund_amount: cancelHasRefund ? cancelRefundAmount : 0,

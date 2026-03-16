@@ -2,7 +2,6 @@ import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
@@ -10,21 +9,17 @@ import {
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
-import { Plus, Search, Pencil, Trash2, FileSignature, Ban, Link2, Copy, Download } from "lucide-react";
+import { Pencil, Trash2, FileSignature, Ban, Link2, Download } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { Tables, Constants } from "@/integrations/supabase/types";
-import { ContratoForm } from "@/components/contratos/ContratoForm";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
+import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { format, parseISO } from "date-fns";
 import { PageHeader } from "@/components/PageHeader";
-import { EntityBreadcrumb } from "@/components/EntityBreadcrumb";
 import { useNavigate } from "react-router-dom";
-
-type Contract = Tables<"contracts">;
 
 const statusLabels: Record<string, string> = {
   pendente: "Pendente", assinado: "Assinado", cancelado: "Cancelado",
@@ -37,16 +32,19 @@ const statusColors: Record<string, string> = {
 
 const ContratosPage = () => {
   const [statusFilter, setStatusFilter] = useState("all");
-  const [formOpen, setFormOpen] = useState(false);
-  const [editingContrato, setEditingContrato] = useState<Contract | null>(null);
   const { toast } = useToast();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
 
+  // Fetch proposals with contract_status (unified table)
   const { data: contracts = [], isLoading } = useQuery({
-    queryKey: ["contracts"],
+    queryKey: ["contracts-from-proposals"],
     queryFn: async () => {
-      const { data, error } = await supabase.from("contracts").select("*").order("created_at", { ascending: false });
+      const { data, error } = await supabase
+        .from("proposals")
+        .select("*")
+        .not("contract_status", "is", null)
+        .order("created_at", { ascending: false });
       if (error) throw error;
       return data as any[];
     },
@@ -55,22 +53,15 @@ const ContratosPage = () => {
   const { data: signatures = [] } = useQuery({
     queryKey: ["digital-signatures"],
     queryFn: async () => {
-      const { data, error } = await supabase.from("digital_signatures").select("contract_id, signature_method, signed_at");
+      const { data, error } = await supabase.from("digital_signatures").select("proposal_id, contract_id, signature_method, signed_at");
       if (error) throw error;
       return data;
     },
   });
 
-  const signaturesMap = Object.fromEntries(signatures.map((s: any) => [s.contract_id, s]));
-
-  const { data: proposals = [] } = useQuery({
-    queryKey: ["proposals-select"],
-    queryFn: async () => {
-      const { data, error } = await supabase.from("proposals").select("id, title").order("title");
-      if (error) throw error;
-      return data;
-    },
-  });
+  const signaturesMap = Object.fromEntries(
+    signatures.map((s: any) => [s.proposal_id || s.contract_id, s])
+  );
 
   const { data: cases = [] } = useQuery({
     queryKey: ["cases-select"],
@@ -81,54 +72,27 @@ const ContratosPage = () => {
     },
   });
 
-  const proposalsMap = Object.fromEntries(proposals.map((p) => [p.id, p.title]));
   const casesMap = Object.fromEntries(cases.map((c) => [c.id, c.title]));
-
-  const saveMutation = useMutation({
-    mutationFn: async (data: any) => {
-      if (editingContrato) {
-        const { error } = await supabase.from("contracts").update(data).eq("id", editingContrato.id);
-        if (error) throw error;
-      } else {
-        const { error } = await supabase.from("contracts").insert(data);
-        if (error) throw error;
-      }
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["contracts"] });
-      setFormOpen(false);
-      setEditingContrato(null);
-      toast({ title: editingContrato ? "Contrato atualizado" : "Contrato criado" });
-    },
-    onError: (e: any) => {
-      toast({ title: "Erro", description: e.message, variant: "destructive" });
-    },
-  });
 
   const signMutation = useMutation({
     mutationFn: async (id: string) => {
-      // 1. Sign the contract
-      const { error } = await supabase.from("contracts").update({
-        status: "assinado" as any,
+      const { error } = await supabase.from("proposals").update({
+        contract_status: "assinado",
         signed_at: new Date().toISOString(),
-      }).eq("id", id);
+      } as any).eq("id", id);
       if (error) throw error;
 
-      // 2. Find the contract to get case_id
-      const contract = contracts.find((c) => c.id === id);
-      if (contract?.case_id) {
-        // 3. Update case status to em_andamento
-        await supabase.from("cases").update({ status: "em_andamento" as any }).eq("id", contract.case_id);
-
-        // 4. Find lead linked to the case and update to fechado
-        const { data: linkedCase } = await supabase.from("cases").select("lead_id").eq("id", contract.case_id).single();
+      const proposal = contracts.find((c) => c.id === id);
+      if (proposal?.case_id) {
+        await supabase.from("cases").update({ status: "em_andamento" as any }).eq("id", proposal.case_id);
+        const { data: linkedCase } = await supabase.from("cases").select("lead_id").eq("id", proposal.case_id).single();
         if (linkedCase?.lead_id) {
           await supabase.from("leads").update({ funnel_stage: "fechado" as any }).eq("id", linkedCase.lead_id);
         }
       }
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["contracts"] });
+      queryClient.invalidateQueries({ queryKey: ["contracts-from-proposals"] });
       queryClient.invalidateQueries({ queryKey: ["cases"] });
       queryClient.invalidateQueries({ queryKey: ["leads"] });
       toast({ title: "Contrato assinado — caso ativado e lead fechado" });
@@ -162,8 +126,8 @@ const ContratosPage = () => {
         outro: "Outro",
       };
       const fullReason = `${reasonLabels[reason] || reason}${notes ? ` — ${notes}` : ""}`;
-      const { error } = await supabase.from("contracts").update({
-        status: "cancelado" as any,
+      const { error } = await supabase.from("proposals").update({
+        contract_status: "cancelado",
         cancelled_at: new Date().toISOString(),
         cancel_reason: fullReason,
         refund_amount: refundAmount,
@@ -171,7 +135,7 @@ const ContratosPage = () => {
       if (error) throw error;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["contracts"] });
+      queryClient.invalidateQueries({ queryKey: ["contracts-from-proposals"] });
       setCancelDialogOpen(false);
       setCancelTargetId(null);
       toast({ title: "Contrato cancelado" });
@@ -183,16 +147,23 @@ const ContratosPage = () => {
 
   const deleteMutation = useMutation({
     mutationFn: async (id: string) => {
-      const { error } = await supabase.from("contracts").delete().eq("id", id);
+      // Remove contract_status to "un-contract" the proposal
+      const { error } = await supabase.from("proposals").update({
+        contract_status: null,
+        signed_at: null,
+        cancelled_at: null,
+        cancel_reason: null,
+        refund_amount: null,
+      } as any).eq("id", id);
       if (error) throw error;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["contracts"] });
-      toast({ title: "Contrato eliminado" });
+      queryClient.invalidateQueries({ queryKey: ["contracts-from-proposals"] });
+      toast({ title: "Contrato removido" });
     },
   });
 
-  const filtered = contracts.filter((c) => statusFilter === "all" || c.status === statusFilter);
+  const filtered = contracts.filter((c) => statusFilter === "all" || c.contract_status === statusFilter);
 
   const fmtDate = (d: string | null) => d ? format(parseISO(d), "dd/MM/yyyy") : "—";
 
@@ -202,26 +173,22 @@ const ContratosPage = () => {
     toast({ title: "Link copiado", description: "Link de assinatura copiado para a área de transferência" });
   };
 
-  const downloadCertificate = (contractId: string) => {
+  const downloadCertificate = (proposalId: string) => {
     const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-    window.open(`${supabaseUrl}/functions/v1/signature-certificate?contract_id=${contractId}&format=html`, "_blank");
+    window.open(`${supabaseUrl}/functions/v1/signature-certificate?contract_id=${proposalId}&format=html`, "_blank");
   };
 
   return (
     <div className="space-y-4">
-      <PageHeader title="Contratos" description="Gestão de contratos e assinaturas">
-        <Button onClick={() => { setEditingContrato(null); setFormOpen(true); }} className="bg-white/20 hover:bg-white/30 text-white border-0 rounded-full">
-          <Plus className="mr-2 h-4 w-4" /> Novo Contrato
-        </Button>
-      </PageHeader>
+      <PageHeader title="Contratos" description="Gestão de contratos e assinaturas" />
 
       <Select value={statusFilter} onValueChange={setStatusFilter}>
         <SelectTrigger className="w-[180px]"><SelectValue placeholder="Status" /></SelectTrigger>
         <SelectContent>
           <SelectItem value="all">Todos</SelectItem>
-          {Constants.public.Enums.contract_status.map((s) => (
-            <SelectItem key={s} value={s}>{statusLabels[s]}</SelectItem>
-          ))}
+          <SelectItem value="pendente">Pendente</SelectItem>
+          <SelectItem value="assinado">Assinado</SelectItem>
+          <SelectItem value="cancelado">Cancelado</SelectItem>
         </SelectContent>
       </Select>
 
@@ -241,7 +208,7 @@ const ContratosPage = () => {
           </TableHeader>
           <TableBody>
             {isLoading ? (
-              <TableRow><TableCell colSpan={7} className="text-center text-muted-foreground">A carregar...</TableCell></TableRow>
+              <TableRow><TableCell colSpan={8} className="text-center text-muted-foreground">A carregar...</TableCell></TableRow>
             ) : filtered.length === 0 ? (
               <TableRow><TableCell colSpan={8} className="text-center text-muted-foreground">Nenhum contrato encontrado</TableCell></TableRow>
             ) : filtered.map((c: any) => {
@@ -250,7 +217,7 @@ const ContratosPage = () => {
               <TableRow key={c.id}>
                 <TableCell className="font-medium text-sm">
                   <Button variant="link" size="sm" className="p-0 h-auto text-sm" onClick={() => navigate("/propostas")}>
-                    {proposalsMap[c.proposal_id] || "—"}
+                    {c.title || "—"}
                   </Button>
                 </TableCell>
                 <TableCell className="text-sm">
@@ -265,15 +232,15 @@ const ContratosPage = () => {
                     <Tooltip>
                       <TooltipTrigger asChild>
                         <div>
-                          <Badge className={`text-xs ${statusColors[c.status]}`}>{statusLabels[c.status]}</Badge>
-                          {c.status === "cancelado" && (c as any).refund_amount > 0 && (
-                            <Badge variant="outline" className="text-[10px] ml-1">Devolvido: €{(c as any).refund_amount}</Badge>
+                          <Badge className={`text-xs ${statusColors[c.contract_status] || ""}`}>{statusLabels[c.contract_status] || c.contract_status}</Badge>
+                          {c.contract_status === "cancelado" && c.refund_amount > 0 && (
+                            <Badge variant="outline" className="text-[10px] ml-1">Devolvido: €{c.refund_amount}</Badge>
                           )}
                         </div>
                       </TooltipTrigger>
-                      {c.status === "cancelado" && (c as any).cancel_reason && (
+                      {c.contract_status === "cancelado" && c.cancel_reason && (
                         <TooltipContent>
-                          <p className="text-xs">{(c as any).cancel_reason}</p>
+                          <p className="text-xs">{c.cancel_reason}</p>
                         </TooltipContent>
                       )}
                     </Tooltip>
@@ -287,13 +254,13 @@ const ContratosPage = () => {
                     <Badge variant="outline" className="text-xs">
                       {sig.signature_method === "draw" ? "✍️ Desenho" : sig.signature_method === "selfie" ? "📸 Selfie" : "🔒 IP"}
                     </Badge>
-                  ) : c.status === "pendente" ? (
+                  ) : c.contract_status === "pendente" ? (
                     <span className="text-muted-foreground">—</span>
                   ) : "—"}
                 </TableCell>
                 <TableCell>
                   <div className="flex gap-1">
-                    {c.status === "pendente" && (
+                    {c.contract_status === "pendente" && (
                       <>
                         {c.sign_token && (
                           <Button variant="ghost" size="icon" title="Copiar link de assinatura" onClick={() => copySignLink(c.sign_token)}>
@@ -313,7 +280,7 @@ const ContratosPage = () => {
                         <Download className="h-4 w-4 text-primary" />
                       </Button>
                     )}
-                    <Button variant="ghost" size="icon" onClick={() => { setEditingContrato(c); setFormOpen(true); }}>
+                    <Button variant="ghost" size="icon" onClick={() => navigate("/propostas")}>
                       <Pencil className="h-4 w-4" />
                     </Button>
                     <Button variant="ghost" size="icon" onClick={() => deleteMutation.mutate(c.id)}>
@@ -376,16 +343,6 @@ const ContratosPage = () => {
           </div>
         </DialogContent>
       </Dialog>
-
-      <ContratoForm
-        open={formOpen}
-        onOpenChange={setFormOpen}
-        contrato={editingContrato}
-        proposals={proposals}
-        cases={cases}
-        onSave={(data) => saveMutation.mutate(data)}
-        saving={saveMutation.isPending}
-      />
     </div>
   );
 };

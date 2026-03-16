@@ -131,8 +131,8 @@ const PropostasPage = () => {
     },
     onSuccess: (_, { status }) => {
       queryClient.invalidateQueries({ queryKey: ["proposals"] });
-      queryClient.invalidateQueries({ queryKey: ["contracts"] });
-      toast({ title: status === "aceita" ? "Proposta aceita — contrato criado" : "Status atualizado" });
+      queryClient.invalidateQueries({ queryKey: ["contracts-from-proposals"] });
+      toast({ title: status === "aceita" ? "Proposta aceita — contrato ativado" : "Status atualizado" });
     },
     onError: (e: any) => {
       toast({ title: "Erro", description: e.message, variant: "destructive" });
