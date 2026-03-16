@@ -809,6 +809,7 @@ export type Database = {
         Row: {
           address: string | null
           birth_date: string | null
+          bitrix24_id: string | null
           concelho: string | null
           country: string | null
           created_at: string
@@ -818,6 +819,7 @@ export type Database = {
           freguesia: string | null
           has_active_contract: boolean
           id: string
+          id_access: string | null
           name: string
           nationality: string | null
           nib: string | null
@@ -828,6 +830,7 @@ export type Database = {
         Insert: {
           address?: string | null
           birth_date?: string | null
+          bitrix24_id?: string | null
           concelho?: string | null
           country?: string | null
           created_at?: string
@@ -837,6 +840,7 @@ export type Database = {
           freguesia?: string | null
           has_active_contract?: boolean
           id?: string
+          id_access?: string | null
           name: string
           nationality?: string | null
           nib?: string | null
@@ -847,6 +851,7 @@ export type Database = {
         Update: {
           address?: string | null
           birth_date?: string | null
+          bitrix24_id?: string | null
           concelho?: string | null
           country?: string | null
           created_at?: string
@@ -856,6 +861,7 @@ export type Database = {
           freguesia?: string | null
           has_active_contract?: boolean
           id?: string
+          id_access?: string | null
           name?: string
           nationality?: string | null
           nib?: string | null
