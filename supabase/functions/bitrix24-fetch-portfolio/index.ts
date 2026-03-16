@@ -75,8 +75,8 @@ async function handleFullPortfolio(supabase: any) {
   while (true) {
     const { data: chunk, error } = await supabase
       .from("clients")
-      .select("id, name, document_number, notes")
-      .ilike("notes", "%Access%")
+      .select("id, name, document_number, notes, id_access, bitrix24_id")
+      .not("id_access", "is", null)
       .order("name", { ascending: true })
       .range(offset, offset + PAGE_SIZE);
 
