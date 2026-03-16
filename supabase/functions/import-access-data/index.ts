@@ -614,6 +614,9 @@ serve(async (req) => {
         if (fm.recordsCount > 0 && fm.allPaid) statusClass = "quitado";
         else if (fm.hasOverdue) statusClass = "atrasado";
 
+        // Synced = client has bitrix24_id AND all financial records have both bitrix24_deal_id and bitrix24_invoice_id
+        const isSynced = !!client.bitrix24_id && fm.allRecordsHaveBitrixIds;
+
         clientsWithFinancials.push({
           client_id: client.id,
           name: client.name,
@@ -633,6 +636,7 @@ serve(async (req) => {
           address: client.address,
           birth_date: client.birth_date,
           contract_date: fm.contractDate ? fm.contractDate.split("T")[0] : null,
+          synced: isSynced,
         });
       }
 
