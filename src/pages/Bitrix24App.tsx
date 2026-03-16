@@ -5284,6 +5284,11 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
   const [selectedCategoryId, setSelectedCategoryId] = useState("0");
   const [loadingPipelines, setLoadingPipelines] = useState(false);
 
+  // Enrich Bitrix contacts
+  const [enriching, setEnriching] = useState(false);
+  const [enrichProgress, setEnrichProgress] = useState({ processed: 0, total: 0, updated: 0, notFound: 0, skipped: 0 });
+  const [enrichDone, setEnrichDone] = useState(false);
+
   // Filter states (Phase 2 only)
   const [filterDateFrom, setFilterDateFrom] = useState<Date | undefined>(undefined);
   const [filterDateTo, setFilterDateTo] = useState<Date | undefined>(undefined);
