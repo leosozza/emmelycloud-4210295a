@@ -3,7 +3,7 @@ import { Tables } from "@/integrations/supabase/types";
 import { differenceInHours, differenceInMinutes, parseISO } from "date-fns";
 import { useRef } from "react";
 
-type Lead = Tables<"leads">;
+type Lead = Tables<"leads"> & { clients?: { name: string } | null };
 
 const originLabels: Record<string, string> = {
   whatsapp: "WhatsApp",
