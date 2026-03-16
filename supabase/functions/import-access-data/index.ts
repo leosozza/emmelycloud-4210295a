@@ -988,7 +988,7 @@ serve(async (req) => {
         const contactFields: Record<string, any> = {
           NAME: nameParts[0] || "",
           LAST_NAME: nameParts.slice(1).join(" ") || "",
-          UF_CRM_EMMELY_NIF: docNumber || "",
+          UF_CRM_1733687549802: docNumber || "",
         };
         if (phones.length > 0) contactFields.PHONE = phones.map(p => ({ VALUE: p, VALUE_TYPE: "WORK" }));
         if (emails.length > 0) contactFields.EMAIL = emails.map(e => ({ VALUE: e, VALUE_TYPE: "WORK" }));
