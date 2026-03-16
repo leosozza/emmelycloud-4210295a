@@ -213,7 +213,7 @@ export default function ServicosPage() {
                       <Button
                         variant="ghost"
                         size="icon"
-                        onClick={() => deleteMutation.mutate(s.id)}
+                        onClick={() => deleteMutation.mutate(s)}
                       >
                         <Trash2 className="h-4 w-4" />
                       </Button>
