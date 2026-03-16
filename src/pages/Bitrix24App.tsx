@@ -5278,6 +5278,7 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
   const [syncingSingle, setSyncingSingle] = useState(false);
   const [syncingBatch, setSyncingBatch] = useState(false);
   const batchAbortRef = useRef(false);
+  const [batchProgress, setBatchProgress] = useState({ current: 0, total: 0, contacts: 0, deals: 0, invoices: 0, errors: 0, currentName: "" });
   const [batchActions, setBatchActions] = useState({ contact: true, deal: true, invoices: true });
   const [pipelines, setPipelines] = useState<{ id: string; name: string }[]>([]);
   const [selectedCategoryId, setSelectedCategoryId] = useState("0");
@@ -5908,7 +5909,7 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
     setLoadingSyncClients(false);
   };
 
-  const handleSyncSingleClient = async (client: SyncClient, actionsOverride?: { contact: boolean; deal: boolean; invoices: boolean }, overridesOverride?: { name?: string; phone?: string; nif?: string }) => {
+  const handleSyncSingleClient = async (client: SyncClient, actionsOverride?: { contact: boolean; deal: boolean; invoices: boolean }, overridesOverride?: { name?: string; phone?: string; nif?: string }): Promise<{ contact_id?: string; deal_id?: string; invoices_created?: number } | null> => {
     setSyncingSingle(true);
     try {
       const res = await fetch(`${SUPABASE_URL}/functions/v1/import-access-data`, {
@@ -5935,9 +5936,12 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
             ? { ...c, synced: true, syncResult: data.results?.join("; ") || "OK", bitrix_contact_id: data.contact_id || c.bitrix_contact_id, bitrix_deal_id: data.deal_id || c.bitrix_deal_id }
             : c
         ));
+        return { contact_id: data.contact_id, deal_id: data.deal_id, invoices_created: data.invoices_created || 0 };
       }
+      return null;
     } catch (e) {
       console.error("[syncSingle]", e);
+      return null;
     } finally {
       setSyncingSingle(false);
       setEditingClient(null);
@@ -5949,14 +5953,31 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
     setSyncingBatch(true);
     batchAbortRef.current = false;
     const ids = Array.from(selectedIds);
+    const progress = { current: 0, total: ids.length, contacts: 0, deals: 0, invoices: 0, errors: 0, currentName: "" };
+    setBatchProgress(progress);
     for (const id of ids) {
       if (batchAbortRef.current) {
         console.log("[syncBatch] Aborted by user");
         break;
       }
       const client = syncClients.find(c => c.client_id === id);
-      if (!client || client.synced) continue;
-      await handleSyncSingleClient(client, batchActions, { name: client.name, phone: client.phones[0] || "", nif: client.nif || "" });
+      if (!client || client.synced) {
+        progress.current++;
+        setBatchProgress({ ...progress });
+        continue;
+      }
+      progress.currentName = client.name;
+      progress.current++;
+      setBatchProgress({ ...progress });
+      const result = await handleSyncSingleClient(client, batchActions, { name: client.name, phone: client.phones[0] || "", nif: client.nif || "" });
+      if (result) {
+        if (result.contact_id) progress.contacts++;
+        if (result.deal_id) progress.deals++;
+        progress.invoices += result.invoices_created || 0;
+      } else {
+        progress.errors++;
+      }
+      setBatchProgress({ ...progress });
     }
     setSyncingBatch(false);
     batchAbortRef.current = false;
@@ -6432,6 +6453,27 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
                       </>
                     )}
                   </div>
+
+                  {/* Batch progress panel */}
+                  {syncingBatch && batchProgress.total > 0 && (
+                    <div className="border rounded-lg p-3 bg-muted/30 space-y-2">
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="font-medium text-foreground">
+                          Sincronizando {batchProgress.current}/{batchProgress.total} — {batchProgress.currentName}
+                        </span>
+                        <span className="text-muted-foreground">{Math.round((batchProgress.current / batchProgress.total) * 100)}%</span>
+                      </div>
+                      <Progress value={(batchProgress.current / batchProgress.total) * 100} className="h-2" />
+                      <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                        <span className="flex items-center gap-1"><Users className="h-3.5 w-3.5" /> Contacts: <span className="font-semibold text-foreground">{batchProgress.contacts}</span></span>
+                        <span className="flex items-center gap-1"><FileText className="h-3.5 w-3.5" /> Deals: <span className="font-semibold text-foreground">{batchProgress.deals}</span></span>
+                        <span className="flex items-center gap-1"><CreditCard className="h-3.5 w-3.5" /> Faturas: <span className="font-semibold text-foreground">{batchProgress.invoices}</span></span>
+                        {batchProgress.errors > 0 && (
+                          <span className="flex items-center gap-1 text-destructive"><XCircle className="h-3.5 w-3.5" /> Erros: <span className="font-semibold">{batchProgress.errors}</span></span>
+                        )}
+                      </div>
+                    </div>
+                  )}
 
                   {/* Client list */}
                   <ScrollArea className="h-[400px] border rounded-lg">
