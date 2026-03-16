@@ -676,7 +676,7 @@ serve(async (req) => {
       // Fetch client
       const { data: client, error: clientErr } = await supabase
         .from("clients")
-        .select("id, name, document_number, document_type, notes, address, postal_code, country, birth_date, nationality")
+        .select("id, name, document_number, document_type, notes, address, postal_code, country, birth_date, nationality, id_access, bitrix24_id")
         .eq("id", client_id)
         .single();
 
