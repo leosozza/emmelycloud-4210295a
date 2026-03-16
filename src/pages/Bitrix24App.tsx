@@ -6420,9 +6420,15 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
                           <label className="flex items-center gap-1"><input type="checkbox" checked={batchActions.deal} onChange={e => setBatchActions(p => ({ ...p, deal: e.target.checked }))} className="h-3 w-3" /> Deal</label>
                           <label className="flex items-center gap-1"><input type="checkbox" checked={batchActions.invoices} onChange={e => setBatchActions(p => ({ ...p, invoices: e.target.checked }))} className="h-3 w-3" /> Faturas</label>
                         </div>
-                        <Button size="sm" onClick={handleSyncBatch} disabled={syncingBatch} className="text-xs ml-auto">
-                          {syncingBatch ? <><Loader2 className="h-3.5 w-3.5 animate-spin mr-1" /> Sincronizando...</> : <><RefreshCw className="h-3.5 w-3.5 mr-1" /> Sincronizar {selectedIds.size} seleccionados</>}
-                        </Button>
+                        {syncingBatch ? (
+                          <Button size="sm" variant="destructive" onClick={handleCancelBatch} className="text-xs ml-auto">
+                            <StopCircle className="h-3.5 w-3.5 mr-1" /> Parar Sincronização
+                          </Button>
+                        ) : (
+                          <Button size="sm" onClick={handleSyncBatch} disabled={selectedIds.size === 0} className="text-xs ml-auto">
+                            <RefreshCw className="h-3.5 w-3.5 mr-1" /> Sincronizar {selectedIds.size} seleccionados
+                          </Button>
+                        )}
                       </>
                     )}
                   </div>
