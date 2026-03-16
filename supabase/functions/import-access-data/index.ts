@@ -632,7 +632,7 @@ serve(async (req) => {
 
       const total = clientsWithFinancials.length;
 
-      // Step 5: Batch Bitrix lookup — load deals with UF_CRM_1768312831 and UF_CRM_EMMELY_NIF in bulk
+      // Step 5: Batch Bitrix lookup — load deals with UF_CRM_1768312831 and UF_CRM_1733687549802 in bulk
       let bitrixDealsByAccessId: Record<string, { dealId: string; contactId: string | null }> = {};
       let bitrixDealsByNif: Record<string, { dealId: string; contactId: string | null }> = {};
       let bitrixDealsByContactId: Record<string, string> = {}; // contactId -> dealId
