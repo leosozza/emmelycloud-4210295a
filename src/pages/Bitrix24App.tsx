@@ -5903,13 +5903,18 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
         }
       }
 
-      setSyncClients(allClients);
-      setSyncLoadProgress({ processed: allClients.length, total: allClients.length });
+      // Preserve backend synced flag
+      const clientsWithSyncStatus = allClients.map(c => ({
+        ...c,
+        synced: c.synced === true,
+      }));
+      setSyncClients(clientsWithSyncStatus);
+      setSyncLoadProgress({ processed: clientsWithSyncStatus.length, total: clientsWithSyncStatus.length });
 
       // Auto-select segment and tab that have data
-      if (allClients.length > 0) {
-        const existing = allClients.filter(c => !!c.bitrix_deal_id);
-        const newOnes = allClients.filter(c => !c.bitrix_deal_id);
+      if (clientsWithSyncStatus.length > 0) {
+        const existing = clientsWithSyncStatus.filter(c => !!c.bitrix_deal_id);
+        const newOnes = clientsWithSyncStatus.filter(c => !c.bitrix_deal_id);
         const bestSegment = existing.length > 0 ? "existing" : "new";
         setSyncSegment(bestSegment);
 
@@ -5921,12 +5926,15 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
         else if (aberto > 0) setActiveTab("aberto");
         else if (quitado > 0) setActiveTab("quitado");
       }
+
+      return clientsWithSyncStatus;
     } catch (e) {
       console.error("[loadSyncClients]", e);
+      return [];
+    } finally {
+      setSyncClientsLoaded(true);
+      setLoadingSyncClients(false);
     }
-
-    setSyncClientsLoaded(true);
-    setLoadingSyncClients(false);
   };
 
   const handleSyncSingleClient = async (client: SyncClient, actionsOverride?: { contact: boolean; deal: boolean; invoices: boolean }, overridesOverride?: { name?: string; phone?: string; nif?: string }): Promise<{ contact_id?: string; deal_id?: string; invoices_created?: number } | null> => {
