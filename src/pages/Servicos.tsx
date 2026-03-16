@@ -96,8 +96,17 @@ export default function ServicosPage() {
         if (error) throw error;
       }
     },
-    onSuccess: () => {
+    onSuccess: (_result, variables) => {
       queryClient.invalidateQueries({ queryKey: ["services"] });
+      // Fire-and-forget sync to Bitrix24
+      const serviceId = editingId || _result; // editingId for updates
+      if (editingId) {
+        syncProductToBitrix("upsert", editingId, {
+          name: variables.name,
+          value: parseFloat(variables.value) || 0,
+          currency: variables.currency,
+        });
+      }
       setDialogOpen(false);
       setEditingId(null);
       setForm(emptyForm);
