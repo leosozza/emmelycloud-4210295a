@@ -1001,10 +1001,10 @@ serve(async (req) => {
         } else {
           // Try find by NIF
           if (docNumber && !docNumber.startsWith("ACCESS_")) {
-            const searchRes = await bitrixCall("crm.contact.list", { filter: { UF_CRM_EMMELY_NIF: docNumber }, select: ["ID", "UF_CRM_EMMELY_NIF"] });
+            const searchRes = await bitrixCall("crm.contact.list", { filter: { UF_CRM_1733687549802: docNumber }, select: ["ID", "UF_CRM_1733687549802"] });
             if (searchRes.result?.length > 0 && (searchRes.total || searchRes.result.length) <= 5) {
               const match = searchRes.result[0];
-              if (match.UF_CRM_EMMELY_NIF === docNumber) {
+              if (match.UF_CRM_1733687549802 === docNumber) {
                 contactId = match.ID;
                 await bitrixCall("crm.contact.update", { id: contactId, fields: contactFields });
                 results.push(`Contacto ${contactId} encontrado por NIF e actualizado`);
