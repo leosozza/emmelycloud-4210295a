@@ -168,7 +168,7 @@ export default function ServicosPage() {
               </TableRow>
             ) : filtered.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={4} className="text-center text-muted-foreground">
+                <TableCell colSpan={5} className="text-center text-muted-foreground">
                   Nenhum serviço encontrado
                 </TableCell>
               </TableRow>
