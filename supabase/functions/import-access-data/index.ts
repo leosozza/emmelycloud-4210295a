@@ -547,6 +547,7 @@ serve(async (req) => {
             totalValue: 0, totalPaid: 0, allPaid: true, hasOverdue: false,
             overdueCount: 0, overdueValue: 0, services: [], recordsCount: 0,
             phones: [], emails: [], contractDate: null as string | null,
+            allRecordsHaveBitrixIds: true,
           };
         }
         const fm = financialMap[cid];
