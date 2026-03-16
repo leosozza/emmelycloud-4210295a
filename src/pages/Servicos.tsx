@@ -1,6 +1,18 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+
+// Sync a service with Bitrix24 product catalog (fire-and-forget)
+async function syncProductToBitrix(action: "upsert" | "delete", serviceId: string, data?: { name: string; value: number; currency: string }) {
+  try {
+    const { error } = await supabase.functions.invoke("bitrix24-sync-product", {
+      body: { action, service_id: serviceId, ...data },
+    });
+    if (error) console.warn("[Bitrix24 Sync]", error);
+  } catch (e) {
+    console.warn("[Bitrix24 Sync] Failed:", e);
+  }
+}
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
