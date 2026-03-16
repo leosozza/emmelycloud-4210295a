@@ -76,7 +76,7 @@ export default function ServicosPage() {
   });
 
   const saveMutation = useMutation({
-    mutationFn: async (data: ServiceForm) => {
+    mutationFn: async (data: ServiceForm): Promise<string | null> => {
       const payload = {
         name: data.name,
         currency: data.currency,
@@ -91,17 +91,18 @@ export default function ServicosPage() {
           .update(payload)
           .eq("id", editingId);
         if (error) throw error;
+        return editingId;
       } else {
-        const { error } = await supabase.from("services").insert(payload);
+        const { data: inserted, error } = await supabase.from("services").insert(payload).select("id").single();
         if (error) throw error;
+        return inserted?.id || null;
       }
     },
-    onSuccess: (_result, variables) => {
+    onSuccess: (serviceId, variables) => {
       queryClient.invalidateQueries({ queryKey: ["services"] });
       // Fire-and-forget sync to Bitrix24
-      const serviceId = editingId || _result; // editingId for updates
-      if (editingId) {
-        syncProductToBitrix("upsert", editingId, {
+      if (serviceId) {
+        syncProductToBitrix("upsert", serviceId, {
           name: variables.name,
           value: parseFloat(variables.value) || 0,
           currency: variables.currency,
