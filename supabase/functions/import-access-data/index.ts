@@ -940,6 +940,11 @@ serve(async (req) => {
         }
       }
 
+      // Save bitrix24_id on client record if contact was created/found
+      if (contactId) {
+        await supabase.from("clients").update({ bitrix24_id: contactId }).eq("id", client_id);
+      }
+
       return new Response(JSON.stringify({
         success: true,
         mode: "sync_single_client",

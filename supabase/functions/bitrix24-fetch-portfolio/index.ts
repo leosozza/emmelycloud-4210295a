@@ -152,13 +152,9 @@ async function handleFullPortfolio(supabase: any) {
     totalPending += cpn;
     totalOverdue += co;
 
-    // Extract Access ID from notes
-    const match = c.notes?.match(/Access \(ID:\s*(\d+)\)/);
-    const accessId = match ? match[1] : null;
-
     return {
-      client: { id: c.id, name: c.name, document_number: c.document_number },
-      accessId,
+      client: { id: c.id, name: c.name, document_number: c.document_number, bitrix24_id: c.bitrix24_id },
+      accessId: c.id_access || null,
       totalValue: cv,
       totalPaid: cp,
       totalPending: cpn,
