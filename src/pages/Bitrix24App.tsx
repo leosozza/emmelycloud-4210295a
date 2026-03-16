@@ -74,8 +74,24 @@ type AppView = "loading" | "dashboard" | "agentes" | "training" | "flows" | "pla
 // ==================== MAIN COMPONENT ====================
 const Bitrix24App = () => {
   const { isDark } = useBitrix24Theme();
-  const [view, setView] = useState<AppView>("loading");
+  const navigate = useNavigate();
+  const location = useLocation();
+  const [initialLoading, setInitialLoading] = useState(true);
   const [memberId, setMemberId] = useState<string | null>(null);
+
+  // Derive view from URL path
+  const view: AppView = useMemo(() => {
+    if (initialLoading) return "loading";
+    const sub = location.pathname.replace(/^\/bitrix24\/?/, "").split("/")[0];
+    if (!sub || sub === "") return "dashboard";
+    const validViews: AppView[] = ["dashboard", "agentes", "training", "flows", "playground", "chatia", "pagamentos", "relatorios", "mapeamento", "empresas", "baixa", "placement", "importacao", "carteira", "configuracoes"];
+    return validViews.includes(sub as AppView) ? (sub as AppView) : "dashboard";
+  }, [location.pathname, initialLoading]);
+
+  const setView = useCallback((v: AppView) => {
+    if (v === "loading") return;
+    navigate(`/bitrix24/${v === "dashboard" ? "" : v}`, { replace: false });
+  }, [navigate]);
   const [domain, setDomain] = useState<string | null>(null);
   const [integration, setIntegration] = useState<any | null>(null);
   const [botId, setBotId] = useState<string | null>(null);
