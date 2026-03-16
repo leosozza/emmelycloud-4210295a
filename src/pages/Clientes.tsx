@@ -259,6 +259,8 @@ export default function ClientesPage() {
             <TableRow>
               <TableHead>Nome</TableHead>
               <TableHead>Documento</TableHead>
+              <TableHead>ID Access</TableHead>
+              <TableHead>ID Bitrix</TableHead>
               <TableHead>Nacionalidade</TableHead>
               <TableHead>Contrato</TableHead>
               <TableHead className="w-24">Ações</TableHead>
