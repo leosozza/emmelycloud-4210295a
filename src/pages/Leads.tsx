@@ -71,7 +71,7 @@ const LeadsPage = () => {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("leads")
-        .select("*")
+        .select("*, clients(name)")
         .order("created_at", { ascending: false });
       if (error) throw error;
       return data;
