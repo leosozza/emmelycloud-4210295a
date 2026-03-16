@@ -1262,6 +1262,7 @@ export type Database = {
           geolocation: Json | null
           id: string
           ip_address: string | null
+          proposal_id: string | null
           signature_image_url: string | null
           signature_method: string
           signed_at: string
@@ -1279,6 +1280,7 @@ export type Database = {
           geolocation?: Json | null
           id?: string
           ip_address?: string | null
+          proposal_id?: string | null
           signature_image_url?: string | null
           signature_method?: string
           signed_at?: string
@@ -1296,6 +1298,7 @@ export type Database = {
           geolocation?: Json | null
           id?: string
           ip_address?: string | null
+          proposal_id?: string | null
           signature_image_url?: string | null
           signature_method?: string
           signed_at?: string
@@ -1313,6 +1316,13 @@ export type Database = {
             referencedRelation: "contracts"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "digital_signatures_proposal_id_fkey"
+            columns: ["proposal_id"]
+            isOneToOne: false
+            referencedRelation: "proposals"
+            referencedColumns: ["id"]
+          },
         ]
       }
       financial_records: {
@@ -1328,6 +1338,7 @@ export type Database = {
           installment_value: number | null
           paid_at: string | null
           payment_method: Database["public"]["Enums"]["payment_method"]
+          proposal_id: string | null
           receipt_url: string | null
           status: Database["public"]["Enums"]["installment_status"]
           stripe_payment_id: string | null
@@ -1347,6 +1358,7 @@ export type Database = {
           installment_value?: number | null
           paid_at?: string | null
           payment_method?: Database["public"]["Enums"]["payment_method"]
+          proposal_id?: string | null
           receipt_url?: string | null
           status?: Database["public"]["Enums"]["installment_status"]
           stripe_payment_id?: string | null
@@ -1366,6 +1378,7 @@ export type Database = {
           installment_value?: number | null
           paid_at?: string | null
           payment_method?: Database["public"]["Enums"]["payment_method"]
+          proposal_id?: string | null
           receipt_url?: string | null
           status?: Database["public"]["Enums"]["installment_status"]
           stripe_payment_id?: string | null
@@ -1379,6 +1392,13 @@ export type Database = {
             columns: ["contract_id"]
             isOneToOne: false
             referencedRelation: "contracts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "financial_records_proposal_id_fkey"
+            columns: ["proposal_id"]
+            isOneToOne: false
+            referencedRelation: "proposals"
             referencedColumns: ["id"]
           },
         ]
@@ -1972,6 +1992,7 @@ export type Database = {
           payment_url: string | null
           pix_code: string | null
           pix_qr_code: string | null
+          proposal_id: string | null
           status: string
           updated_at: string
         }
@@ -1992,6 +2013,7 @@ export type Database = {
           payment_url?: string | null
           pix_code?: string | null
           pix_qr_code?: string | null
+          proposal_id?: string | null
           status?: string
           updated_at?: string
         }
@@ -2012,6 +2034,7 @@ export type Database = {
           payment_url?: string | null
           pix_code?: string | null
           pix_qr_code?: string | null
+          proposal_id?: string | null
           status?: string
           updated_at?: string
         }
@@ -2042,6 +2065,13 @@ export type Database = {
             columns: ["financial_record_id"]
             isOneToOne: false
             referencedRelation: "financial_records"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "payment_transactions_proposal_id_fkey"
+            columns: ["proposal_id"]
+            isOneToOne: false
+            referencedRelation: "proposals"
             referencedColumns: ["id"]
           },
         ]
@@ -2138,6 +2168,8 @@ export type Database = {
           accepted_at: string | null
           accepted_ip: string | null
           accepted_user_agent: string | null
+          cancel_reason: string | null
+          cancelled_at: string | null
           case_id: string
           client_address: string | null
           client_document: string | null
@@ -2145,14 +2177,25 @@ export type Database = {
           client_name: string | null
           client_phone: string | null
           conditions: string | null
+          contract_notes: string | null
+          contract_status: string | null
           created_at: string
           created_by: string | null
           description: string | null
+          expires_at: string | null
+          file_url: string | null
           id: string
           installments: number | null
           payment_type: Database["public"]["Enums"]["payment_type"]
           pdf_url: string | null
+          refund_amount: number | null
           service_id: string | null
+          sign_token: string | null
+          signed_at: string | null
+          signer_email: string | null
+          signer_name: string | null
+          signer_phone: string | null
+          starts_at: string | null
           status: Database["public"]["Enums"]["proposal_status"]
           title: string
           updated_at: string
@@ -2164,6 +2207,8 @@ export type Database = {
           accepted_at?: string | null
           accepted_ip?: string | null
           accepted_user_agent?: string | null
+          cancel_reason?: string | null
+          cancelled_at?: string | null
           case_id: string
           client_address?: string | null
           client_document?: string | null
@@ -2171,14 +2216,25 @@ export type Database = {
           client_name?: string | null
           client_phone?: string | null
           conditions?: string | null
+          contract_notes?: string | null
+          contract_status?: string | null
           created_at?: string
           created_by?: string | null
           description?: string | null
+          expires_at?: string | null
+          file_url?: string | null
           id?: string
           installments?: number | null
           payment_type?: Database["public"]["Enums"]["payment_type"]
           pdf_url?: string | null
+          refund_amount?: number | null
           service_id?: string | null
+          sign_token?: string | null
+          signed_at?: string | null
+          signer_email?: string | null
+          signer_name?: string | null
+          signer_phone?: string | null
+          starts_at?: string | null
           status?: Database["public"]["Enums"]["proposal_status"]
           title: string
           updated_at?: string
@@ -2190,6 +2246,8 @@ export type Database = {
           accepted_at?: string | null
           accepted_ip?: string | null
           accepted_user_agent?: string | null
+          cancel_reason?: string | null
+          cancelled_at?: string | null
           case_id?: string
           client_address?: string | null
           client_document?: string | null
@@ -2197,14 +2255,25 @@ export type Database = {
           client_name?: string | null
           client_phone?: string | null
           conditions?: string | null
+          contract_notes?: string | null
+          contract_status?: string | null
           created_at?: string
           created_by?: string | null
           description?: string | null
+          expires_at?: string | null
+          file_url?: string | null
           id?: string
           installments?: number | null
           payment_type?: Database["public"]["Enums"]["payment_type"]
           pdf_url?: string | null
+          refund_amount?: number | null
           service_id?: string | null
+          sign_token?: string | null
+          signed_at?: string | null
+          signer_email?: string | null
+          signer_name?: string | null
+          signer_phone?: string | null
+          starts_at?: string | null
           status?: Database["public"]["Enums"]["proposal_status"]
           title?: string
           updated_at?: string
