@@ -52,7 +52,7 @@ const App = () => (
           <Route path="/privacy" element={<Privacy />} />
           <Route path="/terms" element={<Terms />} />
           <Route path="/data-deletion" element={<DataDeletion />} />
-          <Route path="/bitrix24" element={<Bitrix24App />} />
+          <Route path="/bitrix24/*" element={<Bitrix24App />} />
           <Route path="/proposta/:token" element={<PropostaPublica />} />
           <Route path="/sign/:token" element={<SignContract />} />
           <Route element={<AppLayout />}>
