@@ -197,14 +197,45 @@ const CASE_TITLE_TO_PRODUCT_ID: Record<string, number> = {
 };
 
 // Resolve a case title to its Bitrix24 product ID using fuzzy matching
-function resolveBitrixProductId(caseTitle: string): number | null {
+// Priority: 1) DB services table lookup (populated at runtime), 2) static map fallback
+let _servicesCache: Record<string, number> | null = null;
+
+async function loadServicesCache(supabase: any): Promise<Record<string, number>> {
+  if (_servicesCache) return _servicesCache;
+  try {
+    const { data } = await supabase
+      .from("services")
+      .select("name, bitrix24_id")
+      .not("bitrix24_id", "is", null);
+    _servicesCache = {};
+    for (const svc of (data || [])) {
+      if (svc.bitrix24_id) {
+        _servicesCache[svc.name.toUpperCase().trim()] = parseInt(svc.bitrix24_id);
+      }
+    }
+  } catch (e) {
+    console.warn("[import] Failed to load services cache:", e);
+    _servicesCache = {};
+  }
+  return _servicesCache;
+}
+
+function resolveBitrixProductId(caseTitle: string, servicesMap: Record<string, number> = {}): number | null {
   if (!caseTitle) return null;
   const upper = caseTitle.toUpperCase().trim();
 
-  // Direct match
+  // 1) DB services table (exact match by name)
+  if (servicesMap[upper]) return servicesMap[upper];
+
+  // 2) DB services substring match
+  for (const [key, id] of Object.entries(servicesMap)) {
+    if (upper.includes(key) || key.includes(upper)) return id;
+  }
+
+  // 3) Static map direct match
   if (CASE_TITLE_TO_PRODUCT_ID[upper]) return CASE_TITLE_TO_PRODUCT_ID[upper];
 
-  // Substring match — find the longest key that is contained in the title
+  // 4) Static map substring match — find the longest key that is contained in the title
   let bestMatch: { key: string; id: number } | null = null;
   for (const [key, id] of Object.entries(CASE_TITLE_TO_PRODUCT_ID)) {
     if (upper.includes(key) && (!bestMatch || key.length > bestMatch.key.length)) {
@@ -213,7 +244,7 @@ function resolveBitrixProductId(caseTitle: string): number | null {
   }
   if (bestMatch) return bestMatch.id;
 
-  // Reverse: check if any key contains the title
+  // 5) Reverse: check if any key contains the title
   for (const [key, id] of Object.entries(CASE_TITLE_TO_PRODUCT_ID)) {
     if (key.includes(upper) && upper.length >= 4) return id;
   }
@@ -992,8 +1023,9 @@ serve(async (req) => {
         // ── Deal Product Rows ── Link products from Bitrix24 catalog
         if (dealId && info.services.length > 0) {
           try {
+            const servicesMap = await loadServicesCache(supabase);
             const productRows = info.services.map((svc: string) => {
-              const productId = resolveBitrixProductId(svc);
+              const productId = resolveBitrixProductId(svc, servicesMap);
               const row: Record<string, any> = {
                 PRODUCT_NAME: svc,
                 PRICE: info.total_value / info.services.length,

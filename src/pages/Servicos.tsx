@@ -1,6 +1,18 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+
+// Sync a service with Bitrix24 product catalog (fire-and-forget)
+async function syncProductToBitrix(action: "upsert" | "delete", serviceId: string, data?: { name: string; value: number; currency: string }) {
+  try {
+    const { error } = await supabase.functions.invoke("bitrix24-sync-product", {
+      body: { action, service_id: serviceId, ...data },
+    });
+    if (error) console.warn("[Bitrix24 Sync]", error);
+  } catch (e) {
+    console.warn("[Bitrix24 Sync] Failed:", e);
+  }
+}
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -64,7 +76,7 @@ export default function ServicosPage() {
   });
 
   const saveMutation = useMutation({
-    mutationFn: async (data: ServiceForm) => {
+    mutationFn: async (data: ServiceForm): Promise<string | null> => {
       const payload = {
         name: data.name,
         currency: data.currency,
@@ -79,13 +91,23 @@ export default function ServicosPage() {
           .update(payload)
           .eq("id", editingId);
         if (error) throw error;
+        return editingId;
       } else {
-        const { error } = await supabase.from("services").insert(payload);
+        const { data: inserted, error } = await supabase.from("services").insert(payload).select("id").single();
         if (error) throw error;
+        return inserted?.id || null;
       }
     },
-    onSuccess: () => {
+    onSuccess: (serviceId, variables) => {
       queryClient.invalidateQueries({ queryKey: ["services"] });
+      // Fire-and-forget sync to Bitrix24
+      if (serviceId) {
+        syncProductToBitrix("upsert", serviceId, {
+          name: variables.name,
+          value: parseFloat(variables.value) || 0,
+          currency: variables.currency,
+        });
+      }
       setDialogOpen(false);
       setEditingId(null);
       setForm(emptyForm);
@@ -97,8 +119,12 @@ export default function ServicosPage() {
   });
 
   const deleteMutation = useMutation({
-    mutationFn: async (id: string) => {
-      const { error } = await supabase.from("services").delete().eq("id", id);
+    mutationFn: async (service: any) => {
+      // Sync delete to Bitrix24 first (fire-and-forget)
+      if (service.bitrix24_id) {
+        syncProductToBitrix("delete", service.id);
+      }
+      const { error } = await supabase.from("services").delete().eq("id", service.id);
       if (error) throw error;
     },
     onSuccess: () => {
@@ -187,7 +213,7 @@ export default function ServicosPage() {
                       <Button
                         variant="ghost"
                         size="icon"
-                        onClick={() => deleteMutation.mutate(s.id)}
+                        onClick={() => deleteMutation.mutate(s)}
                       >
                         <Trash2 className="h-4 w-4" />
                       </Button>
