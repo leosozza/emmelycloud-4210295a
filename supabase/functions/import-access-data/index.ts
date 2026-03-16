@@ -632,7 +632,7 @@ serve(async (req) => {
 
       const total = clientsWithFinancials.length;
 
-      // Step 5: Batch Bitrix lookup — load deals with UF_CRM_1768312831 and UF_CRM_EMMELY_NIF in bulk
+      // Step 5: Batch Bitrix lookup — load deals with UF_CRM_1768312831 and UF_CRM_1733687549802 in bulk
       let bitrixDealsByAccessId: Record<string, { dealId: string; contactId: string | null }> = {};
       let bitrixDealsByNif: Record<string, { dealId: string; contactId: string | null }> = {};
       let bitrixDealsByContactId: Record<string, string> = {}; // contactId -> dealId
@@ -676,15 +676,15 @@ serve(async (req) => {
             let start = 0;
             while (true) {
               const res = await bitrixCall("crm.deal.list", {
-                select: ["ID", "CONTACT_ID", "UF_CRM_1768312831", "UF_CRM_EMMELY_NIF"],
+                select: ["ID", "CONTACT_ID", "UF_CRM_1768312831", "UF_CRM_1733687549802"],
                 start,
               });
               for (const deal of (res.result || [])) {
                 if (deal.UF_CRM_1768312831) {
                   bitrixDealsByAccessId[deal.UF_CRM_1768312831] = { dealId: deal.ID, contactId: deal.CONTACT_ID || null };
                 }
-                if (deal.UF_CRM_EMMELY_NIF) {
-                  bitrixDealsByNif[deal.UF_CRM_EMMELY_NIF] = { dealId: deal.ID, contactId: deal.CONTACT_ID || null };
+                if (deal.UF_CRM_1733687549802) {
+                  bitrixDealsByNif[deal.UF_CRM_1733687549802] = { dealId: deal.ID, contactId: deal.CONTACT_ID || null };
                 }
                 // Index by contact ID to resolve deals from contact matches
                 if (deal.CONTACT_ID) {
@@ -911,17 +911,17 @@ serve(async (req) => {
         }
         if (!dealId && docNumber && !docNumber.startsWith("ACCESS_")) {
           const res = await bitrixCall("crm.deal.list", {
-            filter: { UF_CRM_EMMELY_NIF: docNumber },
-            select: ["ID", "CONTACT_ID", "UF_CRM_EMMELY_NIF"],
+            filter: { UF_CRM_1733687549802: docNumber },
+            select: ["ID", "CONTACT_ID", "UF_CRM_1733687549802"],
           });
           if (res.result?.length > 0 && (res.total || res.result.length) <= 5) {
             const match = res.result[0];
-            if (match.UF_CRM_EMMELY_NIF === docNumber) {
+            if (match.UF_CRM_1733687549802 === docNumber) {
               dealId = match.ID;
               contactId = match.CONTACT_ID || null;
               console.log(`[sync_single_client] Matched deal ${dealId} by NIF=${docNumber}`);
             } else {
-              console.warn(`[sync_single_client] NIF filter returned field mismatch — skipping (expected=${docNumber}, got=${match.UF_CRM_EMMELY_NIF})`);
+              console.warn(`[sync_single_client] NIF filter returned field mismatch — skipping (expected=${docNumber}, got=${match.UF_CRM_1733687549802})`);
             }
           } else if (res.result?.length > 0) {
             console.warn(`[sync_single_client] NIF filter returned ${res.total} results — filter likely ignored, skipping`);
@@ -988,7 +988,7 @@ serve(async (req) => {
         const contactFields: Record<string, any> = {
           NAME: nameParts[0] || "",
           LAST_NAME: nameParts.slice(1).join(" ") || "",
-          UF_CRM_EMMELY_NIF: docNumber || "",
+          UF_CRM_1733687549802: docNumber || "",
         };
         if (phones.length > 0) contactFields.PHONE = phones.map(p => ({ VALUE: p, VALUE_TYPE: "WORK" }));
         if (emails.length > 0) contactFields.EMAIL = emails.map(e => ({ VALUE: e, VALUE_TYPE: "WORK" }));
@@ -1001,10 +1001,10 @@ serve(async (req) => {
         } else {
           // Try find by NIF
           if (docNumber && !docNumber.startsWith("ACCESS_")) {
-            const searchRes = await bitrixCall("crm.contact.list", { filter: { UF_CRM_EMMELY_NIF: docNumber }, select: ["ID", "UF_CRM_EMMELY_NIF"] });
+            const searchRes = await bitrixCall("crm.contact.list", { filter: { UF_CRM_1733687549802: docNumber }, select: ["ID", "UF_CRM_1733687549802"] });
             if (searchRes.result?.length > 0 && (searchRes.total || searchRes.result.length) <= 5) {
               const match = searchRes.result[0];
-              if (match.UF_CRM_EMMELY_NIF === docNumber) {
+              if (match.UF_CRM_1733687549802 === docNumber) {
                 contactId = match.ID;
                 await bitrixCall("crm.contact.update", { id: contactId, fields: contactFields });
                 results.push(`Contacto ${contactId} encontrado por NIF e actualizado`);
@@ -1059,7 +1059,7 @@ serve(async (req) => {
           OPPORTUNITY: info.total_value,
           CURRENCY_ID: "EUR",
           STAGE_ID: stageId,
-          UF_CRM_EMMELY_NIF: docNumber || "",
+          UF_CRM_1733687549802: docNumber || "",
         };
         if (info.access_id) dealFields.UF_CRM_1768312831 = info.access_id;
         if (contactId) dealFields.CONTACT_ID = contactId;
@@ -1386,16 +1386,16 @@ serve(async (req) => {
           // 2) Search by NIF/CPF — with validation
           if (!dealId && docNumber && !docNumber.startsWith("ACCESS_")) {
             const res = await bitrixCall("crm.deal.list", {
-              filter: { UF_CRM_EMMELY_NIF: docNumber },
-              select: ["ID", "CONTACT_ID", "UF_CRM_EMMELY_NIF"],
+              filter: { UF_CRM_1733687549802: docNumber },
+              select: ["ID", "CONTACT_ID", "UF_CRM_1733687549802"],
             });
             if (res.result?.length > 0 && (res.total || res.result.length) <= 5) {
               const match = res.result[0];
-              if (match.UF_CRM_EMMELY_NIF === docNumber) {
+              if (match.UF_CRM_1733687549802 === docNumber) {
                 dealId = match.ID;
                 contactId = match.CONTACT_ID || null;
               } else {
-                console.warn(`[sync_bitrix] NIF filter mismatch for ${clientName} — expected=${docNumber}, got=${match.UF_CRM_EMMELY_NIF}`);
+                console.warn(`[sync_bitrix] NIF filter mismatch for ${clientName} — expected=${docNumber}, got=${match.UF_CRM_1733687549802}`);
               }
             } else if (res.result?.length > 0) {
               console.warn(`[sync_bitrix] NIF filter returned ${res.total} results for ${clientName} — filter likely ignored`);
@@ -1434,7 +1434,7 @@ serve(async (req) => {
             const contactFields: Record<string, any> = {
               NAME: firstName,
               LAST_NAME: lastName,
-              UF_CRM_EMMELY_NIF: docNumber || "",
+              UF_CRM_1733687549802: docNumber || "",
             };
             if (phones.length > 0) contactFields.PHONE = phones.map(p => ({ VALUE: p, VALUE_TYPE: "WORK" }));
             if (emails.length > 0) contactFields.EMAIL = emails.map(e => ({ VALUE: e, VALUE_TYPE: "WORK" }));
@@ -1444,12 +1444,12 @@ serve(async (req) => {
             // Try find by NIF first
             if (docNumber && !docNumber.startsWith("ACCESS_")) {
               const searchRes = await bitrixCall("crm.contact.list", {
-                filter: { UF_CRM_EMMELY_NIF: docNumber },
-                select: ["ID", "UF_CRM_EMMELY_NIF"],
+                filter: { UF_CRM_1733687549802: docNumber },
+                select: ["ID", "UF_CRM_1733687549802"],
               });
               if (searchRes.result?.length > 0 && (searchRes.total || searchRes.result.length) <= 5) {
                 const match = searchRes.result[0];
-                if (match.UF_CRM_EMMELY_NIF === docNumber) {
+                if (match.UF_CRM_1733687549802 === docNumber) {
                   contactId = match.ID;
                   await bitrixCall("crm.contact.update", { id: contactId, fields: contactFields });
                 }
@@ -1474,7 +1474,7 @@ serve(async (req) => {
             OPPORTUNITY: totalValue,
             CURRENCY_ID: "EUR",
             STAGE_ID: allPaid ? "WON" : (hasOverdue ? "EXECUTING" : "NEW"),
-            UF_CRM_EMMELY_NIF: docNumber || "",
+            UF_CRM_1733687549802: docNumber || "",
           };
           if (accessId) dealFields.UF_CRM_1768312831 = accessId;
           if (contactId) dealFields.CONTACT_ID = contactId;
