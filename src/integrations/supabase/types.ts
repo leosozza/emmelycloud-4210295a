@@ -571,6 +571,30 @@ export type Database = {
           },
         ]
       }
+      bitrix24_sync_cache: {
+        Row: {
+          cache_type: string
+          data: Json
+          fetched_at: string
+          id: string
+          member_id: string
+        }
+        Insert: {
+          cache_type: string
+          data?: Json
+          fetched_at?: string
+          id?: string
+          member_id: string
+        }
+        Update: {
+          cache_type?: string
+          data?: Json
+          fetched_at?: string
+          id?: string
+          member_id?: string
+        }
+        Relationships: []
+      }
       business_rules: {
         Row: {
           action_config: Json | null
