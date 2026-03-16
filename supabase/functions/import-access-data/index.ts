@@ -676,15 +676,15 @@ serve(async (req) => {
             let start = 0;
             while (true) {
               const res = await bitrixCall("crm.deal.list", {
-                select: ["ID", "CONTACT_ID", "UF_CRM_1768312831", "UF_CRM_EMMELY_NIF"],
+                select: ["ID", "CONTACT_ID", "UF_CRM_1768312831", "UF_CRM_1733687549802"],
                 start,
               });
               for (const deal of (res.result || [])) {
                 if (deal.UF_CRM_1768312831) {
                   bitrixDealsByAccessId[deal.UF_CRM_1768312831] = { dealId: deal.ID, contactId: deal.CONTACT_ID || null };
                 }
-                if (deal.UF_CRM_EMMELY_NIF) {
-                  bitrixDealsByNif[deal.UF_CRM_EMMELY_NIF] = { dealId: deal.ID, contactId: deal.CONTACT_ID || null };
+                if (deal.UF_CRM_1733687549802) {
+                  bitrixDealsByNif[deal.UF_CRM_1733687549802] = { dealId: deal.ID, contactId: deal.CONTACT_ID || null };
                 }
                 // Index by contact ID to resolve deals from contact matches
                 if (deal.CONTACT_ID) {
