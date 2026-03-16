@@ -1055,9 +1055,11 @@ serve(async (req) => {
           const instValue = Number(fr.installment_value) || 0;
           const desc = (fr.description || "").split("|")[0].trim();
 
-          let invoiceStage = "DT31_6:NEW";
-          if (isPaid) invoiceStage = "DT31_6:P";
-          else if (isOverdue) invoiceStage = "DT31_6:UC";
+          // Stage mapping: DT31_3:N=Em Aberto, DT31_3:S=Atrasado, DT31_3:P=Pago, DT31_3:UC=Cancelado
+          let invoiceStage = "DT31_3:N";
+          if (isPaid) invoiceStage = "DT31_3:P";
+          else if (isOverdue) invoiceStage = "DT31_3:S";
+          else if (fr.status === "cancelada") invoiceStage = "DT31_3:UC";
 
           const invoiceTitle = `Parcela ${fr.installment_number}/${fr.total_installments} - ${desc} - ${clientName}`;
           const invoiceFields: Record<string, any> = {
@@ -1069,11 +1071,9 @@ serve(async (req) => {
             isManualOpportunity: "Y",
           };
           if (contactId) invoiceFields.contactId = contactId;
-          if (fr.due_date) {
-            invoiceFields.begindate = fr.due_date;
-            // Use paid_at (Column P - DATAPAGTO) as closedate for paid invoices
-            invoiceFields.closedate = (isPaid && fr.paid_at) ? fr.paid_at.split("T")[0] : fr.due_date;
-          }
+          // begindate = data de criação/contratação (Coluna F), closedate = paid_at se paga, senão due_date
+          if (fr.created_at) invoiceFields.begindate = fr.created_at.split("T")[0];
+          invoiceFields.closedate = (isPaid && fr.paid_at) ? fr.paid_at.split("T")[0] : (fr.due_date || fr.created_at?.split("T")[0]);
 
           // Dedup: search by parcel number prefix (matches old and new title formats)
           const existingRes = await bitrixCall("crm.item.list", {
