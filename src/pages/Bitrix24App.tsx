@@ -6458,6 +6458,22 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
             <p className="text-sm text-muted-foreground">⚠️ Sem integração Bitrix24 activa.</p>
           ) : (
             <>
+              {/* Auto-resume banner */}
+              {syncSessionId && !syncingBatch && !loadingSyncClients && autoResumeSyncPending && (
+                <div className="flex items-center gap-2 p-3 rounded-lg bg-primary/10 border border-primary/20">
+                  <AlertCircle className="h-4 w-4 text-primary shrink-0" />
+                  <p className="text-xs text-foreground flex-1">
+                    Sessão anterior detectada. A retomada automática será iniciada...
+                  </p>
+                  <Button variant="ghost" size="sm" className="text-xs h-7 shrink-0" onClick={async () => {
+                    if (syncSessionId) { await markSessionDone(syncSessionId); setSyncSessionId(null); }
+                    setAutoResumeSyncPending(false);
+                  }}>
+                    <Trash2 className="h-3 w-3 mr-1" /> Cancelar
+                  </Button>
+                </div>
+              )}
+
               {/* Pipeline selector */}
               <div className="space-y-1.5">
                 <Label className="text-sm">Pipeline de destino para novos Deals</Label>
