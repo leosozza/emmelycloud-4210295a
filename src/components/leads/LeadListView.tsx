@@ -5,7 +5,7 @@ import {
 import { Tables } from "@/integrations/supabase/types";
 import { format, parseISO } from "date-fns";
 
-type Lead = Tables<"leads">;
+type Lead = Tables<"leads"> & { clients?: { name: string } | null };
 
 const stageLabels: Record<string, string> = {
   lead: "Lead", triagem: "Triagem", proposta: "Proposta", analise: "Análise",
