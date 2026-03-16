@@ -429,6 +429,8 @@ serve(async (req) => {
       if (allRecords.length > 0 && allPaid) statusClass = "quitado";
       else if (hasOverdue) statusClass = "atrasado";
 
+      console.log(`[fetchClientWithFinancials] client=${client.name} records=${allRecords.length} allPaid=${allPaid} hasOverdue=${hasOverdue} statusClass=${statusClass} totalValue=${totalValue} totalPaid=${totalPaid}`);
+
       const accessId = client.id_access || ((client.notes || "").match(/ID:\s*(\d+)/) || [])[1] || null;
 
       return {
