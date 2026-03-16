@@ -6654,11 +6654,16 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
                             </TableCell>
                             <TableCell>
                               {client.synced ? (
-                                <span className="text-[10px] text-green-600">{client.syncResult?.substring(0, 30)}</span>
+                                <span className="text-[10px] text-green-600">{client.syncResult?.substring(0, 30) || "✅"}</span>
                               ) : (
-                                <Button size="sm" variant="outline" className="text-xs h-7" onClick={() => openEditDialog(client)}>
-                                  <Edit className="h-3 w-3 mr-1" /> Sincronizar
-                                </Button>
+                                <div className="flex gap-1">
+                                  <Button size="sm" variant="outline" className="text-xs h-7" onClick={() => openEditDialog(client)}>
+                                    <Edit className="h-3 w-3 mr-1" /> Sync
+                                  </Button>
+                                  <Button size="sm" variant="ghost" className="text-xs h-7 text-muted-foreground" onClick={() => handleMarkAsSynced(client)} title="Marcar como sincronizado manualmente">
+                                    <CheckCircle className="h-3 w-3" />
+                                  </Button>
+                                </div>
                               )}
                             </TableCell>
                           </TableRow>
