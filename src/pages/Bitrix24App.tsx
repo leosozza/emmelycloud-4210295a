@@ -156,7 +156,7 @@ const Bitrix24App = () => {
       console.error("[BITRIX24] Fetch error:", e);
     } finally {
       setLoadingData(false);
-      setView("dashboard");
+      setInitialLoading(false);
     }
   }, []);
 
