@@ -1028,31 +1028,9 @@ serve(async (req) => {
             : `CLIENTE - ${clientName}`;
 
         // Resolve correct STAGE_ID for the target pipeline
-        let stageId = info.all_paid ? "WON" : (info.has_overdue ? "EXECUTING" : "NEW");
-        if (category_id && category_id !== "0") {
-          try {
-            const stagesRes = await bitrixCall("crm.dealcategory.stage.list", { id: parseInt(category_id) });
-            const stages = stagesRes.result || [];
-            if (stages.length > 0) {
-              if (info.all_paid) {
-                // Find success stage (SEMANTICS: "S")
-                const successStage = stages.find((s: any) => s.SEMANTICS === "S");
-                if (successStage) stageId = successStage.STATUS_ID;
-              } else if (info.has_overdue) {
-                // Find process stage (SEMANTICS: "P" but not first)
-                const processStages = stages.filter((s: any) => s.SEMANTICS === "P");
-                stageId = processStages.length > 1 ? processStages[1].STATUS_ID : processStages[0]?.STATUS_ID || stageId;
-              } else {
-                // Find first/new stage (first with SEMANTICS: "P" or first overall)
-                const firstStage = stages.find((s: any) => s.SEMANTICS === "P") || stages[0];
-                if (firstStage) stageId = firstStage.STATUS_ID;
-              }
-              console.log(`[sync_single_client] Pipeline ${category_id} resolved stage: ${stageId} (all_paid=${info.all_paid})`);
-            }
-          } catch (e) {
-            console.error("[sync_single_client] Failed to fetch pipeline stages, using fallback:", e);
-          }
-        }
+        // Fixed stage mapping for Pipeline 15
+        const stageId = info.all_paid ? "C15:WON" : (info.has_overdue ? "C15:UC_S7RLFB" : "C15:NEW");
+        console.log(`[sync_single_client] Stage: ${stageId} (all_paid=${info.all_paid}, has_overdue=${info.has_overdue})`);
 
         const dealFields: Record<string, any> = {
           TITLE: dealTitle,
