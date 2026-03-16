@@ -1258,6 +1258,7 @@ serve(async (req) => {
               select: ["id", "title"],
             });
             const existing = existingRes.result?.items?.[0];
+            let batchInvoiceId: string | null = null;
 
             if (existing) {
               await bitrixCall("crm.item.update", {
@@ -1265,13 +1266,23 @@ serve(async (req) => {
                 id: existing.id,
                 fields: invoiceFields,
               });
+              batchInvoiceId = String(existing.id);
               invoicesUpdated++;
             } else {
-              await bitrixCall("crm.item.add", {
+              const addRes = await bitrixCall("crm.item.add", {
                 entityTypeId: 31,
                 fields: invoiceFields,
               });
+              const newId = addRes.result?.item?.id;
+              if (newId) batchInvoiceId = String(newId);
               invoicesCreated++;
+            }
+            // Persist Bitrix24 IDs on local financial_record
+            if (fr.id && (dealId || batchInvoiceId)) {
+              const upd: Record<string, string> = {};
+              if (dealId) upd.bitrix24_deal_id = String(dealId);
+              if (batchInvoiceId) upd.bitrix24_invoice_id = batchInvoiceId;
+              await supabase.from("financial_records").update(upd).eq("id", fr.id);
             }
           }
 
