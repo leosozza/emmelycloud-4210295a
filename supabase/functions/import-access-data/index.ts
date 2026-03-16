@@ -114,6 +114,7 @@ async function upsertClient(supabase: any, client: RawClient): Promise<{ clientI
     nib: cleanStr(client.NIB),
     birth_date: parseDate(client.NASCIMENTO),
     has_active_contract: (client.ATIVO || "").toUpperCase() === "SIM",
+    id_access: String(client.ID),
     notes: cleanStr(client.ESTADOCIVIL) ? `Estado civil: ${client.ESTADOCIVIL}. Importado do Access (ID: ${client.ID})` : `Importado do Access (ID: ${client.ID})`,
   };
 
