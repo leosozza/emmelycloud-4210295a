@@ -1445,11 +1445,14 @@ serve(async (req) => {
             if (docNumber && !docNumber.startsWith("ACCESS_")) {
               const searchRes = await bitrixCall("crm.contact.list", {
                 filter: { UF_CRM_EMMELY_NIF: docNumber },
-                select: ["ID"],
+                select: ["ID", "UF_CRM_EMMELY_NIF"],
               });
-              if (searchRes.result?.length > 0) {
-                contactId = searchRes.result[0].ID;
-                await bitrixCall("crm.contact.update", { id: contactId, fields: contactFields });
+              if (searchRes.result?.length > 0 && (searchRes.total || searchRes.result.length) <= 5) {
+                const match = searchRes.result[0];
+                if (match.UF_CRM_EMMELY_NIF === docNumber) {
+                  contactId = match.ID;
+                  await bitrixCall("crm.contact.update", { id: contactId, fields: contactFields });
+                }
               }
             }
 
