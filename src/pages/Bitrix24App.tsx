@@ -6586,7 +6586,7 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
                 if (!file) return;
                 setEnriching(true);
                 setEnrichDone(false);
-                setEnrichProgress({ processed: 0, total: 0, updated: 0, notFound: 0, skipped: 0 });
+                setEnrichProgress({ processed: 0, total: 0, updated: 0, notFound: 0, skipped: 0, contactsCreated: 0 });
 
                 try {
                   const text = await file.text();
@@ -6595,7 +6595,7 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
                   const total = rows.length;
                   setEnrichProgress(p => ({ ...p, total }));
 
-                  let updated = 0, notFound = 0, skipped = 0;
+                  let updated = 0, notFound = 0, skipped = 0, contactsCreated = 0;
                   const BATCH = 50;
 
                   for (let i = 0; i < rows.length; i += BATCH) {
@@ -6603,11 +6603,19 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
                     const promises = batch.map(async (row) => {
                       const cols = row.split(";").map(c => c.replace(/^"|"$/g, "").trim());
                       const ef = cols[0]; // EF = id_access
+                      const rawName = cols[2] || ""; // Nome
                       const bitrixId = cols[22]; // ID = bitrix24 contact id
                       if (!ef || !bitrixId || ef === "EF" || bitrixId === "ID") {
                         skipped++;
                         return;
                       }
+
+                      // Extract clean contact name (remove "EF XXX - " prefix and " - ADMINISTRAT..." suffix)
+                      let contactName = rawName;
+                      const nameMatch = rawName.match(/^EF\s+\d+\s*-\s*(.+?)(?:\s*-\s*ADMINISTRAT.*)?$/i);
+                      if (nameMatch) contactName = nameMatch[1].trim();
+
+                      // Update bitrix24_id on client
                       const { data, error } = await supabase
                         .from("clients")
                         .update({ bitrix24_id: bitrixId })
@@ -6615,8 +6623,12 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
                         .is("bitrix24_id", null)
                         .select("id")
                         .maybeSingle();
+
+                      let clientId: string | null = null;
+
                       if (data) {
                         updated++;
+                        clientId = data.id;
                       } else if (!error) {
                         // Check if client exists but already has bitrix24_id
                         const { data: existing } = await supabase
@@ -6625,19 +6637,37 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
                           .eq("id_access", ef)
                           .maybeSingle();
                         if (existing) {
-                          skipped++; // already has bitrix24_id
+                          skipped++;
+                          clientId = existing.id;
                         } else {
                           notFound++;
                         }
                       } else {
                         notFound++;
                       }
+
+                      // Create/update contact entry with Bitrix name
+                      if (clientId && contactName) {
+                        const { data: existingContact } = await supabase
+                          .from("client_contacts")
+                          .select("id")
+                          .eq("client_id", clientId)
+                          .eq("name", contactName)
+                          .maybeSingle();
+                        if (!existingContact) {
+                          await supabase.from("client_contacts").insert({
+                            client_id: clientId,
+                            name: contactName,
+                          });
+                          contactsCreated++;
+                        }
+                      }
                     });
                     await Promise.all(promises);
-                    setEnrichProgress({ processed: Math.min(i + BATCH, total), total, updated, notFound, skipped });
+                    setEnrichProgress({ processed: Math.min(i + BATCH, total), total, updated, notFound, skipped, contactsCreated });
                   }
 
-                  setEnrichProgress({ processed: total, total, updated, notFound, skipped });
+                  setEnrichProgress({ processed: total, total, updated, notFound, skipped, contactsCreated });
                   setEnrichDone(true);
                 } catch (err: any) {
                   console.error("[enrich]", err);
@@ -6653,11 +6683,12 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
           {(enriching || enrichDone) && (
             <div className="space-y-3">
               <Progress value={enrichProgress.total > 0 ? (enrichProgress.processed / enrichProgress.total) * 100 : 0} className="h-2" />
-              <div className="flex gap-4 text-sm">
+              <div className="flex gap-4 text-sm flex-wrap">
                 <span className="text-muted-foreground">{enrichProgress.processed}/{enrichProgress.total} processados</span>
                 <span className="text-green-500 font-medium">✅ {enrichProgress.updated} actualizados</span>
                 <span className="text-yellow-500">⏭ {enrichProgress.skipped} já existentes</span>
                 <span className="text-red-400">❌ {enrichProgress.notFound} não encontrados</span>
+                <span className="text-blue-500">👤 {enrichProgress.contactsCreated} contactos criados</span>
               </div>
               {enrichDone && (
                 <Badge variant="default" className="text-xs">
