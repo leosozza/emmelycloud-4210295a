@@ -145,7 +145,7 @@ serve(async (req) => {
         paid_at: record.paid_at,
         created_at: record.created_at,
         description: record.description || proposal?.title || "Sem descrição",
-        client_name: proposal?.client_name || metadata.client_name || record.description || "Sem cliente",
+        client_name: resolveClientName(proposal, payment),
         company_name: payment?.company_id ? companyMap.get(payment.company_id) || "—" : "—",
         responsible_name: proposal?.created_by ? profileMap.get(proposal.created_by) || "Sem responsável" : "Sem responsável",
       };
