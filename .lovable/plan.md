@@ -1,23 +1,20 @@
 
 
-## Problema
+## Problem
 
-A tabela `leads` tem o campo `name` com nomes genéricos ("Cliente 5", "Cliente 60", etc.) vindos da importação do Access. Porém, o `client_id` está corretamente vinculado à tabela `clients` que contém os nomes reais (ex: "LUCAS BERNARDES DE ASSIS RIBEIRO").
+The `bitrix24-reports` edge function has two bugs preventing correct client name resolution:
 
-## Solução
+1. **Proposals query missing `case_id`** (line 59): Without `case_id`, the chain `proposal -> case -> lead -> client_id -> clients.name` never executes.
+2. **Payment transactions query missing `client_id`** (line 68): Without `client_id`, the direct `payment -> clients.name` lookup never works.
 
-Executar um UPDATE em massa para copiar o nome real da tabela `clients` para o campo `leads.name`:
+Both paths fail silently, falling back to `proposal.client_name` which stores old/incorrect names.
 
-```sql
-UPDATE leads l
-SET name = c.name
-FROM clients c
-WHERE l.client_id = c.id
-  AND l.client_id IS NOT NULL;
-```
+## Fix
 
-Isto corrige os 1705 registos de uma vez. Nenhuma alteração de código é necessária — o campo `name` passa a ter o valor correto.
+In `supabase/functions/bitrix24-reports/index.ts`:
 
-### Ficheiros alterados
-Nenhum ficheiro de código. Apenas uma operação de dados (UPDATE) na tabela `leads`.
+1. **Line 59**: Change proposals select from `"id, client_name, title, created_by"` to `"id, client_name, title, created_by, case_id"`
+2. **Line 68**: Change payment_transactions select from `"id, financial_record_id, gateway, payment_method, company_id, created_at, metadata"` to `"id, financial_record_id, gateway, payment_method, company_id, client_id, created_at, metadata"`
+
+Then redeploy the edge function. No other code changes needed.
 
