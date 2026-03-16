@@ -6569,10 +6569,10 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <Link className="h-5 w-5" /> Enriquecer IDs Contacto Bitrix24
+            <Link className="h-5 w-5" /> Enriquecer Contactos Bitrix24
           </CardTitle>
           <CardDescription>
-            Importe o CSV de contactos exportado do Bitrix24 para associar o ID de contacto aos clientes existentes (correspondência via ID Access → coluna EF)
+            Importe o CSV de contactos do Bitrix24 para associar o ID e nome do contacto aos clientes (correspondência via ID Access → coluna EF). ⚠️ O CSV não inclui telefone — use a API do Bitrix para obter esse dado.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
