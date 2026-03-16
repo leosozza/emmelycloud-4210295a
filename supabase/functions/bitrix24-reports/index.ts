@@ -56,7 +56,7 @@ serve(async (req) => {
     const proposals = await selectInChunks(
       supabase,
       "proposals",
-      "id, client_name, title, created_by",
+      "id, client_name, title, created_by, case_id",
       "id",
       proposalIds,
     );
