@@ -269,7 +269,7 @@ export default function ClientesPage() {
           <TableBody>
             {isLoading ? (
               <TableRow>
-                <TableCell colSpan={5} className="text-center text-muted-foreground">
+                <TableCell colSpan={7} className="text-center text-muted-foreground">
                   A carregar...
                 </TableCell>
               </TableRow>
