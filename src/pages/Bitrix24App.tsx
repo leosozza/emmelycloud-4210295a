@@ -5909,7 +5909,7 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
     setLoadingSyncClients(false);
   };
 
-  const handleSyncSingleClient = async (client: SyncClient, actionsOverride?: { contact: boolean; deal: boolean; invoices: boolean }, overridesOverride?: { name?: string; phone?: string; nif?: string }) => {
+  const handleSyncSingleClient = async (client: SyncClient, actionsOverride?: { contact: boolean; deal: boolean; invoices: boolean }, overridesOverride?: { name?: string; phone?: string; nif?: string }): Promise<{ contact_id?: string; deal_id?: string; invoices_created?: number } | null> => {
     setSyncingSingle(true);
     try {
       const res = await fetch(`${SUPABASE_URL}/functions/v1/import-access-data`, {
@@ -5936,9 +5936,12 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
             ? { ...c, synced: true, syncResult: data.results?.join("; ") || "OK", bitrix_contact_id: data.contact_id || c.bitrix_contact_id, bitrix_deal_id: data.deal_id || c.bitrix_deal_id }
             : c
         ));
+        return { contact_id: data.contact_id, deal_id: data.deal_id, invoices_created: data.invoices_created || 0 };
       }
+      return null;
     } catch (e) {
       console.error("[syncSingle]", e);
+      return null;
     } finally {
       setSyncingSingle(false);
       setEditingClient(null);
@@ -5950,14 +5953,31 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
     setSyncingBatch(true);
     batchAbortRef.current = false;
     const ids = Array.from(selectedIds);
+    const progress = { current: 0, total: ids.length, contacts: 0, deals: 0, invoices: 0, errors: 0, currentName: "" };
+    setBatchProgress(progress);
     for (const id of ids) {
       if (batchAbortRef.current) {
         console.log("[syncBatch] Aborted by user");
         break;
       }
       const client = syncClients.find(c => c.client_id === id);
-      if (!client || client.synced) continue;
-      await handleSyncSingleClient(client, batchActions, { name: client.name, phone: client.phones[0] || "", nif: client.nif || "" });
+      if (!client || client.synced) {
+        progress.current++;
+        setBatchProgress({ ...progress });
+        continue;
+      }
+      progress.currentName = client.name;
+      progress.current++;
+      setBatchProgress({ ...progress });
+      const result = await handleSyncSingleClient(client, batchActions, { name: client.name, phone: client.phones[0] || "", nif: client.nif || "" });
+      if (result) {
+        if (result.contact_id) progress.contacts++;
+        if (result.deal_id) progress.deals++;
+        progress.invoices += result.invoices_created || 0;
+      } else {
+        progress.errors++;
+      }
+      setBatchProgress({ ...progress });
     }
     setSyncingBatch(false);
     batchAbortRef.current = false;
