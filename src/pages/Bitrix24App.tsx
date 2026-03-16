@@ -6846,3 +6846,72 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
 
 export default Bitrix24App;
 
+  // ── Phase 3: Auto-resume sync ──
+  useEffect(() => {
+    if (
+      autoResumeSyncPending &&
+      !resumingPhase &&
+      !syncingBatch &&
+      !loadingSyncClients &&
+      !!resolvedMemberId &&
+      !!integration
+    ) {
+      setAutoResumeSyncPending(false);
+      // Load clients then auto-start batch with pending ones
+      (async () => {
+        const clients = await handleLoadSyncClients();
+        if (clients && clients.length > 0) {
+          const pending = clients.filter((c: SyncClient) => !c.synced);
+          if (pending.length > 0) {
+            // Auto-select all pending and start batch
+            setSelectedIds(new Set(pending.map((c: SyncClient) => c.client_id)));
+            // Small delay to let state settle
+            setTimeout(() => {
+              handleSyncBatch(pending);
+            }, 500);
+          }
+        }
+      })();
+    }
+  }, [autoResumeSyncPending, resumingPhase, syncingBatch, loadingSyncClients, resolvedMemberId, integration]);
+
+  // ── Manual mark as synced ──
+  const handleMarkAsSynced = async (client: SyncClient) => {
+    // Set placeholder bitrix IDs to mark as manually synced
+    if (!client.synced) {
+      // Update client bitrix24_id if not set
+      const { data: cl } = await supabase.from("clients").select("bitrix24_id").eq("id", client.client_id).single();
+      if (cl && !cl.bitrix24_id) {
+        await supabase.from("clients").update({ bitrix24_id: "MANUAL" }).eq("id", client.client_id);
+      }
+
+      // Update financial_records missing bitrix IDs
+      const { data: leads } = await supabase
+        .from("leads")
+        .select("cases!cases_lead_id_fkey(proposals!proposals_case_id_fkey(contracts!contracts_proposal_id_fkey(financial_records!financial_records_contract_id_fkey(id, bitrix24_deal_id, bitrix24_invoice_id))))")
+        .eq("client_id", client.client_id)
+        .eq("sync_source", "access_import") as any;
+
+      for (const lead of (leads || [])) {
+        for (const caso of (lead.cases || [])) {
+          for (const proposal of (caso.proposals || [])) {
+            for (const contract of (proposal.contracts || [])) {
+              for (const fr of (contract.financial_records || [])) {
+                const updates: Record<string, string> = {};
+                if (!fr.bitrix24_deal_id) updates.bitrix24_deal_id = "MANUAL";
+                if (!fr.bitrix24_invoice_id) updates.bitrix24_invoice_id = "MANUAL";
+                if (Object.keys(updates).length > 0) {
+                  await supabase.from("financial_records").update(updates).eq("id", fr.id);
+                }
+              }
+            }
+          }
+        }
+      }
+
+      // Update local state
+      setSyncClients(prev => prev.map(c =>
+        c.client_id === client.client_id ? { ...c, synced: true, syncResult: "Marcado manualmente" } : c
+      ));
+    }
+  };
