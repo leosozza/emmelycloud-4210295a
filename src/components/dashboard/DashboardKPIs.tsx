@@ -2,10 +2,10 @@ import {
   Users, Clock, DollarSign, TrendingUp, ArrowUpRight, ArrowDownRight, Briefcase, FileSignature,
 } from "lucide-react";
 import { useLocale } from "@/contexts/LocaleContext";
-import { useDashboardKPIs } from "@/hooks/useDashboardData";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Card } from "@/components/ui/card";
 import { motion } from "framer-motion";
+import type { DashboardData } from "@/hooks/useDashboardData";
 
 interface KPICardProps {
   title: string;
@@ -45,9 +45,13 @@ function KPICard({ title, value, change, up, icon: Icon, description, accentClas
   );
 }
 
-export function DashboardKPIs() {
+interface DashboardKPIsProps {
+  data?: DashboardData["kpis"];
+  isLoading?: boolean;
+}
+
+export function DashboardKPIs({ data, isLoading }: DashboardKPIsProps) {
   const { formatCurrency } = useLocale();
-  const { data, isLoading } = useDashboardKPIs();
 
   if (isLoading) {
     return (

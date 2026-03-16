@@ -6,6 +6,7 @@ import { DashboardSidebar } from "@/components/dashboard/DashboardSidebar";
 import { DashboardCustomizer } from "@/components/dashboard/DashboardCustomizer";
 import { PeriodFilter } from "@/components/dashboard/PeriodFilter";
 import { useDashboardLayout, type WidgetId } from "@/hooks/useDashboardLayout";
+import { useDashboardAll } from "@/hooks/useDashboardData";
 import { useAuthContext } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import {
@@ -49,16 +50,6 @@ function SortableWidget({ id, children }: { id: string; children: React.ReactNod
   );
 }
 
-const WIDGET_COMPONENTS: Record<WidgetId, React.FC> = {
-  kpis: DashboardKPIs,
-  funnel: FunnelChartWidget,
-  leadsByOrigin: LeadsByOriginChart,
-  revenueByArea: RevenueByAreaChart,
-  monthlyRevenue: MonthlyRevenueChart,
-  recentLeads: RecentLeads,
-  sidebar: DashboardSidebar,
-};
-
 const CHART_WIDGETS: WidgetId[] = ["funnel", "leadsByOrigin", "revenueByArea", "monthlyRevenue"];
 const FULL_WIDGETS: WidgetId[] = ["kpis"];
 const BOTTOM_LEFT: WidgetId[] = ["recentLeads"];
@@ -69,6 +60,7 @@ const Index = () => {
   const [period, setPeriod] = useState("30d");
   const { user } = useAuthContext();
   const [userName, setUserName] = useState("");
+  const { data: dashboardData, isLoading } = useDashboardAll();
 
   useEffect(() => {
     if (!user) return;
@@ -106,6 +98,28 @@ const Index = () => {
 
   const todayFormatted = format(new Date(), "EEEE, d 'de' MMMM 'de' yyyy", { locale: pt });
 
+  // Render widget by ID, passing dashboard data via props
+  const renderWidget = (id: WidgetId) => {
+    switch (id) {
+      case "kpis":
+        return <DashboardKPIs data={dashboardData?.kpis} isLoading={isLoading} />;
+      case "funnel":
+        return <FunnelChartWidget data={dashboardData?.funnel} isLoading={isLoading} />;
+      case "leadsByOrigin":
+        return <LeadsByOriginChart data={dashboardData?.leadsByOrigin} isLoading={isLoading} />;
+      case "revenueByArea":
+        return <RevenueByAreaChart data={dashboardData?.revenueByArea} isLoading={isLoading} />;
+      case "monthlyRevenue":
+        return <MonthlyRevenueChart data={dashboardData?.monthlyRevenue} isLoading={isLoading} />;
+      case "recentLeads":
+        return <RecentLeads data={dashboardData?.recentLeads} isLoading={isLoading} />;
+      case "sidebar":
+        return <DashboardSidebar />;
+      default:
+        return null;
+    }
+  };
+
   return (
     <div className="space-y-8">
       {/* Header */}
@@ -136,50 +150,38 @@ const Index = () => {
       <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
         <SortableContext items={visibleWidgets} strategy={verticalListSortingStrategy}>
           <div className="space-y-6">
-            {fullWidgets.map((id) => {
-              const Component = WIDGET_COMPONENTS[id];
-              return (
-                <SortableWidget key={id} id={id}>
-                  <Component />
-                </SortableWidget>
-              );
-            })}
+            {fullWidgets.map((id) => (
+              <SortableWidget key={id} id={id}>
+                {renderWidget(id)}
+              </SortableWidget>
+            ))}
 
             {chartWidgets.length > 0 && (
               <div className="grid gap-5 md:grid-cols-2">
-                {chartWidgets.map((id) => {
-                  const Component = WIDGET_COMPONENTS[id];
-                  return (
-                    <SortableWidget key={id} id={id}>
-                      <Component />
-                    </SortableWidget>
-                  );
-                })}
+                {chartWidgets.map((id) => (
+                  <SortableWidget key={id} id={id}>
+                    {renderWidget(id)}
+                  </SortableWidget>
+                ))}
               </div>
             )}
 
             {(bottomLeft.length > 0 || bottomRight.length > 0) && (
               <div className="grid gap-6 lg:grid-cols-[1fr_300px]">
                 <div className="space-y-6">
-                  {bottomLeft.map((id) => {
-                    const Component = WIDGET_COMPONENTS[id];
-                    return (
-                      <SortableWidget key={id} id={id}>
-                        <Component />
-                      </SortableWidget>
-                    );
-                  })}
+                  {bottomLeft.map((id) => (
+                    <SortableWidget key={id} id={id}>
+                      {renderWidget(id)}
+                    </SortableWidget>
+                  ))}
                 </div>
                 {bottomRight.length > 0 && (
                   <div className="space-y-4">
-                    {bottomRight.map((id) => {
-                      const Component = WIDGET_COMPONENTS[id];
-                      return (
-                        <SortableWidget key={id} id={id}>
-                          <Component />
-                        </SortableWidget>
-                      );
-                    })}
+                    {bottomRight.map((id) => (
+                      <SortableWidget key={id} id={id}>
+                        {renderWidget(id)}
+                      </SortableWidget>
+                    ))}
                   </div>
                 )}
               </div>
