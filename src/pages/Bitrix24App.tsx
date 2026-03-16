@@ -5947,14 +5947,24 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
   const handleSyncBatch = async () => {
     if (selectedIds.size === 0) return;
     setSyncingBatch(true);
+    batchAbortRef.current = false;
     const ids = Array.from(selectedIds);
     for (const id of ids) {
+      if (batchAbortRef.current) {
+        console.log("[syncBatch] Aborted by user");
+        break;
+      }
       const client = syncClients.find(c => c.client_id === id);
       if (!client || client.synced) continue;
       await handleSyncSingleClient(client, batchActions, { name: client.name, phone: client.phones[0] || "", nif: client.nif || "" });
     }
     setSyncingBatch(false);
+    batchAbortRef.current = false;
     setSelectedIds(new Set());
+  };
+
+  const handleCancelBatch = () => {
+    batchAbortRef.current = true;
   };
 
   const openEditDialog = (client: SyncClient) => {
