@@ -1474,7 +1474,7 @@ serve(async (req) => {
             OPPORTUNITY: totalValue,
             CURRENCY_ID: "EUR",
             STAGE_ID: allPaid ? "WON" : (hasOverdue ? "EXECUTING" : "NEW"),
-            UF_CRM_EMMELY_NIF: docNumber || "",
+            UF_CRM_1733687549802: docNumber || "",
           };
           if (accessId) dealFields.UF_CRM_1768312831 = accessId;
           if (contactId) dealFields.CONTACT_ID = contactId;
