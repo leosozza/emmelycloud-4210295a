@@ -439,8 +439,7 @@ serve(async (req) => {
         const fm = financialMap[client.id];
         if (!fm || fm.recordsCount === 0) continue;
 
-        const accessIdMatch = (client.notes || "").match(/ID:\s*(\d+)/);
-        const accessId = accessIdMatch ? accessIdMatch[1] : null;
+        const accessId = client.id_access || ((client.notes || "").match(/ID:\s*(\d+)/) || [])[1] || null;
 
         let statusClass = "aberto";
         if (fm.recordsCount > 0 && fm.allPaid) statusClass = "quitado";
