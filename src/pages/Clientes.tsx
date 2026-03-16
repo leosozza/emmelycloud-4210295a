@@ -259,6 +259,8 @@ export default function ClientesPage() {
             <TableRow>
               <TableHead>Nome</TableHead>
               <TableHead>Documento</TableHead>
+              <TableHead>ID Access</TableHead>
+              <TableHead>ID Bitrix</TableHead>
               <TableHead>Nacionalidade</TableHead>
               <TableHead>Contrato</TableHead>
               <TableHead className="w-24">Ações</TableHead>
@@ -267,13 +269,13 @@ export default function ClientesPage() {
           <TableBody>
             {isLoading ? (
               <TableRow>
-                <TableCell colSpan={5} className="text-center text-muted-foreground">
+                <TableCell colSpan={7} className="text-center text-muted-foreground">
                   A carregar...
                 </TableCell>
               </TableRow>
             ) : filtered.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={5} className="text-center text-muted-foreground">
+                <TableCell colSpan={7} className="text-center text-muted-foreground">
                   Nenhum cliente encontrado
                 </TableCell>
               </TableRow>
@@ -282,6 +284,8 @@ export default function ClientesPage() {
                 <TableRow key={c.id}>
                   <TableCell className="font-medium">{c.name}</TableCell>
                   <TableCell>{c.document_number || "—"}</TableCell>
+                  <TableCell>{c.id_access || "—"}</TableCell>
+                  <TableCell>{c.bitrix24_id || "—"}</TableCell>
                   <TableCell>{c.nationality || "—"}</TableCell>
                   <TableCell>
                     {c.has_active_contract ? (

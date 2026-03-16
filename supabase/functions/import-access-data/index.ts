@@ -114,6 +114,7 @@ async function upsertClient(supabase: any, client: RawClient): Promise<{ clientI
     nib: cleanStr(client.NIB),
     birth_date: parseDate(client.NASCIMENTO),
     has_active_contract: (client.ATIVO || "").toUpperCase() === "SIM",
+    id_access: String(client.ID),
     notes: cleanStr(client.ESTADOCIVIL) ? `Estado civil: ${client.ESTADOCIVIL}. Importado do Access (ID: ${client.ID})` : `Importado do Access (ID: ${client.ID})`,
   };
 
@@ -267,8 +268,7 @@ serve(async (req) => {
       if (allRecords.length > 0 && allPaid) statusClass = "quitado";
       else if (hasOverdue) statusClass = "atrasado";
 
-      const accessIdMatch = (client.notes || "").match(/ID:\s*(\d+)/);
-      const accessId = accessIdMatch ? accessIdMatch[1] : null;
+      const accessId = client.id_access || ((client.notes || "").match(/ID:\s*(\d+)/) || [])[1] || null;
 
       return {
         client_id: client.id,
@@ -301,8 +301,8 @@ serve(async (req) => {
       while (true) {
         const { data: batch, error: batchErr } = await supabase
           .from("clients")
-          .select("id, name, document_number, document_type, notes, address, postal_code, country, birth_date, nationality")
-          .like("notes", "%Importado do Access%")
+        .select("id, name, document_number, document_type, notes, address, postal_code, country, birth_date, nationality, id_access, bitrix24_id")
+        .not("id_access", "is", null)
           .order("name")
           .range(rangeStart, rangeStart + pageSize - 1);
 
@@ -439,8 +439,7 @@ serve(async (req) => {
         const fm = financialMap[client.id];
         if (!fm || fm.recordsCount === 0) continue;
 
-        const accessIdMatch = (client.notes || "").match(/ID:\s*(\d+)/);
-        const accessId = accessIdMatch ? accessIdMatch[1] : null;
+        const accessId = client.id_access || ((client.notes || "").match(/ID:\s*(\d+)/) || [])[1] || null;
 
         let statusClass = "aberto";
         if (fm.recordsCount > 0 && fm.allPaid) statusClass = "quitado";
@@ -677,7 +676,7 @@ serve(async (req) => {
       // Fetch client
       const { data: client, error: clientErr } = await supabase
         .from("clients")
-        .select("id, name, document_number, document_type, notes, address, postal_code, country, birth_date, nationality")
+        .select("id, name, document_number, document_type, notes, address, postal_code, country, birth_date, nationality, id_access, bitrix24_id")
         .eq("id", client_id)
         .single();
 
@@ -939,6 +938,11 @@ serve(async (req) => {
             },
           });
         }
+      }
+
+      // Save bitrix24_id on client record if contact was created/found
+      if (contactId) {
+        await supabase.from("clients").update({ bitrix24_id: contactId }).eq("id", client_id);
       }
 
       return new Response(JSON.stringify({
