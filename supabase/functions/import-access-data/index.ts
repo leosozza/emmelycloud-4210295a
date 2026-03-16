@@ -1059,7 +1059,7 @@ serve(async (req) => {
           OPPORTUNITY: info.total_value,
           CURRENCY_ID: "EUR",
           STAGE_ID: stageId,
-          UF_CRM_EMMELY_NIF: docNumber || "",
+          UF_CRM_1733687549802: docNumber || "",
         };
         if (info.access_id) dealFields.UF_CRM_1768312831 = info.access_id;
         if (contactId) dealFields.CONTACT_ID = contactId;
