@@ -1,104 +1,142 @@
 
 
-## Revisão Arquitetural — Fase 2 Implementada
+## Plano: Otimizar Dashboard com RPC Único
 
-### Mudanças realizadas (Fase 2)
+### Problema
+O dashboard faz **~20 queries HTTP sequenciais** ao carregar:
+- `useDashboardKPIs`: 9 queries sequenciais (leads 30d, leads 60d, SLA, receita mês, receita mês anterior, total leads, convertidos, cases, contratos pendentes)
+- `useMonthlyRevenue`: 6 queries sequenciais (loop por mês)
+- `useRevenueByArea`: 3-5 queries sequenciais (cases, records, proposals, contracts)
+- `useLeadsByOrigin`, `useFunnelData`, `RecentLeads`: 1 query cada
 
-#### 1. Código morto eliminado
-- `chatbot-reply/index.ts` — **removido** (100% duplicado com flow-engine → ai-process-message)
-- `ai-triage/index.ts` — **removido** (100% duplicado com ai-automation-agent action classify_lead)
+Cada query é um round-trip HTTP separado (~100-300ms cada). Total: **3-6 segundos** de latência.
 
-#### 2. Janela de contexto expandida
-- `RECENT_MSG_COUNT`: 5 → **15** mensagens recentes completas
-- `HISTORY_LIMIT`: 15 → **30** mensagens totais
-- TOON comprime as 15 mais antigas, mantém as 15 recentes intactas
+### Solução
+Criar **uma única função SQL (RPC)** `get_dashboard_data` que retorna tudo num único round-trip. No frontend, substituir os 5 hooks por um único `useDashboardAll` que chama o RPC.
 
-#### 3. RAG semântico real (pgvector)
-- Edge function `generate-embeddings` criada — gera embeddings de 768 dimensões via Lovable AI
-- `parse-document` agora chama `generate-embeddings` automaticamente após chunking
-- `ai-process-message` usa `match_chunks()` RPC para busca semântica (threshold 0.5)
-- Fallback para keyword scoring quando embeddings não existem
+### 1. Migração SQL — Função `get_dashboard_data`
 
-#### 4. Router multi-agente
-- Quando agente tem `sub_agent_ids`, classifica intenção via IA rápida (flash-lite)
-- Delega para sub-agente especialista com seu próprio prompt e KB
-- Mantém agente activo em `bot_state.active_sub_agent_id` para consistência
+```sql
+CREATE OR REPLACE FUNCTION public.get_dashboard_data()
+RETURNS jsonb LANGUAGE plpgsql STABLE SECURITY DEFINER
+SET search_path = public AS $$
+DECLARE
+  result jsonb;
+  now_ts timestamptz := now();
+  thirty_days_ago timestamptz := now_ts - interval '30 days';
+  sixty_days_ago timestamptz := now_ts - interval '60 days';
+  four_hours_ahead timestamptz := now_ts + interval '4 hours';
+  month_start timestamptz; month_end timestamptz;
+  prev_month_start timestamptz; prev_month_end timestamptz;
+  -- KPIs
+  v_leads_new int; v_leads_prev int; v_sla_expiring int;
+  v_revenue_this numeric; v_revenue_last numeric;
+  v_total_leads int; v_converted int;
+  v_active_cases int; v_pending_contracts int;
+  -- Charts
+  v_leads_by_origin jsonb; v_funnel jsonb;
+  v_revenue_by_area jsonb; v_monthly_revenue jsonb;
+  v_recent_leads jsonb;
+BEGIN
+  -- All KPI counts (parallel in SQL)
+  SELECT count(*) INTO v_leads_new FROM leads WHERE created_at >= thirty_days_ago;
+  SELECT count(*) INTO v_leads_prev FROM leads WHERE created_at >= sixty_days_ago AND created_at < thirty_days_ago;
+  SELECT count(*) INTO v_sla_expiring FROM leads WHERE sla_expires_at BETWEEN now_ts AND four_hours_ahead AND funnel_stage != 'fechado';
+  -- Revenue this/last month
+  month_start := date_trunc('month', now_ts);
+  month_end := (month_start + interval '1 month' - interval '1 second');
+  prev_month_start := date_trunc('month', now_ts - interval '1 month');
+  prev_month_end := (prev_month_start + interval '1 month' - interval '1 second');
+  SELECT coalesce(sum(total_value),0) INTO v_revenue_this FROM financial_records WHERE status='paga' AND paid_at BETWEEN month_start AND month_end;
+  SELECT coalesce(sum(total_value),0) INTO v_revenue_last FROM financial_records WHERE status='paga' AND paid_at BETWEEN prev_month_start AND prev_month_end;
+  -- Conversion
+  SELECT count(*) INTO v_total_leads FROM leads;
+  SELECT count(*) INTO v_converted FROM leads WHERE funnel_stage IN ('contrato','financeiro','fechado');
+  -- Cases & contracts
+  SELECT count(*) INTO v_active_cases FROM cases WHERE status IN ('aberto','em_andamento','pendente_docs');
+  SELECT count(*) INTO v_pending_contracts FROM proposals WHERE contract_status = 'pendente';
+  -- Leads by origin
+  SELECT coalesce(jsonb_agg(row_to_json(t)), '[]') INTO v_leads_by_origin FROM (SELECT origin as name, count(*) as value FROM leads GROUP BY origin) t;
+  -- Funnel
+  SELECT coalesce(jsonb_agg(row_to_json(t)), '[]') INTO v_funnel FROM (SELECT funnel_stage as name, count(*) as value FROM leads GROUP BY funnel_stage) t;
+  -- Monthly revenue (last 6 months)
+  SELECT coalesce(jsonb_agg(row_to_json(t) ORDER BY t.month_start), '[]') INTO v_monthly_revenue FROM (
+    SELECT to_char(d, 'Mon') as month, date_trunc('month', d) as month_start,
+      coalesce((SELECT sum(total_value) FROM financial_records WHERE status='paga' AND paid_at >= date_trunc('month',d) AND paid_at < date_trunc('month',d)+interval '1 month'), 0) as receita
+    FROM generate_series(date_trunc('month',now_ts) - interval '5 months', date_trunc('month',now_ts), interval '1 month') d
+  ) t;
+  -- Revenue by area (via proposals → cases)
+  SELECT coalesce(jsonb_agg(row_to_json(t)), '[]') INTO v_revenue_by_area FROM (
+    SELECT coalesce(c.legal_area::text, 'outro') as area, sum(fr.total_value) as receita
+    FROM financial_records fr
+    LEFT JOIN proposals p ON p.id = fr.proposal_id
+    LEFT JOIN cases c ON c.id = p.case_id
+    WHERE fr.status = 'paga'
+    GROUP BY coalesce(c.legal_area::text, 'outro')
+    ORDER BY sum(fr.total_value) DESC
+  ) t;
+  -- Recent leads
+  SELECT coalesce(jsonb_agg(row_to_json(t)), '[]') INTO v_recent_leads FROM (
+    SELECT id, name, origin, funnel_stage, ai_score, created_at FROM leads ORDER BY created_at DESC LIMIT 5
+  ) t;
 
-#### 5. Self-evaluation / Reflexão
-- Após gerar resposta, avalia qualidade via flash-lite (score 1-10)
-- Se score < 7, regenera com instrução de correcção (máximo 1 retry)
-- Respostas < 50 chars ignoram avaliação
+  result := jsonb_build_object(
+    'kpis', jsonb_build_object(
+      'leadsNew', v_leads_new, 'leadsPrev', v_leads_prev,
+      'slaExpiring', v_sla_expiring,
+      'revenueThisMonth', v_revenue_this, 'revenueLastMonth', v_revenue_last,
+      'totalLeads', v_total_leads, 'convertedLeads', v_converted,
+      'activeCases', v_active_cases, 'pendingContracts', v_pending_contracts
+    ),
+    'leadsByOrigin', v_leads_by_origin,
+    'funnel', v_funnel,
+    'monthlyRevenue', v_monthly_revenue,
+    'revenueByArea', v_revenue_by_area,
+    'recentLeads', v_recent_leads
+  );
+  RETURN result;
+END;
+$$;
+```
 
-#### 6. Sentiment analysis + Auto-escalação
-- Análise de sentimento via heurística + IA
-- 2x frustração consecutiva → auto-transfere para humano
-- Guarda sentiment em `bot_state.last_sentiment`
-- Regista escalação em `conversation_feedback`
+### 2. Frontend — Novo hook `useDashboardAll`
 
-#### 7. Tools dinâmicas expandidas
-- Novas tools: `search_knowledge`, `get_case_status`, `send_payment_link`
-- Tools desconhecidas verificam `tool_parameters.webhook_url` para chamada webhook genérica
-- Registry pattern: tools são lidas de `agent_tools` table
+Substituir os 5 hooks individuais por um único:
 
-#### 8. Queue worker auto-trigger
-- Trigger PostgreSQL `AFTER INSERT ON message_queue` chama `pg_net.http_post()` para queue-worker
-- Cron backup via `pg_cron` a cada minuto
+```typescript
+// src/hooks/useDashboardData.ts — reescrita
+export function useDashboardAll() {
+  return useQuery({
+    queryKey: ["dashboard-all"],
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc("get_dashboard_data");
+      if (error) throw error;
+      // Parse and transform the RPC result into the shapes expected by components
+      return transformRpcResult(data);
+    },
+    refetchInterval: 60000,
+  });
+}
+```
 
-#### 9. Melhorias de robustez no sendReply
-- `Promise.allSettled` para operações paralelas (save message + update conversation)
-- Error logging real em vez de fire-and-forget silencioso para message-send e bitrix24-send
-- Extração de memória com tolerância `count % 10 > 1` (mais robusto que `=== 0`)
+### 3. Componentes actualizados
 
-### Mudanças realizadas (Fase 2.1 — Consolidação Completa)
+- `DashboardKPIs.tsx` — receber dados via props do pai (Index.tsx) em vez de chamar hook próprio
+- `DashboardChartsLive.tsx` — idem, receber dados via props
+- `RecentLeads.tsx` — idem
+- `Index.tsx` — chamar `useDashboardAll()` uma vez e passar dados aos componentes filhos
 
-#### Código morto eliminado
-- `chatbot-reply/index.ts` e `ai-triage/index.ts` — diretórios removidos, referências limpas em `config.toml`, `ApiDocs.tsx` e `bitrix24-worker.ts`
-- ApiDocs actualizado para documentar `ai-process-message` em vez de `chatbot-reply`
+### Resultado esperado
+- **Antes**: ~20 queries HTTP sequenciais → 3-6s
+- **Depois**: 1 query RPC → ~200-400ms
 
-#### Sintaxe corrigida
-- `parse-document/index.ts` — corrigida função `extractWithAI` que estava erroneamente aninhada dentro de `findFileInZip`
+### Ficheiros alterados
+| Ficheiro | Alteração |
+|----------|-----------|
+| Migração SQL | Criar `get_dashboard_data()` |
+| `src/hooks/useDashboardData.ts` | Reescrever com RPC único |
+| `src/pages/Index.tsx` | Usar `useDashboardAll`, passar dados via props |
+| `src/components/dashboard/DashboardKPIs.tsx` | Aceitar dados via props |
+| `src/components/dashboard/DashboardChartsLive.tsx` | Aceitar dados via props |
+| `src/components/dashboard/RecentLeads.tsx` | Aceitar dados via props |
 
-#### Config.toml actualizado
-- Removidas entradas `ai-triage` e `chatbot-reply`
-- Adicionadas entradas para `generate-embeddings`, `parse-document` e `queue-worker`
-
-#### Triggers PostgreSQL criados
-- `on_message_queue_insert` → auto-invoca `queue-worker` via `pg_net`
-- `on_lead_created` → notifica comerciais e admins
-- `on_message_created` → notifica de novas mensagens inbound
-- `on_payment_status_change` → notifica pagamentos recebidos
-- `on_lead_sla_check` → alerta SLA a expirar
-- `on_lead_set_sla` → define SLA automático na criação
-- `on_profile_created` → atribui admin ao primeiro utilizador
-- Cron job `queue-worker-backup` — invoca queue-worker a cada minuto
-
-### Estado actual — 8/8 melhorias implementadas ✅
-1. ✅ Código morto eliminado (chatbot-reply + ai-triage)
-2. ✅ Contexto expandido (30 mensagens: 15 recentes + 15 comprimidas TOON)
-3. ✅ RAG semântico (pgvector + match_chunks + generate-embeddings)
-4. ✅ Router multi-agente (sub_agent_ids + classificação de intenção)
-5. ✅ Tools dinâmicas (registry pattern + webhook fallback)
-6. ✅ Reflexão/Auto-avaliação (score 1-10, retry se < 7)
-7. ✅ Sentiment analysis + auto-escalação (2x frustração → humano)
-8. ✅ Queue worker auto-trigger (pg_trigger + pg_cron backup)
-
-### Mudanças realizadas (Fase 3 — Auditoria Arquitetural)
-
-#### 1. Dashboard de Observabilidade IA
-- Nova página `/observabilidade-ia` com KPIs: requisições, tokens, custo estimado, latência média, taxa fallback, taxa erro, rating feedback
-- Hook `useAiObservability.ts` com agregação de dados
-
-#### 2. Thumbs up/down no chat de atendimento
-- Botões de feedback em mensagens outbound (bot) no painel de atendimento
-
-#### 3. Retry com backoff no AI gateway (429/502/503, 2s delay, 1 retry)
-
-#### 4. Cost estimation real (tabela de preços por modelo, cálculo automático)
-
-#### 5. Memory extraction melhorada (cada 15 msgs + em transferência humana)
-
-#### 6. Reorganização do monólito (constantes extraídas, secções delimitadas)
-
-### Próximos passos
-- Batch job para gerar embeddings dos chunks existentes
-- Streaming no PlaygroundIA
