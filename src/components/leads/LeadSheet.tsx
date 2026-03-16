@@ -28,7 +28,7 @@ import { useNavigate } from "react-router-dom";
 import { useToast } from "@/hooks/use-toast";
 import { useAiTriage } from "@/hooks/useAiTriage";
 
-type Lead = Tables<"leads">;
+type Lead = Tables<"leads"> & { clients?: { name: string } | null };
 
 const stageLabels: Record<string, string> = {
   lead: "Lead", triagem: "Triagem", proposta: "Proposta", analise: "Análise",
