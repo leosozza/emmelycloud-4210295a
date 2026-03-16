@@ -2311,6 +2311,7 @@ export type Database = {
       }
       services: {
         Row: {
+          bitrix24_id: string | null
           budget_details: string | null
           contract_details: string | null
           contract_intro: string | null
@@ -2322,6 +2323,7 @@ export type Database = {
           value: number
         }
         Insert: {
+          bitrix24_id?: string | null
           budget_details?: string | null
           contract_details?: string | null
           contract_intro?: string | null
@@ -2333,6 +2335,7 @@ export type Database = {
           value?: number
         }
         Update: {
+          bitrix24_id?: string | null
           budget_details?: string | null
           contract_details?: string | null
           contract_intro?: string | null

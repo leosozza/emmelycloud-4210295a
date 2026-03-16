@@ -28,7 +28,7 @@ import { useNavigate } from "react-router-dom";
 import { useToast } from "@/hooks/use-toast";
 import { useAiTriage } from "@/hooks/useAiTriage";
 
-type Lead = Tables<"leads">;
+type Lead = Tables<"leads"> & { clients?: { name: string } | null };
 
 const stageLabels: Record<string, string> = {
   lead: "Lead", triagem: "Triagem", proposta: "Proposta", analise: "Análise",
@@ -125,7 +125,7 @@ function LeadSheetContent({ lead, onOpenChange, onEdit, onDelete, onMoveStage, o
     <Sheet open={true} onOpenChange={onOpenChange}>
       <SheetContent className="w-[400px] sm:w-[480px] overflow-y-auto">
         <SheetHeader>
-          <SheetTitle className="text-lg">{lead.name}</SheetTitle>
+          <SheetTitle className="text-lg">{lead.clients?.name || lead.name}</SheetTitle>
         </SheetHeader>
         <div className="mt-4 space-y-4">
           {/* SLA */}

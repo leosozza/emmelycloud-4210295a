@@ -151,23 +151,24 @@ export default function ServicosPage() {
       <div className="rounded-md border">
         <Table>
           <TableHeader>
-            <TableRow>
+           <TableRow>
               <TableHead>Nome</TableHead>
               <TableHead>Moeda</TableHead>
               <TableHead>Valor</TableHead>
+              <TableHead>ID Bitrix</TableHead>
               <TableHead className="w-24">Ações</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {isLoading ? (
               <TableRow>
-                <TableCell colSpan={4} className="text-center text-muted-foreground">
+                <TableCell colSpan={5} className="text-center text-muted-foreground">
                   A carregar...
                 </TableCell>
               </TableRow>
             ) : filtered.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={4} className="text-center text-muted-foreground">
+                <TableCell colSpan={5} className="text-center text-muted-foreground">
                   Nenhum serviço encontrado
                 </TableCell>
               </TableRow>
@@ -177,6 +178,7 @@ export default function ServicosPage() {
                   <TableCell className="font-medium">{s.name}</TableCell>
                   <TableCell>{s.currency}</TableCell>
                   <TableCell>{formatCurrency(Number(s.value))}</TableCell>
+                  <TableCell className="text-xs text-muted-foreground">{s.bitrix24_id || "—"}</TableCell>
                   <TableCell>
                     <div className="flex gap-1">
                       <Button variant="ghost" size="icon" onClick={() => openEdit(s)}>

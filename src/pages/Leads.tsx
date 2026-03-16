@@ -13,7 +13,7 @@ import { LeadSheet } from "@/components/leads/LeadSheet";
 import { PageHeader } from "@/components/PageHeader";
 import { useNavigate, useSearchParams } from "react-router-dom";
 
-type Lead = Tables<"leads">;
+type Lead = Tables<"leads"> & { clients?: { name: string } | null };
 
 const LeadsPage = () => {
   const [view, setView] = useState<"kanban" | "list">("kanban");
@@ -71,7 +71,7 @@ const LeadsPage = () => {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("leads")
-        .select("*")
+        .select("*, clients(name)")
         .order("created_at", { ascending: false });
       if (error) throw error;
       return data;
