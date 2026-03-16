@@ -1,104 +1,57 @@
 
 
-## Revisão Arquitetural — Fase 2 Implementada
+## Problema
 
-### Mudanças realizadas (Fase 2)
+Ao criar/atualizar Deals no Bitrix24 durante a Fase 3, o sistema **não vincula produtos** do catálogo de produtos do Bitrix24. Atualmente:
 
-#### 1. Código morto eliminado
-- `chatbot-reply/index.ts` — **removido** (100% duplicado com flow-engine → ai-process-message)
-- `ai-triage/index.ts` — **removido** (100% duplicado com ai-automation-agent action classify_lead)
+1. **Deals**: Nenhum produto é adicionado — apenas o campo `OPPORTUNITY` é definido com o valor total
+2. **Faturas (Smart Invoices)**: Produtos são adicionados apenas por nome (`PRODUCT_NAME`) sem `PRODUCT_ID`, ou seja, sem vínculo ao catálogo real
 
-#### 2. Janela de contexto expandida
-- `RECENT_MSG_COUNT`: 5 → **15** mensagens recentes completas
-- `HISTORY_LIMIT`: 15 → **30** mensagens totais
-- TOON comprime as 15 mais antigas, mantém as 15 recentes intactas
+O catálogo do Bitrix24 tem ~60 produtos com IDs específicos (ex: ID 11 = "Autorização de Residência pelo Estudo (Dispensa de Visto)"). Os cases locais usam títulos abreviados (ex: "ESTUDO", "NACIONALIDADE FILHO OU NETO").
 
-#### 3. RAG semântico real (pgvector)
-- Edge function `generate-embeddings` criada — gera embeddings de 768 dimensões via Lovable AI
-- `parse-document` agora chama `generate-embeddings` automaticamente após chunking
-- `ai-process-message` usa `match_chunks()` RPC para busca semântica (threshold 0.5)
-- Fallback para keyword scoring quando embeddings não existem
+## Plano
 
-#### 4. Router multi-agente
-- Quando agente tem `sub_agent_ids`, classifica intenção via IA rápida (flash-lite)
-- Delega para sub-agente especialista com seu próprio prompt e KB
-- Mantém agente activo em `bot_state.active_sub_agent_id` para consistência
+### 1. Popular a tabela `services` com o catálogo do Bitrix24
 
-#### 5. Self-evaluation / Reflexão
-- Após gerar resposta, avalia qualidade via flash-lite (score 1-10)
-- Se score < 7, regenera com instrução de correcção (máximo 1 retry)
-- Respostas < 50 chars ignoram avaliação
+Criar uma migração SQL para inserir os ~60 produtos exportados, mapeando `bitrix24_id` ao ID do catálogo Bitrix24. Exemplo:
 
-#### 6. Sentiment analysis + Auto-escalação
-- Análise de sentimento via heurística + IA
-- 2x frustração consecutiva → auto-transfere para humano
-- Guarda sentiment em `bot_state.last_sentiment`
-- Regista escalação em `conversation_feedback`
+```sql
+INSERT INTO services (name, currency, value, bitrix24_id) VALUES
+('Autorização de Residência pelo Estudo (Dispensa de Visto)', 'EUR', 600, '11'),
+('Reagrupamento Familiar e Obtenção da Residência', 'EUR', 600, '13'),
+...
+```
 
-#### 7. Tools dinâmicas expandidas
-- Novas tools: `search_knowledge`, `get_case_status`, `send_payment_link`
-- Tools desconhecidas verificam `tool_parameters.webhook_url` para chamada webhook genérica
-- Registry pattern: tools são lidas de `agent_tools` table
+### 2. Criar tabela de mapeamento case_title → service
 
-#### 8. Queue worker auto-trigger
-- Trigger PostgreSQL `AFTER INSERT ON message_queue` chama `pg_net.http_post()` para queue-worker
-- Cron backup via `pg_cron` a cada minuto
+Como os títulos dos cases são abreviados (ex: "ESTUDO COM DISPENSA DE VISTO") e os nomes dos produtos Bitrix são completos, criar um mapeamento manual na edge function. Mapa de ~50 entries ligando case titles aos `bitrix24_id` dos produtos.
 
-#### 9. Melhorias de robustez no sendReply
-- `Promise.allSettled` para operações paralelas (save message + update conversation)
-- Error logging real em vez de fire-and-forget silencioso para message-send e bitrix24-send
-- Extração de memória com tolerância `count % 10 > 1` (mais robusto que `=== 0`)
+### 3. Adicionar product rows ao Deal após criação
 
-### Mudanças realizadas (Fase 2.1 — Consolidação Completa)
+No `sync_single_client`, após `crm.deal.add`, chamar `crm.deal.productrows.set` com os produtos correspondentes:
 
-#### Código morto eliminado
-- `chatbot-reply/index.ts` e `ai-triage/index.ts` — diretórios removidos, referências limpas em `config.toml`, `ApiDocs.tsx` e `bitrix24-worker.ts`
-- ApiDocs actualizado para documentar `ai-process-message` em vez de `chatbot-reply`
+```typescript
+// Após criar o deal
+if (dealId && info.services.length > 0) {
+  const productRows = info.services.map(svc => {
+    const productId = serviceNameToBitrixId(svc);
+    return {
+      PRODUCT_ID: productId || 0,
+      PRODUCT_NAME: svc,
+      PRICE: contractValue,
+      QUANTITY: 1,
+    };
+  });
+  await bitrixCall("crm.deal.productrows.set", { id: dealId, rows: productRows });
+}
+```
 
-#### Sintaxe corrigida
-- `parse-document/index.ts` — corrigida função `extractWithAI` que estava erroneamente aninhada dentro de `findFileInZip`
+### 4. Corrigir product rows nas Faturas
 
-#### Config.toml actualizado
-- Removidas entradas `ai-triage` e `chatbot-reply`
-- Adicionadas entradas para `generate-embeddings`, `parse-document` e `queue-worker`
+Nas faturas (Smart Invoices), adicionar `PRODUCT_ID` quando disponível, para vincular ao catálogo real em vez de usar apenas o nome em texto.
 
-#### Triggers PostgreSQL criados
-- `on_message_queue_insert` → auto-invoca `queue-worker` via `pg_net`
-- `on_lead_created` → notifica comerciais e admins
-- `on_message_created` → notifica de novas mensagens inbound
-- `on_payment_status_change` → notifica pagamentos recebidos
-- `on_lead_sla_check` → alerta SLA a expirar
-- `on_lead_set_sla` → define SLA automático na criação
-- `on_profile_created` → atribui admin ao primeiro utilizador
-- Cron job `queue-worker-backup` — invoca queue-worker a cada minuto
+### Ficheiros alterados
 
-### Estado actual — 8/8 melhorias implementadas ✅
-1. ✅ Código morto eliminado (chatbot-reply + ai-triage)
-2. ✅ Contexto expandido (30 mensagens: 15 recentes + 15 comprimidas TOON)
-3. ✅ RAG semântico (pgvector + match_chunks + generate-embeddings)
-4. ✅ Router multi-agente (sub_agent_ids + classificação de intenção)
-5. ✅ Tools dinâmicas (registry pattern + webhook fallback)
-6. ✅ Reflexão/Auto-avaliação (score 1-10, retry se < 7)
-7. ✅ Sentiment analysis + auto-escalação (2x frustração → humano)
-8. ✅ Queue worker auto-trigger (pg_trigger + pg_cron backup)
+- **SQL Migration**: Inserir ~60 serviços na tabela `services` com `bitrix24_id`
+- **`supabase/functions/import-access-data/index.ts`**: Adicionar mapeamento case_title→product_id, chamar `crm.deal.productrows.set` após criar deal, e incluir `PRODUCT_ID` nos product rows das faturas
 
-### Mudanças realizadas (Fase 3 — Auditoria Arquitetural)
-
-#### 1. Dashboard de Observabilidade IA
-- Nova página `/observabilidade-ia` com KPIs: requisições, tokens, custo estimado, latência média, taxa fallback, taxa erro, rating feedback
-- Hook `useAiObservability.ts` com agregação de dados
-
-#### 2. Thumbs up/down no chat de atendimento
-- Botões de feedback em mensagens outbound (bot) no painel de atendimento
-
-#### 3. Retry com backoff no AI gateway (429/502/503, 2s delay, 1 retry)
-
-#### 4. Cost estimation real (tabela de preços por modelo, cálculo automático)
-
-#### 5. Memory extraction melhorada (cada 15 msgs + em transferência humana)
-
-#### 6. Reorganização do monólito (constantes extraídas, secções delimitadas)
-
-### Próximos passos
-- Batch job para gerar embeddings dos chunks existentes
-- Streaming no PlaygroundIA
