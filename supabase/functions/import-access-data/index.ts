@@ -988,6 +988,28 @@ serve(async (req) => {
           dealId = dealRes.result ? String(dealRes.result) : null;
           results.push(`Deal ${dealId} criado (pipeline: ${category_id}, stage: ${stageId})`);
         }
+
+        // ── Deal Product Rows ── Link products from Bitrix24 catalog
+        if (dealId && info.services.length > 0) {
+          try {
+            const productRows = info.services.map((svc: string) => {
+              const productId = resolveBitrixProductId(svc);
+              const row: Record<string, any> = {
+                PRODUCT_NAME: svc,
+                PRICE: info.total_value / info.services.length,
+                QUANTITY: 1,
+              };
+              if (productId) row.PRODUCT_ID = productId;
+              return row;
+            });
+            await bitrixCall("crm.deal.productrows.set", { id: dealId, rows: productRows });
+            const linked = productRows.filter((r: any) => r.PRODUCT_ID).length;
+            results.push(`${linked}/${productRows.length} produtos vinculados ao Deal`);
+          } catch (e) {
+            console.warn("[SYNC] Deal product rows error:", e);
+            results.push("Erro ao vincular produtos ao Deal");
+          }
+        }
       }
 
       // ── Invoices ──
