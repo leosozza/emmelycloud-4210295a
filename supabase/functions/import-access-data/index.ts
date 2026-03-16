@@ -93,6 +93,134 @@ function mapStatus(s: string): string {
   return "pendente";
 }
 
+// ── Case Title → Bitrix24 Product ID mapping ──────────────────────────────
+// Maps abbreviated case titles (from Access import) to Bitrix24 catalog product IDs
+const CASE_TITLE_TO_PRODUCT_ID: Record<string, number> = {
+  "ESTUDO COM DISPENSA DE VISTO": 11,
+  "ESTUDO DISPENSA VISTO": 11,
+  "ESTUDO": 11,
+  "REAGRUPAMENTO FAMILIAR": 13,
+  "REAGRUPAMENTO": 13,
+  "NACIONALIDADE FILHO OU NETO": 17,
+  "NACIONALIDADE FILHO/NETO": 17,
+  "ATRIBUIÇÃO NACIONALIDADE FILHO NETO": 17,
+  "NACIONALIDADE POR TEMPO DE RESIDÊNCIA": 19,
+  "NACIONALIDADE NATURALIZAÇÃO": 19,
+  "NATURALIZAÇÃO TEMPO RESIDÊNCIA": 19,
+  "VISTO ESTUDO": 21,
+  "VISTO DE RESIDÊNCIA ESTUDO": 21,
+  "ESTUDO ENSINO SECUNDÁRIO": 23,
+  "ESTATUTO IGUALDADE": 27,
+  "NACIONALIDADE NASCIMENTO": 29,
+  "NACIONALIDADE NASCIMENTO PORTUGAL": 29,
+  "MANIFESTAÇÃO DE INTERESSE": 31,
+  "MANIFESTAÇÃO INTERESSE": 31,
+  "TRANSCRIÇÃO CASAMENTO": 33,
+  "CASAMENTO CONSERVATÓRIA": 35,
+  "PEDIDO CASAMENTO": 35,
+  "NACIONALIDADE CASAMENTO": 37,
+  "FAMILIAR CIDADÃO EUROPEU": 39,
+  "ART 15": 39,
+  "ARTIGO 15": 39,
+  "VISTO ESTUDO ACOMPANHAMENTO FAMILIAR": 41,
+  "ART 122 B": 43,
+  "ARTIGO 122 B": 43,
+  "122 B": 43,
+  "HOMOLOGAÇÃO DIVÓRCIO": 45,
+  "DIVÓRCIO": 45,
+  "NACIONALIDADE NASCIDO PORTUGAL": 47,
+  "NÔMADE DIGITAL": 49,
+  "NOMADE DIGITAL": 49,
+  "PROCURA DE TRABALHO": 51,
+  "ALTAMENTE QUALIFICADO": 53,
+  "ART 122 B Nº4": 55,
+  "122 B E 4": 55,
+  "ART 122 K": 57,
+  "ARTIGO 122 K": 57,
+  "122 K": 57,
+  "REFORMADOS": 59,
+  "RELIGIOSOS": 59,
+  "FIXAÇÃO RESIDÊNCIA": 59,
+  "ACOMPANHAMENTO COM VISTO": 61,
+  "ACOMPANHAMENTO RESIDÊNCIA COM VISTO": 61,
+  "HOMOLOGAÇÃO TRIBUNAL RELAÇÃO": 63,
+  "AÇÃO MANIFESTAÇÃO INTERESSE": 65,
+  "AÇÃO AGENDAMENTO COM VISTO": 67,
+  "AÇÃO REAGRUPAMENTO FAMILIAR": 69,
+  "AÇÃO FAMILIAR EUROPEU": 71,
+  "AÇÃO ESTUDANTE DISPENSA VISTO": 73,
+  "VISTO TRABALHO": 75,
+  "VISTO TRABALHO ACOMPANHAMENTO": 77,
+  "AÇÃO EMISSÃO RESIDÊNCIA": 79,
+  "ART 122 G": 81,
+  "122 G": 81,
+  "AÇÃO 122 K": 83,
+  "AÇÃO RENOVAÇÃO RESIDÊNCIA": 85,
+  "AÇÃO CPLP": 87,
+  "AÇÃO TROCA CPLP": 89,
+  "ACOMPANHAMENTO DISPENSA VISTO": 91,
+  "ACOMPANHAMENTO SEM VISTO": 91,
+  "CONSULTA ONLINE": 99,
+  "CONSULTA ON-LINE": 99,
+  "CONSULTA PRESENCIAL": 101,
+  "CONSULTA TRADUTOR": 105,
+  "RENÚNCIA NACIONALIDADE": 107,
+  "RESPONSABILIDADE PARENTAL": 109,
+  "PENSÃO ALIMENTÍCIA": 111,
+  "PENSAO ALIMENTICIA": 111,
+  "RECONHECIMENTO SENTENÇA": 113,
+  "NIF": 115,
+  "NISS": 117,
+  "ABERTURA ATIVIDADE": 119,
+  "ALTERAÇÃO MORADA": 121,
+  "CARTA CONVITE": 125,
+  "AUTORIZAÇÃO VIAGEM": 127,
+  "NOTIFICAÇÃO AIMA": 129,
+  "ACOMPANHAMENTO AEROPORTO": 131,
+  "REAGRUPAMENTO FORA PT": 553,
+  "REAGRUPAMENTO FAMILIAR FORA PT": 553,
+  "RESIDÊNCIA PERMANENTE": 555,
+  "NOTIFICAÇÃO ABANDONO": 557,
+  "AÇÃO ACELERAR NACIONALIDADE": 559,
+  "RENOVAÇÃO RESIDÊNCIA": 561,
+  "RENOVAÇÃO": 561,
+  "NACIONALIDADE ASCENDENTES": 593,
+  "NACIONALIDADE PAIS": 593,
+  "ASSESSORIA AIMA": 607,
+  "ACOMPANHAMENTO AIMA": 607,
+  "INDEFERIMENTO": 609,
+  "NOTIFICAÇÃO INDEFERIMENTO": 609,
+  "TROCA CPLP": 611,
+  "ASSESSORIA TROCA CPLP": 611,
+  "ART 122 J": 617,
+  "122 J": 617,
+};
+
+// Resolve a case title to its Bitrix24 product ID using fuzzy matching
+function resolveBitrixProductId(caseTitle: string): number | null {
+  if (!caseTitle) return null;
+  const upper = caseTitle.toUpperCase().trim();
+
+  // Direct match
+  if (CASE_TITLE_TO_PRODUCT_ID[upper]) return CASE_TITLE_TO_PRODUCT_ID[upper];
+
+  // Substring match — find the longest key that is contained in the title
+  let bestMatch: { key: string; id: number } | null = null;
+  for (const [key, id] of Object.entries(CASE_TITLE_TO_PRODUCT_ID)) {
+    if (upper.includes(key) && (!bestMatch || key.length > bestMatch.key.length)) {
+      bestMatch = { key, id };
+    }
+  }
+  if (bestMatch) return bestMatch.id;
+
+  // Reverse: check if any key contains the title
+  for (const [key, id] of Object.entries(CASE_TITLE_TO_PRODUCT_ID)) {
+    if (key.includes(upper) && upper.length >= 4) return id;
+  }
+
+  return null;
+}
+
 // ── Upsert Client Helper ──────────────────────────────────────────────────
 
 async function upsertClient(supabase: any, client: RawClient): Promise<{ clientId: string; docNumber: string }> {
