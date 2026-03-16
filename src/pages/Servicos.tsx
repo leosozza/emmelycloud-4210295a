@@ -151,10 +151,11 @@ export default function ServicosPage() {
       <div className="rounded-md border">
         <Table>
           <TableHeader>
-            <TableRow>
+           <TableRow>
               <TableHead>Nome</TableHead>
               <TableHead>Moeda</TableHead>
               <TableHead>Valor</TableHead>
+              <TableHead>ID Bitrix</TableHead>
               <TableHead className="w-24">Ações</TableHead>
             </TableRow>
           </TableHeader>
