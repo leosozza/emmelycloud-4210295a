@@ -1221,13 +1221,25 @@ serve(async (req) => {
       const batch = (allClients || []).slice(batch_start, batch_start + batch_size);
       const results: { client_name: string; status: string; error?: string; details?: string }[] = [];
 
-      const bitrixCall = async (method: string, payload: Record<string, any> = {}) => {
-        const res = await fetch(`${endpoint}${method}`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ auth: accessToken, ...payload }),
-        });
-        return res.json();
+      const bitrixCall = async (method: string, payload: Record<string, any> = {}, retries = 3): Promise<any> => {
+        for (let attempt = 0; attempt < retries; attempt++) {
+          try {
+            const res = await fetch(`${endpoint}${method}`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ auth: accessToken, ...payload }),
+            });
+            return await res.json();
+          } catch (err) {
+            const isTransient = String(err).includes("http2 error") || String(err).includes("connection error") || String(err).includes("SendRequest");
+            if (isTransient && attempt < retries - 1) {
+              console.warn(`[bitrixCall] Transient error on ${method}, retry ${attempt + 1}/${retries - 1}`);
+              await new Promise(r => setTimeout(r, 1000 * (attempt + 1)));
+              continue;
+            }
+            throw err;
+          }
+        }
       };
 
       for (const client of batch) {
