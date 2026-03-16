@@ -178,7 +178,7 @@ export default function ServicosPage() {
                   <TableCell className="font-medium">{s.name}</TableCell>
                   <TableCell>{s.currency}</TableCell>
                   <TableCell>{formatCurrency(Number(s.value))}</TableCell>
-                  <TableCell>
+                  <TableCell className="text-xs text-muted-foreground">{s.bitrix24_id || "—"}</TableCell>
                     <div className="flex gap-1">
                       <Button variant="ghost" size="icon" onClick={() => openEdit(s)}>
                         <Pencil className="h-4 w-4" />
