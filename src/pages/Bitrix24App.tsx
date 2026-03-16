@@ -6442,6 +6442,16 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
               : "Integração com Bitrix24 não disponível."
             }
           </CardDescription>
+          {syncClientsLoaded && syncClients.length > 0 && (
+            <div className="flex items-center gap-3 mt-2">
+              <Badge variant="default" className="text-xs">✅ {syncedCount} sincronizados</Badge>
+              <Badge variant="outline" className="text-xs">⏳ {pendingCount} pendentes</Badge>
+              <span className="text-xs text-muted-foreground">{syncClients.length} total</span>
+              {syncSessionId && (
+                <Badge variant="secondary" className="text-[10px]">📁 Sessão activa</Badge>
+              )}
+            </div>
+          )}
         </CardHeader>
         <CardContent className="space-y-4">
           {!integration ? (
