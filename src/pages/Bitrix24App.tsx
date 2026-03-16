@@ -5351,8 +5351,18 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
 
       let shouldAutoResumeClients = false;
       let shouldAutoResumeHonorarios = false;
+      let shouldAutoResumeSync = false;
 
       for (const session of sessions as any[]) {
+        // Phase 3 sync session
+        if (session.phase === "sync_bitrix3") {
+          setSyncSessionId(session.id);
+          if (session.status === "in_progress") {
+            shouldAutoResumeSync = true;
+          }
+          continue;
+        }
+
         // For completed sessions, just restore the visual state without re-downloading
         if (session.status === "done") {
           const savedLogs = Array.isArray(session.logs) ? session.logs : [];
@@ -5439,6 +5449,7 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
 
       if (shouldAutoResumeClients) setAutoResumeClientsPending(true);
       if (shouldAutoResumeHonorarios) setAutoResumeHonorariosPending(true);
+      if (shouldAutoResumeSync) setAutoResumeSyncPending(true);
       setResumingPhase(null);
     };
 
