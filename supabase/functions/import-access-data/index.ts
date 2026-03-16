@@ -505,7 +505,8 @@ serve(async (req) => {
                   id, created_at,
                   financial_records!financial_records_contract_id_fkey (
                     id, description, total_value, installment_number, total_installments,
-                    installment_value, status, due_date, paid_at, created_at
+                    installment_value, status, due_date, paid_at, created_at,
+                    bitrix24_deal_id, bitrix24_invoice_id
                   )
                 )
               )
@@ -546,6 +547,7 @@ serve(async (req) => {
             totalValue: 0, totalPaid: 0, allPaid: true, hasOverdue: false,
             overdueCount: 0, overdueValue: 0, services: [], recordsCount: 0,
             phones: [], emails: [], contractDate: null as string | null,
+            allRecordsHaveBitrixIds: true,
           };
         }
         const fm = financialMap[cid];
@@ -566,6 +568,10 @@ serve(async (req) => {
               }
               for (const fr of (contract.financial_records || [])) {
                 fm.recordsCount++;
+                // Track if all records have bitrix IDs for synced status
+                if (!fr.bitrix24_deal_id || !fr.bitrix24_invoice_id) {
+                  fm.allRecordsHaveBitrixIds = false;
+                }
                 if (fr.status === "paga") {
                   fm.totalPaid += Number(fr.installment_value) || 0;
                 } else {
@@ -608,6 +614,9 @@ serve(async (req) => {
         if (fm.recordsCount > 0 && fm.allPaid) statusClass = "quitado";
         else if (fm.hasOverdue) statusClass = "atrasado";
 
+        // Synced = client has bitrix24_id AND all financial records have both bitrix24_deal_id and bitrix24_invoice_id
+        const isSynced = !!client.bitrix24_id && fm.allRecordsHaveBitrixIds;
+
         clientsWithFinancials.push({
           client_id: client.id,
           name: client.name,
@@ -627,6 +636,7 @@ serve(async (req) => {
           address: client.address,
           birth_date: client.birth_date,
           contract_date: fm.contractDate ? fm.contractDate.split("T")[0] : null,
+          synced: isSynced,
         });
       }
 

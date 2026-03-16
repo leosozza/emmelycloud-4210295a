@@ -5284,6 +5284,10 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
   const [selectedCategoryId, setSelectedCategoryId] = useState("0");
   const [loadingPipelines, setLoadingPipelines] = useState(false);
 
+  // Phase 3 session persistence
+  const [syncSessionId, setSyncSessionId] = useState<string | null>(null);
+  const [autoResumeSyncPending, setAutoResumeSyncPending] = useState(false);
+
   // Enrich Bitrix contacts
   const [enriching, setEnriching] = useState(false);
   const [enrichProgress, setEnrichProgress] = useState({ processed: 0, total: 0, updated: 0, notFound: 0, skipped: 0, contactsCreated: 0 });
@@ -5347,8 +5351,18 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
 
       let shouldAutoResumeClients = false;
       let shouldAutoResumeHonorarios = false;
+      let shouldAutoResumeSync = false;
 
       for (const session of sessions as any[]) {
+        // Phase 3 sync session
+        if (session.phase === "sync_bitrix3") {
+          setSyncSessionId(session.id);
+          if (session.status === "in_progress") {
+            shouldAutoResumeSync = true;
+          }
+          continue;
+        }
+
         // For completed sessions, just restore the visual state without re-downloading
         if (session.status === "done") {
           const savedLogs = Array.isArray(session.logs) ? session.logs : [];
@@ -5435,6 +5449,7 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
 
       if (shouldAutoResumeClients) setAutoResumeClientsPending(true);
       if (shouldAutoResumeHonorarios) setAutoResumeHonorariosPending(true);
+      if (shouldAutoResumeSync) setAutoResumeSyncPending(true);
       setResumingPhase(null);
     };
 
@@ -5809,6 +5824,64 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
     honorariosProgress.processed,
   ]);
 
+  // ── Phase 3: Auto-resume sync ──
+  useEffect(() => {
+    if (
+      autoResumeSyncPending &&
+      !resumingPhase &&
+      !syncingBatch &&
+      !loadingSyncClients &&
+      !!resolvedMemberId &&
+      !!integration
+    ) {
+      setAutoResumeSyncPending(false);
+      (async () => {
+        const clients = await handleLoadSyncClients();
+        if (clients && clients.length > 0) {
+          const pending = clients.filter((c: SyncClient) => !c.synced);
+          if (pending.length > 0) {
+            setSelectedIds(new Set(pending.map((c: SyncClient) => c.client_id)));
+            setTimeout(() => { handleSyncBatch(pending); }, 500);
+          }
+        }
+      })();
+    }
+  }, [autoResumeSyncPending, resumingPhase, syncingBatch, loadingSyncClients, resolvedMemberId, integration]);
+
+  // ── Manual mark as synced ──
+  const handleMarkAsSynced = async (client: SyncClient) => {
+    if (!client.synced) {
+      const { data: cl } = await supabase.from("clients").select("bitrix24_id").eq("id", client.client_id).single();
+      if (cl && !cl.bitrix24_id) {
+        await supabase.from("clients").update({ bitrix24_id: "MANUAL" }).eq("id", client.client_id);
+      }
+      const { data: leads } = await supabase
+        .from("leads")
+        .select("cases!cases_lead_id_fkey(proposals!proposals_case_id_fkey(contracts!contracts_proposal_id_fkey(financial_records!financial_records_contract_id_fkey(id, bitrix24_deal_id, bitrix24_invoice_id))))")
+        .eq("client_id", client.client_id)
+        .eq("sync_source", "access_import") as any;
+      for (const lead of (leads || [])) {
+        for (const caso of (lead.cases || [])) {
+          for (const proposal of (caso.proposals || [])) {
+            for (const contract of (proposal.contracts || [])) {
+              for (const fr of (contract.financial_records || [])) {
+                const updates: Record<string, string> = {};
+                if (!fr.bitrix24_deal_id) updates.bitrix24_deal_id = "MANUAL";
+                if (!fr.bitrix24_invoice_id) updates.bitrix24_invoice_id = "MANUAL";
+                if (Object.keys(updates).length > 0) {
+                  await supabase.from("financial_records").update(updates).eq("id", fr.id);
+                }
+              }
+            }
+          }
+        }
+      }
+      setSyncClients(prev => prev.map(c =>
+        c.client_id === client.client_id ? { ...c, synced: true, syncResult: "Marcado manualmente" } : c
+      ));
+    }
+  };
+
   // ── Clear session helper ──
   const handleClearSession = async (phase: "clients" | "honorarios") => {
     if (phase === "clients" && clientsSessionId) {
@@ -5888,13 +5961,18 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
         }
       }
 
-      setSyncClients(allClients);
-      setSyncLoadProgress({ processed: allClients.length, total: allClients.length });
+      // Preserve backend synced flag
+      const clientsWithSyncStatus = allClients.map(c => ({
+        ...c,
+        synced: c.synced === true,
+      }));
+      setSyncClients(clientsWithSyncStatus);
+      setSyncLoadProgress({ processed: clientsWithSyncStatus.length, total: clientsWithSyncStatus.length });
 
       // Auto-select segment and tab that have data
-      if (allClients.length > 0) {
-        const existing = allClients.filter(c => !!c.bitrix_deal_id);
-        const newOnes = allClients.filter(c => !c.bitrix_deal_id);
+      if (clientsWithSyncStatus.length > 0) {
+        const existing = clientsWithSyncStatus.filter(c => !!c.bitrix_deal_id);
+        const newOnes = clientsWithSyncStatus.filter(c => !c.bitrix_deal_id);
         const bestSegment = existing.length > 0 ? "existing" : "new";
         setSyncSegment(bestSegment);
 
@@ -5906,12 +5984,15 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
         else if (aberto > 0) setActiveTab("aberto");
         else if (quitado > 0) setActiveTab("quitado");
       }
+
+      return clientsWithSyncStatus;
     } catch (e) {
       console.error("[loadSyncClients]", e);
+      return [];
+    } finally {
+      setSyncClientsLoaded(true);
+      setLoadingSyncClients(false);
     }
-
-    setSyncClientsLoaded(true);
-    setLoadingSyncClients(false);
   };
 
   const handleSyncSingleClient = async (client: SyncClient, actionsOverride?: { contact: boolean; deal: boolean; invoices: boolean }, overridesOverride?: { name?: string; phone?: string; nif?: string }): Promise<{ contact_id?: string; deal_id?: string; invoices_created?: number } | null> => {
@@ -5953,21 +6034,34 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
     }
   };
 
-  const handleSyncBatch = async () => {
-    if (selectedIds.size === 0) return;
+  const handleSyncBatch = async (clientsToSync?: SyncClient[]) => {
+    const useClients = clientsToSync || syncClients;
+    const ids = clientsToSync ? clientsToSync.map(c => c.client_id) : Array.from(selectedIds);
+    if (ids.length === 0) return;
+
     setSyncingBatch(true);
     batchAbortRef.current = false;
-    const ids = Array.from(selectedIds);
+
+    // Create or reuse session
+    let sessionId = syncSessionId;
+    if (!sessionId) {
+      sessionId = await createSession("sync_bitrix3", "n/a", ids.length);
+      if (sessionId) setSyncSessionId(sessionId);
+    }
+
     const progress = { current: 0, total: ids.length, contacts: 0, deals: 0, invoices: 0, errors: 0, currentName: "" };
     setBatchProgress(progress);
+    const processedIds: string[] = [];
+
     for (const id of ids) {
       if (batchAbortRef.current) {
         console.log("[syncBatch] Aborted by user");
         break;
       }
-      const client = syncClients.find(c => c.client_id === id);
+      const client = useClients.find(c => c.client_id === id);
       if (!client || client.synced) {
         progress.current++;
+        processedIds.push(id);
         setBatchProgress({ ...progress });
         continue;
       }
@@ -5979,14 +6073,27 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
         if (result.contact_id) progress.contacts++;
         if (result.deal_id) progress.deals++;
         progress.invoices += result.invoices_created || 0;
+        processedIds.push(id);
       } else {
         progress.errors++;
+        processedIds.push(id);
       }
       setBatchProgress({ ...progress });
+
+      // Save progress after each client
+      if (sessionId) {
+        await saveSessionProgress(sessionId, processedIds.length, processedIds as any);
+      }
     }
+
     setSyncingBatch(false);
     batchAbortRef.current = false;
     setSelectedIds(new Set());
+
+    // Mark session done if all processed
+    if (sessionId && processedIds.length >= ids.length) {
+      await markSessionDone(sessionId);
+    }
   };
 
   const handleCancelBatch = () => {
@@ -6019,6 +6126,8 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
   const quitadoCount = segmentedClients.filter(c => c.status_class === "quitado").length;
   const abertoCount = segmentedClients.filter(c => c.status_class === "aberto").length;
   const atrasadoCount = segmentedClients.filter(c => c.status_class === "atrasado").length;
+  const syncedCount = syncClients.filter(c => c.synced).length;
+  const pendingCount = syncClients.filter(c => !c.synced).length;
 
   const selectAllInTab = () => {
     const ids = filteredSyncClients.filter(c => !c.synced).map(c => c.client_id);
@@ -6333,12 +6442,38 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
               : "Integração com Bitrix24 não disponível."
             }
           </CardDescription>
+          {syncClientsLoaded && syncClients.length > 0 && (
+            <div className="flex items-center gap-3 mt-2">
+              <Badge variant="default" className="text-xs">✅ {syncedCount} sincronizados</Badge>
+              <Badge variant="outline" className="text-xs">⏳ {pendingCount} pendentes</Badge>
+              <span className="text-xs text-muted-foreground">{syncClients.length} total</span>
+              {syncSessionId && (
+                <Badge variant="secondary" className="text-[10px]">📁 Sessão activa</Badge>
+              )}
+            </div>
+          )}
         </CardHeader>
         <CardContent className="space-y-4">
           {!integration ? (
             <p className="text-sm text-muted-foreground">⚠️ Sem integração Bitrix24 activa.</p>
           ) : (
             <>
+              {/* Auto-resume banner */}
+              {syncSessionId && !syncingBatch && !loadingSyncClients && autoResumeSyncPending && (
+                <div className="flex items-center gap-2 p-3 rounded-lg bg-primary/10 border border-primary/20">
+                  <AlertCircle className="h-4 w-4 text-primary shrink-0" />
+                  <p className="text-xs text-foreground flex-1">
+                    Sessão anterior detectada. A retomada automática será iniciada...
+                  </p>
+                  <Button variant="ghost" size="sm" className="text-xs h-7 shrink-0" onClick={async () => {
+                    if (syncSessionId) { await markSessionDone(syncSessionId); setSyncSessionId(null); }
+                    setAutoResumeSyncPending(false);
+                  }}>
+                    <Trash2 className="h-3 w-3 mr-1" /> Cancelar
+                  </Button>
+                </div>
+              )}
+
               {/* Pipeline selector */}
               <div className="space-y-1.5">
                 <Label className="text-sm">Pipeline de destino para novos Deals</Label>
@@ -6451,7 +6586,7 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
                             <XCircle className="h-3.5 w-3.5 mr-1" /> Parar Sincronização
                           </Button>
                         ) : (
-                          <Button size="sm" onClick={handleSyncBatch} disabled={selectedIds.size === 0} className="text-xs ml-auto">
+                          <Button size="sm" onClick={() => handleSyncBatch()} disabled={selectedIds.size === 0} className="text-xs ml-auto">
                             <RefreshCw className="h-3.5 w-3.5 mr-1" /> Sincronizar {selectedIds.size} seleccionados
                           </Button>
                         )}
@@ -6535,11 +6670,16 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
                             </TableCell>
                             <TableCell>
                               {client.synced ? (
-                                <span className="text-[10px] text-green-600">{client.syncResult?.substring(0, 30)}</span>
+                                <span className="text-[10px] text-green-600">{client.syncResult?.substring(0, 30) || "✅"}</span>
                               ) : (
-                                <Button size="sm" variant="outline" className="text-xs h-7" onClick={() => openEditDialog(client)}>
-                                  <Edit className="h-3 w-3 mr-1" /> Sincronizar
-                                </Button>
+                                <div className="flex gap-1">
+                                  <Button size="sm" variant="outline" className="text-xs h-7" onClick={() => openEditDialog(client)}>
+                                    <Edit className="h-3 w-3 mr-1" /> Sync
+                                  </Button>
+                                  <Button size="sm" variant="ghost" className="text-xs h-7 text-muted-foreground" onClick={() => handleMarkAsSynced(client)} title="Marcar como sincronizado manualmente">
+                                    <CheckCircle className="h-3 w-3" />
+                                  </Button>
+                                </div>
                               )}
                             </TableCell>
                           </TableRow>
@@ -6796,4 +6936,3 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
 }
 
 export default Bitrix24App;
-
