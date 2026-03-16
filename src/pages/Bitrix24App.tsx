@@ -6126,6 +6126,8 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
   const quitadoCount = segmentedClients.filter(c => c.status_class === "quitado").length;
   const abertoCount = segmentedClients.filter(c => c.status_class === "aberto").length;
   const atrasadoCount = segmentedClients.filter(c => c.status_class === "atrasado").length;
+  const syncedCount = syncClients.filter(c => c.synced).length;
+  const pendingCount = syncClients.filter(c => !c.synced).length;
 
   const selectAllInTab = () => {
     const ids = filteredSyncClients.filter(c => !c.synced).map(c => c.client_id);
