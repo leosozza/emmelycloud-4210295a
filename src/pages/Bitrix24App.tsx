@@ -5976,21 +5976,34 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
     }
   };
 
-  const handleSyncBatch = async () => {
-    if (selectedIds.size === 0) return;
+  const handleSyncBatch = async (clientsToSync?: SyncClient[]) => {
+    const useClients = clientsToSync || syncClients;
+    const ids = clientsToSync ? clientsToSync.map(c => c.client_id) : Array.from(selectedIds);
+    if (ids.length === 0) return;
+
     setSyncingBatch(true);
     batchAbortRef.current = false;
-    const ids = Array.from(selectedIds);
+
+    // Create or reuse session
+    let sessionId = syncSessionId;
+    if (!sessionId) {
+      sessionId = await createSession("sync_bitrix3", "n/a", ids.length);
+      if (sessionId) setSyncSessionId(sessionId);
+    }
+
     const progress = { current: 0, total: ids.length, contacts: 0, deals: 0, invoices: 0, errors: 0, currentName: "" };
     setBatchProgress(progress);
+    const processedIds: string[] = [];
+
     for (const id of ids) {
       if (batchAbortRef.current) {
         console.log("[syncBatch] Aborted by user");
         break;
       }
-      const client = syncClients.find(c => c.client_id === id);
+      const client = useClients.find(c => c.client_id === id);
       if (!client || client.synced) {
         progress.current++;
+        processedIds.push(id);
         setBatchProgress({ ...progress });
         continue;
       }
@@ -6002,14 +6015,27 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
         if (result.contact_id) progress.contacts++;
         if (result.deal_id) progress.deals++;
         progress.invoices += result.invoices_created || 0;
+        processedIds.push(id);
       } else {
         progress.errors++;
+        processedIds.push(id);
       }
       setBatchProgress({ ...progress });
+
+      // Save progress after each client
+      if (sessionId) {
+        await saveSessionProgress(sessionId, processedIds.length, processedIds as any);
+      }
     }
+
     setSyncingBatch(false);
     batchAbortRef.current = false;
     setSelectedIds(new Set());
+
+    // Mark session done if all processed
+    if (sessionId && processedIds.length >= ids.length) {
+      await markSessionDone(sessionId);
+    }
   };
 
   const handleCancelBatch = () => {
