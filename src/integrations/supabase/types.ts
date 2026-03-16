@@ -2503,6 +2503,7 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      get_dashboard_data: { Args: never; Returns: Json }
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"]

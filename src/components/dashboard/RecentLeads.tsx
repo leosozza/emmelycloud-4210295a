@@ -1,5 +1,3 @@
-import { useQuery } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -8,6 +6,7 @@ import { useNavigate } from "react-router-dom";
 import { format, parseISO } from "date-fns";
 import { useLocale } from "@/contexts/LocaleContext";
 import { Star } from "lucide-react";
+import type { RecentLead } from "@/hooks/useDashboardData";
 
 const stageLabels: Record<string, string> = {
   lead: "Lead", triagem: "Triagem", proposta: "Proposta", analise: "Análise",
@@ -39,22 +38,14 @@ function ScoreStars({ score }: { score: number | null }) {
   );
 }
 
-export function RecentLeads() {
+interface RecentLeadsProps {
+  data?: RecentLead[];
+  isLoading?: boolean;
+}
+
+export function RecentLeads({ data: leads = [], isLoading }: RecentLeadsProps) {
   const navigate = useNavigate();
   const { dateFnsLocale } = useLocale();
-
-  const { data: leads = [] } = useQuery({
-    queryKey: ["recent-leads"],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("leads")
-        .select("*")
-        .order("created_at", { ascending: false })
-        .limit(5);
-      if (error) throw error;
-      return data;
-    },
-  });
 
   return (
     <Card className="rounded-2xl shadow-sm">
@@ -66,7 +57,9 @@ export function RecentLeads() {
       </CardHeader>
       <CardContent className="p-0">
         <div className="divide-y divide-border/50">
-          {leads.length === 0 ? (
+          {isLoading ? (
+            <p className="text-sm text-muted-foreground p-6 text-center">Carregando...</p>
+          ) : leads.length === 0 ? (
             <p className="text-sm text-muted-foreground p-6 text-center">Nenhum lead encontrado</p>
           ) : leads.map((lead) => (
             <div key={lead.id} className="flex items-center gap-3 px-6 py-3.5 hover:bg-muted/50 transition-colors cursor-pointer" onClick={() => navigate("/leads")}>
@@ -83,7 +76,7 @@ export function RecentLeads() {
                   </Badge>
                 </div>
                 <div className="text-xs text-muted-foreground mt-0.5">
-                  {originLabels[lead.origin]} · {format(parseISO(lead.created_at), "dd/MM/yyyy", { locale: dateFnsLocale })}
+                  {originLabels[lead.origin] || lead.origin} · {format(parseISO(lead.created_at), "dd/MM/yyyy", { locale: dateFnsLocale })}
                 </div>
               </div>
               <div className="shrink-0">

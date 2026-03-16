@@ -1,6 +1,5 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { useLocale } from "@/contexts/LocaleContext";
-import { useLeadsByOrigin, useRevenueByArea, useMonthlyRevenue, useFunnelData } from "@/hooks/useDashboardData";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -24,9 +23,12 @@ function ChartSkeleton() {
   return <Skeleton className="h-[250px] w-full rounded-xl" />;
 }
 
-export function LeadsByOriginChart() {
-  const { data, isLoading } = useLeadsByOrigin();
+interface LeadsByOriginChartProps {
+  data?: { name: string; value: number }[];
+  isLoading?: boolean;
+}
 
+export function LeadsByOriginChart({ data, isLoading }: LeadsByOriginChartProps) {
   return (
     <Card className="rounded-2xl shadow-sm hover:shadow-md transition-shadow">
       <CardHeader>
@@ -64,9 +66,13 @@ export function LeadsByOriginChart() {
   );
 }
 
-export function RevenueByAreaChart() {
+interface RevenueByAreaChartProps {
+  data?: { area: string; receita: number }[];
+  isLoading?: boolean;
+}
+
+export function RevenueByAreaChart({ data, isLoading }: RevenueByAreaChartProps) {
   const { formatCurrency, currencySymbol } = useLocale();
-  const { data, isLoading } = useRevenueByArea();
 
   return (
     <Card className="rounded-2xl shadow-sm hover:shadow-md transition-shadow">
@@ -93,9 +99,13 @@ export function RevenueByAreaChart() {
   );
 }
 
-export function MonthlyRevenueChart() {
+interface MonthlyRevenueChartProps {
+  data?: { month: string; receita: number }[];
+  isLoading?: boolean;
+}
+
+export function MonthlyRevenueChart({ data, isLoading }: MonthlyRevenueChartProps) {
   const { formatCurrency, currencySymbol } = useLocale();
-  const { data, isLoading } = useMonthlyRevenue();
 
   return (
     <Card className="rounded-2xl shadow-sm hover:shadow-md transition-shadow">
@@ -128,9 +138,12 @@ export function MonthlyRevenueChart() {
   );
 }
 
-export function FunnelChartWidget() {
-  const { data, isLoading } = useFunnelData();
+interface FunnelChartWidgetProps {
+  data?: { name: string; value: number }[];
+  isLoading?: boolean;
+}
 
+export function FunnelChartWidget({ data, isLoading }: FunnelChartWidgetProps) {
   return (
     <Card className="rounded-2xl shadow-sm hover:shadow-md transition-shadow">
       <CardHeader>
