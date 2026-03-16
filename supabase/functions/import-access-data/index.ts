@@ -1059,17 +1059,22 @@ serve(async (req) => {
             const addRes = await bitrixCall("crm.item.add", { entityTypeId: 31, fields: invoiceFields });
             const newInvoiceId = addRes.result?.item?.id;
             if (newInvoiceId) invoiceIdToSave = String(newInvoiceId);
-            // Add product row with service name and installment value
+            // Add product row with service name, installment value, and Bitrix24 product ID
             if (newInvoiceId && instValue > 0) {
               try {
+                const productRow: Record<string, any> = {
+                  PRODUCT_NAME: desc || "Honorários",
+                  PRICE: instValue,
+                  QUANTITY: 1,
+                };
+                // Resolve Bitrix24 product ID from case/service description
+                const productId = resolveBitrixProductId(desc);
+                if (productId) productRow.PRODUCT_ID = productId;
+
                 await bitrixCall("crm.item.productrow.set", {
                   ownerType: "Tb6",
                   ownerId: newInvoiceId,
-                  productRows: [{
-                    PRODUCT_NAME: desc || "Honorários",
-                    PRICE: instValue,
-                    QUANTITY: 1,
-                  }],
+                  productRows: [productRow],
                 });
               } catch (e) {
                 console.warn("[SYNC] Product row error:", e);
