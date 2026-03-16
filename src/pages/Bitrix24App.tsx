@@ -6565,6 +6565,110 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
         </CardContent>
       </Card>
 
+      {/* ═══════ ENRIQUECER CONTACTOS BITRIX24 ═══════ */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Link className="h-5 w-5" /> Enriquecer IDs Contacto Bitrix24
+          </CardTitle>
+          <CardDescription>
+            Importe o CSV de contactos exportado do Bitrix24 para associar o ID de contacto aos clientes existentes (correspondência via ID Access → coluna EF)
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex items-center gap-3">
+            <Input
+              type="file"
+              accept=".csv"
+              disabled={enriching}
+              onChange={async (e) => {
+                const file = e.target.files?.[0];
+                if (!file) return;
+                setEnriching(true);
+                setEnrichDone(false);
+                setEnrichProgress({ processed: 0, total: 0, updated: 0, notFound: 0, skipped: 0 });
+
+                try {
+                  const text = await file.text();
+                  const lines = text.split("\n").filter(l => l.trim());
+                  const rows = lines.slice(1); // skip header
+                  const total = rows.length;
+                  setEnrichProgress(p => ({ ...p, total }));
+
+                  let updated = 0, notFound = 0, skipped = 0;
+                  const BATCH = 50;
+
+                  for (let i = 0; i < rows.length; i += BATCH) {
+                    const batch = rows.slice(i, i + BATCH);
+                    const promises = batch.map(async (row) => {
+                      const cols = row.split(";").map(c => c.replace(/^"|"$/g, "").trim());
+                      const ef = cols[0]; // EF = id_access
+                      const bitrixId = cols[22]; // ID = bitrix24 contact id
+                      if (!ef || !bitrixId || ef === "EF" || bitrixId === "ID") {
+                        skipped++;
+                        return;
+                      }
+                      const { data, error } = await supabase
+                        .from("clients")
+                        .update({ bitrix24_id: bitrixId })
+                        .eq("id_access", ef)
+                        .is("bitrix24_id", null)
+                        .select("id")
+                        .maybeSingle();
+                      if (data) {
+                        updated++;
+                      } else if (!error) {
+                        // Check if client exists but already has bitrix24_id
+                        const { data: existing } = await supabase
+                          .from("clients")
+                          .select("id, bitrix24_id")
+                          .eq("id_access", ef)
+                          .maybeSingle();
+                        if (existing) {
+                          skipped++; // already has bitrix24_id
+                        } else {
+                          notFound++;
+                        }
+                      } else {
+                        notFound++;
+                      }
+                    });
+                    await Promise.all(promises);
+                    setEnrichProgress({ processed: Math.min(i + BATCH, total), total, updated, notFound, skipped });
+                  }
+
+                  setEnrichProgress({ processed: total, total, updated, notFound, skipped });
+                  setEnrichDone(true);
+                } catch (err: any) {
+                  console.error("[enrich]", err);
+                } finally {
+                  setEnriching(false);
+                }
+              }}
+              className="max-w-sm"
+            />
+            {enriching && <Loader2 className="h-4 w-4 animate-spin" />}
+          </div>
+
+          {(enriching || enrichDone) && (
+            <div className="space-y-3">
+              <Progress value={enrichProgress.total > 0 ? (enrichProgress.processed / enrichProgress.total) * 100 : 0} className="h-2" />
+              <div className="flex gap-4 text-sm">
+                <span className="text-muted-foreground">{enrichProgress.processed}/{enrichProgress.total} processados</span>
+                <span className="text-green-500 font-medium">✅ {enrichProgress.updated} actualizados</span>
+                <span className="text-yellow-500">⏭ {enrichProgress.skipped} já existentes</span>
+                <span className="text-red-400">❌ {enrichProgress.notFound} não encontrados</span>
+              </div>
+              {enrichDone && (
+                <Badge variant="default" className="text-xs">
+                  <CheckCircle className="h-3 w-3 mr-1" /> Concluído
+                </Badge>
+              )}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
       {/* ═══════ DIALOG: Aprovação Individual ═══════ */}
       <Dialog open={!!editingClient} onOpenChange={(open) => { if (!open) setEditingClient(null); }}>
         <DialogContent className="sm:max-w-md">
