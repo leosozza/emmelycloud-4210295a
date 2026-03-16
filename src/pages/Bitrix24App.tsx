@@ -5906,7 +5906,7 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
   // ── Phase 3: Load clients for sync ──
   const [syncLoadProgress, setSyncLoadProgress] = useState({ processed: 0, total: 0 });
 
-  const handleLoadSyncClients = async () => {
+  const handleLoadSyncClients = async (forceRefresh = false) => {
     setLoadingSyncClients(true);
     setSyncClients([]);
     setSyncClientsLoaded(false);
@@ -5929,6 +5929,7 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
             clientes: [],
             mode: "list_sync_clients",
             member_id: resolvedMemberId,
+            ...(forceRefresh ? { force_refresh: true } : {}),
             ...(batchStart > 0 ? { batch_start: batchStart } : {}),
           }),
         });
