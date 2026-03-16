@@ -642,13 +642,16 @@ serve(async (req) => {
 
       const total = clientsWithFinancials.length;
 
-      // Step 5: Batch Bitrix lookup — load deals with UF_CRM_1768312831 and UF_CRM_1733687549802 in bulk
+      // Step 5: Batch Bitrix lookup — with cache layer (30 min TTL)
       let bitrixDealsByAccessId: Record<string, { dealId: string; contactId: string | null }> = {};
       let bitrixDealsByNif: Record<string, { dealId: string; contactId: string | null }> = {};
       let bitrixDealsByContactId: Record<string, string> = {}; // contactId -> dealId
       let bitrixContactsByName: Record<string, string> = {};
       let bitrixContactsByPhone: Record<string, string> = {};
       let bitrixContactsByEmail: Record<string, string> = {};
+
+      const CACHE_TTL_MS = 30 * 60 * 1000; // 30 minutes
+      const forceRefresh = body.force_refresh === true;
 
       if (member_id) {
         const { data: integration } = await supabase
@@ -681,60 +684,126 @@ serve(async (req) => {
             }
           };
 
-           // Batch load ALL deals (not just those with access ID)
-          try {
-            let start = 0;
-            while (true) {
-              const res = await bitrixCall("crm.deal.list", {
-                select: ["ID", "CONTACT_ID", "UF_CRM_1768312831", "UF_CRM_1733687549802"],
-                start,
-              });
-              for (const deal of (res.result || [])) {
-                if (deal.UF_CRM_1768312831) {
-                  bitrixDealsByAccessId[deal.UF_CRM_1768312831] = { dealId: deal.ID, contactId: deal.CONTACT_ID || null };
-                }
-                if (deal.UF_CRM_1733687549802) {
-                  bitrixDealsByNif[deal.UF_CRM_1733687549802] = { dealId: deal.ID, contactId: deal.CONTACT_ID || null };
-                }
-                // Index by contact ID to resolve deals from contact matches
-                if (deal.CONTACT_ID) {
-                  bitrixDealsByContactId[deal.CONTACT_ID] = deal.ID;
-                }
+          // ── Cache helper functions ──
+          const loadCache = async (cacheType: string): Promise<any[] | null> => {
+            if (forceRefresh) return null;
+            const { data: cached } = await supabase
+              .from("bitrix24_sync_cache")
+              .select("data, fetched_at")
+              .eq("member_id", member_id)
+              .eq("cache_type", cacheType)
+              .single();
+            if (cached && cached.fetched_at) {
+              const age = Date.now() - new Date(cached.fetched_at).getTime();
+              if (age < CACHE_TTL_MS) {
+                console.log(`[list_sync_clients] Using ${cacheType} cache (age: ${Math.round(age / 1000)}s)`);
+                return cached.data as any[];
               }
-              if (!res.next) break;
-              start = res.next;
             }
-          } catch (e) {
-            console.error("[list_sync_clients] Batch deal fetch error:", e);
+            return null;
+          };
+
+          const saveCache = async (cacheType: string, data: any[]) => {
+            await supabase.from("bitrix24_sync_cache").upsert({
+              member_id,
+              cache_type: cacheType,
+              data,
+              fetched_at: new Date().toISOString(),
+            }, { onConflict: "member_id,cache_type" });
+          };
+
+          // ── Load deals (cache-first) ──
+          const cachedDeals = await loadCache("deals");
+          if (cachedDeals) {
+            for (const deal of cachedDeals) {
+              if (deal.UF_CRM_1768312831) {
+                bitrixDealsByAccessId[deal.UF_CRM_1768312831] = { dealId: deal.ID, contactId: deal.CONTACT_ID || null };
+              }
+              if (deal.UF_CRM_1733687549802) {
+                bitrixDealsByNif[deal.UF_CRM_1733687549802] = { dealId: deal.ID, contactId: deal.CONTACT_ID || null };
+              }
+              if (deal.CONTACT_ID) {
+                bitrixDealsByContactId[deal.CONTACT_ID] = deal.ID;
+              }
+            }
+          } else {
+            try {
+              const allDeals: any[] = [];
+              let start = 0;
+              while (true) {
+                const res = await bitrixCall("crm.deal.list", {
+                  select: ["ID", "CONTACT_ID", "UF_CRM_1768312831", "UF_CRM_1733687549802"],
+                  start,
+                });
+                for (const deal of (res.result || [])) {
+                  allDeals.push(deal);
+                  if (deal.UF_CRM_1768312831) {
+                    bitrixDealsByAccessId[deal.UF_CRM_1768312831] = { dealId: deal.ID, contactId: deal.CONTACT_ID || null };
+                  }
+                  if (deal.UF_CRM_1733687549802) {
+                    bitrixDealsByNif[deal.UF_CRM_1733687549802] = { dealId: deal.ID, contactId: deal.CONTACT_ID || null };
+                  }
+                  if (deal.CONTACT_ID) {
+                    bitrixDealsByContactId[deal.CONTACT_ID] = deal.ID;
+                  }
+                }
+                if (!res.next) break;
+                start = res.next;
+              }
+              await saveCache("deals", allDeals);
+            } catch (e) {
+              console.error("[list_sync_clients] Batch deal fetch error:", e);
+            }
           }
 
-          // Batch load contacts for matching by phone, email, name
-          try {
-            let start = 0;
-            while (true) {
-              const res = await bitrixCall("crm.contact.list", {
-                select: ["ID", "NAME", "LAST_NAME", "PHONE", "EMAIL"],
-                start,
-              });
-              for (const contact of (res.result || [])) {
-                const fullName = [contact.NAME, contact.LAST_NAME].filter(Boolean).join(" ").toUpperCase().trim();
-                if (fullName) bitrixContactsByName[fullName] = contact.ID;
-                if (contact.PHONE) {
-                  for (const p of contact.PHONE) {
-                    if (p.VALUE) bitrixContactsByPhone[p.VALUE.replace(/\D/g, "")] = contact.ID;
-                  }
-                }
-                if (contact.EMAIL) {
-                  for (const e of contact.EMAIL) {
-                    if (e.VALUE) bitrixContactsByEmail[e.VALUE.toLowerCase()] = contact.ID;
-                  }
+          // ── Load contacts (cache-first) ──
+          const cachedContacts = await loadCache("contacts");
+          if (cachedContacts) {
+            for (const contact of cachedContacts) {
+              const fullName = [contact.NAME, contact.LAST_NAME].filter(Boolean).join(" ").toUpperCase().trim();
+              if (fullName) bitrixContactsByName[fullName] = contact.ID;
+              if (contact.PHONE) {
+                for (const p of contact.PHONE) {
+                  if (p.VALUE) bitrixContactsByPhone[p.VALUE.replace(/\D/g, "")] = contact.ID;
                 }
               }
-              if (!res.next) break;
-              start = res.next;
+              if (contact.EMAIL) {
+                for (const e of contact.EMAIL) {
+                  if (e.VALUE) bitrixContactsByEmail[e.VALUE.toLowerCase()] = contact.ID;
+                }
+              }
             }
-          } catch (e) {
-            console.error("[list_sync_clients] Batch contact fetch error:", e);
+          } else {
+            try {
+              const allContacts: any[] = [];
+              let start = 0;
+              while (true) {
+                const res = await bitrixCall("crm.contact.list", {
+                  select: ["ID", "NAME", "LAST_NAME", "PHONE", "EMAIL"],
+                  start,
+                });
+                for (const contact of (res.result || [])) {
+                  allContacts.push(contact);
+                  const fullName = [contact.NAME, contact.LAST_NAME].filter(Boolean).join(" ").toUpperCase().trim();
+                  if (fullName) bitrixContactsByName[fullName] = contact.ID;
+                  if (contact.PHONE) {
+                    for (const p of contact.PHONE) {
+                      if (p.VALUE) bitrixContactsByPhone[p.VALUE.replace(/\D/g, "")] = contact.ID;
+                    }
+                  }
+                  if (contact.EMAIL) {
+                    for (const e of contact.EMAIL) {
+                      if (e.VALUE) bitrixContactsByEmail[e.VALUE.toLowerCase()] = contact.ID;
+                    }
+                  }
+                }
+                if (!res.next) break;
+                start = res.next;
+              }
+              await saveCache("contacts", allContacts);
+            } catch (e) {
+              console.error("[list_sync_clients] Batch contact fetch error:", e);
+            }
           }
         }
       }

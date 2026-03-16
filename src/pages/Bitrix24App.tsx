@@ -5906,7 +5906,7 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
   // ── Phase 3: Load clients for sync ──
   const [syncLoadProgress, setSyncLoadProgress] = useState({ processed: 0, total: 0 });
 
-  const handleLoadSyncClients = async () => {
+  const handleLoadSyncClients = async (forceRefresh = false) => {
     setLoadingSyncClients(true);
     setSyncClients([]);
     setSyncClientsLoaded(false);
@@ -5929,6 +5929,7 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
             clientes: [],
             mode: "list_sync_clients",
             member_id: resolvedMemberId,
+            ...(forceRefresh ? { force_refresh: true } : {}),
             ...(batchStart > 0 ? { batch_start: batchStart } : {}),
           }),
         });
@@ -6493,16 +6494,23 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
                 )}
               </div>
 
-              {/* Load clients button */}
-              <Button onClick={handleLoadSyncClients} disabled={isImporting} className="w-full" size="lg" variant="outline">
-                {loadingSyncClients ? (
-                  <><Loader2 className="h-4 w-4 animate-spin mr-2" /> Carregando clientes... {syncLoadProgress.total > 0 ? `(${syncLoadProgress.processed}/${syncLoadProgress.total})` : ""}</>
-                ) : syncClientsLoaded ? (
-                  <><RefreshCw className="h-4 w-4 mr-2" /> Recarregar ({syncClients.length} clientes)</>
-                ) : (
-                  <><Users className="h-4 w-4 mr-2" /> Carregar Clientes para Sincronização</>
+              {/* Load clients buttons */}
+              <div className="flex gap-2">
+                <Button onClick={() => handleLoadSyncClients(false)} disabled={isImporting} className="flex-1" size="lg" variant="outline">
+                  {loadingSyncClients ? (
+                    <><Loader2 className="h-4 w-4 animate-spin mr-2" /> Carregando clientes... {syncLoadProgress.total > 0 ? `(${syncLoadProgress.processed}/${syncLoadProgress.total})` : ""}</>
+                  ) : syncClientsLoaded ? (
+                    <><RefreshCw className="h-4 w-4 mr-2" /> Recarregar ({syncClients.length} clientes)</>
+                  ) : (
+                    <><Users className="h-4 w-4 mr-2" /> Carregar Clientes para Sincronização</>
+                  )}
+                </Button>
+                {syncClientsLoaded && (
+                  <Button onClick={() => handleLoadSyncClients(true)} disabled={isImporting || loadingSyncClients} size="lg" variant="ghost" title="Forçar actualização dos dados do Bitrix24 (ignora cache)">
+                    <RefreshCw className="h-4 w-4" />
+                  </Button>
                 )}
-              </Button>
+              </div>
 
               {/* Loading progress bar */}
               {loadingSyncClients && syncLoadProgress.total > 0 && (
