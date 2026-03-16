@@ -54,7 +54,7 @@ export function useFinancialDashboard(startDate: string, endDate: string) {
       // Overdue records: due_date up to endDate
       const { data: overdueRecords } = await supabase
         .from("financial_records")
-        .select("id, installment_value, status, paid_at, due_date, contract_id, payment_method, created_at")
+        .select("id, installment_value, status, paid_at, due_date, contract_id, payment_method, created_at, proposal_id")
         .eq("status", "atrasada")
         .lte("due_date", endDateOnly);
 
