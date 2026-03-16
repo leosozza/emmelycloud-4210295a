@@ -2661,8 +2661,25 @@ const PERIOD_OPTIONS: { key: PeriodKey; label: string }[] = [
   { key: "all", label: "Todos" },
 ];
 
-function RelatoriosView() {
-  const [transactions, setTransactions] = useState<any[]>([]);
+type BitrixReportTransaction = {
+  id: string;
+  amount: number;
+  installment_value: number;
+  total_value: number;
+  status: string;
+  payment_method: string;
+  gateway: string;
+  due_date: string | null;
+  paid_at: string | null;
+  created_at: string;
+  description: string;
+  client_name: string;
+  company_name: string;
+  responsible_name: string;
+};
+
+function RelatoriosView({ memberId }: { memberId?: string }) {
+  const [transactions, setTransactions] = useState<BitrixReportTransaction[]>([]);
   const [loading, setLoading] = useState(true);
   const [period, setPeriod] = useState<PeriodKey>("30d");
   const [gatewayFilter, setGatewayFilter] = useState<string>("all");
@@ -2670,26 +2687,78 @@ function RelatoriosView() {
   const [companyFilter, setCompanyFilter] = useState<string>("all");
   const [dateRange, setDateRange] = useState<{ from?: Date; to?: Date }>({});
   const [datePickerOpen, setDatePickerOpen] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [exportedLink, setExportedLink] = useState<string | null>(null);
 
   useEffect(() => {
-    setLoading(true);
-    fetch(
-      `${SUPABASE_URL}/rest/v1/financial_records?select=id,installment_value,total_value,status,payment_method,due_date,paid_at,created_at,contract_id,description&order=paid_at.desc.nullslast&limit=1000`,
-      { headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` } }
-    )
-      .then((r) => r.json())
-      .then((data) => setTransactions(Array.isArray(data) ? data : []))
-      .catch(console.error)
-      .finally(() => setLoading(false));
+    let active = true;
+
+    const loadTransactions = async () => {
+      if (!memberId) {
+        if (active) {
+          setTransactions([]);
+          setLoading(false);
+        }
+        return;
+      }
+
+      setLoading(true);
+      try {
+        const res = await fetch(`${SUPABASE_URL}/functions/v1/bitrix24-reports?member_id=${encodeURIComponent(memberId)}`, {
+          headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` },
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data?.error || "Erro ao carregar relatórios");
+        if (active) {
+          setTransactions(Array.isArray(data?.transactions) ? data.transactions : []);
+        }
+      } catch (error) {
+        console.error("[bitrix24-relatorios] load error:", error);
+        if (active) setTransactions([]);
+      } finally {
+        if (active) setLoading(false);
+      }
+    };
+
+    loadTransactions();
+    return () => {
+      active = false;
+    };
+  }, [memberId]);
+
+  const gateways = useMemo(
+    () => [...new Set(transactions.map((t) => t.gateway).filter((value) => value && value !== "—"))].sort(),
+    [transactions]
+  );
+  const clients = useMemo(
+    () => [...new Set(transactions.map((t) => t.client_name).filter(Boolean))].sort(),
+    [transactions]
+  );
+  const companies = useMemo(
+    () => [...new Set(transactions.map((t) => t.company_name).filter((value) => value && value !== "—"))].sort(),
+    [transactions]
+  );
+
+  const classify = useCallback((t: BitrixReportTransaction) => {
+    if (t.status === "paga") return "confirmed";
+    if (t.status === "atrasada") return "overdue";
+    if (t.status === "pendente" && t.due_date && new Date(t.due_date) < new Date()) return "overdue";
+    return "pending";
   }, []);
 
-  const gateways: string[] = [];
-  const clients: string[] = [];
-  const companies: string[] = [];
-
   const filtered = useMemo(() => {
-    let data = transactions;
-    // Date filtering using paid_at for paid, due_date for pending/overdue
+    let data = [...transactions];
+
+    if (gatewayFilter !== "all") {
+      data = data.filter((t) => t.gateway === gatewayFilter);
+    }
+    if (clientFilter !== "all") {
+      data = data.filter((t) => t.client_name === clientFilter);
+    }
+    if (companyFilter !== "all") {
+      data = data.filter((t) => t.company_name === companyFilter);
+    }
+
     if (period === "custom" && dateRange.from) {
       const from = new Date(dateRange.from);
       from.setHours(0, 0, 0, 0);
@@ -2708,25 +2777,18 @@ function RelatoriosView() {
         return refDate >= cutoff;
       });
     }
+
     return data;
-  }, [transactions, period, dateRange]);
+  }, [transactions, gatewayFilter, clientFilter, companyFilter, period, dateRange]);
 
-  const today = new Date();
-  const classify = (t: any) => {
-    if (t.status === "paga") return "confirmed";
-    if (t.status === "atrasada") return "overdue";
-    if (t.status === "pendente" && t.due_date && new Date(t.due_date) < today) return "overdue";
-    return "pending";
-  };
+  const confirmed = useMemo(() => filtered.filter((t) => classify(t) === "confirmed"), [filtered, classify]);
+  const pending = useMemo(() => filtered.filter((t) => classify(t) === "pending"), [filtered, classify]);
+  const overdue = useMemo(() => filtered.filter((t) => classify(t) === "overdue"), [filtered, classify]);
 
-  const confirmed = filtered.filter((t) => classify(t) === "confirmed");
-  const pending = filtered.filter((t) => classify(t) === "pending");
-  const overdue = filtered.filter((t) => classify(t) === "overdue");
-
-  const totalCharged = filtered.reduce((s, t) => s + Number(t.installment_value || 0), 0);
-  const totalPaid = confirmed.reduce((s, t) => s + Number(t.installment_value || 0), 0);
-  const openAmount = pending.reduce((s, t) => s + Number(t.installment_value || 0), 0);
-  const overdueAmount = overdue.reduce((s, t) => s + Number(t.installment_value || 0), 0);
+  const totalCharged = filtered.reduce((sum, t) => sum + Number(t.amount || 0), 0);
+  const totalPaid = confirmed.reduce((sum, t) => sum + Number(t.amount || 0), 0);
+  const openAmount = pending.reduce((sum, t) => sum + Number(t.amount || 0), 0);
+  const overdueAmount = overdue.reduce((sum, t) => sum + Number(t.amount || 0), 0);
   const paymentRate = filtered.length ? Math.round((confirmed.length / filtered.length) * 100) : 0;
 
   const fmt = (v: number) =>
@@ -2739,11 +2801,11 @@ function RelatoriosView() {
       const refDate = t.status === "paga" && t.paid_at ? new Date(t.paid_at) : t.due_date ? new Date(t.due_date) : new Date(t.created_at);
       const key = `${refDate.getFullYear()}-${String(refDate.getMonth()).padStart(2, "0")}`;
       if (!months[key]) months[key] = { month: `${monthNames[refDate.getMonth()]} ${refDate.getFullYear()}`, pago: 0, pendente: 0 };
-      if (classify(t) === "confirmed") months[key].pago += Number(t.installment_value || 0);
-      else months[key].pendente += Number(t.installment_value || 0);
+      if (classify(t) === "confirmed") months[key].pago += Number(t.amount || 0);
+      else months[key].pendente += Number(t.amount || 0);
     });
     return Object.entries(months).sort(([a], [b]) => a.localeCompare(b)).map(([, v]) => v);
-  }, [filtered]);
+  }, [filtered, classify]);
 
   const statusData = [
     { name: "Pago", value: confirmed.length, color: COLORS_STATUS.confirmed },
@@ -2754,8 +2816,8 @@ function RelatoriosView() {
   const methodData = useMemo(() => {
     const map: Record<string, number> = {};
     filtered.forEach((t) => {
-      const m = t.payment_method || "outro";
-      map[m] = (map[m] || 0) + Number(t.installment_value || 0);
+      const method = t.payment_method || "outro";
+      map[method] = (map[method] || 0) + Number(t.amount || 0);
     });
     return Object.entries(map).map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value);
   }, [filtered]);
@@ -2763,24 +2825,23 @@ function RelatoriosView() {
   const clientData = useMemo(() => {
     const map: Record<string, number> = {};
     filtered.forEach((t) => {
-      const name = t.description || "Sem descrição";
-      map[name] = (map[name] || 0) + Number(t.installment_value || 0);
+      const name = t.client_name || "Sem cliente";
+      map[name] = (map[name] || 0) + Number(t.amount || 0);
     });
     return Object.entries(map).map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value).slice(0, 5);
   }, [filtered]);
 
-  // Seller / Responsible report
   const sellerData = useMemo(() => {
     const map: Record<string, { name: string; total: number; paid: number; count: number }> = {};
     filtered.forEach((t) => {
-      const seller = "Geral";
+      const seller = t.responsible_name || "Sem responsável";
       if (!map[seller]) map[seller] = { name: seller, total: 0, paid: 0, count: 0 };
-      map[seller].total += Number(t.installment_value || 0);
+      map[seller].total += Number(t.amount || 0);
       map[seller].count += 1;
-      if (classify(t) === "confirmed") map[seller].paid += Number(t.installment_value || 0);
+      if (classify(t) === "confirmed") map[seller].paid += Number(t.amount || 0);
     });
     return Object.values(map).sort((a, b) => b.total - a.total);
-  }, [filtered]);
+  }, [filtered, classify]);
 
   const sellerChartData = sellerData.map((s) => ({
     name: s.name.length > 20 ? s.name.slice(0, 18) + "…" : s.name,
@@ -2803,8 +2864,6 @@ function RelatoriosView() {
     setDateRange({});
     setPeriod("30d");
   };
-  const [exporting, setExporting] = useState(false);
-  const [exportedLink, setExportedLink] = useState<string | null>(null);
 
   const buildSnapshotData = () => ({
     kpis: { totalCharged, totalPaid, openAmount, overdueAmount, confirmedCount: confirmed.length, paymentRate },
@@ -2814,9 +2873,13 @@ function RelatoriosView() {
       due_date: t.due_date || null,
       paid_at: t.paid_at || null,
       description: t.description || null,
-      amount: Number(t.installment_value || 0),
+      amount: Number(t.amount || 0),
       payment_method: t.payment_method,
       status: t.status,
+      client_name: t.client_name,
+      company_name: t.company_name,
+      responsible_name: t.responsible_name,
+      gateway: t.gateway,
     })),
   });
 
@@ -2861,7 +2924,6 @@ function RelatoriosView() {
 
   return (
     <div className="p-6 space-y-5">
-      {/* Header + Period Filter */}
       <div className="b24-view-header flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-xl font-bold text-white">Relatórios Financeiros</h1>
@@ -2874,7 +2936,6 @@ function RelatoriosView() {
           )}
         </div>
         <div className="flex items-center gap-3 flex-wrap">
-          {/* Period pills */}
           <div className="flex gap-1 bg-white/10 rounded-lg p-0.5">
             {PERIOD_OPTIONS.map((p) => (
               <button
@@ -2882,9 +2943,7 @@ function RelatoriosView() {
                 onClick={() => { setPeriod(p.key); if (p.key !== "custom") setDateRange({}); }}
                 className={cn(
                   "px-3 py-1.5 rounded-md text-xs font-medium transition-all",
-                  period === p.key
-                    ? "bg-white text-primary shadow-sm"
-                    : "text-white/70 hover:text-white hover:bg-white/10"
+                  period === p.key ? "bg-white text-primary shadow-sm" : "text-white/70 hover:text-white hover:bg-white/10"
                 )}
               >
                 {p.label}
@@ -2904,17 +2963,14 @@ function RelatoriosView() {
         </div>
       </div>
 
-      {/* Filters Row */}
       <div className="flex items-center gap-3 flex-wrap">
-        {/* Date Range Picker */}
         <Popover open={datePickerOpen} onOpenChange={setDatePickerOpen}>
           <PopoverTrigger asChild>
             <Button variant="outline" className={cn("h-8 text-xs gap-1.5 min-w-[180px] justify-start", period === "custom" && "border-primary")}>
               <CalendarIcon className="h-3.5 w-3.5" />
               {period === "custom" && dateRange.from
                 ? `${format(dateRange.from, "dd/MM/yyyy")}${dateRange.to ? ` - ${format(dateRange.to, "dd/MM/yyyy")}` : ""}`
-                : "Período personalizado"
-              }
+                : "Período personalizado"}
             </Button>
           </PopoverTrigger>
           <PopoverContent className="w-auto p-0" align="start">
@@ -2972,7 +3028,6 @@ function RelatoriosView() {
         </Select>
       </div>
 
-      {/* KPI Cards */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
         {[
           { label: "Total Cobrado", value: fmt(totalCharged), icon: DollarSign, bg: "bg-primary/10", color: "text-primary" },
@@ -2996,7 +3051,6 @@ function RelatoriosView() {
         ))}
       </div>
 
-      {/* Charts Row 1 */}
       <div className="grid grid-cols-2 gap-4">
         <Card className="b24-card">
           <CardHeader className="pb-2 pt-4 px-4">
@@ -3008,10 +3062,7 @@ function RelatoriosView() {
                 <CartesianGrid strokeDasharray="3 3" stroke={gridColor} />
                 <XAxis dataKey="month" tick={{ fill: textColor, fontSize: 10 }} />
                 <YAxis tick={{ fill: textColor, fontSize: 10 }} />
-                <RechartsTooltip
-                  contentStyle={{ backgroundColor: "#fff", border: "1px solid " + gridColor, borderRadius: 8, fontSize: 12 }}
-                  labelStyle={{ color: textColor }}
-                />
+                <RechartsTooltip contentStyle={{ backgroundColor: "#fff", border: "1px solid " + gridColor, borderRadius: 8, fontSize: 12 }} labelStyle={{ color: textColor }} />
                 <Legend wrapperStyle={{ fontSize: 11 }} />
                 <Bar dataKey="pago" name="Pago" fill={COLORS_STATUS.confirmed} radius={[4, 4, 0, 0]} />
                 <Bar dataKey="pendente" name="Pendente" fill={COLORS_STATUS.pending} radius={[4, 4, 0, 0]} />
@@ -3027,7 +3078,7 @@ function RelatoriosView() {
           <CardContent className="px-2 pb-3 flex items-center justify-center">
             <ResponsiveContainer width="100%" height={220}>
               <PieChart>
-                <Pie data={statusData} cx="50%" cy="50%" innerRadius={55} outerRadius={85} paddingAngle={3} dataKey="value" label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`} labelLine={false} style={{ fontSize: 11 }}>
+                <Pie data={statusData} cx="50%" cy="50%" innerRadius={55} outerRadius={85} paddingAngle={3} dataKey="value" label={({ name, percent }) => `${name} ${((percent || 0) * 100).toFixed(0)}%`} labelLine={false} style={{ fontSize: 11 }}>
                   {statusData.map((entry, i) => (
                     <Cell key={i} fill={entry.color} />
                   ))}
@@ -3039,7 +3090,6 @@ function RelatoriosView() {
         </Card>
       </div>
 
-      {/* Charts Row 2 */}
       <div className="grid grid-cols-2 gap-4">
         <Card className="b24-card">
           <CardHeader className="pb-2 pt-4 px-4">
@@ -3080,7 +3130,6 @@ function RelatoriosView() {
         </Card>
       </div>
 
-      {/* Seller / Responsible Report */}
       <div className="grid grid-cols-2 gap-4">
         <Card className="b24-card">
           <CardHeader className="pb-2 pt-4 px-4">
@@ -3145,7 +3194,6 @@ function RelatoriosView() {
         </Card>
       </div>
 
-      {/* Detailed Table */}
       <Card className="b24-card">
         <CardHeader className="pb-2 pt-4 px-4">
           <CardTitle className="text-sm">Transações Detalhadas</CardTitle>
@@ -3177,19 +3225,19 @@ function RelatoriosView() {
                   const statusLabel: Record<string, string> = { confirmed: "Pago", pending: "Pendente", overdue: "Atrasado" };
                   return (
                     <tr key={t.id} className="border-b border-border hover:bg-muted/30 transition-colors">
-                      <td className="px-4 py-2">{new Date(t.created_at).toLocaleDateString("pt-PT")}</td>
-                      <td className="px-4 py-2">{t.clients?.name || "—"}</td>
-                      <td className="px-4 py-2">{t.companies?.name || "—"}</td>
-                      <td className="px-4 py-2">{(t.metadata as any)?.responsible_name || "—"}</td>
+                      <td className="px-4 py-2">{new Date(t.paid_at || t.created_at).toLocaleDateString("pt-PT")}</td>
+                      <td className="px-4 py-2">{t.client_name || "—"}</td>
+                      <td className="px-4 py-2">{t.company_name || "—"}</td>
+                      <td className="px-4 py-2">{t.responsible_name || "—"}</td>
                       <td className="px-4 py-2 text-right font-medium">{fmt(Number(t.amount || 0))}</td>
-                      <td className="px-4 py-2">{t.payment_method}</td>
-                      <td className="px-4 py-2">{t.gateway}</td>
+                      <td className="px-4 py-2">{t.payment_method || "—"}</td>
+                      <td className="px-4 py-2">{t.gateway || "—"}</td>
                       <td className="px-4 py-2">
                         <span className={cn("px-2 py-0.5 rounded-full text-[10px] font-semibold", statusBadge[cls])}>
                           {statusLabel[cls]}
                         </span>
                       </td>
-                      <td className="px-4 py-2">{t.metadata?.due_date ? new Date(t.metadata.due_date).toLocaleDateString("pt-PT") : "—"}</td>
+                      <td className="px-4 py-2">{t.due_date ? new Date(t.due_date).toLocaleDateString("pt-PT") : "—"}</td>
                     </tr>
                   );
                 })}
