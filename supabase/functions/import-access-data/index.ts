@@ -568,6 +568,10 @@ serve(async (req) => {
               }
               for (const fr of (contract.financial_records || [])) {
                 fm.recordsCount++;
+                // Track if all records have bitrix IDs for synced status
+                if (!fr.bitrix24_deal_id || !fr.bitrix24_invoice_id) {
+                  fm.allRecordsHaveBitrixIds = false;
+                }
                 if (fr.status === "paga") {
                   fm.totalPaid += Number(fr.installment_value) || 0;
                 } else {
