@@ -3,7 +3,7 @@ import { Tables } from "@/integrations/supabase/types";
 import { Constants } from "@/integrations/supabase/types";
 import { LeadCard } from "./LeadCard";
 
-type Lead = Tables<"leads">;
+type Lead = Tables<"leads"> & { clients?: { name: string } | null };
 
 const stageLabels: Record<string, string> = {
   lead: "Lead", triagem: "Triagem", proposta: "Proposta", analise: "Análise",

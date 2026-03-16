@@ -125,7 +125,7 @@ function LeadSheetContent({ lead, onOpenChange, onEdit, onDelete, onMoveStage, o
     <Sheet open={true} onOpenChange={onOpenChange}>
       <SheetContent className="w-[400px] sm:w-[480px] overflow-y-auto">
         <SheetHeader>
-          <SheetTitle className="text-lg">{lead.name}</SheetTitle>
+          <SheetTitle className="text-lg">{lead.clients?.name || lead.name}</SheetTitle>
         </SheetHeader>
         <div className="mt-4 space-y-4">
           {/* SLA */}

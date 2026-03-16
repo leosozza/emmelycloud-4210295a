@@ -68,7 +68,7 @@ export function LeadCard({ lead, onClick }: LeadCardProps) {
       className="cursor-grab active:cursor-grabbing rounded-lg border bg-card p-3 space-y-2 shadow-sm hover:shadow-md transition-all opacity-100 [&[draggable=true]]:active:opacity-50"
     >
       <div className="flex items-start justify-between gap-1">
-        <span className="text-sm font-semibold text-card-foreground truncate">{lead.name}</span>
+        <span className="text-sm font-semibold text-card-foreground truncate">{lead.clients?.name || lead.name}</span>
         {lead.ai_score != null && lead.ai_score > 0 && (
           <Badge variant="outline" className="shrink-0 text-[10px]">
             AI {lead.ai_score}

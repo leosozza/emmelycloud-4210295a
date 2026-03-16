@@ -50,7 +50,7 @@ export function LeadListView({ leads, onLeadClick }: LeadListViewProps) {
           ) : (
             leads.map((lead) => (
               <TableRow key={lead.id} className="cursor-pointer" onClick={() => onLeadClick(lead)}>
-                <TableCell className="font-medium">{lead.name}</TableCell>
+                <TableCell className="font-medium">{lead.clients?.name || lead.name}</TableCell>
                 <TableCell>{originLabels[lead.origin] || lead.origin}</TableCell>
                 <TableCell>{lead.legal_area ? (legalAreaLabels[lead.legal_area] || lead.legal_area) : "—"}</TableCell>
                 <TableCell>

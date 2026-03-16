@@ -13,7 +13,7 @@ import { LeadSheet } from "@/components/leads/LeadSheet";
 import { PageHeader } from "@/components/PageHeader";
 import { useNavigate, useSearchParams } from "react-router-dom";
 
-type Lead = Tables<"leads">;
+type Lead = Tables<"leads"> & { clients?: { name: string } | null };
 
 const LeadsPage = () => {
   const [view, setView] = useState<"kanban" | "list">("kanban");
