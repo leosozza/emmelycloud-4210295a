@@ -885,70 +885,99 @@ serve(async (req) => {
       let contactId: string | null = null;
       let dealId: string | null = null;
 
-      // Lookup existing
-      if (info.access_id) {
-        const res = await bitrixCall("crm.deal.list", {
-          filter: { UF_CRM_1768312831: info.access_id },
-          select: ["ID", "CONTACT_ID"],
-        });
-        if (res.result?.length > 0) {
-          dealId = res.result[0].ID;
-          contactId = res.result[0].CONTACT_ID || null;
+      // Skip lookup entirely when force_create is set (Etapa B — new clients)
+      if (!force_create) {
+        // Lookup existing — with validation to reject false matches
+        // When Bitrix24 receives a filter with an unknown UF field, it ignores the filter
+        // and returns ALL records. We detect this by checking res.total > 5.
+        if (info.access_id) {
+          const res = await bitrixCall("crm.deal.list", {
+            filter: { UF_CRM_1768312831: info.access_id },
+            select: ["ID", "CONTACT_ID", "UF_CRM_1768312831"],
+          });
+          if (res.result?.length > 0 && (res.total || res.result.length) <= 5) {
+            // Cross-validate: check the returned field actually matches
+            const match = res.result[0];
+            if (match.UF_CRM_1768312831 === info.access_id || match.UF_CRM_1768312831 === String(info.access_id)) {
+              dealId = match.ID;
+              contactId = match.CONTACT_ID || null;
+              console.log(`[sync_single_client] Matched deal ${dealId} by access_id=${info.access_id}`);
+            } else {
+              console.warn(`[sync_single_client] access_id filter returned ${res.total} results but field mismatch — skipping (expected=${info.access_id}, got=${match.UF_CRM_1768312831})`);
+            }
+          } else if (res.result?.length > 0) {
+            console.warn(`[sync_single_client] access_id filter returned ${res.total} results — filter likely ignored, skipping`);
+          }
         }
-      }
-      if (!dealId && docNumber && !docNumber.startsWith("ACCESS_")) {
-        const res = await bitrixCall("crm.deal.list", {
-          filter: { UF_CRM_EMMELY_NIF: docNumber },
-          select: ["ID", "CONTACT_ID"],
-        });
-        if (res.result?.length > 0) {
-          dealId = res.result[0].ID;
-          contactId = res.result[0].CONTACT_ID || null;
+        if (!dealId && docNumber && !docNumber.startsWith("ACCESS_")) {
+          const res = await bitrixCall("crm.deal.list", {
+            filter: { UF_CRM_EMMELY_NIF: docNumber },
+            select: ["ID", "CONTACT_ID", "UF_CRM_EMMELY_NIF"],
+          });
+          if (res.result?.length > 0 && (res.total || res.result.length) <= 5) {
+            const match = res.result[0];
+            if (match.UF_CRM_EMMELY_NIF === docNumber) {
+              dealId = match.ID;
+              contactId = match.CONTACT_ID || null;
+              console.log(`[sync_single_client] Matched deal ${dealId} by NIF=${docNumber}`);
+            } else {
+              console.warn(`[sync_single_client] NIF filter returned field mismatch — skipping (expected=${docNumber}, got=${match.UF_CRM_EMMELY_NIF})`);
+            }
+          } else if (res.result?.length > 0) {
+            console.warn(`[sync_single_client] NIF filter returned ${res.total} results — filter likely ignored, skipping`);
+          }
         }
-      }
-      if (!dealId && phones.length > 0) {
-        for (const phone of phones) {
-          const contactRes = await bitrixCall("crm.contact.list", { filter: { PHONE: phone }, select: ["ID"] });
-          if (contactRes.result?.length > 0) {
-            const fid = contactRes.result[0].ID;
-            const dealRes = await bitrixCall("crm.deal.list", { filter: { CONTACT_ID: fid }, select: ["ID", "CONTACT_ID"] });
-            if (dealRes.result?.length > 0) {
-              dealId = dealRes.result[0].ID;
-              contactId = fid;
+        if (!dealId && phones.length > 0) {
+          for (const phone of phones) {
+            const contactRes = await bitrixCall("crm.contact.list", { filter: { PHONE: phone }, select: ["ID"] });
+            if (contactRes.result?.length > 0 && (contactRes.total || contactRes.result.length) <= 5) {
+              const fid = contactRes.result[0].ID;
+              const dealRes = await bitrixCall("crm.deal.list", { filter: { CONTACT_ID: fid }, select: ["ID", "CONTACT_ID"] });
+              if (dealRes.result?.length > 0) {
+                dealId = dealRes.result[0].ID;
+                contactId = fid;
+                console.log(`[sync_single_client] Matched deal ${dealId} by phone=${phone}, contact=${fid}`);
+                break;
+              }
+            }
+          }
+        }
+        // Lookup by email
+        if (!dealId && !contactId && emails.length > 0) {
+          for (const email of emails) {
+            const contactRes = await bitrixCall("crm.contact.list", { filter: { EMAIL: email }, select: ["ID"] });
+            if (contactRes.result?.length > 0 && (contactRes.total || contactRes.result.length) <= 5) {
+              contactId = contactRes.result[0].ID;
+              const dealRes = await bitrixCall("crm.deal.list", { filter: { CONTACT_ID: contactId }, select: ["ID", "CONTACT_ID"] });
+              if (dealRes.result?.length > 0) {
+                dealId = dealRes.result[0].ID;
+              }
+              console.log(`[sync_single_client] Matched by email=${email}, contact=${contactId}, deal=${dealId}`);
               break;
             }
           }
         }
-      }
-      // Lookup by email
-      if (!dealId && !contactId && emails.length > 0) {
-        for (const email of emails) {
-          const contactRes = await bitrixCall("crm.contact.list", { filter: { EMAIL: email }, select: ["ID"] });
-          if (contactRes.result?.length > 0) {
-            contactId = contactRes.result[0].ID;
-            const dealRes = await bitrixCall("crm.deal.list", { filter: { CONTACT_ID: contactId }, select: ["ID", "CONTACT_ID"] });
-            if (dealRes.result?.length > 0) {
-              dealId = dealRes.result[0].ID;
+        // Lookup by full name (only if name has 2+ words)
+        if (!dealId && !contactId && clientName && clientName !== "SEM NOME") {
+          const nameParts = clientName.trim().split(/\s+/);
+          if (nameParts.length >= 2) {
+            const firstName = nameParts[0] || "";
+            const lastName = nameParts.slice(1).join(" ") || "";
+            const nameFilter: Record<string, any> = { NAME: firstName };
+            if (lastName) nameFilter.LAST_NAME = lastName;
+            const contactRes = await bitrixCall("crm.contact.list", { filter: nameFilter, select: ["ID"] });
+            if (contactRes.result?.length > 0 && (contactRes.total || contactRes.result.length) <= 3) {
+              contactId = contactRes.result[0].ID;
+              const dealRes = await bitrixCall("crm.deal.list", { filter: { CONTACT_ID: contactId }, select: ["ID", "CONTACT_ID"] });
+              if (dealRes.result?.length > 0) {
+                dealId = dealRes.result[0].ID;
+              }
+              console.log(`[sync_single_client] Matched by name=${clientName}, contact=${contactId}, deal=${dealId}`);
             }
-            break;
           }
         }
-      }
-      // Lookup by full name
-      if (!dealId && !contactId && clientName && clientName !== "SEM NOME") {
-        const nameParts = clientName.trim().split(/\s+/);
-        const firstName = nameParts[0] || "";
-        const lastName = nameParts.slice(1).join(" ") || "";
-        const nameFilter: Record<string, any> = { NAME: firstName };
-        if (lastName) nameFilter.LAST_NAME = lastName;
-        const contactRes = await bitrixCall("crm.contact.list", { filter: nameFilter, select: ["ID"] });
-        if (contactRes.result?.length > 0) {
-          contactId = contactRes.result[0].ID;
-          const dealRes = await bitrixCall("crm.deal.list", { filter: { CONTACT_ID: contactId }, select: ["ID", "CONTACT_ID"] });
-          if (dealRes.result?.length > 0) {
-            dealId = dealRes.result[0].ID;
-          }
-        }
+      } else {
+        console.log(`[sync_single_client] force_create=true — skipping all lookups for ${clientName}`);
       }
 
       const results: string[] = [];
