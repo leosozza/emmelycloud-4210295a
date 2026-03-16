@@ -28,44 +28,50 @@ Deno.serve(async (req) => {
         return new Response(JSON.stringify({ error: "Token obrigatório" }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
       }
 
-      const { data: contract, error } = await supabase
-        .from("contracts")
-        .select("id, status, starts_at, expires_at, signer_name, signer_email, signer_phone, file_url, proposal_id, sign_token")
+      // Search in proposals (unified table)
+      const { data: proposal, error } = await supabase
+        .from("proposals")
+        .select("id, status, contract_status, starts_at, expires_at, signer_name, signer_email, signer_phone, file_url, title, value, description, sign_token, case_id")
         .eq("sign_token", token)
         .single();
 
-      if (error || !contract) {
+      if (error || !proposal) {
         return new Response(JSON.stringify({ error: "Contrato não encontrado" }), { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } });
       }
-
-      // Get proposal title and value
-      const { data: proposal } = await supabase
-        .from("proposals")
-        .select("title, value, description")
-        .eq("id", contract.proposal_id)
-        .single();
 
       // Check if already signed
       const { data: existingSignature } = await supabase
         .from("digital_signatures")
         .select("id, signature_method, signed_at, evidence_hash")
-        .eq("contract_id", contract.id)
+        .eq("proposal_id", proposal.id)
         .limit(1)
         .maybeSingle();
 
+      // Also check legacy contract_id based signatures
+      let legacySignature = existingSignature;
+      if (!legacySignature) {
+        const { data: legacySig } = await supabase
+          .from("digital_signatures")
+          .select("id, signature_method, signed_at, evidence_hash")
+          .eq("contract_id", proposal.id)
+          .limit(1)
+          .maybeSingle();
+        legacySignature = legacySig;
+      }
+
       return new Response(JSON.stringify({
         contract: {
-          id: contract.id,
-          status: contract.status,
-          starts_at: contract.starts_at,
-          expires_at: contract.expires_at,
-          signer_name: contract.signer_name,
-          signer_email: contract.signer_email,
-          signer_phone: contract.signer_phone,
-          file_url: contract.file_url,
+          id: proposal.id,
+          status: proposal.contract_status || "pendente",
+          starts_at: proposal.starts_at,
+          expires_at: proposal.expires_at,
+          signer_name: proposal.signer_name,
+          signer_email: proposal.signer_email,
+          signer_phone: proposal.signer_phone,
+          file_url: proposal.file_url,
         },
-        proposal: proposal ? { title: proposal.title, value: proposal.value, description: proposal.description } : null,
-        signature: existingSignature,
+        proposal: { title: proposal.title, value: proposal.value, description: proposal.description },
+        signature: legacySignature,
       }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
@@ -77,18 +83,18 @@ Deno.serve(async (req) => {
         return new Response(JSON.stringify({ error: "Token e método obrigatórios" }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
       }
 
-      // Find contract
-      const { data: contract, error: contractError } = await supabase
-        .from("contracts")
-        .select("id, status, case_id, proposal_id")
+      // Find proposal by sign_token
+      const { data: proposal, error: proposalError } = await supabase
+        .from("proposals")
+        .select("id, contract_status, case_id")
         .eq("sign_token", token)
         .single();
 
-      if (contractError || !contract) {
+      if (proposalError || !proposal) {
         return new Response(JSON.stringify({ error: "Contrato não encontrado" }), { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } });
       }
 
-      if (contract.status !== "pendente") {
+      if (proposal.contract_status !== "pendente") {
         return new Response(JSON.stringify({ error: "Contrato já não está pendente" }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
       }
 
@@ -105,7 +111,7 @@ Deno.serve(async (req) => {
         const base64Data = signature_data.replace(/^data:image\/\w+;base64,/, "");
         const binaryData = Uint8Array.from(atob(base64Data), c => c.charCodeAt(0));
         const ext = method === "selfie" ? "jpg" : "png";
-        const filePath = `${contract.id}/${method}_${Date.now()}.${ext}`;
+        const filePath = `${proposal.id}/${method}_${Date.now()}.${ext}`;
 
         const { error: uploadError } = await supabase.storage
           .from("signatures")
@@ -117,11 +123,12 @@ Deno.serve(async (req) => {
         }
       }
 
-      // Insert digital signature
+      // Insert digital signature (with proposal_id)
       const { data: signature, error: sigError } = await supabase
         .from("digital_signatures")
         .insert({
-          contract_id: contract.id,
+          contract_id: proposal.id, // keep for backward compat (will be ignored if FK fails)
+          proposal_id: proposal.id,
           signer_name: signer_name || "Signatário",
           signer_email,
           signer_phone,
@@ -139,20 +146,52 @@ Deno.serve(async (req) => {
         .single();
 
       if (sigError) {
-        return new Response(JSON.stringify({ error: "Erro ao registar assinatura", details: sigError.message }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        // Retry without contract_id if FK fails
+        const { data: sig2, error: sig2Err } = await supabase
+          .from("digital_signatures")
+          .insert({
+            proposal_id: proposal.id,
+            contract_id: proposal.id,
+            signer_name: signer_name || "Signatário",
+            signer_email,
+            signer_phone,
+            signer_document,
+            signature_method: method,
+            signature_image_url: signatureImageUrl,
+            ip_address: ip,
+            user_agent: userAgent,
+            device_info: { platform: req.headers.get("sec-ch-ua-platform"), mobile: req.headers.get("sec-ch-ua-mobile") },
+            geolocation: geolocation || null,
+            evidence_hash: evidenceHash,
+            signed_at: signedAt,
+          })
+          .select("id")
+          .single();
+
+        if (sig2Err) {
+          return new Response(JSON.stringify({ error: "Erro ao registar assinatura", details: sig2Err.message }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        }
       }
 
-      // Update contract status
+      const sigId = signature?.id;
+
+      // Update proposal contract_status
+      await supabase.from("proposals").update({
+        contract_status: "assinado",
+        signed_at: signedAt,
+      }).eq("id", proposal.id);
+
+      // Also update legacy contract if exists
       await supabase.from("contracts").update({
         status: "assinado",
         signed_at: signedAt,
-      }).eq("id", contract.id);
+      }).eq("proposal_id", proposal.id);
 
       // Update case and lead
-      if (contract.case_id) {
-        await supabase.from("cases").update({ status: "em_andamento" }).eq("id", contract.case_id);
+      if (proposal.case_id) {
+        await supabase.from("cases").update({ status: "em_andamento" }).eq("id", proposal.case_id);
 
-        const { data: linkedCase } = await supabase.from("cases").select("lead_id").eq("id", contract.case_id).single();
+        const { data: linkedCase } = await supabase.from("cases").select("lead_id").eq("id", proposal.case_id).single();
         if (linkedCase?.lead_id) {
           await supabase.from("leads").update({ funnel_stage: "fechado" }).eq("id", linkedCase.lead_id);
         }
@@ -160,10 +199,9 @@ Deno.serve(async (req) => {
 
       // --- Bitrix24 Badge: emmely_contract_signed ---
       try {
-        // Find deal via case -> lead -> bitrix24_id
         let bitrixDealId: string | null = null;
-        if (contract.case_id) {
-          const { data: linkedCase } = await supabase.from("cases").select("lead_id").eq("id", contract.case_id).single();
+        if (proposal.case_id) {
+          const { data: linkedCase } = await supabase.from("cases").select("lead_id").eq("id", proposal.case_id).single();
           if (linkedCase?.lead_id) {
             const { data: lead } = await supabase.from("leads").select("bitrix24_id").eq("id", linkedCase.lead_id).single();
             bitrixDealId = lead?.bitrix24_id || null;
@@ -208,7 +246,7 @@ Deno.serve(async (req) => {
 
       return new Response(JSON.stringify({
         success: true,
-        signature_id: signature.id,
+        signature_id: sigId,
         evidence_hash: evidenceHash,
         signed_at: signedAt,
         ip_address: ip,

@@ -74,11 +74,11 @@ export function useDashboardKPIs() {
         .select("*", { count: "exact", head: true })
         .in("status", ["aberto", "em_andamento", "pendente_docs"]);
 
-      // Pending contracts
+      // Pending contracts (from unified proposals table)
       const { count: pendingContracts } = await supabase
-        .from("contracts")
+        .from("proposals")
         .select("*", { count: "exact", head: true })
-        .eq("status", "pendente");
+        .eq("contract_status", "pendente");
 
       const leadsChange = leadsPrev ? Math.round(((leadsNew || 0) - leadsPrev) / leadsPrev * 100) : 0;
       const revenueChange = revenueLastMonth ? Math.round((revenueThisMonth - revenueLastMonth) / revenueLastMonth * 100) : 0;
@@ -127,19 +127,31 @@ export function useRevenueByArea() {
       const { data: cases } = await supabase.from("cases").select("id, legal_area");
       const caseAreaMap = Object.fromEntries((cases || []).map((c) => [c.id, c.legal_area]));
 
-      // Get contracts linked to cases
-      const { data: contracts } = await supabase.from("contracts").select("id, case_id");
-      const contractCaseMap = Object.fromEntries((contracts || []).map((c) => [c.id, c.case_id]));
-
-      // Get paid financial records
+      // Get paid financial records with proposal_id
       const { data: records } = await supabase
         .from("financial_records")
-        .select("contract_id, total_value")
+        .select("proposal_id, contract_id, total_value")
         .eq("status", "paga");
+
+      // Get proposals with case_id for mapping
+      const proposalIds = [...new Set((records || []).filter((r) => r.proposal_id).map((r) => r.proposal_id!))];
+      const contractIds = [...new Set((records || []).filter((r) => !r.proposal_id && r.contract_id).map((r) => r.contract_id!))];
+      
+      const proposalCaseMap: Record<string, string> = {};
+      if (proposalIds.length > 0) {
+        const { data: props } = await supabase.from("proposals").select("id, case_id").in("id", proposalIds.slice(0, 100));
+        (props || []).forEach((p) => { if (p.case_id) proposalCaseMap[p.id] = p.case_id; });
+      }
+      // Legacy fallback via contracts
+      if (contractIds.length > 0) {
+        const { data: contracts } = await supabase.from("contracts").select("id, case_id").in("id", contractIds.slice(0, 100));
+        (contracts || []).forEach((c) => { if (c.case_id) proposalCaseMap[c.id] = c.case_id; });
+      }
 
       const areaRevenue: Record<string, number> = {};
       (records || []).forEach((r) => {
-        const caseId = contractCaseMap[r.contract_id];
+        const lookupId = r.proposal_id || r.contract_id;
+        const caseId = lookupId ? proposalCaseMap[lookupId] : null;
         const area = caseId ? caseAreaMap[caseId] || "outro" : "outro";
         areaRevenue[area] = (areaRevenue[area] || 0) + Number(r.total_value);
       });

@@ -1,100 +1,104 @@
 
 
-## Plano: Fase 3 — Migração e Unificação proposals + contracts
+## Revisão Arquitetural — Fase 2 Implementada
 
-### Contexto
-A tabela `contracts` será absorvida pela tabela `proposals`. Todos os ficheiros que referenciam `contracts` precisam ser actualizados. A tabela `contracts` será mantida temporariamente (backward compat) mas todo o código passará a usar `proposals`.
+### Mudanças realizadas (Fase 2)
 
-### 1. Migração SQL
+#### 1. Código morto eliminado
+- `chatbot-reply/index.ts` — **removido** (100% duplicado com flow-engine → ai-process-message)
+- `ai-triage/index.ts` — **removido** (100% duplicado com ai-automation-agent action classify_lead)
 
-Adicionar colunas de contrato à tabela `proposals`, migrar dados existentes, e redirecionar FKs:
+#### 2. Janela de contexto expandida
+- `RECENT_MSG_COUNT`: 5 → **15** mensagens recentes completas
+- `HISTORY_LIMIT`: 15 → **30** mensagens totais
+- TOON comprime as 15 mais antigas, mantém as 15 recentes intactas
 
-```sql
--- Adicionar campos de contrato à proposals
-ALTER TABLE public.proposals
-  ADD COLUMN IF NOT EXISTS contract_status text DEFAULT NULL,
-  ADD COLUMN IF NOT EXISTS file_url text,
-  ADD COLUMN IF NOT EXISTS starts_at timestamptz,
-  ADD COLUMN IF NOT EXISTS expires_at timestamptz,
-  ADD COLUMN IF NOT EXISTS signed_at timestamptz,
-  ADD COLUMN IF NOT EXISTS sign_token uuid DEFAULT gen_random_uuid(),
-  ADD COLUMN IF NOT EXISTS signer_name text,
-  ADD COLUMN IF NOT EXISTS signer_email text,
-  ADD COLUMN IF NOT EXISTS signer_phone text,
-  ADD COLUMN IF NOT EXISTS contract_notes text,
-  ADD COLUMN IF NOT EXISTS cancelled_at timestamptz,
-  ADD COLUMN IF NOT EXISTS cancel_reason text,
-  ADD COLUMN IF NOT EXISTS refund_amount numeric;
+#### 3. RAG semântico real (pgvector)
+- Edge function `generate-embeddings` criada — gera embeddings de 768 dimensões via Lovable AI
+- `parse-document` agora chama `generate-embeddings` automaticamente após chunking
+- `ai-process-message` usa `match_chunks()` RPC para busca semântica (threshold 0.5)
+- Fallback para keyword scoring quando embeddings não existem
 
--- Migrar dados de contracts para proposals
-UPDATE public.proposals p SET
-  contract_status = c.status::text,
-  file_url = c.file_url,
-  starts_at = c.starts_at,
-  expires_at = c.expires_at,
-  signed_at = c.signed_at,
-  sign_token = c.sign_token,
-  signer_name = c.signer_name,
-  signer_email = c.signer_email,
-  signer_phone = c.signer_phone,
-  contract_notes = c.notes,
-  cancelled_at = c.cancelled_at,
-  cancel_reason = c.cancel_reason,
-  refund_amount = c.refund_amount
-FROM public.contracts c WHERE c.proposal_id = p.id;
+#### 4. Router multi-agente
+- Quando agente tem `sub_agent_ids`, classifica intenção via IA rápida (flash-lite)
+- Delega para sub-agente especialista com seu próprio prompt e KB
+- Mantém agente activo em `bot_state.active_sub_agent_id` para consistência
 
--- Redirecionar financial_records para proposals
-ALTER TABLE public.financial_records ADD COLUMN IF NOT EXISTS proposal_id uuid REFERENCES proposals(id);
-UPDATE public.financial_records fr SET proposal_id = c.proposal_id FROM public.contracts c WHERE fr.contract_id = c.id;
+#### 5. Self-evaluation / Reflexão
+- Após gerar resposta, avalia qualidade via flash-lite (score 1-10)
+- Se score < 7, regenera com instrução de correcção (máximo 1 retry)
+- Respostas < 50 chars ignoram avaliação
 
--- Redirecionar digital_signatures para proposals
-ALTER TABLE public.digital_signatures ADD COLUMN IF NOT EXISTS proposal_id uuid REFERENCES proposals(id);
-UPDATE public.digital_signatures ds SET proposal_id = c.proposal_id FROM public.contracts c WHERE ds.contract_id = c.id;
+#### 6. Sentiment analysis + Auto-escalação
+- Análise de sentimento via heurística + IA
+- 2x frustração consecutiva → auto-transfere para humano
+- Guarda sentiment em `bot_state.last_sentiment`
+- Regista escalação em `conversation_feedback`
 
--- Índices
-CREATE INDEX IF NOT EXISTS idx_fr_proposal_id ON public.financial_records(proposal_id) WHERE proposal_id IS NOT NULL;
-CREATE INDEX IF NOT EXISTS idx_ds_proposal_id ON public.digital_signatures(proposal_id) WHERE proposal_id IS NOT NULL;
-CREATE INDEX IF NOT EXISTS idx_proposals_sign_token ON public.proposals(sign_token) WHERE sign_token IS NOT NULL;
-```
+#### 7. Tools dinâmicas expandidas
+- Novas tools: `search_knowledge`, `get_case_status`, `send_payment_link`
+- Tools desconhecidas verificam `tool_parameters.webhook_url` para chamada webhook genérica
+- Registry pattern: tools são lidas de `agent_tools` table
 
-**Nota:** A tabela `contracts` NÃO será eliminada agora para manter backward compat. O código é que deixa de a usar.
+#### 8. Queue worker auto-trigger
+- Trigger PostgreSQL `AFTER INSERT ON message_queue` chama `pg_net.http_post()` para queue-worker
+- Cron backup via `pg_cron` a cada minuto
 
-### 2. Frontend — Ficheiros alterados
+#### 9. Melhorias de robustez no sendReply
+- `Promise.allSettled` para operações paralelas (save message + update conversation)
+- Error logging real em vez de fire-and-forget silencioso para message-send e bitrix24-send
+- Extração de memória com tolerância `count % 10 > 1` (mais robusto que `=== 0`)
 
-| Ficheiro | Alteração |
-|----------|-----------|
-| `src/pages/Contratos.tsx` | Reescrever para usar `proposals` (filtro por `contract_status IS NOT NULL`) |
-| `src/components/contratos/ContratoForm.tsx` | Usar `proposals` em vez de `contracts` |
-| `src/pages/SignContract.tsx` | `sign-contract` edge fn já retorna dados — frontend mantém-se quase igual |
-| `src/components/AppSidebar.tsx` | Manter link "Contratos" (agora filtra proposals com contract_status) |
-| `src/hooks/useDashboardData.ts` | `pendingContracts` → query `proposals` com `contract_status = 'pendente'` |
-| `src/hooks/useFinancialDashboard.ts` | Receita por área: `financial_records.proposal_id → proposals.case_id` (eliminar salto via contracts) |
+### Mudanças realizadas (Fase 2.1 — Consolidação Completa)
 
-### 3. Backend — Edge Functions alteradas
+#### Código morto eliminado
+- `chatbot-reply/index.ts` e `ai-triage/index.ts` — diretórios removidos, referências limpas em `config.toml`, `ApiDocs.tsx` e `bitrix24-worker.ts`
+- ApiDocs actualizado para documentar `ai-process-message` em vez de `chatbot-reply`
 
-| Ficheiro | Alteração |
-|----------|-----------|
-| `supabase/functions/proposal-accept/index.ts` | Em vez de `contracts.insert`, faz `proposals.update` com `contract_status: 'pendente'` |
-| `supabase/functions/sign-contract/index.ts` | Buscar por `proposals.sign_token`, usar `proposals` em vez de `contracts` |
-| `supabase/functions/signature-certificate/index.ts` | Buscar de `proposals` com `sign_token` ou `id` |
-| `supabase/functions/payment-reminder/index.ts` | Usar `proposal_id` em vez de `contract_id → proposal_id` |
-| `supabase/functions/import-access-data/index.ts` | Eliminar criação de contracts; usar `proposals` directamente com `contract_status` |
-| `src/pages/Bitrix24App.tsx` | Actualizar referências a `contracts` para usar `proposals` com `contract_status` |
+#### Sintaxe corrigida
+- `parse-document/index.ts` — corrigida função `extractWithAI` que estava erroneamente aninhada dentro de `findFileInZip`
 
-### 4. Fluxo actualizado
+#### Config.toml actualizado
+- Removidas entradas `ai-triage` e `chatbot-reply`
+- Adicionadas entradas para `generate-embeddings`, `parse-document` e `queue-worker`
 
-```text
-Proposta criada (status: rascunho)
-  → Enviada (status: enviada)
-  → Aceita (status: aceita, contract_status: pendente, sign_token gerado)
-  → Assinada (contract_status: assinado, signed_at preenchido)
-  → Cancelada (contract_status: cancelado, cancel_reason, cancelled_at)
-```
+#### Triggers PostgreSQL criados
+- `on_message_queue_insert` → auto-invoca `queue-worker` via `pg_net`
+- `on_lead_created` → notifica comerciais e admins
+- `on_message_created` → notifica de novas mensagens inbound
+- `on_payment_status_change` → notifica pagamentos recebidos
+- `on_lead_sla_check` → alerta SLA a expirar
+- `on_lead_set_sla` → define SLA automático na criação
+- `on_profile_created` → atribui admin ao primeiro utilizador
+- Cron job `queue-worker-backup` — invoca queue-worker a cada minuto
 
-### Complexidade e Risco
-- **Alto**: `import-access-data` e `Bitrix24App.tsx` têm lógica extensa com contracts
-- **Médio**: Edge functions de assinatura
-- **Baixo**: Dashboard hooks, sidebar
+### Estado actual — 8/8 melhorias implementadas ✅
+1. ✅ Código morto eliminado (chatbot-reply + ai-triage)
+2. ✅ Contexto expandido (30 mensagens: 15 recentes + 15 comprimidas TOON)
+3. ✅ RAG semântico (pgvector + match_chunks + generate-embeddings)
+4. ✅ Router multi-agente (sub_agent_ids + classificação de intenção)
+5. ✅ Tools dinâmicas (registry pattern + webhook fallback)
+6. ✅ Reflexão/Auto-avaliação (score 1-10, retry se < 7)
+7. ✅ Sentiment analysis + auto-escalação (2x frustração → humano)
+8. ✅ Queue worker auto-trigger (pg_trigger + pg_cron backup)
 
-Recomendo implementar por partes: primeiro a migração SQL + edge functions core, depois o frontend.
+### Mudanças realizadas (Fase 3 — Auditoria Arquitetural)
 
+#### 1. Dashboard de Observabilidade IA
+- Nova página `/observabilidade-ia` com KPIs: requisições, tokens, custo estimado, latência média, taxa fallback, taxa erro, rating feedback
+- Hook `useAiObservability.ts` com agregação de dados
+
+#### 2. Thumbs up/down no chat de atendimento
+- Botões de feedback em mensagens outbound (bot) no painel de atendimento
+
+#### 3. Retry com backoff no AI gateway (429/502/503, 2s delay, 1 retry)
+
+#### 4. Cost estimation real (tabela de preços por modelo, cálculo automático)
+
+#### 5. Memory extraction melhorada (cada 15 msgs + em transferência humana)
+
+#### 6. Reorganização do monólito (constantes extraídas, secções delimitadas)
+
+### Próximos passos
+- Batch job para gerar embeddings dos chunks existentes
+- Streaming no PlaygroundIA

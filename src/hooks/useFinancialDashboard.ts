@@ -38,7 +38,7 @@ export function useFinancialDashboard(startDate: string, endDate: string) {
       // Paid records: filter by paid_at
       const { data: paidRecords } = await supabase
         .from("financial_records")
-        .select("id, installment_value, status, paid_at, due_date, contract_id, payment_method, created_at")
+        .select("id, installment_value, status, paid_at, due_date, contract_id, payment_method, created_at, proposal_id")
         .eq("status", "paga")
         .gte("paid_at", startDate)
         .lte("paid_at", endDate);
@@ -46,7 +46,7 @@ export function useFinancialDashboard(startDate: string, endDate: string) {
       // Pending records: filter by due_date
       const { data: pendingRecords } = await supabase
         .from("financial_records")
-        .select("id, installment_value, status, paid_at, due_date, contract_id, payment_method, created_at")
+        .select("id, installment_value, status, paid_at, due_date, contract_id, payment_method, created_at, proposal_id")
         .eq("status", "pendente")
         .gte("due_date", startDateOnly)
         .lte("due_date", endDateOnly);
@@ -54,7 +54,7 @@ export function useFinancialDashboard(startDate: string, endDate: string) {
       // Overdue records: due_date up to endDate
       const { data: overdueRecords } = await supabase
         .from("financial_records")
-        .select("id, installment_value, status, paid_at, due_date, contract_id, payment_method, created_at")
+        .select("id, installment_value, status, paid_at, due_date, contract_id, payment_method, created_at, proposal_id")
         .eq("status", "atrasada")
         .lte("due_date", endDateOnly);
 
@@ -88,17 +88,28 @@ export function useFinancialDashboard(startDate: string, endDate: string) {
 
       const totalOverdue = agingBuckets.reduce((s, b) => s + b.amount, 0);
 
-      // Revenue by legal area via contracts → cases
-      const contractIds = [...new Set(confirmed.filter((t) => t.contract_id).map((t) => t.contract_id!))];
+      // Revenue by legal area via proposals (unified) → cases
+      const proposalIds = [...new Set(confirmed.filter((t) => t.proposal_id || t.contract_id).map((t) => (t as any).proposal_id || t.contract_id!))];
       const revenueByArea: RevenueByArea[] = [];
 
-      if (contractIds.length > 0) {
-        const { data: contracts } = await supabase
+      if (proposalIds.length > 0) {
+        // Try proposals first
+        const { data: proposals } = await supabase
+          .from("proposals")
+          .select("id, case_id")
+          .in("id", proposalIds.slice(0, 100));
+
+        // Fallback: also check contracts for legacy records
+        const { data: legacyContracts } = await supabase
           .from("contracts")
           .select("id, case_id")
-          .in("id", contractIds.slice(0, 100));
+          .in("id", proposalIds.slice(0, 100));
 
-        const caseIds = [...new Set((contracts || []).filter((c) => c.case_id).map((c) => c.case_id!))];
+        const idToCaseMap = new Map<string, string>();
+        (proposals || []).forEach((p) => { if (p.case_id) idToCaseMap.set(p.id, p.case_id); });
+        (legacyContracts || []).forEach((c) => { if (c.case_id && !idToCaseMap.has(c.id)) idToCaseMap.set(c.id, c.case_id); });
+
+        const caseIds = [...new Set(Array.from(idToCaseMap.values()))];
         if (caseIds.length > 0) {
           const { data: cases } = await supabase
             .from("cases")
@@ -106,12 +117,12 @@ export function useFinancialDashboard(startDate: string, endDate: string) {
             .in("id", caseIds.slice(0, 100));
 
           const caseMap = new Map((cases || []).map((c) => [c.id, c.legal_area]));
-          const contractCaseMap = new Map((contracts || []).map((c) => [c.id, c.case_id]));
 
           const areaAmounts: Record<string, number> = {};
           confirmed.forEach((t) => {
-            if (!t.contract_id) return;
-            const caseId = contractCaseMap.get(t.contract_id);
+            const lookupId = (t as any).proposal_id || t.contract_id;
+            if (!lookupId) return;
+            const caseId = idToCaseMap.get(lookupId);
             const area = caseId ? caseMap.get(caseId) || "outro" : "outro";
             areaAmounts[area] = (areaAmounts[area] || 0) + Number(t.installment_value || 0);
           });

@@ -56,21 +56,23 @@ Deno.serve(async (req) => {
       throw new Error("Proposta expirada");
     }
 
-    // 1. Update proposal status with legal evidence
+    // 1. Update proposal status with legal evidence + contract_status
     const { error: upErr } = await supabase.from("proposals").update({
       status: "aceita",
       accepted_at: new Date().toISOString(),
       accepted_ip: clientIp,
       accepted_user_agent: userAgent,
+      contract_status: "pendente",
+      sign_token: proposal.sign_token || crypto.randomUUID(),
     }).eq("id", proposal.id);
     if (upErr) throw upErr;
 
-    // 2. Create contract
+    // 2. Also create a contract record for backward compat
     const { error: contractErr } = await supabase.from("contracts").insert({
       proposal_id: proposal.id,
       case_id: proposal.case_id,
     });
-    if (contractErr) console.error("[PROPOSAL-ACCEPT] Contract creation error:", contractErr);
+    if (contractErr) console.error("[PROPOSAL-ACCEPT] Contract creation (compat) error:", contractErr);
 
     // 3. Get case data for lead update and attorney notification
     const { data: caseData } = await supabase
@@ -91,7 +93,6 @@ Deno.serve(async (req) => {
     try {
       const notifyUserIds = new Set<string>();
 
-      // Add assigned attorney (via profiles to get user_id)
       if (caseData?.assigned_attorney_id) {
         const { data: attorneyProfile } = await supabase
           .from("profiles")
@@ -103,7 +104,6 @@ Deno.serve(async (req) => {
         }
       }
 
-      // Add all admins
       const { data: adminRoles } = await supabase
         .from("user_roles")
         .select("user_id")
@@ -127,7 +127,7 @@ Deno.serve(async (req) => {
       console.error("[PROPOSAL-ACCEPT] Notification error:", notifErr);
     }
 
-    // 6. Attempt to notify client via existing conversation (WhatsApp/Instagram)
+    // 6. Attempt to notify client via existing conversation
     try {
       if (caseData?.lead_id) {
         const { data: lead } = await supabase
