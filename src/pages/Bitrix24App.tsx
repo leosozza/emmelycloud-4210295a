@@ -5286,7 +5286,7 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
 
   // Enrich Bitrix contacts
   const [enriching, setEnriching] = useState(false);
-  const [enrichProgress, setEnrichProgress] = useState({ processed: 0, total: 0, updated: 0, notFound: 0, skipped: 0 });
+  const [enrichProgress, setEnrichProgress] = useState({ processed: 0, total: 0, updated: 0, notFound: 0, skipped: 0, contactsCreated: 0 });
   const [enrichDone, setEnrichDone] = useState(false);
 
   // Filter states (Phase 2 only)
