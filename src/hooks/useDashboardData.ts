@@ -74,11 +74,11 @@ export function useDashboardKPIs() {
         .select("*", { count: "exact", head: true })
         .in("status", ["aberto", "em_andamento", "pendente_docs"]);
 
-      // Pending contracts
+      // Pending contracts (from unified proposals table)
       const { count: pendingContracts } = await supabase
-        .from("contracts")
+        .from("proposals")
         .select("*", { count: "exact", head: true })
-        .eq("status", "pendente");
+        .eq("contract_status", "pendente");
 
       const leadsChange = leadsPrev ? Math.round(((leadsNew || 0) - leadsPrev) / leadsPrev * 100) : 0;
       const revenueChange = revenueLastMonth ? Math.round((revenueThisMonth - revenueLastMonth) / revenueLastMonth * 100) : 0;
