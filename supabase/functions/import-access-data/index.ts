@@ -324,6 +324,7 @@ serve(async (req) => {
       client_id,
       actions,
       overrides,
+      force_create = false,
     } = body as {
       clientes: RawClient[];
       honorarios?: RawHonorario[];
@@ -335,6 +336,7 @@ serve(async (req) => {
       client_id?: string;
       actions?: { contact?: boolean; deal?: boolean; invoices?: boolean };
       overrides?: { name?: string; phone?: string; nif?: string };
+      force_create?: boolean;
     };
 
     // ══════════════════════════════════════════════════════════════════
@@ -426,6 +428,8 @@ serve(async (req) => {
       let statusClass = "aberto";
       if (allRecords.length > 0 && allPaid) statusClass = "quitado";
       else if (hasOverdue) statusClass = "atrasado";
+
+      console.log(`[fetchClientWithFinancials] client=${client.name} records=${allRecords.length} allPaid=${allPaid} hasOverdue=${hasOverdue} statusClass=${statusClass} totalValue=${totalValue} totalPaid=${totalPaid}`);
 
       const accessId = client.id_access || ((client.notes || "").match(/ID:\s*(\d+)/) || [])[1] || null;
 
@@ -881,70 +885,99 @@ serve(async (req) => {
       let contactId: string | null = null;
       let dealId: string | null = null;
 
-      // Lookup existing
-      if (info.access_id) {
-        const res = await bitrixCall("crm.deal.list", {
-          filter: { UF_CRM_1768312831: info.access_id },
-          select: ["ID", "CONTACT_ID"],
-        });
-        if (res.result?.length > 0) {
-          dealId = res.result[0].ID;
-          contactId = res.result[0].CONTACT_ID || null;
+      // Skip lookup entirely when force_create is set (Etapa B — new clients)
+      if (!force_create) {
+        // Lookup existing — with validation to reject false matches
+        // When Bitrix24 receives a filter with an unknown UF field, it ignores the filter
+        // and returns ALL records. We detect this by checking res.total > 5.
+        if (info.access_id) {
+          const res = await bitrixCall("crm.deal.list", {
+            filter: { UF_CRM_1768312831: info.access_id },
+            select: ["ID", "CONTACT_ID", "UF_CRM_1768312831"],
+          });
+          if (res.result?.length > 0 && (res.total || res.result.length) <= 5) {
+            // Cross-validate: check the returned field actually matches
+            const match = res.result[0];
+            if (match.UF_CRM_1768312831 === info.access_id || match.UF_CRM_1768312831 === String(info.access_id)) {
+              dealId = match.ID;
+              contactId = match.CONTACT_ID || null;
+              console.log(`[sync_single_client] Matched deal ${dealId} by access_id=${info.access_id}`);
+            } else {
+              console.warn(`[sync_single_client] access_id filter returned ${res.total} results but field mismatch — skipping (expected=${info.access_id}, got=${match.UF_CRM_1768312831})`);
+            }
+          } else if (res.result?.length > 0) {
+            console.warn(`[sync_single_client] access_id filter returned ${res.total} results — filter likely ignored, skipping`);
+          }
         }
-      }
-      if (!dealId && docNumber && !docNumber.startsWith("ACCESS_")) {
-        const res = await bitrixCall("crm.deal.list", {
-          filter: { UF_CRM_EMMELY_NIF: docNumber },
-          select: ["ID", "CONTACT_ID"],
-        });
-        if (res.result?.length > 0) {
-          dealId = res.result[0].ID;
-          contactId = res.result[0].CONTACT_ID || null;
+        if (!dealId && docNumber && !docNumber.startsWith("ACCESS_")) {
+          const res = await bitrixCall("crm.deal.list", {
+            filter: { UF_CRM_EMMELY_NIF: docNumber },
+            select: ["ID", "CONTACT_ID", "UF_CRM_EMMELY_NIF"],
+          });
+          if (res.result?.length > 0 && (res.total || res.result.length) <= 5) {
+            const match = res.result[0];
+            if (match.UF_CRM_EMMELY_NIF === docNumber) {
+              dealId = match.ID;
+              contactId = match.CONTACT_ID || null;
+              console.log(`[sync_single_client] Matched deal ${dealId} by NIF=${docNumber}`);
+            } else {
+              console.warn(`[sync_single_client] NIF filter returned field mismatch — skipping (expected=${docNumber}, got=${match.UF_CRM_EMMELY_NIF})`);
+            }
+          } else if (res.result?.length > 0) {
+            console.warn(`[sync_single_client] NIF filter returned ${res.total} results — filter likely ignored, skipping`);
+          }
         }
-      }
-      if (!dealId && phones.length > 0) {
-        for (const phone of phones) {
-          const contactRes = await bitrixCall("crm.contact.list", { filter: { PHONE: phone }, select: ["ID"] });
-          if (contactRes.result?.length > 0) {
-            const fid = contactRes.result[0].ID;
-            const dealRes = await bitrixCall("crm.deal.list", { filter: { CONTACT_ID: fid }, select: ["ID", "CONTACT_ID"] });
-            if (dealRes.result?.length > 0) {
-              dealId = dealRes.result[0].ID;
-              contactId = fid;
+        if (!dealId && phones.length > 0) {
+          for (const phone of phones) {
+            const contactRes = await bitrixCall("crm.contact.list", { filter: { PHONE: phone }, select: ["ID"] });
+            if (contactRes.result?.length > 0 && (contactRes.total || contactRes.result.length) <= 5) {
+              const fid = contactRes.result[0].ID;
+              const dealRes = await bitrixCall("crm.deal.list", { filter: { CONTACT_ID: fid }, select: ["ID", "CONTACT_ID"] });
+              if (dealRes.result?.length > 0) {
+                dealId = dealRes.result[0].ID;
+                contactId = fid;
+                console.log(`[sync_single_client] Matched deal ${dealId} by phone=${phone}, contact=${fid}`);
+                break;
+              }
+            }
+          }
+        }
+        // Lookup by email
+        if (!dealId && !contactId && emails.length > 0) {
+          for (const email of emails) {
+            const contactRes = await bitrixCall("crm.contact.list", { filter: { EMAIL: email }, select: ["ID"] });
+            if (contactRes.result?.length > 0 && (contactRes.total || contactRes.result.length) <= 5) {
+              contactId = contactRes.result[0].ID;
+              const dealRes = await bitrixCall("crm.deal.list", { filter: { CONTACT_ID: contactId }, select: ["ID", "CONTACT_ID"] });
+              if (dealRes.result?.length > 0) {
+                dealId = dealRes.result[0].ID;
+              }
+              console.log(`[sync_single_client] Matched by email=${email}, contact=${contactId}, deal=${dealId}`);
               break;
             }
           }
         }
-      }
-      // Lookup by email
-      if (!dealId && !contactId && emails.length > 0) {
-        for (const email of emails) {
-          const contactRes = await bitrixCall("crm.contact.list", { filter: { EMAIL: email }, select: ["ID"] });
-          if (contactRes.result?.length > 0) {
-            contactId = contactRes.result[0].ID;
-            const dealRes = await bitrixCall("crm.deal.list", { filter: { CONTACT_ID: contactId }, select: ["ID", "CONTACT_ID"] });
-            if (dealRes.result?.length > 0) {
-              dealId = dealRes.result[0].ID;
+        // Lookup by full name (only if name has 2+ words)
+        if (!dealId && !contactId && clientName && clientName !== "SEM NOME") {
+          const nameParts = clientName.trim().split(/\s+/);
+          if (nameParts.length >= 2) {
+            const firstName = nameParts[0] || "";
+            const lastName = nameParts.slice(1).join(" ") || "";
+            const nameFilter: Record<string, any> = { NAME: firstName };
+            if (lastName) nameFilter.LAST_NAME = lastName;
+            const contactRes = await bitrixCall("crm.contact.list", { filter: nameFilter, select: ["ID"] });
+            if (contactRes.result?.length > 0 && (contactRes.total || contactRes.result.length) <= 3) {
+              contactId = contactRes.result[0].ID;
+              const dealRes = await bitrixCall("crm.deal.list", { filter: { CONTACT_ID: contactId }, select: ["ID", "CONTACT_ID"] });
+              if (dealRes.result?.length > 0) {
+                dealId = dealRes.result[0].ID;
+              }
+              console.log(`[sync_single_client] Matched by name=${clientName}, contact=${contactId}, deal=${dealId}`);
             }
-            break;
           }
         }
-      }
-      // Lookup by full name
-      if (!dealId && !contactId && clientName && clientName !== "SEM NOME") {
-        const nameParts = clientName.trim().split(/\s+/);
-        const firstName = nameParts[0] || "";
-        const lastName = nameParts.slice(1).join(" ") || "";
-        const nameFilter: Record<string, any> = { NAME: firstName };
-        if (lastName) nameFilter.LAST_NAME = lastName;
-        const contactRes = await bitrixCall("crm.contact.list", { filter: nameFilter, select: ["ID"] });
-        if (contactRes.result?.length > 0) {
-          contactId = contactRes.result[0].ID;
-          const dealRes = await bitrixCall("crm.deal.list", { filter: { CONTACT_ID: contactId }, select: ["ID", "CONTACT_ID"] });
-          if (dealRes.result?.length > 0) {
-            dealId = dealRes.result[0].ID;
-          }
-        }
+      } else {
+        console.log(`[sync_single_client] force_create=true — skipping all lookups for ${clientName}`);
       }
 
       const results: string[] = [];
@@ -968,11 +1001,14 @@ serve(async (req) => {
         } else {
           // Try find by NIF
           if (docNumber && !docNumber.startsWith("ACCESS_")) {
-            const searchRes = await bitrixCall("crm.contact.list", { filter: { UF_CRM_EMMELY_NIF: docNumber }, select: ["ID"] });
-            if (searchRes.result?.length > 0) {
-              contactId = searchRes.result[0].ID;
-              await bitrixCall("crm.contact.update", { id: contactId, fields: contactFields });
-              results.push(`Contacto ${contactId} encontrado por NIF e actualizado`);
+            const searchRes = await bitrixCall("crm.contact.list", { filter: { UF_CRM_EMMELY_NIF: docNumber }, select: ["ID", "UF_CRM_EMMELY_NIF"] });
+            if (searchRes.result?.length > 0 && (searchRes.total || searchRes.result.length) <= 5) {
+              const match = searchRes.result[0];
+              if (match.UF_CRM_EMMELY_NIF === docNumber) {
+                contactId = match.ID;
+                await bitrixCall("crm.contact.update", { id: contactId, fields: contactFields });
+                results.push(`Contacto ${contactId} encontrado por NIF e actualizado`);
+              }
             }
           }
           if (!contactId) {
@@ -1328,38 +1364,52 @@ serve(async (req) => {
           let dealId: string | null = null;
           let contactId: string | null = null;
 
-          // 1) Search by UF_CRM_1768312831 (id_access)
+          // 1) Search by UF_CRM_1768312831 (id_access) — with validation
           if (accessId) {
             const res = await bitrixCall("crm.deal.list", {
               filter: { UF_CRM_1768312831: accessId },
-              select: ["ID", "CONTACT_ID"],
+              select: ["ID", "CONTACT_ID", "UF_CRM_1768312831"],
             });
-            if (res.result?.length > 0) {
-              dealId = res.result[0].ID;
-              contactId = res.result[0].CONTACT_ID || null;
+            if (res.result?.length > 0 && (res.total || res.result.length) <= 5) {
+              const match = res.result[0];
+              if (match.UF_CRM_1768312831 === accessId || match.UF_CRM_1768312831 === String(accessId)) {
+                dealId = match.ID;
+                contactId = match.CONTACT_ID || null;
+              } else {
+                console.warn(`[sync_bitrix] access_id filter mismatch for ${clientName} — expected=${accessId}, got=${match.UF_CRM_1768312831}`);
+              }
+            } else if (res.result?.length > 0) {
+              console.warn(`[sync_bitrix] access_id filter returned ${res.total} results for ${clientName} — filter likely ignored`);
             }
           }
 
-          // 2) Search by NIF/CPF
+          // 2) Search by NIF/CPF — with validation
           if (!dealId && docNumber && !docNumber.startsWith("ACCESS_")) {
             const res = await bitrixCall("crm.deal.list", {
               filter: { UF_CRM_EMMELY_NIF: docNumber },
-              select: ["ID", "CONTACT_ID"],
+              select: ["ID", "CONTACT_ID", "UF_CRM_EMMELY_NIF"],
             });
-            if (res.result?.length > 0) {
-              dealId = res.result[0].ID;
-              contactId = res.result[0].CONTACT_ID || null;
+            if (res.result?.length > 0 && (res.total || res.result.length) <= 5) {
+              const match = res.result[0];
+              if (match.UF_CRM_EMMELY_NIF === docNumber) {
+                dealId = match.ID;
+                contactId = match.CONTACT_ID || null;
+              } else {
+                console.warn(`[sync_bitrix] NIF filter mismatch for ${clientName} — expected=${docNumber}, got=${match.UF_CRM_EMMELY_NIF}`);
+              }
+            } else if (res.result?.length > 0) {
+              console.warn(`[sync_bitrix] NIF filter returned ${res.total} results for ${clientName} — filter likely ignored`);
             }
           }
 
-          // 3) Search by phone (via Contact)
+          // 3) Search by phone (via Contact) — with count validation
           if (!dealId && phones.length > 0) {
             for (const phone of phones) {
               const contactRes = await bitrixCall("crm.contact.list", {
                 filter: { PHONE: phone },
                 select: ["ID"],
               });
-              if (contactRes.result?.length > 0) {
+              if (contactRes.result?.length > 0 && (contactRes.total || contactRes.result.length) <= 5) {
                 const foundContactId = contactRes.result[0].ID;
                 // Find deal linked to this contact
                 const dealRes = await bitrixCall("crm.deal.list", {
@@ -1395,11 +1445,14 @@ serve(async (req) => {
             if (docNumber && !docNumber.startsWith("ACCESS_")) {
               const searchRes = await bitrixCall("crm.contact.list", {
                 filter: { UF_CRM_EMMELY_NIF: docNumber },
-                select: ["ID"],
+                select: ["ID", "UF_CRM_EMMELY_NIF"],
               });
-              if (searchRes.result?.length > 0) {
-                contactId = searchRes.result[0].ID;
-                await bitrixCall("crm.contact.update", { id: contactId, fields: contactFields });
+              if (searchRes.result?.length > 0 && (searchRes.total || searchRes.result.length) <= 5) {
+                const match = searchRes.result[0];
+                if (match.UF_CRM_EMMELY_NIF === docNumber) {
+                  contactId = match.ID;
+                  await bitrixCall("crm.contact.update", { id: contactId, fields: contactFields });
+                }
               }
             }
 
