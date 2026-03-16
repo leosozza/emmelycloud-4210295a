@@ -119,8 +119,12 @@ export default function ServicosPage() {
   });
 
   const deleteMutation = useMutation({
-    mutationFn: async (id: string) => {
-      const { error } = await supabase.from("services").delete().eq("id", id);
+    mutationFn: async (service: any) => {
+      // Sync delete to Bitrix24 first (fire-and-forget)
+      if (service.bitrix24_id) {
+        syncProductToBitrix("delete", service.id);
+      }
+      const { error } = await supabase.from("services").delete().eq("id", service.id);
       if (error) throw error;
     },
     onSuccess: () => {
