@@ -268,8 +268,7 @@ serve(async (req) => {
       if (allRecords.length > 0 && allPaid) statusClass = "quitado";
       else if (hasOverdue) statusClass = "atrasado";
 
-      const accessIdMatch = (client.notes || "").match(/ID:\s*(\d+)/);
-      const accessId = accessIdMatch ? accessIdMatch[1] : null;
+      const accessId = client.id_access || ((client.notes || "").match(/ID:\s*(\d+)/) || [])[1] || null;
 
       return {
         client_id: client.id,
