@@ -1386,16 +1386,16 @@ serve(async (req) => {
           // 2) Search by NIF/CPF — with validation
           if (!dealId && docNumber && !docNumber.startsWith("ACCESS_")) {
             const res = await bitrixCall("crm.deal.list", {
-              filter: { UF_CRM_EMMELY_NIF: docNumber },
-              select: ["ID", "CONTACT_ID", "UF_CRM_EMMELY_NIF"],
+              filter: { UF_CRM_1733687549802: docNumber },
+              select: ["ID", "CONTACT_ID", "UF_CRM_1733687549802"],
             });
             if (res.result?.length > 0 && (res.total || res.result.length) <= 5) {
               const match = res.result[0];
-              if (match.UF_CRM_EMMELY_NIF === docNumber) {
+              if (match.UF_CRM_1733687549802 === docNumber) {
                 dealId = match.ID;
                 contactId = match.CONTACT_ID || null;
               } else {
-                console.warn(`[sync_bitrix] NIF filter mismatch for ${clientName} — expected=${docNumber}, got=${match.UF_CRM_EMMELY_NIF}`);
+                console.warn(`[sync_bitrix] NIF filter mismatch for ${clientName} — expected=${docNumber}, got=${match.UF_CRM_1733687549802}`);
               }
             } else if (res.result?.length > 0) {
               console.warn(`[sync_bitrix] NIF filter returned ${res.total} results for ${clientName} — filter likely ignored`);
