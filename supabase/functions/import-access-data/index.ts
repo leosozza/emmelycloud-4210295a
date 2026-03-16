@@ -301,8 +301,8 @@ serve(async (req) => {
       while (true) {
         const { data: batch, error: batchErr } = await supabase
           .from("clients")
-          .select("id, name, document_number, document_type, notes, address, postal_code, country, birth_date, nationality")
-          .like("notes", "%Importado do Access%")
+        .select("id, name, document_number, document_type, notes, address, postal_code, country, birth_date, nationality, id_access, bitrix24_id")
+        .not("id_access", "is", null)
           .order("name")
           .range(rangeStart, rangeStart + pageSize - 1);
 
