@@ -6500,7 +6500,7 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
                             <XCircle className="h-3.5 w-3.5 mr-1" /> Parar Sincronização
                           </Button>
                         ) : (
-                          <Button size="sm" onClick={handleSyncBatch} disabled={selectedIds.size === 0} className="text-xs ml-auto">
+                          <Button size="sm" onClick={() => handleSyncBatch()} disabled={selectedIds.size === 0} className="text-xs ml-auto">
                             <RefreshCw className="h-3.5 w-3.5 mr-1" /> Sincronizar {selectedIds.size} seleccionados
                           </Button>
                         )}
