@@ -6681,6 +6681,7 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
                           ))}
                         </div>
                       )}
+                    </div>
                   )}
 
                   {/* Client list */}
