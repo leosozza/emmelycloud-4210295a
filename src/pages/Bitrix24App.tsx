@@ -5907,6 +5907,22 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
   // ── Phase 3: Load clients for sync ──
   const [syncLoadProgress, setSyncLoadProgress] = useState({ processed: 0, total: 0 });
 
+  const autoSelectSegmentsAndTabs = useCallback((clients: SyncClient[]) => {
+    const existing = clients.filter(c => !!c.bitrix_deal_id);
+    const newOnes = clients.filter(c => !c.bitrix_deal_id);
+    const segs = new Set<"existing" | "new">();
+    if (existing.length > 0) segs.add("existing");
+    if (newOnes.length > 0) segs.add("new");
+    if (segs.size === 0) segs.add("existing");
+    setSyncSegments(segs);
+    const tabs = new Set<"quitado" | "aberto" | "atrasado">();
+    if (clients.some(c => c.status_class === "atrasado")) tabs.add("atrasado");
+    if (clients.some(c => c.status_class === "aberto")) tabs.add("aberto");
+    if (clients.some(c => c.status_class === "quitado")) tabs.add("quitado");
+    if (tabs.size === 0) tabs.add("atrasado");
+    setActiveTabs(tabs);
+  }, []);
+
   // Restore syncClients from backend cache on mount (instant, no Bitrix calls)
   useEffect(() => {
     if (syncClientsLoaded || syncClients.length > 0) return;
