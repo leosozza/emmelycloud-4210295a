@@ -6858,7 +6858,7 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
                         {filteredSyncClients.length === 0 && (
                           <TableRow>
                             <TableCell colSpan={8} className="text-center text-sm text-muted-foreground py-8">
-                              Nenhum cliente com status "{activeTab}" encontrado.
+                              Nenhum cliente encontrado com os filtros selecionados.
                             </TableCell>
                           </TableRow>
                         )}
