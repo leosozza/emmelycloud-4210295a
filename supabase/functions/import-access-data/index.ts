@@ -456,6 +456,42 @@ serve(async (req) => {
       };
     }
     // ══════════════════════════════════════════════════════════════════
+    // ══════════════════════════════════════════════════════════════════
+    // MODE: get_cached_sync_clients — Return cached list instantly (no Bitrix calls)
+    // ══════════════════════════════════════════════════════════════════
+    if (mode === "get_cached_sync_clients") {
+      if (!member_id) {
+        return new Response(JSON.stringify({ success: true, clients: [], cached: false }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      try {
+        const { data: cacheRow } = await supabase
+          .from("bitrix24_sync_cache")
+          .select("data, fetched_at")
+          .eq("member_id", member_id)
+          .eq("cache_type", "sync_clients_list")
+          .maybeSingle();
+
+        if (cacheRow?.data && Array.isArray(cacheRow.data) && cacheRow.data.length > 0) {
+          return new Response(JSON.stringify({
+            success: true,
+            clients: cacheRow.data,
+            cached: true,
+            cached_at: cacheRow.fetched_at,
+            total: cacheRow.data.length,
+          }), {
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+      } catch (e) {
+        console.warn("[get_cached_sync_clients] Cache read failed:", e);
+      }
+      return new Response(JSON.stringify({ success: true, clients: [], cached: false }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     if (mode === "list_sync_clients") {
       // Step 1: Fetch ALL imported clients with pagination to bypass 1000 limit
       const allClients: any[] = [];
