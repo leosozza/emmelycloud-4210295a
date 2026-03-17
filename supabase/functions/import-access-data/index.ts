@@ -919,7 +919,7 @@ serve(async (req) => {
 
       const endpoint = integration.client_endpoint;
       const accessToken = integration.access_token;
-      const bitrixCall = async (method: string, payload: Record<string, any> = {}, retries = 3): Promise<any> => {
+      const bitrixCall = async (method: string, payload: Record<string, any> = {}, retries = 5): Promise<any> => {
         for (let attempt = 0; attempt < retries; attempt++) {
           try {
             const res = await fetch(`${endpoint}${method}`, {
@@ -928,12 +928,17 @@ serve(async (req) => {
               body: JSON.stringify({ auth: accessToken, ...payload }),
             });
             const text = await res.text();
-            try { return JSON.parse(text); } catch { throw new Error(`Bitrix24 returned non-JSON (HTTP ${res.status}): ${text.substring(0, 200)}`); }
+            if (res.status >= 500) {
+              throw new Error(`Bitrix24 HTTP ${res.status}: ${text.substring(0, 150)}`);
+            }
+            try { return JSON.parse(text); } catch { throw new Error(`Bitrix24 returned non-JSON (HTTP ${res.status}): ${text.substring(0, 150)}`); }
           } catch (err) {
-            const isTransient = String(err).includes("http2 error") || String(err).includes("connection error") || String(err).includes("SendRequest") || String(err).includes("non-JSON");
+            const errStr = String(err);
+            const isTransient = errStr.includes("http2 error") || errStr.includes("connection error") || errStr.includes("SendRequest") || errStr.includes("non-JSON") || errStr.includes("Bitrix24 HTTP 5");
             if (isTransient && attempt < retries - 1) {
-              console.warn(`[bitrixCall] Transient error on ${method}, retry ${attempt + 1}/${retries - 1}`);
-              await new Promise(r => setTimeout(r, 1000 * (attempt + 1)));
+              const delay = Math.min(2000 * Math.pow(2, attempt), 15000);
+              console.warn(`[bitrixCall] Transient error on ${method}, retry ${attempt + 1}/${retries - 1} (wait ${delay}ms)`);
+              await new Promise(r => setTimeout(r, delay));
               continue;
             }
             throw err;
