@@ -5908,8 +5908,10 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
 
   const handleLoadSyncClients = async (forceRefresh = false) => {
     setLoadingSyncClients(true);
-    setSyncClients([]);
-    setSyncClientsLoaded(false);
+    if (forceRefresh) {
+      setSyncClients([]);
+      setSyncClientsLoaded(false);
+    }
     setSyncLoadProgress({ processed: 0, total: 0 });
 
     try {
