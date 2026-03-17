@@ -5936,8 +5936,13 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
     }
   }, []);
 
+  const [syncLoadError, setSyncLoadError] = useState<string | null>(null);
+  const [syncPartialWarning, setSyncPartialWarning] = useState<string | null>(null);
+
   const handleLoadSyncClients = async (forceRefresh = false) => {
     setLoadingSyncClients(true);
+    setSyncLoadError(null);
+    setSyncPartialWarning(null);
     if (forceRefresh) {
       setSyncClients([]);
       setSyncClientsLoaded(false);
@@ -5968,13 +5973,22 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
 
         if (!res.ok) {
           console.error("[loadSyncClients] HTTP error:", res.status);
-          break;
+          setSyncLoadError(`Erro HTTP ${res.status} ao carregar clientes. Tente novamente.`);
+          setLoadingSyncClients(false);
+          return [];
         }
 
         const data = await res.json();
         if (!data.success) {
           console.error("[loadSyncClients] API error:", data.error);
-          break;
+          setSyncLoadError(`Erro ao carregar: ${data.error || "erro desconhecido"}`);
+          setLoadingSyncClients(false);
+          return [];
+        }
+
+        // Check for partial warning from backend
+        if (data.warning) {
+          setSyncPartialWarning(data.warning);
         }
 
         if (data.clients?.length) {
@@ -6002,7 +6016,7 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
       setSyncClients(clientsWithSyncStatus);
       setSyncLoadProgress({ processed: clientsWithSyncStatus.length, total: clientsWithSyncStatus.length });
 
-      // Cache in sessionStorage for persistence
+      // Cache in sessionStorage for persistence — only on success
       try {
         sessionStorage.setItem('sync_clients_cache', JSON.stringify(clientsWithSyncStatus));
       } catch (e) {
@@ -6025,13 +6039,19 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
         else if (quitado > 0) setActiveTab("quitado");
       }
 
+      setSyncClientsLoaded(true);
+      setLoadingSyncClients(false);
       return clientsWithSyncStatus;
     } catch (e) {
       console.error("[loadSyncClients]", e);
-      return [];
-    } finally {
-      setSyncClientsLoaded(true);
+      const msg = String(e);
+      if (msg.includes("Failed to fetch") || msg.includes("NetworkError")) {
+        setSyncLoadError("Falha de rede / timeout ao comunicar com o servidor. O Bitrix24 pode estar instável. Tente novamente em alguns segundos.");
+      } else {
+        setSyncLoadError(`Erro inesperado: ${msg.substring(0, 200)}`);
+      }
       setLoadingSyncClients(false);
+      return [];
     }
   };
 
@@ -6552,6 +6572,30 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
                   <Button onClick={() => handleLoadSyncClients(true)} disabled={isImporting || loadingSyncClients} size="sm" variant="ghost" title="Forçar actualização dos dados do Bitrix24 (ignora cache)">
                     {loadingSyncClients ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
                   </Button>
+                </div>
+              )}
+
+              {/* Error state */}
+              {syncLoadError && !loadingSyncClients && (
+                <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-4 space-y-2">
+                  <div className="flex items-start gap-2">
+                    <AlertTriangle className="h-5 w-5 text-destructive shrink-0 mt-0.5" />
+                    <div className="space-y-1">
+                      <p className="text-sm font-medium text-destructive">Falha ao carregar clientes</p>
+                      <p className="text-xs text-muted-foreground">{syncLoadError}</p>
+                    </div>
+                  </div>
+                  <Button onClick={() => handleLoadSyncClients(false)} size="sm" variant="outline" className="w-full">
+                    <RefreshCw className="h-4 w-4 mr-2" /> Tentar novamente
+                  </Button>
+                </div>
+              )}
+
+              {/* Partial warning */}
+              {syncPartialWarning && syncClientsLoaded && syncClients.length > 0 && (
+                <div className="rounded-lg border border-yellow-500/50 bg-yellow-500/10 p-3 flex items-start gap-2">
+                  <AlertCircle className="h-4 w-4 text-yellow-600 shrink-0 mt-0.5" />
+                  <p className="text-xs text-muted-foreground">{syncPartialWarning}</p>
                 </div>
               )}
 

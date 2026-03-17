@@ -643,153 +643,145 @@ serve(async (req) => {
       const total = clientsWithFinancials.length;
 
       // Step 5: Batch Bitrix lookup — with cache layer (30 min TTL)
+      // This is OPTIONAL enrichment — if Bitrix is down, we still return clients
       let bitrixDealsByAccessId: Record<string, { dealId: string; contactId: string | null }> = {};
       let bitrixDealsByNif: Record<string, { dealId: string; contactId: string | null }> = {};
       let bitrixDealsByContactId: Record<string, string> = {}; // contactId -> dealId
       let bitrixContactsByName: Record<string, string> = {};
       let bitrixContactsByPhone: Record<string, string> = {};
       let bitrixContactsByEmail: Record<string, string> = {};
+      let bitrixEnrichmentWarning: string | null = null;
 
       const CACHE_TTL_MS = 30 * 60 * 1000; // 30 minutes
       const forceRefresh = body.force_refresh === true;
+      const BITRIX_TIME_BUDGET_MS = 25000; // 25s max for Bitrix enrichment
+      const enrichmentStart = Date.now();
 
       if (member_id) {
-        const { data: integration } = await supabase
-          .from("bitrix24_integrations")
-          .select("*")
-          .eq("member_id", member_id)
-          .single();
+        try {
+          const { data: integration } = await supabase
+            .from("bitrix24_integrations")
+            .select("*")
+            .eq("member_id", member_id)
+            .single();
 
-        if (integration?.client_endpoint && integration?.access_token) {
-          const endpoint = integration.client_endpoint;
-          const accessToken = integration.access_token;
-          const bitrixCall = async (method: string, payload: Record<string, any> = {}, retries = 5): Promise<any> => {
-            for (let attempt = 0; attempt < retries; attempt++) {
+          if (integration?.client_endpoint && integration?.access_token) {
+            const endpoint = integration.client_endpoint;
+            const accessToken = integration.access_token;
+            const bitrixCall = async (method: string, payload: Record<string, any> = {}, retries = 3): Promise<any> => {
+              for (let attempt = 0; attempt < retries; attempt++) {
+                // Check time budget before each attempt
+                if (Date.now() - enrichmentStart > BITRIX_TIME_BUDGET_MS) {
+                  throw new Error("TIME_BUDGET_EXCEEDED");
+                }
+                try {
+                  const res = await fetch(`${endpoint}${method}`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ auth: accessToken, ...payload }),
+                  });
+                  const text = await res.text();
+                  if (res.status >= 500) {
+                    throw new Error(`Bitrix24 HTTP ${res.status}: ${text.substring(0, 150)}`);
+                  }
+                  try { return JSON.parse(text); } catch { throw new Error(`Bitrix24 returned non-JSON (HTTP ${res.status}): ${text.substring(0, 150)}`); }
+                } catch (err) {
+                  const errStr = String(err);
+                  if (errStr.includes("TIME_BUDGET_EXCEEDED")) throw err;
+                  const isTransient = errStr.includes("http2 error") || errStr.includes("connection error") || errStr.includes("SendRequest") || errStr.includes("non-JSON") || errStr.includes("Bitrix24 HTTP 5");
+                  if (isTransient && attempt < retries - 1) {
+                    const delay = Math.min(2000 * Math.pow(2, attempt), 8000);
+                    console.warn(`[bitrixCall] Transient error on ${method}, retry ${attempt + 1}/${retries - 1} (wait ${delay}ms)`);
+                    await new Promise(r => setTimeout(r, delay));
+                    continue;
+                  }
+                  throw err;
+                }
+              }
+            };
+
+            // ── Cache helper functions ──
+            const loadCache = async (cacheType: string): Promise<any[] | null> => {
+              if (forceRefresh) return null;
+              const { data: cached } = await supabase
+                .from("bitrix24_sync_cache")
+                .select("data, fetched_at")
+                .eq("member_id", member_id)
+                .eq("cache_type", cacheType)
+                .single();
+              if (cached && cached.fetched_at) {
+                const age = Date.now() - new Date(cached.fetched_at).getTime();
+                if (age < CACHE_TTL_MS) {
+                  console.log(`[list_sync_clients] Using ${cacheType} cache (age: ${Math.round(age / 1000)}s)`);
+                  return cached.data as any[];
+                }
+              }
+              return null;
+            };
+
+            const saveCache = async (cacheType: string, data: any[]) => {
+              await supabase.from("bitrix24_sync_cache").upsert({
+                member_id,
+                cache_type: cacheType,
+                data,
+                fetched_at: new Date().toISOString(),
+              }, { onConflict: "member_id,cache_type" });
+            };
+
+            // ── Load deals (cache-first) ──
+            const cachedDeals = await loadCache("deals");
+            if (cachedDeals) {
+              for (const deal of cachedDeals) {
+                if (deal.UF_CRM_1768312831) {
+                  bitrixDealsByAccessId[deal.UF_CRM_1768312831] = { dealId: deal.ID, contactId: deal.CONTACT_ID || null };
+                }
+                if (deal.UF_CRM_1733687549802) {
+                  bitrixDealsByNif[deal.UF_CRM_1733687549802] = { dealId: deal.ID, contactId: deal.CONTACT_ID || null };
+                }
+                if (deal.CONTACT_ID) {
+                  bitrixDealsByContactId[deal.CONTACT_ID] = deal.ID;
+                }
+              }
+            } else {
               try {
-                const res = await fetch(`${endpoint}${method}`, {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ auth: accessToken, ...payload }),
-                });
-                const text = await res.text();
-                if (res.status >= 500) {
-                  throw new Error(`Bitrix24 HTTP ${res.status}: ${text.substring(0, 150)}`);
-                }
-                try { return JSON.parse(text); } catch { throw new Error(`Bitrix24 returned non-JSON (HTTP ${res.status}): ${text.substring(0, 150)}`); }
-              } catch (err) {
-                const errStr = String(err);
-                const isTransient = errStr.includes("http2 error") || errStr.includes("connection error") || errStr.includes("SendRequest") || errStr.includes("non-JSON") || errStr.includes("Bitrix24 HTTP 5");
-                if (isTransient && attempt < retries - 1) {
-                  const delay = Math.min(2000 * Math.pow(2, attempt), 15000);
-                  console.warn(`[bitrixCall] Transient error on ${method}, retry ${attempt + 1}/${retries - 1} (wait ${delay}ms)`);
-                  await new Promise(r => setTimeout(r, delay));
-                  continue;
-                }
-                throw err;
-              }
-            }
-          };
-
-          // ── Cache helper functions ──
-          const loadCache = async (cacheType: string): Promise<any[] | null> => {
-            if (forceRefresh) return null;
-            const { data: cached } = await supabase
-              .from("bitrix24_sync_cache")
-              .select("data, fetched_at")
-              .eq("member_id", member_id)
-              .eq("cache_type", cacheType)
-              .single();
-            if (cached && cached.fetched_at) {
-              const age = Date.now() - new Date(cached.fetched_at).getTime();
-              if (age < CACHE_TTL_MS) {
-                console.log(`[list_sync_clients] Using ${cacheType} cache (age: ${Math.round(age / 1000)}s)`);
-                return cached.data as any[];
-              }
-            }
-            return null;
-          };
-
-          const saveCache = async (cacheType: string, data: any[]) => {
-            await supabase.from("bitrix24_sync_cache").upsert({
-              member_id,
-              cache_type: cacheType,
-              data,
-              fetched_at: new Date().toISOString(),
-            }, { onConflict: "member_id,cache_type" });
-          };
-
-          // ── Load deals (cache-first) ──
-          const cachedDeals = await loadCache("deals");
-          if (cachedDeals) {
-            for (const deal of cachedDeals) {
-              if (deal.UF_CRM_1768312831) {
-                bitrixDealsByAccessId[deal.UF_CRM_1768312831] = { dealId: deal.ID, contactId: deal.CONTACT_ID || null };
-              }
-              if (deal.UF_CRM_1733687549802) {
-                bitrixDealsByNif[deal.UF_CRM_1733687549802] = { dealId: deal.ID, contactId: deal.CONTACT_ID || null };
-              }
-              if (deal.CONTACT_ID) {
-                bitrixDealsByContactId[deal.CONTACT_ID] = deal.ID;
-              }
-            }
-          } else {
-            try {
-              const allDeals: any[] = [];
-              let start = 0;
-              while (true) {
-                const res = await bitrixCall("crm.deal.list", {
-                  select: ["ID", "CONTACT_ID", "UF_CRM_1768312831", "UF_CRM_1733687549802"],
-                  start,
-                });
-                for (const deal of (res.result || [])) {
-                  allDeals.push(deal);
-                  if (deal.UF_CRM_1768312831) {
-                    bitrixDealsByAccessId[deal.UF_CRM_1768312831] = { dealId: deal.ID, contactId: deal.CONTACT_ID || null };
+                const allDeals: any[] = [];
+                let start = 0;
+                while (true) {
+                  if (Date.now() - enrichmentStart > BITRIX_TIME_BUDGET_MS) throw new Error("TIME_BUDGET_EXCEEDED");
+                  const res = await bitrixCall("crm.deal.list", {
+                    select: ["ID", "CONTACT_ID", "UF_CRM_1768312831", "UF_CRM_1733687549802"],
+                    start,
+                  });
+                  for (const deal of (res.result || [])) {
+                    allDeals.push(deal);
+                    if (deal.UF_CRM_1768312831) {
+                      bitrixDealsByAccessId[deal.UF_CRM_1768312831] = { dealId: deal.ID, contactId: deal.CONTACT_ID || null };
+                    }
+                    if (deal.UF_CRM_1733687549802) {
+                      bitrixDealsByNif[deal.UF_CRM_1733687549802] = { dealId: deal.ID, contactId: deal.CONTACT_ID || null };
+                    }
+                    if (deal.CONTACT_ID) {
+                      bitrixDealsByContactId[deal.CONTACT_ID] = deal.ID;
+                    }
                   }
-                  if (deal.UF_CRM_1733687549802) {
-                    bitrixDealsByNif[deal.UF_CRM_1733687549802] = { dealId: deal.ID, contactId: deal.CONTACT_ID || null };
-                  }
-                  if (deal.CONTACT_ID) {
-                    bitrixDealsByContactId[deal.CONTACT_ID] = deal.ID;
-                  }
+                  if (!res.next) break;
+                  start = res.next;
                 }
-                if (!res.next) break;
-                start = res.next;
+                await saveCache("deals", allDeals);
+              } catch (e) {
+                const errMsg = String(e);
+                console.error("[list_sync_clients] Batch deal fetch error:", errMsg);
+                if (errMsg.includes("TIME_BUDGET_EXCEEDED")) {
+                  bitrixEnrichmentWarning = "Correspondência parcial: timeout ao buscar negócios do Bitrix24.";
+                }
               }
-              await saveCache("deals", allDeals);
-            } catch (e) {
-              console.error("[list_sync_clients] Batch deal fetch error:", e);
             }
-          }
 
-          // ── Load contacts (cache-first) ──
-          const cachedContacts = await loadCache("contacts");
-          if (cachedContacts) {
-            for (const contact of cachedContacts) {
-              const fullName = [contact.NAME, contact.LAST_NAME].filter(Boolean).join(" ").toUpperCase().trim();
-              if (fullName) bitrixContactsByName[fullName] = contact.ID;
-              if (contact.PHONE) {
-                for (const p of contact.PHONE) {
-                  if (p.VALUE) bitrixContactsByPhone[p.VALUE.replace(/\D/g, "")] = contact.ID;
-                }
-              }
-              if (contact.EMAIL) {
-                for (const e of contact.EMAIL) {
-                  if (e.VALUE) bitrixContactsByEmail[e.VALUE.toLowerCase()] = contact.ID;
-                }
-              }
-            }
-          } else {
-            try {
-              const allContacts: any[] = [];
-              let start = 0;
-              while (true) {
-                const res = await bitrixCall("crm.contact.list", {
-                  select: ["ID", "NAME", "LAST_NAME", "PHONE", "EMAIL"],
-                  start,
-                });
-                for (const contact of (res.result || [])) {
-                  allContacts.push(contact);
+            // ── Load contacts (cache-first) — skip if time budget exhausted ──
+            if (Date.now() - enrichmentStart < BITRIX_TIME_BUDGET_MS) {
+              const cachedContacts = await loadCache("contacts");
+              if (cachedContacts) {
+                for (const contact of cachedContacts) {
                   const fullName = [contact.NAME, contact.LAST_NAME].filter(Boolean).join(" ").toUpperCase().trim();
                   if (fullName) bitrixContactsByName[fullName] = contact.ID;
                   if (contact.PHONE) {
@@ -803,14 +795,53 @@ serve(async (req) => {
                     }
                   }
                 }
-                if (!res.next) break;
-                start = res.next;
+              } else {
+                try {
+                  const allContacts: any[] = [];
+                  let start = 0;
+                  while (true) {
+                    if (Date.now() - enrichmentStart > BITRIX_TIME_BUDGET_MS) throw new Error("TIME_BUDGET_EXCEEDED");
+                    const res = await bitrixCall("crm.contact.list", {
+                      select: ["ID", "NAME", "LAST_NAME", "PHONE", "EMAIL"],
+                      start,
+                    });
+                    for (const contact of (res.result || [])) {
+                      allContacts.push(contact);
+                      const fullName = [contact.NAME, contact.LAST_NAME].filter(Boolean).join(" ").toUpperCase().trim();
+                      if (fullName) bitrixContactsByName[fullName] = contact.ID;
+                      if (contact.PHONE) {
+                        for (const p of contact.PHONE) {
+                          if (p.VALUE) bitrixContactsByPhone[p.VALUE.replace(/\D/g, "")] = contact.ID;
+                        }
+                      }
+                      if (contact.EMAIL) {
+                        for (const e of contact.EMAIL) {
+                          if (e.VALUE) bitrixContactsByEmail[e.VALUE.toLowerCase()] = contact.ID;
+                        }
+                      }
+                    }
+                    if (!res.next) break;
+                    start = res.next;
+                  }
+                  await saveCache("contacts", allContacts);
+                } catch (e) {
+                  const errMsg = String(e);
+                  console.error("[list_sync_clients] Batch contact fetch error:", errMsg);
+                  if (!bitrixEnrichmentWarning) {
+                    bitrixEnrichmentWarning = "Correspondência parcial: timeout ao buscar contactos do Bitrix24.";
+                  }
+                }
               }
-              await saveCache("contacts", allContacts);
-            } catch (e) {
-              console.error("[list_sync_clients] Batch contact fetch error:", e);
+            } else {
+              console.warn("[list_sync_clients] Skipping contacts fetch — time budget exceeded");
+              if (!bitrixEnrichmentWarning) {
+                bitrixEnrichmentWarning = "Correspondência parcial: tempo esgotado antes de buscar contactos.";
+              }
             }
           }
+        } catch (outerErr) {
+          console.error("[list_sync_clients] Bitrix enrichment failed entirely:", outerErr);
+          bitrixEnrichmentWarning = "Correspondência com Bitrix24 indisponível. Os clientes são exibidos sem correspondência.";
         }
       }
 
@@ -895,6 +926,7 @@ serve(async (req) => {
         processed: total,
         total,
         has_more: false,
+        ...(bitrixEnrichmentWarning ? { warning: bitrixEnrichmentWarning } : {}),
       }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
