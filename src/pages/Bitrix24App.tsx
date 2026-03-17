@@ -6669,11 +6669,18 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
                         <span className="flex items-center gap-1"><Users className="h-3.5 w-3.5" /> Contactos: <span className="font-semibold text-foreground">{batchProgress.contacts}</span></span>
                         <span className="flex items-center gap-1"><FileText className="h-3.5 w-3.5" /> Negócios: <span className="font-semibold text-foreground">{batchProgress.deals}</span></span>
                         <span className="flex items-center gap-1"><CreditCard className="h-3.5 w-3.5" /> Faturas: <span className="font-semibold text-foreground">{batchProgress.invoices}</span></span>
-                        {batchProgress.errors > 0 && (
+                         {batchProgress.errors > 0 && (
                           <span className="flex items-center gap-1 text-destructive"><XCircle className="h-3.5 w-3.5" /> Erros: <span className="font-semibold">{batchProgress.errors}</span></span>
                         )}
                       </div>
-                    </div>
+                      {batchErrorLog.length > 0 && (
+                        <div className="mt-2 max-h-32 overflow-y-auto rounded border border-destructive/20 bg-destructive/5 p-2 space-y-1">
+                          <p className="text-xs font-medium text-destructive">Detalhes dos erros:</p>
+                          {batchErrorLog.map((err, i) => (
+                            <p key={i} className="text-xs text-destructive/80">• <strong>{err.name}</strong>: {err.error}</p>
+                          ))}
+                        </div>
+                      )}
                   )}
 
                   {/* Client list */}
