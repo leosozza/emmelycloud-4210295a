@@ -5267,8 +5267,8 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
   const [syncClients, setSyncClients] = useState<SyncClient[]>([]);
   const [loadingSyncClients, setLoadingSyncClients] = useState(false);
   const [syncClientsLoaded, setSyncClientsLoaded] = useState(false);
-  const [activeTab, setActiveTab] = useState<"quitado" | "aberto" | "atrasado">("atrasado");
-  const [syncSegment, setSyncSegment] = useState<"existing" | "new">("existing");
+  const [activeTabs, setActiveTabs] = useState<Set<"quitado" | "aberto" | "atrasado">>(new Set(["atrasado"]));
+  const [syncSegments, setSyncSegments] = useState<Set<"existing" | "new">>(new Set(["existing"]));
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [editingClient, setEditingClient] = useState<SyncClient | null>(null);
   const [editName, setEditName] = useState("");
