@@ -6029,16 +6029,17 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
       if (clientsWithSyncStatus.length > 0) {
         const existing = clientsWithSyncStatus.filter(c => !!c.bitrix_deal_id);
         const newOnes = clientsWithSyncStatus.filter(c => !c.bitrix_deal_id);
-        const bestSegment = existing.length > 0 ? "existing" : "new";
-        setSyncSegment(bestSegment);
-
-        const segData = bestSegment === "existing" ? existing : newOnes;
-        const atrasado = segData.filter(c => c.status_class === "atrasado").length;
-        const aberto = segData.filter(c => c.status_class === "aberto").length;
-        const quitado = segData.filter(c => c.status_class === "quitado").length;
-        if (atrasado > 0) setActiveTab("atrasado");
-        else if (aberto > 0) setActiveTab("aberto");
-        else if (quitado > 0) setActiveTab("quitado");
+        const segs = new Set<"existing" | "new">();
+        if (existing.length > 0) segs.add("existing");
+        if (newOnes.length > 0) segs.add("new");
+        if (segs.size === 0) segs.add("existing");
+        setSyncSegments(segs);
+        const tabs = new Set<"quitado" | "aberto" | "atrasado">();
+        if (clientsWithSyncStatus.some(c => c.status_class === "atrasado")) tabs.add("atrasado");
+        if (clientsWithSyncStatus.some(c => c.status_class === "aberto")) tabs.add("aberto");
+        if (clientsWithSyncStatus.some(c => c.status_class === "quitado")) tabs.add("quitado");
+        if (tabs.size === 0) tabs.add("atrasado");
+        setActiveTabs(tabs);
       }
 
       setSyncClientsLoaded(true);
