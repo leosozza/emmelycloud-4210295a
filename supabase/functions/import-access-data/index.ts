@@ -926,6 +926,7 @@ serve(async (req) => {
         processed: total,
         total,
         has_more: false,
+        ...(bitrixEnrichmentWarning ? { warning: bitrixEnrichmentWarning } : {}),
       }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
