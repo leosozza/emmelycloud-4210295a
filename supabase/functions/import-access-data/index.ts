@@ -930,7 +930,7 @@ serve(async (req) => {
             const text = await res.text();
             try { return JSON.parse(text); } catch { throw new Error(`Bitrix24 returned non-JSON (HTTP ${res.status}): ${text.substring(0, 200)}`); }
           } catch (err) {
-            const isTransient = String(err).includes("http2 error") || String(err).includes("connection error") || String(err).includes("SendRequest");
+            const isTransient = String(err).includes("http2 error") || String(err).includes("connection error") || String(err).includes("SendRequest") || String(err).includes("non-JSON");
             if (isTransient && attempt < retries - 1) {
               console.warn(`[bitrixCall] Transient error on ${method}, retry ${attempt + 1}/${retries - 1}`);
               await new Promise(r => setTimeout(r, 1000 * (attempt + 1)));
