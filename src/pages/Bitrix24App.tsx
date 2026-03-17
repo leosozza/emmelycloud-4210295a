@@ -6091,6 +6091,7 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
 
     const progress = { current: 0, total: ids.length, contacts: 0, deals: 0, invoices: 0, errors: 0, currentName: "" };
     setBatchProgress(progress);
+    setBatchErrorLog([]);
     const processedIds: string[] = [];
 
     for (const id of ids) {
