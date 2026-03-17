@@ -6063,7 +6063,7 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
 
     const requestSyncSingle = async (attempt: number) => {
       const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 45000);
+      const timeout = setTimeout(() => controller.abort(), 120000); // 2min — clients with many invoices need time
 
       try {
         const res = await fetch(`${SUPABASE_URL}/functions/v1/import-access-data`, {
