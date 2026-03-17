@@ -5279,6 +5279,7 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
   const [syncingBatch, setSyncingBatch] = useState(false);
   const batchAbortRef = useRef(false);
   const [batchProgress, setBatchProgress] = useState({ current: 0, total: 0, contacts: 0, deals: 0, invoices: 0, errors: 0, currentName: "" });
+  const [batchErrorLog, setBatchErrorLog] = useState<{ name: string; error: string }[]>([]);
   const [batchActions, setBatchActions] = useState({ contact: true, deal: true, invoices: true });
   const [pipelines, setPipelines] = useState<{ id: string; name: string }[]>([]);
   const [selectedCategoryId, setSelectedCategoryId] = useState("0");
@@ -6034,7 +6035,7 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
     }
   };
 
-  const handleSyncSingleClient = async (client: SyncClient, actionsOverride?: { contact: boolean; deal: boolean; invoices: boolean }, overridesOverride?: { name?: string; phone?: string; nif?: string }): Promise<{ contact_id?: string; deal_id?: string; invoices_created?: number } | null> => {
+  const handleSyncSingleClient = async (client: SyncClient, actionsOverride?: { contact: boolean; deal: boolean; invoices: boolean }, overridesOverride?: { name?: string; phone?: string; nif?: string }): Promise<{ contact_id?: string; deal_id?: string; invoices_created?: number; error?: string } | null> => {
     setSyncingSingle(true);
     try {
       const res = await fetch(`${SUPABASE_URL}/functions/v1/import-access-data`, {
@@ -6063,10 +6064,10 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
         ));
         return { contact_id: data.contact_id, deal_id: data.deal_id, invoices_created: data.invoices_created || 0 };
       }
-      return null;
-    } catch (e) {
+      return { error: data.error || `HTTP ${res.status}` };
+    } catch (e: any) {
       console.error("[syncSingle]", e);
-      return null;
+      return { error: e?.message || "Erro de rede" };
     } finally {
       setSyncingSingle(false);
       setEditingClient(null);
@@ -6090,6 +6091,7 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
 
     const progress = { current: 0, total: ids.length, contacts: 0, deals: 0, invoices: 0, errors: 0, currentName: "" };
     setBatchProgress(progress);
+    setBatchErrorLog([]);
     const processedIds: string[] = [];
 
     for (const id of ids) {
@@ -6108,7 +6110,7 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
       progress.current++;
       setBatchProgress({ ...progress });
       const result = await handleSyncSingleClient(client, batchActions, { name: client.name, phone: client.phones[0] || "", nif: client.nif || "" });
-      if (result) {
+      if (result && !result.error) {
         if (result.contact_id) progress.contacts++;
         if (result.deal_id) progress.deals++;
         progress.invoices += result.invoices_created || 0;
@@ -6118,6 +6120,7 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
       } else {
         progress.errors++;
         processedIds.push(id);
+        setBatchErrorLog(prev => [...prev, { name: client.name, error: result?.error || "Sem resposta" }]);
       }
       setBatchProgress({ ...progress });
 
@@ -6655,7 +6658,7 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
                         <div className="flex items-center gap-2">
                           <span className="text-muted-foreground">{Math.round((batchProgress.current / batchProgress.total) * 100)}%</span>
                           {!syncingBatch && (
-                            <Button variant="ghost" size="sm" className="h-5 px-1.5 text-xs" onClick={() => setBatchProgress({ current: 0, total: 0, contacts: 0, deals: 0, invoices: 0, errors: 0, currentName: "" })}>
+                            <Button variant="ghost" size="sm" className="h-5 px-1.5 text-xs" onClick={() => { setBatchProgress({ current: 0, total: 0, contacts: 0, deals: 0, invoices: 0, errors: 0, currentName: "" }); setBatchErrorLog([]); }}>
                               Fechar
                             </Button>
                           )}
@@ -6666,10 +6669,18 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
                         <span className="flex items-center gap-1"><Users className="h-3.5 w-3.5" /> Contactos: <span className="font-semibold text-foreground">{batchProgress.contacts}</span></span>
                         <span className="flex items-center gap-1"><FileText className="h-3.5 w-3.5" /> Negócios: <span className="font-semibold text-foreground">{batchProgress.deals}</span></span>
                         <span className="flex items-center gap-1"><CreditCard className="h-3.5 w-3.5" /> Faturas: <span className="font-semibold text-foreground">{batchProgress.invoices}</span></span>
-                        {batchProgress.errors > 0 && (
+                         {batchProgress.errors > 0 && (
                           <span className="flex items-center gap-1 text-destructive"><XCircle className="h-3.5 w-3.5" /> Erros: <span className="font-semibold">{batchProgress.errors}</span></span>
                         )}
                       </div>
+                      {batchErrorLog.length > 0 && (
+                        <div className="mt-2 max-h-32 overflow-y-auto rounded border border-destructive/20 bg-destructive/5 p-2 space-y-1">
+                          <p className="text-xs font-medium text-destructive">Detalhes dos erros:</p>
+                          {batchErrorLog.map((err, i) => (
+                            <p key={i} className="text-xs text-destructive/80">• <strong>{err.name}</strong>: {err.error}</p>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   )}
 
