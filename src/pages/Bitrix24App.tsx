@@ -6184,9 +6184,12 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
   // Primary segmentation: existing in Bitrix (has Deal) vs new (no Deal)
   const existingClients = syncClients.filter(c => !!c.bitrix_deal_id);
   const newClients = syncClients.filter(c => !c.bitrix_deal_id);
-  const segmentedClients = syncSegment === "existing" ? existingClients : newClients;
+  const segmentedClients = syncClients.filter(c => 
+    (syncSegments.has("existing") && !!c.bitrix_deal_id) || 
+    (syncSegments.has("new") && !c.bitrix_deal_id)
+  );
 
-  const filteredSyncClients = segmentedClients.filter(c => c.status_class === activeTab);
+  const filteredSyncClients = segmentedClients.filter(c => activeTabs.has(c.status_class as any));
   const quitadoCount = segmentedClients.filter(c => c.status_class === "quitado").length;
   const abertoCount = segmentedClients.filter(c => c.status_class === "aberto").length;
   const atrasadoCount = segmentedClients.filter(c => c.status_class === "atrasado").length;
