@@ -919,6 +919,23 @@ serve(async (req) => {
         });
       }
 
+      // Persist full list to backend cache (no TTL — persists until forced refresh)
+      if (member_id) {
+        try {
+          await supabase
+            .from("bitrix24_sync_cache")
+            .upsert({
+              member_id,
+              cache_type: "sync_clients_list",
+              data: clientsList,
+              fetched_at: new Date().toISOString(),
+            }, { onConflict: "member_id,cache_type" });
+          console.log(`[list_sync_clients] Cached ${clientsList.length} clients for member ${member_id}`);
+        } catch (cacheErr) {
+          console.warn("[list_sync_clients] Failed to save cache:", cacheErr);
+        }
+      }
+
       return new Response(JSON.stringify({
         success: true,
         mode: "list_sync_clients",
