@@ -6060,37 +6060,63 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
 
   const handleSyncSingleClient = async (client: SyncClient, actionsOverride?: { contact: boolean; deal: boolean; invoices: boolean }, overridesOverride?: { name?: string; phone?: string; nif?: string }): Promise<{ contact_id?: string; deal_id?: string; invoices_created?: number; error?: string } | null> => {
     setSyncingSingle(true);
-    try {
-      const res = await fetch(`${SUPABASE_URL}/functions/v1/import-access-data`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          apikey: SUPABASE_KEY,
-          Authorization: `Bearer ${SUPABASE_KEY}`,
-        },
-        body: JSON.stringify({
-          clientes: [],
-          mode: "sync_single_client",
-          client_id: client.client_id,
-          member_id: resolvedMemberId,
-          category_id: selectedCategoryId,
-          actions: actionsOverride || editActions,
-          overrides: overridesOverride || { name: editName, phone: editPhone, nif: editNif },
-        }),
-      });
-      const data = await res.json();
-      if (data.success) {
-        setSyncClients(prev => prev.map(c =>
-          c.client_id === client.client_id
-            ? { ...c, synced: true, syncResult: data.results?.join("; ") || "OK", bitrix_contact_id: data.contact_id || c.bitrix_contact_id, bitrix_deal_id: data.deal_id || c.bitrix_deal_id }
-            : c
-        ));
-        return { contact_id: data.contact_id, deal_id: data.deal_id, invoices_created: data.invoices_created || 0 };
+
+    const requestSyncSingle = async (attempt: number) => {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 45000);
+
+      try {
+        const res = await fetch(`${SUPABASE_URL}/functions/v1/import-access-data`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            apikey: SUPABASE_KEY,
+            Authorization: `Bearer ${SUPABASE_KEY}`,
+          },
+          signal: controller.signal,
+          body: JSON.stringify({
+            clientes: [],
+            mode: "sync_single_client",
+            client_id: client.client_id,
+            member_id: resolvedMemberId,
+            category_id: selectedCategoryId,
+            actions: actionsOverride || editActions,
+            overrides: overridesOverride || { name: editName, phone: editPhone, nif: editNif },
+          }),
+        });
+
+        const data = await res.json();
+        if (data.success) {
+          setSyncClients(prev => prev.map(c =>
+            c.client_id === client.client_id
+              ? { ...c, synced: true, syncResult: data.results?.join("; ") || "OK", bitrix_contact_id: data.contact_id || c.bitrix_contact_id, bitrix_deal_id: data.deal_id || c.bitrix_deal_id }
+              : c
+          ));
+          return { contact_id: data.contact_id, deal_id: data.deal_id, invoices_created: data.invoices_created || 0 };
+        }
+
+        return { error: data.error || `HTTP ${res.status}` };
+      } catch (e: any) {
+        const message = e?.name === "AbortError"
+          ? "Timeout ao sincronizar cliente"
+          : (e?.message || "Erro de rede");
+
+        const isTransient = message.includes("Failed to fetch") || message.includes("Timeout") || message.includes("Network");
+        if (isTransient && attempt < 2) {
+          const delay = 1200 * (attempt + 1);
+          await new Promise(resolve => setTimeout(resolve, delay));
+          return requestSyncSingle(attempt + 1);
+        }
+
+        console.error("[syncSingle]", e);
+        return { error: message };
+      } finally {
+        clearTimeout(timeout);
       }
-      return { error: data.error || `HTTP ${res.status}` };
-    } catch (e: any) {
-      console.error("[syncSingle]", e);
-      return { error: e?.message || "Erro de rede" };
+    };
+
+    try {
+      return await requestSyncSingle(0);
     } finally {
       setSyncingSingle(false);
       setEditingClient(null);
@@ -6122,42 +6148,47 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
         console.log("[syncBatch] Aborted by user");
         break;
       }
+
       const client = useClients.find(c => c.client_id === id);
       if (!client || client.synced) {
         progress.current++;
         processedIds.push(id);
         setBatchProgress({ ...progress });
+        await new Promise(resolve => setTimeout(resolve, 0));
         continue;
       }
+
       progress.currentName = client.name;
       progress.current++;
       setBatchProgress({ ...progress });
+
       const result = await handleSyncSingleClient(client, batchActions, { name: client.name, phone: client.phones[0] || "", nif: client.nif || "" });
+
       if (result && !result.error) {
         if (result.contact_id) progress.contacts++;
         if (result.deal_id) progress.deals++;
         progress.invoices += result.invoices_created || 0;
         processedIds.push(id);
-        // Update syncClients in real-time so badges refresh
         setSyncClients(prev => prev.map(c => c.client_id === id ? { ...c, synced: true } : c));
       } else {
         progress.errors++;
         processedIds.push(id);
         setBatchErrorLog(prev => [...prev, { name: client.name, error: result?.error || "Sem resposta" }]);
       }
+
       setBatchProgress({ ...progress });
 
-      // Save progress after each client
       if (sessionId) {
         await saveSessionProgress(sessionId, processedIds.length, processedIds as any);
       }
+
+      await new Promise(resolve => setTimeout(resolve, 150));
     }
 
     setSyncingBatch(false);
     batchAbortRef.current = false;
     setSelectedIds(new Set());
 
-    // Mark session done if all processed
     if (sessionId && processedIds.length >= ids.length) {
       await markSessionDone(sessionId);
     }
