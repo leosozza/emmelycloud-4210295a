@@ -5972,6 +5972,13 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
       setSyncClients(clientsWithSyncStatus);
       setSyncLoadProgress({ processed: clientsWithSyncStatus.length, total: clientsWithSyncStatus.length });
 
+      // Cache in sessionStorage for persistence
+      try {
+        sessionStorage.setItem('sync_clients_cache', JSON.stringify(clientsWithSyncStatus));
+      } catch (e) {
+        console.warn('[syncClients] sessionStorage save failed:', e);
+      }
+
       // Auto-select segment and tab that have data
       if (clientsWithSyncStatus.length > 0) {
         const existing = clientsWithSyncStatus.filter(c => !!c.bitrix_deal_id);
