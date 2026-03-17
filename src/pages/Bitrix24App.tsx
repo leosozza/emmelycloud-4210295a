@@ -5906,6 +5906,35 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
   // ── Phase 3: Load clients for sync ──
   const [syncLoadProgress, setSyncLoadProgress] = useState({ processed: 0, total: 0 });
 
+  // Restore syncClients from sessionStorage on mount
+  useEffect(() => {
+    if (syncClientsLoaded || syncClients.length > 0) return;
+    try {
+      const cached = sessionStorage.getItem('sync_clients_cache');
+      if (cached) {
+        const parsed = JSON.parse(cached) as SyncClient[];
+        if (parsed.length > 0) {
+          setSyncClients(parsed);
+          setSyncClientsLoaded(true);
+          // Auto-select segment/tab
+          const existing = parsed.filter(c => !!c.bitrix_deal_id);
+          const newOnes = parsed.filter(c => !c.bitrix_deal_id);
+          const bestSegment = existing.length > 0 ? "existing" : "new";
+          setSyncSegment(bestSegment);
+          const segData = bestSegment === "existing" ? existing : newOnes;
+          const atrasado = segData.filter(c => c.status_class === "atrasado").length;
+          const aberto = segData.filter(c => c.status_class === "aberto").length;
+          const quitado = segData.filter(c => c.status_class === "quitado").length;
+          if (atrasado > 0) setActiveTab("atrasado");
+          else if (aberto > 0) setActiveTab("aberto");
+          else if (quitado > 0) setActiveTab("quitado");
+        }
+      }
+    } catch (e) {
+      console.warn('[syncClients] sessionStorage restore failed:', e);
+    }
+  }, []);
+
   const handleLoadSyncClients = async (forceRefresh = false) => {
     setLoadingSyncClients(true);
     if (forceRefresh) {
