@@ -6535,22 +6535,22 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
               </div>
 
               {/* Load clients buttons */}
-              <div className="flex gap-2">
-                <Button onClick={() => handleLoadSyncClients(false)} disabled={isImporting} className="flex-1" size="lg" variant="outline">
+              {!syncClientsLoaded ? (
+                <Button onClick={() => handleLoadSyncClients(false)} disabled={isImporting || loadingSyncClients} className="w-full" size="lg" variant="outline">
                   {loadingSyncClients ? (
                     <><Loader2 className="h-4 w-4 animate-spin mr-2" /> Carregando clientes... {syncLoadProgress.total > 0 ? `(${syncLoadProgress.processed}/${syncLoadProgress.total})` : ""}</>
-                  ) : syncClientsLoaded ? (
-                    <><RefreshCw className="h-4 w-4 mr-2" /> Recarregar ({syncClients.length} clientes)</>
                   ) : (
                     <><Users className="h-4 w-4 mr-2" /> Carregar Clientes para Sincronização</>
                   )}
                 </Button>
-                {syncClientsLoaded && (
-                  <Button onClick={() => handleLoadSyncClients(true)} disabled={isImporting || loadingSyncClients} size="lg" variant="ghost" title="Forçar actualização dos dados do Bitrix24 (ignora cache)">
-                    <RefreshCw className="h-4 w-4" />
+              ) : (
+                <div className="flex items-center justify-between">
+                  <p className="text-sm font-medium text-muted-foreground">{syncClients.length} clientes carregados</p>
+                  <Button onClick={() => handleLoadSyncClients(true)} disabled={isImporting || loadingSyncClients} size="sm" variant="ghost" title="Forçar actualização dos dados do Bitrix24 (ignora cache)">
+                    {loadingSyncClients ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
                   </Button>
-                )}
-              </div>
+                </div>
+              )}
 
               {/* Loading progress bar */}
               {loadingSyncClients && syncLoadProgress.total > 0 && (
