@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX IF NOT EXISTS bitrix24_sync_cache_member_type_unique ON public.bitrix24_sync_cache (member_id, cache_type);
