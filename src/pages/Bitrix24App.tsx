@@ -6075,6 +6075,8 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
         if (result.deal_id) progress.deals++;
         progress.invoices += result.invoices_created || 0;
         processedIds.push(id);
+        // Update syncClients in real-time so badges refresh
+        setSyncClients(prev => prev.map(c => c.client_id === id ? { ...c, synced: true } : c));
       } else {
         progress.errors++;
         processedIds.push(id);
