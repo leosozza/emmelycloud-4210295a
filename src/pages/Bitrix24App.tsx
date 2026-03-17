@@ -5907,9 +5907,11 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
   // ── Phase 3: Load clients for sync ──
   const [syncLoadProgress, setSyncLoadProgress] = useState({ processed: 0, total: 0 });
 
-  // Restore syncClients from sessionStorage on mount
+  // Restore syncClients from backend cache on mount (instant, no Bitrix calls)
   useEffect(() => {
     if (syncClientsLoaded || syncClients.length > 0) return;
+
+    // First try sessionStorage (fastest, intra-session)
     try {
       const cached = sessionStorage.getItem('sync_clients_cache');
       if (cached) {
@@ -5917,26 +5919,48 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
         if (parsed.length > 0) {
           setSyncClients(parsed);
           setSyncClientsLoaded(true);
-          // Auto-select segment/tab
-          const existing = parsed.filter(c => !!c.bitrix_deal_id);
-          const newOnes = parsed.filter(c => !c.bitrix_deal_id);
-          const segs = new Set<"existing" | "new">();
-          if (existing.length > 0) segs.add("existing");
-          if (newOnes.length > 0) segs.add("new");
-          if (segs.size === 0) segs.add("existing");
-          setSyncSegments(segs);
-          const tabs = new Set<"quitado" | "aberto" | "atrasado">();
-          if (parsed.some(c => c.status_class === "atrasado")) tabs.add("atrasado");
-          if (parsed.some(c => c.status_class === "aberto")) tabs.add("aberto");
-          if (parsed.some(c => c.status_class === "quitado")) tabs.add("quitado");
-          if (tabs.size === 0) tabs.add("atrasado");
-          setActiveTabs(tabs);
+          autoSelectSegmentsAndTabs(parsed);
+          return;
         }
       }
     } catch (e) {
       console.warn('[syncClients] sessionStorage restore failed:', e);
     }
-  }, []);
+
+    // Then try backend cache (persists across sessions)
+    if (!resolvedMemberId) return;
+    (async () => {
+      try {
+        const res = await fetch(`${SUPABASE_URL}/functions/v1/import-access-data`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            apikey: SUPABASE_KEY,
+            Authorization: `Bearer ${SUPABASE_KEY}`,
+          },
+          body: JSON.stringify({
+            clientes: [],
+            mode: "get_cached_sync_clients",
+            member_id: resolvedMemberId,
+          }),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data.success && data.cached && data.clients?.length > 0) {
+            const clients = data.clients as SyncClient[];
+            setSyncClients(clients);
+            setSyncClientsLoaded(true);
+            autoSelectSegmentsAndTabs(clients);
+            // Also save to sessionStorage for faster intra-session access
+            try { sessionStorage.setItem('sync_clients_cache', JSON.stringify(clients)); } catch {}
+            console.log(`[syncClients] Restored ${clients.length} clients from backend cache (cached at ${data.cached_at})`);
+          }
+        }
+      } catch (e) {
+        console.warn('[syncClients] Backend cache restore failed:', e);
+      }
+    })();
+  }, [resolvedMemberId]);
 
   const [syncLoadError, setSyncLoadError] = useState<string | null>(null);
   const [syncPartialWarning, setSyncPartialWarning] = useState<string | null>(null);
