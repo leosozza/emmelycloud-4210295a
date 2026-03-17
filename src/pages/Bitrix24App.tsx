@@ -5906,10 +5906,41 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
   // ── Phase 3: Load clients for sync ──
   const [syncLoadProgress, setSyncLoadProgress] = useState({ processed: 0, total: 0 });
 
+  // Restore syncClients from sessionStorage on mount
+  useEffect(() => {
+    if (syncClientsLoaded || syncClients.length > 0) return;
+    try {
+      const cached = sessionStorage.getItem('sync_clients_cache');
+      if (cached) {
+        const parsed = JSON.parse(cached) as SyncClient[];
+        if (parsed.length > 0) {
+          setSyncClients(parsed);
+          setSyncClientsLoaded(true);
+          // Auto-select segment/tab
+          const existing = parsed.filter(c => !!c.bitrix_deal_id);
+          const newOnes = parsed.filter(c => !c.bitrix_deal_id);
+          const bestSegment = existing.length > 0 ? "existing" : "new";
+          setSyncSegment(bestSegment);
+          const segData = bestSegment === "existing" ? existing : newOnes;
+          const atrasado = segData.filter(c => c.status_class === "atrasado").length;
+          const aberto = segData.filter(c => c.status_class === "aberto").length;
+          const quitado = segData.filter(c => c.status_class === "quitado").length;
+          if (atrasado > 0) setActiveTab("atrasado");
+          else if (aberto > 0) setActiveTab("aberto");
+          else if (quitado > 0) setActiveTab("quitado");
+        }
+      }
+    } catch (e) {
+      console.warn('[syncClients] sessionStorage restore failed:', e);
+    }
+  }, []);
+
   const handleLoadSyncClients = async (forceRefresh = false) => {
     setLoadingSyncClients(true);
-    setSyncClients([]);
-    setSyncClientsLoaded(false);
+    if (forceRefresh) {
+      setSyncClients([]);
+      setSyncClientsLoaded(false);
+    }
     setSyncLoadProgress({ processed: 0, total: 0 });
 
     try {
@@ -5969,6 +6000,13 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
       }));
       setSyncClients(clientsWithSyncStatus);
       setSyncLoadProgress({ processed: clientsWithSyncStatus.length, total: clientsWithSyncStatus.length });
+
+      // Cache in sessionStorage for persistence
+      try {
+        sessionStorage.setItem('sync_clients_cache', JSON.stringify(clientsWithSyncStatus));
+      } catch (e) {
+        console.warn('[syncClients] sessionStorage save failed:', e);
+      }
 
       // Auto-select segment and tab that have data
       if (clientsWithSyncStatus.length > 0) {
@@ -6497,22 +6535,22 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
               </div>
 
               {/* Load clients buttons */}
-              <div className="flex gap-2">
-                <Button onClick={() => handleLoadSyncClients(false)} disabled={isImporting} className="flex-1" size="lg" variant="outline">
+              {!syncClientsLoaded ? (
+                <Button onClick={() => handleLoadSyncClients(false)} disabled={isImporting || loadingSyncClients} className="w-full" size="lg" variant="outline">
                   {loadingSyncClients ? (
                     <><Loader2 className="h-4 w-4 animate-spin mr-2" /> Carregando clientes... {syncLoadProgress.total > 0 ? `(${syncLoadProgress.processed}/${syncLoadProgress.total})` : ""}</>
-                  ) : syncClientsLoaded ? (
-                    <><RefreshCw className="h-4 w-4 mr-2" /> Recarregar ({syncClients.length} clientes)</>
                   ) : (
                     <><Users className="h-4 w-4 mr-2" /> Carregar Clientes para Sincronização</>
                   )}
                 </Button>
-                {syncClientsLoaded && (
-                  <Button onClick={() => handleLoadSyncClients(true)} disabled={isImporting || loadingSyncClients} size="lg" variant="ghost" title="Forçar actualização dos dados do Bitrix24 (ignora cache)">
-                    <RefreshCw className="h-4 w-4" />
+              ) : (
+                <div className="flex items-center justify-between">
+                  <p className="text-sm font-medium text-muted-foreground">{syncClients.length} clientes carregados</p>
+                  <Button onClick={() => handleLoadSyncClients(true)} disabled={isImporting || loadingSyncClients} size="sm" variant="ghost" title="Forçar actualização dos dados do Bitrix24 (ignora cache)">
+                    {loadingSyncClients ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
                   </Button>
-                )}
-              </div>
+                </div>
+              )}
 
               {/* Loading progress bar */}
               {loadingSyncClients && syncLoadProgress.total > 0 && (
