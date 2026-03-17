@@ -6618,51 +6618,103 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
               {/* Tabs + Client list */}
               {syncClientsLoaded && syncClients.length > 0 && (
                 <div className="space-y-4 pt-3 border-t">
-                  {/* Primary segmentation: Existing vs New */}
-                  <div className="flex gap-2 mb-2">
+                  {/* Primary segmentation: Existing vs New (multi-select) */}
+                  <div className="flex gap-2 mb-2 flex-wrap">
                     <Button
-                      variant={syncSegment === "existing" ? "default" : "outline"}
+                      variant={syncSegments.has("existing") ? "default" : "outline"}
                       size="sm"
-                      onClick={() => { setSyncSegment("existing"); setSelectedIds(new Set()); }}
+                      onClick={() => {
+                        const next = new Set(syncSegments);
+                        if (next.has("existing")) { if (next.size > 1) next.delete("existing"); }
+                        else next.add("existing");
+                        setSyncSegments(next);
+                        setSelectedIds(new Set());
+                      }}
                       className="text-xs"
                     >
                       <RefreshCw className="h-3.5 w-3.5 mr-1" /> Etapa A: Sincronizar existentes ({existingClients.length})
                     </Button>
                     <Button
-                      variant={syncSegment === "new" ? "default" : "outline"}
+                      variant={syncSegments.has("new") ? "default" : "outline"}
                       size="sm"
-                      onClick={() => { setSyncSegment("new"); setSelectedIds(new Set()); }}
+                      onClick={() => {
+                        const next = new Set(syncSegments);
+                        if (next.has("new")) { if (next.size > 1) next.delete("new"); }
+                        else next.add("new");
+                        setSyncSegments(next);
+                        setSelectedIds(new Set());
+                      }}
                       className="text-xs"
                     >
                       <Plus className="h-3.5 w-3.5 mr-1" /> Etapa B: Cadastrar novos ({newClients.length})
                     </Button>
+                    <Button
+                      variant={syncSegments.size === 2 ? "secondary" : "outline"}
+                      size="sm"
+                      onClick={() => {
+                        setSyncSegments(new Set(["existing", "new"]));
+                        setSelectedIds(new Set());
+                      }}
+                      className="text-xs"
+                    >
+                      Todos ({syncClients.length})
+                    </Button>
                   </div>
 
-                  {/* Status tabs (secondary filter) */}
-                  <div className="flex gap-2">
+                  {/* Status tabs (multi-select) */}
+                  <div className="flex gap-2 flex-wrap">
                     <Button
-                      variant={activeTab === "atrasado" ? "default" : "outline"}
+                      variant={activeTabs.has("atrasado") ? "default" : "outline"}
                       size="sm"
-                      onClick={() => { setActiveTab("atrasado"); setSelectedIds(new Set()); }}
+                      onClick={() => {
+                        const next = new Set(activeTabs);
+                        if (next.has("atrasado")) { if (next.size > 1) next.delete("atrasado"); }
+                        else next.add("atrasado");
+                        setActiveTabs(next);
+                        setSelectedIds(new Set());
+                      }}
                       className="text-xs"
                     >
                       <AlertTriangle className="h-3.5 w-3.5 mr-1" /> Atrasados ({atrasadoCount})
                     </Button>
                     <Button
-                      variant={activeTab === "aberto" ? "default" : "outline"}
+                      variant={activeTabs.has("aberto") ? "default" : "outline"}
                       size="sm"
-                      onClick={() => { setActiveTab("aberto"); setSelectedIds(new Set()); }}
+                      onClick={() => {
+                        const next = new Set(activeTabs);
+                        if (next.has("aberto")) { if (next.size > 1) next.delete("aberto"); }
+                        else next.add("aberto");
+                        setActiveTabs(next);
+                        setSelectedIds(new Set());
+                      }}
                       className="text-xs"
                     >
                       <Clock className="h-3.5 w-3.5 mr-1" /> Em Aberto ({abertoCount})
                     </Button>
                     <Button
-                      variant={activeTab === "quitado" ? "default" : "outline"}
+                      variant={activeTabs.has("quitado") ? "default" : "outline"}
                       size="sm"
-                      onClick={() => { setActiveTab("quitado"); setSelectedIds(new Set()); }}
+                      onClick={() => {
+                        const next = new Set(activeTabs);
+                        if (next.has("quitado")) { if (next.size > 1) next.delete("quitado"); }
+                        else next.add("quitado");
+                        setActiveTabs(next);
+                        setSelectedIds(new Set());
+                      }}
                       className="text-xs"
                     >
                       <CheckCircle className="h-3.5 w-3.5 mr-1" /> Quitados ({quitadoCount})
+                    </Button>
+                    <Button
+                      variant={activeTabs.size === 3 ? "secondary" : "outline"}
+                      size="sm"
+                      onClick={() => {
+                        setActiveTabs(new Set(["atrasado", "aberto", "quitado"]));
+                        setSelectedIds(new Set());
+                      }}
+                      className="text-xs"
+                    >
+                      Todos
                     </Button>
                   </div>
 
