@@ -6035,7 +6035,7 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
     }
   };
 
-  const handleSyncSingleClient = async (client: SyncClient, actionsOverride?: { contact: boolean; deal: boolean; invoices: boolean }, overridesOverride?: { name?: string; phone?: string; nif?: string }): Promise<{ contact_id?: string; deal_id?: string; invoices_created?: number } | null> => {
+  const handleSyncSingleClient = async (client: SyncClient, actionsOverride?: { contact: boolean; deal: boolean; invoices: boolean }, overridesOverride?: { name?: string; phone?: string; nif?: string }): Promise<{ contact_id?: string; deal_id?: string; invoices_created?: number; error?: string } | null> => {
     setSyncingSingle(true);
     try {
       const res = await fetch(`${SUPABASE_URL}/functions/v1/import-access-data`, {
@@ -6064,10 +6064,10 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
         ));
         return { contact_id: data.contact_id, deal_id: data.deal_id, invoices_created: data.invoices_created || 0 };
       }
-      return null;
-    } catch (e) {
+      return { error: data.error || `HTTP ${res.status}` };
+    } catch (e: any) {
       console.error("[syncSingle]", e);
-      return null;
+      return { error: e?.message || "Erro de rede" };
     } finally {
       setSyncingSingle(false);
       setEditingClient(null);
