@@ -6110,7 +6110,7 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
       progress.current++;
       setBatchProgress({ ...progress });
       const result = await handleSyncSingleClient(client, batchActions, { name: client.name, phone: client.phones[0] || "", nif: client.nif || "" });
-      if (result) {
+      if (result && !result.error) {
         if (result.contact_id) progress.contacts++;
         if (result.deal_id) progress.deals++;
         progress.invoices += result.invoices_created || 0;
@@ -6120,6 +6120,7 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
       } else {
         progress.errors++;
         processedIds.push(id);
+        setBatchErrorLog(prev => [...prev, { name: client.name, error: result?.error || "Sem resposta" }]);
       }
       setBatchProgress({ ...progress });
 
