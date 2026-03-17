@@ -6658,7 +6658,7 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
                         <div className="flex items-center gap-2">
                           <span className="text-muted-foreground">{Math.round((batchProgress.current / batchProgress.total) * 100)}%</span>
                           {!syncingBatch && (
-                            <Button variant="ghost" size="sm" className="h-5 px-1.5 text-xs" onClick={() => setBatchProgress({ current: 0, total: 0, contacts: 0, deals: 0, invoices: 0, errors: 0, currentName: "" })}>
+                            <Button variant="ghost" size="sm" className="h-5 px-1.5 text-xs" onClick={() => { setBatchProgress({ current: 0, total: 0, contacts: 0, deals: 0, invoices: 0, errors: 0, currentName: "" }); setBatchErrorLog([]); }}>
                               Fechar
                             </Button>
                           )}
