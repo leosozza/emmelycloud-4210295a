@@ -6605,18 +6605,28 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
                   </div>
 
                   {/* Batch progress panel */}
-                  {syncingBatch && batchProgress.total > 0 && (
-                    <div className="border rounded-lg p-3 bg-muted/30 space-y-2">
+                  {batchProgress.total > 0 && (
+                    <div className={cn("border rounded-lg p-3 space-y-2", syncingBatch ? "bg-muted/30" : "bg-green-50 dark:bg-green-950/20 border-green-200 dark:border-green-800")}>
                       <div className="flex items-center justify-between text-xs">
                         <span className="font-medium text-foreground">
-                          Sincronizando {batchProgress.current}/{batchProgress.total} — {batchProgress.currentName}
+                          {syncingBatch 
+                            ? `Sincronizando ${batchProgress.current}/${batchProgress.total} — ${batchProgress.currentName}`
+                            : `✅ Concluído — ${batchProgress.current}/${batchProgress.total} processados`
+                          }
                         </span>
-                        <span className="text-muted-foreground">{Math.round((batchProgress.current / batchProgress.total) * 100)}%</span>
+                        <div className="flex items-center gap-2">
+                          <span className="text-muted-foreground">{Math.round((batchProgress.current / batchProgress.total) * 100)}%</span>
+                          {!syncingBatch && (
+                            <Button variant="ghost" size="sm" className="h-5 px-1.5 text-xs" onClick={() => setBatchProgress({ current: 0, total: 0, contacts: 0, deals: 0, invoices: 0, errors: 0, currentName: "" })}>
+                              Fechar
+                            </Button>
+                          )}
+                        </div>
                       </div>
                       <Progress value={(batchProgress.current / batchProgress.total) * 100} className="h-2" />
                       <div className="flex items-center gap-4 text-xs text-muted-foreground">
-                        <span className="flex items-center gap-1"><Users className="h-3.5 w-3.5" /> Contacts: <span className="font-semibold text-foreground">{batchProgress.contacts}</span></span>
-                        <span className="flex items-center gap-1"><FileText className="h-3.5 w-3.5" /> Deals: <span className="font-semibold text-foreground">{batchProgress.deals}</span></span>
+                        <span className="flex items-center gap-1"><Users className="h-3.5 w-3.5" /> Contactos: <span className="font-semibold text-foreground">{batchProgress.contacts}</span></span>
+                        <span className="flex items-center gap-1"><FileText className="h-3.5 w-3.5" /> Negócios: <span className="font-semibold text-foreground">{batchProgress.deals}</span></span>
                         <span className="flex items-center gap-1"><CreditCard className="h-3.5 w-3.5" /> Faturas: <span className="font-semibold text-foreground">{batchProgress.invoices}</span></span>
                         {batchProgress.errors > 0 && (
                           <span className="flex items-center gap-1 text-destructive"><XCircle className="h-3.5 w-3.5" /> Erros: <span className="font-semibold">{batchProgress.errors}</span></span>
