@@ -1,104 +1,80 @@
 
+Objetivo: fazer a Fase 3 voltar a listar clientes mesmo quando o Bitrix24 oscila, e impedir o estado “carregou 0” falso.
 
-## Revisão Arquitetural — Fase 2 Implementada
+Diagnóstico
+- Os dados locais existem: há 1058 clientes importados com `id_access` e 1019 com cadeia financeira válida para a Fase 3.
+- A função `import-access-data` em `mode: "list_sync_clients"` responde com clientes quando chamada diretamente.
+- O problema real está no caminho do preview: o request do browser falhou com `Failed to fetch` enquanto a função tentava buscar `crm.contact.list` no Bitrix24 e fazia retries.
+- Hoje o frontend faz isto em `src/pages/Bitrix24App.tsx`:
+  - em erro retorna `[]`
+  - no `finally` faz `setSyncClientsLoaded(true)` sempre
+- Resultado: o botão some, a lista fica vazia e parece que “não importou nenhum cliente”, mesmo sem ser verdade.
 
-### Mudanças realizadas (Fase 2)
+Plano de implementação
 
-#### 1. Código morto eliminado
-- `chatbot-reply/index.ts` — **removido** (100% duplicado com flow-engine → ai-process-message)
-- `ai-triage/index.ts` — **removido** (100% duplicado com ai-automation-agent action classify_lead)
+1. Corrigir o estado de erro no frontend
+- Arquivo: `src/pages/Bitrix24App.tsx`
+- Ajustar `handleLoadSyncClients` para:
+  - só marcar `syncClientsLoaded = true` quando houver resposta válida processada
+  - manter `syncClientsLoaded = false` em erro de rede / timeout
+  - adicionar `syncLoadError` com mensagem amigável
+  - não esconder o botão “Carregar Clientes” se a chamada falhar
+- Efeito: o usuário verá erro + botão de tentar novamente, em vez de uma tela vazia.
 
-#### 2. Janela de contexto expandida
-- `RECENT_MSG_COUNT`: 5 → **15** mensagens recentes completas
-- `HISTORY_LIMIT`: 15 → **30** mensagens totais
-- TOON comprime as 15 mais antigas, mantém as 15 recentes intactas
+2. Mostrar feedback explícito quando o carregamento falhar
+- Arquivo: `src/pages/Bitrix24App.tsx`
+- Adicionar um bloco visual na Fase 3 com:
+  - mensagem de erro (“Falha ao carregar clientes do Bitrix24”)
+  - motivo técnico resumido (“instabilidade de rede / timeout no Bitrix24”)
+  - ação clara de retry
+- Efeito: fica óbvio que falhou a comunicação, não que “não existem clientes”.
 
-#### 3. RAG semântico real (pgvector)
-- Edge function `generate-embeddings` criada — gera embeddings de 768 dimensões via Lovable AI
-- `parse-document` agora chama `generate-embeddings` automaticamente após chunking
-- `ai-process-message` usa `match_chunks()` RPC para busca semântica (threshold 0.5)
-- Fallback para keyword scoring quando embeddings não existem
+3. Fazer o backend degradar com segurança
+- Arquivo: `supabase/functions/import-access-data/index.ts`
+- Em `mode === "list_sync_clients"`:
+  - manter a montagem da lista local de clientes como prioridade
+  - tratar a busca de contactos do Bitrix como enriquecimento opcional, não obrigatório
+  - se `crm.contact.list` estiver lento ou instável, devolver a lista mesmo assim, com matching parcial
+  - incluir um `warning` no payload quando a correspondência por contactos for ignorada
+- Efeito: a Fase 3 continua funcional mesmo se o Bitrix estiver com 502 / timeout.
 
-#### 4. Router multi-agente
-- Quando agente tem `sub_agent_ids`, classifica intenção via IA rápida (flash-lite)
-- Delega para sub-agente especialista com seu próprio prompt e KB
-- Mantém agente activo em `bot_state.active_sub_agent_id` para consistência
+4. Reduzir o tempo de execução da listagem inicial
+- Arquivo: `supabase/functions/import-access-data/index.ts`
+- Ajustar o bloco de `crm.contact.list` para usar orçamento de tempo menor e menos retries no modo de listagem.
+- Estratégia:
+  - usar cache quando existir
+  - se não houver cache e o Bitrix falhar, abortar esse enriquecimento cedo
+  - não deixar a resposta inteira depender dessa varredura pesada
+- Efeito: menos chance de `Failed to fetch` no navegador.
 
-#### 5. Self-evaluation / Reflexão
-- Após gerar resposta, avalia qualidade via flash-lite (score 1-10)
-- Se score < 7, regenera com instrução de correcção (máximo 1 retry)
-- Respostas < 50 chars ignoram avaliação
+5. Preservar a segmentação da UI sem bloquear a listagem
+- Arquivo: `src/pages/Bitrix24App.tsx`
+- Se a resposta vier parcial:
+  - continuar exibindo os clientes
+  - segmentar com base no que foi possível resolver
+  - mostrar aviso de “correspondência parcial com Bitrix24”
+- Efeito: o utilizador consegue trabalhar e sincronizar, mesmo sem enriquecimento completo.
 
-#### 6. Sentiment analysis + Auto-escalação
-- Análise de sentimento via heurística + IA
-- 2x frustração consecutiva → auto-transfere para humano
-- Guarda sentiment em `bot_state.last_sentiment`
-- Regista escalação em `conversation_feedback`
+Resultado esperado
+- A Fase 3 volta a mostrar os clientes importados.
+- Se o Bitrix oscilar, a tela não fica “zerada”.
+- O botão de carregar continua disponível quando houver falha.
+- O usuário entende quando houve erro real de rede versus lista realmente vazia.
 
-#### 7. Tools dinâmicas expandidas
-- Novas tools: `search_knowledge`, `get_case_status`, `send_payment_link`
-- Tools desconhecidas verificam `tool_parameters.webhook_url` para chamada webhook genérica
-- Registry pattern: tools são lidas de `agent_tools` table
+Detalhes técnicos
+- Frontend:
+  - remover o `setSyncClientsLoaded(true)` incondicional do `finally`
+  - adicionar `syncLoadError` e estado de “partial load”
+  - manter `sessionStorage` apenas para sucesso real
+- Backend:
+  - transformar `crm.contact.list` em passo opcional no `list_sync_clients`
+  - responder com `success: true` + `warnings` quando o problema for apenas no enriquecimento do Bitrix
+  - priorizar os 1019 clientes locais com financeiro válido
 
-#### 8. Queue worker auto-trigger
-- Trigger PostgreSQL `AFTER INSERT ON message_queue` chama `pg_net.http_post()` para queue-worker
-- Cron backup via `pg_cron` a cada minuto
-
-#### 9. Melhorias de robustez no sendReply
-- `Promise.allSettled` para operações paralelas (save message + update conversation)
-- Error logging real em vez de fire-and-forget silencioso para message-send e bitrix24-send
-- Extração de memória com tolerância `count % 10 > 1` (mais robusto que `=== 0`)
-
-### Mudanças realizadas (Fase 2.1 — Consolidação Completa)
-
-#### Código morto eliminado
-- `chatbot-reply/index.ts` e `ai-triage/index.ts` — diretórios removidos, referências limpas em `config.toml`, `ApiDocs.tsx` e `bitrix24-worker.ts`
-- ApiDocs actualizado para documentar `ai-process-message` em vez de `chatbot-reply`
-
-#### Sintaxe corrigida
-- `parse-document/index.ts` — corrigida função `extractWithAI` que estava erroneamente aninhada dentro de `findFileInZip`
-
-#### Config.toml actualizado
-- Removidas entradas `ai-triage` e `chatbot-reply`
-- Adicionadas entradas para `generate-embeddings`, `parse-document` e `queue-worker`
-
-#### Triggers PostgreSQL criados
-- `on_message_queue_insert` → auto-invoca `queue-worker` via `pg_net`
-- `on_lead_created` → notifica comerciais e admins
-- `on_message_created` → notifica de novas mensagens inbound
-- `on_payment_status_change` → notifica pagamentos recebidos
-- `on_lead_sla_check` → alerta SLA a expirar
-- `on_lead_set_sla` → define SLA automático na criação
-- `on_profile_created` → atribui admin ao primeiro utilizador
-- Cron job `queue-worker-backup` — invoca queue-worker a cada minuto
-
-### Estado actual — 8/8 melhorias implementadas ✅
-1. ✅ Código morto eliminado (chatbot-reply + ai-triage)
-2. ✅ Contexto expandido (30 mensagens: 15 recentes + 15 comprimidas TOON)
-3. ✅ RAG semântico (pgvector + match_chunks + generate-embeddings)
-4. ✅ Router multi-agente (sub_agent_ids + classificação de intenção)
-5. ✅ Tools dinâmicas (registry pattern + webhook fallback)
-6. ✅ Reflexão/Auto-avaliação (score 1-10, retry se < 7)
-7. ✅ Sentiment analysis + auto-escalação (2x frustração → humano)
-8. ✅ Queue worker auto-trigger (pg_trigger + pg_cron backup)
-
-### Mudanças realizadas (Fase 3 — Auditoria Arquitetural)
-
-#### 1. Dashboard de Observabilidade IA
-- Nova página `/observabilidade-ia` com KPIs: requisições, tokens, custo estimado, latência média, taxa fallback, taxa erro, rating feedback
-- Hook `useAiObservability.ts` com agregação de dados
-
-#### 2. Thumbs up/down no chat de atendimento
-- Botões de feedback em mensagens outbound (bot) no painel de atendimento
-
-#### 3. Retry com backoff no AI gateway (429/502/503, 2s delay, 1 retry)
-
-#### 4. Cost estimation real (tabela de preços por modelo, cálculo automático)
-
-#### 5. Memory extraction melhorada (cada 15 msgs + em transferência humana)
-
-#### 6. Reorganização do monólito (constantes extraídas, secções delimitadas)
-
-### Próximos passos
-- Batch job para gerar embeddings dos chunks existentes
-- Streaming no PlaygroundIA
+Validação após implementar
+1. Chamar a função `list_sync_clients` e confirmar retorno com clientes.
+2. Abrir a Fase 3 e verificar que a lista aparece.
+3. Simular falha de Bitrix e confirmar:
+   - erro visível
+   - botão continua disponível
+   - a tela não entra em estado falso de “0 clientes”.
