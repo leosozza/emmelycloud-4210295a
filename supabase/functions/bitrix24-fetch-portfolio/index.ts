@@ -132,6 +132,7 @@ async function handleFullPortfolio(supabase: any) {
     let cv = 0, cp = 0, cpn = 0, co = 0;
     let serviceCount = 0;
 
+    let firstDealId: string | null = null;
     for (const lead of cLeads) {
       for (const cas of (lead.cases || [])) {
         serviceCount++;
@@ -142,6 +143,7 @@ async function handleFullPortfolio(supabase: any) {
             if (fr.status === "paga") cp += val;
             else if (fr.due_date && new Date(fr.due_date) < now && fr.status !== "paga") co += val;
             else cpn += val;
+            if (!firstDealId && fr.bitrix24_deal_id) firstDealId = fr.bitrix24_deal_id;
           }
         }
       }
