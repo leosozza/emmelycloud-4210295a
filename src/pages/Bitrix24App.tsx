@@ -69,7 +69,7 @@ const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
 
 const customNodeTypes = { custom: CustomFlowNode };
 
-type AppView = "loading" | "dashboard" | "agentes" | "training" | "flows" | "playground" | "chatia" | "pagamentos" | "relatorios" | "mapeamento" | "empresas" | "baixa" | "placement" | "importacao" | "carteira" | "configuracoes";
+type AppView = "loading" | "dashboard" | "agentes" | "training" | "flows" | "playground" | "chatia" | "pagamentos" | "relatorios" | "mapeamento" | "empresas" | "baixa" | "placement" | "importacao" | "carteira" | "configuracoes" | "revisao";
 
 // ==================== MAIN COMPONENT ====================
 const Bitrix24App = () => {
@@ -84,7 +84,7 @@ const Bitrix24App = () => {
     if (initialLoading) return "loading";
     const sub = location.pathname.replace(/^\/bitrix24\/?/, "").split("/")[0];
     if (!sub || sub === "") return "dashboard";
-    const validViews: AppView[] = ["dashboard", "agentes", "training", "flows", "playground", "chatia", "pagamentos", "relatorios", "mapeamento", "empresas", "baixa", "placement", "importacao", "carteira", "configuracoes"];
+    const validViews: AppView[] = ["dashboard", "agentes", "training", "flows", "playground", "chatia", "pagamentos", "relatorios", "mapeamento", "empresas", "baixa", "placement", "importacao", "carteira", "configuracoes", "revisao"];
     return validViews.includes(sub as AppView) ? (sub as AppView) : "dashboard";
   }, [location.pathname, initialLoading]);
 
@@ -213,6 +213,7 @@ const Bitrix24App = () => {
         { id: "carteira", label: "Carteira", icon: Users },
         { id: "baixa", label: "Baixa Carteira", icon: FileDown },
         { id: "importacao", label: "Importação", icon: Upload },
+        { id: "revisao", label: "Revisão", icon: AlertTriangle },
         { id: "placement", label: "Placement", icon: ExternalLink },
         { id: "empresas", label: "Empresas", icon: Building2 },
         { id: "relatorios", label: "Relatórios", icon: BarChart3 },
@@ -339,6 +340,7 @@ const Bitrix24App = () => {
         {view === "relatorios" && <RelatoriosView memberId={memberId || integration?.member_id || undefined} />}
         {view === "importacao" && <ImportacaoAccessView integration={integration} memberId={memberId} />}
         {view === "carteira" && <CarteiraAccessView integration={integration} memberId={memberId} cachedPortfolio={cachedPortfolio} />}
+        {view === "revisao" && <RevisaoView integration={integration} memberId={memberId} />}
         {view === "configuracoes" && (
           <ConfigView
             integration={integration}
@@ -7219,6 +7221,308 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
           )}
         </DialogContent>
       </Dialog>
+    </div>
+  );
+}
+
+// ==================== REVISÃO VIEW ====================
+function RevisaoView({ integration, memberId }: { integration: any; memberId: string | null }) {
+  const [scanning, setScanning] = useState(false);
+  const [scanResult, setScanResult] = useState<any>(null);
+  const [merging, setMerging] = useState<string | null>(null);
+  const [fixingStages, setFixingStages] = useState(false);
+  const [fixResult, setFixResult] = useState<any>(null);
+  const [selectedKeep, setSelectedKeep] = useState<Record<string, string>>({});
+  const [mergeResults, setMergeResults] = useState<Record<string, any>>({});
+
+  const mid = memberId || integration?.member_id;
+
+  const handleScan = async () => {
+    if (!mid) return;
+    setScanning(true);
+    setScanResult(null);
+    setMergeResults({});
+    try {
+      const res = await fetch(
+        `${SUPABASE_URL}/functions/v1/bitrix24-cleanup-duplicates?action=scan&member_id=${encodeURIComponent(mid)}`,
+        { headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` } }
+      );
+      const data = await res.json();
+      if (data.success) {
+        setScanResult(data);
+        // Default: keep oldest deal in each group
+        const defaults: Record<string, string> = {};
+        for (const group of data.duplicate_groups || []) {
+          if (group.deals.length > 0) {
+            defaults[group.key] = group.deals[0].id;
+          }
+        }
+        setSelectedKeep(defaults);
+      }
+    } catch (e) {
+      console.error("[revisao] Scan error:", e);
+    } finally {
+      setScanning(false);
+    }
+  };
+
+  const handleMerge = async (groupKey: string, keepId: string, deleteIds: string[]) => {
+    if (!mid) return;
+    setMerging(groupKey);
+    try {
+      const res = await fetch(
+        `${SUPABASE_URL}/functions/v1/bitrix24-cleanup-duplicates?action=merge&member_id=${encodeURIComponent(mid)}`,
+        {
+          method: "POST",
+          headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}`, "Content-Type": "application/json" },
+          body: JSON.stringify({ member_id: mid, keep_id: keepId, delete_ids: deleteIds }),
+        }
+      );
+      const data = await res.json();
+      setMergeResults(prev => ({ ...prev, [groupKey]: data }));
+      // Remove from scan results
+      if (data.success && scanResult) {
+        setScanResult((prev: any) => ({
+          ...prev,
+          duplicate_groups: prev.duplicate_groups.filter((g: any) => g.key !== groupKey),
+        }));
+      }
+    } catch (e) {
+      console.error("[revisao] Merge error:", e);
+    } finally {
+      setMerging(null);
+    }
+  };
+
+  const handleFixStages = async () => {
+    if (!mid) return;
+    setFixingStages(true);
+    setFixResult(null);
+    try {
+      const res = await fetch(
+        `${SUPABASE_URL}/functions/v1/bitrix24-cleanup-duplicates?action=fix_stages&member_id=${encodeURIComponent(mid)}`,
+        { headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` } }
+      );
+      const data = await res.json();
+      if (data.success) setFixResult(data);
+    } catch (e) {
+      console.error("[revisao] Fix stages error:", e);
+    } finally {
+      setFixingStages(false);
+    }
+  };
+
+  const stageLabel = (stageId: string) => {
+    if (stageId === "C15:WON") return "Quitados";
+    if (stageId === "C15:UC_S7RLFB") return "Atrasado";
+    if (stageId === "C15:NEW") return "Em dia";
+    return stageId;
+  };
+
+  return (
+    <div className="space-y-4 p-4">
+      {/* Header */}
+      <div className="b24-view-header">
+        <h1 className="text-xl font-bold text-white">Revisão Bitrix24 — Pipeline 15</h1>
+        <p className="text-white/60 text-sm mt-0.5">
+          Identificar duplicados, mesclar negócios e corrigir estágios
+        </p>
+      </div>
+
+      {/* Action buttons */}
+      <div className="flex flex-wrap gap-3">
+        <Button onClick={handleScan} disabled={scanning} className="gap-2">
+          {scanning ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+          Escanear Duplicados
+        </Button>
+        <Button onClick={handleFixStages} disabled={fixingStages} variant="outline" className="gap-2">
+          {fixingStages ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle className="h-4 w-4" />}
+          Corrigir Estágios
+        </Button>
+      </div>
+
+      {/* KPIs after scan */}
+      {scanResult && (
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <Card>
+            <CardContent className="p-4 text-center">
+              <p className="text-2xl font-bold text-foreground">{scanResult.total_deals}</p>
+              <p className="text-xs text-muted-foreground">Total Deals</p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="p-4 text-center">
+              <p className="text-2xl font-bold text-foreground">{scanResult.unique_deals}</p>
+              <p className="text-xs text-muted-foreground">Únicos</p>
+            </CardContent>
+          </Card>
+          <Card className="border-destructive/30">
+            <CardContent className="p-4 text-center">
+              <p className="text-2xl font-bold text-destructive">{scanResult.duplicate_groups?.length || 0}</p>
+              <p className="text-xs text-muted-foreground">Grupos Duplicados</p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="p-4 text-center">
+              <p className="text-2xl font-bold text-foreground">
+                {(scanResult.duplicate_groups || []).reduce((sum: number, g: any) => sum + g.deals.length - 1, 0)}
+              </p>
+              <p className="text-xs text-muted-foreground">Deals a Eliminar</p>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {/* Fix stages result */}
+      {fixResult && (
+        <Card className="border-primary/30">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">Resultado — Correção de Estágios</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+              <div className="bg-muted rounded p-3 text-center">
+                <p className="text-lg font-bold text-foreground">{fixResult.total_deals}</p>
+                <p className="text-xs text-muted-foreground">Total</p>
+              </div>
+              <div className="bg-emerald-500/10 rounded p-3 text-center">
+                <p className="text-lg font-bold text-emerald-600">{fixResult.corrected}</p>
+                <p className="text-xs text-muted-foreground">Corrigidos</p>
+              </div>
+              <div className="bg-muted rounded p-3 text-center">
+                <p className="text-lg font-bold text-foreground">{fixResult.already_correct}</p>
+                <p className="text-xs text-muted-foreground">Já Correctos</p>
+              </div>
+              <div className="bg-amber-500/10 rounded p-3 text-center">
+                <p className="text-lg font-bold text-amber-600">{fixResult.no_records}</p>
+                <p className="text-xs text-muted-foreground">Sem Registos</p>
+              </div>
+            </div>
+            {fixResult.corrections?.length > 0 && (
+              <div className="mt-3">
+                <p className="text-xs font-medium text-muted-foreground mb-2">Detalhes das correções:</p>
+                <div className="max-h-48 overflow-auto space-y-1">
+                  {fixResult.corrections.map((c: any, i: number) => (
+                    <div key={i} className="flex items-center gap-2 text-xs py-1 border-b border-border/50">
+                      <span className="font-medium text-foreground">#{c.deal_id}</span>
+                      <span className="text-muted-foreground truncate max-w-[200px]">{c.title}</span>
+                      <Badge variant="outline" className="text-[10px]">{stageLabel(c.from)}</Badge>
+                      <span className="text-muted-foreground">→</span>
+                      <Badge className="text-[10px] bg-primary/10 text-primary border-primary/20">{stageLabel(c.to)}</Badge>
+                      {c.error && <span className="text-destructive text-[10px]">❌ {c.error}</span>}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Duplicate groups table */}
+      {scanResult && (scanResult.duplicate_groups || []).length > 0 && (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base flex items-center gap-2">
+              <AlertTriangle className="h-4 w-4 text-amber-500" />
+              Grupos Duplicados ({scanResult.duplicate_groups.length})
+            </CardTitle>
+            <CardDescription>
+              Selecione o deal principal em cada grupo e clique em "Mesclar" para eliminar os duplicados.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {scanResult.duplicate_groups.map((group: any) => {
+              const keepId = selectedKeep[group.key] || group.deals[0]?.id;
+              const deleteIds = group.deals.filter((d: any) => d.id !== keepId).map((d: any) => d.id);
+              const isMerging = merging === group.key;
+              const result = mergeResults[group.key];
+
+              return (
+                <Card key={group.key} className="border-amber-500/30">
+                  <CardContent className="p-4 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-sm font-semibold text-foreground">
+                          {group.access_id ? `Access ID: ${group.access_id}` : group.nif ? `NIF: ${group.nif}` : group.key}
+                        </p>
+                        <p className="text-xs text-muted-foreground">{group.deals.length} deals duplicados</p>
+                      </div>
+                      <Button
+                        size="sm"
+                        variant="destructive"
+                        disabled={isMerging || !!result}
+                        onClick={() => handleMerge(group.key, keepId, deleteIds)}
+                        className="gap-1"
+                      >
+                        {isMerging ? <Loader2 className="h-3 w-3 animate-spin" /> : <Trash2 className="h-3 w-3" />}
+                        Mesclar ({deleteIds.length} a eliminar)
+                      </Button>
+                    </div>
+
+                    {result && (
+                      <Badge className="bg-emerald-500/10 text-emerald-600 border-emerald-500/20">
+                        ✅ Mesclado com sucesso — Deal #{keepId} mantido
+                      </Badge>
+                    )}
+
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="w-12">Manter</TableHead>
+                          <TableHead>ID</TableHead>
+                          <TableHead>Título</TableHead>
+                          <TableHead>Valor</TableHead>
+                          <TableHead>Estágio</TableHead>
+                          <TableHead>Data Criação</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {group.deals.map((deal: any) => (
+                          <TableRow key={deal.id} className={deal.id === keepId ? "bg-primary/5" : "opacity-60"}>
+                            <TableCell>
+                              <input
+                                type="radio"
+                                name={`keep_${group.key}`}
+                                checked={deal.id === keepId}
+                                onChange={() => setSelectedKeep(prev => ({ ...prev, [group.key]: deal.id }))}
+                                className="h-4 w-4"
+                                disabled={!!result}
+                              />
+                            </TableCell>
+                            <TableCell className="font-medium text-foreground">#{deal.id}</TableCell>
+                            <TableCell className="text-sm">{deal.title}</TableCell>
+                            <TableCell className="text-sm">€{deal.opportunity?.toLocaleString("pt-PT", { minimumFractionDigits: 2 })}</TableCell>
+                            <TableCell>
+                              <Badge variant="outline" className="text-[10px]">{stageLabel(deal.stage_id)}</Badge>
+                            </TableCell>
+                            <TableCell className="text-xs text-muted-foreground">
+                              {deal.date_create ? new Date(deal.date_create).toLocaleDateString("pt-PT") : "—"}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </CardContent>
+                </Card>
+              );
+            })}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* No duplicates */}
+      {scanResult && (scanResult.duplicate_groups || []).length === 0 && (
+        <Card>
+          <CardContent className="py-12 text-center">
+            <CheckCircle className="h-10 w-10 mx-auto mb-3 text-emerald-500" />
+            <p className="font-medium text-foreground">Nenhum duplicado encontrado!</p>
+            <p className="text-sm text-muted-foreground mt-1">
+              Todos os {scanResult.total_deals} deals na Pipeline 15 são únicos.
+            </p>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }

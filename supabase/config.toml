@@ -151,3 +151,6 @@ verify_jwt = false
 
 [functions.bitrix24-dashboard-stats]
 verify_jwt = false
+
+[functions.bitrix24-cleanup-duplicates]
+verify_jwt = false
