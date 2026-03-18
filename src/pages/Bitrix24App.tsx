@@ -6930,23 +6930,31 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
                             <TableCell className="text-right text-xs">€{client.total_value.toLocaleString("pt-PT", { minimumFractionDigits: 2 })}</TableCell>
                             <TableCell className="text-right text-xs">€{client.total_paid.toLocaleString("pt-PT", { minimumFractionDigits: 2 })}</TableCell>
                             <TableCell>
-                              {client.bitrix_deal_id ? (
-                                <div className="flex flex-col gap-0.5">
-                                  <Badge variant="outline" className="text-[10px]">Deal #{client.bitrix_deal_id}</Badge>
-                                  <span className="text-[9px] text-muted-foreground">
-                                    via {client.match_type === "access_id" ? "Access ID" : client.match_type === "nif" ? "NIF" : client.match_type === "phone" ? "Telefone" : client.match_type === "email" ? "Email" : client.match_type === "name" ? "Nome" : "—"}
-                                  </span>
-                                </div>
-                              ) : client.bitrix_contact_id ? (
-                                <div className="flex flex-col gap-0.5">
-                                  <Badge variant="secondary" className="text-[10px]">Contacto #{client.bitrix_contact_id}</Badge>
-                                  <span className="text-[9px] text-muted-foreground">
-                                    via {client.match_type === "phone" ? "Telefone" : client.match_type === "email" ? "Email" : client.match_type === "name" ? "Nome" : "—"}
-                                  </span>
-                                </div>
-                              ) : (
-                                <Badge variant="outline" className="text-[10px] border-dashed">Novo</Badge>
-                              )}
+                              {(() => {
+                                const st = client.sync_status || (client.synced ? "synced" : "pending");
+                                if (st === "synced") return (
+                                  <div className="flex flex-col gap-0.5">
+                                    <Badge variant="default" className="text-[10px] bg-green-600">✅ Sincronizado</Badge>
+                                    {client.bitrix_deal_id && <span className="text-[9px] text-muted-foreground">Deal #{client.bitrix_deal_id}</span>}
+                                  </div>
+                                );
+                                if (st === "partial") return (
+                                  <div className="flex flex-col gap-0.5">
+                                    <Badge variant="secondary" className="text-[10px] bg-yellow-500/20 text-yellow-700 border-yellow-500/30">⚠️ Parcial</Badge>
+                                    {client.has_contact && <span className="text-[9px] text-muted-foreground">Contacto ✓</span>}
+                                    {!client.has_all_deals && <span className="text-[9px] text-yellow-600">Deals ✗</span>}
+                                  </div>
+                                );
+                                return (
+                                  <div className="flex flex-col gap-0.5">
+                                    <Badge variant="outline" className="text-[10px] border-dashed">⏳ Pendente</Badge>
+                                    {client.bitrix_contact_id && <span className="text-[9px] text-muted-foreground">Contacto #{client.bitrix_contact_id}</span>}
+                                    {client.match_type && client.match_type !== "new" && (
+                                      <span className="text-[9px] text-muted-foreground">via {client.match_type === "access_id" ? "Access ID" : client.match_type === "nif" ? "NIF" : client.match_type === "phone" ? "Tel" : client.match_type === "email" ? "Email" : client.match_type}</span>
+                                    )}
+                                  </div>
+                                );
+                              })()}
                             </TableCell>
                             <TableCell>
                               {client.synced ? (
