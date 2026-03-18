@@ -1,104 +1,49 @@
 
 
-## Revisão Arquitetural — Fase 2 Implementada
+## Plano: Corrigir Carteira e Placement para clientes importados
 
-### Mudanças realizadas (Fase 2)
+### Problema 1: Carteira não mostra Deal IDs
+A tabela de Clientes (`/bitrix24/carteira`) já mostra `bitrix24_id` (contacto). Mas faltam as colunas de `bitrix24_deal_id` dos `financial_records`. A edge function `bitrix24-fetch-portfolio` não inclui `bitrix24_deal_id` no SELECT dos financial_records, nem retorna esses IDs ao frontend.
 
-#### 1. Código morto eliminado
-- `chatbot-reply/index.ts` — **removido** (100% duplicado com flow-engine → ai-process-message)
-- `ai-triage/index.ts` — **removido** (100% duplicado com ai-automation-agent action classify_lead)
+### Problema 2: Placement "Emmely Pay" não mostra dados de clientes importados
+O placement do Deal (`bitrix24-payment-tab`) encontra parcelas apenas via `payment_transactions.metadata.bitrix_deal_id`. Clientes importados do Access **não têm `payment_transactions`** — têm `financial_records` com `bitrix24_deal_id` preenchido diretamente. O placement ignora completamente este caminho.
 
-#### 2. Janela de contexto expandida
-- `RECENT_MSG_COUNT`: 5 → **15** mensagens recentes completas
-- `HISTORY_LIMIT`: 15 → **30** mensagens totais
-- TOON comprime as 15 mais antigas, mantém as 15 recentes intactas
+### Solução
 
-#### 3. RAG semântico real (pgvector)
-- Edge function `generate-embeddings` criada — gera embeddings de 768 dimensões via Lovable AI
-- `parse-document` agora chama `generate-embeddings` automaticamente após chunking
-- `ai-process-message` usa `match_chunks()` RPC para busca semântica (threshold 0.5)
-- Fallback para keyword scoring quando embeddings não existem
+**Ficheiro 1: `supabase/functions/bitrix24-payment-tab/index.ts`** (Deal view, ~linha 1686)
 
-#### 4. Router multi-agente
-- Quando agente tem `sub_agent_ids`, classifica intenção via IA rápida (flash-lite)
-- Delega para sub-agente especialista com seu próprio prompt e KB
-- Mantém agente activo em `bot_state.active_sub_agent_id` para consistência
+Adicionar um fallback: se `dealTransactions` e `financialRecords` estiverem vazios, procurar diretamente na tabela `financial_records` pelo campo `bitrix24_deal_id = entityId`. Isso cobre os clientes importados do Access que têm parcelas vinculadas ao deal mas sem `payment_transactions`.
 
-#### 5. Self-evaluation / Reflexão
-- Após gerar resposta, avalia qualidade via flash-lite (score 1-10)
-- Se score < 7, regenera com instrução de correcção (máximo 1 retry)
-- Respostas < 50 chars ignoram avaliação
+```
+// After existing logic (line ~1708), add fallback:
+if (financialRecords.length === 0 && dealTransactions.length === 0) {
+  // Fallback: Access-imported clients have financial_records with bitrix24_deal_id directly
+  const { data: directRecords } = await supabase
+    .from("financial_records")
+    .select("*")
+    .eq("bitrix24_deal_id", String(entityId))
+    .order("installment_number", { ascending: true });
+  if (directRecords && directRecords.length > 0) {
+    financialRecords = directRecords;
+  }
+}
+```
 
-#### 6. Sentiment analysis + Auto-escalação
-- Análise de sentimento via heurística + IA
-- 2x frustração consecutiva → auto-transfere para humano
-- Guarda sentiment em `bot_state.last_sentiment`
-- Regista escalação em `conversation_feedback`
+Isso garante que o placement mostra corretamente as parcelas e o status "Quitado" para deals sincronizados.
 
-#### 7. Tools dinâmicas expandidas
-- Novas tools: `search_knowledge`, `get_case_status`, `send_payment_link`
-- Tools desconhecidas verificam `tool_parameters.webhook_url` para chamada webhook genérica
-- Registry pattern: tools são lidas de `agent_tools` table
+**Ficheiro 2: `supabase/functions/bitrix24-fetch-portfolio/index.ts`**
 
-#### 8. Queue worker auto-trigger
-- Trigger PostgreSQL `AFTER INSERT ON message_queue` chama `pg_net.http_post()` para queue-worker
-- Cron backup via `pg_cron` a cada minuto
+No `handleFullPortfolio`, incluir `bitrix24_deal_id` no SELECT dos financial_records e retornar o primeiro `bitrix24_deal_id` encontrado no objeto de cada cliente:
 
-#### 9. Melhorias de robustez no sendReply
-- `Promise.allSettled` para operações paralelas (save message + update conversation)
-- Error logging real em vez de fire-and-forget silencioso para message-send e bitrix24-send
-- Extração de memória com tolerância `count % 10 > 1` (mais robusto que `=== 0`)
+- SELECT: adicionar `bitrix24_deal_id` ao nested query dos financial_records
+- Response: adicionar `dealId: firstDealId` ao objeto de cada cliente
 
-### Mudanças realizadas (Fase 2.1 — Consolidação Completa)
+**Ficheiro 3: Build errors**
 
-#### Código morto eliminado
-- `chatbot-reply/index.ts` e `ai-triage/index.ts` — diretórios removidos, referências limpas em `config.toml`, `ApiDocs.tsx` e `bitrix24-worker.ts`
-- ApiDocs actualizado para documentar `ai-process-message` em vez de `chatbot-reply`
+Os erros de build (`Cannot find package 'rollup'`, `QueryClient`, etc.) são pré-existentes e não relacionados com as alterações da Fase 3. Precisam ser resolvidos separadamente — provavelmente um `package.json` com dependências em falta ou versões incompatíveis.
 
-#### Sintaxe corrigida
-- `parse-document/index.ts` — corrigida função `extractWithAI` que estava erroneamente aninhada dentro de `findFileInZip`
+### Resultado
+- Carteira mostra o Deal ID do Bitrix24 por cliente
+- Placement "Emmely Pay" mostra parcelas e status correto para deals de clientes importados
+- Deals "Quitados" aparecem com todas as parcelas pagas no placement
 
-#### Config.toml actualizado
-- Removidas entradas `ai-triage` e `chatbot-reply`
-- Adicionadas entradas para `generate-embeddings`, `parse-document` e `queue-worker`
-
-#### Triggers PostgreSQL criados
-- `on_message_queue_insert` → auto-invoca `queue-worker` via `pg_net`
-- `on_lead_created` → notifica comerciais e admins
-- `on_message_created` → notifica de novas mensagens inbound
-- `on_payment_status_change` → notifica pagamentos recebidos
-- `on_lead_sla_check` → alerta SLA a expirar
-- `on_lead_set_sla` → define SLA automático na criação
-- `on_profile_created` → atribui admin ao primeiro utilizador
-- Cron job `queue-worker-backup` — invoca queue-worker a cada minuto
-
-### Estado actual — 8/8 melhorias implementadas ✅
-1. ✅ Código morto eliminado (chatbot-reply + ai-triage)
-2. ✅ Contexto expandido (30 mensagens: 15 recentes + 15 comprimidas TOON)
-3. ✅ RAG semântico (pgvector + match_chunks + generate-embeddings)
-4. ✅ Router multi-agente (sub_agent_ids + classificação de intenção)
-5. ✅ Tools dinâmicas (registry pattern + webhook fallback)
-6. ✅ Reflexão/Auto-avaliação (score 1-10, retry se < 7)
-7. ✅ Sentiment analysis + auto-escalação (2x frustração → humano)
-8. ✅ Queue worker auto-trigger (pg_trigger + pg_cron backup)
-
-### Mudanças realizadas (Fase 3 — Auditoria Arquitetural)
-
-#### 1. Dashboard de Observabilidade IA
-- Nova página `/observabilidade-ia` com KPIs: requisições, tokens, custo estimado, latência média, taxa fallback, taxa erro, rating feedback
-- Hook `useAiObservability.ts` com agregação de dados
-
-#### 2. Thumbs up/down no chat de atendimento
-- Botões de feedback em mensagens outbound (bot) no painel de atendimento
-
-#### 3. Retry com backoff no AI gateway (429/502/503, 2s delay, 1 retry)
-
-#### 4. Cost estimation real (tabela de preços por modelo, cálculo automático)
-
-#### 5. Memory extraction melhorada (cada 15 msgs + em transferência humana)
-
-#### 6. Reorganização do monólito (constantes extraídas, secções delimitadas)
-
-### Próximos passos
-- Batch job para gerar embeddings dos chunks existentes
-- Streaming no PlaygroundIA
