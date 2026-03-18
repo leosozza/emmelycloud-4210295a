@@ -17,6 +17,7 @@ serve(async (req) => {
     const url = new URL(req.url);
     const action = url.searchParams.get("action");
     const memberIdParam = url.searchParams.get("member_id");
+    const categoryIdParam = url.searchParams.get("category_id");
 
     let body: any = {};
     if (req.method === "POST") {
@@ -24,6 +25,8 @@ serve(async (req) => {
     }
 
     const memberId = memberIdParam || body.member_id;
+    const categoryId = categoryIdParam || body.category_id || "15";
+
     if (!memberId) {
       return new Response(JSON.stringify({ error: "member_id is required" }), {
         status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -94,8 +97,18 @@ serve(async (req) => {
     // Refresh token before proceeding
     accessToken = await ensureValidToken();
 
-    // Helper: paginated fetch of all deals in Pipeline 15
-    async function fetchAllDeals(): Promise<any[]> {
+    // Helper: call Bitrix API
+    async function bitrixCall(method: string, params: Record<string, any>) {
+      const res = await fetch(`${endpoint}${method}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ auth: accessToken, ...params }),
+      });
+      return res.json();
+    }
+
+    // Helper: paginated fetch of all deals in a given pipeline
+    async function fetchAllDeals(catId: string): Promise<any[]> {
       const allDeals: any[] = [];
       let start = 0;
       while (true) {
@@ -104,7 +117,7 @@ serve(async (req) => {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             auth: accessToken,
-            filter: { CATEGORY_ID: "15" },
+            filter: { CATEGORY_ID: catId },
             select: [
               "ID", "TITLE", "OPPORTUNITY", "CURRENCY_ID", "CONTACT_ID",
               "STAGE_ID", "DATE_CREATE", "ASSIGNED_BY_ID",
@@ -124,20 +137,82 @@ serve(async (req) => {
       return allDeals;
     }
 
-    // Helper: call Bitrix API
-    async function bitrixCall(method: string, params: Record<string, any>) {
-      const res = await fetch(`${endpoint}${method}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ auth: accessToken, ...params }),
+    // Helper: paginated fetch of financial_records for deal IDs
+    async function fetchAllFinancialRecords(dealIds: string[]) {
+      const allRecords: any[] = [];
+      const batchSize = 200;
+      for (let i = 0; i < dealIds.length; i += batchSize) {
+        const batch = dealIds.slice(i, i + batchSize);
+        let from = 0;
+        const pageSize = 1000;
+        while (true) {
+          const { data } = await supabase
+            .from("financial_records")
+            .select("bitrix24_deal_id, status, due_date, paid_at")
+            .in("bitrix24_deal_id", batch)
+            .range(from, from + pageSize - 1);
+          if (!data || data.length === 0) break;
+          allRecords.push(...data);
+          if (data.length < pageSize) break;
+          from += pageSize;
+        }
+      }
+      return allRecords;
+    }
+
+    // ==================== LIST PIPELINES ====================
+    if (action === "list_pipelines") {
+      console.log("[cleanup] Listing pipelines...");
+
+      // Fetch all deal categories (pipelines)
+      const catRes = await bitrixCall("crm.dealcategory.list", {});
+      const categories = catRes.result || [];
+
+      // Add default pipeline (ID 0)
+      const pipelines: any[] = [{ ID: "0", NAME: "Pipeline Geral (Padrão)" }];
+      for (const cat of categories) {
+        pipelines.push({ ID: String(cat.ID), NAME: cat.NAME });
+      }
+
+      // Fetch stages and deal counts for each pipeline
+      const result: any[] = [];
+      for (const pipeline of pipelines) {
+        // Get stages
+        const stagesRes = await bitrixCall("crm.dealcategory.stage.list", {
+          id: pipeline.ID,
+        });
+        const stages = (stagesRes.result || []).map((s: any) => ({
+          STATUS_ID: s.STATUS_ID,
+          NAME: s.NAME,
+          SORT: s.SORT,
+          SEMANTICS: s.SEMANTICS || null,
+        }));
+
+        // Get deal count
+        const countRes = await bitrixCall("crm.deal.list", {
+          filter: { CATEGORY_ID: pipeline.ID },
+          select: ["ID"],
+          start: 0,
+        });
+        const totalDeals = countRes.total || 0;
+
+        result.push({
+          id: pipeline.ID,
+          name: pipeline.NAME,
+          total_deals: totalDeals,
+          stages,
+        });
+      }
+
+      return new Response(JSON.stringify({ success: true, pipelines: result }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
-      return res.json();
     }
 
     // ==================== SCAN ====================
     if (action === "scan") {
-      console.log("[cleanup] Scanning Pipeline 15 for duplicates...");
-      const allDeals = await fetchAllDeals();
+      console.log(`[cleanup] Scanning Pipeline ${categoryId} for duplicates...`);
+      const allDeals = await fetchAllDeals(categoryId);
       console.log(`[cleanup] Found ${allDeals.length} total deals`);
 
       // Group by Access ID
@@ -173,11 +248,12 @@ serve(async (req) => {
         integration_id: integration.id,
         event_type: "cleanup_scan",
         direction: "internal",
-        payload: { total_deals: allDeals.length, duplicate_groups: duplicateGroups.length },
+        payload: { category_id: categoryId, total_deals: allDeals.length, duplicate_groups: duplicateGroups.length },
       });
 
       return new Response(JSON.stringify({
         success: true,
+        category_id: categoryId,
         total_deals: allDeals.length,
         duplicate_groups: duplicateGroups,
         unique_deals: Object.values(groups).filter(g => g.length === 1).length,
@@ -253,19 +329,39 @@ serve(async (req) => {
 
     // ==================== FIX STAGES ====================
     if (action === "fix_stages") {
-      console.log("[cleanup] Fixing stages in Pipeline 15...");
-      const allDeals = await fetchAllDeals();
+      const overdueStage = body.overdue_stage || url.searchParams.get("overdue_stage");
+      const wonStage = body.won_stage || url.searchParams.get("won_stage");
+      const newStage = body.new_stage || url.searchParams.get("new_stage");
 
-      // Get all bitrix24_deal_ids from financial_records
+      console.log(`[cleanup] Fixing stages in Pipeline ${categoryId}...`);
+      const allDeals = await fetchAllDeals(categoryId);
+
+      // If stages not provided, try to resolve dynamically
+      let stageWon = wonStage;
+      let stageOverdue = overdueStage;
+      let stageNew = newStage;
+
+      if (!stageWon || !stageNew) {
+        const stagesRes = await bitrixCall("crm.dealcategory.stage.list", { id: categoryId });
+        const stages = stagesRes.result || [];
+        if (!stageWon) {
+          const won = stages.find((s: any) => s.SEMANTICS === "S");
+          stageWon = won?.STATUS_ID || `C${categoryId}:WON`;
+        }
+        if (!stageNew) {
+          const first = stages.find((s: any) => s.SEMANTICS === "P" || !s.SEMANTICS);
+          stageNew = first?.STATUS_ID || `C${categoryId}:NEW`;
+        }
+      }
+
+      // Get all financial records (paginated)
       const dealIds = allDeals.map(d => d.ID);
-      const { data: records } = await supabase
-        .from("financial_records")
-        .select("bitrix24_deal_id, status, due_date, paid_at")
-        .in("bitrix24_deal_id", dealIds);
+      const allRecords = await fetchAllFinancialRecords(dealIds);
+      console.log(`[cleanup] Fetched ${allRecords.length} financial records for ${dealIds.length} deals`);
 
       // Group records by deal
       const recordsByDeal: Record<string, any[]> = {};
-      for (const r of (records || [])) {
+      for (const r of allRecords) {
         if (!r.bitrix24_deal_id) continue;
         if (!recordsByDeal[r.bitrix24_deal_id]) recordsByDeal[r.bitrix24_deal_id] = [];
         recordsByDeal[r.bitrix24_deal_id].push(r);
@@ -289,11 +385,13 @@ serve(async (req) => {
 
         let correctStage: string;
         if (allPaid) {
-          correctStage = "C15:WON";
+          correctStage = stageWon!;
+        } else if (hasOverdue && stageOverdue) {
+          correctStage = stageOverdue;
         } else if (hasOverdue) {
-          correctStage = "C15:UC_S7RLFB";
+          correctStage = stageNew!;
         } else {
-          correctStage = "C15:NEW";
+          correctStage = stageNew!;
         }
 
         if (deal.STAGE_ID === correctStage) {
@@ -331,12 +429,14 @@ serve(async (req) => {
         integration_id: integration.id,
         event_type: "cleanup_fix_stages",
         direction: "outbound",
-        payload: { total: allDeals.length, corrected, alreadyCorrect, noRecords },
+        payload: { category_id: categoryId, total: allDeals.length, corrected, alreadyCorrect, noRecords, records_fetched: allRecords.length },
       });
 
       return new Response(JSON.stringify({
         success: true,
+        category_id: categoryId,
         total_deals: allDeals.length,
+        records_fetched: allRecords.length,
         corrected,
         already_correct: alreadyCorrect,
         no_records: noRecords,
@@ -344,7 +444,7 @@ serve(async (req) => {
       }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
-    return new Response(JSON.stringify({ error: "Invalid action. Use: scan, merge, fix_stages" }), {
+    return new Response(JSON.stringify({ error: "Invalid action. Use: list_pipelines, scan, merge, fix_stages" }), {
       status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
 
