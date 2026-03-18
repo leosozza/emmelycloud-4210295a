@@ -1099,7 +1099,7 @@ serve(async (req) => {
         }
         if (!dealId && docNumber && !docNumber.startsWith("ACCESS_")) {
           const res = await bitrixCall("crm.deal.list", {
-            filter: { UF_CRM_1733687549802: docNumber },
+            filter: { UF_CRM_1733687549802: docNumber, CATEGORY_ID: category_id },
             select: ["ID", "CONTACT_ID", "UF_CRM_1733687549802"],
           });
           if (res.result?.length > 0 && (res.total || res.result.length) <= 5) {
