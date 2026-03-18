@@ -1059,8 +1059,19 @@ serve(async (req) => {
       const phones = overrides?.phone ? [overrides.phone, ...info.phones] : info.phones;
       const emails = info.emails;
 
-      let contactId: string | null = null;
+      // Pre-populate IDs from local DB to avoid duplicating already-synced entities
+      let contactId: string | null = client.bitrix24_id || null;
       let dealId: string | null = null;
+
+      // Check if any financial_record already has a deal ID saved from a previous sync
+      const existingDealId = info.records.find((r: any) => r.bitrix24_deal_id)?.bitrix24_deal_id || null;
+      if (existingDealId) {
+        dealId = existingDealId;
+        console.log(`[sync_single_client] Pre-populated dealId=${dealId} from local DB`);
+      }
+      if (contactId) {
+        console.log(`[sync_single_client] Pre-populated contactId=${contactId} from client.bitrix24_id`);
+      }
 
       // Skip lookup entirely when force_create is set (Etapa B — new clients)
       if (!force_create) {
