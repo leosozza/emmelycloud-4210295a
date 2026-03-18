@@ -5263,11 +5263,15 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
     contract_date: string | null;
     synced?: boolean;
     syncResult?: string;
+    sync_status?: "synced" | "partial" | "pending";
+    has_contact?: boolean;
+    has_all_deals?: boolean;
   };
   const [syncClients, setSyncClients] = useState<SyncClient[]>([]);
   const [loadingSyncClients, setLoadingSyncClients] = useState(false);
   const [syncClientsLoaded, setSyncClientsLoaded] = useState(false);
   const [activeTabs, setActiveTabs] = useState<Set<"quitado" | "aberto" | "atrasado">>(new Set(["atrasado"]));
+  const [syncStatusFilter, setSyncStatusFilter] = useState<"all" | "synced" | "partial" | "pending">("all");
   const [syncSegments, setSyncSegments] = useState<Set<"existing" | "new">>(new Set(["existing"]));
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [editingClient, setEditingClient] = useState<SyncClient | null>(null);
@@ -6251,12 +6255,18 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
     (syncSegments.has("new") && !c.bitrix_deal_id)
   );
 
-  const filteredSyncClients = segmentedClients.filter(c => activeTabs.has(c.status_class as any));
-  const quitadoCount = segmentedClients.filter(c => c.status_class === "quitado").length;
-  const abertoCount = segmentedClients.filter(c => c.status_class === "aberto").length;
-  const atrasadoCount = segmentedClients.filter(c => c.status_class === "atrasado").length;
-  const syncedCount = syncClients.filter(c => c.synced).length;
-  const pendingCount = syncClients.filter(c => !c.synced).length;
+  const statusFilteredClients = segmentedClients.filter(c => {
+    if (syncStatusFilter === "all") return true;
+    const st = c.sync_status || (c.synced ? "synced" : "pending");
+    return st === syncStatusFilter;
+  });
+  const filteredSyncClients = statusFilteredClients.filter(c => activeTabs.has(c.status_class as any));
+  const quitadoCount = statusFilteredClients.filter(c => c.status_class === "quitado").length;
+  const abertoCount = statusFilteredClients.filter(c => c.status_class === "aberto").length;
+  const atrasadoCount = statusFilteredClients.filter(c => c.status_class === "atrasado").length;
+  const syncedCount = syncClients.filter(c => c.synced || c.sync_status === "synced").length;
+  const partialCount = syncClients.filter(c => c.sync_status === "partial").length;
+  const pendingCount = syncClients.filter(c => !c.synced && c.sync_status !== "partial" && c.sync_status !== "synced").length;
 
   const selectAllInTab = () => {
     const ids = filteredSyncClients.filter(c => !c.synced).map(c => c.client_id);
@@ -6572,14 +6582,34 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
             }
           </CardDescription>
           {syncClientsLoaded && syncClients.length > 0 && (
-            <div className="flex items-center gap-3 mt-2">
-              <Badge variant="default" className="text-xs">✅ {syncedCount} sincronizados</Badge>
-              <Badge variant="outline" className="text-xs">⏳ {pendingCount} pendentes</Badge>
-              <span className="text-xs text-muted-foreground">{syncClients.length} total</span>
-              {syncSessionId && (
-                <Badge variant="secondary" className="text-[10px]">📁 Sessão activa</Badge>
+            <>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-3">
+                <div className="rounded-lg border bg-card p-3 text-center">
+                  <p className="text-2xl font-bold text-foreground">{syncClients.length}</p>
+                  <p className="text-[10px] text-muted-foreground">Total Importados</p>
+                </div>
+                <div className="rounded-lg border border-green-500/30 bg-green-500/5 p-3 text-center">
+                  <p className="text-2xl font-bold text-green-600">{syncedCount}</p>
+                  <p className="text-[10px] text-muted-foreground">✅ Sincronizados</p>
+                </div>
+                <div className="rounded-lg border border-yellow-500/30 bg-yellow-500/5 p-3 text-center">
+                  <p className="text-2xl font-bold text-yellow-600">{partialCount}</p>
+                  <p className="text-[10px] text-muted-foreground">⚠️ Parcial</p>
+                </div>
+                <div className="rounded-lg border border-red-500/30 bg-red-500/5 p-3 text-center">
+                  <p className="text-2xl font-bold text-red-600">{pendingCount}</p>
+                  <p className="text-[10px] text-muted-foreground">⏳ Pendentes</p>
+                </div>
+              </div>
+              {syncedCount === syncClients.length && syncClients.length > 0 && (
+                <div className="mt-2 rounded-lg border border-green-500/30 bg-green-500/10 p-3 text-center">
+                  <p className="text-sm font-medium text-green-700">🎉 Todos os clientes estão sincronizados com o Bitrix24. As tabelas de importação podem ser removidas com segurança.</p>
+                </div>
               )}
-            </div>
+              {syncSessionId && (
+                <Badge variant="secondary" className="text-[10px] mt-1">📁 Sessão activa</Badge>
+              )}
+            </>
           )}
         </CardHeader>
         <CardContent className="space-y-4">
@@ -6777,7 +6807,27 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
                     </Button>
                   </div>
 
-                  {/* Batch toolbar */}
+                  {/* Sync status filter */}
+                  <div className="flex gap-2 flex-wrap">
+                    <span className="text-xs text-muted-foreground self-center mr-1">Sincronização:</span>
+                    {([
+                      { key: "all" as const, label: "Todos", icon: null },
+                      { key: "synced" as const, label: `✅ Sincronizados (${syncedCount})`, icon: null },
+                      { key: "partial" as const, label: `⚠️ Parcial (${partialCount})`, icon: null },
+                      { key: "pending" as const, label: `⏳ Pendentes (${pendingCount})`, icon: null },
+                    ]).map(f => (
+                      <Button
+                        key={f.key}
+                        variant={syncStatusFilter === f.key ? "default" : "outline"}
+                        size="sm"
+                        onClick={() => { setSyncStatusFilter(f.key); setSelectedIds(new Set()); }}
+                        className="text-xs"
+                      >
+                        {f.label}
+                      </Button>
+                    ))}
+                  </div>
+
                   <div className="flex items-center gap-3 flex-wrap">
                     <Button variant="ghost" size="sm" className="text-xs" onClick={selectAllInTab}>
                       Selecionar todos ({filteredSyncClients.filter(c => !c.synced).length})
@@ -6856,7 +6906,7 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
                           <TableHead>Telefone</TableHead>
                           <TableHead className="text-right">Valor</TableHead>
                           <TableHead className="text-right">Pago</TableHead>
-                          <TableHead>Bitrix</TableHead>
+                          <TableHead>Status Sync</TableHead>
                           <TableHead className="w-24">Acção</TableHead>
                         </TableRow>
                       </TableHeader>
@@ -6880,23 +6930,31 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
                             <TableCell className="text-right text-xs">€{client.total_value.toLocaleString("pt-PT", { minimumFractionDigits: 2 })}</TableCell>
                             <TableCell className="text-right text-xs">€{client.total_paid.toLocaleString("pt-PT", { minimumFractionDigits: 2 })}</TableCell>
                             <TableCell>
-                              {client.bitrix_deal_id ? (
-                                <div className="flex flex-col gap-0.5">
-                                  <Badge variant="outline" className="text-[10px]">Deal #{client.bitrix_deal_id}</Badge>
-                                  <span className="text-[9px] text-muted-foreground">
-                                    via {client.match_type === "access_id" ? "Access ID" : client.match_type === "nif" ? "NIF" : client.match_type === "phone" ? "Telefone" : client.match_type === "email" ? "Email" : client.match_type === "name" ? "Nome" : "—"}
-                                  </span>
-                                </div>
-                              ) : client.bitrix_contact_id ? (
-                                <div className="flex flex-col gap-0.5">
-                                  <Badge variant="secondary" className="text-[10px]">Contacto #{client.bitrix_contact_id}</Badge>
-                                  <span className="text-[9px] text-muted-foreground">
-                                    via {client.match_type === "phone" ? "Telefone" : client.match_type === "email" ? "Email" : client.match_type === "name" ? "Nome" : "—"}
-                                  </span>
-                                </div>
-                              ) : (
-                                <Badge variant="outline" className="text-[10px] border-dashed">Novo</Badge>
-                              )}
+                              {(() => {
+                                const st = client.sync_status || (client.synced ? "synced" : "pending");
+                                if (st === "synced") return (
+                                  <div className="flex flex-col gap-0.5">
+                                    <Badge variant="default" className="text-[10px] bg-green-600">✅ Sincronizado</Badge>
+                                    {client.bitrix_deal_id && <span className="text-[9px] text-muted-foreground">Deal #{client.bitrix_deal_id}</span>}
+                                  </div>
+                                );
+                                if (st === "partial") return (
+                                  <div className="flex flex-col gap-0.5">
+                                    <Badge variant="secondary" className="text-[10px] bg-yellow-500/20 text-yellow-700 border-yellow-500/30">⚠️ Parcial</Badge>
+                                    {client.has_contact && <span className="text-[9px] text-muted-foreground">Contacto ✓</span>}
+                                    {!client.has_all_deals && <span className="text-[9px] text-yellow-600">Deals ✗</span>}
+                                  </div>
+                                );
+                                return (
+                                  <div className="flex flex-col gap-0.5">
+                                    <Badge variant="outline" className="text-[10px] border-dashed">⏳ Pendente</Badge>
+                                    {client.bitrix_contact_id && <span className="text-[9px] text-muted-foreground">Contacto #{client.bitrix_contact_id}</span>}
+                                    {client.match_type && client.match_type !== "new" && (
+                                      <span className="text-[9px] text-muted-foreground">via {client.match_type === "access_id" ? "Access ID" : client.match_type === "nif" ? "NIF" : client.match_type === "phone" ? "Tel" : client.match_type === "email" ? "Email" : client.match_type}</span>
+                                    )}
+                                  </div>
+                                );
+                              })()}
                             </TableCell>
                             <TableCell>
                               {client.synced ? (

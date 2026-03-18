@@ -652,7 +652,13 @@ serve(async (req) => {
         else if (fm.hasOverdue) statusClass = "atrasado";
 
         // Synced = client has bitrix24_id AND all financial records have both bitrix24_deal_id and bitrix24_invoice_id
-        const isSynced = !!client.bitrix24_id && fm.allRecordsHaveBitrixIds;
+        const hasContact = !!client.bitrix24_id;
+        const hasAllDeals = fm.allRecordsHaveBitrixIds;
+        const isSynced = hasContact && hasAllDeals;
+        // Partial = has contact but not all deals synced, or vice versa
+        const isPartial = !isSynced && (hasContact || hasAllDeals);
+        // sync_status: "synced" | "partial" | "pending"
+        const syncStatus = isSynced ? "synced" : isPartial ? "partial" : "pending";
 
         clientsWithFinancials.push({
           client_id: client.id,
@@ -674,6 +680,9 @@ serve(async (req) => {
           birth_date: client.birth_date,
           contract_date: fm.contractDate ? fm.contractDate.split("T")[0] : null,
           synced: isSynced,
+          sync_status: syncStatus,
+          has_contact: hasContact,
+          has_all_deals: hasAllDeals,
         });
       }
 
