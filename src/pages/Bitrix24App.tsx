@@ -7235,22 +7235,67 @@ function RevisaoView({ integration, memberId }: { integration: any; memberId: st
   const [selectedKeep, setSelectedKeep] = useState<Record<string, string>>({});
   const [mergeResults, setMergeResults] = useState<Record<string, any>>({});
 
+  // Pipeline selection
+  const [loadingPipelines, setLoadingPipelines] = useState(false);
+  const [pipelines, setPipelines] = useState<any[]>([]);
+  const [selectedPipeline, setSelectedPipeline] = useState<string>("");
+  const [selectedOverdueStage, setSelectedOverdueStage] = useState<string>("");
+
   const mid = memberId || integration?.member_id;
 
-  const handleScan = async () => {
+  // Load pipelines on mount
+  useEffect(() => {
     if (!mid) return;
+    const loadPipelines = async () => {
+      setLoadingPipelines(true);
+      try {
+        const res = await fetch(
+          `${SUPABASE_URL}/functions/v1/bitrix24-cleanup-duplicates?action=list_pipelines&member_id=${encodeURIComponent(mid)}`,
+          { headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` } }
+        );
+        const data = await res.json();
+        if (data.success && data.pipelines) {
+          setPipelines(data.pipelines);
+          const p15 = data.pipelines.find((p: any) => p.id === "15");
+          if (p15) {
+            setSelectedPipeline("15");
+            const overdue = p15.stages?.find((s: any) => s.STATUS_ID === "C15:UC_S7RLFB");
+            if (overdue) setSelectedOverdueStage(overdue.STATUS_ID);
+          } else if (data.pipelines.length > 0) {
+            setSelectedPipeline(data.pipelines[0].id);
+          }
+        }
+      } catch (e) {
+        console.error("[revisao] Load pipelines error:", e);
+      } finally {
+        setLoadingPipelines(false);
+      }
+    };
+    loadPipelines();
+  }, [mid]);
+
+  const currentPipeline = pipelines.find((p: any) => p.id === selectedPipeline);
+  const currentStages = currentPipeline?.stages || [];
+
+  const stageLabel = (stageId: string) => {
+    const stage = currentStages.find((s: any) => s.STATUS_ID === stageId);
+    if (stage) return stage.NAME;
+    return stageId;
+  };
+
+  const handleScan = async () => {
+    if (!mid || !selectedPipeline) return;
     setScanning(true);
     setScanResult(null);
     setMergeResults({});
     try {
       const res = await fetch(
-        `${SUPABASE_URL}/functions/v1/bitrix24-cleanup-duplicates?action=scan&member_id=${encodeURIComponent(mid)}`,
+        `${SUPABASE_URL}/functions/v1/bitrix24-cleanup-duplicates?action=scan&member_id=${encodeURIComponent(mid)}&category_id=${encodeURIComponent(selectedPipeline)}`,
         { headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` } }
       );
       const data = await res.json();
       if (data.success) {
         setScanResult(data);
-        // Default: keep oldest deal in each group
         const defaults: Record<string, string> = {};
         for (const group of data.duplicate_groups || []) {
           if (group.deals.length > 0) {
@@ -7271,7 +7316,7 @@ function RevisaoView({ integration, memberId }: { integration: any; memberId: st
     setMerging(groupKey);
     try {
       const res = await fetch(
-        `${SUPABASE_URL}/functions/v1/bitrix24-cleanup-duplicates?action=merge&member_id=${encodeURIComponent(mid)}`,
+        `${SUPABASE_URL}/functions/v1/bitrix24-cleanup-duplicates?action=merge&member_id=${encodeURIComponent(mid)}&category_id=${encodeURIComponent(selectedPipeline)}`,
         {
           method: "POST",
           headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}`, "Content-Type": "application/json" },
@@ -7280,7 +7325,6 @@ function RevisaoView({ integration, memberId }: { integration: any; memberId: st
       );
       const data = await res.json();
       setMergeResults(prev => ({ ...prev, [groupKey]: data }));
-      // Remove from scan results
       if (data.success && scanResult) {
         setScanResult((prev: any) => ({
           ...prev,
@@ -7295,12 +7339,19 @@ function RevisaoView({ integration, memberId }: { integration: any; memberId: st
   };
 
   const handleFixStages = async () => {
-    if (!mid) return;
+    if (!mid || !selectedPipeline) return;
     setFixingStages(true);
     setFixResult(null);
     try {
+      const params = new URLSearchParams({
+        action: "fix_stages",
+        member_id: mid,
+        category_id: selectedPipeline,
+      });
+      if (selectedOverdueStage) params.set("overdue_stage", selectedOverdueStage);
+
       const res = await fetch(
-        `${SUPABASE_URL}/functions/v1/bitrix24-cleanup-duplicates?action=fix_stages&member_id=${encodeURIComponent(mid)}`,
+        `${SUPABASE_URL}/functions/v1/bitrix24-cleanup-duplicates?${params.toString()}`,
         { headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` } }
       );
       const data = await res.json();
@@ -7312,30 +7363,93 @@ function RevisaoView({ integration, memberId }: { integration: any; memberId: st
     }
   };
 
-  const stageLabel = (stageId: string) => {
-    if (stageId === "C15:WON") return "Quitados";
-    if (stageId === "C15:UC_S7RLFB") return "Atrasado";
-    if (stageId === "C15:NEW") return "Em dia";
-    return stageId;
-  };
-
   return (
     <div className="space-y-4 p-4">
       {/* Header */}
       <div className="b24-view-header">
-        <h1 className="text-xl font-bold text-white">Revisão Bitrix24 — Pipeline 15</h1>
+        <h1 className="text-xl font-bold text-white">Revisão Bitrix24</h1>
         <p className="text-white/60 text-sm mt-0.5">
           Identificar duplicados, mesclar negócios e corrigir estágios
         </p>
       </div>
 
+      {/* Pipeline selector */}
+      <Card>
+        <CardContent className="p-4 space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="space-y-2">
+              <Label className="text-sm font-medium">Pipeline</Label>
+              {loadingPipelines ? (
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <Loader2 className="h-4 w-4 animate-spin" /> Carregando pipelines...
+                </div>
+              ) : (
+                <Select value={selectedPipeline} onValueChange={(v) => {
+                  setSelectedPipeline(v);
+                  setScanResult(null);
+                  setFixResult(null);
+                  setSelectedOverdueStage("");
+                }}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Selecione uma pipeline" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {pipelines.map((p: any) => (
+                      <SelectItem key={p.id} value={p.id}>
+                        {p.name} ({p.total_deals} deals)
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+            </div>
+
+            {selectedPipeline && currentStages.length > 0 && (
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">Estágio "Atrasado"</Label>
+                <Select value={selectedOverdueStage} onValueChange={setSelectedOverdueStage}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="(Opcional) Selecione estágio" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {currentStages.map((s: any) => (
+                      <SelectItem key={s.STATUS_ID} value={s.STATUS_ID}>
+                        {s.NAME}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-[10px] text-muted-foreground">
+                  Deals com parcelas vencidas serão movidos para este estágio
+                </p>
+              </div>
+            )}
+
+            {selectedPipeline && currentStages.length > 0 && (
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">Estágios da Pipeline</Label>
+                <div className="flex flex-wrap gap-1">
+                  {currentStages.map((s: any) => (
+                    <Badge key={s.STATUS_ID} variant="outline" className="text-[10px]">
+                      {s.NAME}
+                      {s.SEMANTICS === "S" && " ✅"}
+                      {s.SEMANTICS === "F" && " ❌"}
+                    </Badge>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+
       {/* Action buttons */}
       <div className="flex flex-wrap gap-3">
-        <Button onClick={handleScan} disabled={scanning} className="gap-2">
+        <Button onClick={handleScan} disabled={scanning || !selectedPipeline} className="gap-2">
           {scanning ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
           Escanear Duplicados
         </Button>
-        <Button onClick={handleFixStages} disabled={fixingStages} variant="outline" className="gap-2">
+        <Button onClick={handleFixStages} disabled={fixingStages || !selectedPipeline} variant="outline" className="gap-2">
           {fixingStages ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle className="h-4 w-4" />}
           Corrigir Estágios
         </Button>
@@ -7378,6 +7492,9 @@ function RevisaoView({ integration, memberId }: { integration: any; memberId: st
         <Card className="border-primary/30">
           <CardHeader className="pb-2">
             <CardTitle className="text-base">Resultado — Correção de Estágios</CardTitle>
+            <CardDescription className="text-xs">
+              {fixResult.records_fetched} registos financeiros analisados para {fixResult.total_deals} deals
+            </CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
@@ -7518,7 +7635,7 @@ function RevisaoView({ integration, memberId }: { integration: any; memberId: st
             <CheckCircle className="h-10 w-10 mx-auto mb-3 text-emerald-500" />
             <p className="font-medium text-foreground">Nenhum duplicado encontrado!</p>
             <p className="text-sm text-muted-foreground mt-1">
-              Todos os {scanResult.total_deals} deals na Pipeline 15 são únicos.
+              Todos os {scanResult.total_deals} deals na pipeline selecionada são únicos.
             </p>
           </CardContent>
         </Card>
