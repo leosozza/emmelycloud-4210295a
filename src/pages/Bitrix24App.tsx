@@ -7560,7 +7560,7 @@ function RevisaoView({ integration, memberId }: { integration: any; memberId: st
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-3 text-sm">
               <div className="bg-muted rounded p-3 text-center">
                 <p className="text-lg font-bold text-foreground">{fixResult.total_deals}</p>
                 <p className="text-xs text-muted-foreground">Total</p>
@@ -7577,6 +7577,15 @@ function RevisaoView({ integration, memberId }: { integration: any; memberId: st
                 <p className="text-lg font-bold text-amber-600">{fixResult.no_records}</p>
                 <p className="text-xs text-muted-foreground">Sem Registos</p>
               </div>
+              {(() => {
+                const errCount = (fixResult.corrections || []).filter((c: any) => c.error).length;
+                return errCount > 0 ? (
+                  <div className="bg-destructive/10 rounded p-3 text-center">
+                    <p className="text-lg font-bold text-destructive">{errCount}</p>
+                    <p className="text-xs text-muted-foreground">Com Erro</p>
+                  </div>
+                ) : null;
+              })()}
             </div>
             {fixResult.corrections?.length > 0 && (
               <div className="mt-3">
