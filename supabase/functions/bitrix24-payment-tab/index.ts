@@ -1707,6 +1707,18 @@ Deno.serve(async (req) => {
       financialRecords = records || [];
     }
 
+    // Fallback: Access-imported clients have financial_records with bitrix24_deal_id directly
+    if (financialRecords.length === 0 && dealTransactions.length === 0) {
+      const { data: directRecords } = await supabase
+        .from("financial_records")
+        .select("*")
+        .eq("bitrix24_deal_id", String(entityId))
+        .order("installment_number", { ascending: true });
+      if (directRecords && directRecords.length > 0) {
+        financialRecords = directRecords;
+      }
+    }
+
     let installments: InstallmentData[] = [];
     let totalValue = 0;
     let paidValue = 0;
