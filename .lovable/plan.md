@@ -1,104 +1,41 @@
 
 
-## Revisão Arquitetural — Fase 2 Implementada
+## Problema Identificado: Duplicação de Negócios e IDs não reutilizados
 
-### Mudanças realizadas (Fase 2)
+### Causa Raiz (3 problemas)
 
-#### 1. Código morto eliminado
-- `chatbot-reply/index.ts` — **removido** (100% duplicado com flow-engine → ai-process-message)
-- `ai-triage/index.ts` — **removido** (100% duplicado com ai-automation-agent action classify_lead)
+1. **IDs locais ignorados**: Quando o cliente já tem `bitrix24_id` (contacto) salvo no banco, o `sync_single_client` **não usa esse ID**. Ele faz `contactId = null` e inicia lookups do zero. Se o lookup falha (ex: filtro de campo customizado ignorado pelo Bitrix), cria um contacto/negócio **duplicado**.
 
-#### 2. Janela de contexto expandida
-- `RECENT_MSG_COUNT`: 5 → **15** mensagens recentes completas
-- `HISTORY_LIMIT`: 15 → **30** mensagens totais
-- TOON comprime as 15 mais antigas, mantém as 15 recentes intactas
+2. **`bitrix24_deal_id` não é consultado**: Os `financial_records` já têm `bitrix24_deal_id` salvo de syncs anteriores, mas o `fetchClientWithFinancials` **não inclui essas colunas** no SELECT. O sistema nunca sabe que o deal já existe localmente.
 
-#### 3. RAG semântico real (pgvector)
-- Edge function `generate-embeddings` criada — gera embeddings de 768 dimensões via Lovable AI
-- `parse-document` agora chama `generate-embeddings` automaticamente após chunking
-- `ai-process-message` usa `match_chunks()` RPC para busca semântica (threshold 0.5)
-- Fallback para keyword scoring quando embeddings não existem
+3. **Lookup sem filtro de pipeline**: O `crm.deal.list` busca em TODAS as pipelines. Um cliente pode ter um deal antigo numa pipeline diferente, o lookup encontra esse, e depois cria outro na pipeline 15 — ou vice-versa.
 
-#### 4. Router multi-agente
-- Quando agente tem `sub_agent_ids`, classifica intenção via IA rápida (flash-lite)
-- Delega para sub-agente especialista com seu próprio prompt e KB
-- Mantém agente activo em `bot_state.active_sub_agent_id` para consistência
+### Solução
 
-#### 5. Self-evaluation / Reflexão
-- Após gerar resposta, avalia qualidade via flash-lite (score 1-10)
-- Se score < 7, regenera com instrução de correcção (máximo 1 retry)
-- Respostas < 50 chars ignoram avaliação
+**Ficheiro:** `supabase/functions/import-access-data/index.ts`
 
-#### 6. Sentiment analysis + Auto-escalação
-- Análise de sentimento via heurística + IA
-- 2x frustração consecutiva → auto-transfere para humano
-- Guarda sentiment em `bot_state.last_sentiment`
-- Regista escalação em `conversation_feedback`
+**A. Pré-popular `contactId` e `dealId` a partir dos IDs locais (linhas ~1061-1062)**
+```typescript
+let contactId: string | null = client.bitrix24_id || null;
+let dealId: string | null = null;
 
-#### 7. Tools dinâmicas expandidas
-- Novas tools: `search_knowledge`, `get_case_status`, `send_payment_link`
-- Tools desconhecidas verificam `tool_parameters.webhook_url` para chamada webhook genérica
-- Registry pattern: tools são lidas de `agent_tools` table
+// Check if any financial_record already has a deal ID
+const existingDealId = info.records.find((r: any) => r.bitrix24_deal_id)?.bitrix24_deal_id || null;
+if (existingDealId) dealId = existingDealId;
+```
+Se já temos IDs locais, usamos direto — sem precisar de lookup API. Isso previne duplicação e é instantâneo.
 
-#### 8. Queue worker auto-trigger
-- Trigger PostgreSQL `AFTER INSERT ON message_queue` chama `pg_net.http_post()` para queue-worker
-- Cron backup via `pg_cron` a cada minuto
+**B. Incluir `bitrix24_deal_id` e `bitrix24_invoice_id` no SELECT do `fetchClientWithFinancials` (linha ~369)**
+Adicionar essas colunas ao SELECT dos `financial_records` para que estejam disponíveis no `info.records`.
 
-#### 9. Melhorias de robustez no sendReply
-- `Promise.allSettled` para operações paralelas (save message + update conversation)
-- Error logging real em vez de fire-and-forget silencioso para message-send e bitrix24-send
-- Extração de memória com tolerância `count % 10 > 1` (mais robusto que `=== 0`)
+**C. Filtrar lookup por pipeline (linhas ~1070-1087)**
+Adicionar `CATEGORY_ID: category_id` ao filtro dos `crm.deal.list` para evitar encontrar deals em pipelines erradas.
 
-### Mudanças realizadas (Fase 2.1 — Consolidação Completa)
+**D. Retornar `bitrix24_id` no response e atualizar cache**
+O response já retorna `contact_id` e `deal_id`. Precisamos garantir que o frontend atualiza o cache persistente (`bitrix24_sync_cache`) com o estado `synced: true` após cada sync bem-sucedido — isso já acontece parcialmente mas o cache backend fica desatualizado.
 
-#### Código morto eliminado
-- `chatbot-reply/index.ts` e `ai-triage/index.ts` — diretórios removidos, referências limpas em `config.toml`, `ApiDocs.tsx` e `bitrix24-worker.ts`
-- ApiDocs actualizado para documentar `ai-process-message` em vez de `chatbot-reply`
+### Resultado
+- Clientes já sincronizados **nunca duplicam** — usam os IDs locais.
+- Lookup limitado à pipeline correta — evita matches cruzados.
+- A lista da Fase 3 reflete corretamente quem está sincronizado.
 
-#### Sintaxe corrigida
-- `parse-document/index.ts` — corrigida função `extractWithAI` que estava erroneamente aninhada dentro de `findFileInZip`
-
-#### Config.toml actualizado
-- Removidas entradas `ai-triage` e `chatbot-reply`
-- Adicionadas entradas para `generate-embeddings`, `parse-document` e `queue-worker`
-
-#### Triggers PostgreSQL criados
-- `on_message_queue_insert` → auto-invoca `queue-worker` via `pg_net`
-- `on_lead_created` → notifica comerciais e admins
-- `on_message_created` → notifica de novas mensagens inbound
-- `on_payment_status_change` → notifica pagamentos recebidos
-- `on_lead_sla_check` → alerta SLA a expirar
-- `on_lead_set_sla` → define SLA automático na criação
-- `on_profile_created` → atribui admin ao primeiro utilizador
-- Cron job `queue-worker-backup` — invoca queue-worker a cada minuto
-
-### Estado actual — 8/8 melhorias implementadas ✅
-1. ✅ Código morto eliminado (chatbot-reply + ai-triage)
-2. ✅ Contexto expandido (30 mensagens: 15 recentes + 15 comprimidas TOON)
-3. ✅ RAG semântico (pgvector + match_chunks + generate-embeddings)
-4. ✅ Router multi-agente (sub_agent_ids + classificação de intenção)
-5. ✅ Tools dinâmicas (registry pattern + webhook fallback)
-6. ✅ Reflexão/Auto-avaliação (score 1-10, retry se < 7)
-7. ✅ Sentiment analysis + auto-escalação (2x frustração → humano)
-8. ✅ Queue worker auto-trigger (pg_trigger + pg_cron backup)
-
-### Mudanças realizadas (Fase 3 — Auditoria Arquitetural)
-
-#### 1. Dashboard de Observabilidade IA
-- Nova página `/observabilidade-ia` com KPIs: requisições, tokens, custo estimado, latência média, taxa fallback, taxa erro, rating feedback
-- Hook `useAiObservability.ts` com agregação de dados
-
-#### 2. Thumbs up/down no chat de atendimento
-- Botões de feedback em mensagens outbound (bot) no painel de atendimento
-
-#### 3. Retry com backoff no AI gateway (429/502/503, 2s delay, 1 retry)
-
-#### 4. Cost estimation real (tabela de preços por modelo, cálculo automático)
-
-#### 5. Memory extraction melhorada (cada 15 msgs + em transferência humana)
-
-#### 6. Reorganização do monólito (constantes extraídas, secções delimitadas)
-
-### Próximos passos
-- Batch job para gerar embeddings dos chunks existentes
-- Streaming no PlaygroundIA
