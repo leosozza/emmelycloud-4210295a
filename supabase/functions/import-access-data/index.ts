@@ -1156,7 +1156,7 @@ serve(async (req) => {
             const contactRes = await bitrixCall("crm.contact.list", { filter: nameFilter, select: ["ID"] });
             if (contactRes.result?.length > 0 && (contactRes.total || contactRes.result.length) <= 3) {
               contactId = contactRes.result[0].ID;
-              const dealRes = await bitrixCall("crm.deal.list", { filter: { CONTACT_ID: contactId }, select: ["ID", "CONTACT_ID"] });
+              const dealRes = await bitrixCall("crm.deal.list", { filter: { CONTACT_ID: contactId, CATEGORY_ID: category_id }, select: ["ID", "CONTACT_ID"] });
               if (dealRes.result?.length > 0) {
                 dealId = dealRes.result[0].ID;
               }
