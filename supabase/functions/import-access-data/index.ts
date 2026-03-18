@@ -1080,7 +1080,7 @@ serve(async (req) => {
         // and returns ALL records. We detect this by checking res.total > 5.
         if (info.access_id) {
           const res = await bitrixCall("crm.deal.list", {
-            filter: { UF_CRM_1768312831: info.access_id },
+            filter: { UF_CRM_1768312831: info.access_id, CATEGORY_ID: category_id },
             select: ["ID", "CONTACT_ID", "UF_CRM_1768312831"],
           });
           if (res.result?.length > 0 && (res.total || res.result.length) <= 5) {
