@@ -105,7 +105,7 @@ async function handleFullPortfolio(supabase: any) {
     while (true) {
       const { data: leadsPage } = await supabase
         .from("leads")
-        .select("id, name, client_id, cases(id, title, contracts(id, financial_records(id, installment_value, status, due_date)))")
+        .select("id, name, client_id, cases(id, title, contracts(id, financial_records(id, installment_value, status, due_date, bitrix24_deal_id)))")
         .in("client_id", idsChunk)
         .eq("sync_source", "access_import")
         .range(leadOffset, leadOffset + PAGE_SIZE);
