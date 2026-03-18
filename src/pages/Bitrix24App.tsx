@@ -6255,12 +6255,18 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
     (syncSegments.has("new") && !c.bitrix_deal_id)
   );
 
-  const filteredSyncClients = segmentedClients.filter(c => activeTabs.has(c.status_class as any));
-  const quitadoCount = segmentedClients.filter(c => c.status_class === "quitado").length;
-  const abertoCount = segmentedClients.filter(c => c.status_class === "aberto").length;
-  const atrasadoCount = segmentedClients.filter(c => c.status_class === "atrasado").length;
-  const syncedCount = syncClients.filter(c => c.synced).length;
-  const pendingCount = syncClients.filter(c => !c.synced).length;
+  const statusFilteredClients = segmentedClients.filter(c => {
+    if (syncStatusFilter === "all") return true;
+    const st = c.sync_status || (c.synced ? "synced" : "pending");
+    return st === syncStatusFilter;
+  });
+  const filteredSyncClients = statusFilteredClients.filter(c => activeTabs.has(c.status_class as any));
+  const quitadoCount = statusFilteredClients.filter(c => c.status_class === "quitado").length;
+  const abertoCount = statusFilteredClients.filter(c => c.status_class === "aberto").length;
+  const atrasadoCount = statusFilteredClients.filter(c => c.status_class === "atrasado").length;
+  const syncedCount = syncClients.filter(c => c.synced || c.sync_status === "synced").length;
+  const partialCount = syncClients.filter(c => c.sync_status === "partial").length;
+  const pendingCount = syncClients.filter(c => !c.synced && c.sync_status !== "partial" && c.sync_status !== "synced").length;
 
   const selectAllInTab = () => {
     const ids = filteredSyncClients.filter(c => !c.synced).map(c => c.client_id);
