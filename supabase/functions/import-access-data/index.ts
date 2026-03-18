@@ -367,7 +367,8 @@ serve(async (req) => {
                 id, created_at,
                 financial_records!financial_records_contract_id_fkey (
                   id, description, total_value, installment_number, total_installments,
-                  installment_value, status, due_date, paid_at, created_at
+                  installment_value, status, due_date, paid_at, created_at,
+                  bitrix24_deal_id, bitrix24_invoice_id
                 )
               )
             )
