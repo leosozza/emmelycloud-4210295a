@@ -48,13 +48,51 @@ serve(async (req) => {
     }
 
     const endpoint = integration.client_endpoint;
-    const accessToken = integration.access_token;
+    let accessToken = integration.access_token;
 
     if (!endpoint || !accessToken) {
       return new Response(JSON.stringify({ error: "Missing Bitrix24 credentials" }), {
         status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
+
+    // Ensure valid token (refresh if expired)
+    async function ensureValidToken(): Promise<string> {
+      const expiresAt = integration.expires_at ? new Date(integration.expires_at) : null;
+      if (expiresAt && expiresAt.getTime() - Date.now() > 5 * 60 * 1000) {
+        return accessToken;
+      }
+      const clientId = Deno.env.get("BITRIX24_CLIENT_ID");
+      const clientSecret = Deno.env.get("BITRIX24_CLIENT_SECRET");
+      if (!clientId || !clientSecret || !integration.refresh_token) {
+        throw new Error("Cannot refresh token: missing credentials");
+      }
+      const res = await fetch("https://oauth.bitrix.info/oauth/token/", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({
+          grant_type: "refresh_token",
+          client_id: clientId,
+          client_secret: clientSecret,
+          refresh_token: integration.refresh_token,
+        }),
+      });
+      const data = await res.json();
+      if (data.error || !data.access_token) {
+        throw new Error(`Token refresh failed: ${data.error || "unknown"}`);
+      }
+      await supabase.from("bitrix24_integrations").update({
+        access_token: data.access_token,
+        refresh_token: data.refresh_token,
+        expires_at: new Date(Date.now() + (data.expires_in || 3600) * 1000).toISOString(),
+      }).eq("id", integration.id);
+      accessToken = data.access_token;
+      console.log("[cleanup] Token refreshed successfully");
+      return data.access_token;
+    }
+
+    // Refresh token before proceeding
+    accessToken = await ensureValidToken();
 
     // Helper: paginated fetch of all deals in Pipeline 15
     async function fetchAllDeals(): Promise<any[]> {
