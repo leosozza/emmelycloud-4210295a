@@ -373,6 +373,9 @@ serve(async (req) => {
       let noRecords = 0;
       const corrections: any[] = [];
 
+      // Build list of deals that need stage changes
+      const pendingUpdates: { deal: any; correctStage: string }[] = [];
+
       for (const deal of allDeals) {
         const recs = recordsByDeal[deal.ID] || [];
         if (recs.length === 0) {
@@ -399,29 +402,53 @@ serve(async (req) => {
           continue;
         }
 
-        // Update stage
-        const upRes = await bitrixCall("crm.deal.update", {
-          id: deal.ID,
-          fields: { STAGE_ID: correctStage },
-        });
+        pendingUpdates.push({ deal, correctStage });
+      }
 
-        if (!upRes.error) {
-          corrected++;
-          corrections.push({
-            deal_id: deal.ID,
-            title: deal.TITLE,
-            from: deal.STAGE_ID,
-            to: correctStage,
-          });
-        } else {
-          corrections.push({
-            deal_id: deal.ID,
-            title: deal.TITLE,
-            from: deal.STAGE_ID,
-            to: correctStage,
-            error: upRes.error,
-          });
+      console.log(`[cleanup] ${pendingUpdates.length} deals need stage update, ${alreadyCorrect} already correct, ${noRecords} no records`);
+
+      // Process updates using Bitrix24 batch API (50 commands per batch)
+      const BATCH_SIZE = 50;
+      for (let i = 0; i < pendingUpdates.length; i += BATCH_SIZE) {
+        const batch = pendingUpdates.slice(i, i + BATCH_SIZE);
+        const cmd: Record<string, string> = {};
+        for (let j = 0; j < batch.length; j++) {
+          const { deal, correctStage } = batch[j];
+          cmd[`update_${j}`] = `crm.deal.update?id=${deal.ID}&fields[STAGE_ID]=${encodeURIComponent(correctStage)}`;
         }
+
+        const batchRes = await fetch(`${endpoint}batch`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ auth: accessToken, halt: 0, cmd }),
+        });
+        const batchData = await batchRes.json();
+        const results = batchData.result?.result || {};
+        const errors = batchData.result?.result_error || {};
+
+        for (let j = 0; j < batch.length; j++) {
+          const { deal, correctStage } = batch[j];
+          const key = `update_${j}`;
+          if (errors[key]) {
+            corrections.push({
+              deal_id: deal.ID,
+              title: deal.TITLE,
+              from: deal.STAGE_ID,
+              to: correctStage,
+              error: errors[key],
+            });
+          } else {
+            corrected++;
+            corrections.push({
+              deal_id: deal.ID,
+              title: deal.TITLE,
+              from: deal.STAGE_ID,
+              to: correctStage,
+            });
+          }
+        }
+
+        console.log(`[cleanup] Batch ${Math.floor(i / BATCH_SIZE) + 1}/${Math.ceil(pendingUpdates.length / BATCH_SIZE)} processed`);
       }
 
       // Log
