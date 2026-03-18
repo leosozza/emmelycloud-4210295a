@@ -7493,6 +7493,31 @@ function RevisaoView({ integration, memberId }: { integration: any; memberId: st
         </Button>
       </div>
 
+      {/* Progress indicator */}
+      {operationProgress && (
+        <Card className="border-primary/30">
+          <CardContent className="p-4 space-y-2">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 text-sm font-medium text-foreground">
+                <Loader2 className="h-4 w-4 animate-spin text-primary" />
+                {operationProgress.label}
+              </div>
+              <span className="text-xs text-muted-foreground">{operationProgress.elapsed}s</span>
+            </div>
+            <Progress className="h-2" />
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Error alert */}
+      {operationError && (
+        <Alert variant="destructive">
+          <AlertTriangle className="h-4 w-4" />
+          <AlertTitle>Erro</AlertTitle>
+          <AlertDescription className="text-xs">{operationError}</AlertDescription>
+        </Alert>
+      )}
+
       {/* KPIs after scan */}
       {scanResult && (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
