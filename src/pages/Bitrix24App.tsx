@@ -6607,6 +6607,7 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
             )}
           </div>
           )}
+        </CardHeader>
         <CardContent className="space-y-4">
           {!integration ? (
             <p className="text-sm text-muted-foreground">⚠️ Sem integração Bitrix24 activa.</p>
