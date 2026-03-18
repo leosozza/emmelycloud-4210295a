@@ -6582,30 +6582,34 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
             }
           </CardDescription>
           {syncClientsLoaded && syncClients.length > 0 && (
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-3">
-              <div className="rounded-lg border bg-card p-3 text-center">
-                <p className="text-2xl font-bold text-foreground">{syncClients.length}</p>
-                <p className="text-[10px] text-muted-foreground">Total Importados</p>
+            <>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-3">
+                <div className="rounded-lg border bg-card p-3 text-center">
+                  <p className="text-2xl font-bold text-foreground">{syncClients.length}</p>
+                  <p className="text-[10px] text-muted-foreground">Total Importados</p>
+                </div>
+                <div className="rounded-lg border border-green-500/30 bg-green-500/5 p-3 text-center">
+                  <p className="text-2xl font-bold text-green-600">{syncedCount}</p>
+                  <p className="text-[10px] text-muted-foreground">✅ Sincronizados</p>
+                </div>
+                <div className="rounded-lg border border-yellow-500/30 bg-yellow-500/5 p-3 text-center">
+                  <p className="text-2xl font-bold text-yellow-600">{partialCount}</p>
+                  <p className="text-[10px] text-muted-foreground">⚠️ Parcial</p>
+                </div>
+                <div className="rounded-lg border border-red-500/30 bg-red-500/5 p-3 text-center">
+                  <p className="text-2xl font-bold text-red-600">{pendingCount}</p>
+                  <p className="text-[10px] text-muted-foreground">⏳ Pendentes</p>
+                </div>
               </div>
-              <div className="rounded-lg border border-green-500/30 bg-green-500/5 p-3 text-center">
-                <p className="text-2xl font-bold text-green-600">{syncedCount}</p>
-                <p className="text-[10px] text-muted-foreground">✅ Sincronizados</p>
-              </div>
-              <div className="rounded-lg border border-yellow-500/30 bg-yellow-500/5 p-3 text-center">
-                <p className="text-2xl font-bold text-yellow-600">{partialCount}</p>
-                <p className="text-[10px] text-muted-foreground">⚠️ Parcial</p>
-              </div>
-              <div className="rounded-lg border border-red-500/30 bg-red-500/5 p-3 text-center">
-                <p className="text-2xl font-bold text-red-600">{pendingCount}</p>
-                <p className="text-[10px] text-muted-foreground">⏳ Pendentes</p>
-              </div>
-            </div>
-            {syncedCount === syncClients.length && syncClients.length > 0 && (
-              <div className="mt-2 rounded-lg border border-green-500/30 bg-green-500/10 p-3 text-center">
-                <p className="text-sm font-medium text-green-700">🎉 Todos os clientes estão sincronizados com o Bitrix24. As tabelas de importação podem ser removidas com segurança.</p>
-              </div>
-            )}
-          </div>
+              {syncedCount === syncClients.length && syncClients.length > 0 && (
+                <div className="mt-2 rounded-lg border border-green-500/30 bg-green-500/10 p-3 text-center">
+                  <p className="text-sm font-medium text-green-700">🎉 Todos os clientes estão sincronizados com o Bitrix24. As tabelas de importação podem ser removidas com segurança.</p>
+                </div>
+              )}
+              {syncSessionId && (
+                <Badge variant="secondary" className="text-[10px] mt-1">📁 Sessão activa</Badge>
+              )}
+            </>
           )}
         </CardHeader>
         <CardContent className="space-y-4">
