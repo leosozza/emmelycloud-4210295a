@@ -5263,6 +5263,9 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
     contract_date: string | null;
     synced?: boolean;
     syncResult?: string;
+    sync_status?: "synced" | "partial" | "pending";
+    has_contact?: boolean;
+    has_all_deals?: boolean;
   };
   const [syncClients, setSyncClients] = useState<SyncClient[]>([]);
   const [loadingSyncClients, setLoadingSyncClients] = useState(false);
