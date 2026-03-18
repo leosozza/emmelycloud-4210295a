@@ -6807,7 +6807,27 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
                     </Button>
                   </div>
 
-                  {/* Batch toolbar */}
+                  {/* Sync status filter */}
+                  <div className="flex gap-2 flex-wrap">
+                    <span className="text-xs text-muted-foreground self-center mr-1">Sincronização:</span>
+                    {([
+                      { key: "all" as const, label: "Todos", icon: null },
+                      { key: "synced" as const, label: `✅ Sincronizados (${syncedCount})`, icon: null },
+                      { key: "partial" as const, label: `⚠️ Parcial (${partialCount})`, icon: null },
+                      { key: "pending" as const, label: `⏳ Pendentes (${pendingCount})`, icon: null },
+                    ]).map(f => (
+                      <Button
+                        key={f.key}
+                        variant={syncStatusFilter === f.key ? "default" : "outline"}
+                        size="sm"
+                        onClick={() => { setSyncStatusFilter(f.key); setSelectedIds(new Set()); }}
+                        className="text-xs"
+                      >
+                        {f.label}
+                      </Button>
+                    ))}
+                  </div>
+
                   <div className="flex items-center gap-3 flex-wrap">
                     <Button variant="ghost" size="sm" className="text-xs" onClick={selectAllInTab}>
                       Selecionar todos ({filteredSyncClients.filter(c => !c.synced).length})
