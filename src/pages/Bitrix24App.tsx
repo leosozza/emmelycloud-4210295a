@@ -213,6 +213,7 @@ const Bitrix24App = () => {
         { id: "carteira", label: "Carteira", icon: Users },
         { id: "baixa", label: "Baixa Carteira", icon: FileDown },
         { id: "importacao", label: "Importação", icon: Upload },
+        { id: "revisao", label: "Revisão", icon: AlertTriangle },
         { id: "placement", label: "Placement", icon: ExternalLink },
         { id: "empresas", label: "Empresas", icon: Building2 },
         { id: "relatorios", label: "Relatórios", icon: BarChart3 },
