@@ -1562,11 +1562,34 @@ Deno.serve(async (req) => {
                  meta.bitrix_entity_id === dealId || meta.bitrix_entity_id === String(dealId);
         });
 
-        // Build installments from transactions or synthetic
+        // Fallback: Access-imported clients have financial_records with bitrix24_deal_id directly
+        let directFinRecords: any[] = [];
+        if (dealTxs.length === 0) {
+          const { data: directRecs } = await supabase
+            .from("financial_records")
+            .select("*")
+            .eq("bitrix24_deal_id", dealId)
+            .order("installment_number", { ascending: true });
+          directFinRecords = directRecs || [];
+        }
+
+        // Build installments from transactions, direct records, or synthetic
         let installments: InstallmentData[] = [];
         let totalValue = 0, paidValue = 0;
 
-        if (dealTxs.length > 0) {
+        if (directFinRecords.length > 0) {
+          const firstRec = directFinRecords[0];
+          totalValue = firstRec.total_value || 0;
+          installments = directFinRecords.map((rec: any) => ({
+            id: rec.id, number: rec.installment_number || 1, total: rec.total_installments || 1,
+            value: rec.installment_value || 0, status: rec.status || "pendente",
+            due_date: rec.due_date, paid_at: rec.paid_at, currency: rec.currency || dealCurrency,
+            description: rec.description || "",
+            invoice_id: rec.bitrix24_invoice_id || null,
+            metadata: {},
+          }));
+          paidValue = installments.filter(i => i.status === "paga").reduce((s, i) => s + i.value, 0);
+        } else if (dealTxs.length > 0) {
           totalValue = dealTxs.reduce((s: number, tx: any) => s + (tx.amount || 0), 0);
           installments = dealTxs.map((tx: any, idx: number) => {
             let status = "pendente";

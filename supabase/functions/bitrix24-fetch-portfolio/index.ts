@@ -157,6 +157,7 @@ async function handleFullPortfolio(supabase: any) {
     return {
       client: { id: c.id, name: c.name, document_number: c.document_number, bitrix24_id: c.bitrix24_id },
       accessId: c.id_access || null,
+      dealId: firstDealId,
       totalValue: cv,
       totalPaid: cp,
       totalPending: cpn,
