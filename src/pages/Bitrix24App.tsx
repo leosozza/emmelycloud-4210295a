@@ -7235,7 +7235,47 @@ function RevisaoView({ integration, memberId }: { integration: any; memberId: st
   const [selectedKeep, setSelectedKeep] = useState<Record<string, string>>({});
   const [mergeResults, setMergeResults] = useState<Record<string, any>>({});
 
+  // Pipeline selection
+  const [loadingPipelines, setLoadingPipelines] = useState(false);
+  const [pipelines, setPipelines] = useState<any[]>([]);
+  const [selectedPipeline, setSelectedPipeline] = useState<string>("");
+  const [selectedOverdueStage, setSelectedOverdueStage] = useState<string>("");
+
   const mid = memberId || integration?.member_id;
+
+  // Load pipelines on mount
+  useEffect(() => {
+    if (!mid) return;
+    const loadPipelines = async () => {
+      setLoadingPipelines(true);
+      try {
+        const res = await fetch(
+          `${SUPABASE_URL}/functions/v1/bitrix24-cleanup-duplicates?action=list_pipelines&member_id=${encodeURIComponent(mid)}`,
+          { headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` } }
+        );
+        const data = await res.json();
+        if (data.success && data.pipelines) {
+          setPipelines(data.pipelines);
+          const p15 = data.pipelines.find((p: any) => p.id === "15");
+          if (p15) {
+            setSelectedPipeline("15");
+            const overdue = p15.stages?.find((s: any) => s.STATUS_ID === "C15:UC_S7RLFB");
+            if (overdue) setSelectedOverdueStage(overdue.STATUS_ID);
+          } else if (data.pipelines.length > 0) {
+            setSelectedPipeline(data.pipelines[0].id);
+          }
+        }
+      } catch (e) {
+        console.error("[revisao] Load pipelines error:", e);
+      } finally {
+        setLoadingPipelines(false);
+      }
+    };
+    loadPipelines();
+  }, [mid]);
+
+  const currentPipeline = pipelines.find((p: any) => p.id === selectedPipeline);
+  const currentStages = currentPipeline?.stages || [];
 
   const handleScan = async () => {
     if (!mid) return;
