@@ -7339,6 +7339,7 @@ function RevisaoView({ integration, memberId }: { integration: any; memberId: st
   const handleMerge = async (groupKey: string, keepId: string, deleteIds: string[]) => {
     if (!mid) return;
     setMerging(groupKey);
+    setOperationError(null);
     try {
       const res = await fetch(
         `${SUPABASE_URL}/functions/v1/bitrix24-cleanup-duplicates?action=merge&member_id=${encodeURIComponent(mid)}&category_id=${encodeURIComponent(selectedPipeline)}`,
@@ -7350,14 +7351,17 @@ function RevisaoView({ integration, memberId }: { integration: any; memberId: st
       );
       const data = await res.json();
       setMergeResults(prev => ({ ...prev, [groupKey]: data }));
-      if (data.success && scanResult) {
+      if (data.error) {
+        setOperationError(`Erro ao mesclar: ${data.error}`);
+      } else if (data.success && scanResult) {
         setScanResult((prev: any) => ({
           ...prev,
           duplicate_groups: prev.duplicate_groups.filter((g: any) => g.key !== groupKey),
         }));
       }
-    } catch (e) {
+    } catch (e: any) {
       console.error("[revisao] Merge error:", e);
+      setOperationError(`Erro de rede ao mesclar: ${e.message || "Falha ao conectar"}`);
     } finally {
       setMerging(null);
     }
@@ -7367,6 +7371,8 @@ function RevisaoView({ integration, memberId }: { integration: any; memberId: st
     if (!mid || !selectedPipeline) return;
     setFixingStages(true);
     setFixResult(null);
+    setOperationError(null);
+    startProgress("Corrigindo estágios...");
     try {
       const params = new URLSearchParams({
         action: "fix_stages",
@@ -7380,9 +7386,19 @@ function RevisaoView({ integration, memberId }: { integration: any; memberId: st
         { headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` } }
       );
       const data = await res.json();
-      if (data.success) setFixResult(data);
-    } catch (e) {
+      if (data.error) {
+        setOperationError(`Erro ao corrigir estágios: ${data.error}`);
+      } else if (data.success) {
+        setFixResult(data);
+      }
+    } catch (e: any) {
       console.error("[revisao] Fix stages error:", e);
+      setOperationError(`Erro de rede: ${e.message || "Falha ao conectar"}`);
+    } finally {
+      setFixingStages(false);
+      stopProgress();
+    }
+  };
     } finally {
       setFixingStages(false);
     }
