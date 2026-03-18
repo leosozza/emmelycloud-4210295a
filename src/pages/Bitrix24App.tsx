@@ -6906,7 +6906,7 @@ function ImportacaoAccessView({ integration, memberId }: { integration: any; mem
                           <TableHead>Telefone</TableHead>
                           <TableHead className="text-right">Valor</TableHead>
                           <TableHead className="text-right">Pago</TableHead>
-                          <TableHead>Bitrix</TableHead>
+                          <TableHead>Status Sync</TableHead>
                           <TableHead className="w-24">Acção</TableHead>
                         </TableRow>
                       </TableHeader>
