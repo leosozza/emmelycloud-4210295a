@@ -7307,13 +7307,17 @@ function RevisaoView({ integration, memberId }: { integration: any; memberId: st
     setScanning(true);
     setScanResult(null);
     setMergeResults({});
+    setOperationError(null);
+    startProgress("Escaneando duplicados...");
     try {
       const res = await fetch(
         `${SUPABASE_URL}/functions/v1/bitrix24-cleanup-duplicates?action=scan&member_id=${encodeURIComponent(mid)}&category_id=${encodeURIComponent(selectedPipeline)}`,
         { headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` } }
       );
       const data = await res.json();
-      if (data.success) {
+      if (data.error) {
+        setOperationError(`Erro no scan: ${data.error}`);
+      } else if (data.success) {
         setScanResult(data);
         const defaults: Record<string, string> = {};
         for (const group of data.duplicate_groups || []) {
@@ -7323,10 +7327,12 @@ function RevisaoView({ integration, memberId }: { integration: any; memberId: st
         }
         setSelectedKeep(defaults);
       }
-    } catch (e) {
+    } catch (e: any) {
       console.error("[revisao] Scan error:", e);
+      setOperationError(`Erro de rede: ${e.message || "Falha ao conectar"}`);
     } finally {
       setScanning(false);
+      stopProgress();
     }
   };
 
