@@ -7399,10 +7399,6 @@ function RevisaoView({ integration, memberId }: { integration: any; memberId: st
       stopProgress();
     }
   };
-    } finally {
-      setFixingStages(false);
-    }
-  };
 
   return (
     <div className="space-y-4 p-4">
