@@ -7382,10 +7382,13 @@ function RevisaoView({ integration, memberId }: { integration: any; memberId: st
       });
       if (selectedOverdueStage) params.set("overdue_stage", selectedOverdueStage);
 
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 300000); // 5 min
       const res = await fetch(
         `${SUPABASE_URL}/functions/v1/bitrix24-cleanup-duplicates?${params.toString()}`,
-        { headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` } }
+        { headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` }, signal: controller.signal }
       );
+      clearTimeout(timeout);
       const data = await res.json();
       if (data.error) {
         setOperationError(`Erro ao corrigir estágios: ${data.error}`);
