@@ -367,7 +367,8 @@ serve(async (req) => {
                 id, created_at,
                 financial_records!financial_records_contract_id_fkey (
                   id, description, total_value, installment_number, total_installments,
-                  installment_value, status, due_date, paid_at, created_at
+                  installment_value, status, due_date, paid_at, created_at,
+                  bitrix24_deal_id, bitrix24_invoice_id
                 )
               )
             )
@@ -1058,8 +1059,19 @@ serve(async (req) => {
       const phones = overrides?.phone ? [overrides.phone, ...info.phones] : info.phones;
       const emails = info.emails;
 
-      let contactId: string | null = null;
+      // Pre-populate IDs from local DB to avoid duplicating already-synced entities
+      let contactId: string | null = client.bitrix24_id || null;
       let dealId: string | null = null;
+
+      // Check if any financial_record already has a deal ID saved from a previous sync
+      const existingDealId = info.records.find((r: any) => r.bitrix24_deal_id)?.bitrix24_deal_id || null;
+      if (existingDealId) {
+        dealId = existingDealId;
+        console.log(`[sync_single_client] Pre-populated dealId=${dealId} from local DB`);
+      }
+      if (contactId) {
+        console.log(`[sync_single_client] Pre-populated contactId=${contactId} from client.bitrix24_id`);
+      }
 
       // Skip lookup entirely when force_create is set (Etapa B — new clients)
       if (!force_create) {
@@ -1068,7 +1080,7 @@ serve(async (req) => {
         // and returns ALL records. We detect this by checking res.total > 5.
         if (info.access_id) {
           const res = await bitrixCall("crm.deal.list", {
-            filter: { UF_CRM_1768312831: info.access_id },
+            filter: { UF_CRM_1768312831: info.access_id, CATEGORY_ID: category_id },
             select: ["ID", "CONTACT_ID", "UF_CRM_1768312831"],
           });
           if (res.result?.length > 0 && (res.total || res.result.length) <= 5) {
@@ -1087,7 +1099,7 @@ serve(async (req) => {
         }
         if (!dealId && docNumber && !docNumber.startsWith("ACCESS_")) {
           const res = await bitrixCall("crm.deal.list", {
-            filter: { UF_CRM_1733687549802: docNumber },
+            filter: { UF_CRM_1733687549802: docNumber, CATEGORY_ID: category_id },
             select: ["ID", "CONTACT_ID", "UF_CRM_1733687549802"],
           });
           if (res.result?.length > 0 && (res.total || res.result.length) <= 5) {
@@ -1108,7 +1120,7 @@ serve(async (req) => {
             const contactRes = await bitrixCall("crm.contact.list", { filter: { PHONE: phone }, select: ["ID"] });
             if (contactRes.result?.length > 0 && (contactRes.total || contactRes.result.length) <= 5) {
               const fid = contactRes.result[0].ID;
-              const dealRes = await bitrixCall("crm.deal.list", { filter: { CONTACT_ID: fid }, select: ["ID", "CONTACT_ID"] });
+              const dealRes = await bitrixCall("crm.deal.list", { filter: { CONTACT_ID: fid, CATEGORY_ID: category_id }, select: ["ID", "CONTACT_ID"] });
               if (dealRes.result?.length > 0) {
                 dealId = dealRes.result[0].ID;
                 contactId = fid;
@@ -1124,7 +1136,7 @@ serve(async (req) => {
             const contactRes = await bitrixCall("crm.contact.list", { filter: { EMAIL: email }, select: ["ID"] });
             if (contactRes.result?.length > 0 && (contactRes.total || contactRes.result.length) <= 5) {
               contactId = contactRes.result[0].ID;
-              const dealRes = await bitrixCall("crm.deal.list", { filter: { CONTACT_ID: contactId }, select: ["ID", "CONTACT_ID"] });
+              const dealRes = await bitrixCall("crm.deal.list", { filter: { CONTACT_ID: contactId, CATEGORY_ID: category_id }, select: ["ID", "CONTACT_ID"] });
               if (dealRes.result?.length > 0) {
                 dealId = dealRes.result[0].ID;
               }
@@ -1144,7 +1156,7 @@ serve(async (req) => {
             const contactRes = await bitrixCall("crm.contact.list", { filter: nameFilter, select: ["ID"] });
             if (contactRes.result?.length > 0 && (contactRes.total || contactRes.result.length) <= 3) {
               contactId = contactRes.result[0].ID;
-              const dealRes = await bitrixCall("crm.deal.list", { filter: { CONTACT_ID: contactId }, select: ["ID", "CONTACT_ID"] });
+              const dealRes = await bitrixCall("crm.deal.list", { filter: { CONTACT_ID: contactId, CATEGORY_ID: category_id }, select: ["ID", "CONTACT_ID"] });
               if (dealRes.result?.length > 0) {
                 dealId = dealRes.result[0].ID;
               }
