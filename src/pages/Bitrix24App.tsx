@@ -7234,12 +7234,31 @@ function RevisaoView({ integration, memberId }: { integration: any; memberId: st
   const [fixResult, setFixResult] = useState<any>(null);
   const [selectedKeep, setSelectedKeep] = useState<Record<string, string>>({});
   const [mergeResults, setMergeResults] = useState<Record<string, any>>({});
+  const [operationError, setOperationError] = useState<string | null>(null);
+  const [operationProgress, setOperationProgress] = useState<{label: string; elapsed: number} | null>(null);
+  const [progressTimer, setProgressTimer] = useState<ReturnType<typeof setInterval> | null>(null);
 
   // Pipeline selection
   const [loadingPipelines, setLoadingPipelines] = useState(false);
   const [pipelines, setPipelines] = useState<any[]>([]);
   const [selectedPipeline, setSelectedPipeline] = useState<string>("");
   const [selectedOverdueStage, setSelectedOverdueStage] = useState<string>("");
+
+  const startProgress = (label: string) => {
+    setOperationError(null);
+    setOperationProgress({ label, elapsed: 0 });
+    const start = Date.now();
+    const timer = setInterval(() => {
+      setOperationProgress(prev => prev ? { ...prev, elapsed: Math.floor((Date.now() - start) / 1000) } : null);
+    }, 1000);
+    setProgressTimer(timer);
+  };
+
+  const stopProgress = () => {
+    if (progressTimer) clearInterval(progressTimer);
+    setProgressTimer(null);
+    setOperationProgress(null);
+  };
 
   const mid = memberId || integration?.member_id;
 
