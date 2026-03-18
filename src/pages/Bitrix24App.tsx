@@ -4,6 +4,7 @@ import { calculateLateFees } from "@/lib/lateFeeCalc";
 import { supabase } from "@/integrations/supabase/client";
 import { useBitrix24Theme } from "@/hooks/useBitrix24Theme";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -7234,12 +7235,31 @@ function RevisaoView({ integration, memberId }: { integration: any; memberId: st
   const [fixResult, setFixResult] = useState<any>(null);
   const [selectedKeep, setSelectedKeep] = useState<Record<string, string>>({});
   const [mergeResults, setMergeResults] = useState<Record<string, any>>({});
+  const [operationError, setOperationError] = useState<string | null>(null);
+  const [operationProgress, setOperationProgress] = useState<{label: string; elapsed: number} | null>(null);
+  const [progressTimer, setProgressTimer] = useState<ReturnType<typeof setInterval> | null>(null);
 
   // Pipeline selection
   const [loadingPipelines, setLoadingPipelines] = useState(false);
   const [pipelines, setPipelines] = useState<any[]>([]);
   const [selectedPipeline, setSelectedPipeline] = useState<string>("");
   const [selectedOverdueStage, setSelectedOverdueStage] = useState<string>("");
+
+  const startProgress = (label: string) => {
+    setOperationError(null);
+    setOperationProgress({ label, elapsed: 0 });
+    const start = Date.now();
+    const timer = setInterval(() => {
+      setOperationProgress(prev => prev ? { ...prev, elapsed: Math.floor((Date.now() - start) / 1000) } : null);
+    }, 1000);
+    setProgressTimer(timer);
+  };
+
+  const stopProgress = () => {
+    if (progressTimer) clearInterval(progressTimer);
+    setProgressTimer(null);
+    setOperationProgress(null);
+  };
 
   const mid = memberId || integration?.member_id;
 
@@ -7288,13 +7308,17 @@ function RevisaoView({ integration, memberId }: { integration: any; memberId: st
     setScanning(true);
     setScanResult(null);
     setMergeResults({});
+    setOperationError(null);
+    startProgress("Escaneando duplicados...");
     try {
       const res = await fetch(
         `${SUPABASE_URL}/functions/v1/bitrix24-cleanup-duplicates?action=scan&member_id=${encodeURIComponent(mid)}&category_id=${encodeURIComponent(selectedPipeline)}`,
         { headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` } }
       );
       const data = await res.json();
-      if (data.success) {
+      if (data.error) {
+        setOperationError(`Erro no scan: ${data.error}`);
+      } else if (data.success) {
         setScanResult(data);
         const defaults: Record<string, string> = {};
         for (const group of data.duplicate_groups || []) {
@@ -7304,16 +7328,19 @@ function RevisaoView({ integration, memberId }: { integration: any; memberId: st
         }
         setSelectedKeep(defaults);
       }
-    } catch (e) {
+    } catch (e: any) {
       console.error("[revisao] Scan error:", e);
+      setOperationError(`Erro de rede: ${e.message || "Falha ao conectar"}`);
     } finally {
       setScanning(false);
+      stopProgress();
     }
   };
 
   const handleMerge = async (groupKey: string, keepId: string, deleteIds: string[]) => {
     if (!mid) return;
     setMerging(groupKey);
+    setOperationError(null);
     try {
       const res = await fetch(
         `${SUPABASE_URL}/functions/v1/bitrix24-cleanup-duplicates?action=merge&member_id=${encodeURIComponent(mid)}&category_id=${encodeURIComponent(selectedPipeline)}`,
@@ -7325,14 +7352,17 @@ function RevisaoView({ integration, memberId }: { integration: any; memberId: st
       );
       const data = await res.json();
       setMergeResults(prev => ({ ...prev, [groupKey]: data }));
-      if (data.success && scanResult) {
+      if (data.error) {
+        setOperationError(`Erro ao mesclar: ${data.error}`);
+      } else if (data.success && scanResult) {
         setScanResult((prev: any) => ({
           ...prev,
           duplicate_groups: prev.duplicate_groups.filter((g: any) => g.key !== groupKey),
         }));
       }
-    } catch (e) {
+    } catch (e: any) {
       console.error("[revisao] Merge error:", e);
+      setOperationError(`Erro de rede ao mesclar: ${e.message || "Falha ao conectar"}`);
     } finally {
       setMerging(null);
     }
@@ -7342,6 +7372,8 @@ function RevisaoView({ integration, memberId }: { integration: any; memberId: st
     if (!mid || !selectedPipeline) return;
     setFixingStages(true);
     setFixResult(null);
+    setOperationError(null);
+    startProgress("Corrigindo estágios...");
     try {
       const params = new URLSearchParams({
         action: "fix_stages",
@@ -7355,11 +7387,17 @@ function RevisaoView({ integration, memberId }: { integration: any; memberId: st
         { headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` } }
       );
       const data = await res.json();
-      if (data.success) setFixResult(data);
-    } catch (e) {
+      if (data.error) {
+        setOperationError(`Erro ao corrigir estágios: ${data.error}`);
+      } else if (data.success) {
+        setFixResult(data);
+      }
+    } catch (e: any) {
       console.error("[revisao] Fix stages error:", e);
+      setOperationError(`Erro de rede: ${e.message || "Falha ao conectar"}`);
     } finally {
       setFixingStages(false);
+      stopProgress();
     }
   };
 
@@ -7455,6 +7493,31 @@ function RevisaoView({ integration, memberId }: { integration: any; memberId: st
         </Button>
       </div>
 
+      {/* Progress indicator */}
+      {operationProgress && (
+        <Card className="border-primary/30">
+          <CardContent className="p-4 space-y-2">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 text-sm font-medium text-foreground">
+                <Loader2 className="h-4 w-4 animate-spin text-primary" />
+                {operationProgress.label}
+              </div>
+              <span className="text-xs text-muted-foreground">{operationProgress.elapsed}s</span>
+            </div>
+            <Progress className="h-2" />
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Error alert */}
+      {operationError && (
+        <Alert variant="destructive">
+          <AlertTriangle className="h-4 w-4" />
+          <AlertTitle>Erro</AlertTitle>
+          <AlertDescription className="text-xs">{operationError}</AlertDescription>
+        </Alert>
+      )}
+
       {/* KPIs after scan */}
       {scanResult && (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -7497,7 +7560,7 @@ function RevisaoView({ integration, memberId }: { integration: any; memberId: st
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-3 text-sm">
               <div className="bg-muted rounded p-3 text-center">
                 <p className="text-lg font-bold text-foreground">{fixResult.total_deals}</p>
                 <p className="text-xs text-muted-foreground">Total</p>
@@ -7514,6 +7577,15 @@ function RevisaoView({ integration, memberId }: { integration: any; memberId: st
                 <p className="text-lg font-bold text-amber-600">{fixResult.no_records}</p>
                 <p className="text-xs text-muted-foreground">Sem Registos</p>
               </div>
+              {(() => {
+                const errCount = (fixResult.corrections || []).filter((c: any) => c.error).length;
+                return errCount > 0 ? (
+                  <div className="bg-destructive/10 rounded p-3 text-center">
+                    <p className="text-lg font-bold text-destructive">{errCount}</p>
+                    <p className="text-xs text-muted-foreground">Com Erro</p>
+                  </div>
+                ) : null;
+              })()}
             </div>
             {fixResult.corrections?.length > 0 && (
               <div className="mt-3">
