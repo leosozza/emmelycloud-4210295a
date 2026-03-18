@@ -105,7 +105,7 @@ async function handleFullPortfolio(supabase: any) {
     while (true) {
       const { data: leadsPage } = await supabase
         .from("leads")
-        .select("id, name, client_id, cases(id, title, contracts(id, financial_records(id, installment_value, status, due_date)))")
+        .select("id, name, client_id, cases(id, title, contracts(id, financial_records(id, installment_value, status, due_date, bitrix24_deal_id)))")
         .in("client_id", idsChunk)
         .eq("sync_source", "access_import")
         .range(leadOffset, leadOffset + PAGE_SIZE);
@@ -132,6 +132,7 @@ async function handleFullPortfolio(supabase: any) {
     let cv = 0, cp = 0, cpn = 0, co = 0;
     let serviceCount = 0;
 
+    let firstDealId: string | null = null;
     for (const lead of cLeads) {
       for (const cas of (lead.cases || [])) {
         serviceCount++;
@@ -142,6 +143,7 @@ async function handleFullPortfolio(supabase: any) {
             if (fr.status === "paga") cp += val;
             else if (fr.due_date && new Date(fr.due_date) < now && fr.status !== "paga") co += val;
             else cpn += val;
+            if (!firstDealId && fr.bitrix24_deal_id) firstDealId = fr.bitrix24_deal_id;
           }
         }
       }
@@ -155,6 +157,7 @@ async function handleFullPortfolio(supabase: any) {
     return {
       client: { id: c.id, name: c.name, document_number: c.document_number, bitrix24_id: c.bitrix24_id },
       accessId: c.id_access || null,
+      dealId: firstDealId,
       totalValue: cv,
       totalPaid: cp,
       totalPending: cpn,
