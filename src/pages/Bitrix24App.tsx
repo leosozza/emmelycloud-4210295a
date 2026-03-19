@@ -85,7 +85,7 @@ const Bitrix24App = () => {
     if (initialLoading) return "loading";
     const sub = location.pathname.replace(/^\/bitrix24\/?/, "").split("/")[0];
     if (!sub || sub === "") return "dashboard";
-    const validViews: AppView[] = ["dashboard", "agentes", "training", "flows", "playground", "chatia", "pagamentos", "relatorios", "mapeamento", "empresas", "baixa", "placement", "importacao", "carteira", "configuracoes", "revisao"];
+    const validViews: AppView[] = ["dashboard", "agentes", "training", "flows", "playground", "chatia", "pagamentos", "relatorios", "baixa", "carteira", "configuracoes"];
     return validViews.includes(sub as AppView) ? (sub as AppView) : "dashboard";
   }, [location.pathname, initialLoading]);
 
