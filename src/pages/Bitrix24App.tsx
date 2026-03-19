@@ -7455,10 +7455,10 @@ function RevisaoView({ integration, memberId }: { integration: any; memberId: st
 
             {selectedPipeline && currentStages.length > 0 && (
               <div className="space-y-2">
-                <Label className="text-sm font-medium">Estágio "Atrasado"</Label>
-                <Select value={selectedOverdueStage} onValueChange={setSelectedOverdueStage}>
+                <Label className="text-sm font-medium">Estágio "Quitado"</Label>
+                <Select value={selectedWonStage} onValueChange={setSelectedWonStage}>
                   <SelectTrigger>
-                    <SelectValue placeholder="(Opcional) Selecione estágio" />
+                    <SelectValue placeholder="Selecione estágio" />
                   </SelectTrigger>
                   <SelectContent>
                     {currentStages.map((s: any) => (
@@ -7469,12 +7469,53 @@ function RevisaoView({ integration, memberId }: { integration: any; memberId: st
                   </SelectContent>
                 </Select>
                 <p className="text-[10px] text-muted-foreground">
-                  Deals com parcelas vencidas serão movidos para este estágio
+                  Deals com todas as parcelas pagas
                 </p>
               </div>
             )}
 
             {selectedPipeline && currentStages.length > 0 && (
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">Estágio "Atrasado"</Label>
+                <Select value={selectedOverdueStage} onValueChange={setSelectedOverdueStage}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Selecione estágio" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {currentStages.map((s: any) => (
+                      <SelectItem key={s.STATUS_ID} value={s.STATUS_ID}>
+                        {s.NAME}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-[10px] text-muted-foreground">
+                  Deals com parcelas vencidas
+                </p>
+              </div>
+            )}
+          </div>
+
+          {selectedPipeline && currentStages.length > 0 && (
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">Estágio "Em Dia"</Label>
+                <Select value={selectedOnTimeStage} onValueChange={setSelectedOnTimeStage}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Selecione estágio" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {currentStages.map((s: any) => (
+                      <SelectItem key={s.STATUS_ID} value={s.STATUS_ID}>
+                        {s.NAME}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-[10px] text-muted-foreground">
+                  Deals com parcelas pendentes mas sem atraso
+                </p>
+              </div>
               <div className="space-y-2">
                 <Label className="text-sm font-medium">Estágios da Pipeline</Label>
                 <div className="flex flex-wrap gap-1">
