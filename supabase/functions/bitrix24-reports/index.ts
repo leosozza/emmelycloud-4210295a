@@ -25,13 +25,16 @@ serve(async (req) => {
 
     const { data: integration, error: integrationError } = await supabase
       .from("bitrix24_integrations")
-      .select("id")
+      .select("id, client_endpoint, access_token")
       .eq("member_id", memberId)
       .single();
 
     if (integrationError || !integration) {
       return json({ error: "Integration not found" }, 404);
     }
+
+    const endpoint = integration.client_endpoint;
+    const accessToken = integration.access_token;
 
     const financialRecords = await fetchAllFinancialRecords(supabase);
     const financialRecordIds = unique(financialRecords.map((record: any) => record.id));
