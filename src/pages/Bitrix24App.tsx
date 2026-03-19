@@ -7385,8 +7385,10 @@ function RevisaoView({ integration, memberId }: { integration: any; memberId: st
         action: "fix_stages",
         member_id: mid,
         category_id: selectedPipeline,
+        won_stage: selectedWonStage,
+        overdue_stage: selectedOverdueStage,
+        new_stage: selectedOnTimeStage,
       });
-      if (selectedOverdueStage) params.set("overdue_stage", selectedOverdueStage);
 
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 300000); // 5 min
