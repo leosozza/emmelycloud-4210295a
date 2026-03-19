@@ -329,30 +329,18 @@ serve(async (req) => {
 
     // ==================== FIX STAGES ====================
     if (action === "fix_stages") {
-      const overdueStage = body.overdue_stage || url.searchParams.get("overdue_stage");
-      const wonStage = body.won_stage || url.searchParams.get("won_stage");
-      const newStage = body.new_stage || url.searchParams.get("new_stage");
+      const stageWon = body.won_stage || url.searchParams.get("won_stage");
+      const stageOverdue = body.overdue_stage || url.searchParams.get("overdue_stage");
+      const stageOnTime = body.new_stage || url.searchParams.get("new_stage");
 
-      console.log(`[cleanup] Fixing stages in Pipeline ${categoryId}...`);
-      const allDeals = await fetchAllDeals(categoryId);
-
-      // If stages not provided, try to resolve dynamically
-      let stageWon = wonStage;
-      let stageOverdue = overdueStage;
-      let stageNew = newStage;
-
-      if (!stageWon || !stageNew) {
-        const stagesRes = await bitrixCall("crm.dealcategory.stage.list", { id: categoryId });
-        const stages = stagesRes.result || [];
-        if (!stageWon) {
-          const won = stages.find((s: any) => s.SEMANTICS === "S");
-          stageWon = won?.STATUS_ID || `C${categoryId}:WON`;
-        }
-        if (!stageNew) {
-          const first = stages.find((s: any) => s.SEMANTICS === "P" || !s.SEMANTICS);
-          stageNew = first?.STATUS_ID || `C${categoryId}:NEW`;
-        }
+      if (!stageWon || !stageOverdue || !stageOnTime) {
+        return new Response(JSON.stringify({ error: "won_stage, overdue_stage and new_stage are all required" }), {
+          status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
       }
+
+      console.log(`[cleanup] Fixing stages in Pipeline ${categoryId}: won=${stageWon}, overdue=${stageOverdue}, onTime=${stageOnTime}`);
+      const allDeals = await fetchAllDeals(categoryId);
 
       // Get all financial records (paginated)
       const dealIds = allDeals.map(d => d.ID);
@@ -372,8 +360,6 @@ serve(async (req) => {
       let alreadyCorrect = 0;
       let noRecords = 0;
       const corrections: any[] = [];
-
-      // Build list of deals that need stage changes
       const pendingUpdates: { deal: any; correctStage: string }[] = [];
 
       for (const deal of allDeals) {
@@ -383,18 +369,18 @@ serve(async (req) => {
           continue;
         }
 
-        const allPaid = recs.every(r => r.status === "paga");
-        const hasOverdue = recs.some(r => r.status !== "paga" && r.due_date && new Date(r.due_date) < now);
+        const allPaid = recs.every(r => r.status === "paga" || r.paid_at);
+        const hasOverdue = !allPaid && recs.some(r => 
+          r.status !== "paga" && !r.paid_at && r.due_date && new Date(r.due_date) < now
+        );
 
         let correctStage: string;
         if (allPaid) {
-          correctStage = stageWon!;
-        } else if (hasOverdue && stageOverdue) {
-          correctStage = stageOverdue;
+          correctStage = stageWon;
         } else if (hasOverdue) {
-          correctStage = stageNew!;
+          correctStage = stageOverdue;
         } else {
-          correctStage = stageNew!;
+          correctStage = stageOnTime;
         }
 
         if (deal.STAGE_ID === correctStage) {
@@ -423,7 +409,6 @@ serve(async (req) => {
           body: JSON.stringify({ auth: accessToken, halt: 0, cmd }),
         });
         const batchData = await batchRes.json();
-        const results = batchData.result?.result || {};
         const errors = batchData.result?.result_error || {};
 
         for (let j = 0; j < batch.length; j++) {
@@ -431,19 +416,14 @@ serve(async (req) => {
           const key = `update_${j}`;
           if (errors[key]) {
             corrections.push({
-              deal_id: deal.ID,
-              title: deal.TITLE,
-              from: deal.STAGE_ID,
-              to: correctStage,
-              error: errors[key],
+              deal_id: deal.ID, title: deal.TITLE,
+              from: deal.STAGE_ID, to: correctStage, error: errors[key],
             });
           } else {
             corrected++;
             corrections.push({
-              deal_id: deal.ID,
-              title: deal.TITLE,
-              from: deal.STAGE_ID,
-              to: correctStage,
+              deal_id: deal.ID, title: deal.TITLE,
+              from: deal.STAGE_ID, to: correctStage,
             });
           }
         }

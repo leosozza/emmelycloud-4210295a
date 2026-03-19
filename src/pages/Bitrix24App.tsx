@@ -7243,7 +7243,9 @@ function RevisaoView({ integration, memberId }: { integration: any; memberId: st
   const [loadingPipelines, setLoadingPipelines] = useState(false);
   const [pipelines, setPipelines] = useState<any[]>([]);
   const [selectedPipeline, setSelectedPipeline] = useState<string>("");
+  const [selectedWonStage, setSelectedWonStage] = useState<string>("");
   const [selectedOverdueStage, setSelectedOverdueStage] = useState<string>("");
+  const [selectedOnTimeStage, setSelectedOnTimeStage] = useState<string>("");
 
   const startProgress = (label: string) => {
     setOperationError(null);
