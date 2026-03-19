@@ -70,7 +70,7 @@ const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
 
 const customNodeTypes = { custom: CustomFlowNode };
 
-type AppView = "loading" | "dashboard" | "agentes" | "training" | "flows" | "playground" | "chatia" | "pagamentos" | "relatorios" | "mapeamento" | "empresas" | "baixa" | "placement" | "importacao" | "carteira" | "configuracoes" | "revisao";
+type AppView = "loading" | "dashboard" | "agentes" | "training" | "flows" | "playground" | "chatia" | "pagamentos" | "relatorios" | "baixa" | "carteira" | "configuracoes";
 
 // ==================== MAIN COMPONENT ====================
 const Bitrix24App = () => {
@@ -85,7 +85,7 @@ const Bitrix24App = () => {
     if (initialLoading) return "loading";
     const sub = location.pathname.replace(/^\/bitrix24\/?/, "").split("/")[0];
     if (!sub || sub === "") return "dashboard";
-    const validViews: AppView[] = ["dashboard", "agentes", "training", "flows", "playground", "chatia", "pagamentos", "relatorios", "mapeamento", "empresas", "baixa", "placement", "importacao", "carteira", "configuracoes", "revisao"];
+    const validViews: AppView[] = ["dashboard", "agentes", "training", "flows", "playground", "chatia", "pagamentos", "relatorios", "baixa", "carteira", "configuracoes"];
     return validViews.includes(sub as AppView) ? (sub as AppView) : "dashboard";
   }, [location.pathname, initialLoading]);
 
@@ -204,7 +204,6 @@ const Bitrix24App = () => {
       items: [
         { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
         { id: "flows", label: "Fluxos", icon: GitBranch },
-        { id: "mapeamento", label: "Mapeamento", icon: Link },
       ],
     },
     {
@@ -213,10 +212,6 @@ const Bitrix24App = () => {
         { id: "pagamentos", label: "Pagamentos", icon: CreditCard },
         { id: "carteira", label: "Carteira", icon: Users },
         { id: "baixa", label: "Baixa Carteira", icon: FileDown },
-        { id: "importacao", label: "Importação", icon: Upload },
-        { id: "revisao", label: "Revisão", icon: AlertTriangle },
-        { id: "placement", label: "Placement", icon: ExternalLink },
-        { id: "empresas", label: "Empresas", icon: Building2 },
         { id: "relatorios", label: "Relatórios", icon: BarChart3 },
       ],
     },
@@ -333,23 +328,20 @@ const Bitrix24App = () => {
         {view === "flows" && <FlowsView />}
         {view === "playground" && <PlaygroundView />}
         {view === "chatia" && <ChatIABitrixView />}
-        {view === "mapeamento" && <MapeamentoView integrationId={integration?.id} memberId={memberId || integration?.member_id || undefined} />}
         {view === "pagamentos" && <PagamentosView integration={integration} onRefresh={() => memberId && fetchData(memberId)} />}
         {view === "baixa" && <BaixaCarteiraView integration={integration} />}
-        {view === "placement" && <PlacementPreviewView integration={integration} memberId={memberId} />}
-        {view === "empresas" && <EmpresasView />}
         {view === "relatorios" && <RelatoriosView memberId={memberId || integration?.member_id || undefined} />}
-        {view === "importacao" && <ImportacaoAccessView integration={integration} memberId={memberId} />}
         {view === "carteira" && <CarteiraAccessView integration={integration} memberId={memberId} cachedPortfolio={cachedPortfolio} />}
-        {view === "revisao" && <RevisaoView integration={integration} memberId={memberId} />}
         {view === "configuracoes" && (
-          <ConfigView
+          <ConfiguracoesWrapper
             integration={integration}
             botId={botId}
             domain={domain}
             loading={loadingData}
             onResync={handleResync}
             onRefresh={() => memberId && fetchData(memberId)}
+            memberId={memberId}
+            cachedPortfolio={cachedPortfolio}
           />
         )}
       </main>
@@ -778,6 +770,66 @@ function DashboardView({ integration, botId, domain, onCachePortfolio }: {
             )}
           </CardContent>
         </Card>
+      </div>
+    </div>
+  );
+}
+
+// ==================== CONFIGURACOES WRAPPER ====================
+type ConfigSubTab = "geral" | "empresas" | "placement" | "revisao" | "importacao" | "mapeamento";
+
+const configSubTabs: { id: ConfigSubTab; label: string; icon: typeof Settings }[] = [
+  { id: "geral", label: "Geral", icon: Settings },
+  { id: "empresas", label: "Empresas", icon: Building2 },
+  { id: "mapeamento", label: "Mapeamento", icon: Link },
+  { id: "placement", label: "Placement", icon: ExternalLink },
+  { id: "revisao", label: "Revisão", icon: AlertTriangle },
+  { id: "importacao", label: "Importação", icon: Upload },
+];
+
+function ConfiguracoesWrapper({ integration, botId, domain, loading, onResync, onRefresh, memberId, cachedPortfolio }: {
+  integration: any;
+  botId: string | null;
+  domain: string | null;
+  loading: boolean;
+  onResync: () => void;
+  onRefresh: () => void;
+  memberId: string | null;
+  cachedPortfolio: any;
+}) {
+  const [subTab, setSubTab] = useState<ConfigSubTab>("geral");
+
+  return (
+    <div className="flex flex-col h-full">
+      {/* Sub-tab bar */}
+      <div className="border-b border-border bg-card/50 px-4 py-1.5 flex gap-1 overflow-x-auto">
+        {configSubTabs.map((tab) => (
+          <button
+            key={tab.id}
+            onClick={() => setSubTab(tab.id)}
+            className={cn(
+              "flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors whitespace-nowrap",
+              subTab === tab.id
+                ? "bg-primary/10 text-primary"
+                : "text-muted-foreground hover:bg-muted hover:text-foreground"
+            )}
+          >
+            <tab.icon className="h-3.5 w-3.5" />
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Sub-tab content */}
+      <div className="flex-1 overflow-auto">
+        {subTab === "geral" && (
+          <ConfigView integration={integration} botId={botId} domain={domain} loading={loading} onResync={onResync} onRefresh={onRefresh} />
+        )}
+        {subTab === "empresas" && <EmpresasView />}
+        {subTab === "placement" && <PlacementPreviewView integration={integration} memberId={memberId} />}
+        {subTab === "revisao" && <RevisaoView integration={integration} memberId={memberId} />}
+        {subTab === "importacao" && <ImportacaoAccessView integration={integration} memberId={memberId} />}
+        {subTab === "mapeamento" && <MapeamentoView integrationId={integration?.id} memberId={memberId || integration?.member_id || undefined} />}
       </div>
     </div>
   );
