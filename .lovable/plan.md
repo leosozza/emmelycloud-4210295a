@@ -1,38 +1,104 @@
 
 
-## Plano: Corrigir lógica de estágios fix_stages
+## Revisão Arquitetural — Fase 2 Implementada
 
-### Problema actual
-A lógica actual do `fix_stages` tem falhas:
-1. O frontend só envia `overdue_stage` — não envia `won_stage` nem `new_stage`
-2. A lógica mapeia: todas pagas → WON (semântica S), caso contrário → primeiro stage (NEW). Não há distinção clara entre "Em Dia" e "Atrasado"
-3. Quando não há `overdue_stage`, deals atrasados caem no stage NEW — errado
+### Mudanças realizadas (Fase 2)
 
-### Lógica correcta pretendida
-Para cada deal da pipeline seleccionada, verificar os `financial_records` vinculados via `bitrix24_deal_id`:
-- **Quitado** (todas as parcelas pagas) → stage "Quitado" (mapeado pelo utilizador)
-- **Atrasado** (tem parcela não paga com `due_date < hoje`) → stage "Atrasado" (mapeado pelo utilizador)
-- **Em Dia** (tem parcelas pendentes mas nenhuma atrasada) → stage "Em Dia" (mapeado pelo utilizador)
+#### 1. Código morto eliminado
+- `chatbot-reply/index.ts` — **removido** (100% duplicado com flow-engine → ai-process-message)
+- `ai-triage/index.ts` — **removido** (100% duplicado com ai-automation-agent action classify_lead)
 
-### Alterações
+#### 2. Janela de contexto expandida
+- `RECENT_MSG_COUNT`: 5 → **15** mensagens recentes completas
+- `HISTORY_LIMIT`: 15 → **30** mensagens totais
+- TOON comprime as 15 mais antigas, mantém as 15 recentes intactas
 
-**A. Frontend (`Bitrix24App.tsx` — RevisaoView)**
-1. Adicionar 3 selectores de stage (em vez de só 1 para "Atrasado"):
-   - **Stage "Quitado"** — para deals com todas as parcelas pagas
-   - **Stage "Atrasado"** — para deals com parcelas vencidas
-   - **Stage "Em Dia"** — para deals com parcelas pendentes mas sem atraso
-2. Enviar os 3 parâmetros: `won_stage`, `overdue_stage`, `new_stage`
-3. Tornar obrigatório seleccionar os 3 stages antes de permitir "Corrigir Estágios"
+#### 3. RAG semântico real (pgvector)
+- Edge function `generate-embeddings` criada — gera embeddings de 768 dimensões via Lovable AI
+- `parse-document` agora chama `generate-embeddings` automaticamente após chunking
+- `ai-process-message` usa `match_chunks()` RPC para busca semântica (threshold 0.5)
+- Fallback para keyword scoring quando embeddings não existem
 
-**B. Backend (`bitrix24-cleanup-duplicates/index.ts` — fix_stages)**
-1. Receber `won_stage`, `overdue_stage`, `new_stage` como parâmetros obrigatórios
-2. Simplificar a lógica:
-   - `allPaid` → usa `won_stage`
-   - `hasOverdue` → usa `overdue_stage`
-   - caso contrário (em dia) → usa `new_stage`
-3. Deals sem `financial_records` → não alterar (skip), contar separadamente
+#### 4. Router multi-agente
+- Quando agente tem `sub_agent_ids`, classifica intenção via IA rápida (flash-lite)
+- Delega para sub-agente especialista com seu próprio prompt e KB
+- Mantém agente activo em `bot_state.active_sub_agent_id` para consistência
 
-### Ficheiros a editar
-- `supabase/functions/bitrix24-cleanup-duplicates/index.ts` — lógica fix_stages
-- `src/pages/Bitrix24App.tsx` — 3 selectores de stage + envio dos parâmetros
+#### 5. Self-evaluation / Reflexão
+- Após gerar resposta, avalia qualidade via flash-lite (score 1-10)
+- Se score < 7, regenera com instrução de correcção (máximo 1 retry)
+- Respostas < 50 chars ignoram avaliação
 
+#### 6. Sentiment analysis + Auto-escalação
+- Análise de sentimento via heurística + IA
+- 2x frustração consecutiva → auto-transfere para humano
+- Guarda sentiment em `bot_state.last_sentiment`
+- Regista escalação em `conversation_feedback`
+
+#### 7. Tools dinâmicas expandidas
+- Novas tools: `search_knowledge`, `get_case_status`, `send_payment_link`
+- Tools desconhecidas verificam `tool_parameters.webhook_url` para chamada webhook genérica
+- Registry pattern: tools são lidas de `agent_tools` table
+
+#### 8. Queue worker auto-trigger
+- Trigger PostgreSQL `AFTER INSERT ON message_queue` chama `pg_net.http_post()` para queue-worker
+- Cron backup via `pg_cron` a cada minuto
+
+#### 9. Melhorias de robustez no sendReply
+- `Promise.allSettled` para operações paralelas (save message + update conversation)
+- Error logging real em vez de fire-and-forget silencioso para message-send e bitrix24-send
+- Extração de memória com tolerância `count % 10 > 1` (mais robusto que `=== 0`)
+
+### Mudanças realizadas (Fase 2.1 — Consolidação Completa)
+
+#### Código morto eliminado
+- `chatbot-reply/index.ts` e `ai-triage/index.ts` — diretórios removidos, referências limpas em `config.toml`, `ApiDocs.tsx` e `bitrix24-worker.ts`
+- ApiDocs actualizado para documentar `ai-process-message` em vez de `chatbot-reply`
+
+#### Sintaxe corrigida
+- `parse-document/index.ts` — corrigida função `extractWithAI` que estava erroneamente aninhada dentro de `findFileInZip`
+
+#### Config.toml actualizado
+- Removidas entradas `ai-triage` e `chatbot-reply`
+- Adicionadas entradas para `generate-embeddings`, `parse-document` e `queue-worker`
+
+#### Triggers PostgreSQL criados
+- `on_message_queue_insert` → auto-invoca `queue-worker` via `pg_net`
+- `on_lead_created` → notifica comerciais e admins
+- `on_message_created` → notifica de novas mensagens inbound
+- `on_payment_status_change` → notifica pagamentos recebidos
+- `on_lead_sla_check` → alerta SLA a expirar
+- `on_lead_set_sla` → define SLA automático na criação
+- `on_profile_created` → atribui admin ao primeiro utilizador
+- Cron job `queue-worker-backup` — invoca queue-worker a cada minuto
+
+### Estado actual — 8/8 melhorias implementadas ✅
+1. ✅ Código morto eliminado (chatbot-reply + ai-triage)
+2. ✅ Contexto expandido (30 mensagens: 15 recentes + 15 comprimidas TOON)
+3. ✅ RAG semântico (pgvector + match_chunks + generate-embeddings)
+4. ✅ Router multi-agente (sub_agent_ids + classificação de intenção)
+5. ✅ Tools dinâmicas (registry pattern + webhook fallback)
+6. ✅ Reflexão/Auto-avaliação (score 1-10, retry se < 7)
+7. ✅ Sentiment analysis + auto-escalação (2x frustração → humano)
+8. ✅ Queue worker auto-trigger (pg_trigger + pg_cron backup)
+
+### Mudanças realizadas (Fase 3 — Auditoria Arquitetural)
+
+#### 1. Dashboard de Observabilidade IA
+- Nova página `/observabilidade-ia` com KPIs: requisições, tokens, custo estimado, latência média, taxa fallback, taxa erro, rating feedback
+- Hook `useAiObservability.ts` com agregação de dados
+
+#### 2. Thumbs up/down no chat de atendimento
+- Botões de feedback em mensagens outbound (bot) no painel de atendimento
+
+#### 3. Retry com backoff no AI gateway (429/502/503, 2s delay, 1 retry)
+
+#### 4. Cost estimation real (tabela de preços por modelo, cálculo automático)
+
+#### 5. Memory extraction melhorada (cada 15 msgs + em transferência humana)
+
+#### 6. Reorganização do monólito (constantes extraídas, secções delimitadas)
+
+### Próximos passos
+- Batch job para gerar embeddings dos chunks existentes
+- Streaming no PlaygroundIA

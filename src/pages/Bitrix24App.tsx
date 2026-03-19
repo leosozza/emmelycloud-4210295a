@@ -7243,7 +7243,9 @@ function RevisaoView({ integration, memberId }: { integration: any; memberId: st
   const [loadingPipelines, setLoadingPipelines] = useState(false);
   const [pipelines, setPipelines] = useState<any[]>([]);
   const [selectedPipeline, setSelectedPipeline] = useState<string>("");
+  const [selectedWonStage, setSelectedWonStage] = useState<string>("");
   const [selectedOverdueStage, setSelectedOverdueStage] = useState<string>("");
+  const [selectedOnTimeStage, setSelectedOnTimeStage] = useState<string>("");
 
   const startProgress = (label: string) => {
     setOperationError(null);
@@ -7279,8 +7281,12 @@ function RevisaoView({ integration, memberId }: { integration: any; memberId: st
           const p15 = data.pipelines.find((p: any) => p.id === "15");
           if (p15) {
             setSelectedPipeline("15");
+            const won = p15.stages?.find((s: any) => s.STATUS_ID === "C15:WON");
+            if (won) setSelectedWonStage(won.STATUS_ID);
             const overdue = p15.stages?.find((s: any) => s.STATUS_ID === "C15:UC_S7RLFB");
             if (overdue) setSelectedOverdueStage(overdue.STATUS_ID);
+            const onTime = p15.stages?.find((s: any) => s.STATUS_ID === "C15:NEW");
+            if (onTime) setSelectedOnTimeStage(onTime.STATUS_ID);
           } else if (data.pipelines.length > 0) {
             setSelectedPipeline(data.pipelines[0].id);
           }
@@ -7379,8 +7385,10 @@ function RevisaoView({ integration, memberId }: { integration: any; memberId: st
         action: "fix_stages",
         member_id: mid,
         category_id: selectedPipeline,
+        won_stage: selectedWonStage,
+        overdue_stage: selectedOverdueStage,
+        new_stage: selectedOnTimeStage,
       });
-      if (selectedOverdueStage) params.set("overdue_stage", selectedOverdueStage);
 
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 300000); // 5 min
@@ -7426,10 +7434,12 @@ function RevisaoView({ integration, memberId }: { integration: any; memberId: st
                 </div>
               ) : (
                 <Select value={selectedPipeline} onValueChange={(v) => {
-                  setSelectedPipeline(v);
-                  setScanResult(null);
-                  setFixResult(null);
-                  setSelectedOverdueStage("");
+                   setSelectedPipeline(v);
+                   setScanResult(null);
+                   setFixResult(null);
+                   setSelectedWonStage("");
+                   setSelectedOverdueStage("");
+                   setSelectedOnTimeStage("");
                 }}>
                   <SelectTrigger>
                     <SelectValue placeholder="Selecione uma pipeline" />
@@ -7447,10 +7457,10 @@ function RevisaoView({ integration, memberId }: { integration: any; memberId: st
 
             {selectedPipeline && currentStages.length > 0 && (
               <div className="space-y-2">
-                <Label className="text-sm font-medium">Estágio "Atrasado"</Label>
-                <Select value={selectedOverdueStage} onValueChange={setSelectedOverdueStage}>
+                <Label className="text-sm font-medium">Estágio "Quitado"</Label>
+                <Select value={selectedWonStage} onValueChange={setSelectedWonStage}>
                   <SelectTrigger>
-                    <SelectValue placeholder="(Opcional) Selecione estágio" />
+                    <SelectValue placeholder="Selecione estágio" />
                   </SelectTrigger>
                   <SelectContent>
                     {currentStages.map((s: any) => (
@@ -7461,12 +7471,53 @@ function RevisaoView({ integration, memberId }: { integration: any; memberId: st
                   </SelectContent>
                 </Select>
                 <p className="text-[10px] text-muted-foreground">
-                  Deals com parcelas vencidas serão movidos para este estágio
+                  Deals com todas as parcelas pagas
                 </p>
               </div>
             )}
 
             {selectedPipeline && currentStages.length > 0 && (
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">Estágio "Atrasado"</Label>
+                <Select value={selectedOverdueStage} onValueChange={setSelectedOverdueStage}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Selecione estágio" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {currentStages.map((s: any) => (
+                      <SelectItem key={s.STATUS_ID} value={s.STATUS_ID}>
+                        {s.NAME}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-[10px] text-muted-foreground">
+                  Deals com parcelas vencidas
+                </p>
+              </div>
+            )}
+          </div>
+
+          {selectedPipeline && currentStages.length > 0 && (
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">Estágio "Em Dia"</Label>
+                <Select value={selectedOnTimeStage} onValueChange={setSelectedOnTimeStage}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Selecione estágio" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {currentStages.map((s: any) => (
+                      <SelectItem key={s.STATUS_ID} value={s.STATUS_ID}>
+                        {s.NAME}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-[10px] text-muted-foreground">
+                  Deals com parcelas pendentes mas sem atraso
+                </p>
+              </div>
               <div className="space-y-2">
                 <Label className="text-sm font-medium">Estágios da Pipeline</Label>
                 <div className="flex flex-wrap gap-1">
@@ -7479,8 +7530,9 @@ function RevisaoView({ integration, memberId }: { integration: any; memberId: st
                   ))}
                 </div>
               </div>
-            )}
-          </div>
+            </div>
+          )}
+
         </CardContent>
       </Card>
 
@@ -7490,7 +7542,7 @@ function RevisaoView({ integration, memberId }: { integration: any; memberId: st
           {scanning ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
           Escanear Duplicados
         </Button>
-        <Button onClick={handleFixStages} disabled={fixingStages || !selectedPipeline} variant="outline" className="gap-2">
+        <Button onClick={handleFixStages} disabled={fixingStages || !selectedPipeline || !selectedWonStage || !selectedOverdueStage || !selectedOnTimeStage} variant="outline" className="gap-2">
           {fixingStages ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle className="h-4 w-4" />}
           Corrigir Estágios
         </Button>
