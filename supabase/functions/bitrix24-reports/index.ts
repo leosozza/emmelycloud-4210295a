@@ -248,7 +248,7 @@ async function fetchAllFinancialRecords(supabase: any) {
   while (true) {
     const { data, error } = await supabase
       .from("financial_records")
-      .select("id, installment_value, total_value, status, payment_method, due_date, paid_at, created_at, contract_id, proposal_id, description")
+      .select("id, installment_value, total_value, status, payment_method, due_date, paid_at, created_at, contract_id, proposal_id, description, bitrix24_deal_id")
       .order("paid_at", { ascending: false, nullsFirst: false })
       .order("created_at", { ascending: false })
       .range(offset, offset + PAGE_SIZE);
