@@ -338,13 +338,15 @@ const Bitrix24App = () => {
         {view === "carteira" && <CarteiraAccessView integration={integration} memberId={memberId} cachedPortfolio={cachedPortfolio} />}
         {view === "revisao" && <RevisaoView integration={integration} memberId={memberId} />}
         {view === "configuracoes" && (
-          <ConfigView
+          <ConfiguracoesWrapper
             integration={integration}
             botId={botId}
             domain={domain}
             loading={loadingData}
             onResync={handleResync}
             onRefresh={() => memberId && fetchData(memberId)}
+            memberId={memberId}
+            cachedPortfolio={cachedPortfolio}
           />
         )}
       </main>
