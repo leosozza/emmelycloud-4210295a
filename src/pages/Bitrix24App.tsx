@@ -7281,8 +7281,12 @@ function RevisaoView({ integration, memberId }: { integration: any; memberId: st
           const p15 = data.pipelines.find((p: any) => p.id === "15");
           if (p15) {
             setSelectedPipeline("15");
+            const won = p15.stages?.find((s: any) => s.STATUS_ID === "C15:WON");
+            if (won) setSelectedWonStage(won.STATUS_ID);
             const overdue = p15.stages?.find((s: any) => s.STATUS_ID === "C15:UC_S7RLFB");
             if (overdue) setSelectedOverdueStage(overdue.STATUS_ID);
+            const onTime = p15.stages?.find((s: any) => s.STATUS_ID === "C15:NEW");
+            if (onTime) setSelectedOnTimeStage(onTime.STATUS_ID);
           } else if (data.pipelines.length > 0) {
             setSelectedPipeline(data.pipelines[0].id);
           }
