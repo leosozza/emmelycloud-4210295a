@@ -25,13 +25,16 @@ serve(async (req) => {
 
     const { data: integration, error: integrationError } = await supabase
       .from("bitrix24_integrations")
-      .select("id")
+      .select("id, client_endpoint, access_token")
       .eq("member_id", memberId)
       .single();
 
     if (integrationError || !integration) {
       return json({ error: "Integration not found" }, 404);
     }
+
+    const endpoint = integration.client_endpoint;
+    const accessToken = integration.access_token;
 
     const financialRecords = await fetchAllFinancialRecords(supabase);
     const financialRecordIds = unique(financialRecords.map((record: any) => record.id));
@@ -118,6 +121,69 @@ serve(async (req) => {
       return "Sem cliente";
     }
 
+    // Resolve responsible from Bitrix24 deal ASSIGNED_BY_ID
+    const dealIds = unique(financialRecords.map((r: any) => r.bitrix24_deal_id));
+    const dealResponsibleMap = new Map<string, string>(); // dealId -> userName
+
+    if (endpoint && accessToken && dealIds.length > 0) {
+      // Fetch deals in batches of 50 via Bitrix batch API
+      const BATCH = 50;
+      const allDeals: any[] = [];
+      for (let i = 0; i < dealIds.length; i += BATCH) {
+        const chunk = dealIds.slice(i, i + BATCH);
+        const cmd: Record<string, string> = {};
+        chunk.forEach((id: string, idx: number) => {
+          cmd[`deal_${idx}`] = `crm.deal.get?ID=${id}`;
+        });
+        try {
+          const batchRes = await fetch(`${endpoint}batch`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ auth: accessToken, cmd }),
+          });
+          const batchData = await batchRes.json();
+          if (batchData.result?.result) {
+            for (const key of Object.keys(batchData.result.result)) {
+              const d = batchData.result.result[key];
+              if (d?.ID) allDeals.push(d);
+            }
+          }
+        } catch (e) {
+          console.error("[bitrix24-reports] batch deal fetch error:", e);
+        }
+      }
+
+      // Collect unique ASSIGNED_BY_ID
+      const assignedIds = unique(allDeals.map((d: any) => d.ASSIGNED_BY_ID));
+      const bitrixUserMap = new Map<string, string>();
+
+      if (assignedIds.length > 0) {
+        try {
+          const userRes = await fetch(`${endpoint}user.get`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ auth: accessToken, filter: { ID: assignedIds } }),
+          });
+          const userData = await userRes.json();
+          if (userData.result) {
+            for (const u of userData.result) {
+              const fullName = [u.NAME, u.LAST_NAME].filter(Boolean).join(" ");
+              bitrixUserMap.set(String(u.ID), fullName);
+            }
+          }
+        } catch (e) {
+          console.error("[bitrix24-reports] user.get error:", e);
+        }
+      }
+
+      // Map deal ID -> responsible name
+      for (const d of allDeals) {
+        const userName = bitrixUserMap.get(String(d.ASSIGNED_BY_ID));
+        if (userName) dealResponsibleMap.set(String(d.ID), userName);
+      }
+    }
+
+    // Fallback: profile map for proposals without deal
     const profileIds = unique(proposals.map((proposal: any) => proposal.created_by));
     const profiles = await selectInChunks(supabase, "profiles", "id, full_name", "id", profileIds);
     const profileMap = new Map(profiles.map((profile: any) => [profile.id, profile.full_name]));
@@ -128,6 +194,14 @@ serve(async (req) => {
       const payment = latestPaymentByFinancialRecord.get(record.id);
       const amount = Number(record.installment_value ?? record.total_value ?? 0);
       const metadata = payment?.metadata && typeof payment.metadata === "object" ? payment.metadata : {};
+
+      // Resolve responsible: first from Bitrix deal, then fallback to proposal creator
+      let responsibleName = "Sem responsável";
+      if (record.bitrix24_deal_id && dealResponsibleMap.has(String(record.bitrix24_deal_id))) {
+        responsibleName = dealResponsibleMap.get(String(record.bitrix24_deal_id))!;
+      } else if (proposal?.created_by && profileMap.has(proposal.created_by)) {
+        responsibleName = profileMap.get(proposal.created_by)!;
+      }
 
       return {
         id: record.id,
@@ -143,7 +217,7 @@ serve(async (req) => {
         description: record.description || proposal?.title || "Sem descrição",
         client_name: resolveClientName(proposal, payment),
         company_name: payment?.company_id ? companyMap.get(payment.company_id) || "—" : "—",
-        responsible_name: proposal?.created_by ? profileMap.get(proposal.created_by) || "Sem responsável" : "Sem responsável",
+        responsible_name: responsibleName,
       };
     });
 
@@ -174,7 +248,7 @@ async function fetchAllFinancialRecords(supabase: any) {
   while (true) {
     const { data, error } = await supabase
       .from("financial_records")
-      .select("id, installment_value, total_value, status, payment_method, due_date, paid_at, created_at, contract_id, proposal_id, description")
+      .select("id, installment_value, total_value, status, payment_method, due_date, paid_at, created_at, contract_id, proposal_id, description, bitrix24_deal_id")
       .order("paid_at", { ascending: false, nullsFirst: false })
       .order("created_at", { ascending: false })
       .range(offset, offset + PAGE_SIZE);
