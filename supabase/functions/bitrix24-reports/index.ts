@@ -122,59 +122,72 @@ serve(async (req) => {
     }
 
     // Resolve responsible from Bitrix24 deal ASSIGNED_BY_ID
-    const dealIds = unique(financialRecords.map((r: any) => r.bitrix24_deal_id));
+    const dealIds = unique(financialRecords.map((r: any) => String(r.bitrix24_deal_id)));
     const dealResponsibleMap = new Map<string, string>(); // dealId -> userName
 
     if (endpoint && accessToken && dealIds.length > 0) {
-      // Fetch deals in batches of 50 via Bitrix batch API
-      const BATCH = 50;
+      // Use crm.deal.list with ID filter in chunks of 50 (much faster than individual crm.deal.get)
+      const CHUNK = 50;
       const allDeals: any[] = [];
-      for (let i = 0; i < dealIds.length; i += BATCH) {
-        const chunk = dealIds.slice(i, i + BATCH);
-        const cmd: Record<string, string> = {};
-        chunk.forEach((id: string, idx: number) => {
-          cmd[`deal_${idx}`] = `crm.deal.get?ID=${id}`;
-        });
+      for (let i = 0; i < dealIds.length; i += CHUNK) {
+        const chunk = dealIds.slice(i, i + CHUNK);
         try {
-          const batchRes = await fetch(`${endpoint}batch`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ auth: accessToken, cmd }),
-          });
-          const batchData = await batchRes.json();
-          if (batchData.result?.result) {
-            for (const key of Object.keys(batchData.result.result)) {
-              const d = batchData.result.result[key];
-              if (d?.ID) allDeals.push(d);
+          let start = 0;
+          while (true) {
+            const res = await fetch(`${endpoint}crm.deal.list`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                auth: accessToken,
+                filter: { ID: chunk },
+                select: ["ID", "ASSIGNED_BY_ID"],
+                start,
+              }),
+            });
+            const data = await res.json();
+            if (data.result) {
+              allDeals.push(...data.result);
             }
+            if (!data.next) break;
+            start = data.next;
           }
         } catch (e) {
-          console.error("[bitrix24-reports] batch deal fetch error:", e);
+          console.error("[bitrix24-reports] crm.deal.list chunk error:", e);
         }
       }
 
-      // Collect unique ASSIGNED_BY_ID
-      const assignedIds = unique(allDeals.map((d: any) => d.ASSIGNED_BY_ID));
+      console.log(`[bitrix24-reports] Fetched ${allDeals.length} deals for responsible resolution`);
+
+      // Collect unique ASSIGNED_BY_ID and fetch user names
+      const assignedIds = unique(allDeals.map((d: any) => String(d.ASSIGNED_BY_ID)));
       const bitrixUserMap = new Map<string, string>();
 
+      // Fetch users in pages (user.get returns max 50)
       if (assignedIds.length > 0) {
         try {
-          const userRes = await fetch(`${endpoint}user.get`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ auth: accessToken, filter: { ID: assignedIds } }),
-          });
-          const userData = await userRes.json();
-          if (userData.result) {
-            for (const u of userData.result) {
-              const fullName = [u.NAME, u.LAST_NAME].filter(Boolean).join(" ");
-              bitrixUserMap.set(String(u.ID), fullName);
+          let start = 0;
+          while (true) {
+            const userRes = await fetch(`${endpoint}user.get`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ auth: accessToken, filter: { ID: assignedIds }, start }),
+            });
+            const userData = await userRes.json();
+            if (userData.result) {
+              for (const u of userData.result) {
+                const fullName = [u.NAME, u.LAST_NAME].filter(Boolean).join(" ");
+                bitrixUserMap.set(String(u.ID), fullName);
+              }
             }
+            if (!userData.next) break;
+            start = userData.next;
           }
         } catch (e) {
           console.error("[bitrix24-reports] user.get error:", e);
         }
       }
+
+      console.log(`[bitrix24-reports] Resolved ${bitrixUserMap.size} user names`);
 
       // Map deal ID -> responsible name
       for (const d of allDeals) {
