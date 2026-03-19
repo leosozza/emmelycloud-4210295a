@@ -328,15 +328,10 @@ const Bitrix24App = () => {
         {view === "flows" && <FlowsView />}
         {view === "playground" && <PlaygroundView />}
         {view === "chatia" && <ChatIABitrixView />}
-        {view === "mapeamento" && <MapeamentoView integrationId={integration?.id} memberId={memberId || integration?.member_id || undefined} />}
         {view === "pagamentos" && <PagamentosView integration={integration} onRefresh={() => memberId && fetchData(memberId)} />}
         {view === "baixa" && <BaixaCarteiraView integration={integration} />}
-        {view === "placement" && <PlacementPreviewView integration={integration} memberId={memberId} />}
-        {view === "empresas" && <EmpresasView />}
         {view === "relatorios" && <RelatoriosView memberId={memberId || integration?.member_id || undefined} />}
-        {view === "importacao" && <ImportacaoAccessView integration={integration} memberId={memberId} />}
         {view === "carteira" && <CarteiraAccessView integration={integration} memberId={memberId} cachedPortfolio={cachedPortfolio} />}
-        {view === "revisao" && <RevisaoView integration={integration} memberId={memberId} />}
         {view === "configuracoes" && (
           <ConfiguracoesWrapper
             integration={integration}
