@@ -7528,8 +7528,9 @@ function RevisaoView({ integration, memberId }: { integration: any; memberId: st
                   ))}
                 </div>
               </div>
-            )}
-          </div>
+            </div>
+          )}
+
         </CardContent>
       </Card>
 
