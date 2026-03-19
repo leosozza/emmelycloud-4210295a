@@ -6,6 +6,37 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+async function ensureValidToken(sb: any, integration: any): Promise<string> {
+  const expiresAt = new Date(integration.expires_at);
+  const now = new Date();
+  if (expiresAt.getTime() - now.getTime() > 5 * 60 * 1000) {
+    return integration.access_token;
+  }
+
+  console.log("[dashboard-main] Refreshing token...");
+  const response = await fetch("https://oauth.bitrix.info/oauth/token/", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      grant_type: "refresh_token",
+      client_id: Deno.env.get("BITRIX24_CLIENT_ID")!,
+      client_secret: Deno.env.get("BITRIX24_CLIENT_SECRET")!,
+      refresh_token: integration.refresh_token,
+    }),
+  });
+
+  const data = await response.json();
+  if (data.error) throw new Error(`Token refresh: ${data.error}`);
+
+  await sb.from("bitrix24_integrations").update({
+    access_token: data.access_token,
+    refresh_token: data.refresh_token,
+    expires_at: new Date(Date.now() + data.expires_in * 1000).toISOString(),
+  }).eq("id", integration.id);
+
+  return data.access_token;
+}
+
 async function bitrixPost(endpoint: string, method: string, params: Record<string, unknown> = {}) {
   const res = await fetch(`${endpoint}${method}`, {
     method: "POST",
