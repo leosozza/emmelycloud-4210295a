@@ -7432,10 +7432,12 @@ function RevisaoView({ integration, memberId }: { integration: any; memberId: st
                 </div>
               ) : (
                 <Select value={selectedPipeline} onValueChange={(v) => {
-                  setSelectedPipeline(v);
-                  setScanResult(null);
-                  setFixResult(null);
-                  setSelectedOverdueStage("");
+                   setSelectedPipeline(v);
+                   setScanResult(null);
+                   setFixResult(null);
+                   setSelectedWonStage("");
+                   setSelectedOverdueStage("");
+                   setSelectedOnTimeStage("");
                 }}>
                   <SelectTrigger>
                     <SelectValue placeholder="Selecione uma pipeline" />
