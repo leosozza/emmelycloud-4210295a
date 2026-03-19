@@ -125,6 +125,17 @@ export function useDashboardAll() {
   return useQuery<DashboardData>({
     queryKey: ["dashboard-all"],
     queryFn: async () => {
+      // Try Bitrix24 edge function first
+      try {
+        const { data, error } = await supabase.functions.invoke("dashboard-main");
+        if (!error && data && !data.error) {
+          return data as DashboardData;
+        }
+      } catch {
+        // Fall through to RPC
+      }
+
+      // Fallback to local RPC
       const { data, error } = await supabase.rpc("get_dashboard_data" as any);
       if (error) throw error;
       return transformRpcResult(data);
