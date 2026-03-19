@@ -86,7 +86,7 @@ serve(async (req) => {
     }
 
     const ep = integration.client_endpoint;
-    const auth = integration.access_token;
+    const auth = await ensureValidToken(sb, integration);
     const memberId = integration.member_id;
 
     // Check cache (5 min TTL)
