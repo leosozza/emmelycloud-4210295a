@@ -97,7 +97,9 @@ serve(async (req) => {
       .eq("cache_type", "dashboard_main")
       .single();
 
-    if (cached && Date.now() - new Date(cached.fetched_at).getTime() < 5 * 60 * 1000) {
+    const cachedData = cached?.data as any;
+    const hasDealData = cachedData?.funnel?.length > 0 || cachedData?.recentLeads?.length > 0;
+    if (cached && hasDealData && Date.now() - new Date(cached.fetched_at).getTime() < 5 * 60 * 1000) {
       console.log("[dashboard-main] Returning cached data");
       return new Response(JSON.stringify(cached.data), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
