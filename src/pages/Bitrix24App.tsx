@@ -780,6 +780,66 @@ function DashboardView({ integration, botId, domain, onCachePortfolio }: {
   );
 }
 
+// ==================== CONFIGURACOES WRAPPER ====================
+type ConfigSubTab = "geral" | "empresas" | "placement" | "revisao" | "importacao" | "mapeamento";
+
+const configSubTabs: { id: ConfigSubTab; label: string; icon: typeof Settings }[] = [
+  { id: "geral", label: "Geral", icon: Settings },
+  { id: "empresas", label: "Empresas", icon: Building2 },
+  { id: "mapeamento", label: "Mapeamento", icon: Link },
+  { id: "placement", label: "Placement", icon: ExternalLink },
+  { id: "revisao", label: "Revisão", icon: AlertTriangle },
+  { id: "importacao", label: "Importação", icon: Upload },
+];
+
+function ConfiguracoesWrapper({ integration, botId, domain, loading, onResync, onRefresh, memberId, cachedPortfolio }: {
+  integration: any;
+  botId: string | null;
+  domain: string | null;
+  loading: boolean;
+  onResync: () => void;
+  onRefresh: () => void;
+  memberId: string | null;
+  cachedPortfolio: any;
+}) {
+  const [subTab, setSubTab] = useState<ConfigSubTab>("geral");
+
+  return (
+    <div className="flex flex-col h-full">
+      {/* Sub-tab bar */}
+      <div className="border-b border-border bg-card/50 px-4 py-1.5 flex gap-1 overflow-x-auto">
+        {configSubTabs.map((tab) => (
+          <button
+            key={tab.id}
+            onClick={() => setSubTab(tab.id)}
+            className={cn(
+              "flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors whitespace-nowrap",
+              subTab === tab.id
+                ? "bg-primary/10 text-primary"
+                : "text-muted-foreground hover:bg-muted hover:text-foreground"
+            )}
+          >
+            <tab.icon className="h-3.5 w-3.5" />
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Sub-tab content */}
+      <div className="flex-1 overflow-auto">
+        {subTab === "geral" && (
+          <ConfigView integration={integration} botId={botId} domain={domain} loading={loading} onResync={onResync} onRefresh={onRefresh} />
+        )}
+        {subTab === "empresas" && <EmpresasView />}
+        {subTab === "placement" && <PlacementPreviewView integration={integration} memberId={memberId} />}
+        {subTab === "revisao" && <RevisaoView integration={integration} memberId={memberId} />}
+        {subTab === "importacao" && <ImportacaoAccessView integration={integration} memberId={memberId} />}
+        {subTab === "mapeamento" && <MapeamentoView integrationId={integration?.id} memberId={memberId || integration?.member_id || undefined} />}
+      </div>
+    </div>
+  );
+}
+
 // ==================== CONFIG VIEW (old dashboard content) ====================
 function ConfigView({ integration, botId, domain, loading, onResync, onRefresh }: {
   integration: any;
