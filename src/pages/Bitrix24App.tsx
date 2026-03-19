@@ -7542,7 +7542,7 @@ function RevisaoView({ integration, memberId }: { integration: any; memberId: st
           {scanning ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
           Escanear Duplicados
         </Button>
-        <Button onClick={handleFixStages} disabled={fixingStages || !selectedPipeline} variant="outline" className="gap-2">
+        <Button onClick={handleFixStages} disabled={fixingStages || !selectedPipeline || !selectedWonStage || !selectedOverdueStage || !selectedOnTimeStage} variant="outline" className="gap-2">
           {fixingStages ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle className="h-4 w-4" />}
           Corrigir Estágios
         </Button>
