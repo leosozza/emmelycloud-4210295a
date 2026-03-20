@@ -2,6 +2,11 @@ import { useEffect, useState, useCallback, useRef, lazy, Suspense, useMemo, Frag
 import { useNavigate, useLocation } from "react-router-dom";
 import { calculateLateFees } from "@/lib/lateFeeCalc";
 import { supabase } from "@/integrations/supabase/client";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useToast } from "@/hooks/use-toast";
+import { PropostaForm } from "@/components/propostas/PropostaForm";
+import { PropostaTemplateForm } from "@/components/propostas/PropostaTemplateForm";
+import TemplateEditor from "@/pages/TemplateEditor";
 import { useBitrix24Theme } from "@/hooks/useBitrix24Theme";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
@@ -38,7 +43,7 @@ import {
   Settings, CreditCard, Zap, CheckCircle, XCircle, Activity,
   Power, ExternalLink, AlertCircle, MessageSquare, BarChart3,
   DollarSign, Clock, AlertTriangle, TrendingUp, Link,
-  ArrowDownLeft, ArrowUpRight, Building2, FileDown, ChevronRight,
+  ArrowDownLeft, ArrowUpRight, Building2, FileDown, ChevronRight, LayoutTemplate, Pencil,
 } from "lucide-react";
 import {
   BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis,
@@ -70,7 +75,7 @@ const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
 
 const customNodeTypes = { custom: CustomFlowNode };
 
-type AppView = "loading" | "dashboard" | "agentes" | "training" | "flows" | "playground" | "chatia" | "pagamentos" | "relatorios" | "baixa" | "carteira" | "configuracoes";
+type AppView = "loading" | "dashboard" | "agentes" | "training" | "flows" | "playground" | "chatia" | "pagamentos" | "relatorios" | "baixa" | "carteira" | "configuracoes" | "propostas";
 
 // ==================== MAIN COMPONENT ====================
 const Bitrix24App = () => {
@@ -203,6 +208,7 @@ const Bitrix24App = () => {
       label: "Emmely CRM",
       items: [
         { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
+        { id: "propostas", label: "Propostas", icon: FileText },
         { id: "flows", label: "Fluxos", icon: GitBranch },
       ],
     },
@@ -332,6 +338,7 @@ const Bitrix24App = () => {
         {view === "baixa" && <BaixaCarteiraView integration={integration} />}
         {view === "relatorios" && <RelatoriosView memberId={memberId || integration?.member_id || undefined} />}
         {view === "carteira" && <CarteiraAccessView integration={integration} memberId={memberId} cachedPortfolio={cachedPortfolio} />}
+        {view === "propostas" && <PropostasViewBitrix />}
         {view === "configuracoes" && (
           <ConfiguracoesWrapper
             integration={integration}
@@ -7819,6 +7826,353 @@ function RevisaoView({ integration, memberId }: { integration: any; memberId: st
           </CardContent>
         </Card>
       )}
+    </div>
+  );
+}
+
+// ==================== PROPOSTAS VIEW (BITRIX24) ====================
+function PropostasViewBitrix() {
+  const [tab, setTab] = useState<"propostas" | "modelos">("propostas");
+  const [editingTemplateId, setEditingTemplateId] = useState<string | null | undefined>(undefined);
+  const [formOpen, setFormOpen] = useState(false);
+  const [editingProposta, setEditingProposta] = useState<any>(null);
+  const [templateFormOpen, setTemplateFormOpen] = useState(false);
+  const [editingTemplate, setEditingTemplate] = useState<any>(null);
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+
+  const { data: proposals = [], isLoading } = useQuery({
+    queryKey: ["proposals"],
+    queryFn: async () => {
+      const { data, error } = await supabase.from("proposals").select("*").order("created_at", { ascending: false });
+      if (error) throw error;
+      return data;
+    },
+  });
+
+  const { data: cases = [] } = useQuery({
+    queryKey: ["cases-select"],
+    queryFn: async () => {
+      const { data, error } = await supabase.from("cases").select("id, title").order("title");
+      if (error) throw error;
+      return data;
+    },
+  });
+
+  const { data: templates = [] } = useQuery({
+    queryKey: ["proposal-templates"],
+    queryFn: async () => {
+      const { data, error } = await supabase.from("proposal_templates").select("*").order("name");
+      if (error) throw error;
+      return data;
+    },
+  });
+
+  const casesMap = Object.fromEntries(cases.map((c) => [c.id, c.title]));
+
+  const saveMutation = useMutation({
+    mutationFn: async (data: any) => {
+      if (editingProposta) {
+        const { error } = await supabase.from("proposals").update(data).eq("id", editingProposta.id);
+        if (error) throw error;
+      } else {
+        const { error } = await supabase.from("proposals").insert(data);
+        if (error) throw error;
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["proposals"] });
+      setFormOpen(false);
+      setEditingProposta(null);
+      toast({ title: editingProposta ? "Proposta atualizada" : "Proposta criada" });
+    },
+    onError: (e: any) => toast({ title: "Erro", description: e.message, variant: "destructive" }),
+  });
+
+  const updateStatusMutation = useMutation({
+    mutationFn: async ({ id, status }: { id: string; status: string }) => {
+      if (status === "aceita") {
+        const res = await supabase.functions.invoke("proposal-accept", { body: { proposal_id: id } });
+        if (res.error) throw new Error(res.error.message);
+        const data = res.data as any;
+        if (data?.error) throw new Error(data.error);
+      } else {
+        const { error } = await supabase.from("proposals").update({ status: status as any }).eq("id", id);
+        if (error) throw error;
+      }
+    },
+    onSuccess: (_, { status }) => {
+      queryClient.invalidateQueries({ queryKey: ["proposals"] });
+      toast({ title: status === "aceita" ? "Proposta aceita — contrato ativado" : "Status atualizado" });
+    },
+    onError: (e: any) => toast({ title: "Erro", description: e.message, variant: "destructive" }),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase.from("proposals").delete().eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["proposals"] });
+      toast({ title: "Proposta eliminada" });
+    },
+  });
+
+  const saveTemplateMutation = useMutation({
+    mutationFn: async (data: any) => {
+      if (editingTemplate) {
+        const { error } = await supabase.from("proposal_templates").update(data).eq("id", editingTemplate.id);
+        if (error) throw error;
+      } else {
+        const { error } = await supabase.from("proposal_templates").insert(data);
+        if (error) throw error;
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["proposal-templates"] });
+      setTemplateFormOpen(false);
+      setEditingTemplate(null);
+      toast({ title: editingTemplate ? "Modelo atualizado" : "Modelo criado" });
+    },
+    onError: (e: any) => toast({ title: "Erro", description: e.message, variant: "destructive" }),
+  });
+
+  const deleteTemplateMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase.from("proposal_templates").delete().eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["proposal-templates"] });
+      toast({ title: "Modelo eliminado" });
+    },
+  });
+
+  const handleDuplicateTemplate = (t: any) => {
+    const { id, created_at, updated_at, ...rest } = t;
+    saveTemplateMutation.mutate({ ...rest, name: `${rest.name} (cópia)` });
+  };
+
+  const handleCopyLink = (p: any) => {
+    const token = p.accept_token;
+    if (!token) { toast({ title: "Token não disponível", variant: "destructive" }); return; }
+    const url = `${window.location.origin}/proposta/${token}`;
+    navigator.clipboard.writeText(url);
+    toast({ title: "Link copiado!" });
+  };
+
+  const handleDownloadPdf = async (p: any) => {
+    toast({ title: "A gerar PDF...", description: "Aguarde um momento." });
+    try {
+      const { data, error } = await supabase.functions.invoke("proposal-pdf", { body: { proposal_id: p.id } });
+      if (error) throw error;
+      if (data?.pdf_url) window.open(data.pdf_url, "_blank");
+    } catch (e: any) {
+      toast({ title: "Erro ao gerar PDF", description: e.message, variant: "destructive" });
+    }
+  };
+
+  const filtered = proposals
+    .filter((p) => statusFilter === "all" || p.status === statusFilter)
+    .filter((p) => p.title.toLowerCase().includes(search.toLowerCase()));
+
+  const statusLabels: Record<string, string> = {
+    rascunho: "Rascunho", enviada: "Enviada", aceita: "Aceita", recusada: "Recusada", expirada: "Expirada",
+  };
+  const statusColors: Record<string, string> = {
+    rascunho: "bg-muted text-muted-foreground",
+    enviada: "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300",
+    aceita: "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300",
+    recusada: "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300",
+    expirada: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300",
+  };
+  const paymentTypeLabels: Record<string, string> = {
+    fixo: "Fixo", exito: "Êxito", hibrido: "Híbrido", parcelado: "Parcelado",
+  };
+
+  // If editing a template in the visual editor, render it inline
+  if (editingTemplateId !== undefined) {
+    return (
+      <TemplateEditor
+        templateId={editingTemplateId || undefined}
+        onBack={() => setEditingTemplateId(undefined)}
+      />
+    );
+  }
+
+  return (
+    <div className="p-6 space-y-4">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-xl font-bold">Propostas</h2>
+          <p className="text-sm text-muted-foreground">Criação e gestão de propostas de honorários</p>
+        </div>
+        <Button onClick={() => { setEditingProposta(null); setFormOpen(true); }}>
+          <Plus className="mr-2 h-4 w-4" /> Nova Proposta
+        </Button>
+      </div>
+
+      <div className="flex gap-2 border-b">
+        <button
+          className={cn("px-4 py-2 text-sm font-medium border-b-2 transition-colors", tab === "propostas" ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground")}
+          onClick={() => setTab("propostas")}
+        >
+          <FileText className="h-4 w-4 inline mr-1" /> Propostas
+        </button>
+        <button
+          className={cn("px-4 py-2 text-sm font-medium border-b-2 transition-colors", tab === "modelos" ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground")}
+          onClick={() => setTab("modelos")}
+        >
+          <LayoutTemplate className="h-4 w-4 inline mr-1" /> Modelos
+        </button>
+      </div>
+
+      {tab === "propostas" && (
+        <>
+          <div className="flex gap-3 items-center">
+            <Input placeholder="Pesquisar..." value={search} onChange={(e) => setSearch(e.target.value)} className="max-w-xs" />
+            <Select value={statusFilter} onValueChange={setStatusFilter}>
+              <SelectTrigger className="w-[160px]"><SelectValue placeholder="Status" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Todos</SelectItem>
+                {Object.entries(statusLabels).map(([k, v]) => (
+                  <SelectItem key={k} value={k}>{v}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="rounded-md border">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Título</TableHead>
+                  <TableHead>Caso</TableHead>
+                  <TableHead>Valor</TableHead>
+                  <TableHead>Pagamento</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead className="w-40">Ações</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {isLoading ? (
+                  <TableRow><TableCell colSpan={6} className="text-center text-muted-foreground">A carregar...</TableCell></TableRow>
+                ) : filtered.length === 0 ? (
+                  <TableRow><TableCell colSpan={6} className="text-center text-muted-foreground">Nenhuma proposta</TableCell></TableRow>
+                ) : filtered.map((p) => (
+                  <TableRow key={p.id}>
+                    <TableCell className="font-medium">{p.title}</TableCell>
+                    <TableCell className="text-sm">{casesMap[p.case_id] || "—"}</TableCell>
+                    <TableCell className="text-sm font-medium">€{Number(p.value).toFixed(2)}</TableCell>
+                    <TableCell className="text-sm">{paymentTypeLabels[p.payment_type]}{p.installments && p.installments > 1 ? ` (${p.installments}x)` : ""}</TableCell>
+                    <TableCell><Badge className={`text-xs ${statusColors[p.status]}`}>{statusLabels[p.status]}</Badge></TableCell>
+                    <TableCell>
+                      <div className="flex gap-1">
+                        <Button variant="ghost" size="icon" title="Copiar Link" onClick={() => handleCopyLink(p)}><Copy className="h-4 w-4" /></Button>
+                        <Button variant="ghost" size="icon" title="PDF" onClick={() => handleDownloadPdf(p)}><FileDown className="h-4 w-4" /></Button>
+                        {p.status === "rascunho" && (
+                          <Button variant="ghost" size="icon" title="Enviar" onClick={() => updateStatusMutation.mutate({ id: p.id, status: "enviada" })}><Send className="h-4 w-4" /></Button>
+                        )}
+                        {p.status === "enviada" && (
+                          <>
+                            <Button variant="ghost" size="icon" title="Aceitar" onClick={() => updateStatusMutation.mutate({ id: p.id, status: "aceita" })}><CheckCircle className="h-4 w-4 text-green-600" /></Button>
+                            <Button variant="ghost" size="icon" title="Recusar" onClick={() => updateStatusMutation.mutate({ id: p.id, status: "recusada" })}><XCircle className="h-4 w-4 text-red-600" /></Button>
+                          </>
+                        )}
+                        <Button variant="ghost" size="icon" onClick={() => { setEditingProposta(p); setFormOpen(true); }}><Edit className="h-4 w-4" /></Button>
+                        <Button variant="ghost" size="icon" onClick={() => deleteMutation.mutate(p.id)}><Trash2 className="h-4 w-4" /></Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        </>
+      )}
+
+      {tab === "modelos" && (
+        <>
+          <div className="flex justify-between items-center">
+            <p className="text-sm text-muted-foreground">Modelos reutilizáveis para propostas.</p>
+            <div className="flex gap-2">
+              <Button variant="outline" size="sm" onClick={() => { setEditingTemplate(null); setTemplateFormOpen(true); }}>
+                <Plus className="mr-1 h-4 w-4" /> Modelo Simples
+              </Button>
+              <Button size="sm" onClick={() => setEditingTemplateId(null)}>
+                <LayoutTemplate className="mr-1 h-4 w-4" /> Editor Visual
+              </Button>
+            </div>
+          </div>
+          {templates.length === 0 ? (
+            <Card>
+              <CardContent className="flex flex-col items-center justify-center py-12 text-center">
+                <LayoutTemplate className="h-12 w-12 text-muted-foreground mb-4" />
+                <h3 className="text-lg font-semibold">Nenhum modelo criado</h3>
+                <p className="text-sm text-muted-foreground mt-1">Crie modelos para agilizar a criação de propostas.</p>
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+              {templates.map((t: any) => (
+                <Card key={t.id} className="group hover:shadow-md transition-shadow">
+                  <CardHeader className="pb-2">
+                    <div className="flex items-start justify-between">
+                      <div>
+                        <CardTitle className="text-base">{t.name}</CardTitle>
+                        {t.title && <CardDescription className="mt-1">{t.title}</CardDescription>}
+                      </div>
+                      <Badge variant="secondary" className="text-xs shrink-0">
+                        {paymentTypeLabels[t.payment_type] || t.payment_type}
+                      </Badge>
+                    </div>
+                  </CardHeader>
+                  <CardContent>
+                    {t.description && <p className="text-sm text-muted-foreground line-clamp-2 mb-3">{t.description}</p>}
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-semibold">€{Number(t.value).toFixed(2)}</span>
+                      {t.installments > 1 && <span className="text-xs text-muted-foreground">{t.installments}x parcelas</span>}
+                    </div>
+                    <div className="flex gap-1 mt-3 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <Button variant="ghost" size="sm" onClick={() => setEditingTemplateId(t.id)}>
+                        <LayoutTemplate className="h-3 w-3 mr-1" /> Editor
+                      </Button>
+                      <Button variant="ghost" size="sm" onClick={() => { setEditingTemplate(t); setTemplateFormOpen(true); }}>
+                        <Edit className="h-3 w-3 mr-1" /> Editar
+                      </Button>
+                      <Button variant="ghost" size="sm" onClick={() => handleDuplicateTemplate(t)}>
+                        <Copy className="h-3 w-3 mr-1" /> Duplicar
+                      </Button>
+                      <Button variant="ghost" size="sm" className="text-destructive" onClick={() => deleteTemplateMutation.mutate(t.id)}>
+                        <Trash2 className="h-3 w-3 mr-1" /> Eliminar
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          )}
+        </>
+      )}
+
+      <PropostaForm
+        open={formOpen}
+        onOpenChange={setFormOpen}
+        proposta={editingProposta}
+        cases={cases}
+        onSave={(data) => saveMutation.mutate(data)}
+        saving={saveMutation.isPending}
+      />
+
+      <PropostaTemplateForm
+        open={templateFormOpen}
+        onOpenChange={(open) => { setTemplateFormOpen(open); if (!open) setEditingTemplate(null); }}
+        template={editingTemplate}
+        onSave={(data) => saveTemplateMutation.mutate(data)}
+        saving={saveTemplateMutation.isPending}
+      />
     </div>
   );
 }
