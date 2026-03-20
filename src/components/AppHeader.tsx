@@ -32,6 +32,7 @@ export function AppHeader({ onSearchClick, children }: { onSearchClick?: () => v
   return (
     <header className="sticky top-0 z-30 glass border-b shadow-sm">
       <div className="flex h-14 items-center gap-4 px-4">
+        {children}
         {/* Logo */}
         <div className="flex items-center gap-2.5 shrink-0">
           <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary shadow-md">
