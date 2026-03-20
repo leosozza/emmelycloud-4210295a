@@ -521,6 +521,7 @@ async function handleGenerateProposal(
     let templateInstallments = 0;
     let templateValue = 0;
     let templateServiceId: string | null = null;
+    let templateId: string | null = null;
 
     if (templateName) {
       const { data: tmpl } = await supabase
