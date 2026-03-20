@@ -1,44 +1,50 @@
 
 
-# Sidebar como Overlay (sem empurrar conteúdo)
+# Análise dos Robots de Propostas
 
-## Problema
-A `AnimatedSidebar` atual (DesktopSidebar) ocupa espaço no layout (`shrink-0`), fazendo o conteúdo redimensionar ao expandir/colapsar.
+## Resultado da Análise
 
-## Solução
-Alterar o `DesktopSidebar` em `AnimatedSidebar.tsx` para usar `position: fixed` (overlay), ficando por cima do conteúdo sem o deslocar. A sidebar abre ao hover e fecha ao sair, como um painel flutuante.
+### 1. Robot `emmely_generate_proposal` — Problemas encontrados
 
-### Alterações
+**Problema A: `template_id` não é passado à proposta**
+Quando o robot encontra um template (`templateName`), ele extrai os dados (título, descrição, condições, valor, etc.) mas **nunca associa o `template_id`** à proposta criada. O `INSERT` na tabela `proposals` (linha 666-686) não inclui `template_id`. Consequência: o PDF gerado pela Edge Function `proposal-pdf` não consegue carregar o `layout_blocks` do template — cai sempre no layout fallback hardcoded.
 
-**Ficheiro:** `src/components/bitrix24/AnimatedSidebar.tsx` — `DesktopSidebar`
+**Problema B: Não lista templates disponíveis**
+O parâmetro `template_name` no Bitrix24 é um campo `Type: "string"` livre. O utilizador precisa saber o nome exato do template. Não há listagem ou selector dos templates disponíveis. Idealmente o robot deveria permitir listar templates no Bitrix24 como opções seleccionáveis.
 
-- Mudar de `shrink-0` para `fixed left-0 top-0 z-40` com `h-full`
-- Remover o espaço reservado no layout — a sidebar fica sobreposta
-- Adicionar sombra (`shadow-xl`) quando expandida para destacar do conteúdo
-- Manter o comportamento hover-expand existente
+**Problema C: Não filtra por `template_type`**
+A busca do template (`ilike("name", ...)`) não filtra por `template_type`, podendo encontrar templates de contrato em vez de proposta.
 
-**Ficheiro:** `src/pages/Bitrix24App.tsx`
+### 2. Robot `emmely_send_proposal` — OK com ressalvas
 
-- O `<main>` deixa de precisar compensar a largura da sidebar — ocupa 100% da largura
-- Remover o wrapper `flex` que faz sidebar + main lado a lado; main fica full-width
+**Funcionamento geral: correcto.** Suporta `link`, `pdf` e `both`. Gera PDF on-demand se necessário. Mensagem personalizada funciona.
 
-### Resultado visual
-```text
-┌──────────────────────────────────┐
-│  Main content (100% width)       │
-│                                  │
-│ ┌──┐                             │
-│ │🔘│  ← sidebar colapsada (60px) │
-│ │🔘│    sobreposta ao conteúdo   │
-│ │🔘│                             │
-│ └──┘                             │
-│                                  │
-└──────────────────────────────────┘
+**Problema A: PDF é HTML, não PDF real**
+A Edge Function `proposal-pdf` gera um ficheiro `.html` e guarda-o no storage como `proposal-{id}.html`. O URL devolvido é de um HTML — não é um PDF real. O nome do robot e do campo diz "PDF" mas entrega HTML. Isto pode causar confusão ao cliente que recebe o link.
 
-Hover → sidebar expande por cima como modal overlay
-```
+**Problema B: sem `template_id` no proposal, o PDF fica sem branding**
+Mesmo problema — como o `template_id` não é guardado na proposta (ver problema A acima), o `proposal-pdf` não carrega os `layout_blocks` do template.
+
+---
+
+## Plano de Correção
+
+### Passo 1: Adicionar coluna `template_id` à tabela `proposals`
+- Migration: `ALTER TABLE proposals ADD COLUMN template_id UUID REFERENCES proposal_templates(id) ON DELETE SET NULL;`
+
+### Passo 2: Corrigir `handleGenerateProposal` no robot-handler
+- Guardar o `template.id` encontrado e incluir `template_id` no INSERT da proposta
+- Filtrar por `template_type = 'proposta'` na busca do template
+
+### Passo 3: Listar templates no parâmetro do robot
+- No `bitrix24-install`, mudar o campo `template_name` para incluir uma descrição indicando que o utilizador pode consultar os templates disponíveis
+- Criar um endpoint auxiliar ou robot de consulta que devolva a lista de templates (alternativa simples: documentar na descrição do campo)
+
+### Passo 4: Corrigir `proposal-pdf` para usar `template_id` da proposta
+- A função já verifica `proposal.template_id` — com a coluna preenchida, passará a funcionar automaticamente
 
 ### Ficheiros a editar
-1. `src/components/bitrix24/AnimatedSidebar.tsx` — DesktopSidebar fixed overlay
-2. `src/pages/Bitrix24App.tsx` — layout full-width sem flex sidebar
+1. **Migration SQL** — adicionar `template_id` à tabela `proposals`
+2. `supabase/functions/bitrix24-robot-handler/index.ts` — `handleGenerateProposal`: incluir `template_id`, filtrar por `template_type`
+3. `supabase/functions/bitrix24-install/index.ts` — melhorar descrição do campo `template_name`
 
