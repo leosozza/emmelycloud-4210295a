@@ -1,50 +1,59 @@
 
 
-# Análise dos Robots de Propostas
+# Tema Azul — Alternativa de Cores
 
-## Resultado da Análise
+## O que será feito
 
-### 1. Robot `emmely_generate_proposal` — Problemas encontrados
+Adicionar um seletor de tema de cor nas configurações (acessível pelo menu do utilizador no header) que permite alternar entre o tema atual **Vermelho** e um novo tema **Azul**.
 
-**Problema A: `template_id` não é passado à proposta**
-Quando o robot encontra um template (`templateName`), ele extrai os dados (título, descrição, condições, valor, etc.) mas **nunca associa o `template_id`** à proposta criada. O `INSERT` na tabela `proposals` (linha 666-686) não inclui `template_id`. Consequência: o PDF gerado pela Edge Function `proposal-pdf` não consegue carregar o `layout_blocks` do template — cai sempre no layout fallback hardcoded.
+## Como funciona
 
-**Problema B: Não lista templates disponíveis**
-O parâmetro `template_name` no Bitrix24 é um campo `Type: "string"` livre. O utilizador precisa saber o nome exato do template. Não há listagem ou selector dos templates disponíveis. Idealmente o robot deveria permitir listar templates no Bitrix24 como opções seleccionáveis.
+### 1. CSS — Adicionar variantes de cor azul
+**Ficheiro:** `src/index.css`
 
-**Problema C: Não filtra por `template_type`**
-A busca do template (`ilike("name", ...)`) não filtra por `template_type`, podendo encontrar templates de contrato em vez de proposta.
+Adicionar classes `.theme-blue` e `.dark.theme-blue` que sobrescrevem as variáveis CSS `--primary`, `--ring`, `--accent`, `--sidebar-primary`, `--sidebar-ring`, `--chart-*`, etc., substituindo os tons vermelhos/dourados por tons azuis.
 
-### 2. Robot `emmely_send_proposal` — OK com ressalvas
+```text
+:root            → vermelho (padrão, sem alteração)
+.theme-blue      → azul (light)
+.dark.theme-blue → azul (dark)
+```
 
-**Funcionamento geral: correcto.** Suporta `link`, `pdf` e `both`. Gera PDF on-demand se necessário. Mensagem personalizada funciona.
+### 2. Contexto de Tema
+**Novo ficheiro:** `src/contexts/ThemeContext.tsx`
 
-**Problema A: PDF é HTML, não PDF real**
-A Edge Function `proposal-pdf` gera um ficheiro `.html` e guarda-o no storage como `proposal-{id}.html`. O URL devolvido é de um HTML — não é um PDF real. O nome do robot e do campo diz "PDF" mas entrega HTML. Isto pode causar confusão ao cliente que recebe o link.
+- Criar `ThemeProvider` que lê/guarda o tema escolhido em `localStorage`
+- Aplicar a classe `theme-blue` no `<html>` quando selecionado
+- Expor `theme` e `setTheme` via hook `useTheme`
 
-**Problema B: sem `template_id` no proposal, o PDF fica sem branding**
-Mesmo problema — como o `template_id` não é guardado na proposta (ver problema A acima), o `proposal-pdf` não carrega os `layout_blocks` do template.
+### 3. Página de Configurações
+**Novo ficheiro:** `src/pages/Configuracoes.tsx`
 
----
+- Secção "Aparência" com cards visuais para cada tema (Vermelho e Azul)
+- Cada card mostra uma preview da cor com borda de seleção
+- Ao clicar, aplica o tema imediatamente
 
-## Plano de Correção
+### 4. Integrar no layout
+- **`src/App.tsx`**: Envolver com `ThemeProvider`, adicionar rota `/configuracoes`
+- **`src/components/AppSidebar.tsx`**: Adicionar item "Configurações" no grupo secundário
+- **`src/components/AppHeader.tsx`**: O item "Configurações" no dropdown do avatar navega para `/configuracoes`
 
-### Passo 1: Adicionar coluna `template_id` à tabela `proposals`
-- Migration: `ALTER TABLE proposals ADD COLUMN template_id UUID REFERENCES proposal_templates(id) ON DELETE SET NULL;`
+### Paleta Azul (valores HSL)
+| Variável | Light | Dark |
+|---|---|---|
+| `--primary` | `220 60% 42%` | `220 70% 50%` |
+| `--ring` | `220 60% 42%` | `220 70% 50%` |
+| `--accent` | `210 80% 90%` | `220 50% 35%` |
+| `--accent-foreground` | `220 60% 30%` | `210 80% 90%` |
+| `--sidebar-primary` | `220 60% 42%` | `220 70% 50%` |
+| `--sidebar-accent` | `210 80% 90%` | `220 50% 35%` |
+| `--chart-1/3` | tons azuis | tons azuis |
 
-### Passo 2: Corrigir `handleGenerateProposal` no robot-handler
-- Guardar o `template.id` encontrado e incluir `template_id` no INSERT da proposta
-- Filtrar por `template_type = 'proposta'` na busca do template
-
-### Passo 3: Listar templates no parâmetro do robot
-- No `bitrix24-install`, mudar o campo `template_name` para incluir uma descrição indicando que o utilizador pode consultar os templates disponíveis
-- Criar um endpoint auxiliar ou robot de consulta que devolva a lista de templates (alternativa simples: documentar na descrição do campo)
-
-### Passo 4: Corrigir `proposal-pdf` para usar `template_id` da proposta
-- A função já verifica `proposal.template_id` — com a coluna preenchida, passará a funcionar automaticamente
-
-### Ficheiros a editar
-1. **Migration SQL** — adicionar `template_id` à tabela `proposals`
-2. `supabase/functions/bitrix24-robot-handler/index.ts` — `handleGenerateProposal`: incluir `template_id`, filtrar por `template_type`
-3. `supabase/functions/bitrix24-install/index.ts` — melhorar descrição do campo `template_name`
+### Ficheiros a criar/editar
+1. `src/index.css` — classes `.theme-blue`
+2. `src/contexts/ThemeContext.tsx` — novo contexto
+3. `src/pages/Configuracoes.tsx` — nova página
+4. `src/App.tsx` — rota + provider
+5. `src/components/AppSidebar.tsx` — link configurações
+6. `src/components/AppHeader.tsx` — link configurações no dropdown
 
