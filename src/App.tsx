@@ -37,6 +37,7 @@ import Bitrix24App from "./pages/Bitrix24App";
 import PropostaPublica from "./pages/PropostaPublica";
 import SignContract from "./pages/SignContract";
 import NotFound from "./pages/NotFound";
+import Configuracoes from "./pages/Configuracoes";
 import TemplateEditor from "./pages/TemplateEditor";
 
 const queryClient = new QueryClient();
