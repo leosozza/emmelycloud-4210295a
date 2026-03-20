@@ -54,7 +54,7 @@ import { ChevronDown, Star, Edit, Volume2, Users, GitBranch as GitBranchIcon2 } 
 import {
   Collapsible, CollapsibleContent, CollapsibleTrigger,
 } from "@/components/ui/collapsible";
-import { ExpandableTabs, type TabItem } from "@/components/ui/expandable-tabs";
+import { ExpandableTabs } from "@/components/ui/expandable-tabs";
 import { AnimatePresence, motion } from "framer-motion";
 import { AnimatedSidebar, AnimatedSidebarBody, AnimatedSidebarLink } from "@/components/bitrix24/AnimatedSidebar";
 import { AgentFormDialog } from "@/components/agentes/AgentFormDialog";
