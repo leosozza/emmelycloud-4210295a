@@ -40,10 +40,10 @@ export function TemplatePreview({
           <div key={block.id} className={`p-6 cursor-pointer ${selectClass}`} onClick={() => onSelectBlock?.(block.id)}>
             <h3 className="text-xs uppercase tracking-widest text-muted-foreground font-semibold border-b pb-1 mb-3">Dados do Cliente</h3>
             <div className="grid grid-cols-2 gap-2 text-sm">
-              <div><span className="text-muted-foreground">Nome:</span> <span className="italic text-muted-foreground/60">{{"{"}cliente.nome{"}"}} </span></div>
-              <div><span className="text-muted-foreground">Email:</span> <span className="italic text-muted-foreground/60">{{"{"}cliente.email{"}"}} </span></div>
-              <div><span className="text-muted-foreground">Telefone:</span> <span className="italic text-muted-foreground/60">{{"{"}cliente.telefone{"}"}} </span></div>
-              <div><span className="text-muted-foreground">Documento:</span> <span className="italic text-muted-foreground/60">{{"{"}cliente.documento{"}"}} </span></div>
+              <div><span className="text-muted-foreground">Nome:</span> <span className="italic text-muted-foreground/60">{"{cliente.nome}"}</span></div>
+              <div><span className="text-muted-foreground">Email:</span> <span className="italic text-muted-foreground/60">{"{cliente.email}"}</span></div>
+              <div><span className="text-muted-foreground">Telefone:</span> <span className="italic text-muted-foreground/60">{"{cliente.telefone}"}</span></div>
+              <div><span className="text-muted-foreground">Documento:</span> <span className="italic text-muted-foreground/60">{"{cliente.documento}"}</span></div>
             </div>
           </div>
         );

@@ -383,6 +383,9 @@ const PropostasPage = () => {
                       )}
                     </div>
                     <div className="flex gap-1 mt-3 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <Button variant="ghost" size="sm" onClick={() => navigate(`/propostas/template-editor/${t.id}`)}>
+                        <LayoutTemplate className="h-3 w-3 mr-1" /> Editor
+                      </Button>
                       <Button variant="ghost" size="sm" onClick={() => { setEditingTemplate(t); setTemplateFormOpen(true); }}>
                         <Pencil className="h-3 w-3 mr-1" /> Editar
                       </Button>
