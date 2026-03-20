@@ -243,7 +243,7 @@ const Bitrix24App = () => {
   }
 
   return (
-    <div className={cn("min-h-screen flex bg-background", isDark && "dark")}>
+    <div className={cn("min-h-screen bg-background", isDark && "dark")}>
       {/* ── Sidebar ── */}
       <AnimatedSidebar animate>
         <AnimatedSidebarBody>
