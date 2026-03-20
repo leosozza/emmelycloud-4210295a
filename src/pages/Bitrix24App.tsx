@@ -43,7 +43,7 @@ import {
   Settings, CreditCard, Zap, CheckCircle, XCircle, Activity,
   Power, ExternalLink, AlertCircle, MessageSquare, BarChart3,
   DollarSign, Clock, AlertTriangle, TrendingUp, Link,
-  ArrowDownLeft, ArrowUpRight, Building2, FileDown, ChevronRight, LayoutTemplate, Pencil,
+  ArrowDownLeft, ArrowUpRight, Building2, FileDown, ChevronRight, LayoutTemplate, Pencil, Scale, Users,
 } from "lucide-react";
 import {
   BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis,
