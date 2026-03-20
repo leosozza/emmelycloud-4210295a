@@ -50,7 +50,7 @@ import {
   CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, Legend,
 } from "recharts";
 import { cn } from "@/lib/utils";
-import { ChevronDown, Star, Edit, Volume2, Users, GitBranch as GitBranchIcon2 } from "lucide-react";
+import { ChevronDown, Star, Edit, Volume2, GitBranch as GitBranchIcon2 } from "lucide-react";
 import {
   Collapsible, CollapsibleContent, CollapsibleTrigger,
 } from "@/components/ui/collapsible";
