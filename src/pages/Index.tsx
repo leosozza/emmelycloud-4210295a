@@ -104,7 +104,7 @@ const Index = () => {
       case "kpis":
         return <DashboardKPIs data={dashboardData?.kpis} isLoading={isLoading} />;
       case "funnel":
-        return <FunnelChartWidget data={dashboardData?.funnel} isLoading={isLoading} />;
+        return <FunnelChartWidget data={dashboardData?.funnel as any} isLoading={isLoading} />;
       case "leadsByOrigin":
         return <LeadsByOriginChart data={dashboardData?.leadsByOrigin} isLoading={isLoading} />;
       case "revenueByArea":
