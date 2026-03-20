@@ -50,7 +50,7 @@ import {
   CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, Legend,
 } from "recharts";
 import { cn } from "@/lib/utils";
-import { ChevronDown, Star, Edit, Volume2, Users, GitBranch as GitBranchIcon2 } from "lucide-react";
+import { ChevronDown, Star, Edit, Volume2, GitBranch as GitBranchIcon2 } from "lucide-react";
 import {
   Collapsible, CollapsibleContent, CollapsibleTrigger,
 } from "@/components/ui/collapsible";
@@ -245,6 +245,7 @@ const Bitrix24App = () => {
     );
   }
 
+  return (
     <SidebarProvider>
       <div className={cn("flex min-h-screen w-full", isDark && "dark")}>
         <Sidebar collapsible="icon" className="border-r border-sidebar-border bg-sidebar">
