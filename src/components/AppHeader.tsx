@@ -14,7 +14,7 @@ import {
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { NotificationCenter } from "@/components/NotificationCenter";
 
-export function AppHeader({ onSearchClick }: { onSearchClick?: () => void }) {
+export function AppHeader({ onSearchClick, children }: { onSearchClick?: () => void; children?: React.ReactNode }) {
   const { user } = useAuth();
   const { locale, setLocale } = useLocale();
   const navigate = useNavigate();
@@ -32,6 +32,7 @@ export function AppHeader({ onSearchClick }: { onSearchClick?: () => void }) {
   return (
     <header className="sticky top-0 z-30 glass border-b shadow-sm">
       <div className="flex h-14 items-center gap-4 px-4">
+        {children}
         {/* Logo */}
         <div className="flex items-center gap-2.5 shrink-0">
           <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary shadow-md">
