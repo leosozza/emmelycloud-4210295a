@@ -104,6 +104,7 @@ export default function TemplateEditor({ templateId, onBack }: { templateId?: st
   useEffect(() => {
     if (template) {
       setName(template.name);
+      setTemplateType((template as any).template_type || "proposta");
       setHeaderColor((template as any).header_color || "#1e293b");
       setAccentColor((template as any).accent_color || "#0f172a");
       setCompanyName((template as any).company_name || "");
@@ -114,6 +115,14 @@ export default function TemplateEditor({ templateId, onBack }: { templateId?: st
       }
     }
   }, [template]);
+
+  const handleTemplateTypeChange = (type: string) => {
+    setTemplateType(type);
+    if (!id) {
+      setBlocks(type === "contrato" ? DEFAULT_CONTRACT_BLOCKS : DEFAULT_PROPOSAL_BLOCKS);
+      setSelectedBlockId(null);
+    }
+  };
 
   const saveMutation = useMutation({
     mutationFn: async () => {
