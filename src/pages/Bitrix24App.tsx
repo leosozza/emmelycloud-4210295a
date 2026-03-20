@@ -43,7 +43,7 @@ import {
   Settings, CreditCard, Zap, CheckCircle, XCircle, Activity,
   Power, ExternalLink, AlertCircle, MessageSquare, BarChart3,
   DollarSign, Clock, AlertTriangle, TrendingUp, Link,
-  ArrowDownLeft, ArrowUpRight, Building2, FileDown, ChevronRight, LayoutTemplate, Pencil,
+  ArrowDownLeft, ArrowUpRight, Building2, FileDown, ChevronRight, LayoutTemplate, Pencil, Scale, Users,
 } from "lucide-react";
 import {
   BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis,
@@ -54,9 +54,12 @@ import { ChevronDown, Star, Edit, Volume2, Users, GitBranch as GitBranchIcon2 } 
 import {
   Collapsible, CollapsibleContent, CollapsibleTrigger,
 } from "@/components/ui/collapsible";
-import { ExpandableTabs } from "@/components/ui/expandable-tabs";
 import { AnimatePresence, motion } from "framer-motion";
-import { AnimatedSidebar, AnimatedSidebarBody, AnimatedSidebarLink } from "@/components/bitrix24/AnimatedSidebar";
+import {
+  Sidebar, SidebarProvider, SidebarContent, SidebarGroup, SidebarGroupLabel,
+  SidebarGroupContent, SidebarMenu, SidebarMenuItem, SidebarMenuButton,
+  SidebarHeader, SidebarFooter, SidebarTrigger, useSidebar,
+} from "@/components/ui/sidebar";
 import { AgentFormDialog } from "@/components/agentes/AgentFormDialog";
 import { Switch } from "@/components/ui/switch";
 import { Slider } from "@/components/ui/slider";
@@ -242,106 +245,110 @@ const Bitrix24App = () => {
     );
   }
 
-  return (
-    <div className={cn("min-h-screen bg-background", isDark && "dark")}>
-      {/* ── Sidebar ── */}
-      <AnimatedSidebar animate>
-        <AnimatedSidebarBody>
-          <div className="flex flex-col h-full">
-            {/* Logo area */}
-            <div className="flex items-center gap-2 px-3 py-3 border-b border-border">
-              <div className="w-7 h-7 rounded-lg flex items-center justify-center font-extrabold text-xs bg-primary text-primary-foreground shrink-0">
-                E
+    <SidebarProvider>
+      <div className={cn("flex min-h-screen w-full", isDark && "dark")}>
+        <Sidebar collapsible="icon" className="border-r border-sidebar-border bg-sidebar">
+          <SidebarHeader className="p-4">
+            <div className="flex items-center gap-3">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary">
+                <Scale className="h-5 w-5 text-primary-foreground" strokeWidth={1.5} />
               </div>
-              <AnimatePresence>
-                <motion.span
-                  initial={{ opacity: 0, width: 0 }}
-                  animate={{ opacity: 1, width: "auto" }}
-                  exit={{ opacity: 0, width: 0 }}
-                  className="font-bold text-sm text-foreground whitespace-nowrap overflow-hidden"
-                >
-                  Emmely Cloud
-                </motion.span>
-              </AnimatePresence>
+              <div className="flex flex-col group-data-[collapsible=icon]:hidden">
+                <span className="text-sm font-bold text-sidebar-foreground">Emmely Cloud</span>
+                <span className="text-[11px] text-sidebar-muted-foreground">
+                  {domain || "Bitrix24"}
+                </span>
+              </div>
             </div>
+          </SidebarHeader>
 
-            {/* Nav items */}
-            <ScrollArea className="flex-1 py-2">
-              {navCategories.map((cat) => (
-                <div key={cat.label} className="mb-3">
-                  <div className="px-3 py-1">
-                    <span className="text-[10px] uppercase tracking-widest font-semibold text-muted-foreground">
-                      {cat.label}
-                    </span>
-                  </div>
-                  {cat.items.map((item) => (
-                    <AnimatedSidebarLink
-                      key={item.id}
-                      link={{ id: item.id, label: item.label, icon: <item.icon className="h-4 w-4" /> }}
-                      isActive={view === item.id}
-                      onClick={() => setView(item.id as AppView)}
-                    />
-                  ))}
-                </div>
-              ))}
-            </ScrollArea>
+          <SidebarContent>
+            {navCategories.map((cat) => (
+              <SidebarGroup key={cat.label}>
+                <SidebarGroupLabel className="text-sidebar-muted-foreground text-[11px] uppercase tracking-widest font-semibold">
+                  {cat.label}
+                </SidebarGroupLabel>
+                <SidebarGroupContent>
+                  <SidebarMenu>
+                    {cat.items.map((item) => (
+                      <SidebarMenuItem key={item.id}>
+                        <SidebarMenuButton
+                          tooltip={item.label}
+                          isActive={view === item.id}
+                          onClick={() => setView(item.id as AppView)}
+                          className={cn(
+                            "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground rounded-lg transition-all",
+                            view === item.id && "bg-sidebar-accent text-sidebar-accent-foreground font-semibold"
+                          )}
+                        >
+                          <item.icon className="h-[18px] w-[18px]" strokeWidth={1.5} />
+                          <span>{item.label}</span>
+                        </SidebarMenuButton>
+                      </SidebarMenuItem>
+                    ))}
+                  </SidebarMenu>
+                </SidebarGroupContent>
+              </SidebarGroup>
+            ))}
+          </SidebarContent>
 
-            {/* Status footer */}
-            <div className="border-t border-border px-3 py-2 flex items-center gap-2">
+          <SidebarFooter className="p-3">
+            <div className="flex items-center gap-2 group-data-[collapsible=icon]:justify-center">
               <div className={cn("w-2 h-2 rounded-full shrink-0", integration ? "bg-emerald-500" : "bg-destructive")} />
-              <AnimatePresence>
-                <motion.span
-                  initial={{ opacity: 0, width: 0 }}
-                  animate={{ opacity: 1, width: "auto" }}
-                  exit={{ opacity: 0, width: 0 }}
-                  className="text-xs text-muted-foreground whitespace-nowrap overflow-hidden"
-                >
-                  {integration ? "Online" : "Offline"}
-                  {domain && ` · ${domain}`}
-                </motion.span>
-              </AnimatePresence>
+              <span className="text-xs text-sidebar-muted-foreground group-data-[collapsible=icon]:hidden">
+                {integration ? "Online" : "Offline"}
+              </span>
             </div>
-          </div>
-        </AnimatedSidebarBody>
-      </AnimatedSidebar>
+          </SidebarFooter>
+        </Sidebar>
 
-      {/* ── Main Content ── */}
-      <main className="w-full overflow-auto min-w-0">
-        {view === "dashboard" && (
-          <DashboardView
-            integration={integration}
-            botId={botId}
-            domain={domain}
-            loading={loadingData}
-            onResync={handleResync}
-            onRefresh={() => memberId && fetchData(memberId)}
-            onCachePortfolio={setCachedPortfolio}
-          />
-        )}
-        {view === "agentes" && <AgentesView botId={botId} integrationId={integration?.id} />}
-        {view === "training" && <TrainingView />}
-        {view === "flows" && <FlowsView />}
-        {view === "playground" && <PlaygroundView />}
-        {view === "chatia" && <ChatIABitrixView />}
-        {view === "pagamentos" && <PagamentosView integration={integration} onRefresh={() => memberId && fetchData(memberId)} />}
-        {view === "baixa" && <BaixaCarteiraView integration={integration} />}
-        {view === "relatorios" && <RelatoriosView memberId={memberId || integration?.member_id || undefined} />}
-        {view === "carteira" && <CarteiraAccessView integration={integration} memberId={memberId} cachedPortfolio={cachedPortfolio} />}
-        {view === "propostas" && <PropostasViewBitrix />}
-        {view === "configuracoes" && (
-          <ConfiguracoesWrapper
-            integration={integration}
-            botId={botId}
-            domain={domain}
-            loading={loadingData}
-            onResync={handleResync}
-            onRefresh={() => memberId && fetchData(memberId)}
-            memberId={memberId}
-            cachedPortfolio={cachedPortfolio}
-          />
-        )}
-      </main>
-    </div>
+        <div className="flex-1 flex flex-col min-w-0">
+          <header className="h-12 flex items-center border-b border-border px-4 bg-background">
+            <SidebarTrigger className="mr-2" />
+            <span className="text-sm font-semibold text-foreground">Emmely Cloud</span>
+            {domain && (
+              <Badge variant="secondary" className="ml-2 text-[10px]">{domain}</Badge>
+            )}
+          </header>
+
+          <main className="flex-1 overflow-auto">
+            {view === "dashboard" && (
+              <DashboardView
+                integration={integration}
+                botId={botId}
+                domain={domain}
+                loading={loadingData}
+                onResync={handleResync}
+                onRefresh={() => memberId && fetchData(memberId)}
+                onCachePortfolio={setCachedPortfolio}
+              />
+            )}
+            {view === "agentes" && <AgentesView botId={botId} integrationId={integration?.id} />}
+            {view === "training" && <TrainingView />}
+            {view === "flows" && <FlowsView />}
+            {view === "playground" && <PlaygroundView />}
+            {view === "chatia" && <ChatIABitrixView />}
+            {view === "pagamentos" && <PagamentosView integration={integration} onRefresh={() => memberId && fetchData(memberId)} />}
+            {view === "baixa" && <BaixaCarteiraView integration={integration} />}
+            {view === "relatorios" && <RelatoriosView memberId={memberId || integration?.member_id || undefined} />}
+            {view === "carteira" && <CarteiraAccessView integration={integration} memberId={memberId} cachedPortfolio={cachedPortfolio} />}
+            {view === "propostas" && <PropostasViewBitrix />}
+            {view === "configuracoes" && (
+              <ConfiguracoesWrapper
+                integration={integration}
+                botId={botId}
+                domain={domain}
+                loading={loadingData}
+                onResync={handleResync}
+                onRefresh={() => memberId && fetchData(memberId)}
+                memberId={memberId}
+                cachedPortfolio={cachedPortfolio}
+              />
+            )}
+          </main>
+        </div>
+      </div>
+    </SidebarProvider>
   );
 };
 
