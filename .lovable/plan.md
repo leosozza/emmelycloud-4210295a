@@ -1,19 +1,52 @@
 
 
-# Fix: Rota /bitrix24/propostas não funciona
+# Restaurar Sidebar — Portal e iframe Bitrix24
 
-## Problema
-Na linha 93 de `Bitrix24App.tsx`, a lista `validViews` não inclui `"propostas"`. Qualquer rota não reconhecida cai no fallback `"dashboard"`.
+## Situação Atual
+- **Portal principal** (`AppLayout.tsx`): Usa `Dock` (barra inferior tipo macOS) para navegação
+- **Iframe Bitrix24** (`Bitrix24App.tsx`): Usa `ExpandableTabs` no header para navegação
+- O componente `AppSidebar.tsx` já existe com toda a navegação organizada por grupos mas não está a ser usado
 
-## Correção
+## Plano
 
-**Ficheiro:** `src/pages/Bitrix24App.tsx` (linha 93)
+### 1. Portal Principal — Restaurar Sidebar
+**Ficheiro:** `src/components/AppLayout.tsx`
 
-Adicionar `"propostas"` à array `validViews`:
+- Remover o `Dock` e `AppDock`
+- Envolver o layout com `SidebarProvider` do shadcn
+- Usar o `AppSidebar` existente como sidebar lateral
+- Adicionar `SidebarTrigger` no header para toggle
+- Layout: sidebar à esquerda, header + conteúdo à direita
 
-```typescript
-const validViews: AppView[] = ["dashboard", "agentes", "training", "flows", "playground", "chatia", "pagamentos", "relatorios", "baixa", "carteira", "configuracoes", "propostas"];
+```text
+┌──────────┬──────────────────────────┐
+│          │  Header + SidebarTrigger │
+│ Sidebar  ├──────────────────────────┤
+│          │  <Outlet />              │
+│          │                          │
+└──────────┴──────────────────────────┘
 ```
 
-Uma única linha a alterar.
+### 2. Iframe Bitrix24 — Adicionar Sidebar
+**Ficheiro:** `src/pages/Bitrix24App.tsx`
+
+- Remover o `ExpandableTabs` do header
+- Criar sidebar compacta com os mesmos `navCategories` já definidos
+- Usar o componente `AnimatedSidebar` já existente (hover-expand) para manter o iframe compacto
+- Header simplificado: logo + domain badge + status (sem tabs)
+- Layout: sidebar colapsável à esquerda, conteúdo à direita
+
+```text
+┌────┬──────────────────────────────┐
+│ 🔘 │  Logo  Domain       Status  │
+│ 🔘 ├──────────────────────────────┤
+│ 🔘 │  View content               │
+│ 🔘 │                              │
+│    │                              │
+└────┴──────────────────────────────┘
+```
+
+### Ficheiros a editar
+1. `src/components/AppLayout.tsx` — sidebar + remover dock
+2. `src/pages/Bitrix24App.tsx` — sidebar + remover ExpandableTabs
 
