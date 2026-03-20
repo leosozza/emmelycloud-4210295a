@@ -306,7 +306,7 @@ const Bitrix24App = () => {
       </AnimatedSidebar>
 
       {/* ── Main Content ── */}
-      <main className="flex-1 overflow-auto min-w-0">
+      <main className="w-full overflow-auto min-w-0">
         {view === "dashboard" && (
           <DashboardView
             integration={integration}
