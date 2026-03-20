@@ -1,53 +1,72 @@
 
 
-# Melhoria do Sistema de Orçamento via Robot Bitrix24
+# Editor Visual de Templates de Proposta/Orçamento
 
 ## Situação Atual
-O robot `emmely_generate_proposal` já existe e gera propostas a partir de deals/leads, mas não suporta:
-- Seleção de **template** (modelos da tabela `proposal_templates`)
-- Adição de **produtos** (da tabela `services`)
-- Envio automático do resultado (link ou PDF) via WhatsApp/chat
+Os templates são formulários simples com campos de texto (nome, título, descrição, condições, valor, pagamento). O PDF gerado usa um layout HTML hardcoded na Edge Function `proposal-pdf`. Não existe editor visual nem geração por IA.
 
 ## Plano de Implementação
 
-### 1. Atualizar o Robot com novos parâmetros
-**Ficheiro:** `supabase/functions/bitrix24-install/index.ts`
+### 1. Migração — Adicionar campos visuais ao template
+Adicionar colunas à tabela `proposal_templates`:
+- `logo_url` (text) — URL do logo carregado
+- `header_color` (text, default '#1e293b') — cor do cabeçalho
+- `accent_color` (text, default '#0f172a') — cor de destaque
+- `body_html` (text) — HTML do corpo editável (blocos organizados)
+- `company_name` (text) — nome da empresa no cabeçalho
+- `company_tagline` (text) — slogan
+- `layout_blocks` (jsonb) — configuração dos blocos visuais (ordem, visibilidade, conteúdo)
 
-Adicionar ao robot `emmely_generate_proposal`:
-- `template_id` (select) — lista de modelos disponíveis ou nome do template
-- `product_ids` (string) — IDs dos produtos/serviços separados por vírgula
-- `send_method` (select) — "link", "pdf", "both", "none"
-- `send_to_phone` (string) — telefone para envio via WhatsApp
+### 2. Página dedicada de Editor de Templates
+Criar `src/pages/TemplateEditor.tsx` com rota `/propostas/template-editor/:id?`:
 
-### 2. Atualizar o Handler do Robot
-**Ficheiro:** `supabase/functions/bitrix24-robot-handler/index.ts`
+**Estrutura do editor em 3 painéis:**
+- **Painel esquerdo** — Paleta de blocos arrastáveis (Logo, Cabeçalho, Dados do Cliente, Descrição do Serviço, Valor/Pagamento, Condições, Rodapé, Bloco de Texto Livre)
+- **Painel central** — Pré-visualização em tempo real do template (iframe ou div com estilos)
+- **Painel direito** — Propriedades do bloco selecionado (cores, fontes, textos, upload de logo)
 
-Na função `handleGenerateProposal`:
-- Se `template_id` ou `template_name` for informado, buscar o template em `proposal_templates` e preencher automaticamente: título, descrição, condições, tipo de pagamento, parcelas e valor base
-- Se `product_ids` for informado, buscar os serviços na tabela `services`, somar valores e concatenar descrições
-- Os valores manuais (se informados) sobrepõem os do template
-- Após criar a proposta, se `send_method` = "link" ou "both", enviar mensagem WhatsApp com o link de aceite
-- Se `send_method` = "pdf" ou "both", gerar o PDF e enviar como media via WhatsApp
-- Devolver novos parâmetros: `template_used`, `products_used`, `send_status`
+**Funcionalidades do editor:**
+- Drag & drop de blocos para reordenar secções usando `@dnd-kit/core`
+- Upload de logo para o bucket `proposal-files`
+- Seletor de cores para cabeçalho e acentos
+- Edição inline de textos (nome da empresa, tagline, condições padrão)
+- Pré-visualização live que reflete todas as alterações
+- Botão "Guardar Modelo" que salva o `layout_blocks` JSON + metadados
 
-### 3. Reinstalar Robots
-Após a edição, reimplantar a Edge Function `bitrix24-install` para que os novos parâmetros apareçam no Bitrix24 ao reinstalar/reparar a integração.
+### 3. Geração de Template por IA
+Adicionar ao editor um botão "Gerar com IA":
+- O utilizador faz upload de um PDF ou imagem de exemplo
+- O ficheiro é enviado para uma nova Edge Function `generate-template-from-image`
+- A Edge Function usa Lovable AI (`google/gemini-2.5-pro` com suporte multimodal) para:
+  - Analisar o layout visual do documento
+  - Extrair estrutura de blocos, cores, textos e posicionamento
+  - Devolver um JSON de `layout_blocks` compatível com o editor
+- O resultado preenche automaticamente o editor para ajustes manuais
 
-### Fluxo Final no Bitrix24
-```text
-Deal chega na etapa X
-  → Automação BizProc aciona robot "Emmely: Gerar Proposta"
-  → Utilizador configura:
-      - Template: "Consultoria Jurídica"
-      - Produtos: "Serviço A, Serviço B"
-      - Pagamento: Parcelado, 3x
-      - Envio: Link + PDF
-  → Robot gera proposta com dados do deal + template + produtos
-  → Envia link com botão de aceite e/ou PDF ao cliente via WhatsApp
-  → Devolve proposal_url, pdf_url ao BizProc
-```
+### 4. Atualizar geração de PDF
+Modificar `supabase/functions/proposal-pdf/index.ts`:
+- Se a proposta tem um template com `layout_blocks`, usar esses blocos para montar o HTML
+- Aplicar `logo_url`, `header_color`, `accent_color`, `company_name`
+- Renderizar os blocos na ordem definida pelo utilizador
+- Manter o layout hardcoded atual como fallback quando não há template visual
 
-### Ficheiros a Editar
-1. `supabase/functions/bitrix24-robot-handler/index.ts` — lógica do handler
-2. `supabase/functions/bitrix24-install/index.ts` — registo do robot com novos campos
+### 5. Integrar na página de Propostas
+Atualizar a tab "Modelos" em `src/pages/Propostas.tsx`:
+- Botão "Editar" nos cards de template agora abre o editor visual (`/propostas/template-editor/:id`)
+- Botão "Novo Modelo" oferece escolha: "Criar do zero" (editor vazio) ou "Gerar por IA" (upload)
+- Pré-visualização miniatura do template no card (thumbnail do layout)
+
+### Ficheiros a Criar/Editar
+1. **Migração SQL** — novas colunas em `proposal_templates`
+2. `src/pages/TemplateEditor.tsx` — página do editor visual (novo)
+3. `src/components/propostas/TemplateBlock.tsx` — componentes de blocos individuais (novo)
+4. `src/components/propostas/TemplatePreview.tsx` — pré-visualização live (novo)
+5. `src/components/propostas/TemplateBlockPalette.tsx` — paleta de blocos drag & drop (novo)
+6. `supabase/functions/generate-template-from-image/index.ts` — IA para gerar template (novo)
+7. `supabase/functions/proposal-pdf/index.ts` — usar layout_blocks na geração
+8. `src/pages/Propostas.tsx` — links para o editor
+9. `src/App.tsx` — nova rota
+
+### Dependências
+- `@dnd-kit/core` e `@dnd-kit/sortable` para drag & drop dos blocos
 
