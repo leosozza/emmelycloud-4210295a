@@ -14,7 +14,7 @@ import {
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { NotificationCenter } from "@/components/NotificationCenter";
 
-export function AppHeader({ onSearchClick }: { onSearchClick?: () => void }) {
+export function AppHeader({ onSearchClick, children }: { onSearchClick?: () => void; children?: React.ReactNode }) {
   const { user } = useAuth();
   const { locale, setLocale } = useLocale();
   const navigate = useNavigate();
