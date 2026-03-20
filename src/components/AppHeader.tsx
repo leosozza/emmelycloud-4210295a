@@ -78,8 +78,8 @@ export function AppHeader({ onSearchClick, children }: { onSearchClick?: () => v
                   <span className="text-xs text-muted-foreground">{user?.email}</span>
                 </div>
               </div>
-              <DropdownMenuItem>Perfil</DropdownMenuItem>
-              <DropdownMenuItem>Configurações</DropdownMenuItem>
+              <DropdownMenuItem onClick={() => navigate("/configuracoes")}>Perfil</DropdownMenuItem>
+              <DropdownMenuItem onClick={() => navigate("/configuracoes")}>Configurações</DropdownMenuItem>
               <DropdownMenuItem onClick={handleLogout}>
                 <LogOut className="mr-2 h-4 w-4" strokeWidth={1.5} />
                 Sair

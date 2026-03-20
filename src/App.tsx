@@ -6,6 +6,7 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { AppLayout } from "@/components/AppLayout";
 import { LocaleProvider } from "@/contexts/LocaleContext";
 import { AuthProvider } from "@/contexts/AuthContext";
+import { ThemeProvider } from "@/contexts/ThemeContext";
 import Index from "./pages/Index";
 import Auth from "./pages/Auth";
 import LeadsPage from "./pages/Leads";
@@ -36,6 +37,7 @@ import Bitrix24App from "./pages/Bitrix24App";
 import PropostaPublica from "./pages/PropostaPublica";
 import SignContract from "./pages/SignContract";
 import NotFound from "./pages/NotFound";
+import Configuracoes from "./pages/Configuracoes";
 import TemplateEditor from "./pages/TemplateEditor";
 
 const queryClient = new QueryClient();
@@ -43,6 +45,7 @@ const queryClient = new QueryClient();
 const App = () => (
   <QueryClientProvider client={queryClient}>
     <AuthProvider>
+    <ThemeProvider>
     <LocaleProvider>
     <TooltipProvider>
       <Toaster />
@@ -81,12 +84,14 @@ const App = () => (
             <Route path="/manual" element={<ManualPage />} />
             <Route path="/chat" element={<ChatIAPage />} />
             <Route path="/observabilidade-ia" element={<ObservabilidadeIAPage />} />
+            <Route path="/configuracoes" element={<Configuracoes />} />
           </Route>
           <Route path="*" element={<NotFound />} />
         </Routes>
       </BrowserRouter>
     </TooltipProvider>
     </LocaleProvider>
+    </ThemeProvider>
     </AuthProvider>
   </QueryClientProvider>
 );
