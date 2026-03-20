@@ -17,9 +17,15 @@ interface LeadByOrigin {
   value: number;
 }
 
-interface FunnelItem {
+interface FunnelStage {
   name: string;
   value: number;
+}
+
+interface FunnelPipeline {
+  pipelineId: string;
+  pipelineName: string;
+  stages: FunnelStage[];
 }
 
 interface MonthlyRevenueItem {
@@ -44,7 +50,7 @@ export interface RecentLead {
 export interface DashboardData {
   kpis: DashboardKPIs;
   leadsByOrigin: LeadByOrigin[];
-  funnel: FunnelItem[];
+  funnel: FunnelPipeline[];
   monthlyRevenue: MonthlyRevenueItem[];
   revenueByArea: RevenueByAreaItem[];
   recentLeads: RecentLead[];
@@ -78,10 +84,14 @@ function transformRpcResult(raw: any): DashboardData {
     value: Number(item.value),
   }));
 
-  // Map funnel to ordered stages
+  // Map funnel — RPC fallback uses flat stages, wrap into pipeline format
   const funnelMap: Record<string, number> = {};
   (raw.funnel || []).forEach((item: any) => { funnelMap[item.name] = Number(item.value); });
-  const funnel = stageOrder.map((key) => ({ name: stageLabels[key] || key, value: funnelMap[key] || 0 }));
+  const funnel: FunnelPipeline[] = [{
+    pipelineId: "0",
+    pipelineName: "Pipeline padrão",
+    stages: stageOrder.map((key) => ({ name: stageLabels[key] || key, value: funnelMap[key] || 0 })),
+  }];
 
   const monthlyRevenue = (raw.monthlyRevenue || []).map((item: any) => ({
     month: item.month,
