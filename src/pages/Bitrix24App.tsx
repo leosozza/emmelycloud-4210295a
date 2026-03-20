@@ -2,6 +2,11 @@ import { useEffect, useState, useCallback, useRef, lazy, Suspense, useMemo, Frag
 import { useNavigate, useLocation } from "react-router-dom";
 import { calculateLateFees } from "@/lib/lateFeeCalc";
 import { supabase } from "@/integrations/supabase/client";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useToast } from "@/hooks/use-toast";
+import { PropostaForm } from "@/components/propostas/PropostaForm";
+import { PropostaTemplateForm } from "@/components/propostas/PropostaTemplateForm";
+import TemplateEditor from "@/pages/TemplateEditor";
 import { useBitrix24Theme } from "@/hooks/useBitrix24Theme";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
