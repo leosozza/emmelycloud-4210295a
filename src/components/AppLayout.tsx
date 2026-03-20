@@ -1,63 +1,11 @@
 import { useState } from "react";
-import { Outlet, Navigate, useNavigate, useLocation } from "react-router-dom";
+import { Outlet, Navigate } from "react-router-dom";
 import { AppHeader } from "@/components/AppHeader";
 import { CommandPalette } from "@/components/CommandPalette";
 import { useAuthContext } from "@/contexts/AuthContext";
 import { LumaSpin } from "@/components/ui/luma-spin";
-import {
-  LayoutDashboard, Users, Briefcase, FileText, FileSignature,
-  DollarSign, Zap, BarChart3, Contact, MessageCircle, Map, Plug, Bot, Workflow,
-} from "lucide-react";
-import { Dock, DockCard, DockDivider } from "@/components/ui/dock";
-
-const dockItems = [
-  { title: "Dashboard", url: "/", icon: LayoutDashboard },
-  { title: "Atendimento", url: "/atendimento", icon: MessageCircle },
-  { title: "Leads", url: "/leads", icon: Users },
-  { title: "Propostas", url: "/propostas", icon: FileText },
-  { title: "Contratos", url: "/contratos", icon: FileSignature },
-  { title: "Casos", url: "/casos", icon: Briefcase },
-  null, // divider
-  { title: "Carteira", url: "/carteira", icon: Contact },
-  { title: "Financeiro", url: "/financeiro", icon: DollarSign },
-  { title: "Automações", url: "/automacoes", icon: Zap },
-  { title: "Relatórios", url: "/relatorios", icon: BarChart3 },
-  null, // divider
-  { title: "Integrações", url: "/integracoes", icon: Plug },
-  { title: "Agentes", url: "/agentes", icon: Bot },
-  { title: "Fluxos", url: "/flows", icon: Workflow },
-  { title: "Roadmap", url: "/roadmap", icon: Map },
-];
-
-function AppDock() {
-  const navigate = useNavigate();
-  const location = useLocation();
-
-  return (
-    <Dock>
-      {dockItems.map((item, index) => {
-        if (!item) return <DockDivider key={`div-${index}`} />;
-        const isActive =
-          item.url === "/"
-            ? location.pathname === "/"
-            : location.pathname.startsWith(item.url);
-        return (
-          <DockCard
-            key={item.url}
-            id={String(index)}
-            onClick={() => navigate(item.url)}
-            isActive={isActive}
-            label={item.title}
-          >
-            <item.icon
-              className={`h-full w-full ${isActive ? "text-primary" : "text-muted-foreground"}`}
-            />
-          </DockCard>
-        );
-      })}
-    </Dock>
-  );
-}
+import { AppSidebar } from "@/components/AppSidebar";
+import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 
 export function AppLayout() {
   const { session, loading } = useAuthContext();
@@ -82,13 +30,19 @@ export function AppLayout() {
   }
 
   return (
-    <div className="flex min-h-screen w-full flex-col">
-      <AppHeader onSearchClick={() => setCmdOpen(true)} />
-      <main className="flex-1 p-6 pb-24 bg-background">
-        <Outlet />
-      </main>
-      <AppDock />
+    <SidebarProvider>
+      <div className="flex min-h-screen w-full">
+        <AppSidebar />
+        <div className="flex-1 flex flex-col min-w-0">
+          <AppHeader onSearchClick={() => setCmdOpen(true)}>
+            <SidebarTrigger className="mr-2" />
+          </AppHeader>
+          <main className="flex-1 p-6 bg-background">
+            <Outlet />
+          </main>
+        </div>
+      </div>
       <CommandPalette open={cmdOpen} onOpenChange={setCmdOpen} />
-    </div>
+    </SidebarProvider>
   );
 }
