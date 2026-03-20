@@ -229,38 +229,7 @@ const Bitrix24App = () => {
     },
   ];
 
-  // Build flat tabs array with separators between categories
-  const { tabs: expandableTabs, indexToView } = useMemo(() => {
-    const tabs: TabItem[] = [];
-    const indexToView: Record<number, AppView> = {};
-    let idx = 0;
-    navCategories.forEach((cat, catIdx) => {
-      if (catIdx > 0) {
-        tabs.push({ type: "separator" as const });
-        idx++;
-      }
-      cat.items.forEach((item) => {
-        tabs.push({ title: item.label, icon: item.icon });
-        indexToView[idx] = item.id as AppView;
-        idx++;
-      });
-    });
-    return { tabs, indexToView };
-  }, []);
-
-  // Find active tab index from current view
-  const activeTabIndex = useMemo(() => {
-    for (const [idx, v] of Object.entries(indexToView)) {
-      if (v === view) return Number(idx);
-    }
-    return null;
-  }, [view, indexToView]);
-
-  const handleTabChange = (index: number | null) => {
-    if (index !== null && indexToView[index]) {
-      setView(indexToView[index]);
-    }
-  };
+  // No longer need expandable tabs logic
   if (view === "loading") {
     return (
       <div className={cn("min-h-screen bg-background flex items-center justify-center", isDark && "dark")}>
