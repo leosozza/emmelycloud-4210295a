@@ -1,52 +1,44 @@
 
 
-# Restaurar Sidebar — Portal e iframe Bitrix24
+# Sidebar como Overlay (sem empurrar conteúdo)
 
-## Situação Atual
-- **Portal principal** (`AppLayout.tsx`): Usa `Dock` (barra inferior tipo macOS) para navegação
-- **Iframe Bitrix24** (`Bitrix24App.tsx`): Usa `ExpandableTabs` no header para navegação
-- O componente `AppSidebar.tsx` já existe com toda a navegação organizada por grupos mas não está a ser usado
+## Problema
+A `AnimatedSidebar` atual (DesktopSidebar) ocupa espaço no layout (`shrink-0`), fazendo o conteúdo redimensionar ao expandir/colapsar.
 
-## Plano
+## Solução
+Alterar o `DesktopSidebar` em `AnimatedSidebar.tsx` para usar `position: fixed` (overlay), ficando por cima do conteúdo sem o deslocar. A sidebar abre ao hover e fecha ao sair, como um painel flutuante.
 
-### 1. Portal Principal — Restaurar Sidebar
-**Ficheiro:** `src/components/AppLayout.tsx`
+### Alterações
 
-- Remover o `Dock` e `AppDock`
-- Envolver o layout com `SidebarProvider` do shadcn
-- Usar o `AppSidebar` existente como sidebar lateral
-- Adicionar `SidebarTrigger` no header para toggle
-- Layout: sidebar à esquerda, header + conteúdo à direita
+**Ficheiro:** `src/components/bitrix24/AnimatedSidebar.tsx` — `DesktopSidebar`
 
-```text
-┌──────────┬──────────────────────────┐
-│          │  Header + SidebarTrigger │
-│ Sidebar  ├──────────────────────────┤
-│          │  <Outlet />              │
-│          │                          │
-└──────────┴──────────────────────────┘
-```
+- Mudar de `shrink-0` para `fixed left-0 top-0 z-40` com `h-full`
+- Remover o espaço reservado no layout — a sidebar fica sobreposta
+- Adicionar sombra (`shadow-xl`) quando expandida para destacar do conteúdo
+- Manter o comportamento hover-expand existente
 
-### 2. Iframe Bitrix24 — Adicionar Sidebar
 **Ficheiro:** `src/pages/Bitrix24App.tsx`
 
-- Remover o `ExpandableTabs` do header
-- Criar sidebar compacta com os mesmos `navCategories` já definidos
-- Usar o componente `AnimatedSidebar` já existente (hover-expand) para manter o iframe compacto
-- Header simplificado: logo + domain badge + status (sem tabs)
-- Layout: sidebar colapsável à esquerda, conteúdo à direita
+- O `<main>` deixa de precisar compensar a largura da sidebar — ocupa 100% da largura
+- Remover o wrapper `flex` que faz sidebar + main lado a lado; main fica full-width
 
+### Resultado visual
 ```text
-┌────┬──────────────────────────────┐
-│ 🔘 │  Logo  Domain       Status  │
-│ 🔘 ├──────────────────────────────┤
-│ 🔘 │  View content               │
-│ 🔘 │                              │
-│    │                              │
-└────┴──────────────────────────────┘
+┌──────────────────────────────────┐
+│  Main content (100% width)       │
+│                                  │
+│ ┌──┐                             │
+│ │🔘│  ← sidebar colapsada (60px) │
+│ │🔘│    sobreposta ao conteúdo   │
+│ │🔘│                             │
+│ └──┘                             │
+│                                  │
+└──────────────────────────────────┘
+
+Hover → sidebar expande por cima como modal overlay
 ```
 
 ### Ficheiros a editar
-1. `src/components/AppLayout.tsx` — sidebar + remover dock
-2. `src/pages/Bitrix24App.tsx` — sidebar + remover ExpandableTabs
+1. `src/components/bitrix24/AnimatedSidebar.tsx` — DesktopSidebar fixed overlay
+2. `src/pages/Bitrix24App.tsx` — layout full-width sem flex sidebar
 
