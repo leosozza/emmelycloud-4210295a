@@ -57,8 +57,9 @@ function SortableBlockItem({ block, isSelected, onSelect, onToggle, onRemove }: 
   );
 }
 
-export default function TemplateEditor() {
-  const { id } = useParams();
+export default function TemplateEditor({ templateId, onBack }: { templateId?: string; onBack?: () => void } = {}) {
+  const { id: paramId } = useParams();
+  const id = templateId || paramId;
   const navigate = useNavigate();
   const { toast } = useToast();
   const queryClient = useQueryClient();
