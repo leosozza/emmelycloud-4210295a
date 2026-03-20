@@ -683,6 +683,7 @@ async function handleGenerateProposal(
         client_document: clientDocument,
         client_address: clientAddress,
         service_id: serviceId,
+        template_id: templateId,
         status: "enviada",
       })
       .select("id, accept_token")
