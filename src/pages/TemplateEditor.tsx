@@ -49,7 +49,7 @@ function SortableBlockItem({ block, isSelected, onSelect, onToggle, onRemove }: 
   const labels: Record<string, string> = {
     header: "Cabeçalho", client_info: "Dados do Cliente", description: "Descrição",
     services_table: "Tabela Serviços", payment: "Valor/Pagamento", conditions: "Condições",
-    text: "Texto Livre", footer: "Rodapé",
+    text: "Texto Livre", footer: "Rodapé", clauses: "Cláusulas", signature: "Assinatura", witnesses: "Testemunhas",
   };
 
   return (
