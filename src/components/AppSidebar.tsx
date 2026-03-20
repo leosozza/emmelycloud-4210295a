@@ -70,6 +70,7 @@ const secondaryNav = [
   { title: "API Docs", url: "/api-docs", icon: FileCode },
   { title: "Manual", url: "/manual", icon: BookOpen },
   { title: "Roadmap", url: "/roadmap", icon: Map },
+  { title: "Configurações", url: "/configuracoes", icon: Settings },
 ];
 
 export function AppSidebar() {
