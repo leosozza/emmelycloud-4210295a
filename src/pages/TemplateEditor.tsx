@@ -259,7 +259,7 @@ export default function TemplateEditor({ templateId, onBack }: { templateId?: st
           <div className="w-64 border-r bg-card flex flex-col">
             <ScrollArea className="flex-1 p-3">
               <div className="space-y-4">
-                <TemplateBlockPalette />
+                <TemplateBlockPalette templateType={templateType} />
                 <div className="border-t pt-4">
                   <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider px-1 mb-2">Estrutura</h3>
                   <SortableContext items={blocks.map((b) => b.id)} strategy={verticalListSortingStrategy}>
