@@ -139,35 +139,70 @@ export function MonthlyRevenueChart({ data, isLoading }: MonthlyRevenueChartProp
   );
 }
 
+interface FunnelPipelineData {
+  pipelineId: string;
+  pipelineName: string;
+  stages: { name: string; value: number }[];
+}
+
 interface FunnelChartWidgetProps {
-  data?: { name: string; value: number }[];
+  data?: FunnelPipelineData[];
   isLoading?: boolean;
 }
 
 export function FunnelChartWidget({ data, isLoading }: FunnelChartWidgetProps) {
+  const [activeIdx, setActiveIdx] = useState(0);
+  const pipelines = data || [];
+  const activePipeline = pipelines[activeIdx] || pipelines[0];
+
   return (
     <Card className="rounded-2xl shadow-sm hover:shadow-md transition-shadow">
       <CardHeader>
         <CardTitle className="text-base font-bold">Funil de Vendas</CardTitle>
-        <CardDescription>Distribuição por etapa do funil</CardDescription>
+        <CardDescription>Distribuição por etapa — separado por pipeline</CardDescription>
       </CardHeader>
       <CardContent>
         {isLoading ? <ChartSkeleton /> : (
-          <div className="h-[280px]">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={data} layout="vertical" margin={{ left: 10 }}>
-                <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="hsl(var(--border))" strokeOpacity={0.5} />
-                <XAxis type="number" fontSize={12} stroke="hsl(var(--muted-foreground))" />
-                <YAxis type="category" dataKey="name" fontSize={11} width={70} stroke="hsl(var(--muted-foreground))" />
-                <Tooltip contentStyle={tooltipStyle} />
-                <Bar dataKey="value" radius={[0, 8, 8, 0]}>
-                  {(data || []).map((_, index) => (
-                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                  ))}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
+          <>
+            {/* Pipeline tabs */}
+            {pipelines.length > 1 && (
+              <div className="flex flex-wrap gap-1.5 mb-4">
+                {pipelines.map((p, i) => (
+                  <button
+                    key={p.pipelineId}
+                    onClick={() => setActiveIdx(i)}
+                    className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
+                      i === activeIdx
+                        ? "bg-primary text-primary-foreground"
+                        : "bg-muted text-muted-foreground hover:bg-muted/80"
+                    }`}
+                  >
+                    {p.pipelineName}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {activePipeline ? (
+              <div className="h-[280px]">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={activePipeline.stages} layout="vertical" margin={{ left: 10 }}>
+                    <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="hsl(var(--border))" strokeOpacity={0.5} />
+                    <XAxis type="number" fontSize={12} stroke="hsl(var(--muted-foreground))" />
+                    <YAxis type="category" dataKey="name" fontSize={11} width={100} stroke="hsl(var(--muted-foreground))" />
+                    <Tooltip contentStyle={tooltipStyle} />
+                    <Bar dataKey="value" radius={[0, 8, 8, 0]}>
+                      {(activePipeline.stages || []).map((_, index) => (
+                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                      ))}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground text-center py-8">Sem dados de funil</p>
+            )}
+          </>
         )}
       </CardContent>
     </Card>
