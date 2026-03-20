@@ -1,0 +1,1 @@
+ALTER TABLE public.proposal_templates ADD COLUMN IF NOT EXISTS template_type text NOT NULL DEFAULT 'proposta';

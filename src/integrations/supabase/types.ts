@@ -2151,6 +2151,7 @@ export type Database = {
           name: string
           payment_type: Database["public"]["Enums"]["payment_type"]
           service_id: string | null
+          template_type: string
           title: string | null
           updated_at: string
           value: number
@@ -2172,6 +2173,7 @@ export type Database = {
           name: string
           payment_type?: Database["public"]["Enums"]["payment_type"]
           service_id?: string | null
+          template_type?: string
           title?: string | null
           updated_at?: string
           value?: number
@@ -2193,6 +2195,7 @@ export type Database = {
           name?: string
           payment_type?: Database["public"]["Enums"]["payment_type"]
           service_id?: string | null
+          template_type?: string
           title?: string | null
           updated_at?: string
           value?: number

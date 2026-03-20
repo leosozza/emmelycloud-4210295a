@@ -368,6 +368,9 @@ const PropostasPage = () => {
                         {t.title && <CardDescription className="mt-1">{t.title}</CardDescription>}
                       </div>
                       <Badge variant="secondary" className="text-xs shrink-0">
+                        {(t as any).template_type === "contrato" ? "Contrato" : "Proposta"}
+                      </Badge>
+                      <Badge variant="outline" className="text-xs shrink-0">
                         {paymentTypeLabels[t.payment_type] || t.payment_type}
                       </Badge>
                     </div>

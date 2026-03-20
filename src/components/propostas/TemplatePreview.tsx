@@ -88,6 +88,58 @@ export function TemplatePreview({
             </p>
           </div>
         );
+      case "clauses":
+        return (
+          <div key={block.id} className={`p-6 cursor-pointer ${selectClass}`} onClick={() => onSelectBlock?.(block.id)}>
+            <h3 className="text-xs uppercase tracking-widest text-muted-foreground font-semibold border-b pb-1 mb-3">Cláusulas</h3>
+            <div className="space-y-3">
+              {(block.content.items || []).map((item: any, idx: number) => (
+                <div key={idx}>
+                  <p className="text-sm font-semibold">Cláusula {item.number || idx + 1}ª — {item.title || "Título"}</p>
+                  <p className="text-xs text-muted-foreground mt-0.5 whitespace-pre-wrap">{item.text || "{texto da cláusula}"}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+      case "signature":
+        return (
+          <div key={block.id} className={`p-6 cursor-pointer ${selectClass}`} onClick={() => onSelectBlock?.(block.id)}>
+            <h3 className="text-xs uppercase tracking-widest text-muted-foreground font-semibold border-b pb-1 mb-3">Assinatura</h3>
+            {block.content.location && (
+              <p className="text-xs text-muted-foreground text-center mb-4">
+                {block.content.location}, {block.content.showDate !== false ? "{data}" : ""}
+              </p>
+            )}
+            <div className="grid grid-cols-2 gap-8 mt-4">
+              <div className="text-center">
+                <div className="border-b border-foreground/30 mb-1 h-12" />
+                <p className="text-xs font-semibold uppercase">{block.content.partyA || "CONTRATANTE"}</p>
+                <p className="text-xs text-muted-foreground italic">{"{nome_contratante}"}</p>
+              </div>
+              <div className="text-center">
+                <div className="border-b border-foreground/30 mb-1 h-12" />
+                <p className="text-xs font-semibold uppercase">{block.content.partyB || "CONTRATADO"}</p>
+                <p className="text-xs text-muted-foreground italic">{"{nome_contratado}"}</p>
+              </div>
+            </div>
+          </div>
+        );
+      case "witnesses":
+        return (
+          <div key={block.id} className={`p-6 cursor-pointer ${selectClass}`} onClick={() => onSelectBlock?.(block.id)}>
+            <h3 className="text-xs uppercase tracking-widest text-muted-foreground font-semibold border-b pb-1 mb-3">Testemunhas</h3>
+            <div className="grid grid-cols-2 gap-8 mt-4">
+              {Array.from({ length: block.content.count || 2 }).map((_, i) => (
+                <div key={i} className="text-center">
+                  <div className="border-b border-foreground/30 mb-1 h-10" />
+                  <p className="text-xs text-muted-foreground">Testemunha {i + 1}</p>
+                  <p className="text-xs text-muted-foreground/50 italic">Nome / Doc</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        );
       case "text":
         return (
           <div key={block.id} className={`p-6 cursor-pointer ${selectClass}`} onClick={() => onSelectBlock?.(block.id)}>

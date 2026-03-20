@@ -11,19 +11,32 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { ArrowLeft, Save, Sparkles, GripVertical, Eye, EyeOff, Trash2, Upload } from "lucide-react";
 import { LayoutBlock, BlockType, getDefaultBlock, TemplateBlockPalette } from "@/components/propostas/TemplateBlockPalette";
 import { TemplatePreview } from "@/components/propostas/TemplatePreview";
 import { TemplateBlockProperties } from "@/components/propostas/TemplateBlockProperties";
 
-const DEFAULT_BLOCKS: LayoutBlock[] = [
+const DEFAULT_PROPOSAL_BLOCKS: LayoutBlock[] = [
   getDefaultBlock("header"),
   getDefaultBlock("client_info"),
   getDefaultBlock("description"),
   getDefaultBlock("services_table"),
   getDefaultBlock("payment"),
   getDefaultBlock("conditions"),
+  getDefaultBlock("footer"),
+];
+
+const DEFAULT_CONTRACT_BLOCKS: LayoutBlock[] = [
+  getDefaultBlock("header"),
+  getDefaultBlock("client_info"),
+  getDefaultBlock("description"),
+  getDefaultBlock("clauses"),
+  getDefaultBlock("payment"),
+  getDefaultBlock("conditions"),
+  getDefaultBlock("signature"),
+  getDefaultBlock("witnesses"),
   getDefaultBlock("footer"),
 ];
 
@@ -36,7 +49,7 @@ function SortableBlockItem({ block, isSelected, onSelect, onToggle, onRemove }: 
   const labels: Record<string, string> = {
     header: "Cabeçalho", client_info: "Dados do Cliente", description: "Descrição",
     services_table: "Tabela Serviços", payment: "Valor/Pagamento", conditions: "Condições",
-    text: "Texto Livre", footer: "Rodapé",
+    text: "Texto Livre", footer: "Rodapé", clauses: "Cláusulas", signature: "Assinatura", witnesses: "Testemunhas",
   };
 
   return (
@@ -65,7 +78,8 @@ export default function TemplateEditor({ templateId, onBack }: { templateId?: st
   const queryClient = useQueryClient();
 
   const [name, setName] = useState("");
-  const [blocks, setBlocks] = useState<LayoutBlock[]>(DEFAULT_BLOCKS);
+  const [templateType, setTemplateType] = useState<string>("proposta");
+  const [blocks, setBlocks] = useState<LayoutBlock[]>(DEFAULT_PROPOSAL_BLOCKS);
   const [selectedBlockId, setSelectedBlockId] = useState<string | null>(null);
   const [headerColor, setHeaderColor] = useState("#1e293b");
   const [accentColor, setAccentColor] = useState("#0f172a");
@@ -90,6 +104,7 @@ export default function TemplateEditor({ templateId, onBack }: { templateId?: st
   useEffect(() => {
     if (template) {
       setName(template.name);
+      setTemplateType((template as any).template_type || "proposta");
       setHeaderColor((template as any).header_color || "#1e293b");
       setAccentColor((template as any).accent_color || "#0f172a");
       setCompanyName((template as any).company_name || "");
@@ -101,10 +116,19 @@ export default function TemplateEditor({ templateId, onBack }: { templateId?: st
     }
   }, [template]);
 
+  const handleTemplateTypeChange = (type: string) => {
+    setTemplateType(type);
+    if (!id) {
+      setBlocks(type === "contrato" ? DEFAULT_CONTRACT_BLOCKS : DEFAULT_PROPOSAL_BLOCKS);
+      setSelectedBlockId(null);
+    }
+  };
+
   const saveMutation = useMutation({
     mutationFn: async () => {
       const payload: any = {
         name,
+        template_type: templateType,
         logo_url: logoUrl || null,
         header_color: headerColor,
         accent_color: accentColor,
@@ -206,6 +230,13 @@ export default function TemplateEditor({ templateId, onBack }: { templateId?: st
           <ArrowLeft className="h-4 w-4" />
         </Button>
         <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Nome do modelo..." className="max-w-xs font-semibold" />
+        <Select value={templateType} onValueChange={handleTemplateTypeChange}>
+          <SelectTrigger className="w-[140px]"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="proposta">Proposta</SelectItem>
+            <SelectItem value="contrato">Contrato</SelectItem>
+          </SelectContent>
+        </Select>
         <div className="flex-1" />
         <Button variant="outline" size="sm" className="relative" disabled={aiGenerating}>
           <Sparkles className="h-4 w-4 mr-1" /> {aiGenerating ? "A gerar..." : "Gerar com IA"}
@@ -228,7 +259,7 @@ export default function TemplateEditor({ templateId, onBack }: { templateId?: st
           <div className="w-64 border-r bg-card flex flex-col">
             <ScrollArea className="flex-1 p-3">
               <div className="space-y-4">
-                <TemplateBlockPalette />
+                <TemplateBlockPalette templateType={templateType} />
                 <div className="border-t pt-4">
                   <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider px-1 mb-2">Estrutura</h3>
                   <SortableContext items={blocks.map((b) => b.id)} strategy={verticalListSortingStrategy}>
