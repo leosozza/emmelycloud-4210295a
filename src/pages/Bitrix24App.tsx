@@ -243,7 +243,7 @@ const Bitrix24App = () => {
   }
 
   return (
-    <div className={cn("min-h-screen flex bg-background", isDark && "dark")}>
+    <div className={cn("min-h-screen bg-background", isDark && "dark")}>
       {/* ── Sidebar ── */}
       <AnimatedSidebar animate>
         <AnimatedSidebarBody>
@@ -306,7 +306,7 @@ const Bitrix24App = () => {
       </AnimatedSidebar>
 
       {/* ── Main Content ── */}
-      <main className="flex-1 overflow-auto min-w-0">
+      <main className="w-full overflow-auto min-w-0">
         {view === "dashboard" && (
           <DashboardView
             integration={integration}

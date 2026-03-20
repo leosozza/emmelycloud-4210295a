@@ -77,7 +77,8 @@ const DesktopSidebar = ({
   return (
     <motion.div
       className={cn(
-        "h-full hidden md:flex md:flex-col shrink-0 border-r border-border bg-card",
+        "fixed left-0 top-0 z-40 h-full hidden md:flex md:flex-col border-r border-border bg-card",
+        open ? "shadow-xl" : "",
         className
       )}
       animate={{
