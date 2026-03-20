@@ -230,6 +230,13 @@ export default function TemplateEditor({ templateId, onBack }: { templateId?: st
           <ArrowLeft className="h-4 w-4" />
         </Button>
         <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Nome do modelo..." className="max-w-xs font-semibold" />
+        <Select value={templateType} onValueChange={handleTemplateTypeChange}>
+          <SelectTrigger className="w-[140px]"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="proposta">Proposta</SelectItem>
+            <SelectItem value="contrato">Contrato</SelectItem>
+          </SelectContent>
+        </Select>
         <div className="flex-1" />
         <Button variant="outline" size="sm" className="relative" disabled={aiGenerating}>
           <Sparkles className="h-4 w-4 mr-1" /> {aiGenerating ? "A gerar..." : "Gerar com IA"}
