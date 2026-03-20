@@ -78,7 +78,8 @@ export default function TemplateEditor({ templateId, onBack }: { templateId?: st
   const queryClient = useQueryClient();
 
   const [name, setName] = useState("");
-  const [blocks, setBlocks] = useState<LayoutBlock[]>(DEFAULT_BLOCKS);
+  const [templateType, setTemplateType] = useState<string>("proposta");
+  const [blocks, setBlocks] = useState<LayoutBlock[]>(DEFAULT_PROPOSAL_BLOCKS);
   const [selectedBlockId, setSelectedBlockId] = useState<string | null>(null);
   const [headerColor, setHeaderColor] = useState("#1e293b");
   const [accentColor, setAccentColor] = useState("#0f172a");
