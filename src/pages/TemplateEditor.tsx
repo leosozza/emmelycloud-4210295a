@@ -123,7 +123,7 @@ export default function TemplateEditor({ templateId, onBack }: { templateId?: st
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["proposal-templates"] });
       toast({ title: "Modelo guardado com sucesso" });
-      navigate("/propostas");
+      if (onBack) onBack(); else navigate("/propostas");
     },
     onError: (e: any) => toast({ title: "Erro", description: e.message, variant: "destructive" }),
   });
