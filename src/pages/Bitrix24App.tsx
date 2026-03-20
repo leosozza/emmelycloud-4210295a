@@ -245,6 +245,7 @@ const Bitrix24App = () => {
     );
   }
 
+  return (
     <SidebarProvider>
       <div className={cn("flex min-h-screen w-full", isDark && "dark")}>
         <Sidebar collapsible="icon" className="border-r border-sidebar-border bg-sidebar">
