@@ -336,9 +336,14 @@ const PropostasPage = () => {
         <TabsContent value="modelos">
           <div className="flex justify-between items-center mb-4">
             <p className="text-sm text-muted-foreground">Crie modelos reutilizáveis para preencher propostas rapidamente.</p>
-            <Button onClick={() => { setEditingTemplate(null); setTemplateFormOpen(true); }}>
-              <Plus className="mr-2 h-4 w-4" /> Novo Modelo
-            </Button>
+            <div className="flex gap-2">
+              <Button variant="outline" onClick={() => { setEditingTemplate(null); setTemplateFormOpen(true); }}>
+                <Plus className="mr-2 h-4 w-4" /> Modelo Simples
+              </Button>
+              <Button onClick={() => navigate("/propostas/template-editor")}>
+                <LayoutTemplate className="mr-2 h-4 w-4" /> Editor Visual
+              </Button>
+            </div>
           </div>
 
           {templates.length === 0 ? (
