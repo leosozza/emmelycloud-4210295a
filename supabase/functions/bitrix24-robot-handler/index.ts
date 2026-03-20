@@ -753,6 +753,93 @@ async function handleGenerateProposal(
   }
 }
 
+async function handleSendProposal(
+  properties: Record<string, any>,
+  supabaseUrl: string,
+  serviceKey: string
+): Promise<Record<string, string>> {
+  const proposalId = properties.proposal_id || properties.PROPOSAL_ID || "";
+  const sendMethod = (properties.send_method || properties.SEND_METHOD || "link").toLowerCase();
+  const phoneOverride = properties.phone || properties.PHONE || "";
+  const customMessage = properties.custom_message || properties.CUSTOM_MESSAGE || "";
+
+  if (!proposalId) {
+    return { send_status: "error", proposal_url: "", pdf_url: "", error: "proposal_id is required" };
+  }
+
+  try {
+    const supabase = createClient(supabaseUrl, serviceKey);
+
+    // Fetch proposal
+    const { data: proposal, error: propErr } = await supabase
+      .from("proposals")
+      .select("id, accept_token, title, value, client_name, client_phone, pdf_url, valid_until")
+      .eq("id", proposalId)
+      .single();
+
+    if (propErr || !proposal) {
+      return { send_status: "error", proposal_url: "", pdf_url: "", error: "Proposal not found" };
+    }
+
+    const targetPhone = phoneOverride || proposal.client_phone || "";
+    if (!targetPhone) {
+      return { send_status: "no_phone", proposal_url: "", pdf_url: "", error: "No phone number available" };
+    }
+
+    const frontendUrl = Deno.env.get("FRONTEND_URL") || "https://emmelycloud.lovable.app";
+    const proposalUrl = `${frontendUrl}/proposta/${proposal.accept_token}`;
+
+    // Generate PDF if not yet available
+    let pdfUrl = proposal.pdf_url || "";
+    if ((sendMethod === "pdf" || sendMethod === "both") && !pdfUrl) {
+      try {
+        const pdfRes = await fetch(`${supabaseUrl}/functions/v1/proposal-pdf`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${serviceKey}`,
+          },
+          body: JSON.stringify({ proposal_id: proposal.id }),
+        });
+        const pdfData = await pdfRes.json();
+        pdfUrl = pdfData.pdf_url || pdfData.url || "";
+      } catch (pdfErr) {
+        console.error("[ROBOT-HANDLER] PDF generation error:", pdfErr);
+      }
+    }
+
+    const title = proposal.title || "Proposta";
+    const value = Number(proposal.value || 0).toFixed(2);
+    const prefix = customMessage ? `${customMessage}\n\n` : "";
+    let sendStatus = "";
+
+    if (sendMethod === "link" || sendMethod === "both") {
+      const linkMsg = `${prefix}📋 *Proposta: ${title}*\n\nValor: € ${value}\n\n✅ Aceite a proposta aqui:\n${proposalUrl}`;
+      await handleSendWhatsApp({ phone: targetPhone, message: linkMsg }, supabaseUrl, serviceKey);
+      sendStatus = "link_sent";
+    }
+
+    if ((sendMethod === "pdf" || sendMethod === "both") && pdfUrl) {
+      const pdfMsg = `${prefix}📄 Segue o PDF da proposta *${title}*:\n${pdfUrl}`;
+      await handleSendWhatsApp({ phone: targetPhone, message: pdfMsg }, supabaseUrl, serviceKey);
+      sendStatus = sendMethod === "both" ? "link_and_pdf_sent" : "pdf_sent";
+    }
+
+    if (sendMethod === "pdf" && !pdfUrl) {
+      sendStatus = "pdf_not_available";
+    }
+
+    return {
+      send_status: sendStatus,
+      proposal_url: proposalUrl,
+      pdf_url: pdfUrl,
+      error: "",
+    };
+  } catch (e) {
+    return { send_status: "error", proposal_url: "", pdf_url: "", error: String(e) };
+  }
+}
+
 async function handleExecuteFlow(properties: Record<string, any>, supabaseUrl: string, serviceKey: string): Promise<Record<string, string>> {
   const flowId = properties.flow_id || properties.FLOW_ID || "";
   const phone = properties.phone || properties.PHONE || "";
@@ -1004,6 +1091,9 @@ Deno.serve(async (req) => {
         break;
       case "emmely_generate_proposal":
         returnValues = await handleGenerateProposal(properties, memberId, supabaseUrl, serviceKey);
+        break;
+      case "emmely_send_proposal":
+        returnValues = await handleSendProposal(properties, supabaseUrl, serviceKey);
         break;
       case "emmely_convert_currency":
         returnValues = await handleConvertCurrency(properties);

@@ -1090,6 +1090,22 @@ Deno.serve(async (req) => {
           },
         },
         {
+          CODE: "emmely_send_proposal",
+          NAME: "Emmely: Enviar Orçamento",
+          PROPERTIES: {
+            proposal_id: { Name: "ID da Proposta", Type: "string", Required: "Y", Description: "ID da proposta gerada (retornado pelo robot Gerar Proposta)" },
+            send_method: { Name: "Método de Envio", Type: "select", Required: "Y", Options: { link: "Link com Aceite", pdf: "PDF", both: "Link + PDF" }, Default: "link", Description: "O que enviar ao cliente" },
+            phone: { Name: "Telefone", Type: "string", Description: "Número WhatsApp (com código do país). Se vazio, usa o telefone do cliente na proposta" },
+            custom_message: { Name: "Mensagem Personalizada", Type: "text", Description: "Mensagem adicional antes do link/PDF (opcional)" },
+          },
+          RETURN_PROPERTIES: {
+            send_status: { Name: "Status de Envio", Type: "string" },
+            proposal_url: { Name: "URL da Proposta", Type: "string" },
+            pdf_url: { Name: "URL do PDF", Type: "string" },
+            error: { Name: "Erro", Type: "string" },
+          },
+        },
+        {
           CODE: "emmely_convert_currency",
           NAME: "Emmely: Converter Moeda",
           PROPERTIES: {
