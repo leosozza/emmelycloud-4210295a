@@ -242,51 +242,70 @@ const Bitrix24App = () => {
   }
 
   return (
-    <div className={cn("min-h-screen flex flex-col bg-background", isDark && "dark")}>
-      {/* ── Top Header ── */}
-      <header className="sticky top-0 z-30 flex items-center gap-3 border-b border-border bg-card px-4 py-2">
-        {/* Logo */}
-        <div className="flex items-center gap-2 shrink-0">
-          <div className="w-7 h-7 rounded-lg flex items-center justify-center font-extrabold text-xs bg-primary text-primary-foreground">
-            E
+    <div className={cn("min-h-screen flex bg-background", isDark && "dark")}>
+      {/* ── Sidebar ── */}
+      <AnimatedSidebar animate>
+        <AnimatedSidebarBody>
+          <div className="flex flex-col h-full">
+            {/* Logo area */}
+            <div className="flex items-center gap-2 px-3 py-3 border-b border-border">
+              <div className="w-7 h-7 rounded-lg flex items-center justify-center font-extrabold text-xs bg-primary text-primary-foreground shrink-0">
+                E
+              </div>
+              <AnimatePresence>
+                <motion.span
+                  initial={{ opacity: 0, width: 0 }}
+                  animate={{ opacity: 1, width: "auto" }}
+                  exit={{ opacity: 0, width: 0 }}
+                  className="font-bold text-sm text-foreground whitespace-nowrap overflow-hidden"
+                >
+                  Emmely Cloud
+                </motion.span>
+              </AnimatePresence>
+            </div>
+
+            {/* Nav items */}
+            <ScrollArea className="flex-1 py-2">
+              {navCategories.map((cat) => (
+                <div key={cat.label} className="mb-3">
+                  <div className="px-3 py-1">
+                    <span className="text-[10px] uppercase tracking-widest font-semibold text-muted-foreground">
+                      {cat.label}
+                    </span>
+                  </div>
+                  {cat.items.map((item) => (
+                    <AnimatedSidebarLink
+                      key={item.id}
+                      link={{ id: item.id, label: item.label, icon: <item.icon className="h-4 w-4" /> }}
+                      isActive={view === item.id}
+                      onClick={() => setView(item.id as AppView)}
+                    />
+                  ))}
+                </div>
+              ))}
+            </ScrollArea>
+
+            {/* Status footer */}
+            <div className="border-t border-border px-3 py-2 flex items-center gap-2">
+              <div className={cn("w-2 h-2 rounded-full shrink-0", integration ? "bg-emerald-500" : "bg-destructive")} />
+              <AnimatePresence>
+                <motion.span
+                  initial={{ opacity: 0, width: 0 }}
+                  animate={{ opacity: 1, width: "auto" }}
+                  exit={{ opacity: 0, width: 0 }}
+                  className="text-xs text-muted-foreground whitespace-nowrap overflow-hidden"
+                >
+                  {integration ? "Online" : "Offline"}
+                  {domain && ` · ${domain}`}
+                </motion.span>
+              </AnimatePresence>
+            </div>
           </div>
-          <div className="hidden sm:block">
-            <p className="font-bold text-sm leading-tight text-foreground">Emmely Cloud</p>
-          </div>
-        </div>
-
-        {domain && (
-          <Badge variant="outline" className="hidden md:inline-flex text-[10px] shrink-0">
-            {domain}
-          </Badge>
-        )}
-
-        {/* Tabs */}
-        <div className="flex-1 flex justify-center overflow-x-auto">
-          <ExpandableTabs
-            tabs={expandableTabs}
-            activeIndex={activeTabIndex}
-            onChange={handleTabChange}
-            className="border-none shadow-none bg-transparent p-0"
-          />
-        </div>
-
-        {/* Status */}
-        <div className="flex items-center gap-2 shrink-0">
-          <div className={cn("w-2 h-2 rounded-full", integration ? "bg-success b24-pulse" : "bg-destructive")} />
-          <span className="hidden sm:inline text-xs text-muted-foreground">
-            {integration ? "Online" : "Offline"}
-          </span>
-          {botId && (
-            <span className="hidden lg:inline text-[10px] text-muted-foreground">
-              Bot {botId}
-            </span>
-          )}
-        </div>
-      </header>
+        </AnimatedSidebarBody>
+      </AnimatedSidebar>
 
       {/* ── Main Content ── */}
-      <main className="flex-1 overflow-auto">
+      <main className="flex-1 overflow-auto min-w-0">
         {view === "dashboard" && (
           <DashboardView
             integration={integration}
