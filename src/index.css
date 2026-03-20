@@ -95,6 +95,48 @@
   }
 }
 
+/* ── Theme: Blue ── */
+.theme-blue {
+  --primary: 220 60% 42%;
+  --primary-foreground: 0 0% 100%;
+  --ring: 220 60% 42%;
+  --accent: 210 80% 90%;
+  --accent-foreground: 220 60% 30%;
+  --secondary: 210 60% 92%;
+  --secondary-foreground: 220 50% 25%;
+  --destructive: 0 68% 35%;
+  --sidebar-primary: 220 60% 42%;
+  --sidebar-primary-foreground: 0 0% 100%;
+  --sidebar-accent: 210 80% 90%;
+  --sidebar-accent-foreground: 220 60% 30%;
+  --sidebar-ring: 220 60% 42%;
+  --chart-1: 220 70% 50%;
+  --chart-2: 200 60% 45%;
+  --chart-3: 220 60% 42%;
+  --chart-4: 190 70% 50%;
+  --chart-5: 142 50% 42%;
+}
+
+.dark.theme-blue {
+  --primary: 220 70% 50%;
+  --primary-foreground: 220 20% 97%;
+  --ring: 220 70% 50%;
+  --accent: 220 50% 35%;
+  --accent-foreground: 210 80% 90%;
+  --secondary: 220 40% 28%;
+  --secondary-foreground: 210 80% 90%;
+  --sidebar-primary: 220 70% 50%;
+  --sidebar-primary-foreground: 220 20% 97%;
+  --sidebar-accent: 220 50% 35%;
+  --sidebar-accent-foreground: 210 80% 90%;
+  --sidebar-ring: 220 70% 50%;
+  --chart-1: 220 80% 65%;
+  --chart-2: 200 70% 55%;
+  --chart-3: 220 70% 50%;
+  --chart-4: 190 80% 55%;
+  --chart-5: 142 50% 60%;
+}
+
 @layer base {
   * {
     @apply border-border;
