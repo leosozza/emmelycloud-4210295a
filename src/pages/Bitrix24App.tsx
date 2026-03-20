@@ -203,6 +203,7 @@ const Bitrix24App = () => {
       label: "Emmely CRM",
       items: [
         { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
+        { id: "propostas", label: "Propostas", icon: FileText },
         { id: "flows", label: "Fluxos", icon: GitBranch },
       ],
     },
