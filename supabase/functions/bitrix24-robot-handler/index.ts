@@ -444,16 +444,20 @@ async function handleGenerateProposal(
   const entityType = (properties.entity_type || properties.ENTITY_TYPE || "deal").toLowerCase();
   const manualTitle = properties.title || properties.TITLE || "";
   const serviceName = properties.service_name || properties.SERVICE_NAME || "";
-  const paymentType = properties.payment_type || properties.PAYMENT_TYPE || "fixo";
-  const installments = parseInt(properties.installments || properties.INSTALLMENTS || "1") || 1;
+  const templateName = properties.template_name || properties.TEMPLATE_NAME || "";
+  const productIdsRaw = properties.product_ids || properties.PRODUCT_IDS || "";
+  const sendMethod = (properties.send_method || properties.SEND_METHOD || "none").toLowerCase();
+  const sendToPhone = properties.send_to_phone || properties.SEND_TO_PHONE || "";
+  let paymentType = properties.payment_type || properties.PAYMENT_TYPE || "";
+  let installments = parseInt(properties.installments || properties.INSTALLMENTS || "0") || 0;
   const manualValue = parseFloat(properties.value || properties.VALUE || "0");
   const manualDescription = properties.description || properties.DESCRIPTION || "";
-  const conditions = properties.conditions || properties.CONDITIONS || "";
+  let conditions = properties.conditions || properties.CONDITIONS || "";
   const validDays = parseInt(properties.valid_days || properties.VALID_DAYS || "30") || 30;
 
   const entityId = entityType === "lead" ? leadId : dealId;
   if (!entityId) {
-    return { proposal_url: "", pdf_url: "", proposal_id: "", status: "error", error: "deal_id or lead_id is required" };
+    return { proposal_url: "", pdf_url: "", proposal_id: "", status: "error", template_used: "", products_used: "", send_status: "", error: "deal_id or lead_id is required" };
   }
 
   try {
@@ -467,7 +471,7 @@ async function handleGenerateProposal(
       .maybeSingle();
 
     if (!integration?.client_endpoint || !integration?.access_token) {
-      return { proposal_url: "", pdf_url: "", proposal_id: "", status: "error", error: "Bitrix24 integration not found" };
+      return { proposal_url: "", pdf_url: "", proposal_id: "", status: "error", template_used: "", products_used: "", send_status: "", error: "Bitrix24 integration not found" };
     }
 
     const ep = integration.client_endpoint;
@@ -479,7 +483,7 @@ async function handleGenerateProposal(
     const entity = entityResult.result;
 
     if (!entity) {
-      return { proposal_url: "", pdf_url: "", proposal_id: "", status: "error", error: `Entity ${entityType} ${entityId} not found in Bitrix24` };
+      return { proposal_url: "", pdf_url: "", proposal_id: "", status: "error", template_used: "", products_used: "", send_status: "", error: `Entity ${entityType} ${entityId} not found in Bitrix24` };
     }
 
     const entityTitle = entity.TITLE || "";
@@ -498,20 +502,74 @@ async function handleGenerateProposal(
       const contact = contactResult.result;
       if (contact) {
         clientName = `${contact.NAME || ""} ${contact.LAST_NAME || ""}`.trim();
-        // Extract first email and phone from multi-fields
         if (contact.EMAIL && Array.isArray(contact.EMAIL) && contact.EMAIL.length > 0) {
           clientEmail = contact.EMAIL[0].VALUE || "";
         }
         if (contact.PHONE && Array.isArray(contact.PHONE) && contact.PHONE.length > 0) {
           clientPhone = contact.PHONE[0].VALUE || "";
         }
-        // Address from contact
         if (contact.ADDRESS) clientAddress = contact.ADDRESS;
       }
     }
 
-    // 4. Fetch service if service_name provided
-    let serviceId: string | null = null;
+    // 4. Fetch template if template_name provided
+    let templateUsed = "";
+    let templateTitle = "";
+    let templateDescription = "";
+    let templateConditions = "";
+    let templatePaymentType = "";
+    let templateInstallments = 0;
+    let templateValue = 0;
+    let templateServiceId: string | null = null;
+
+    if (templateName) {
+      const { data: tmpl } = await supabase
+        .from("proposal_templates")
+        .select("*")
+        .ilike("name", `%${templateName}%`)
+        .maybeSingle();
+
+      if (tmpl) {
+        templateUsed = tmpl.name;
+        templateTitle = tmpl.title || "";
+        templateDescription = tmpl.description || "";
+        templateConditions = tmpl.conditions || "";
+        templatePaymentType = tmpl.payment_type || "";
+        templateInstallments = tmpl.installments || 1;
+        templateValue = tmpl.value || 0;
+        templateServiceId = tmpl.service_id || null;
+        console.log(`[ROBOT-HANDLER] Template found: ${tmpl.name} (value: ${tmpl.value})`);
+      } else {
+        console.warn(`[ROBOT-HANDLER] Template not found: ${templateName}`);
+      }
+    }
+
+    // 5. Fetch products if product_ids provided
+    let productsUsed = "";
+    let productsValue = 0;
+    let productsDescription = "";
+
+    if (productIdsRaw) {
+      const productIds = productIdsRaw.split(",").map((id: string) => id.trim()).filter(Boolean);
+      if (productIds.length > 0) {
+        const { data: products } = await supabase
+          .from("services")
+          .select("*")
+          .in("id", productIds);
+
+        if (products && products.length > 0) {
+          productsUsed = products.map((p: any) => p.name).join(", ");
+          productsValue = products.reduce((sum: number, p: any) => sum + (p.value || 0), 0);
+          productsDescription = products
+            .map((p: any) => `• ${p.name}: € ${(p.value || 0).toFixed(2)}${p.budget_details ? ` — ${p.budget_details}` : ""}`)
+            .join("\n");
+          console.log(`[ROBOT-HANDLER] Products found: ${productsUsed} (total: ${productsValue})`);
+        }
+      }
+    }
+
+    // 6. Legacy: Fetch service if service_name provided (backwards compatible)
+    let serviceId: string | null = templateServiceId;
     let serviceValue = 0;
     let serviceDescription = "";
 
@@ -529,15 +587,34 @@ async function handleGenerateProposal(
       }
     }
 
-    // Determine final values
-    const finalValue = manualValue > 0 ? manualValue : (serviceValue > 0 ? serviceValue : opportunity);
-    const finalTitle = manualTitle || entityTitle || "Proposta";
-    const finalDescription = manualDescription || serviceDescription || "";
+    // 7. Determine final values — manual > products > template > service > entity
+    const finalValue = manualValue > 0
+      ? manualValue
+      : productsValue > 0
+        ? productsValue
+        : templateValue > 0
+          ? templateValue
+          : serviceValue > 0
+            ? serviceValue
+            : opportunity;
 
-    // 5. Find existing case or create one — avoid ghost cases
+    const finalTitle = manualTitle || templateTitle || entityTitle || "Proposta";
+
+    const finalDescription = manualDescription
+      || (productsDescription ? productsDescription : "")
+      || templateDescription
+      || serviceDescription
+      || "";
+
+    if (!conditions && templateConditions) conditions = templateConditions;
+    if (!paymentType && templatePaymentType) paymentType = templatePaymentType;
+    if (!paymentType) paymentType = "fixo";
+    if (!installments && templateInstallments > 0) installments = templateInstallments;
+    if (!installments) installments = 1;
+
+    // 8. Find existing case or create one — avoid ghost cases
     let caseId: string;
 
-    // Try to find existing lead by bitrix24_id
     const { data: existingLead } = await supabase
       .from("leads")
       .select("id")
@@ -545,7 +622,6 @@ async function handleGenerateProposal(
       .maybeSingle();
 
     if (existingLead) {
-      // Check if there's already a case for this lead
       const { data: existingCase } = await supabase
         .from("cases")
         .select("id")
@@ -566,11 +642,10 @@ async function handleGenerateProposal(
           })
           .select("id")
           .single();
-        if (!newCase) return { proposal_url: "", pdf_url: "", proposal_id: "", status: "error", error: "Failed to create case" };
+        if (!newCase) return { proposal_url: "", pdf_url: "", proposal_id: "", status: "error", template_used: templateUsed, products_used: productsUsed, send_status: "", error: "Failed to create case" };
         caseId = newCase.id;
       }
     } else {
-      // No existing lead — create case without lead link
       const { data: newCase } = await supabase
         .from("cases")
         .insert({
@@ -581,11 +656,11 @@ async function handleGenerateProposal(
         })
         .select("id")
         .single();
-      if (!newCase) return { proposal_url: "", pdf_url: "", proposal_id: "", status: "error", error: "Failed to create case" };
+      if (!newCase) return { proposal_url: "", pdf_url: "", proposal_id: "", status: "error", template_used: templateUsed, products_used: productsUsed, send_status: "", error: "Failed to create case" };
       caseId = newCase.id;
     }
 
-    // 6. Insert proposal
+    // 9. Insert proposal
     const validUntil = new Date(Date.now() + validDays * 24 * 60 * 60 * 1000).toISOString();
 
     const { data: proposal, error: proposalErr } = await supabase
@@ -611,13 +686,13 @@ async function handleGenerateProposal(
       .single();
 
     if (proposalErr || !proposal) {
-      return { proposal_url: "", pdf_url: "", proposal_id: "", status: "error", error: proposalErr?.message || "Failed to create proposal" };
+      return { proposal_url: "", pdf_url: "", proposal_id: "", status: "error", template_used: templateUsed, products_used: productsUsed, send_status: "", error: proposalErr?.message || "Failed to create proposal" };
     }
 
     const frontendUrl = Deno.env.get("FRONTEND_URL") || "https://emmelycloud.lovable.app";
     const proposalUrl = `${frontendUrl}/proposta/${proposal.accept_token}`;
 
-    // 7. Generate PDF
+    // 10. Generate PDF
     let pdfUrl = "";
     try {
       const pdfRes = await fetch(`${supabaseUrl}/functions/v1/proposal-pdf`, {
@@ -634,15 +709,47 @@ async function handleGenerateProposal(
       console.error("[ROBOT-HANDLER] PDF generation error:", pdfErr);
     }
 
+    // 11. Send via WhatsApp if requested
+    let sendStatus = "";
+    const targetPhone = sendToPhone || clientPhone;
+
+    if (sendMethod !== "none" && targetPhone) {
+      try {
+        if (sendMethod === "link" || sendMethod === "both") {
+          const linkMsg = `📋 *Proposta: ${finalTitle}*\n\nValor: € ${finalValue.toFixed(2)}\nValidade: ${validDays} dias\n\n✅ Aceite a proposta aqui:\n${proposalUrl}`;
+          await handleSendWhatsApp({ phone: targetPhone, message: linkMsg }, supabaseUrl, serviceKey);
+          sendStatus = "link_sent";
+        }
+
+        if ((sendMethod === "pdf" || sendMethod === "both") && pdfUrl) {
+          const pdfMsg = `📄 Segue o PDF da proposta *${finalTitle}*:\n${pdfUrl}`;
+          await handleSendWhatsApp({ phone: targetPhone, message: pdfMsg }, supabaseUrl, serviceKey);
+          sendStatus = sendMethod === "both" ? "link_and_pdf_sent" : "pdf_sent";
+        }
+
+        if (sendMethod === "pdf" && !pdfUrl) {
+          sendStatus = "pdf_not_available";
+        }
+      } catch (sendErr) {
+        console.error("[ROBOT-HANDLER] Send error:", sendErr);
+        sendStatus = "send_error";
+      }
+    } else if (sendMethod !== "none" && !targetPhone) {
+      sendStatus = "no_phone";
+    }
+
     return {
       proposal_url: proposalUrl,
       pdf_url: pdfUrl,
       proposal_id: proposal.id,
+      template_used: templateUsed,
+      products_used: productsUsed,
+      send_status: sendStatus,
       status: "created",
       error: "",
     };
   } catch (e) {
-    return { proposal_url: "", pdf_url: "", proposal_id: "", status: "error", error: String(e) };
+    return { proposal_url: "", pdf_url: "", proposal_id: "", status: "error", template_used: "", products_used: "", send_status: "", error: String(e) };
   }
 }
 
