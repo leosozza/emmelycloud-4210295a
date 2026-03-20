@@ -11,19 +11,32 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { ArrowLeft, Save, Sparkles, GripVertical, Eye, EyeOff, Trash2, Upload } from "lucide-react";
 import { LayoutBlock, BlockType, getDefaultBlock, TemplateBlockPalette } from "@/components/propostas/TemplateBlockPalette";
 import { TemplatePreview } from "@/components/propostas/TemplatePreview";
 import { TemplateBlockProperties } from "@/components/propostas/TemplateBlockProperties";
 
-const DEFAULT_BLOCKS: LayoutBlock[] = [
+const DEFAULT_PROPOSAL_BLOCKS: LayoutBlock[] = [
   getDefaultBlock("header"),
   getDefaultBlock("client_info"),
   getDefaultBlock("description"),
   getDefaultBlock("services_table"),
   getDefaultBlock("payment"),
   getDefaultBlock("conditions"),
+  getDefaultBlock("footer"),
+];
+
+const DEFAULT_CONTRACT_BLOCKS: LayoutBlock[] = [
+  getDefaultBlock("header"),
+  getDefaultBlock("client_info"),
+  getDefaultBlock("description"),
+  getDefaultBlock("clauses"),
+  getDefaultBlock("payment"),
+  getDefaultBlock("conditions"),
+  getDefaultBlock("signature"),
+  getDefaultBlock("witnesses"),
   getDefaultBlock("footer"),
 ];
 
