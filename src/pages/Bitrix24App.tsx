@@ -333,6 +333,7 @@ const Bitrix24App = () => {
         {view === "baixa" && <BaixaCarteiraView integration={integration} />}
         {view === "relatorios" && <RelatoriosView memberId={memberId || integration?.member_id || undefined} />}
         {view === "carteira" && <CarteiraAccessView integration={integration} memberId={memberId} cachedPortfolio={cachedPortfolio} />}
+        {view === "propostas" && <PropostasViewBitrix />}
         {view === "configuracoes" && (
           <ConfiguracoesWrapper
             integration={integration}

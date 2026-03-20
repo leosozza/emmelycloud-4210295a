@@ -202,7 +202,7 @@ export default function TemplateEditor({ templateId, onBack }: { templateId?: st
     <div className="h-screen flex flex-col bg-background">
       {/* Top bar */}
       <div className="flex items-center gap-3 border-b px-4 py-2 bg-card">
-        <Button variant="ghost" size="icon" onClick={() => navigate("/propostas")}>
+        <Button variant="ghost" size="icon" onClick={() => onBack ? onBack() : navigate("/propostas")}>
           <ArrowLeft className="h-4 w-4" />
         </Button>
         <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Nome do modelo..." className="max-w-xs font-semibold" />
