@@ -15,6 +15,112 @@ function escapeHtml(str: string | null | undefined): string {
     .replace(/'/g, "&#039;");
 }
 
+interface LayoutBlock {
+  id: string;
+  type: string;
+  visible: boolean;
+  content: Record<string, any>;
+  styles?: Record<string, string>;
+}
+
+function renderBlockToHtml(block: LayoutBlock, proposal: any, template: any): string {
+  if (!block.visible) return "";
+
+  const headerColor = template?.header_color || "#1e293b";
+  const accentColor = template?.accent_color || "#0f172a";
+  const logoUrl = template?.logo_url || "";
+  const cName = escapeHtml(template?.company_name || "");
+  const cTagline = escapeHtml(template?.company_tagline || "");
+
+  const valueFormatted = Number(proposal.value).toLocaleString("pt-PT", { minimumFractionDigits: 2 });
+  const installmentValue = proposal.installments > 1
+    ? (proposal.value / proposal.installments).toLocaleString("pt-PT", { minimumFractionDigits: 2 })
+    : null;
+  const paymentTypeLabels: Record<string, string> = { fixo: "Fixo", exito: "Êxito", hibrido: "Híbrido", parcelado: "Parcelado" };
+
+  switch (block.type) {
+    case "header":
+      return `<div style="background: linear-gradient(135deg, ${headerColor}, ${accentColor}); color: white; padding: 50px 40px; text-align: center;">
+        ${logoUrl ? `<img src="${escapeHtml(logoUrl)}" alt="Logo" style="height: 48px; margin: 0 auto 12px; display: block; object-fit: contain;" />` : ""}
+        <h1 style="margin: 0; font-size: 28px; letter-spacing: 3px;">${cName || "EMPRESA"}</h1>
+        ${cTagline ? `<p style="margin: 5px 0 0; font-size: 12px; letter-spacing: 5px; color: #94a3b8; text-transform: uppercase;">${cTagline}</p>` : ""}
+      </div>`;
+
+    case "client_info": {
+      const cn = escapeHtml(proposal.client_name);
+      const ce = escapeHtml(proposal.client_email);
+      const cp = escapeHtml(proposal.client_phone);
+      const cd = escapeHtml(proposal.client_document);
+      const ca = escapeHtml(proposal.client_address);
+      if (!cn) return "";
+      return `<div style="padding: 20px 40px;">
+        <div style="font-size: 11px; text-transform: uppercase; letter-spacing: 2px; color: #64748b; font-weight: 600; margin-bottom: 10px; border-bottom: 1px solid #e2e8f0; padding-bottom: 5px;">Dados do Cliente</div>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 14px;">
+          <div><span style="color: #64748b;">Nome:</span> ${cn}</div>
+          ${ce ? `<div><span style="color: #64748b;">Email:</span> ${ce}</div>` : ""}
+          ${cp ? `<div><span style="color: #64748b;">Telefone:</span> ${cp}</div>` : ""}
+          ${cd ? `<div><span style="color: #64748b;">Documento:</span> ${cd}</div>` : ""}
+          ${ca ? `<div style="grid-column: span 2"><span style="color: #64748b;">Morada:</span> ${ca}</div>` : ""}
+        </div>
+      </div>`;
+    }
+
+    case "description": {
+      const desc = escapeHtml(proposal.description || block.content?.text);
+      if (!desc) return "";
+      return `<div style="padding: 20px 40px;">
+        <div style="font-size: 11px; text-transform: uppercase; letter-spacing: 2px; color: #64748b; font-weight: 600; margin-bottom: 10px; border-bottom: 1px solid #e2e8f0; padding-bottom: 5px;">O Processo Inclui</div>
+        <div style="font-size: 14px; line-height: 1.7; white-space: pre-wrap;">${desc}</div>
+      </div>`;
+    }
+
+    case "services_table":
+      return `<div style="padding: 20px 40px;">
+        <div style="font-size: 11px; text-transform: uppercase; letter-spacing: 2px; color: #64748b; font-weight: 600; margin-bottom: 10px; border-bottom: 1px solid #e2e8f0; padding-bottom: 5px;">Serviços</div>
+        <div style="font-size: 14px;">${escapeHtml(proposal.description || "")}</div>
+      </div>`;
+
+    case "payment":
+      return `<div style="padding: 20px 40px;">
+        <div style="font-size: 11px; text-transform: uppercase; letter-spacing: 2px; color: #64748b; font-weight: 600; margin-bottom: 10px; border-bottom: 1px solid #e2e8f0; padding-bottom: 5px;">Orçamento</div>
+        <div style="background: #f8fafc; border-radius: 12px; padding: 30px; text-align: center; margin: 10px 0;">
+          <div style="font-size: 36px; font-weight: bold; color: ${accentColor};">€ ${valueFormatted}</div>
+          <div style="color: #64748b; font-size: 14px; margin-top: 5px;">
+            ${paymentTypeLabels[proposal.payment_type] || escapeHtml(proposal.payment_type)}
+            ${installmentValue ? ` — ${proposal.installments}x de € ${installmentValue}` : ""}
+          </div>
+        </div>
+      </div>`;
+
+    case "conditions": {
+      const cond = escapeHtml(proposal.conditions || block.content?.text);
+      if (!cond) return "";
+      return `<div style="padding: 20px 40px;">
+        <div style="font-size: 11px; text-transform: uppercase; letter-spacing: 2px; color: #64748b; font-weight: 600; margin-bottom: 10px; border-bottom: 1px solid #e2e8f0; padding-bottom: 5px;">Condições</div>
+        <div style="font-size: 13px; line-height: 1.6; white-space: pre-wrap;">${cond}</div>
+      </div>`;
+    }
+
+    case "text": {
+      const title = escapeHtml(block.content?.title);
+      const text = escapeHtml(block.content?.text);
+      if (!text && !title) return "";
+      return `<div style="padding: 20px 40px;">
+        ${title ? `<div style="font-size: 11px; text-transform: uppercase; letter-spacing: 2px; color: #64748b; font-weight: 600; margin-bottom: 10px; border-bottom: 1px solid #e2e8f0; padding-bottom: 5px;">${title}</div>` : ""}
+        <div style="font-size: 14px; line-height: 1.7; white-space: pre-wrap;">${text || ""}</div>
+      </div>`;
+    }
+
+    case "footer":
+      return `<div style="text-align: center; color: #94a3b8; font-size: 11px; padding: 20px; border-top: 1px solid #e2e8f0; margin-top: 20px;">
+        ${escapeHtml(block.content?.text || cName)}
+      </div>`;
+
+    default:
+      return "";
+  }
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -35,32 +141,79 @@ Deno.serve(async (req) => {
       .single();
     if (error || !proposal) throw new Error("Proposal not found");
 
-    const paymentTypeLabels: Record<string, string> = {
-      fixo: "Fixo", exito: "Êxito", hibrido: "Híbrido", parcelado: "Parcelado",
-    };
+    // Try to get template with layout_blocks
+    let template: any = null;
+    if (proposal.template_id) {
+      const { data: tpl } = await supabase.from("proposal_templates").select("*").eq("id", proposal.template_id).single();
+      template = tpl;
+    }
 
-    const valueFormatted = Number(proposal.value).toLocaleString("pt-PT", { minimumFractionDigits: 2 });
-    const installmentValue = proposal.installments > 1
-      ? (proposal.value / proposal.installments).toLocaleString("pt-PT", { minimumFractionDigits: 2 })
-      : null;
+    let html: string;
 
-    // Sanitize all user-provided fields
-    const title = escapeHtml(proposal.title);
-    const clientName = escapeHtml(proposal.client_name);
-    const clientEmail = escapeHtml(proposal.client_email);
-    const clientPhone = escapeHtml(proposal.client_phone);
-    const clientDocument = escapeHtml(proposal.client_document);
-    const clientAddress = escapeHtml(proposal.client_address);
-    const description = escapeHtml(proposal.description);
-    const conditions = escapeHtml(proposal.conditions);
+    if (template?.layout_blocks && Array.isArray(template.layout_blocks)) {
+      // Dynamic layout from blocks
+      const blocksHtml = (template.layout_blocks as LayoutBlock[])
+        .map((block) => renderBlockToHtml(block, proposal, template))
+        .join("");
 
-    const html = `<!DOCTYPE html>
+      // Title + validity
+      const title = escapeHtml(proposal.title);
+      const validityHtml = proposal.valid_until
+        ? `<div style="text-align: center; color: #64748b; font-size: 13px; margin-bottom: 20px;">Válida até ${new Date(proposal.valid_until).toLocaleDateString("pt-PT")}</div>`
+        : "";
+
+      html = `<!DOCTYPE html>
+<html lang="pt">
+<head><meta charset="UTF-8"><style>
+  body { font-family: 'Helvetica Neue', Arial, sans-serif; margin: 0; padding: 0; color: #1a1a1a; }
+</style></head>
+<body>
+  ${blocksHtml.split("</div>")[0] ? blocksHtml.substring(0, blocksHtml.indexOf("</div>") + 6) : ""}
+  <div style="padding: 20px 40px;">
+    <div style="text-align: center; font-size: 22px; font-weight: bold; margin-bottom: 5px;">${title}</div>
+    ${validityHtml}
+  </div>
+  ${blocksHtml.indexOf("</div>") >= 0 ? blocksHtml.substring(blocksHtml.indexOf("</div>") + 6) : blocksHtml}
+</body></html>`;
+
+      // Simpler approach: just render all blocks in order
+      html = `<!DOCTYPE html>
+<html lang="pt">
+<head><meta charset="UTF-8"><style>
+  body { font-family: 'Helvetica Neue', Arial, sans-serif; margin: 0; padding: 0; color: #1a1a1a; }
+</style></head>
+<body>${blocksHtml}</body></html>`;
+    } else {
+      // Fallback: original hardcoded layout
+      const paymentTypeLabels: Record<string, string> = {
+        fixo: "Fixo", exito: "Êxito", hibrido: "Híbrido", parcelado: "Parcelado",
+      };
+      const valueFormatted = Number(proposal.value).toLocaleString("pt-PT", { minimumFractionDigits: 2 });
+      const installmentValue = proposal.installments > 1
+        ? (proposal.value / proposal.installments).toLocaleString("pt-PT", { minimumFractionDigits: 2 })
+        : null;
+      const title = escapeHtml(proposal.title);
+      const clientName = escapeHtml(proposal.client_name);
+      const clientEmail = escapeHtml(proposal.client_email);
+      const clientPhone = escapeHtml(proposal.client_phone);
+      const clientDocument = escapeHtml(proposal.client_document);
+      const clientAddress = escapeHtml(proposal.client_address);
+      const description = escapeHtml(proposal.description);
+      const conditions = escapeHtml(proposal.conditions);
+
+      const hColor = template?.header_color || "#1e293b";
+      const aColor = template?.accent_color || "#0f172a";
+      const cName = escapeHtml(template?.company_name || "EMMELY FERNANDES");
+      const cTagline = escapeHtml(template?.company_tagline || "Advocacia Internacional");
+      const logoHtml = template?.logo_url ? `<img src="${escapeHtml(template.logo_url)}" alt="Logo" style="height: 48px; margin: 0 auto 12px; display: block;" />` : "";
+
+      html = `<!DOCTYPE html>
 <html lang="pt">
 <head>
   <meta charset="UTF-8">
   <style>
     body { font-family: 'Helvetica Neue', Arial, sans-serif; margin: 0; padding: 0; color: #1a1a1a; }
-    .header { background: linear-gradient(135deg, #1e293b, #0f172a); color: white; padding: 50px 40px; text-align: center; }
+    .header { background: linear-gradient(135deg, ${hColor}, ${aColor}); color: white; padding: 50px 40px; text-align: center; }
     .header h1 { margin: 0; font-size: 28px; letter-spacing: 3px; }
     .header p { margin: 5px 0 0; font-size: 12px; letter-spacing: 5px; color: #94a3b8; text-transform: uppercase; }
     .header .tagline { margin-top: 20px; font-style: italic; color: #cbd5e1; font-size: 13px; }
@@ -73,7 +226,7 @@ Deno.serve(async (req) => {
     .client-grid .label { color: #64748b; }
     .description { font-size: 14px; line-height: 1.7; white-space: pre-wrap; }
     .budget-box { background: #f8fafc; border-radius: 12px; padding: 30px; text-align: center; margin: 20px 0; }
-    .budget-value { font-size: 36px; font-weight: bold; color: #0f172a; }
+    .budget-value { font-size: 36px; font-weight: bold; color: ${aColor}; }
     .budget-detail { color: #64748b; font-size: 14px; margin-top: 5px; }
     .conditions { font-size: 13px; line-height: 1.6; white-space: pre-wrap; }
     .footer { text-align: center; color: #94a3b8; font-size: 11px; padding: 20px; border-top: 1px solid #e2e8f0; margin-top: 40px; }
@@ -81,9 +234,9 @@ Deno.serve(async (req) => {
 </head>
 <body>
   <div class="header">
-    <h1>EMMELY FERNANDES</h1>
-    <p>Advocacia Internacional</p>
-    <div class="tagline">Mais do que processos, cuidamos de pessoas e dos seus direitos.</div>
+    ${logoHtml}
+    <h1>${cName}</h1>
+    <p>${cTagline}</p>
   </div>
   <div class="content">
     <div class="title">${title}</div>
@@ -124,9 +277,10 @@ Deno.serve(async (req) => {
       <div class="conditions">${conditions}</div>
     </div>` : ""}
   </div>
-  <div class="footer">Emmely Fernandes — Advocacia Internacional</div>
+  <div class="footer">${cName} — ${cTagline}</div>
 </body>
 </html>`;
+    }
 
     // Store the HTML as a file in storage
     const fileName = `proposal-${proposal.id}.html`;
@@ -138,7 +292,6 @@ Deno.serve(async (req) => {
     const { data: urlData } = supabase.storage.from("proposal-files").getPublicUrl(fileName);
     const pdfUrl = urlData.publicUrl;
 
-    // Update proposal with pdf_url
     await supabase.from("proposals").update({ pdf_url: pdfUrl }).eq("id", proposal.id);
 
     return new Response(JSON.stringify({ pdf_url: pdfUrl }), {

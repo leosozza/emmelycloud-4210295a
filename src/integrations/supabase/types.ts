@@ -2135,12 +2135,19 @@ export type Database = {
       }
       proposal_templates: {
         Row: {
+          accent_color: string | null
+          body_html: string | null
+          company_name: string | null
+          company_tagline: string | null
           conditions: string | null
           created_at: string
           description: string | null
+          header_color: string | null
           id: string
           installments: number
           is_default: boolean
+          layout_blocks: Json | null
+          logo_url: string | null
           name: string
           payment_type: Database["public"]["Enums"]["payment_type"]
           service_id: string | null
@@ -2149,12 +2156,19 @@ export type Database = {
           value: number
         }
         Insert: {
+          accent_color?: string | null
+          body_html?: string | null
+          company_name?: string | null
+          company_tagline?: string | null
           conditions?: string | null
           created_at?: string
           description?: string | null
+          header_color?: string | null
           id?: string
           installments?: number
           is_default?: boolean
+          layout_blocks?: Json | null
+          logo_url?: string | null
           name: string
           payment_type?: Database["public"]["Enums"]["payment_type"]
           service_id?: string | null
@@ -2163,12 +2177,19 @@ export type Database = {
           value?: number
         }
         Update: {
+          accent_color?: string | null
+          body_html?: string | null
+          company_name?: string | null
+          company_tagline?: string | null
           conditions?: string | null
           created_at?: string
           description?: string | null
+          header_color?: string | null
           id?: string
           installments?: number
           is_default?: boolean
+          layout_blocks?: Json | null
+          logo_url?: string | null
           name?: string
           payment_type?: Database["public"]["Enums"]["payment_type"]
           service_id?: string | null

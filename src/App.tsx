@@ -36,6 +36,7 @@ import Bitrix24App from "./pages/Bitrix24App";
 import PropostaPublica from "./pages/PropostaPublica";
 import SignContract from "./pages/SignContract";
 import NotFound from "./pages/NotFound";
+import TemplateEditor from "./pages/TemplateEditor";
 
 const queryClient = new QueryClient();
 
@@ -55,6 +56,8 @@ const App = () => (
           <Route path="/bitrix24/*" element={<Bitrix24App />} />
           <Route path="/proposta/:token" element={<PropostaPublica />} />
           <Route path="/sign/:token" element={<SignContract />} />
+          <Route path="/propostas/template-editor" element={<TemplateEditor />} />
+          <Route path="/propostas/template-editor/:id" element={<TemplateEditor />} />
           <Route element={<AppLayout />}>
             <Route path="/" element={<Index />} />
             <Route path="/leads" element={<LeadsPage />} />
