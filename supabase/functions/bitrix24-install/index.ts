@@ -1065,7 +1065,7 @@ Deno.serve(async (req) => {
             deal_id: { Name: "ID do Negócio", Type: "string", Description: "ID do Deal no Bitrix24" },
             lead_id: { Name: "ID do Lead", Type: "string", Description: "ID do Lead no Bitrix24" },
             entity_type: { Name: "Tipo de Entidade", Type: "select", Options: { deal: "Negócio", lead: "Lead" }, Default: "deal" },
-            template_name: { Name: "Modelo de Proposta", Type: "string", Description: "Nome do template (busca em proposal_templates)" },
+            template_name: { Name: "Modelo de Proposta", Type: "string", Description: "Nome do template de proposta. Consulte os modelos disponíveis no Editor de Templates (Propostas > Modelos). Filtra apenas templates do tipo 'proposta'." },
             product_ids: { Name: "Produtos/Serviços", Type: "string", Description: "IDs dos serviços separados por vírgula (busca na tabela services)" },
             title: { Name: "Título da Proposta", Type: "string", Description: "Opcional — usa template ou título do negócio" },
             service_name: { Name: "Nome do Serviço", Type: "string", Description: "Busca valor/descrição na tabela de serviços (legado)" },

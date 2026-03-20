@@ -521,15 +521,18 @@ async function handleGenerateProposal(
     let templateInstallments = 0;
     let templateValue = 0;
     let templateServiceId: string | null = null;
+    let templateId: string | null = null;
 
     if (templateName) {
       const { data: tmpl } = await supabase
         .from("proposal_templates")
         .select("*")
+        .eq("template_type", "proposta")
         .ilike("name", `%${templateName}%`)
         .maybeSingle();
 
       if (tmpl) {
+        templateId = tmpl.id;
         templateUsed = tmpl.name;
         templateTitle = tmpl.title || "";
         templateDescription = tmpl.description || "";
@@ -680,6 +683,7 @@ async function handleGenerateProposal(
         client_document: clientDocument,
         client_address: clientAddress,
         service_id: serviceId,
+        template_id: templateId,
         status: "enviada",
       })
       .select("id, accept_token")
