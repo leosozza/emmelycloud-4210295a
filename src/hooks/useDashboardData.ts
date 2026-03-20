@@ -17,9 +17,15 @@ interface LeadByOrigin {
   value: number;
 }
 
-interface FunnelItem {
+interface FunnelStage {
   name: string;
   value: number;
+}
+
+interface FunnelPipeline {
+  pipelineId: string;
+  pipelineName: string;
+  stages: FunnelStage[];
 }
 
 interface MonthlyRevenueItem {

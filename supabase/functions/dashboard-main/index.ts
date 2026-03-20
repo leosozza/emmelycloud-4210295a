@@ -106,14 +106,26 @@ serve(async (req) => {
       });
     }
 
-    // Fetch deals + stage names + sources in parallel
-    const [deals, stagesRes, sourcesRes] = await Promise.all([
+    // Fetch deals + stage names + sources + pipelines in parallel
+    const [deals, stagesRes, sourcesRes, categoriesRes] = await Promise.all([
       fetchAllDeals(ep, auth),
       bitrixPost(ep, "crm.status.list", { auth }),
       bitrixPost(ep, "crm.status.list", { auth, filter: { ENTITY_ID: "SOURCE" } }),
+      bitrixPost(ep, "crm.category.list", { auth, entityTypeId: 2 }),
     ]);
 
     console.log(`[dashboard-main] Fetched ${deals.length} deals`);
+
+    // Build pipeline name map
+    const pipelineMap = new Map<string, string>();
+    pipelineMap.set("0", "Pipeline padrão");
+    if (categoriesRes.result?.items) {
+      categoriesRes.result.items.forEach((c: any) => pipelineMap.set(String(c.id), c.name));
+    } else if (categoriesRes.result) {
+      (Array.isArray(categoriesRes.result) ? categoriesRes.result : []).forEach((c: any) =>
+        pipelineMap.set(String(c.id ?? c.ID), c.name ?? c.NAME)
+      );
+    }
 
     // Build stage name map
     const stageMap = new Map<string, string>();
@@ -131,14 +143,17 @@ serve(async (req) => {
     const now = new Date();
     const thirtyDaysAgo = new Date(now.getTime() - 30 * 86400000);
     const sixtyDaysAgo = new Date(now.getTime() - 60 * 86400000);
-    const funnelCount: Record<string, number> = {};
+    // funnel grouped by pipeline: { [categoryId]: { [stageName]: count } }
+    const funnelByPipeline: Record<string, Record<string, number>> = {};
     const originCount: Record<string, number> = {};
     let dealsNew = 0, dealsPrev = 0, wonCount = 0;
 
     for (const d of deals) {
-      // Funnel
+      const catId = String(d.CATEGORY_ID ?? "0");
+      if (!funnelByPipeline[catId]) funnelByPipeline[catId] = {};
+
       const stageName = stageMap.get(d.STAGE_ID) || d.STAGE_ID || "Desconhecido";
-      funnelCount[stageName] = (funnelCount[stageName] || 0) + 1;
+      funnelByPipeline[catId][stageName] = (funnelByPipeline[catId][stageName] || 0) + 1;
 
       // Origin
       const sourceName = sourceMap.get(String(d.SOURCE_ID || "")) || "Sem origem";
@@ -153,9 +168,14 @@ serve(async (req) => {
       if (d.STAGE_ID?.includes("WON")) wonCount++;
     }
 
-    const funnel = Object.entries(funnelCount)
-      .map(([name, value]) => ({ name, value }))
-      .sort((a, b) => b.value - a.value);
+    // Build funnel array grouped by pipeline
+    const funnel = Object.entries(funnelByPipeline).map(([catId, stages]) => ({
+      pipelineId: catId,
+      pipelineName: pipelineMap.get(catId) || `Pipeline ${catId}`,
+      stages: Object.entries(stages)
+        .map(([name, value]) => ({ name, value }))
+        .sort((a, b) => b.value - a.value),
+    }));
 
     const leadsByOrigin = Object.entries(originCount)
       .map(([name, value]) => ({ name, value }))
