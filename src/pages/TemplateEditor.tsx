@@ -128,6 +128,7 @@ export default function TemplateEditor({ templateId, onBack }: { templateId?: st
     mutationFn: async () => {
       const payload: any = {
         name,
+        template_type: templateType,
         logo_url: logoUrl || null,
         header_color: headerColor,
         accent_color: accentColor,
