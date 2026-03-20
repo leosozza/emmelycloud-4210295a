@@ -50,7 +50,7 @@ export interface RecentLead {
 export interface DashboardData {
   kpis: DashboardKPIs;
   leadsByOrigin: LeadByOrigin[];
-  funnel: FunnelItem[];
+  funnel: FunnelPipeline[];
   monthlyRevenue: MonthlyRevenueItem[];
   revenueByArea: RevenueByAreaItem[];
   recentLeads: RecentLead[];
