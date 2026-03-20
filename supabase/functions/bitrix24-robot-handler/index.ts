@@ -532,6 +532,7 @@ async function handleGenerateProposal(
         .maybeSingle();
 
       if (tmpl) {
+        templateId = tmpl.id;
         templateUsed = tmpl.name;
         templateTitle = tmpl.title || "";
         templateDescription = tmpl.description || "";
