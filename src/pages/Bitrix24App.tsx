@@ -56,6 +56,7 @@ import {
 } from "@/components/ui/collapsible";
 import { ExpandableTabs, type TabItem } from "@/components/ui/expandable-tabs";
 import { AnimatePresence, motion } from "framer-motion";
+import { AnimatedSidebar, AnimatedSidebarBody, AnimatedSidebarLink } from "@/components/bitrix24/AnimatedSidebar";
 import { AgentFormDialog } from "@/components/agentes/AgentFormDialog";
 import { Switch } from "@/components/ui/switch";
 import { Slider } from "@/components/ui/slider";
