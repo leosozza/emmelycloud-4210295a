@@ -1,4 +1,4 @@
-import { Search, LogOut, Scale } from "lucide-react";
+import { Search, LogOut } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -34,15 +34,6 @@ export function AppHeader({ onSearchClick, children }: { onSearchClick?: () => v
       <div className="flex h-14 items-center gap-4 px-4">
         {children}
         {/* Logo */}
-        <div className="flex items-center gap-2.5 shrink-0">
-          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary shadow-md">
-            <Scale className="h-5 w-5 text-primary-foreground" strokeWidth={1.5} />
-          </div>
-          <div className="hidden sm:flex flex-col leading-none">
-            <span className="text-sm font-extrabold tracking-tight text-foreground">Emmely Cloud</span>
-            <span className="text-[10px] font-medium text-muted-foreground">CRM Jurídico</span>
-          </div>
-        </div>
 
         {/* Search */}
         <button
