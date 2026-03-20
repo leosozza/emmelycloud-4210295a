@@ -526,6 +526,7 @@ async function handleGenerateProposal(
       const { data: tmpl } = await supabase
         .from("proposal_templates")
         .select("*")
+        .eq("template_type", "proposta")
         .ilike("name", `%${templateName}%`)
         .maybeSingle();
 

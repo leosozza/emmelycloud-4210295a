@@ -2245,6 +2245,7 @@ export type Database = {
           signer_phone: string | null
           starts_at: string | null
           status: Database["public"]["Enums"]["proposal_status"]
+          template_id: string | null
           title: string
           updated_at: string
           valid_until: string | null
@@ -2284,6 +2285,7 @@ export type Database = {
           signer_phone?: string | null
           starts_at?: string | null
           status?: Database["public"]["Enums"]["proposal_status"]
+          template_id?: string | null
           title: string
           updated_at?: string
           valid_until?: string | null
@@ -2323,6 +2325,7 @@ export type Database = {
           signer_phone?: string | null
           starts_at?: string | null
           status?: Database["public"]["Enums"]["proposal_status"]
+          template_id?: string | null
           title?: string
           updated_at?: string
           valid_until?: string | null
@@ -2341,6 +2344,13 @@ export type Database = {
             columns: ["service_id"]
             isOneToOne: false
             referencedRelation: "services"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "proposals_template_id_fkey"
+            columns: ["template_id"]
+            isOneToOne: false
+            referencedRelation: "proposal_templates"
             referencedColumns: ["id"]
           },
         ]

@@ -1,0 +1,1 @@
+ALTER TABLE public.proposals ADD COLUMN template_id UUID REFERENCES public.proposal_templates(id) ON DELETE SET NULL;
