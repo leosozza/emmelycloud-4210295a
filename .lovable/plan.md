@@ -1,52 +1,39 @@
 
 
-# Permissões de Acesso por Utilizador Bitrix24 — Emmely AI & Emmely Pay
+# Correção: Configurações não persistem após guardar
 
-## Conceito
+## Problema Raiz
 
-O admin do Emmely Cloud escolhe quais utilizadores do Bitrix24 têm acesso a cada módulo (Emmely AI, Emmely Pay). Quando um utilizador sem permissão abre o placement, vê uma mensagem de "Sem acesso".
+O Supabase JS SDK **não lança exceções** — retorna `{ data, error }`. O código em `EncargosTab` e `PermissoesTab` usa `try/catch` sem verificar o campo `error`, fazendo com que falhas de escrita sejam ignoradas silenciosamente.
 
-## Implementação
+**Exemplo do bug (linha 97):**
+```typescript
+// Não verifica error!
+await supabase.from("payment_gateway_config").update({...}).eq("id", configId);
+```
 
-### 1. Migração — Tabela `bitrix24_user_permissions`
+## Correções
 
-Nova tabela para armazenar as permissões por utilizador e módulo:
+### Ficheiro 1: `src/pages/Configuracoes.tsx` — EncargosTab
 
-| Coluna | Tipo | Descrição |
-|--------|------|-----------|
-| id | uuid PK | — |
-| integration_id | uuid FK | Referência à integração |
-| bitrix_user_id | text | ID do utilizador no Bitrix24 |
-| module | text | `emmely_ai` ou `emmely_pay` |
-| granted_at | timestamptz | Data de concessão |
-| granted_by | uuid | Quem concedeu (user_id do Supabase) |
+Na função `handleSave`, verificar `error` em cada operação Supabase:
+```typescript
+const { error } = await supabase.from("payment_gateway_config").update(...);
+if (error) throw error;
+```
 
-RLS: admin e service_role têm acesso total, service_role para as edge functions lerem.
+Aplicar ao `update` (linha 97) e ao `insert` (linha 99).
 
-### 2. Edge Functions — Verificação de acesso
+### Ficheiro 2: `src/components/configuracoes/PermissoesTab.tsx`
 
-**`bitrix24-crm-tab/index.ts`** e **`bitrix24-payment-tab/index.ts`**:
+Na função `handleSave`, verificar `error` em:
+- Delete de permissões existentes
+- Insert de novas permissões
 
-- Extrair o `AUTH_ID` do body (já existe) e chamar `user.current` via API Bitrix24 para obter o ID do utilizador
-- Consultar `bitrix24_user_permissions` para verificar se o utilizador tem acesso ao módulo correspondente (`emmely_ai` para crm-tab, `emmely_pay` para payment-tab)
-- Se não houver NENHUM registo na tabela para aquele módulo+integração → acesso livre (backwards compatible)
-- Se houver registos mas o utilizador não estiver na lista → renderizar HTML de "Sem permissão"
+Mostrar `toast.error` com a mensagem real do erro.
 
-### 3. UI de Gestão — Nova aba "Permissões" em Configurações
+### Ficheiros a editar
 
-**`src/pages/Configuracoes.tsx`**:
-
-Nova tab "Permissões Bitrix24":
-- Usa o hook `useBitrixUsers()` (já existe) para listar todos os utilizadores ativos
-- Duas secções: **Emmely AI** e **Emmely Pay**
-- Cada secção mostra checkboxes com os utilizadores
-- Toggle "Restringir acesso" por módulo — quando desativado, todos têm acesso
-- Botão "Guardar" persiste na tabela `bitrix24_user_permissions`
-
-### Ficheiros a criar/editar
-
-1. **Migração SQL** — criar tabela `bitrix24_user_permissions`
-2. **`supabase/functions/bitrix24-crm-tab/index.ts`** — verificar permissão do utilizador para `emmely_ai`
-3. **`supabase/functions/bitrix24-payment-tab/index.ts`** — verificar permissão do utilizador para `emmely_pay`
-4. **`src/pages/Configuracoes.tsx`** — nova aba de gestão de permissões com lista de utilizadores Bitrix24
+1. **`src/pages/Configuracoes.tsx`** — adicionar verificação de `error` no handleSave do EncargosTab
+2. **`src/components/configuracoes/PermissoesTab.tsx`** — adicionar verificação de `error` no handleSave
 
