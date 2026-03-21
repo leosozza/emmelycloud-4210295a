@@ -234,7 +234,7 @@ Deno.serve(async (req) => {
     <p>${cTagline}</p>
   </div>
   <div class="content">
-    <div class="title">${title}</div>
+    <div class="title">${escapeHtml(composedTitle)}</div>
     ${proposal.valid_until ? `<div class="validity">Válida até ${new Date(proposal.valid_until).toLocaleDateString("pt-PT")}</div>` : ""}
 
     ${clientName ? `
