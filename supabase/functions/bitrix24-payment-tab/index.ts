@@ -171,6 +171,7 @@ function renderPaymentTab(opts: {
     const instJson = JSON.stringify({
       id: inst.id,
       transaction_id: inst.transaction_id,
+      financial_record_id: inst.financial_record_id || null,
       entity_id: opts.entityId,
       value: inst.value,
       due_date: inst.due_date,
@@ -179,6 +180,8 @@ function renderPaymentTab(opts: {
       invoice_id: inst.invoice_id,
       description: inst.description,
       notes: meta.notes || "",
+      number: inst.number,
+      total: inst.total,
     }).replace(/"/g, "&quot;");
 
     // Dual currency display
