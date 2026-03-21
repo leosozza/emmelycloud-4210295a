@@ -10,7 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { format } from "date-fns";
 import { pt } from "date-fns/locale";
-import { Send, LayoutDashboard, Receipt, AlertTriangle, Percent, Trophy } from "lucide-react";
+import { Send, LayoutDashboard, Receipt, AlertTriangle, Percent, Trophy, ExternalLink, Copy } from "lucide-react";
 import { toast } from "sonner";
 import { FinanceiroOverview } from "@/components/financeiro/FinanceiroOverview";
 import { InadimplenciaTab } from "@/components/financeiro/InadimplenciaTab";
