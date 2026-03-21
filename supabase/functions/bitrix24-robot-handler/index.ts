@@ -601,7 +601,9 @@ async function handleGenerateProposal(
             ? serviceValue
             : opportunity;
 
-    const finalTitle = manualTitle || templateTitle || entityTitle || "Proposta";
+    // Build a meaningful title: prefer manual, then service/product names, then entity title
+    const baseTitle = manualTitle || templateTitle || productsUsed || serviceName || entityTitle || "Proposta";
+    const finalTitle = clientName ? `${baseTitle} — ${clientName}` : baseTitle;
 
     const finalDescription = manualDescription
       || (productsDescription ? productsDescription : "")
