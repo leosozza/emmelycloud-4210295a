@@ -391,14 +391,19 @@ function renderHtml(opts: {
     </div>
   </div>
 
-  <!-- Conversation Area -->
-  <div id="conv-area">
-    <div id="messages">
+  <!-- Tab Bar -->
+  <div id="tab-bar">
+    <button class="tab-btn active" onclick="switchTab('conversa')" id="tab-btn-conversa">${B24_ICONS.message} Conversa</button>
+    <button class="tab-btn" onclick="switchTab('consulta')" id="tab-btn-consulta">${B24_ICONS.robot} Consulta IA</button>
+  </div>
+
+  <!-- Tab: Conversa -->
+  <div id="tab-conversa" class="tab-content active">
+    <div id="messages" style="flex:1;overflow-y:auto;padding:12px 16px;display:flex;flex-direction:column">
       ${conversationId ? messagesHtml : startConvHtml}
     </div>
     
     ${conversationId ? `
-    <!-- Client Send Bar -->
     <div id="client-send-bar">
       <textarea id="client-input" rows="1" placeholder="Escreva ao cliente..." oninput="autoResize(this)"></textarea>
       <button onclick="sendClientMessage()" id="send-client-btn">${B24_ICONS.send} Enviar</button>
@@ -410,12 +415,8 @@ function renderHtml(opts: {
     <div id="status-msg"></div>
   </div>
 
-  <!-- AI Panel — Chat com badges -->
-  <div id="ai-panel" class="collapsed">
-    <div id="ai-header" onclick="toggleAiPanel()">
-      ${B24_ICONS.robot} Emmely AI Consulta
-      <span id="ai-toggle">▼</span>
-    </div>
+  <!-- Tab: Consulta IA -->
+  <div id="tab-consulta" class="tab-content">
     <div id="agent-badges"></div>
     <div id="ai-messages">
       <div class="ai-empty" id="ai-empty">
