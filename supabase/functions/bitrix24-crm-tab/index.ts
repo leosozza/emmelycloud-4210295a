@@ -596,8 +596,47 @@ function renderHtml(opts: {
       });
     }
 
+    function setStatus(msg, color) {
+      var el = document.getElementById('status-msg');
+      if (el) { el.textContent = msg; el.style.color = color || '#888'; }
+      if (msg) setTimeout(function() { if (el && el.textContent === msg) el.textContent = ''; }, 4000);
+    }
 
-  try {
+    function returnToBot() {
+      if (!CONVERSATION_ID) return;
+      setStatus('A devolver ao bot...', '#888');
+      fetch(SUPABASE_URL + '/functions/v1/bitrix24-return-to-bot', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ conversation_id: CONVERSATION_ID, member_id: MEMBER_ID })
+      })
+      .then(function(r) { return r.text(); })
+      .then(function() {
+        setStatus('Emmely AI retomou o atendimento!', '#22c55e');
+        var badge = document.getElementById('mode-badge');
+        if (badge) { badge.textContent = 'Bot Ativo'; badge.style.color = '#22c55e'; badge.style.borderColor = '#22c55e33'; badge.style.background = '#22c55e15'; }
+      })
+      .catch(function(e) { setStatus('❌ Erro: ' + e.message, '#ef4444'); });
+    }
+
+    function startConversation(channel, phone) {
+      var msgInput = document.getElementById('start-msg-input');
+      var message = msgInput ? msgInput.value.trim() : 'Olá! Em que posso ajudar?';
+      if (!message) { setStatus('Escreva uma mensagem', '#f59e0b'); return; }
+      setStatus('A iniciar conversa...', '#888');
+      fetch(SUPABASE_URL + '/functions/v1/message-send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_KEY },
+        body: JSON.stringify({ channel: channel, contact_phone: phone || undefined, message: message })
+      })
+      .then(function(r) { return r.json(); })
+      .then(function(d) {
+        if (d.error) throw new Error(d.error);
+        setStatus('✅ Conversa iniciada! Recarregue a aba.', '#22c55e');
+      })
+      .catch(function(e) { setStatus('❌ ' + e.message, '#ef4444'); });
+    }
+
     BX24.init(function() { BX24.fitWindow(); });
   } catch(e) {}
 </script>
