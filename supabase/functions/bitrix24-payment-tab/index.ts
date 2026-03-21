@@ -296,7 +296,11 @@ function renderPaymentTab(opts: {
             <button onclick='toggleFlowRow("${inst.id}")' class="b24-btn-outline" style="height:32px;padding:0 10px">✕</button>
           </div>
           ` : ""}
-        ` : ""}
+        ` : `
+          <div class="b24-item-actions">
+            <button onclick='generateReceipt()' class="b24-btn-action" style="border-color:var(--link-color);color:var(--link-color)" title="Gerar Comprovante">${icon("file-text", 13)} Comprovante</button>
+          </div>
+        `}
       </div>`;
   }).join("");
 
