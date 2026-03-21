@@ -112,10 +112,8 @@ Deno.serve(async (req) => {
       console.log(`[REBIND] ${event}:`, JSON.stringify(bindResult));
     }
 
-    // Re-bind IM_TEXTAREA placement (Devolver ao Bot button)
+    // ── Re-bind IM_TEXTAREA placement (Devolver ao Bot button) ──
     const returnToBotUrl = `${supabaseUrl}/functions/v1/bitrix24-return-to-bot`;
-    // Icon: use Bitrix24 CDN-compatible robot SVG as background-image
-    const iconUrl = "https://cdn-icons-png.flaticon.com/32/4712/4712109.png";
     try {
       await callBitrix(integration.client_endpoint, accessToken, "placement.unbind", {
         PLACEMENT: "IM_TEXTAREA",
@@ -126,7 +124,6 @@ Deno.serve(async (req) => {
         HANDLER: returnToBotUrl,
         TITLE: "Devolver ao Bot",
         DESCRIPTION: "Devolver conversa ao assistente IA",
-        ICON: iconUrl,
         LANG_ALL: {
           pt: { TITLE: "Devolver ao Bot", DESCRIPTION: "Devolver conversa ao assistente IA" },
           en: { TITLE: "Return to Bot", DESCRIPTION: "Return conversation to AI assistant" },
@@ -135,10 +132,12 @@ Deno.serve(async (req) => {
         },
         OPTIONS: {
           iconName: "fa-robot",
-          icon: iconUrl,
+          context: "LINES",
           color: "GREEN",
+          role: "USER",
           width: "400",
           height: "200",
+          extranet: "N",
         },
       });
       results["placement_IM_TEXTAREA"] = placementResult.error
@@ -150,35 +149,73 @@ Deno.serve(async (req) => {
       console.error("[REBIND] placement.bind error:", pe);
     }
 
-    // --- Register CRM_LEAD_DETAIL_TAB placement (Emmely AI tab in Lead detail) ---
+    // ── CRM Detail Tabs — Emmely AI (crm-tab) ──
     const crmTabUrl = `${supabaseUrl}/functions/v1/bitrix24-crm-tab`;
-    try {
-      await callBitrix(integration.client_endpoint, accessToken, "placement.unbind", {
-        PLACEMENT: "CRM_LEAD_DETAIL_TAB",
-        HANDLER: crmTabUrl,
-      });
-      const crmTabResult = await callBitrix(integration.client_endpoint, accessToken, "placement.bind", {
-        PLACEMENT: "CRM_LEAD_DETAIL_TAB",
-        HANDLER: crmTabUrl,
-        TITLE: "Emmely AI",
-        DESCRIPTION: "Conversa e histórico do cliente",
-        LANG_ALL: {
-          pt: { TITLE: "Emmely AI", DESCRIPTION: "Conversa e histórico do cliente" },
-          en: { TITLE: "Emmely AI", DESCRIPTION: "Conversation and client history" },
-          es: { TITLE: "Emmely AI", DESCRIPTION: "Conversación e historial del cliente" },
-          ru: { TITLE: "Emmely AI", DESCRIPTION: "Переписка и история клиента" },
-        },
-      });
-      results["placement_CRM_LEAD_DETAIL_TAB"] = crmTabResult.error
-        ? `ERROR: ${crmTabResult.error}`
-        : "OK";
-      console.log("[REBIND] placement.bind CRM_LEAD_DETAIL_TAB:", JSON.stringify(crmTabResult));
-    } catch (crmTabErr) {
-      results["placement_CRM_LEAD_DETAIL_TAB"] = `ERROR: ${crmTabErr}`;
-      console.error("[REBIND] placement.bind CRM_LEAD_DETAIL_TAB error:", crmTabErr);
+    const crmAiPlacements = [
+      "CRM_LEAD_DETAIL_TAB",
+      "CRM_CONTACT_DETAIL_TAB",
+      "CRM_DEAL_DETAIL_TAB",
+      "CRM_DYNAMIC_DETAIL_TAB",
+    ];
+    for (const placement of crmAiPlacements) {
+      try {
+        await callBitrix(integration.client_endpoint, accessToken, "placement.unbind", {
+          PLACEMENT: placement,
+          HANDLER: crmTabUrl,
+        });
+        const r = await callBitrix(integration.client_endpoint, accessToken, "placement.bind", {
+          PLACEMENT: placement,
+          HANDLER: crmTabUrl,
+          TITLE: "Emmely AI",
+          DESCRIPTION: "Conversa e histórico do cliente",
+          LANG_ALL: {
+            pt: { TITLE: "Emmely AI", DESCRIPTION: "Conversa e histórico do cliente" },
+            en: { TITLE: "Emmely AI", DESCRIPTION: "Conversation and client history" },
+            es: { TITLE: "Emmely AI", DESCRIPTION: "Conversación e historial del cliente" },
+            ru: { TITLE: "Emmely AI", DESCRIPTION: "Переписка и история клиента" },
+          },
+        });
+        results[`placement_${placement}_AI`] = r.error ? `ERROR: ${r.error}` : "OK";
+        console.log(`[REBIND] placement.bind ${placement} (AI):`, JSON.stringify(r));
+      } catch (e) {
+        results[`placement_${placement}_AI`] = `ERROR: ${e}`;
+        console.error(`[REBIND] placement.bind ${placement} (AI) error:`, e);
+      }
     }
 
-    // --- Register IM_SIDEBAR placement (Emmely AI Assistant sidebar in messenger) ---
+    // ── CRM Detail Tabs — Emmely Pay (payment-tab) ──
+    const paymentTabUrl = `${supabaseUrl}/functions/v1/bitrix24-payment-tab`;
+    const crmPayPlacements = [
+      "CRM_DEAL_DETAIL_TAB",
+      "CRM_CONTACT_DETAIL_TAB",
+    ];
+    for (const placement of crmPayPlacements) {
+      try {
+        await callBitrix(integration.client_endpoint, accessToken, "placement.unbind", {
+          PLACEMENT: placement,
+          HANDLER: paymentTabUrl,
+        });
+        const r = await callBitrix(integration.client_endpoint, accessToken, "placement.bind", {
+          PLACEMENT: placement,
+          HANDLER: paymentTabUrl,
+          TITLE: "Emmely Pay",
+          DESCRIPTION: "Controle financeiro e parcelas",
+          LANG_ALL: {
+            pt: { TITLE: "Emmely Pay", DESCRIPTION: "Controle financeiro e parcelas" },
+            en: { TITLE: "Emmely Pay", DESCRIPTION: "Financial control and installments" },
+            es: { TITLE: "Emmely Pay", DESCRIPTION: "Control financiero y cuotas" },
+            ru: { TITLE: "Emmely Pay", DESCRIPTION: "Финансовый контроль и платежи" },
+          },
+        });
+        results[`placement_${placement}_PAY`] = r.error ? `ERROR: ${r.error}` : "OK";
+        console.log(`[REBIND] placement.bind ${placement} (Pay):`, JSON.stringify(r));
+      } catch (e) {
+        results[`placement_${placement}_PAY`] = `ERROR: ${e}`;
+        console.error(`[REBIND] placement.bind ${placement} (Pay) error:`, e);
+      }
+    }
+
+    // ── IM_SIDEBAR placement ──
     const imSidebarUrl = `${supabaseUrl}/functions/v1/bitrix24-im-sidebar`;
     try {
       await callBitrix(integration.client_endpoint, accessToken, "placement.unbind", {
@@ -212,7 +249,7 @@ Deno.serve(async (req) => {
       console.error("[REBIND] placement.bind IM_SIDEBAR error:", sidebarErr);
     }
 
-    // --- Register IM_CONTEXT_MENU placement (Analyze with Emmely on messages) ---
+    // ── IM_CONTEXT_MENU placement ──
     const imContextMenuUrl = `${supabaseUrl}/functions/v1/bitrix24-im-context-menu`;
     try {
       await callBitrix(integration.client_endpoint, accessToken, "placement.unbind", {
@@ -240,21 +277,14 @@ Deno.serve(async (req) => {
       console.error("[REBIND] placement.bind IM_CONTEXT_MENU error:", ctxMenuErr);
     }
 
-    // Also verify event.get to confirm bindings
+    // Verify bindings
     const boundEvents = await callBitrix(integration.client_endpoint, accessToken, "event.get", {});
     console.log("[REBIND] Current bindings:", JSON.stringify(boundEvents).substring(0, 500));
-
-    // Verify placement.get to confirm IM_TEXTAREA registration
-    const placementGet = await callBitrix(integration.client_endpoint, accessToken, "placement.get", {
-      PLACEMENT: "IM_TEXTAREA",
-    });
-    console.log("[REBIND] placement.get IM_TEXTAREA:", JSON.stringify(placementGet).substring(0, 1000));
 
     return new Response(JSON.stringify({
       success: true,
       results,
       bound_events: boundEvents.result || [],
-      placement_im_textarea: placementGet.result || placementGet,
       integration_domain: integration.domain,
     }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
 
