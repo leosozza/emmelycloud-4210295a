@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Settings, Check, AlertCircle, Save, RefreshCw, Palette } from "lucide-react";
+import { Settings, Check, AlertCircle, Save, RefreshCw, Palette, Shield } from "lucide-react";
 import { useColorTheme, type ColorTheme } from "@/contexts/ThemeContext";
 import { cn } from "@/lib/utils";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { calculateLateFees } from "@/lib/lateFeeCalc";
+import PermissoesTab from "@/components/configuracoes/PermissoesTab";
 
 const themes: { id: ColorTheme; label: string; colors: string[] }[] = [
   { id: "red", label: "Vermelho", colors: ["hsl(0,56%,39%)", "hsl(48,96%,89%)", "hsl(43,93%,91%)"] },
@@ -223,8 +224,11 @@ export default function Configuracoes() {
           <TabsTrigger value="aparencia" className="gap-1.5">
             <Palette className="h-3.5 w-3.5" /> Aparência
           </TabsTrigger>
-          <TabsTrigger value="encargos" className="gap-1.5">
+        <TabsTrigger value="encargos" className="gap-1.5">
             <AlertCircle className="h-3.5 w-3.5" /> Encargos
+          </TabsTrigger>
+          <TabsTrigger value="permissoes" className="gap-1.5">
+            <Shield className="h-3.5 w-3.5" /> Permissões
           </TabsTrigger>
         </TabsList>
         <TabsContent value="aparencia">
@@ -232,6 +236,9 @@ export default function Configuracoes() {
         </TabsContent>
         <TabsContent value="encargos">
           <EncargosTab />
+        </TabsContent>
+        <TabsContent value="permissoes">
+          <PermissoesTab />
         </TabsContent>
       </Tabs>
     </div>
