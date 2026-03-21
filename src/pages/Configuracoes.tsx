@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Settings, Check, AlertCircle, Save, RefreshCw, Palette } from "lucide-react";
+import { Settings, Check, AlertCircle, Save, RefreshCw, Palette, Shield } from "lucide-react";
 import { useColorTheme, type ColorTheme } from "@/contexts/ThemeContext";
 import { cn } from "@/lib/utils";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { calculateLateFees } from "@/lib/lateFeeCalc";
+import PermissoesTab from "@/components/configuracoes/PermissoesTab";
 
 const themes: { id: ColorTheme; label: string; colors: string[] }[] = [
   { id: "red", label: "Vermelho", colors: ["hsl(0,56%,39%)", "hsl(48,96%,89%)", "hsl(43,93%,91%)"] },
