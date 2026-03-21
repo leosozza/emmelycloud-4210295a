@@ -318,8 +318,7 @@ function renderHtml(opts: {
     #contact-meta { font-size: 11px; color: #959ca4; margin-top: 1px; display: flex; align-items: center; gap: 4px; }
     #mode-badge { display: inline-flex; align-items: center; gap: 4px; background: ${modeColor}15; color: ${modeColor}; border: 1px solid ${modeColor}33; border-radius: 20px; padding: 2px 8px; font-size: 10px; font-weight: 600; }
 
-    /* Conversation area */
-    #conv-area { flex: 1; display: flex; flex-direction: column; overflow: hidden; min-height: 0; }
+    #conv-area, .tab-content { flex: 1; display: flex; flex-direction: column; overflow: hidden; min-height: 0; }
     #messages { flex: 1; overflow-y: auto; padding: 12px 16px; display: flex; flex-direction: column; }
 
     /* Client send bar */
