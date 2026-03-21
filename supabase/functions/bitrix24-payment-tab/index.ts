@@ -99,6 +99,7 @@ interface InstallmentData {
   currency: string;
   description: string;
   transaction_id?: string;
+  financial_record_id?: string;
   payment_url?: string;
   is_down_payment?: boolean;
   invoice_id?: number;
