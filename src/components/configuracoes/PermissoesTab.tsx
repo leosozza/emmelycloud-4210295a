@@ -78,10 +78,11 @@ export default function PermissoesTab() {
 
     try {
       // Delete existing permissions for this integration
-      await supabase
+      const { error: delError } = await supabase
         .from("bitrix24_user_permissions")
         .delete()
         .eq("integration_id", integrationId);
+      if (delError) throw delError;
 
       // Insert new permissions
       const rows: any[] = [];
@@ -97,8 +98,8 @@ export default function PermissoesTab() {
       }
 
       if (rows.length > 0) {
-        const { error } = await supabase.from("bitrix24_user_permissions").insert(rows);
-        if (error) throw error;
+        const { error: insError } = await supabase.from("bitrix24_user_permissions").insert(rows);
+        if (insError) throw insError;
       }
 
       toast.success("Permissões guardadas com sucesso");
