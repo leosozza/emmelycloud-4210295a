@@ -238,6 +238,10 @@ function renderPaymentTab(opts: {
       notes: meta.notes || "",
       number: inst.number,
       total: inst.total,
+      late_penalty: inst.late_penalty || 0,
+      late_interest: inst.late_interest || 0,
+      late_days: inst.late_days || 0,
+      late_total: inst.late_total || inst.value,
     }).replace(/"/g, "&quot;");
 
     // Dual currency display
