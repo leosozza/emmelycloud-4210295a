@@ -1049,7 +1049,8 @@ function renderPaymentTab(opts: {
   function openBaixaModal(inst) {
     _baixaOriginalAmount = inst.value || 0;
     var cur = inst.currency || 'EUR';
-    document.getElementById('baixa-tx-id').value = inst.transaction_id || inst.id;
+    document.getElementById('baixa-tx-id').value = inst.transaction_id || '';
+    document.getElementById('baixa-fr-id').value = inst.financial_record_id || (inst.transaction_id ? '' : inst.id);
     document.getElementById('baixa-invoice-id').value = inst.invoice_id || '';
     document.getElementById('baixa-currency').value = cur;
     document.getElementById('baixa-total-display').textContent = new Intl.NumberFormat('pt-PT', { style: 'currency', currency: cur }).format(_baixaOriginalAmount);
@@ -1061,10 +1062,13 @@ function renderPaymentTab(opts: {
     document.getElementById('baixa-proof').value = '';
     document.getElementById('baixa-result').style.display = 'none';
     // Store entity info for synthetic creation
-    document.getElementById('baixa-overlay').dataset.entityId = inst.entity_id || ENTITY_ID;
-    document.getElementById('baixa-overlay').dataset.currency = cur;
-    document.getElementById('baixa-overlay').dataset.description = inst.description || '';
-    document.getElementById('baixa-overlay').classList.add('active');
+    var overlay = document.getElementById('baixa-overlay');
+    overlay.dataset.entityId = inst.entity_id || ENTITY_ID;
+    overlay.dataset.currency = cur;
+    overlay.dataset.description = inst.description || '';
+    overlay.dataset.installmentNumber = inst.number || '';
+    overlay.dataset.totalInstallments = inst.total || '';
+    overlay.classList.add('active');
     calcDiscount();
   }
   function closeBaixaModal() { document.getElementById('baixa-overlay').classList.remove('active'); }
