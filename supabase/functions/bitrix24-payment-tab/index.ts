@@ -1874,9 +1874,30 @@ Deno.serve(async (req) => {
       .eq("bitrix24_deal_id", String(entityId))
       .order("installment_number", { ascending: true });
     if (directRecords && directRecords.length > 0) {
-      // Use direct records as primary source (covers all installments)
       financialRecords = directRecords;
       console.log("[payment-tab] Using direct financial_records by deal_id:", directRecords.length, "records");
+    }
+
+    // Fetch late fee configuration
+    let lateFeeConfig: LateFeeConfig = DEFAULT_LATE_FEE_CONFIG;
+    try {
+      const { data: lfConfig } = await supabase
+        .from("payment_gateway_config")
+        .select("config")
+        .eq("gateway", "late_fees")
+        .eq("is_active", true)
+        .maybeSingle();
+      if (lfConfig?.config) {
+        const c = lfConfig.config as any;
+        lateFeeConfig = {
+          penalty_pct: c.penalty_pct ?? DEFAULT_LATE_FEE_CONFIG.penalty_pct,
+          interest_monthly_pct: c.interest_monthly_pct ?? DEFAULT_LATE_FEE_CONFIG.interest_monthly_pct,
+          max_interest_days: c.max_interest_days ?? DEFAULT_LATE_FEE_CONFIG.max_interest_days,
+          grace_days: c.grace_days ?? DEFAULT_LATE_FEE_CONFIG.grace_days,
+        };
+      }
+    } catch (e) {
+      console.error("[payment-tab] Failed to load late fee config:", e);
     }
 
     let installments: InstallmentData[] = [];
