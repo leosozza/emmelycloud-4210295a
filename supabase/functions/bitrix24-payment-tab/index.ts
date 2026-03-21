@@ -628,6 +628,7 @@ function renderPaymentTab(opts: {
   <div class="b24-form-card">
     <div class="b24-form-title">${icon("check", 16)} Dar Baixa</div>
     <input type="hidden" id="baixa-tx-id">
+    <input type="hidden" id="baixa-fr-id">
     <input type="hidden" id="baixa-invoice-id">
     <input type="hidden" id="baixa-currency">
     <div class="b24-form-group">
