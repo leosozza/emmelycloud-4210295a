@@ -1,59 +1,37 @@
 
 
-# Tema Azul — Alternativa de Cores
+# Correção do Fluxo de Baixa — Deal 14091
 
-## O que será feito
+## Problema Identificado
 
-Adicionar um seletor de tema de cor nas configurações (acessível pelo menu do utilizador no header) que permite alternar entre o tema atual **Vermelho** e um novo tema **Azul**.
+O fluxo de **baixa** tem duas falhas críticas:
 
-## Como funciona
+### Falha 1: `financial_records` nunca é atualizado
+Quando o utilizador clica "Confirmar Baixa", a função `submitBaixa()` chama `payment-create` PATCH com `status_update: 'confirmed'`. O PATCH handler (linha 216-256) **só atualiza a tabela `payment_transactions`** — nunca toca na tabela `financial_records`. Resultado: a parcela no `financial_records` continua com `status: 'pendente'` e `paid_at: null`, mesmo após a baixa.
 
-### 1. CSS — Adicionar variantes de cor azul
-**Ficheiro:** `src/index.css`
+Quando o tab recarrega, se os dados vêm de `financial_records` (caso do deal 14091 — importado via Access), o status ainda aparece como pendente porque `financial_records.status` não foi alterado.
 
-Adicionar classes `.theme-blue` e `.dark.theme-blue` que sobrescrevem as variáveis CSS `--primary`, `--ring`, `--accent`, `--sidebar-primary`, `--sidebar-ring`, `--chart-*`, etc., substituindo os tons vermelhos/dourados por tons azuis.
+### Falha 2: Smart Invoice usa stageId errado
+O código client-side (linha 1151) usa `stageId: 'DT31_6:P'`, mas conforme a memória do projeto, a pipeline correcta é `DT31_3` com estágio `DT31_3:P` para "Pago".
 
-```text
-:root            → vermelho (padrão, sem alteração)
-.theme-blue      → azul (light)
-.dark.theme-blue → azul (dark)
-```
+## Plano de Correção
 
-### 2. Contexto de Tema
-**Novo ficheiro:** `src/contexts/ThemeContext.tsx`
+### 1. Atualizar `payment-create` PATCH para sincronizar `financial_records`
+**Ficheiro:** `supabase/functions/payment-create/index.ts`
 
-- Criar `ThemeProvider` que lê/guarda o tema escolhido em `localStorage`
-- Aplicar a classe `theme-blue` no `<html>` quando selecionado
-- Expor `theme` e `setTheme` via hook `useTheme`
+No handler PATCH (após atualizar `payment_transactions`):
+- Se `status_update === 'confirmed'`, verificar se a transação tem `financial_record_id`
+- Se sim, atualizar `financial_records` com `status: 'paga'`, `paid_at`, `payment_method`
+- Se não tem `financial_record_id`, procurar em `financial_records` pelo `bitrix24_deal_id` na metadata e pelo valor/número da parcela
 
-### 3. Página de Configurações
-**Novo ficheiro:** `src/pages/Configuracoes.tsx`
+### 2. Corrigir stageId da Smart Invoice no Bitrix24
+**Ficheiro:** `supabase/functions/bitrix24-payment-tab/index.ts`
 
-- Secção "Aparência" com cards visuais para cada tema (Vermelho e Azul)
-- Cada card mostra uma preview da cor com borda de seleção
-- Ao clicar, aplica o tema imediatamente
+Na função `submitBaixa()` (linha 1151):
+- Mudar de `stageId: 'DT31_6:P'` para `stageId: 'DT31_3:P'`
+- Adicionar `closedate` com a data de pagamento para registo correto
 
-### 4. Integrar no layout
-- **`src/App.tsx`**: Envolver com `ThemeProvider`, adicionar rota `/configuracoes`
-- **`src/components/AppSidebar.tsx`**: Adicionar item "Configurações" no grupo secundário
-- **`src/components/AppHeader.tsx`**: O item "Configurações" no dropdown do avatar navega para `/configuracoes`
-
-### Paleta Azul (valores HSL)
-| Variável | Light | Dark |
-|---|---|---|
-| `--primary` | `220 60% 42%` | `220 70% 50%` |
-| `--ring` | `220 60% 42%` | `220 70% 50%` |
-| `--accent` | `210 80% 90%` | `220 50% 35%` |
-| `--accent-foreground` | `220 60% 30%` | `210 80% 90%` |
-| `--sidebar-primary` | `220 60% 42%` | `220 70% 50%` |
-| `--sidebar-accent` | `210 80% 90%` | `220 50% 35%` |
-| `--chart-1/3` | tons azuis | tons azuis |
-
-### Ficheiros a criar/editar
-1. `src/index.css` — classes `.theme-blue`
-2. `src/contexts/ThemeContext.tsx` — novo contexto
-3. `src/pages/Configuracoes.tsx` — nova página
-4. `src/App.tsx` — rota + provider
-5. `src/components/AppSidebar.tsx` — link configurações
-6. `src/components/AppHeader.tsx` — link configurações no dropdown
+### Ficheiros a editar
+1. `supabase/functions/payment-create/index.ts` — PATCH handler: sincronizar `financial_records`
+2. `supabase/functions/bitrix24-payment-tab/index.ts` — `submitBaixa()`: corrigir stageId da fatura
 
