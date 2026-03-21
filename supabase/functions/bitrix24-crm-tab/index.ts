@@ -637,6 +637,7 @@ function renderHtml(opts: {
       .catch(function(e) { setStatus('❌ ' + e.message, '#ef4444'); });
     }
 
+  try {
     BX24.init(function() { BX24.fitWindow(); });
   } catch(e) {}
 </script>
