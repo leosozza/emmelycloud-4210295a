@@ -88,6 +88,48 @@ function formatDate(dateStr: string | null): string {
   } catch { return dateStr; }
 }
 
+// ─── Late Fee Calculation ───────────────────────────────────────────────────
+
+interface LateFeeConfig {
+  penalty_pct: number;
+  interest_monthly_pct: number;
+  max_interest_days: number;
+  grace_days: number;
+}
+
+const DEFAULT_LATE_FEE_CONFIG: LateFeeConfig = {
+  penalty_pct: 10,
+  interest_monthly_pct: 1,
+  max_interest_days: 365,
+  grace_days: 0,
+};
+
+interface LateFeeResult {
+  daysLate: number;
+  penalty: number;
+  interest: number;
+  charges: number;
+  total: number;
+}
+
+function calculateLateFees(amount: number, daysLate: number, config: LateFeeConfig): LateFeeResult {
+  const effectiveDays = Math.max(0, daysLate - config.grace_days);
+  const cappedDays = Math.min(effectiveDays, config.max_interest_days);
+  if (cappedDays <= 0) {
+    return { daysLate: 0, penalty: 0, interest: 0, charges: 0, total: amount };
+  }
+  const penalty = Math.round(amount * (config.penalty_pct / 100) * 100) / 100;
+  const interest = Math.round(amount * (config.interest_monthly_pct / 100) * (cappedDays / 30) * 100) / 100;
+  const charges = penalty + interest;
+  return {
+    daysLate: cappedDays,
+    penalty,
+    interest,
+    charges,
+    total: Math.round((amount + charges) * 100) / 100,
+  };
+}
+
 interface InstallmentData {
   id: string;
   number: number;
@@ -107,6 +149,10 @@ interface InstallmentData {
   company_name?: string;
   payment_method?: string;
   metadata?: any;
+  late_penalty?: number;
+  late_interest?: number;
+  late_days?: number;
+  late_total?: number;
 }
 
 function getStatusColor(status: string): { bg: string; bgDark: string; text: string; textDark: string; label: string } {
