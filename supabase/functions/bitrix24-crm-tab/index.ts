@@ -445,231 +445,47 @@ function renderHtml(opts: {
   var CHANNEL = "${channel || ""}";
   var CONV_SUMMARY = ${JSON.stringify(convSummary)};
   var AGENTS = ${agentsJson};
-  var selectedAgentId = null;
-  var selectedAgentName = '';
+    var selectedAgentId = AGENTS.length > 0 ? AGENTS[0].id : null;
+    var selectedAgentName = AGENTS.length > 0 ? AGENTS[0].name : '';
+    var BADGE_COLORS = ['#2283d8','#7b5ea7','#e06c4f','#22a86b','#d4a017','#3ea8c7','#c75ea7','#5ea77b'];
 
-  // Scroll messages to bottom
-  var msgBox = document.getElementById('messages');
-  if (msgBox) msgBox.scrollTop = msgBox.scrollHeight;
-
-  // Template select → populate textarea
-  var tplSelect = document.getElementById('template-select');
-  if (tplSelect) {
-    tplSelect.addEventListener('change', function() {
-      var ta = document.getElementById('start-msg-input');
-      if (this.value && ta) ta.value = this.value;
-    });
-  }
-
-  // Auto-resize textarea
-  function autoResize(el) {
-    el.style.height = 'auto';
-    el.style.height = Math.min(el.scrollHeight, 80) + 'px';
-  }
-
-  // ── AI Panel toggle ──
-  function toggleAiPanel() {
-    document.getElementById('ai-panel').classList.toggle('collapsed');
-  }
-
-  // ── Send message to client ──
-  function sendClientMessage() {
-    var input = document.getElementById('client-input');
-    var text = (input.value || '').trim();
-    if (!text || !CONVERSATION_ID) return;
-
-    var btn = document.getElementById('send-client-btn');
-    btn.disabled = true;
-    input.value = '';
-    input.style.height = 'auto';
-
-    // Optimistic: add message to chat
-    var msgContainer = document.getElementById('messages');
-    var div = document.createElement('div');
-    div.style.cssText = 'display:flex;flex-direction:column;align-items:flex-end;margin-bottom:10px';
-    div.innerHTML = '<div style="font-size:10px;color:#959ca4;margin-bottom:2px;padding:0 4px">Eu · agora</div>' +
-      '<div style="background:#2283d8;color:#fff;padding:8px 12px;border-radius:12px;max-width:80%;font-size:13px;line-height:1.4;word-break:break-word">' +
-      text.replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\\n/g,'<br>') + '</div>';
-    msgContainer.appendChild(div);
-    msgContainer.scrollTop = msgContainer.scrollHeight;
-
-    fetch(SUPABASE_URL + '/functions/v1/message-send', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_KEY },
-      body: JSON.stringify({ conversation_id: CONVERSATION_ID, content: text, direction: 'outbound', sender_name: 'Operador Bitrix24' })
-    })
-    .then(function(r) { return r.json(); })
-    .then(function(d) {
-      if (d.error) setStatus('❌ ' + d.error, '#ef4444');
-      else setStatus('✅ Enviada', '#22c55e');
-    })
-    .catch(function(e) { setStatus('❌ ' + e.message, '#ef4444'); })
-    .finally(function() { btn.disabled = false; input.focus(); });
-  }
-
-  // ── AI Chat with @agent support ──
-  var aiHistory = [];
-  var aiSending = false;
-
-  function handleAiInput(e) {
-    var val = e.target.value;
-    var atIdx = val.lastIndexOf('@');
-    var dropdown = document.getElementById('agent-dropdown');
-    
-    if (atIdx >= 0) {
-      var query = val.substring(atIdx + 1).toLowerCase();
-      var filtered = AGENTS.filter(function(a) { return a.name.toLowerCase().indexOf(query) >= 0; });
-      
-      if (filtered.length > 0 && !selectedAgentId) {
-        dropdown.innerHTML = filtered.map(function(a) {
-          return '<div class="agent-option" onclick="selectAgent(\\'' + a.id + '\\',\\'' + a.name.replace(/'/g,"\\\\'") + '\\')">' +
-            '<span class="agent-icon">' + a.name.charAt(0).toUpperCase() + '</span>' + a.name + '</div>';
-        }).join('');
-        dropdown.classList.add('visible');
-      } else {
-        dropdown.classList.remove('visible');
-      }
-    } else {
-      dropdown.classList.remove('visible');
+    // ── Build agent badges ──
+    function renderBadges() {
+      var container = document.getElementById('agent-badges');
+      if (!container || AGENTS.length === 0) return;
+      container.innerHTML = AGENTS.map(function(a, i) {
+        var isActive = a.id === selectedAgentId;
+        var color = BADGE_COLORS[i % BADGE_COLORS.length];
+        return '<button class="agent-badge-btn' + (isActive ? ' active' : '') + '" data-id="' + a.id + '" data-name="' + a.name.replace(/"/g,'&quot;') + '" onclick="selectAgent(this)" style="' + (isActive ? 'background:'+color+';border-color:'+color : '') + '">' +
+          '<span class="agent-badge-icon" style="' + (!isActive ? 'background:'+color : '') + '">' + a.name.charAt(0).toUpperCase() + '</span>' +
+          a.name + '</button>';
+      }).join('');
+      updatePlaceholder();
     }
-  }
+    renderBadges();
 
-  function selectAgent(id, name) {
-    selectedAgentId = id;
-    selectedAgentName = name;
-    var input = document.getElementById('ai-input');
-    var val = input.value;
-    var atIdx = val.lastIndexOf('@');
-    input.value = val.substring(0, atIdx) + '@' + name + ' ';
-    document.getElementById('agent-dropdown').classList.remove('visible');
-    input.focus();
-  }
-
-  function appendAiMsg(role, text, showUseBtn) {
-    var container = document.getElementById('ai-messages');
-    var wrapper = document.createElement('div');
-    wrapper.style.cssText = 'display:flex;flex-direction:column;' + (role === 'user' ? 'align-items:flex-end' : 'align-items:flex-start');
-    
-    var div = document.createElement('div');
-    div.className = 'ai-msg ' + role;
-    div.textContent = text;
-    wrapper.appendChild(div);
-
-    if (showUseBtn && role === 'assistant' && text) {
-      var btn = document.createElement('button');
-      btn.className = 'use-response-btn';
-      btn.innerHTML = '${B24_ICONS.use} Usar resposta';
-      btn.onclick = function() { useResponse(text); };
-      wrapper.appendChild(btn);
+    function selectAgent(el) {
+      var id = el.getAttribute('data-id');
+      var name = el.getAttribute('data-name');
+      if (id === selectedAgentId) return;
+      selectedAgentId = id;
+      selectedAgentName = name;
+      // Clear chat history when switching agent
+      aiHistory = [];
+      var msgs = document.getElementById('ai-messages');
+      msgs.innerHTML = '<div class="ai-empty" id="ai-empty"><svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M9 18h6"/><path d="M10 22h4"/><path d="M12 2a7 7 0 0 0-4 12.7V17h8v-2.3A7 7 0 0 0 12 2z"/></svg><p>Pergunte ao <strong>' + name + '</strong><br>A resposta será baseada no contexto da conversa.</p></div>';
+      renderBadges();
     }
 
-    container.appendChild(wrapper);
-    container.scrollTop = container.scrollHeight;
-    return div;
-  }
-
-  function useResponse(text) {
-    var clientInput = document.getElementById('client-input');
-    if (clientInput) {
-      clientInput.value = text;
-      autoResize(clientInput);
-      clientInput.focus();
-      // Scroll to make sure client input is visible
-      clientInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      setStatus('Resposta copiada para o campo de envio', '#2283d8');
-    } else {
-      setStatus('Sem campo de envio disponível (inicie uma conversa primeiro)', '#f59e0b');
-    }
-  }
-
-  function quickAsk(text) {
-    document.getElementById('ai-input').value = text;
-    // Expand AI panel if collapsed
-    var panel = document.getElementById('ai-panel');
-    if (panel.classList.contains('collapsed')) panel.classList.remove('collapsed');
-    sendAiMessage();
-  }
-
-  function sendAiMessage() {
-    if (aiSending) return;
-    var input = document.getElementById('ai-input');
-    var rawText = (input.value || '').trim();
-    if (!rawText) return;
-
-    // Extract question text (remove @AgentName prefix)
-    var questionText = rawText;
-    if (selectedAgentId && rawText.indexOf('@' + selectedAgentName) === 0) {
-      questionText = rawText.substring(('@' + selectedAgentName).length).trim();
-    }
-    if (!questionText) { setStatus('Escreva uma pergunta após @' + selectedAgentName, '#f59e0b'); return; }
-
-    input.value = '';
-    aiSending = true;
-    document.getElementById('ai-send-btn').disabled = true;
-
-    var displayText = selectedAgentName ? '@' + selectedAgentName + ' ' + questionText : questionText;
-    appendAiMsg('user', displayText, false);
-
-    // Build context prefix
-    var contextPrefix = '';
-    if (aiHistory.length === 0) {
-      contextPrefix = '[CONTEXTO INTERNO - NÃO ENVIAR AO CLIENTE]\\n';
-      contextPrefix += 'Cliente: ' + CONTACT_NAME + '\\n';
-      if (CHANNEL) contextPrefix += 'Canal: ' + CHANNEL + '\\n';
-      if (CONV_SUMMARY) contextPrefix += 'Histórico recente:\\n' + CONV_SUMMARY + '\\n';
-      contextPrefix += '---\\nPergunta do operador: ';
+    function updatePlaceholder() {
+      var input = document.getElementById('ai-input');
+      if (input && selectedAgentName) input.placeholder = 'Pergunte ao ' + selectedAgentName + '...';
     }
 
-    var fullText = contextPrefix + questionText;
-    aiHistory.push({ role: 'user', content: fullText });
-
-    var typingDiv = appendAiMsg('assistant', '', false);
-    typingDiv.innerHTML = '<span class="typing-dots"></span>';
-
-    // Choose endpoint: if agent selected, use ai-playground; else ai-process-message
-    var useAgentEndpoint = !!selectedAgentId;
-    var url, payload;
-
-    if (useAgentEndpoint) {
-      url = SUPABASE_URL + '/functions/v1/ai-playground';
-      payload = {
-        agent_id: selectedAgentId,
-        messages: aiHistory
-      };
-    } else {
-      url = SUPABASE_URL + '/functions/v1/ai-process-message';
-      payload = {
-        message_text: fullText,
-        skip_send: true
-      };
-      if (CONVERSATION_ID) payload.conversation_id = CONVERSATION_ID;
+    function autoResizeAi(el) {
+      el.style.height = 'auto';
+      el.style.height = Math.min(el.scrollHeight, 80) + 'px';
     }
-
-    fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + SUPABASE_KEY },
-      body: JSON.stringify(payload)
-    })
-    .then(function(r) { return r.json(); })
-    .then(function(d) {
-      typingDiv.parentElement.remove();
-      var reply = d.content || d.reply || d.error || 'Sem resposta da IA';
-      appendAiMsg('assistant', reply, true);
-      aiHistory.push({ role: 'assistant', content: reply });
-    })
-    .catch(function(e) {
-      typingDiv.parentElement.remove();
-      appendAiMsg('assistant', 'Erro: ' + e.message, false);
-    })
-    .finally(function() {
-      aiSending = false;
-      document.getElementById('ai-send-btn').disabled = false;
-      input.focus();
-      // Reset agent selection after send
-      selectedAgentId = null;
-      selectedAgentName = '';
-    });
-  }
 
   function setStatus(msg, color) {
     var el = document.getElementById('status-msg');
