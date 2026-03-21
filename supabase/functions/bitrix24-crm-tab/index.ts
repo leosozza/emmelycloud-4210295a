@@ -318,8 +318,7 @@ function renderHtml(opts: {
     #contact-meta { font-size: 11px; color: #959ca4; margin-top: 1px; display: flex; align-items: center; gap: 4px; }
     #mode-badge { display: inline-flex; align-items: center; gap: 4px; background: ${modeColor}15; color: ${modeColor}; border: 1px solid ${modeColor}33; border-radius: 20px; padding: 2px 8px; font-size: 10px; font-weight: 600; }
 
-    /* Conversation area */
-    #conv-area { flex: 1; display: flex; flex-direction: column; overflow: hidden; min-height: 0; }
+    #conv-area, .tab-content { flex: 1; display: flex; flex-direction: column; overflow: hidden; min-height: 0; }
     #messages { flex: 1; overflow-y: auto; padding: 12px 16px; display: flex; flex-direction: column; }
 
     /* Client send bar */
@@ -331,13 +330,13 @@ function renderHtml(opts: {
     #client-send-bar button:disabled { opacity: .5; cursor: not-allowed; }
     #status-msg { font-size: 11px; color: #959ca4; text-align: center; padding: 2px 16px; min-height: 14px; }
 
-    /* AI Panel — Chat style */
-    #ai-panel { background: #fff; border-top: 2px solid #2283d8; display: flex; flex-direction: column; max-height: 35vh; min-height: 40px; transition: max-height .3s ease; overflow: hidden; }
-    #ai-panel.collapsed { max-height: 40px; }
-    #ai-header { display: flex; align-items: center; gap: 6px; padding: 8px 16px; cursor: pointer; user-select: none; font-size: 13px; font-weight: 600; color: #2283d8; flex-shrink: 0; }
-    #ai-header:hover { background: #f0f7ff; }
-    #ai-toggle { margin-left: auto; font-size: 16px; transition: transform .2s; }
-    #ai-panel.collapsed #ai-toggle { transform: rotate(180deg); }
+    /* Tab bar */
+    #tab-bar { display: flex; background: #fff; border-bottom: 1px solid #dfe0e3; }
+    .tab-btn { flex: 1; padding: 8px 12px; font-size: 12px; font-weight: 600; color: #959ca4; background: none; border: none; border-bottom: 2px solid transparent; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 5px; transition: all .15s; }
+    .tab-btn:hover { color: #2283d8; background: #f0f7ff; }
+    .tab-btn.active { color: #2283d8; border-bottom-color: #2283d8; }
+    .tab-content { display: none; flex: 1; flex-direction: column; overflow: hidden; min-height: 0; }
+    .tab-content.active { display: flex; }
 
     /* Agent Badges — horizontal gallery scroll */
     #agent-badges { display: flex; flex-wrap: nowrap; gap: 6px; padding: 6px 16px; overflow-x: auto; -webkit-overflow-scrolling: touch; background: #f9fafb; border-bottom: 1px solid #f0f1f3; flex-shrink: 0; }
@@ -364,13 +363,13 @@ function renderHtml(opts: {
     .ai-empty p { font-size: 12px; line-height: 1.5; }
 
     /* AI Input */
-    #ai-input-area { display: flex; gap: 6px; padding: 8px 12px; background: #fff; border-top: 1px solid #eee; align-items: flex-end; }
+    #ai-input-area { display: flex; gap: 6px; padding: 8px 12px; background: #fff; border-top: 1px solid #eee; align-items: flex-end; flex-shrink: 0; }
     #ai-input { flex: 1; border: 1px solid #dfe0e3; border-radius: 8px; padding: 8px 12px; font-size: 12px; outline: none; color: #333840; font-family: inherit; resize: none; min-height: 36px; max-height: 80px; }
     #ai-input:focus { border-color: #2283d8; }
     #ai-send-btn { background: #2283d8; color: #fff; border: none; border-radius: 8px; padding: 8px 12px; font-size: 12px; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 4px; }
     #ai-send-btn:hover { background: #1b6cb8; }
     #ai-send-btn:disabled { opacity: .5; cursor: not-allowed; }
-    .ai-suggestions { display: flex; flex-wrap: wrap; gap: 4px; padding: 4px 16px 8px; background: #fff; }
+    .ai-suggestions { display: flex; flex-wrap: wrap; gap: 4px; padding: 4px 16px 8px; background: #fff; flex-shrink: 0; }
     .ai-suggestions button { background: #f5f7fa; color: #333840; border: 1px solid #dfe0e3; padding: 4px 10px; border-radius: 6px; font-size: 11px; font-weight: 500; cursor: pointer; transition: all .15s; white-space: nowrap; display: flex; align-items: center; gap: 3px; }
     .ai-suggestions button:hover { background: #e8f4fd; color: #2283d8; border-color: #2283d8; }
 
@@ -391,14 +390,19 @@ function renderHtml(opts: {
     </div>
   </div>
 
-  <!-- Conversation Area -->
-  <div id="conv-area">
-    <div id="messages">
+  <!-- Tab Bar -->
+  <div id="tab-bar">
+    <button class="tab-btn active" onclick="switchTab('conversa')" id="tab-btn-conversa">${B24_ICONS.message} Conversa</button>
+    <button class="tab-btn" onclick="switchTab('consulta')" id="tab-btn-consulta">${B24_ICONS.robot} Consulta IA</button>
+  </div>
+
+  <!-- Tab: Conversa -->
+  <div id="tab-conversa" class="tab-content active">
+    <div id="messages" style="flex:1;overflow-y:auto;padding:12px 16px;display:flex;flex-direction:column">
       ${conversationId ? messagesHtml : startConvHtml}
     </div>
     
     ${conversationId ? `
-    <!-- Client Send Bar -->
     <div id="client-send-bar">
       <textarea id="client-input" rows="1" placeholder="Escreva ao cliente..." oninput="autoResize(this)"></textarea>
       <button onclick="sendClientMessage()" id="send-client-btn">${B24_ICONS.send} Enviar</button>
@@ -410,12 +414,8 @@ function renderHtml(opts: {
     <div id="status-msg"></div>
   </div>
 
-  <!-- AI Panel — Chat com badges -->
-  <div id="ai-panel" class="collapsed">
-    <div id="ai-header" onclick="toggleAiPanel()">
-      ${B24_ICONS.robot} Emmely AI Consulta
-      <span id="ai-toggle">▼</span>
-    </div>
+  <!-- Tab: Consulta IA -->
+  <div id="tab-consulta" class="tab-content">
     <div id="agent-badges"></div>
     <div id="ai-messages">
       <div class="ai-empty" id="ai-empty">
@@ -519,22 +519,29 @@ function renderHtml(opts: {
       if (clientInput) {
         clientInput.value = text;
         autoResize(clientInput);
+        switchTab('conversa');
         clientInput.focus();
-        clientInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
         setStatus('Resposta copiada para o campo de envio', '#2283d8');
       } else {
         setStatus('Sem campo de envio disponível (inicie uma conversa primeiro)', '#f59e0b');
       }
     }
 
-    function toggleAiPanel() {
-      var panel = document.getElementById('ai-panel');
-      panel.classList.toggle('collapsed');
+    function switchTab(tab) {
+      document.querySelectorAll('.tab-content').forEach(function(el) { el.classList.remove('active'); });
+      document.querySelectorAll('.tab-btn').forEach(function(el) { el.classList.remove('active'); });
+      var content = document.getElementById('tab-' + tab);
+      var btn = document.getElementById('tab-btn-' + tab);
+      if (content) content.classList.add('active');
+      if (btn) btn.classList.add('active');
+      if (tab === 'consulta') {
+        var aiInput = document.getElementById('ai-input');
+        if (aiInput) aiInput.focus();
+      }
     }
 
     function quickAsk(text) {
-      var panel = document.getElementById('ai-panel');
-      if (panel.classList.contains('collapsed')) panel.classList.remove('collapsed');
+      switchTab('consulta');
       document.getElementById('ai-input').value = text;
       sendAiMessage();
     }
