@@ -2379,6 +2379,44 @@ export type Database = {
         }
         Relationships: []
       }
+      receipt_links: {
+        Row: {
+          bitrix24_deal_id: string | null
+          client_name: string | null
+          contract_id: string | null
+          created_at: string
+          deal_title: string | null
+          id: string
+          token: string
+        }
+        Insert: {
+          bitrix24_deal_id?: string | null
+          client_name?: string | null
+          contract_id?: string | null
+          created_at?: string
+          deal_title?: string | null
+          id?: string
+          token?: string
+        }
+        Update: {
+          bitrix24_deal_id?: string | null
+          client_name?: string | null
+          contract_id?: string | null
+          created_at?: string
+          deal_title?: string | null
+          id?: string
+          token?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "receipt_links_contract_id_fkey"
+            columns: ["contract_id"]
+            isOneToOne: false
+            referencedRelation: "contracts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       report_snapshots: {
         Row: {
           created_at: string
