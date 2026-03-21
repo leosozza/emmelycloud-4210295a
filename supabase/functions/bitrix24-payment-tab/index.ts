@@ -1247,11 +1247,25 @@ function renderPaymentTab(opts: {
         financial_record_id: frId || undefined,
         status_update: 'confirmed',
         paid_amount: paidAmount,
-        metadata_update: { manual_paid: true, paid_at: paidDate + 'T00:00:00Z' },
+        metadata_update: {
+          manual_paid: true,
+          paid_at: paidDate + 'T00:00:00Z',
+          late_fee: _baixaLateFees.charges > 0 ? {
+            penalty: _baixaLateFees.penalty,
+            interest: _baixaLateFees.interest,
+            charges: _baixaLateFees.charges,
+            days_late: _baixaLateFees.days,
+            base_amount: _baixaOriginalAmount
+          } : undefined,
+          expected_amount: _baixaLateFees.charges > 0 ? _baixaLateFees.total : _baixaOriginalAmount
+        },
       };
-      if (discount > 0.001) {
+      if (discount > 0.001 && reason) {
         payload.discount_amount = discount;
         payload.discount_reason = reason;
+      } else if (discount > 0.001 && !reason) {
+        // No reason = carry over to next installment
+        payload.carry_over_amount = discount;
       }
       if (proofUrl) payload.proof_url = proofUrl;
 
