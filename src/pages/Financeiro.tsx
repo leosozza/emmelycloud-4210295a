@@ -10,7 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { format } from "date-fns";
 import { pt } from "date-fns/locale";
-import { Send, LayoutDashboard, Receipt, AlertTriangle, Percent, Trophy } from "lucide-react";
+import { Send, LayoutDashboard, Receipt, AlertTriangle, Percent, Trophy, ExternalLink, Copy } from "lucide-react";
 import { toast } from "sonner";
 import { FinanceiroOverview } from "@/components/financeiro/FinanceiroOverview";
 import { InadimplenciaTab } from "@/components/financeiro/InadimplenciaTab";
@@ -91,7 +91,34 @@ const FinanceiroPage = () => {
     },
   });
 
-  const reminderCount = 0; // Simplified — no metadata tracking on financial_records
+  // Fetch receipt links
+  const { data: receiptLinks = [] } = useQuery({
+    queryKey: ["receipt-links"],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("receipt_links")
+        .select("token, contract_id, bitrix24_deal_id");
+      return data || [];
+    },
+  });
+
+  const getReceiptUrl = (rec: any) => {
+    const link = receiptLinks.find(
+      (rl: any) => (rl.contract_id && rl.contract_id === rec.contract_id) ||
+                   (rl.bitrix24_deal_id && rl.bitrix24_deal_id === rec.bitrix24_deal_id)
+    );
+    if (!link) return null;
+    return `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/payment-receipt?token=${link.token}`;
+  };
+
+  const copyReceiptLink = async (url: string) => {
+    try {
+      await navigator.clipboard.writeText(url);
+      toast.success("Link copiado!");
+    } catch {
+      toast.error("Não foi possível copiar");
+    }
+  };
 
   const handleSendReminder = async (financialRecordId: string) => {
     setSendingReminder(financialRecordId);
@@ -137,7 +164,7 @@ const FinanceiroPage = () => {
         </TabsList>
 
         <TabsContent value="overview">
-          <FinanceiroOverview startDate={range.start} endDate={range.end} reminderCount={reminderCount} />
+          <FinanceiroOverview startDate={range.start} endDate={range.end} reminderCount={0} />
         </TabsContent>
 
         <TabsContent value="recebimentos">
@@ -208,14 +235,33 @@ const FinanceiroPage = () => {
                             {rec.paid_at ? format(new Date(rec.paid_at), "dd/MM/yyyy", { locale: pt }) : "—"}
                           </TableCell>
                           <TableCell>
-                            {isPending && (
-                              <Button size="sm" variant="outline" className="gap-1"
-                                disabled={sendingReminder === rec.id}
-                                onClick={() => handleSendReminder(rec.id)}>
-                                <Send className="h-3 w-3" />
-                                {sendingReminder === rec.id ? "Enviando..." : "Cobrar"}
-                              </Button>
-                            )}
+                            <div className="flex gap-1">
+                              {isPending && (
+                                <Button size="sm" variant="outline" className="gap-1"
+                                  disabled={sendingReminder === rec.id}
+                                  onClick={() => handleSendReminder(rec.id)}>
+                                  <Send className="h-3 w-3" />
+                                  {sendingReminder === rec.id ? "Enviando..." : "Cobrar"}
+                                </Button>
+                              )}
+                              {(() => {
+                                const url = getReceiptUrl(rec);
+                                if (!url) return null;
+                                return (
+                                  <>
+                                    <Button size="sm" variant="ghost" className="gap-1 h-7 px-2"
+                                      onClick={() => copyReceiptLink(url)} title="Copiar link do comprovante">
+                                      <Copy className="h-3 w-3" />
+                                    </Button>
+                                    <Button size="sm" variant="ghost" className="gap-1 h-7 px-2" asChild title="Abrir comprovante">
+                                      <a href={url} target="_blank" rel="noopener noreferrer">
+                                        <ExternalLink className="h-3 w-3" />
+                                      </a>
+                                    </Button>
+                                  </>
+                                );
+                              })()}
+                            </div>
                           </TableCell>
                         </TableRow>
                       );

@@ -299,6 +299,7 @@ function renderPaymentTab(opts: {
         ` : `
           <div class="b24-item-actions">
             <button onclick='generateReceipt()' class="b24-btn-action" style="border-color:var(--link-color);color:var(--link-color)" title="Gerar Comprovante">${icon("file-text", 13)} Comprovante</button>
+            <button onclick='copyReceiptLink()' class="b24-btn-action" style="border-color:var(--accent-paid);color:var(--accent-paid)" title="Copiar Link do Comprovante">${icon("link", 13)} Link</button>
           </div>
         `}
       </div>`;
@@ -1298,6 +1299,21 @@ function renderPaymentTab(opts: {
         });
       }
 
+      // Auto-create receipt_link
+      try {
+        var rlRes = await fetch(SUPABASE_URL + '/rest/v1/receipt_links?bitrix24_deal_id=eq.' + encodeURIComponent(document.getElementById('baixa-overlay').dataset.dealId || '${opts.entityId}') + '&limit=1', {
+          headers: { 'apikey': SUPABASE_KEY, 'Authorization': 'Bearer ' + SUPABASE_KEY }
+        });
+        var rlData = await rlRes.json();
+        if (!rlData || rlData.length === 0) {
+          await fetch(SUPABASE_URL + '/rest/v1/receipt_links', {
+            method: 'POST',
+            headers: { 'apikey': SUPABASE_KEY, 'Authorization': 'Bearer ' + SUPABASE_KEY, 'Content-Type': 'application/json', 'Prefer': 'return=representation' },
+            body: JSON.stringify({ bitrix24_deal_id: '${opts.entityId}', client_name: null, deal_title: '${(opts.dealTitle || "").replace(/'/g, "\\'")}' })
+          });
+        }
+      } catch(rlErr) { console.error('Receipt link error:', rlErr); }
+
       var msg = 'Baixa registada com sucesso!';
       if (discount > 0.001) msg += ' (Desconto: ' + new Intl.NumberFormat('pt-PT', { style: 'currency', currency: document.getElementById('baixa-currency').value }).format(discount) + ')';
       el.innerHTML = msg; el.style.color = 'var(--value-paid)'; el.style.display = 'block';
@@ -1339,6 +1355,40 @@ function renderPaymentTab(opts: {
   function openInvoice(invoiceId) {
     try { BX24.openPath('/crm/invoice/show/' + invoiceId + '/'); }
     catch(e) { try { BX24.openPath('/crm/type/31/details/' + invoiceId + '/'); } catch(e2) {} setStatus('Fatura #' + invoiceId, 'var(--link-color)'); }
+  }
+
+   async function copyReceiptLink() {
+    setStatus('A obter link do comprovante...', 'var(--text-secondary)');
+    try {
+      var res = await fetch(SUPABASE_URL + '/rest/v1/receipt_links?bitrix24_deal_id=eq.${opts.entityId}&limit=1', {
+        headers: { 'apikey': SUPABASE_KEY, 'Authorization': 'Bearer ' + SUPABASE_KEY }
+      });
+      var data = await res.json();
+      var token;
+      if (data && data.length > 0) {
+        token = data[0].token;
+      } else {
+        // Create one
+        var createRes = await fetch(SUPABASE_URL + '/rest/v1/receipt_links', {
+          method: 'POST',
+          headers: { 'apikey': SUPABASE_KEY, 'Authorization': 'Bearer ' + SUPABASE_KEY, 'Content-Type': 'application/json', 'Prefer': 'return=representation' },
+          body: JSON.stringify({ bitrix24_deal_id: '${opts.entityId}', deal_title: '${(opts.dealTitle || "").replace(/'/g, "\\'")}' })
+        });
+        var created = await createRes.json();
+        token = created[0]?.token || created.token;
+      }
+      if (token) {
+        var link = SUPABASE_URL + '/functions/v1/payment-receipt?token=' + token;
+        if (navigator.clipboard) {
+          await navigator.clipboard.writeText(link);
+          setStatus('Link copiado! ' + link, 'var(--value-paid)');
+        } else {
+          prompt('Copie o link:', link);
+        }
+      } else {
+        setStatus('Erro ao gerar link', 'var(--value-open)');
+      }
+    } catch(e) { setStatus('Erro: ' + e.message, 'var(--value-open)'); }
   }
 
   function generateReceipt() {

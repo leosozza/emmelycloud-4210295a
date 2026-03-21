@@ -306,6 +306,33 @@ Deno.serve(async (req) => {
           await supabase.from("financial_records").update(frUpdate).eq("id", frId);
           console.log(`[PAYMENT-CREATE] Synced financial_record ${frId} to paga`);
 
+          // Auto-create receipt_link if not exists
+          try {
+            const { data: currentFrForReceipt } = await supabase.from("financial_records")
+              .select("contract_id, bitrix24_deal_id, description")
+              .eq("id", frId).maybeSingle();
+            if (currentFrForReceipt) {
+              const contractId = currentFrForReceipt.contract_id;
+              const dealId = currentFrForReceipt.bitrix24_deal_id;
+              // Check if receipt_link already exists
+              let existsQuery = supabase.from("receipt_links").select("id").limit(1);
+              if (dealId) existsQuery = existsQuery.eq("bitrix24_deal_id", dealId);
+              else if (contractId) existsQuery = existsQuery.eq("contract_id", contractId);
+              const { data: existingLink } = await existsQuery.maybeSingle();
+              if (!existingLink && (contractId || dealId)) {
+                await supabase.from("receipt_links").insert({
+                  contract_id: contractId || null,
+                  bitrix24_deal_id: dealId || null,
+                  client_name: body.client_name || txMeta.client_name || null,
+                  deal_title: currentFrForReceipt.description || txMeta.deal_title || null,
+                });
+                console.log(`[PAYMENT-CREATE] Created receipt_link for contract=${contractId} deal=${dealId}`);
+              }
+            }
+          } catch (rlErr) {
+            console.error(`[PAYMENT-CREATE] Receipt link creation error:`, rlErr);
+          }
+
           // Carry-over: if paid less than expected and no discount_reason, add remainder to next installment
           const carry_over_amount = body.carry_over_amount;
           if (carry_over_amount && carry_over_amount > 0.001) {
@@ -328,11 +355,9 @@ Deno.serve(async (req) => {
               const { data: nextInst } = await nextQuery.maybeSingle();
               if (nextInst) {
                 const newValue = (nextInst.installment_value || 0) + carry_over_amount;
-                const existingMeta = (nextInst.metadata as any) || {};
                 await supabase.from("financial_records").update({
                   installment_value: Math.round(newValue * 100) / 100,
                 }).eq("id", nextInst.id);
-                // Also update metadata on the matching transaction if exists
                 const { data: nextTx } = await supabase.from("payment_transactions")
                   .select("id, metadata").eq("financial_record_id", nextInst.id).maybeSingle();
                 if (nextTx) {
@@ -363,6 +388,22 @@ Deno.serve(async (req) => {
               .select("id");
             if (matched?.length) {
               console.log(`[PAYMENT-CREATE] Synced financial_record by deal ${dealId} inst ${installNum}`);
+            }
+
+            // Auto-create receipt_link for deal
+            try {
+              const { data: existingLink } = await supabase.from("receipt_links")
+                .select("id").eq("bitrix24_deal_id", dealId).limit(1).maybeSingle();
+              if (!existingLink) {
+                await supabase.from("receipt_links").insert({
+                  bitrix24_deal_id: dealId,
+                  client_name: body.client_name || txMeta.client_name || null,
+                  deal_title: txMeta.deal_title || null,
+                });
+                console.log(`[PAYMENT-CREATE] Created receipt_link for deal=${dealId}`);
+              }
+            } catch (rlErr) {
+              console.error(`[PAYMENT-CREATE] Receipt link error:`, rlErr);
             }
           }
         }
