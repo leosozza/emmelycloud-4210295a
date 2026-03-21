@@ -91,7 +91,34 @@ const FinanceiroPage = () => {
     },
   });
 
-  const reminderCount = 0; // Simplified — no metadata tracking on financial_records
+  // Fetch receipt links
+  const { data: receiptLinks = [] } = useQuery({
+    queryKey: ["receipt-links"],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("receipt_links")
+        .select("token, contract_id, bitrix24_deal_id");
+      return data || [];
+    },
+  });
+
+  const getReceiptUrl = (rec: any) => {
+    const link = receiptLinks.find(
+      (rl: any) => (rl.contract_id && rl.contract_id === rec.contract_id) ||
+                   (rl.bitrix24_deal_id && rl.bitrix24_deal_id === rec.bitrix24_deal_id)
+    );
+    if (!link) return null;
+    return `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/payment-receipt?token=${link.token}`;
+  };
+
+  const copyReceiptLink = async (url: string) => {
+    try {
+      await navigator.clipboard.writeText(url);
+      toast.success("Link copiado!");
+    } catch {
+      toast.error("Não foi possível copiar");
+    }
+  };
 
   const handleSendReminder = async (financialRecordId: string) => {
     setSendingReminder(financialRecordId);
