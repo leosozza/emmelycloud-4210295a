@@ -409,24 +409,28 @@ function renderHtml(opts: {
     <div id="status-msg"></div>
   </div>
 
-  <!-- AI Panel -->
+  <!-- AI Panel — Chat com badges -->
   <div id="ai-panel">
     <div id="ai-header" onclick="toggleAiPanel()">
-      ${B24_ICONS.robot} Emmely AI
-      <span style="font-weight:400;font-size:11px;color:#959ca4;margin-left:4px">${messages.length ? messages.length + " msgs contexto" : ""}</span>
+      ${B24_ICONS.robot} Emmely AI Consulta
       <span id="ai-toggle">▼</span>
+    </div>
+    <div id="agent-badges"></div>
+    <div id="ai-messages">
+      <div class="ai-empty" id="ai-empty">
+        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M9 18h6"/><path d="M10 22h4"/><path d="M12 2a7 7 0 0 0-4 12.7V17h8v-2.3A7 7 0 0 0 12 2z"/></svg>
+        <p>Selecione um agente e faça a sua pergunta.<br>A Emmely responde com base no contexto da conversa.</p>
+      </div>
+    </div>
+    <div id="ai-input-area">
+      <textarea id="ai-input" rows="1" placeholder="Pergunte à Emmely..." oninput="autoResizeAi(this)" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendAiMessage()}"></textarea>
+      <button id="ai-send-btn" onclick="sendAiMessage()">${B24_ICONS.send}</button>
     </div>
     <div class="ai-suggestions">
       <button onclick="quickAsk('Faz um resumo desta conversa com o cliente')">${B24_ICONS.clipboard} Resumir</button>
       <button onclick="quickAsk('Sugere uma resposta profissional para enviar ao cliente')">${B24_ICONS.lightbulb} Sugerir</button>
       <button onclick="quickAsk('Analisa o sentimento do cliente nesta conversa')">${B24_ICONS.smile} Sentimento</button>
       <button onclick="quickAsk('Qual é o procedimento recomendado para este caso?')">${B24_ICONS.list} Procedimento</button>
-    </div>
-    <div id="ai-messages"></div>
-    <div id="ai-input-area">
-      <div id="agent-dropdown"></div>
-      <input type="text" id="ai-input" placeholder="@agente pergunta... ou escreva directamente" oninput="handleAiInput(event)" onkeydown="if(event.key==='Enter')sendAiMessage()">
-      <button id="ai-send-btn" onclick="sendAiMessage()">${B24_ICONS.send}</button>
     </div>
   </div>
 </div>
