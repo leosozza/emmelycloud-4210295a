@@ -1096,6 +1096,7 @@ function renderPaymentTab(opts: {
 
   async function submitBaixa() {
     var txId = document.getElementById('baixa-tx-id').value;
+    var frId = document.getElementById('baixa-fr-id').value;
     var invoiceId = document.getElementById('baixa-invoice-id').value;
     var paidAmount = parseFloat(document.getElementById('baixa-paid').value) || 0;
     var paidDate = document.getElementById('baixa-date').value || new Date().toISOString().split('T')[0];
@@ -1110,9 +1111,9 @@ function renderPaymentTab(opts: {
     var el = document.getElementById('baixa-result');
 
     try {
-      // Ensure transaction exists (create if synthetic)
+      // Ensure transaction exists (create if synthetic or missing)
       var overlay = document.getElementById('baixa-overlay');
-      txId = await ensureTxExists(txId, overlay, _baixaOriginalAmount, overlay.dataset.currency || 'EUR', overlay.dataset.description || '');
+      txId = await ensureTxExists(txId, overlay, _baixaOriginalAmount, overlay.dataset.currency || 'EUR', overlay.dataset.description || '', frId, overlay.dataset.installmentNumber, overlay.dataset.totalInstallments);
 
       // Upload proof if provided
       var proofUrl = null;
@@ -1139,6 +1140,7 @@ function renderPaymentTab(opts: {
       btn.textContent = 'A dar baixa...';
       var payload = {
         transaction_id: txId,
+        financial_record_id: frId || undefined,
         status_update: 'confirmed',
         paid_amount: paidAmount,
         metadata_update: { manual_paid: true, paid_at: paidDate + 'T00:00:00Z' },
