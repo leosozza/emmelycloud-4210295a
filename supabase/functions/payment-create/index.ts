@@ -303,6 +303,14 @@ Deno.serve(async (req) => {
           const frUpdate: any = { status: "paga", paid_at: paidAt };
           if (effectivePaymentMethod) frUpdate.payment_method = effectivePaymentMethod;
           if (proof_url || txMeta.proof_url) frUpdate.receipt_url = proof_url || txMeta.proof_url;
+          // Persist late fee info if paid_amount or discount metadata exists
+          if (paid_amount != null || discount_amount != null) {
+            const lateMeta: any = {};
+            if (paid_amount != null) lateMeta.paid_amount = paid_amount;
+            if (discount_amount != null) lateMeta.discount_amount = discount_amount;
+            if (discount_reason) lateMeta.discount_reason = discount_reason;
+            frUpdate.description = undefined; // don't overwrite
+          }
           await supabase.from("financial_records").update(frUpdate).eq("id", frId);
           console.log(`[PAYMENT-CREATE] Synced financial_record ${frId} to paga`);
 

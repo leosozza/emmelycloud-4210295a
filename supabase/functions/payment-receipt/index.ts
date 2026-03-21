@@ -109,14 +109,22 @@ Deno.serve(async (req) => {
   const totalValue = installments[0]?.total_value || installments.reduce((s: number, r: any) => s + (r.installment_value || 0), 0);
 
   // Build rows
+  let totalCharges = 0;
   const rows = installments.map((rec: any) => {
     const value = rec.installment_value || 0;
     const isPaid = rec.status === "paga";
-    const isOverdue = rec.status === "atrasada" || (!isPaid && rec.due_date && new Date(rec.due_date) < now);
+    // Detect overdue by due_date, not just status string
+    const isOverdue = !isPaid && rec.due_date && new Date(rec.due_date) < now;
+    // For paid installments, check if they were paid late
+    const wasPaidLate = isPaid && rec.due_date && rec.paid_at && new Date(rec.paid_at) > new Date(rec.due_date);
     
     let lateFee = { daysLate: 0, penalty: 0, interest: 0, charges: 0, total: value };
-    if (isOverdue && !isPaid && rec.due_date) {
+    if (isOverdue && rec.due_date) {
       const daysLate = Math.floor((now.getTime() - new Date(rec.due_date).getTime()) / (1000 * 60 * 60 * 24));
+      lateFee = calculateLateFees(value, daysLate, lateFeeConfig);
+      totalCharges += lateFee.charges;
+    } else if (wasPaidLate) {
+      const daysLate = Math.floor((new Date(rec.paid_at).getTime() - new Date(rec.due_date).getTime()) / (1000 * 60 * 60 * 24));
       lateFee = calculateLateFees(value, daysLate, lateFeeConfig);
     }
 
@@ -126,9 +134,8 @@ Deno.serve(async (req) => {
     
     const jurosCell = lateFee.charges > 0 
       ? formatCurrency(lateFee.charges, currency) 
-      : (isPaid && rec.receipt_url ? "—" : "—");
+      : "—";
 
-    // For paid installments, show paid_at amount from metadata if available
     const paidAmount = isPaid ? formatCurrency(value, currency) : "—";
 
     return `<tr>
@@ -145,7 +152,8 @@ Deno.serve(async (req) => {
   }).join("");
 
   const paidTotal = installments.filter((r: any) => r.status === "paga").reduce((s: number, r: any) => s + (r.installment_value || 0), 0);
-  const openTotal = installments.filter((r: any) => r.status !== "paga").reduce((s: number, r: any) => s + (r.installment_value || 0), 0);
+  const openBase = installments.filter((r: any) => r.status !== "paga").reduce((s: number, r: any) => s + (r.installment_value || 0), 0);
+  const openTotal = openBase + totalCharges;
   const paidCount = installments.filter((r: any) => r.status === "paga").length;
   const today = formatDate(now.toISOString());
 

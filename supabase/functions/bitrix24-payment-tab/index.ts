@@ -2073,14 +2073,15 @@ Deno.serve(async (req) => {
       }
     }
 
-    // Compute late fees for overdue installments
+    // Compute late fees for overdue installments (detect by due_date, not just status)
     const now = new Date();
     for (const inst of installments) {
-      if (inst.status === "atrasada" && inst.due_date) {
+      if (inst.status !== "paga" && inst.due_date) {
         const dueDate = new Date(inst.due_date + "T00:00:00Z");
         const diffMs = now.getTime() - dueDate.getTime();
         const daysLate = Math.floor(diffMs / (1000 * 60 * 60 * 24));
         if (daysLate > 0) {
+          inst.status = "atrasada"; // Auto-correct visual status
           const fees = calculateLateFees(inst.value, daysLate, lateFeeConfig);
           inst.late_penalty = fees.penalty;
           inst.late_interest = fees.interest;
