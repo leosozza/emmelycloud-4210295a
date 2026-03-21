@@ -1,61 +1,62 @@
 
 
-# Juros de Atraso no EmmeyPay — Cálculo + Exibição + Baixa
+# Configurações — Aba de Regras de Juros + Comprovante por Parcela
 
-## Problemas Identificados
+## O que falta
 
-1. **Juros nunca são calculados nem exibidos** — O `bitrix24-payment-tab` não calcula late fees para parcelas atrasadas. A listagem mostra apenas o `value` original, sem multa nem juros.
-2. **Modal de baixa ignora juros** — O `openBaixaModal` define `_baixaOriginalAmount = inst.value` (valor base), sem somar encargos. O campo "Valor da Parcela" mostra só o valor original.
-3. **Diferença não é somada à próxima parcela** — Se o utilizador dá baixa com valor inferior ao total com juros, a diferença deveria ser adicionada à próxima parcela pendente. Isto não existe.
+1. **Página de Configurações** (`/configuracoes`) só tem "Aparência" — falta uma secção dedicada às regras de cálculo de juros de atraso
+2. **Comprovante de controlo de parcelas** — após cada baixa, não é gerado um PDF/comprovante com o estado de todas as parcelas do deal (como o PDF do Access que foi partilhado)
 
-## Plano de Correção
+## Plano
 
-### 1. Adicionar cálculo de late fees no servidor (`bitrix24-payment-tab`)
+### 1. Adicionar secção "Encargos por Atraso" à página Configurações
+
+**Ficheiro:** `src/pages/Configuracoes.tsx`
+
+Mover o componente `LateFeeConfigCard` que já existe em `Integracoes.tsx` (linhas 900-1019) para a página de Configurações como uma secção dedicada, com:
+
+- **Configuração**: Multa fixa (%), Juros mensais (%), Limite máx. dias, Tolerância (dias)
+- **Fórmulas explicativas** (como nas imagens partilhadas):
+  - `Multa = Valor Parcela × 10%`
+  - `Juros = Valor Parcela × 1% × (Dias em Atraso / 30)`
+  - `Encargo Total = Multa + Juros`
+- **Simulador em tempo real** (já existe no componente) — valor da parcela + dias de atraso → resultado
+- **Botão guardar** → persiste em `payment_gateway_config` (gateway = `late_fees`)
+
+Organizar a página com tabs: **Aparência** | **Encargos**
+
+### 2. Gerar comprovante PDF após cada baixa no placement
 
 **Ficheiro:** `supabase/functions/bitrix24-payment-tab/index.ts`
 
-- Buscar configuração de `payment_gateway_config` onde `gateway = 'late_fees'` e `is_active = true`
-- Copiar a função `calculateLateFees()` para dentro do edge function (como já feito em `payment-reminder`)
-- Para cada parcela com `status === 'atrasada'`, calcular dias de atraso e aplicar multa + juros
-- Adicionar campos à `InstallmentData`: `late_penalty`, `late_interest`, `late_total` (valor base + encargos)
+Após confirmar a baixa com sucesso (linha ~1297), gerar um comprovante HTML para impressão/download com o layout do PDF partilhado:
 
-### 2. Exibir juros na listagem de parcelas
-
-Na renderização de cada parcela atrasada, mostrar:
 ```text
-Parcela: €150.00
-⚠️ Multa: €15.00 | Juros (45 dias): €2.25
-💵 Total com encargos: €167.25
+┌───────────────────────────────────┐
+│ EMMELY FERNANDES ADVOCACIA        │
+│ Controle de Parcelas              │
+│                                   │
+│ Cliente: NOME                     │
+│ Serviço: TIPO                     │
+│                                   │
+│ Parcela | Vencimento | Pagamento  │
+│         | Juros | Valor | Status  │
+│ ────────────────────────────────  │
+│ 1/6     | 05/03 | 05/03 | PAGO   │
+│ 2/6     | 05/04 | —     | PEND   │
+│ ...                               │
+│                                   │
+│ Morada | Tel | Email | Site       │
+└───────────────────────────────────┘
 ```
 
-### 3. Modal de baixa com juros
+- Botão "Gerar Comprovante" aparece ao lado de cada parcela paga
+- Abre janela de impressão com HTML formatado (mesmo padrão do `exportToPDF`)
+- Inclui TODAS as parcelas do deal (pagas e pendentes), com coluna de juros e valor pago
+- Dados do escritório (morada, telefone, email) puxados de configuração ou hardcoded
 
-- `openBaixaModal`: se parcela atrasada, calcular juros e mostrar breakdown:
-  - Valor base da parcela
-  - Multa (%)
-  - Juros (% × dias)
-  - **Total com encargos** ← valor pré-preenchido no campo "Valor Efetivamente Pago"
-- Adicionar secção visual de breakdown no modal (entre "Valor da Parcela" e "Valor Efetivamente Pago")
+### Ficheiros a editar
 
-### 4. Carry-over: diferença somada à próxima parcela
-
-No `payment-create` PATCH:
-- Se `paid_amount < valor_com_juros` e não há `discount_reason`:
-  - Calcular `remainder = total_com_juros - paid_amount`
-  - Encontrar a próxima parcela pendente (mesmo `contract_id` ou `bitrix24_deal_id`, `installment_number` seguinte)
-  - Somar `remainder` ao `installment_value` dessa parcela
-  - Registar nos metadata: `{ carried_from: parcela_id, carried_amount: X }`
-- Se há `discount_reason`, tratar como desconto (comportamento atual mantido)
-
-### 5. Exibir carry-over na listagem
-
-Se uma parcela tem `metadata.carried_amount > 0`, mostrar:
-```text
-+€17.25 juros acumulados da parcela anterior
-```
-
-## Ficheiros a editar
-
-1. **`supabase/functions/bitrix24-payment-tab/index.ts`** — cálculo de juros, exibição na listagem, modal de baixa com breakdown
-2. **`supabase/functions/payment-create/index.ts`** — carry-over da diferença para próxima parcela
+1. **`src/pages/Configuracoes.tsx`** — adicionar tabs + secção de encargos com config, fórmulas e simulador
+2. **`supabase/functions/bitrix24-payment-tab/index.ts`** — botão "Comprovante" por parcela paga + geração de HTML para impressão
 
