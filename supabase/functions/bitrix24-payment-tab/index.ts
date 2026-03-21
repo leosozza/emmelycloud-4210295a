@@ -1969,6 +1969,27 @@ Deno.serve(async (req) => {
       }
     }
 
+    // Compute late fees for overdue installments
+    const now = new Date();
+    for (const inst of installments) {
+      if (inst.status === "atrasada" && inst.due_date) {
+        const dueDate = new Date(inst.due_date + "T00:00:00Z");
+        const diffMs = now.getTime() - dueDate.getTime();
+        const daysLate = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+        if (daysLate > 0) {
+          const fees = calculateLateFees(inst.value, daysLate, lateFeeConfig);
+          inst.late_penalty = fees.penalty;
+          inst.late_interest = fees.interest;
+          inst.late_days = fees.daysLate;
+          inst.late_total = fees.total;
+        }
+      }
+      // Check for carried amount in metadata
+      if (inst.metadata?.carried_amount > 0) {
+        inst.metadata = inst.metadata || {};
+      }
+    }
+
     const openValue = totalValue - paidValue;
 
     const { data: activeFlows } = await supabase
