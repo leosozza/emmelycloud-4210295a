@@ -19,6 +19,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
 import { format } from "date-fns";
+import { printHtmlDocument } from "@/lib/exportUtils";
 import { CalendarIcon } from "lucide-react";
 import { AudioRecordButton } from "@/components/chat/AudioRecordButton";
 import {
@@ -7962,12 +7963,23 @@ function PropostasViewBitrix() {
   };
 
   const handleDownloadPdf = async (p: any) => {
+    const printWindow = window.open("", "_blank");
+    if (!printWindow) {
+      toast({ title: "Permita pop-ups para gerar o PDF", variant: "destructive" });
+      return;
+    }
+
     toast({ title: "A gerar PDF...", description: "Aguarde um momento." });
     try {
       const { data, error } = await supabase.functions.invoke("proposal-pdf", { body: { proposal_id: p.id } });
       if (error) throw error;
-      if (data?.pdf_url) window.open(data.pdf_url, "_blank");
+      if (data?.html) {
+        printHtmlDocument(data.document_title || p.title || "Proposta", data.html, printWindow);
+        return;
+      }
+      if (data?.pdf_url) printWindow.location.href = data.pdf_url;
     } catch (e: any) {
+      printWindow.close();
       toast({ title: "Erro ao gerar PDF", description: e.message, variant: "destructive" });
     }
   };

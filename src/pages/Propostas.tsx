@@ -16,6 +16,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Plus, Search, Pencil, Trash2, Send, Check, X, Copy, ExternalLink, Download, LayoutTemplate, FileText } from "lucide-react";
 
 import { useToast } from "@/hooks/use-toast";
+import { printHtmlDocument } from "@/lib/exportUtils";
 import { Tables, Constants } from "@/integrations/supabase/types";
 import { PropostaForm } from "@/components/propostas/PropostaForm";
 import { PropostaTemplateForm } from "@/components/propostas/PropostaTemplateForm";
@@ -205,16 +206,27 @@ const PropostasPage = () => {
   };
 
   const handleDownloadPdf = async (p: any) => {
+    const printWindow = window.open("", "_blank");
+    if (!printWindow) {
+      toast({ title: "Permita pop-ups para gerar o PDF", variant: "destructive" });
+      return;
+    }
+
     toast({ title: "A gerar PDF...", description: "Aguarde um momento." });
     try {
       const { data, error } = await supabase.functions.invoke("proposal-pdf", {
         body: { proposal_id: p.id },
       });
       if (error) throw error;
+      if (data?.html) {
+        printHtmlDocument(data.document_title || p.title || "Proposta", data.html, printWindow);
+        return;
+      }
       if (data?.pdf_url) {
-        window.open(data.pdf_url, "_blank");
+        printWindow.location.href = data.pdf_url;
       }
     } catch (e: any) {
+      printWindow.close();
       toast({ title: "Erro ao gerar PDF", description: e.message, variant: "destructive" });
     }
   };

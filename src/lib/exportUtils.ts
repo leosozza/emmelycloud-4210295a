@@ -50,6 +50,30 @@ export function exportToPDF(title: string, content: string) {
   setTimeout(() => printWindow.print(), 500);
 }
 
+export function printHtmlDocument(title: string, html: string, targetWindow?: Window | null) {
+  const printWindow = targetWindow ?? window.open("", "_blank");
+  if (!printWindow) {
+    throw new Error("Não foi possível abrir a janela de impressão. Permita pop-ups e tente novamente.");
+  }
+
+  printWindow.document.open();
+  printWindow.document.write(html);
+  printWindow.document.close();
+
+  const triggerPrint = () => {
+    printWindow.document.title = title;
+    printWindow.focus();
+    printWindow.print();
+  };
+
+  if (printWindow.document.readyState === "complete") {
+    setTimeout(triggerPrint, 300);
+    return;
+  }
+
+  printWindow.onload = () => setTimeout(triggerPrint, 300);
+}
+
 function downloadBlob(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
@@ -60,3 +84,4 @@ function downloadBlob(blob: Blob, filename: string) {
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
 }
+

@@ -174,7 +174,7 @@ Deno.serve(async (req) => {
 
       html = `<!DOCTYPE html>
 <html lang="pt">
-<head><meta charset="UTF-8"><style>
+<head><meta charset="UTF-8"><title>${escapeHtml(composedTitle || "Proposta")}</title><style>
   body { font-family: 'Helvetica Neue', Arial, sans-serif; margin: 0; padding: 0; color: #1a1a1a; }
 </style></head>
 <body>${bodyHtml}</body></html>`;
@@ -206,6 +206,7 @@ Deno.serve(async (req) => {
 <html lang="pt">
 <head>
   <meta charset="UTF-8">
+  <title>${escapeHtml(composedTitle || "Proposta")}</title>
   <style>
     body { font-family: 'Helvetica Neue', Arial, sans-serif; margin: 0; padding: 0; color: #1a1a1a; }
     .header { background: linear-gradient(135deg, ${hColor}, ${aColor}); color: white; padding: 50px 40px; text-align: center; }
@@ -281,7 +282,7 @@ Deno.serve(async (req) => {
     const fileName = `proposal-${proposal.id}.html`;
     const { error: uploadError } = await supabase.storage
       .from("proposal-files")
-      .upload(fileName, new Blob([html], { type: "text/html" }), { upsert: true, contentType: "text/html" });
+      .upload(fileName, new Blob([html], { type: "text/html; charset=utf-8" }), { upsert: true, contentType: "text/html; charset=utf-8" });
     if (uploadError) throw uploadError;
 
     const { data: urlData } = supabase.storage.from("proposal-files").getPublicUrl(fileName);
@@ -289,7 +290,7 @@ Deno.serve(async (req) => {
 
     await supabase.from("proposals").update({ pdf_url: pdfUrl }).eq("id", proposal.id);
 
-    return new Response(JSON.stringify({ pdf_url: pdfUrl }), {
+    return new Response(JSON.stringify({ pdf_url: pdfUrl, html, document_title: composedTitle || proposal.title || "Proposta" }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (e) {
