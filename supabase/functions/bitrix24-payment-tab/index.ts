@@ -1118,15 +1118,42 @@ function renderPaymentTab(opts: {
   }
 
   // === Baixa Modal ===
+  var _baixaLateFees = { penalty: 0, interest: 0, charges: 0, days: 0, total: 0 };
+
   function openBaixaModal(inst) {
     _baixaOriginalAmount = inst.value || 0;
     var cur = inst.currency || 'EUR';
+    var fmt = function(v) { return new Intl.NumberFormat('pt-PT', { style: 'currency', currency: cur }).format(v); };
+
+    // Calculate late fee data from inst
+    var latePenalty = inst.late_penalty || 0;
+    var lateInterest = inst.late_interest || 0;
+    var lateDays = inst.late_days || 0;
+    var lateCharges = latePenalty + lateInterest;
+    var lateTotal = inst.late_total || _baixaOriginalAmount;
+    _baixaLateFees = { penalty: latePenalty, interest: lateInterest, charges: lateCharges, days: lateDays, total: lateTotal };
+
     document.getElementById('baixa-tx-id').value = inst.transaction_id || '';
     document.getElementById('baixa-fr-id').value = inst.financial_record_id || (inst.transaction_id ? '' : inst.id);
     document.getElementById('baixa-invoice-id').value = inst.invoice_id || '';
     document.getElementById('baixa-currency').value = cur;
-    document.getElementById('baixa-total-display').textContent = new Intl.NumberFormat('pt-PT', { style: 'currency', currency: cur }).format(_baixaOriginalAmount);
-    document.getElementById('baixa-paid').value = _baixaOriginalAmount;
+    document.getElementById('baixa-total-display').textContent = fmt(_baixaOriginalAmount);
+
+    // Show late fee breakdown if applicable
+    var breakdownEl = document.getElementById('baixa-late-breakdown');
+    if (lateCharges > 0) {
+      breakdownEl.style.display = 'block';
+      document.getElementById('baixa-late-details').innerHTML =
+        'Multa: <strong>' + fmt(latePenalty) + '</strong><br>' +
+        'Juros (' + lateDays + ' dias): <strong>' + fmt(lateInterest) + '</strong>';
+      document.getElementById('baixa-late-total-line').textContent = '💵 Total com encargos: ' + fmt(lateTotal);
+      // Pre-fill with late total
+      document.getElementById('baixa-paid').value = lateTotal;
+    } else {
+      breakdownEl.style.display = 'none';
+      document.getElementById('baixa-paid').value = _baixaOriginalAmount;
+    }
+
     document.getElementById('baixa-date').value = new Date().toISOString().split('T')[0];
     document.getElementById('baixa-discount-row').style.display = 'none';
     document.getElementById('baixa-reason-group').style.display = 'none';
@@ -1147,12 +1174,15 @@ function renderPaymentTab(opts: {
 
   function calcDiscount() {
     var paid = parseFloat(document.getElementById('baixa-paid').value) || 0;
-    var discount = _baixaOriginalAmount - paid;
+    // The expected full amount is late_total (includes late fees) if there are charges
+    var expectedAmount = _baixaLateFees.charges > 0 ? _baixaLateFees.total : _baixaOriginalAmount;
+    var discount = expectedAmount - paid;
     var cur = document.getElementById('baixa-currency').value || 'EUR';
     var fmt = function(v) { return new Intl.NumberFormat('pt-PT', { style: 'currency', currency: cur }).format(v); };
     if (discount > 0.001) {
       document.getElementById('baixa-discount-row').style.display = 'block';
-      document.getElementById('baixa-discount-display').innerHTML = '💰 <strong>Desconto/Abatimento: ' + fmt(discount) + '</strong><br><span style="font-size:11px">Parcela: ' + fmt(_baixaOriginalAmount) + ' → Pago: ' + fmt(paid) + '</span>';
+      var label = _baixaLateFees.charges > 0 ? 'Total c/ encargos' : 'Parcela';
+      document.getElementById('baixa-discount-display').innerHTML = '💰 <strong>Diferença: ' + fmt(discount) + '</strong><br><span style="font-size:11px">' + label + ': ' + fmt(expectedAmount) + ' → Pago: ' + fmt(paid) + '</span><br><span style="font-size:11px;color:var(--accent-overdue)">⚠️ A diferença será somada à próxima parcela pendente</span>';
       document.getElementById('baixa-reason-group').style.display = 'block';
     } else {
       document.getElementById('baixa-discount-row').style.display = 'none';
