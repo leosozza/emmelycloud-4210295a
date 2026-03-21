@@ -411,7 +411,7 @@ function renderHtml(opts: {
   </div>
 
   <!-- AI Panel — Chat com badges -->
-  <div id="ai-panel">
+  <div id="ai-panel" class="collapsed">
     <div id="ai-header" onclick="toggleAiPanel()">
       ${B24_ICONS.robot} Emmely AI Consulta
       <span id="ai-toggle">▼</span>
