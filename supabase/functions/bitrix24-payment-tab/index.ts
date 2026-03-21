@@ -697,6 +697,11 @@ function renderPaymentTab(opts: {
       <label class="b24-form-label">Valor da Parcela</label>
       <div class="b24-readonly" id="baixa-total-display">—</div>
     </div>
+    <div id="baixa-late-breakdown" style="display:none;background:rgba(239,68,68,0.06);border:1px solid rgba(239,68,68,0.2);border-radius:8px;padding:12px 16px;margin-bottom:14px;font-size:12px">
+      <div style="font-weight:700;margin-bottom:6px;color:var(--text-primary)">⚠️ Encargos por atraso</div>
+      <div id="baixa-late-details"></div>
+      <div style="margin-top:6px;font-weight:700;font-size:14px;color:var(--text-primary)" id="baixa-late-total-line"></div>
+    </div>
     <div class="b24-form-row">
       <div class="b24-form-group">
         <label class="b24-form-label">Valor Efetivamente Pago</label>
