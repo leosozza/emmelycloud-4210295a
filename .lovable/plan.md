@@ -1,81 +1,39 @@
 
-Diagnóstico confirmado:
 
-- A parcela `4` do deal `14091` existe em `financial_records` com ID `c257de59-d47b-46c5-9d38-7fc3dc7c4439`, status `atrasada` e `bitrix24_invoice_id = 6069`.
-- Continua sem qualquer linha em `payment_transactions` ligada por `financial_record_id`.
-- O erro atual (`Transaction c257de59... not found in payment_transactions`) mostra que o fluxo ainda está a chegar ao backend com o UUID da parcela como se fosse `transaction_id`.
+# Correção: Parcelas desaparecem após baixa
 
-Isto indica que a correção anterior melhorou o erro silencioso, mas ainda falta tornar o fluxo resistente a dados legados/cache do placement.
+## Problema
 
-Plano de correção:
+Quando se faz a baixa de uma parcela legada (importada do Access), o sistema cria uma `payment_transaction` sintética. Na recarga seguinte, o código muda de caminho:
+- **Antes:** sem transações → busca `financial_records` por `bitrix24_deal_id` → mostra todas as 6 parcelas
+- **Depois:** 2 transações existem (para parcela 4) → ignora `financial_records` → mostra apenas as 2 transações → restantes parcelas desaparecem
 
-1. Endurecer `ensureTxExists()` no `bitrix24-payment-tab`
-- Não confiar apenas em “txId não vazio”.
-- Se `transaction_id`:
-  - estiver vazio, ou
-  - for igual ao `financial_record_id`, ou
-  - não existir de facto em `payment_transactions`,
-  então criar/obter uma transação real vinculada ao `financial_record_id`.
-- Continuar a incluir nos metadados:
-  - `bitrix_deal_id`
-  - `installment_number`
-  - `total_installments`
-  - `bitrix_invoice_id`
+## Solução
 
-2. Corrigir o submit da baixa para trabalhar com IDs separados
-- Garantir que o modal envia sempre:
-  - `transaction_id` real
-  - `financial_record_id`
-  - `invoice_id`
-- Nunca reutilizar `financial_record_id` como `transaction_id`, mesmo em fallback.
+Alterar a lógica do DEAL VIEW no `bitrix24-payment-tab` para **sempre verificar** `financial_records` pelo `bitrix24_deal_id`, independentemente de existirem transações. Quando ambas as fontes existirem, usar `financial_records` como base e enriquecer com dados das transações correspondentes.
 
-3. Tornar o `payment-create` PATCH tolerante a placements antigos
-- Se `transaction_id` não existir mas `financial_record_id` vier no body:
-  - procurar transação existente por `financial_record_id`
-  - se não existir, criar uma transação sintética “direto” já ligada à parcela
-  - depois aplicar o `status_update`
-- Assim, mesmo que o iframe esteja com HTML antigo/cacheado, a baixa continua a funcionar.
+### Ficheiro: `supabase/functions/bitrix24-payment-tab/index.ts`
 
-4. Manter a sincronização completa da baixa
-- Após confirmar:
-  - atualizar `payment_transactions`
-  - sincronizar `financial_records` para `paga`
-  - preencher `paid_at`
-  - manter `payment_method` e comprovativo, se existirem
-  - atualizar a Smart Invoice `6069` para `DT31_3:P` com `closedate`
+**Mudança na lógica de carregamento (linhas ~1757-1790):**
 
-5. Rever mensagens e logs
-- Melhorar resposta de erro para distinguir:
-  - “ID recebido é de financial_record, não de transaction”
-  - “transação criada automaticamente para registo legado”
-- Adicionar logs curtos para rastrear:
-  - `transaction_id` recebido
-  - `financial_record_id`
-  - se houve fallback/criação sintética
+1. Mover a query de `financial_records` por `bitrix24_deal_id` para ANTES da decisão de qual caminho seguir
+2. Se existirem `financial_records` directos (com `bitrix24_deal_id`), usá-los SEMPRE como fonte primária — mesmo que também existam transações
+3. Cruzar com `dealTransactions` para enriquecer com `transaction_id`, `payment_url`, etc.
 
-Ficheiros a ajustar:
-- `supabase/functions/bitrix24-payment-tab/index.ts`
-- `supabase/functions/payment-create/index.ts`
-
-Resultado esperado:
-- A baixa da parcela 4 do deal 14091 deixa de falhar mesmo com dados legados
-- A parcela passa para `paga`
-- `paid_at` é preenchido
-- A Smart Invoice `6069` também é marcada como paga
-
-Detalhe técnico principal:
 ```text
 Hoje:
-placement envia/aceita UUID da parcela como transaction_id
-→ PATCH procura em payment_transactions
-→ não encontra
-→ erro
+  if (financialRecords from contract_ids) → use them
+  else if (dealTransactions) → use only transactions  ← BUG: perde parcelas
+  else if (no txs) → fallback financial_records by deal_id
+  else → synthetic
 
 Depois:
-placement valida transaction_id real
-ou backend faz fallback por financial_record_id
-→ cria/resolve payment_transaction correta
-→ confirma baixa
-→ sincroniza financial_records
-→ baixa também a Smart Invoice
+  ALWAYS check financial_records by bitrix24_deal_id
+  if (directFinRecords exist) → use as base, match with transactions
+  else if (financialRecords from contract_ids) → use them
+  else if (dealTransactions) → use transactions
+  else → synthetic
 ```
+
+Isto garante que, para dados importados do Access, as 6 parcelas são sempre mostradas, independentemente de quantas transações sintéticas existam.
+
