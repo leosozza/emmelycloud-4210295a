@@ -235,14 +235,33 @@ const FinanceiroPage = () => {
                             {rec.paid_at ? format(new Date(rec.paid_at), "dd/MM/yyyy", { locale: pt }) : "—"}
                           </TableCell>
                           <TableCell>
-                            {isPending && (
-                              <Button size="sm" variant="outline" className="gap-1"
-                                disabled={sendingReminder === rec.id}
-                                onClick={() => handleSendReminder(rec.id)}>
-                                <Send className="h-3 w-3" />
-                                {sendingReminder === rec.id ? "Enviando..." : "Cobrar"}
-                              </Button>
-                            )}
+                            <div className="flex gap-1">
+                              {isPending && (
+                                <Button size="sm" variant="outline" className="gap-1"
+                                  disabled={sendingReminder === rec.id}
+                                  onClick={() => handleSendReminder(rec.id)}>
+                                  <Send className="h-3 w-3" />
+                                  {sendingReminder === rec.id ? "Enviando..." : "Cobrar"}
+                                </Button>
+                              )}
+                              {(() => {
+                                const url = getReceiptUrl(rec);
+                                if (!url) return null;
+                                return (
+                                  <>
+                                    <Button size="sm" variant="ghost" className="gap-1 h-7 px-2"
+                                      onClick={() => copyReceiptLink(url)} title="Copiar link do comprovante">
+                                      <Copy className="h-3 w-3" />
+                                    </Button>
+                                    <Button size="sm" variant="ghost" className="gap-1 h-7 px-2" asChild title="Abrir comprovante">
+                                      <a href={url} target="_blank" rel="noopener noreferrer">
+                                        <ExternalLink className="h-3 w-3" />
+                                      </a>
+                                    </Button>
+                                  </>
+                                );
+                              })()}
+                            </div>
                           </TableCell>
                         </TableRow>
                       );
