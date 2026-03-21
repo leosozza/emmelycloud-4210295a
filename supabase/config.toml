@@ -154,3 +154,6 @@ verify_jwt = false
 
 [functions.bitrix24-cleanup-duplicates]
 verify_jwt = false
+
+[functions.payment-receipt]
+verify_jwt = false
