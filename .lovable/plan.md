@@ -1,39 +1,58 @@
 
 
-# Correção: Parcelas desaparecem após baixa
+# Redesign do Painel Emmely AI — Chat com Badges de Agentes
 
-## Problema
+## Situação Atual
+O painel AI no CRM Tab é um painel colapsável no fundo com 4 botões de ação rápida (Resumir, Sugerir, Sentimento, Procedimento) e um input com suporte a `@agente`. O agente é selecionado via dropdown `@mention` e reseta após cada envio — pouco intuitivo.
 
-Quando se faz a baixa de uma parcela legada (importada do Access), o sistema cria uma `payment_transaction` sintética. Na recarga seguinte, o código muda de caminho:
-- **Antes:** sem transações → busca `financial_records` por `bitrix24_deal_id` → mostra todas as 6 parcelas
-- **Depois:** 2 transações existem (para parcela 4) → ignora `financial_records` → mostra apenas as 2 transações → restantes parcelas desaparecem
+## O que será feito
 
-## Solução
+Transformar o painel AI numa interface de chat completa estilo WhatsApp com:
+1. **Badges visuais de agentes** — botões coloridos com inicial do agente, sempre visíveis acima do input, para selecionar qual agente responde
+2. **Chat persistente por sessão** — histórico de conversa com o agente selecionado, com bolhas estilo mensageiro
+3. **Agente ativo fixo** — o agente selecionado fica ativo até ser trocado (não reseta após envio)
+4. **Contexto automático** — injeta o resumo da conversa do cliente como contexto na primeira mensagem
+5. **Botão "Usar resposta"** mantido — para copiar resposta da IA para o campo de envio ao cliente
 
-Alterar a lógica do DEAL VIEW no `bitrix24-payment-tab` para **sempre verificar** `financial_records` pelo `bitrix24_deal_id`, independentemente de existirem transações. Quando ambas as fontes existirem, usar `financial_records` como base e enriquecer com dados das transações correspondentes.
-
-### Ficheiro: `supabase/functions/bitrix24-payment-tab/index.ts`
-
-**Mudança na lógica de carregamento (linhas ~1757-1790):**
-
-1. Mover a query de `financial_records` por `bitrix24_deal_id` para ANTES da decisão de qual caminho seguir
-2. Se existirem `financial_records` directos (com `bitrix24_deal_id`), usá-los SEMPRE como fonte primária — mesmo que também existam transações
-3. Cruzar com `dealTransactions` para enriquecer com `transaction_id`, `payment_url`, etc.
+## Design Visual
 
 ```text
-Hoje:
-  if (financialRecords from contract_ids) → use them
-  else if (dealTransactions) → use only transactions  ← BUG: perde parcelas
-  else if (no txs) → fallback financial_records by deal_id
-  else → synthetic
-
-Depois:
-  ALWAYS check financial_records by bitrix24_deal_id
-  if (directFinRecords exist) → use as base, match with transactions
-  else if (financialRecords from contract_ids) → use them
-  else if (dealTransactions) → use transactions
-  else → synthetic
+┌─────────────────────────────────┐
+│ 🤖 Emmely AI Consulta          │
+│ ┌─────────────────────────────┐ │
+│ │ [Geral] [Vistos] [Prev] .. │ │  ← badges de agentes (scroll horizontal)
+│ └─────────────────────────────┘ │
+│ ┌─────────────────────────────┐ │
+│ │  Bolha user: "qual prazo?" │ │
+│ │  Bolha bot: "O prazo é..." │ │  ← chat com scroll
+│ │       [Usar resposta]      │ │
+│ └─────────────────────────────┘ │
+│ ┌───────────────────────┐ [▶]  │  ← input + send
+│ │ Escreva a pergunta... │      │
+│ └───────────────────────┘      │
+│ [Resumir][Sugerir][Sentimento] │  ← ações rápidas mantidas
+└─────────────────────────────────┘
 ```
 
-Isto garante que, para dados importados do Access, as 6 parcelas são sempre mostradas, independentemente de quantas transações sintéticas existam.
+## Mudanças Técnicas
+
+### Ficheiro: `supabase/functions/bitrix24-crm-tab/index.ts`
+
+**CSS:**
+- Adicionar estilos para badges de agentes (horizontal scroll, badge ativo com destaque)
+- Reformular o `#ai-panel` para ocupar mais espaço (50vh) e ter layout de chat
+
+**HTML:**
+- Substituir o dropdown `@mention` por uma fila horizontal de badges de agentes
+- Cada badge: círculo com inicial + nome curto, cor única por agente
+- Badge activo tem borda/destaque visual
+- Mover ações rápidas (Resumir, Sugerir, etc.) para baixo do input
+
+**JavaScript:**
+- `selectedAgentId` começa com o primeiro agente (não null)
+- `selectAgent(id)` marca o badge activo e NÃO reseta após envio
+- Remover lógica de `@mention` e dropdown
+- `sendAiMessage()` usa sempre `ai-playground` com o agente selecionado
+- Limpar histórico AI ao trocar de agente (novo contexto)
+- Input placeholder dinâmico: "Pergunte ao {agenteName}..."
 
