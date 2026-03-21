@@ -247,6 +247,13 @@ Deno.serve(async (req) => {
       const { data: txRow, error } = await supabase.from("payment_transactions").update(updatePayload).eq("id", transaction_id).select("financial_record_id, metadata, payment_method").maybeSingle();
       if (error) throw new Error(error.message);
 
+      if (!txRow) {
+        // Transaction not found — return explicit error
+        return new Response(JSON.stringify({ error: `Transaction ${transaction_id} not found in payment_transactions` }), {
+          status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
       // Sync financial_records when marking as confirmed/paid
       if (status_update === "confirmed" || status_update === "paid") {
         const paidAt = new Date().toISOString();

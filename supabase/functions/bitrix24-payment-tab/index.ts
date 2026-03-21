@@ -99,6 +99,7 @@ interface InstallmentData {
   currency: string;
   description: string;
   transaction_id?: string;
+  financial_record_id?: string;
   payment_url?: string;
   is_down_payment?: boolean;
   invoice_id?: number;
@@ -170,6 +171,7 @@ function renderPaymentTab(opts: {
     const instJson = JSON.stringify({
       id: inst.id,
       transaction_id: inst.transaction_id,
+      financial_record_id: inst.financial_record_id || null,
       entity_id: opts.entityId,
       value: inst.value,
       due_date: inst.due_date,
@@ -178,6 +180,8 @@ function renderPaymentTab(opts: {
       invoice_id: inst.invoice_id,
       description: inst.description,
       notes: meta.notes || "",
+      number: inst.number,
+      total: inst.total,
     }).replace(/"/g, "&quot;");
 
     // Dual currency display
@@ -624,6 +628,7 @@ function renderPaymentTab(opts: {
   <div class="b24-form-card">
     <div class="b24-form-title">${icon("check", 16)} Dar Baixa</div>
     <input type="hidden" id="baixa-tx-id">
+    <input type="hidden" id="baixa-fr-id">
     <input type="hidden" id="baixa-invoice-id">
     <input type="hidden" id="baixa-currency">
     <div class="b24-form-group">
@@ -679,21 +684,27 @@ function renderPaymentTab(opts: {
   var _baixaOriginalAmount = 0;
 
   // Ensure a real transaction exists — creates one if txId is synthetic (e.g. "deal-123")
-  async function ensureTxExists(txId, overlayEl, amount, currency, description) {
-    if (!txId || !txId.startsWith('deal-')) return txId;
-    // Create real transaction via payment-create POST
+  async function ensureTxExists(txId, overlayEl, amount, currency, description, financialRecordId, installmentNumber, totalInstallments) {
+    // If we already have a real transaction_id, return it
+    if (txId && !txId.startsWith('deal-')) return txId;
+    // Create real transaction via payment-create POST, linking to financial_record if available
     var entityId = (overlayEl && overlayEl.dataset && overlayEl.dataset.entityId) || ENTITY_ID;
+    var meta = { bitrix_deal_id: entityId, source: 'bitrix24_payment_tab_synthetic' };
+    if (installmentNumber) meta.installment_number = installmentNumber;
+    if (totalInstallments) meta.total_installments = totalInstallments;
+    var bodyPayload = {
+      amount: amount || 0,
+      currency: currency || 'EUR',
+      payment_method: 'direto',
+      force_gateway: 'direto',
+      description: description || 'Parcela',
+      metadata: meta
+    };
+    if (financialRecordId) bodyPayload.financial_record_id = financialRecordId;
     var res = await fetch(SUPABASE_URL + '/functions/v1/payment-create', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_KEY },
-      body: JSON.stringify({
-        amount: amount || 0,
-        currency: currency || 'EUR',
-        payment_method: 'direto',
-        force_gateway: 'direto',
-        description: description || 'Parcela',
-        metadata: { bitrix_deal_id: entityId, source: 'bitrix24_payment_tab_synthetic' }
-      })
+      body: JSON.stringify(bodyPayload)
     });
     var data = await res.json();
     if (data.error) throw new Error('Erro ao criar transação: ' + data.error);
@@ -996,7 +1007,7 @@ function renderPaymentTab(opts: {
     try {
       // Ensure transaction exists (create if synthetic)
       var editOverlay = document.getElementById('edit-overlay');
-      txId = await ensureTxExists(txId, editOverlay, parseFloat(editOverlay.dataset.amount) || 0, editOverlay.dataset.currency || 'EUR', editOverlay.dataset.description || '');
+      txId = await ensureTxExists(txId, editOverlay, parseFloat(editOverlay.dataset.amount) || 0, editOverlay.dataset.currency || 'EUR', editOverlay.dataset.description || '', null, null, null);
 
       var payload = {
         transaction_id: txId,
@@ -1038,7 +1049,8 @@ function renderPaymentTab(opts: {
   function openBaixaModal(inst) {
     _baixaOriginalAmount = inst.value || 0;
     var cur = inst.currency || 'EUR';
-    document.getElementById('baixa-tx-id').value = inst.transaction_id || inst.id;
+    document.getElementById('baixa-tx-id').value = inst.transaction_id || '';
+    document.getElementById('baixa-fr-id').value = inst.financial_record_id || (inst.transaction_id ? '' : inst.id);
     document.getElementById('baixa-invoice-id').value = inst.invoice_id || '';
     document.getElementById('baixa-currency').value = cur;
     document.getElementById('baixa-total-display').textContent = new Intl.NumberFormat('pt-PT', { style: 'currency', currency: cur }).format(_baixaOriginalAmount);
@@ -1050,10 +1062,13 @@ function renderPaymentTab(opts: {
     document.getElementById('baixa-proof').value = '';
     document.getElementById('baixa-result').style.display = 'none';
     // Store entity info for synthetic creation
-    document.getElementById('baixa-overlay').dataset.entityId = inst.entity_id || ENTITY_ID;
-    document.getElementById('baixa-overlay').dataset.currency = cur;
-    document.getElementById('baixa-overlay').dataset.description = inst.description || '';
-    document.getElementById('baixa-overlay').classList.add('active');
+    var overlay = document.getElementById('baixa-overlay');
+    overlay.dataset.entityId = inst.entity_id || ENTITY_ID;
+    overlay.dataset.currency = cur;
+    overlay.dataset.description = inst.description || '';
+    overlay.dataset.installmentNumber = inst.number || '';
+    overlay.dataset.totalInstallments = inst.total || '';
+    overlay.classList.add('active');
     calcDiscount();
   }
   function closeBaixaModal() { document.getElementById('baixa-overlay').classList.remove('active'); }
@@ -1081,6 +1096,7 @@ function renderPaymentTab(opts: {
 
   async function submitBaixa() {
     var txId = document.getElementById('baixa-tx-id').value;
+    var frId = document.getElementById('baixa-fr-id').value;
     var invoiceId = document.getElementById('baixa-invoice-id').value;
     var paidAmount = parseFloat(document.getElementById('baixa-paid').value) || 0;
     var paidDate = document.getElementById('baixa-date').value || new Date().toISOString().split('T')[0];
@@ -1095,9 +1111,9 @@ function renderPaymentTab(opts: {
     var el = document.getElementById('baixa-result');
 
     try {
-      // Ensure transaction exists (create if synthetic)
+      // Ensure transaction exists (create if synthetic or missing)
       var overlay = document.getElementById('baixa-overlay');
-      txId = await ensureTxExists(txId, overlay, _baixaOriginalAmount, overlay.dataset.currency || 'EUR', overlay.dataset.description || '');
+      txId = await ensureTxExists(txId, overlay, _baixaOriginalAmount, overlay.dataset.currency || 'EUR', overlay.dataset.description || '', frId, overlay.dataset.installmentNumber, overlay.dataset.totalInstallments);
 
       // Upload proof if provided
       var proofUrl = null;
@@ -1124,6 +1140,7 @@ function renderPaymentTab(opts: {
       btn.textContent = 'A dar baixa...';
       var payload = {
         transaction_id: txId,
+        financial_record_id: frId || undefined,
         status_update: 'confirmed',
         paid_amount: paidAmount,
         metadata_update: { manual_paid: true, paid_at: paidDate + 'T00:00:00Z' },
@@ -1586,6 +1603,7 @@ Deno.serve(async (req) => {
             value: rec.installment_value || 0, status: rec.status || "pendente",
             due_date: rec.due_date, paid_at: rec.paid_at, currency: rec.currency || dealCurrency,
             description: rec.description || "",
+            financial_record_id: rec.id,
             invoice_id: rec.bitrix24_invoice_id || null,
             metadata: {},
           }));
@@ -1759,8 +1777,10 @@ Deno.serve(async (req) => {
           value: rec.installment_value || 0, status: rec.status || "pendente",
           due_date: rec.due_date, paid_at: rec.paid_at, currency,
           description: rec.description || "", transaction_id: matchingTx?.id,
+          financial_record_id: rec.id,
           payment_url: matchingTx?.payment_url, payment_method: matchingTx?.payment_method,
           metadata: matchingTx?.metadata || {},
+          invoice_id: rec.bitrix24_invoice_id || null,
         };
       });
       paidValue = installments.filter(i => i.status === "paga").reduce((s, i) => s + i.value, 0);
