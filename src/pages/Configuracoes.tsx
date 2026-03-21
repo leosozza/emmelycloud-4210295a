@@ -224,8 +224,11 @@ export default function Configuracoes() {
           <TabsTrigger value="aparencia" className="gap-1.5">
             <Palette className="h-3.5 w-3.5" /> Aparência
           </TabsTrigger>
-          <TabsTrigger value="encargos" className="gap-1.5">
+        <TabsTrigger value="encargos" className="gap-1.5">
             <AlertCircle className="h-3.5 w-3.5" /> Encargos
+          </TabsTrigger>
+          <TabsTrigger value="permissoes" className="gap-1.5">
+            <Shield className="h-3.5 w-3.5" /> Permissões
           </TabsTrigger>
         </TabsList>
         <TabsContent value="aparencia">
@@ -233,6 +236,9 @@ export default function Configuracoes() {
         </TabsContent>
         <TabsContent value="encargos">
           <EncargosTab />
+        </TabsContent>
+        <TabsContent value="permissoes">
+          <PermissoesTab />
         </TabsContent>
       </Tabs>
     </div>
