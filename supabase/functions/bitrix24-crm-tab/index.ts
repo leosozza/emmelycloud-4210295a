@@ -527,6 +527,11 @@ function renderHtml(opts: {
       }
     }
 
+    function toggleAiPanel() {
+      var panel = document.getElementById('ai-panel');
+      panel.classList.toggle('collapsed');
+    }
+
     function quickAsk(text) {
       var panel = document.getElementById('ai-panel');
       if (panel.classList.contains('collapsed')) panel.classList.remove('collapsed');
