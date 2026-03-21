@@ -16,6 +16,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Plus, Search, Pencil, Trash2, Send, Check, X, Copy, ExternalLink, Download, LayoutTemplate, FileText } from "lucide-react";
 
 import { useToast } from "@/hooks/use-toast";
+import { printHtmlDocument } from "@/lib/exportUtils";
 import { Tables, Constants } from "@/integrations/supabase/types";
 import { PropostaForm } from "@/components/propostas/PropostaForm";
 import { PropostaTemplateForm } from "@/components/propostas/PropostaTemplateForm";

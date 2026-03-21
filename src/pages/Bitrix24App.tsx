@@ -19,6 +19,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
 import { format } from "date-fns";
+import { printHtmlDocument } from "@/lib/exportUtils";
 import { CalendarIcon } from "lucide-react";
 import { AudioRecordButton } from "@/components/chat/AudioRecordButton";
 import {

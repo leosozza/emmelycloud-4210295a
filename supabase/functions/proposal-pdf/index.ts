@@ -174,7 +174,7 @@ Deno.serve(async (req) => {
 
       html = `<!DOCTYPE html>
 <html lang="pt">
-<head><meta charset="UTF-8"><style>
+<head><meta charset="UTF-8"><title>${escapeHtml(composedTitle || "Proposta")}</title><style>
   body { font-family: 'Helvetica Neue', Arial, sans-serif; margin: 0; padding: 0; color: #1a1a1a; }
 </style></head>
 <body>${bodyHtml}</body></html>`;
