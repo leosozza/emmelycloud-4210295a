@@ -1,26 +1,53 @@
 
 
-# Correção do Painel Emmely AI — Colapso e Badges
+# Emmely AI Consulta — Mover para Aba Dedicada
 
-## Problemas
+## Problema
+O painel colapsável no fundo ocupa pouco espaço e as respostas da IA ficam ilegíveis. A área de chat AI compete com a área de mensagens do cliente.
 
-1. **Painel ocupa área excessiva** — `max-height: 50vh` é demasiado; deveria iniciar colapsado
-2. **Não colapsa corretamente** — o painel começa expandido por defeito
-3. **Badges saem para fora** — falta `flex-wrap: nowrap` e scroll horizontal tipo galeria
+## Solução
+Transformar o layout numa estrutura de **2 abas** (tabs) que ocupam toda a área disponível:
 
-## Correções
+```text
+┌──────────────────────────────────┐
+│ Header (avatar, nome, badge)     │
+├──────────────────────────────────┤
+│ [💬 Conversa]  [🤖 Consulta IA] │  ← tabs
+├──────────────────────────────────┤
+│                                  │
+│   Conteúdo da aba ativa          │
+│   (usa 100% da altura)           │
+│                                  │
+└──────────────────────────────────┘
+```
 
-### Ficheiro: `supabase/functions/bitrix24-crm-tab/index.ts`
+### Aba "Conversa" (tab padrão)
+- Contém o que existe hoje: mensagens, barra de envio ao cliente, botão devolver ao bot, e "iniciar conversa"
+
+### Aba "Consulta IA" 
+- Badges de agentes no topo (galeria horizontal)
+- Chat AI ocupa toda a área central com scroll
+- Input + botão enviar em baixo
+- Botões de ação rápida (Resumir, Sugerir, etc.)
+- Botão "Usar resposta" copia para o input da aba Conversa
+
+### Mudanças Técnicas
+
+**Ficheiro:** `supabase/functions/bitrix24-crm-tab/index.ts`
 
 **CSS:**
-- `#ai-panel` inicia com classe `collapsed` (max-height: 40px)
-- Reduzir max-height expandido para `35vh`
-- `#agent-badges`: garantir `flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch;` para scroll horizontal tipo galeria
-- Esconder scrollbar do badges mas manter funcionalidade de arrastar
+- Remover `#ai-panel`, `.collapsed`, max-height constraints
+- Adicionar estilos de tabs (`.tab-bar`, `.tab-btn`, `.tab-btn.active`)
+- Tab content com `flex: 1; overflow: hidden; display: flex; flex-direction: column`
 
 **HTML:**
-- Adicionar classe `collapsed` ao `<div id="ai-panel">` por defeito
+- Adicionar barra de tabs após o header
+- Mover conteúdo de conversa para `#tab-conversa`
+- Mover conteúdo AI para `#tab-consulta` (sem wrapper colapsável)
+- Remover `#ai-panel` e `toggleAiPanel()`
 
 **JS:**
-- `toggleAiPanel()` já existe e faz toggle da classe — manter como está
+- `switchTab(tabName)` alterna visibilidade entre `#tab-conversa` e `#tab-consulta`
+- `quickAsk()` faz `switchTab('consulta')` em vez de toggle do painel
+- `useResponse()` faz `switchTab('conversa')` após copiar texto
 
