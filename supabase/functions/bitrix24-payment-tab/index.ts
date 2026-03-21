@@ -299,6 +299,7 @@ function renderPaymentTab(opts: {
         ` : `
           <div class="b24-item-actions">
             <button onclick='generateReceipt()' class="b24-btn-action" style="border-color:var(--link-color);color:var(--link-color)" title="Gerar Comprovante">${icon("file-text", 13)} Comprovante</button>
+            <button onclick='copyReceiptLink()' class="b24-btn-action" style="border-color:var(--accent-paid);color:var(--accent-paid)" title="Copiar Link do Comprovante">${icon("link", 13)} Link</button>
           </div>
         `}
       </div>`;
