@@ -148,41 +148,36 @@ Deno.serve(async (req) => {
       template = tpl;
     }
 
+    const composedTitle = [proposal.title, proposal.client_name]
+      .filter(Boolean)
+      .join(" — ");
+
     let html: string;
 
     if (template?.layout_blocks && Array.isArray(template.layout_blocks)) {
-      // Dynamic layout from blocks
-      const blocksHtml = (template.layout_blocks as LayoutBlock[])
-        .map((block) => renderBlockToHtml(block, proposal, template))
-        .join("");
+      const blocks = template.layout_blocks as LayoutBlock[];
+      let bodyHtml = "";
 
-      // Title + validity
-      const title = escapeHtml(proposal.title);
-      const validityHtml = proposal.valid_until
-        ? `<div style="text-align: center; color: #64748b; font-size: 13px; margin-bottom: 20px;">Válida até ${new Date(proposal.valid_until).toLocaleDateString("pt-PT")}</div>`
-        : "";
+      for (const block of blocks) {
+        bodyHtml += renderBlockToHtml(block, proposal, template);
+        // Insert title + validity right after the header block
+        if (block.type === "header" && block.visible) {
+          const validityHtml = proposal.valid_until
+            ? `<div style="text-align: center; color: #64748b; font-size: 13px; margin-bottom: 20px;">Válida até ${new Date(proposal.valid_until).toLocaleDateString("pt-PT")}</div>`
+            : "";
+          bodyHtml += `<div style="padding: 20px 40px;">
+            <div style="text-align: center; font-size: 22px; font-weight: bold; margin-bottom: 5px;">${escapeHtml(composedTitle)}</div>
+            ${validityHtml}
+          </div>`;
+        }
+      }
 
       html = `<!DOCTYPE html>
 <html lang="pt">
 <head><meta charset="UTF-8"><style>
   body { font-family: 'Helvetica Neue', Arial, sans-serif; margin: 0; padding: 0; color: #1a1a1a; }
 </style></head>
-<body>
-  ${blocksHtml.split("</div>")[0] ? blocksHtml.substring(0, blocksHtml.indexOf("</div>") + 6) : ""}
-  <div style="padding: 20px 40px;">
-    <div style="text-align: center; font-size: 22px; font-weight: bold; margin-bottom: 5px;">${title}</div>
-    ${validityHtml}
-  </div>
-  ${blocksHtml.indexOf("</div>") >= 0 ? blocksHtml.substring(blocksHtml.indexOf("</div>") + 6) : blocksHtml}
-</body></html>`;
-
-      // Simpler approach: just render all blocks in order
-      html = `<!DOCTYPE html>
-<html lang="pt">
-<head><meta charset="UTF-8"><style>
-  body { font-family: 'Helvetica Neue', Arial, sans-serif; margin: 0; padding: 0; color: #1a1a1a; }
-</style></head>
-<body>${blocksHtml}</body></html>`;
+<body>${bodyHtml}</body></html>`;
     } else {
       // Fallback: original hardcoded layout
       const paymentTypeLabels: Record<string, string> = {
