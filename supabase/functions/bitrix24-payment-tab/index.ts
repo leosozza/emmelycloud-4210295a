@@ -1776,8 +1776,10 @@ Deno.serve(async (req) => {
           value: rec.installment_value || 0, status: rec.status || "pendente",
           due_date: rec.due_date, paid_at: rec.paid_at, currency,
           description: rec.description || "", transaction_id: matchingTx?.id,
+          financial_record_id: rec.id,
           payment_url: matchingTx?.payment_url, payment_method: matchingTx?.payment_method,
           metadata: matchingTx?.metadata || {},
+          invoice_id: rec.bitrix24_invoice_id || null,
         };
       });
       paidValue = installments.filter(i => i.status === "paga").reduce((s, i) => s + i.value, 0);
