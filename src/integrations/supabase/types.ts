@@ -595,6 +595,41 @@ export type Database = {
         }
         Relationships: []
       }
+      bitrix24_user_permissions: {
+        Row: {
+          bitrix_user_id: string
+          granted_at: string
+          granted_by: string | null
+          id: string
+          integration_id: string
+          module: string
+        }
+        Insert: {
+          bitrix_user_id: string
+          granted_at?: string
+          granted_by?: string | null
+          id?: string
+          integration_id: string
+          module: string
+        }
+        Update: {
+          bitrix_user_id?: string
+          granted_at?: string
+          granted_by?: string | null
+          id?: string
+          integration_id?: string
+          module?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "bitrix24_user_permissions_integration_id_fkey"
+            columns: ["integration_id"]
+            isOneToOne: false
+            referencedRelation: "bitrix24_integrations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       business_rules: {
         Row: {
           action_config: Json | null
