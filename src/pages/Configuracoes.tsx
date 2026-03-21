@@ -94,9 +94,11 @@ function EncargosTab() {
     setSaving(true);
     try {
       if (configId) {
-        await supabase.from("payment_gateway_config").update({ config: config as any, updated_at: new Date().toISOString() }).eq("id", configId);
+        const { error } = await supabase.from("payment_gateway_config").update({ config: config as any, updated_at: new Date().toISOString() }).eq("id", configId);
+        if (error) throw error;
       } else {
-        await supabase.from("payment_gateway_config").insert({ gateway: "late_fees" as any, environment: "production", is_active: true, config: config as any });
+        const { error } = await supabase.from("payment_gateway_config").insert({ gateway: "late_fees" as any, environment: "production", is_active: true, config: config as any });
+        if (error) throw error;
       }
       toast.success("Configuração de encargos guardada");
     } catch {
