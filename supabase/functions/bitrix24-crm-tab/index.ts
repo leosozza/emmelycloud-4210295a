@@ -332,16 +332,17 @@ function renderHtml(opts: {
     #status-msg { font-size: 11px; color: #959ca4; text-align: center; padding: 2px 16px; min-height: 14px; }
 
     /* AI Panel — Chat style */
-    #ai-panel { background: #fff; border-top: 2px solid #2283d8; display: flex; flex-direction: column; max-height: 50vh; min-height: 40px; transition: max-height .3s; }
-    #ai-panel.collapsed { max-height: 40px; overflow: hidden; }
-    #ai-header { display: flex; align-items: center; gap: 6px; padding: 8px 16px; cursor: pointer; user-select: none; font-size: 13px; font-weight: 600; color: #2283d8; }
+    #ai-panel { background: #fff; border-top: 2px solid #2283d8; display: flex; flex-direction: column; max-height: 35vh; min-height: 40px; transition: max-height .3s ease; overflow: hidden; }
+    #ai-panel.collapsed { max-height: 40px; }
+    #ai-header { display: flex; align-items: center; gap: 6px; padding: 8px 16px; cursor: pointer; user-select: none; font-size: 13px; font-weight: 600; color: #2283d8; flex-shrink: 0; }
     #ai-header:hover { background: #f0f7ff; }
     #ai-toggle { margin-left: auto; font-size: 16px; transition: transform .2s; }
     #ai-panel.collapsed #ai-toggle { transform: rotate(180deg); }
 
-    /* Agent Badges */
-    #agent-badges { display: flex; gap: 6px; padding: 6px 16px; overflow-x: auto; background: #f9fafb; border-bottom: 1px solid #f0f1f3; }
-    #agent-badges::-webkit-scrollbar { height: 0; }
+    /* Agent Badges — horizontal gallery scroll */
+    #agent-badges { display: flex; flex-wrap: nowrap; gap: 6px; padding: 6px 16px; overflow-x: auto; -webkit-overflow-scrolling: touch; background: #f9fafb; border-bottom: 1px solid #f0f1f3; flex-shrink: 0; }
+    #agent-badges::-webkit-scrollbar { display: none; height: 0; }
+    #agent-badges { scrollbar-width: none; -ms-overflow-style: none; }
     .agent-badge-btn { display: flex; align-items: center; gap: 5px; padding: 4px 10px; border-radius: 20px; border: 1.5px solid #dfe0e3; background: #fff; font-size: 11px; font-weight: 500; color: #555; cursor: pointer; white-space: nowrap; transition: all .15s; flex-shrink: 0; }
     .agent-badge-btn:hover { border-color: #2283d8; color: #2283d8; }
     .agent-badge-btn.active { background: #2283d8; color: #fff; border-color: #2283d8; }
@@ -410,7 +411,7 @@ function renderHtml(opts: {
   </div>
 
   <!-- AI Panel — Chat com badges -->
-  <div id="ai-panel">
+  <div id="ai-panel" class="collapsed">
     <div id="ai-header" onclick="toggleAiPanel()">
       ${B24_ICONS.robot} Emmely AI Consulta
       <span id="ai-toggle">▼</span>
