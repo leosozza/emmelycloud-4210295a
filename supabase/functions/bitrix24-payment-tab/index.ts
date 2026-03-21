@@ -684,21 +684,27 @@ function renderPaymentTab(opts: {
   var _baixaOriginalAmount = 0;
 
   // Ensure a real transaction exists — creates one if txId is synthetic (e.g. "deal-123")
-  async function ensureTxExists(txId, overlayEl, amount, currency, description) {
-    if (!txId || !txId.startsWith('deal-')) return txId;
-    // Create real transaction via payment-create POST
+  async function ensureTxExists(txId, overlayEl, amount, currency, description, financialRecordId, installmentNumber, totalInstallments) {
+    // If we already have a real transaction_id, return it
+    if (txId && !txId.startsWith('deal-')) return txId;
+    // Create real transaction via payment-create POST, linking to financial_record if available
     var entityId = (overlayEl && overlayEl.dataset && overlayEl.dataset.entityId) || ENTITY_ID;
+    var meta = { bitrix_deal_id: entityId, source: 'bitrix24_payment_tab_synthetic' };
+    if (installmentNumber) meta.installment_number = installmentNumber;
+    if (totalInstallments) meta.total_installments = totalInstallments;
+    var bodyPayload = {
+      amount: amount || 0,
+      currency: currency || 'EUR',
+      payment_method: 'direto',
+      force_gateway: 'direto',
+      description: description || 'Parcela',
+      metadata: meta
+    };
+    if (financialRecordId) bodyPayload.financial_record_id = financialRecordId;
     var res = await fetch(SUPABASE_URL + '/functions/v1/payment-create', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_KEY },
-      body: JSON.stringify({
-        amount: amount || 0,
-        currency: currency || 'EUR',
-        payment_method: 'direto',
-        force_gateway: 'direto',
-        description: description || 'Parcela',
-        metadata: { bitrix_deal_id: entityId, source: 'bitrix24_payment_tab_synthetic' }
-      })
+      body: JSON.stringify(bodyPayload)
     });
     var data = await res.json();
     if (data.error) throw new Error('Erro ao criar transação: ' + data.error);
