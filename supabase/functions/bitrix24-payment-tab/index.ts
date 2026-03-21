@@ -1202,7 +1202,9 @@ function renderPaymentTab(opts: {
     var invoiceId = document.getElementById('baixa-invoice-id').value;
     var paidAmount = parseFloat(document.getElementById('baixa-paid').value) || 0;
     var paidDate = document.getElementById('baixa-date').value || new Date().toISOString().split('T')[0];
-    var discount = _baixaOriginalAmount - paidAmount;
+    // Expected amount is late_total if there are late fees, otherwise original amount
+    var expectedAmount = _baixaLateFees.charges > 0 ? _baixaLateFees.total : _baixaOriginalAmount;
+    var discount = expectedAmount - paidAmount;
     var reason = '';
     if (discount > 0.001) {
       reason = document.getElementById('baixa-reason').value;
