@@ -1146,9 +1146,10 @@ function renderPaymentTab(opts: {
       if (invoiceId && typeof BX24 !== 'undefined') {
         btn.textContent = 'A atualizar fatura...';
         await new Promise(function(resolve) {
+          var closeDateStr = new Date().toISOString().split('T')[0] + 'T00:00:00+00:00';
           BX24.callMethod('crm.item.update', {
             entityTypeId: 31, id: parseInt(invoiceId),
-            fields: { stageId: 'DT31_6:P', moved: 'Y' }
+            fields: { stageId: 'DT31_3:P', moved: 'Y', closedate: closeDateStr }
           }, function(r) {
             if (r.error()) {
               console.error('Invoice close error:', r.error());

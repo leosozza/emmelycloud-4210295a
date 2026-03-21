@@ -244,8 +244,42 @@ Deno.serve(async (req) => {
       if (status_update) updatePayload.status = status_update;
       if (amount_update != null && amount_update > 0) updatePayload.amount = amount_update;
       if (payment_method_update) updatePayload.payment_method = payment_method_update;
-      const { error } = await supabase.from("payment_transactions").update(updatePayload).eq("id", transaction_id);
+      const { data: txRow, error } = await supabase.from("payment_transactions").update(updatePayload).eq("id", transaction_id).select("financial_record_id, metadata, payment_method").maybeSingle();
       if (error) throw new Error(error.message);
+
+      // Sync financial_records when marking as confirmed/paid
+      if (status_update === "confirmed" || status_update === "paid") {
+        const paidAt = new Date().toISOString();
+        const frId = txRow?.financial_record_id || body.financial_record_id;
+        const txMeta = (txRow?.metadata as any) || {};
+        const effectivePaymentMethod = payment_method_update || txRow?.payment_method || txMeta.payment_method;
+
+        if (frId) {
+          const frUpdate: any = { status: "paga", paid_at: paidAt };
+          if (effectivePaymentMethod) frUpdate.payment_method = effectivePaymentMethod;
+          if (proof_url || txMeta.proof_url) frUpdate.receipt_url = proof_url || txMeta.proof_url;
+          await supabase.from("financial_records").update(frUpdate).eq("id", frId);
+          console.log(`[PAYMENT-CREATE] Synced financial_record ${frId} to paga`);
+        } else {
+          // Try to find by bitrix24_deal_id + installment_number in metadata
+          const dealId = txMeta.bitrix_deal_id || txMeta.bitrix24_deal_id;
+          const installNum = txMeta.installment_number;
+          if (dealId && installNum) {
+            const frUpdate: any = { status: "paga", paid_at: paidAt };
+            if (effectivePaymentMethod) frUpdate.payment_method = effectivePaymentMethod;
+            if (proof_url || txMeta.proof_url) frUpdate.receipt_url = proof_url || txMeta.proof_url;
+            const { data: matched } = await supabase.from("financial_records")
+              .update(frUpdate)
+              .eq("bitrix24_deal_id", dealId)
+              .eq("installment_number", installNum)
+              .select("id");
+            if (matched?.length) {
+              console.log(`[PAYMENT-CREATE] Synced financial_record by deal ${dealId} inst ${installNum}`);
+            }
+          }
+        }
+      }
+
       return new Response(JSON.stringify({ ok: true }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
