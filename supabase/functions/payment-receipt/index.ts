@@ -232,7 +232,7 @@ Deno.serve(async (req) => {
         <div class="summary-value">${formatCurrency(paidTotal, currency)}</div>
       </div>
       <div class="summary-card open">
-        <div class="summary-label">Em Aberto</div>
+        <div class="summary-label">Em Aberto${totalCharges > 0 ? ' (c/ juros)' : ''}</div>
         <div class="summary-value">${formatCurrency(openTotal, currency)}</div>
       </div>
     </div>
