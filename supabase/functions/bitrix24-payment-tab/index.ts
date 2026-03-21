@@ -1603,6 +1603,7 @@ Deno.serve(async (req) => {
             value: rec.installment_value || 0, status: rec.status || "pendente",
             due_date: rec.due_date, paid_at: rec.paid_at, currency: rec.currency || dealCurrency,
             description: rec.description || "",
+            financial_record_id: rec.id,
             invoice_id: rec.bitrix24_invoice_id || null,
             metadata: {},
           }));
