@@ -1298,6 +1298,21 @@ function renderPaymentTab(opts: {
         });
       }
 
+      // Auto-create receipt_link
+      try {
+        var rlRes = await fetch(SUPABASE_URL + '/rest/v1/receipt_links?bitrix24_deal_id=eq.' + encodeURIComponent(document.getElementById('baixa-overlay').dataset.dealId || '${opts.entityId}') + '&limit=1', {
+          headers: { 'apikey': SUPABASE_KEY, 'Authorization': 'Bearer ' + SUPABASE_KEY }
+        });
+        var rlData = await rlRes.json();
+        if (!rlData || rlData.length === 0) {
+          await fetch(SUPABASE_URL + '/rest/v1/receipt_links', {
+            method: 'POST',
+            headers: { 'apikey': SUPABASE_KEY, 'Authorization': 'Bearer ' + SUPABASE_KEY, 'Content-Type': 'application/json', 'Prefer': 'return=representation' },
+            body: JSON.stringify({ bitrix24_deal_id: '${opts.entityId}', client_name: null, deal_title: '${(opts.dealTitle || "").replace(/'/g, "\\'")}' })
+          });
+        }
+      } catch(rlErr) { console.error('Receipt link error:', rlErr); }
+
       var msg = 'Baixa registada com sucesso!';
       if (discount > 0.001) msg += ' (Desconto: ' + new Intl.NumberFormat('pt-PT', { style: 'currency', currency: document.getElementById('baixa-currency').value }).format(discount) + ')';
       el.innerHTML = msg; el.style.color = 'var(--value-paid)'; el.style.display = 'block';
