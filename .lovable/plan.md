@@ -1,57 +1,52 @@
 
 
-# Revisão de Placements — Install vs Rebind (Inconsistências)
+# Permissões de Acesso por Utilizador Bitrix24 — Emmely AI & Emmely Pay
 
-## Inventário Completo
+## Conceito
 
-| Placement | Install | Rebind | Handler | Problema |
-|-----------|---------|--------|---------|----------|
-| IM_TEXTAREA | ✅ | ✅ | bitrix24-return-to-bot | Install tem `context: "LINES"`, Rebind não. Install não tem DESCRIPTION, Rebind tem. Diferenças no OPTIONS. |
-| IM_SIDEBAR | ✅ | ✅ | bitrix24-im-sidebar | OK — consistente |
-| IM_CONTEXT_MENU | ✅ | ✅ | bitrix24-im-context-menu | OK — consistente |
-| CRM_LEAD_DETAIL_TAB | ✅ | ✅ | bitrix24-crm-tab | OK — mas Rebind só regista este, e Install regista 4 CRM tabs |
-| CRM_CONTACT_DETAIL_TAB | ✅ | ❌ | bitrix24-crm-tab | **Falta no Rebind** |
-| CRM_DEAL_DETAIL_TAB (AI) | ✅ | ❌ | bitrix24-crm-tab | **Falta no Rebind** |
-| CRM_DYNAMIC_DETAIL_TAB | ✅ | ❌ | bitrix24-crm-tab | **Falta no Rebind** |
-| CRM_DEAL_DETAIL_TAB (Pay) | ✅ | ❌ | bitrix24-payment-tab | **Falta no Rebind** |
-| CRM_CONTACT_DETAIL_TAB (Pay) | ✅ | ❌ | bitrix24-payment-tab | **Falta no Rebind** |
-| Payment System (emmely_pay) | ✅ | ❌ | bitrix24-payment-handler | N/A — não é placement |
+O admin do Emmely Cloud escolhe quais utilizadores do Bitrix24 têm acesso a cada módulo (Emmely AI, Emmely Pay). Quando um utilizador sem permissão abre o placement, vê uma mensagem de "Sem acesso".
 
-## Problemas Encontrados
+## Implementação
 
-### 1. Rebind está incompleto
-O `bitrix24-rebind-events` só re-regista 5 placements (IM_TEXTAREA, CRM_LEAD_DETAIL_TAB, IM_SIDEBAR, IM_CONTEXT_MENU). Faltam **5 placements** que o Install regista:
-- CRM_CONTACT_DETAIL_TAB (Emmely AI)
-- CRM_DEAL_DETAIL_TAB (Emmely AI)
-- CRM_DYNAMIC_DETAIL_TAB (Emmely AI)
-- CRM_DEAL_DETAIL_TAB (Emmely Pay)
-- CRM_CONTACT_DETAIL_TAB (Emmely Pay)
+### 1. Migração — Tabela `bitrix24_user_permissions`
 
-### 2. IM_TEXTAREA com configurações diferentes
-- **Install**: `context: "LINES"`, sem DESCRIPTION, sem ICON
-- **Rebind**: sem `context`, com DESCRIPTION, com ICON externo (flaticon)
-- O `context: "LINES"` é importante para restringir o botão a Open Lines (não aparecer em chats internos)
+Nova tabela para armazenar as permissões por utilizador e módulo:
 
-### 3. Install IM_TEXTAREA não tem DESCRIPTION
-O Rebind adiciona descrições multilínguas que o Install não tem.
+| Coluna | Tipo | Descrição |
+|--------|------|-----------|
+| id | uuid PK | — |
+| integration_id | uuid FK | Referência à integração |
+| bitrix_user_id | text | ID do utilizador no Bitrix24 |
+| module | text | `emmely_ai` ou `emmely_pay` |
+| granted_at | timestamptz | Data de concessão |
+| granted_by | uuid | Quem concedeu (user_id do Supabase) |
 
-## Correções
+RLS: admin e service_role têm acesso total, service_role para as edge functions lerem.
 
-### Ficheiro 1: `supabase/functions/bitrix24-rebind-events/index.ts`
+### 2. Edge Functions — Verificação de acesso
 
-Adicionar os placements em falta ao rebind:
-- Loop CRM tabs (Lead, Contact, Deal, Dynamic) → `bitrix24-crm-tab`
-- CRM_DEAL_DETAIL_TAB + CRM_CONTACT_DETAIL_TAB → `bitrix24-payment-tab`
+**`bitrix24-crm-tab/index.ts`** e **`bitrix24-payment-tab/index.ts`**:
 
-Uniformizar IM_TEXTAREA com o Install (adicionar `context: "LINES"`).
+- Extrair o `AUTH_ID` do body (já existe) e chamar `user.current` via API Bitrix24 para obter o ID do utilizador
+- Consultar `bitrix24_user_permissions` para verificar se o utilizador tem acesso ao módulo correspondente (`emmely_ai` para crm-tab, `emmely_pay` para payment-tab)
+- Se não houver NENHUM registo na tabela para aquele módulo+integração → acesso livre (backwards compatible)
+- Se houver registos mas o utilizador não estiver na lista → renderizar HTML de "Sem permissão"
 
-### Ficheiro 2: `supabase/functions/bitrix24-install/index.ts`
+### 3. UI de Gestão — Nova aba "Permissões" em Configurações
 
-Uniformizar IM_TEXTAREA com o Rebind:
-- Adicionar DESCRIPTION multilíngue ao Install
+**`src/pages/Configuracoes.tsx`**:
 
-### Ficheiros a editar
+Nova tab "Permissões Bitrix24":
+- Usa o hook `useBitrixUsers()` (já existe) para listar todos os utilizadores ativos
+- Duas secções: **Emmely AI** e **Emmely Pay**
+- Cada secção mostra checkboxes com os utilizadores
+- Toggle "Restringir acesso" por módulo — quando desativado, todos têm acesso
+- Botão "Guardar" persiste na tabela `bitrix24_user_permissions`
 
-1. **`supabase/functions/bitrix24-rebind-events/index.ts`** — adicionar 5 placements CRM em falta + uniformizar IM_TEXTAREA
-2. **`supabase/functions/bitrix24-install/index.ts`** — adicionar DESCRIPTION ao IM_TEXTAREA para consistência
+### Ficheiros a criar/editar
+
+1. **Migração SQL** — criar tabela `bitrix24_user_permissions`
+2. **`supabase/functions/bitrix24-crm-tab/index.ts`** — verificar permissão do utilizador para `emmely_ai`
+3. **`supabase/functions/bitrix24-payment-tab/index.ts`** — verificar permissão do utilizador para `emmely_pay`
+4. **`src/pages/Configuracoes.tsx`** — nova aba de gestão de permissões com lista de utilizadores Bitrix24
 
