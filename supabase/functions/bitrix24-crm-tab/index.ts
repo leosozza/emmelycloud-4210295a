@@ -331,39 +331,47 @@ function renderHtml(opts: {
     #client-send-bar button:disabled { opacity: .5; cursor: not-allowed; }
     #status-msg { font-size: 11px; color: #959ca4; text-align: center; padding: 2px 16px; min-height: 14px; }
 
-    /* AI Panel (bottom collapsible) */
-    #ai-panel { background: #fff; border-top: 2px solid #2283d8; display: flex; flex-direction: column; max-height: 45vh; min-height: 40px; transition: max-height .3s; }
+    /* AI Panel — Chat style */
+    #ai-panel { background: #fff; border-top: 2px solid #2283d8; display: flex; flex-direction: column; max-height: 50vh; min-height: 40px; transition: max-height .3s; }
     #ai-panel.collapsed { max-height: 40px; overflow: hidden; }
     #ai-header { display: flex; align-items: center; gap: 6px; padding: 8px 16px; cursor: pointer; user-select: none; font-size: 13px; font-weight: 600; color: #2283d8; }
     #ai-header:hover { background: #f0f7ff; }
     #ai-toggle { margin-left: auto; font-size: 16px; transition: transform .2s; }
     #ai-panel.collapsed #ai-toggle { transform: rotate(180deg); }
-    .ai-suggestions { display: flex; flex-wrap: wrap; gap: 4px; padding: 4px 16px 8px; }
-    .ai-suggestions button { background: #f5f7fa; color: #333840; border: 1px solid #dfe0e3; padding: 4px 10px; border-radius: 6px; font-size: 11px; font-weight: 500; cursor: pointer; transition: all .15s; white-space: nowrap; display: flex; align-items: center; gap: 3px; }
-    .ai-suggestions button:hover { background: #e8f4fd; color: #2283d8; border-color: #2283d8; }
+
+    /* Agent Badges */
+    #agent-badges { display: flex; gap: 6px; padding: 6px 16px; overflow-x: auto; background: #f9fafb; border-bottom: 1px solid #f0f1f3; }
+    #agent-badges::-webkit-scrollbar { height: 0; }
+    .agent-badge-btn { display: flex; align-items: center; gap: 5px; padding: 4px 10px; border-radius: 20px; border: 1.5px solid #dfe0e3; background: #fff; font-size: 11px; font-weight: 500; color: #555; cursor: pointer; white-space: nowrap; transition: all .15s; flex-shrink: 0; }
+    .agent-badge-btn:hover { border-color: #2283d8; color: #2283d8; }
+    .agent-badge-btn.active { background: #2283d8; color: #fff; border-color: #2283d8; }
+    .agent-badge-icon { width: 20px; height: 20px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 700; flex-shrink: 0; }
+    .agent-badge-btn:not(.active) .agent-badge-icon { background: linear-gradient(135deg, #7b5ea7, #2283d8); color: #fff; }
+    .agent-badge-btn.active .agent-badge-icon { background: rgba(255,255,255,0.3); color: #fff; }
+
+    /* AI Chat messages */
     #ai-messages { flex: 1; overflow-y: auto; padding: 8px 16px; display: flex; flex-direction: column; gap: 8px; min-height: 0; }
-    .ai-msg { max-width: 90%; padding: 8px 12px; border-radius: 10px; font-size: 12px; line-height: 1.5; word-break: break-word; white-space: pre-wrap; }
-    .ai-msg.user { align-self: flex-end; background: #2283d8; color: #fff; }
-    .ai-msg.assistant { align-self: flex-start; background: #f5f7fa; color: #333840; border: 1px solid #dfe0e3; }
+    .ai-msg { max-width: 90%; padding: 8px 12px; border-radius: 12px; font-size: 12px; line-height: 1.5; word-break: break-word; white-space: pre-wrap; }
+    .ai-msg.user { align-self: flex-end; background: #2283d8; color: #fff; border-bottom-right-radius: 4px; }
+    .ai-msg.assistant { align-self: flex-start; background: #f5f7fa; color: #333840; border: 1px solid #dfe0e3; border-bottom-left-radius: 4px; }
     .ai-msg .typing-dots::after { content: '...'; animation: dots 1.2s steps(4,end) infinite; }
     @keyframes dots { 0%,20%{content:'.'} 40%{content:'..'} 60%,100%{content:'...'} }
     .use-response-btn { display: inline-flex; align-items: center; gap: 4px; background: #e8f4fd; color: #2283d8; border: 1px solid #c4dff0; border-radius: 6px; padding: 3px 8px; font-size: 11px; cursor: pointer; margin-top: 6px; transition: all .15s; }
     .use-response-btn:hover { background: #2283d8; color: #fff; }
+    .ai-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 20px; color: #959ca4; text-align: center; flex: 1; }
+    .ai-empty svg { margin-bottom: 8px; color: #c4cdd5; }
+    .ai-empty p { font-size: 12px; line-height: 1.5; }
 
-    /* AI input with @mention */
-    #ai-input-area { display: flex; gap: 6px; padding: 8px 12px; background: #fff; border-top: 1px solid #eee; align-items: flex-end; position: relative; }
-    #ai-input { flex: 1; border: 1px solid #dfe0e3; border-radius: 8px; padding: 8px 12px; font-size: 12px; outline: none; color: #333840; font-family: inherit; }
+    /* AI Input */
+    #ai-input-area { display: flex; gap: 6px; padding: 8px 12px; background: #fff; border-top: 1px solid #eee; align-items: flex-end; }
+    #ai-input { flex: 1; border: 1px solid #dfe0e3; border-radius: 8px; padding: 8px 12px; font-size: 12px; outline: none; color: #333840; font-family: inherit; resize: none; min-height: 36px; max-height: 80px; }
     #ai-input:focus { border-color: #2283d8; }
     #ai-send-btn { background: #2283d8; color: #fff; border: none; border-radius: 8px; padding: 8px 12px; font-size: 12px; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 4px; }
     #ai-send-btn:hover { background: #1b6cb8; }
     #ai-send-btn:disabled { opacity: .5; cursor: not-allowed; }
-
-    /* Agent dropdown */
-    #agent-dropdown { position: absolute; bottom: 100%; left: 12px; right: 60px; background: #fff; border: 1px solid #dfe0e3; border-radius: 8px; box-shadow: 0 -4px 16px rgba(0,0,0,.12); display: none; max-height: 180px; overflow-y: auto; z-index: 100; }
-    #agent-dropdown.visible { display: block; }
-    .agent-option { padding: 8px 12px; font-size: 12px; cursor: pointer; display: flex; align-items: center; gap: 6px; color: #333840; }
-    .agent-option:hover { background: #e8f4fd; color: #2283d8; }
-    .agent-option .agent-icon { width: 20px; height: 20px; border-radius: 50%; background: linear-gradient(135deg, #7b5ea7, #2283d8); display: flex; align-items: center; justify-content: center; color: #fff; font-size: 10px; font-weight: 700; flex-shrink: 0; }
+    .ai-suggestions { display: flex; flex-wrap: wrap; gap: 4px; padding: 4px 16px 8px; background: #fff; }
+    .ai-suggestions button { background: #f5f7fa; color: #333840; border: 1px solid #dfe0e3; padding: 4px 10px; border-radius: 6px; font-size: 11px; font-weight: 500; cursor: pointer; transition: all .15s; white-space: nowrap; display: flex; align-items: center; gap: 3px; }
+    .ai-suggestions button:hover { background: #e8f4fd; color: #2283d8; border-color: #2283d8; }
 
     ::-webkit-scrollbar { width: 4px; } ::-webkit-scrollbar-thumb { background: #dfe0e3; border-radius: 4px; }
   </style>
@@ -401,24 +409,28 @@ function renderHtml(opts: {
     <div id="status-msg"></div>
   </div>
 
-  <!-- AI Panel -->
+  <!-- AI Panel — Chat com badges -->
   <div id="ai-panel">
     <div id="ai-header" onclick="toggleAiPanel()">
-      ${B24_ICONS.robot} Emmely AI
-      <span style="font-weight:400;font-size:11px;color:#959ca4;margin-left:4px">${messages.length ? messages.length + " msgs contexto" : ""}</span>
+      ${B24_ICONS.robot} Emmely AI Consulta
       <span id="ai-toggle">▼</span>
+    </div>
+    <div id="agent-badges"></div>
+    <div id="ai-messages">
+      <div class="ai-empty" id="ai-empty">
+        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M9 18h6"/><path d="M10 22h4"/><path d="M12 2a7 7 0 0 0-4 12.7V17h8v-2.3A7 7 0 0 0 12 2z"/></svg>
+        <p>Selecione um agente e faça a sua pergunta.<br>A Emmely responde com base no contexto da conversa.</p>
+      </div>
+    </div>
+    <div id="ai-input-area">
+      <textarea id="ai-input" rows="1" placeholder="Pergunte à Emmely..." oninput="autoResizeAi(this)" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendAiMessage()}"></textarea>
+      <button id="ai-send-btn" onclick="sendAiMessage()">${B24_ICONS.send}</button>
     </div>
     <div class="ai-suggestions">
       <button onclick="quickAsk('Faz um resumo desta conversa com o cliente')">${B24_ICONS.clipboard} Resumir</button>
       <button onclick="quickAsk('Sugere uma resposta profissional para enviar ao cliente')">${B24_ICONS.lightbulb} Sugerir</button>
       <button onclick="quickAsk('Analisa o sentimento do cliente nesta conversa')">${B24_ICONS.smile} Sentimento</button>
       <button onclick="quickAsk('Qual é o procedimento recomendado para este caso?')">${B24_ICONS.list} Procedimento</button>
-    </div>
-    <div id="ai-messages"></div>
-    <div id="ai-input-area">
-      <div id="agent-dropdown"></div>
-      <input type="text" id="ai-input" placeholder="@agente pergunta... ou escreva directamente" oninput="handleAiInput(event)" onkeydown="if(event.key==='Enter')sendAiMessage()">
-      <button id="ai-send-btn" onclick="sendAiMessage()">${B24_ICONS.send}</button>
     </div>
   </div>
 </div>
@@ -433,280 +445,197 @@ function renderHtml(opts: {
   var CHANNEL = "${channel || ""}";
   var CONV_SUMMARY = ${JSON.stringify(convSummary)};
   var AGENTS = ${agentsJson};
-  var selectedAgentId = null;
-  var selectedAgentName = '';
+    var selectedAgentId = AGENTS.length > 0 ? AGENTS[0].id : null;
+    var selectedAgentName = AGENTS.length > 0 ? AGENTS[0].name : '';
+    var BADGE_COLORS = ['#2283d8','#7b5ea7','#e06c4f','#22a86b','#d4a017','#3ea8c7','#c75ea7','#5ea77b'];
 
-  // Scroll messages to bottom
-  var msgBox = document.getElementById('messages');
-  if (msgBox) msgBox.scrollTop = msgBox.scrollHeight;
+    // ── Build agent badges ──
+    function renderBadges() {
+      var container = document.getElementById('agent-badges');
+      if (!container || AGENTS.length === 0) return;
+      container.innerHTML = AGENTS.map(function(a, i) {
+        var isActive = a.id === selectedAgentId;
+        var color = BADGE_COLORS[i % BADGE_COLORS.length];
+        return '<button class="agent-badge-btn' + (isActive ? ' active' : '') + '" data-id="' + a.id + '" data-name="' + a.name.replace(/"/g,'&quot;') + '" onclick="selectAgent(this)" style="' + (isActive ? 'background:'+color+';border-color:'+color : '') + '">' +
+          '<span class="agent-badge-icon" style="' + (!isActive ? 'background:'+color : '') + '">' + a.name.charAt(0).toUpperCase() + '</span>' +
+          a.name + '</button>';
+      }).join('');
+      updatePlaceholder();
+    }
+    renderBadges();
 
-  // Template select → populate textarea
-  var tplSelect = document.getElementById('template-select');
-  if (tplSelect) {
-    tplSelect.addEventListener('change', function() {
-      var ta = document.getElementById('start-msg-input');
-      if (this.value && ta) ta.value = this.value;
-    });
-  }
+    function selectAgent(el) {
+      var id = el.getAttribute('data-id');
+      var name = el.getAttribute('data-name');
+      if (id === selectedAgentId) return;
+      selectedAgentId = id;
+      selectedAgentName = name;
+      // Clear chat history when switching agent
+      aiHistory = [];
+      var msgs = document.getElementById('ai-messages');
+      msgs.innerHTML = '<div class="ai-empty" id="ai-empty"><svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M9 18h6"/><path d="M10 22h4"/><path d="M12 2a7 7 0 0 0-4 12.7V17h8v-2.3A7 7 0 0 0 12 2z"/></svg><p>Pergunte ao <strong>' + name + '</strong><br>A resposta será baseada no contexto da conversa.</p></div>';
+      renderBadges();
+    }
 
-  // Auto-resize textarea
-  function autoResize(el) {
-    el.style.height = 'auto';
-    el.style.height = Math.min(el.scrollHeight, 80) + 'px';
-  }
+    function updatePlaceholder() {
+      var input = document.getElementById('ai-input');
+      if (input && selectedAgentName) input.placeholder = 'Pergunte ao ' + selectedAgentName + '...';
+    }
 
-  // ── AI Panel toggle ──
-  function toggleAiPanel() {
-    document.getElementById('ai-panel').classList.toggle('collapsed');
-  }
+    function autoResizeAi(el) {
+      el.style.height = 'auto';
+      el.style.height = Math.min(el.scrollHeight, 80) + 'px';
+    }
 
-  // ── Send message to client ──
-  function sendClientMessage() {
-    var input = document.getElementById('client-input');
-    var text = (input.value || '').trim();
-    if (!text || !CONVERSATION_ID) return;
+    // ── AI Chat functions ──
+    var aiHistory = [];
+    var aiSending = false;
 
-    var btn = document.getElementById('send-client-btn');
-    btn.disabled = true;
-    input.value = '';
-    input.style.height = 'auto';
-
-    // Optimistic: add message to chat
-    var msgContainer = document.getElementById('messages');
-    var div = document.createElement('div');
-    div.style.cssText = 'display:flex;flex-direction:column;align-items:flex-end;margin-bottom:10px';
-    div.innerHTML = '<div style="font-size:10px;color:#959ca4;margin-bottom:2px;padding:0 4px">Eu · agora</div>' +
-      '<div style="background:#2283d8;color:#fff;padding:8px 12px;border-radius:12px;max-width:80%;font-size:13px;line-height:1.4;word-break:break-word">' +
-      text.replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\\n/g,'<br>') + '</div>';
-    msgContainer.appendChild(div);
-    msgContainer.scrollTop = msgContainer.scrollHeight;
-
-    fetch(SUPABASE_URL + '/functions/v1/message-send', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_KEY },
-      body: JSON.stringify({ conversation_id: CONVERSATION_ID, content: text, direction: 'outbound', sender_name: 'Operador Bitrix24' })
-    })
-    .then(function(r) { return r.json(); })
-    .then(function(d) {
-      if (d.error) setStatus('❌ ' + d.error, '#ef4444');
-      else setStatus('✅ Enviada', '#22c55e');
-    })
-    .catch(function(e) { setStatus('❌ ' + e.message, '#ef4444'); })
-    .finally(function() { btn.disabled = false; input.focus(); });
-  }
-
-  // ── AI Chat with @agent support ──
-  var aiHistory = [];
-  var aiSending = false;
-
-  function handleAiInput(e) {
-    var val = e.target.value;
-    var atIdx = val.lastIndexOf('@');
-    var dropdown = document.getElementById('agent-dropdown');
-    
-    if (atIdx >= 0) {
-      var query = val.substring(atIdx + 1).toLowerCase();
-      var filtered = AGENTS.filter(function(a) { return a.name.toLowerCase().indexOf(query) >= 0; });
-      
-      if (filtered.length > 0 && !selectedAgentId) {
-        dropdown.innerHTML = filtered.map(function(a) {
-          return '<div class="agent-option" onclick="selectAgent(\\'' + a.id + '\\',\\'' + a.name.replace(/'/g,"\\\\'") + '\\')">' +
-            '<span class="agent-icon">' + a.name.charAt(0).toUpperCase() + '</span>' + a.name + '</div>';
-        }).join('');
-        dropdown.classList.add('visible');
-      } else {
-        dropdown.classList.remove('visible');
+    function appendAiMsg(role, text, showUseBtn) {
+      var empty = document.getElementById('ai-empty');
+      if (empty) empty.remove();
+      var container = document.getElementById('ai-messages');
+      var wrapper = document.createElement('div');
+      wrapper.style.cssText = 'display:flex;flex-direction:column;' + (role === 'user' ? 'align-items:flex-end' : 'align-items:flex-start');
+      var div = document.createElement('div');
+      div.className = 'ai-msg ' + role;
+      div.textContent = text;
+      wrapper.appendChild(div);
+      if (showUseBtn && role === 'assistant' && text) {
+        var btn = document.createElement('button');
+        btn.className = 'use-response-btn';
+        btn.innerHTML = '${B24_ICONS.use} Usar resposta';
+        btn.onclick = function() { useResponse(text); };
+        wrapper.appendChild(btn);
       }
-    } else {
-      dropdown.classList.remove('visible');
-    }
-  }
-
-  function selectAgent(id, name) {
-    selectedAgentId = id;
-    selectedAgentName = name;
-    var input = document.getElementById('ai-input');
-    var val = input.value;
-    var atIdx = val.lastIndexOf('@');
-    input.value = val.substring(0, atIdx) + '@' + name + ' ';
-    document.getElementById('agent-dropdown').classList.remove('visible');
-    input.focus();
-  }
-
-  function appendAiMsg(role, text, showUseBtn) {
-    var container = document.getElementById('ai-messages');
-    var wrapper = document.createElement('div');
-    wrapper.style.cssText = 'display:flex;flex-direction:column;' + (role === 'user' ? 'align-items:flex-end' : 'align-items:flex-start');
-    
-    var div = document.createElement('div');
-    div.className = 'ai-msg ' + role;
-    div.textContent = text;
-    wrapper.appendChild(div);
-
-    if (showUseBtn && role === 'assistant' && text) {
-      var btn = document.createElement('button');
-      btn.className = 'use-response-btn';
-      btn.innerHTML = '${B24_ICONS.use} Usar resposta';
-      btn.onclick = function() { useResponse(text); };
-      wrapper.appendChild(btn);
+      container.appendChild(wrapper);
+      container.scrollTop = container.scrollHeight;
+      return div;
     }
 
-    container.appendChild(wrapper);
-    container.scrollTop = container.scrollHeight;
-    return div;
-  }
-
-  function useResponse(text) {
-    var clientInput = document.getElementById('client-input');
-    if (clientInput) {
-      clientInput.value = text;
-      autoResize(clientInput);
-      clientInput.focus();
-      // Scroll to make sure client input is visible
-      clientInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      setStatus('Resposta copiada para o campo de envio', '#2283d8');
-    } else {
-      setStatus('Sem campo de envio disponível (inicie uma conversa primeiro)', '#f59e0b');
-    }
-  }
-
-  function quickAsk(text) {
-    document.getElementById('ai-input').value = text;
-    // Expand AI panel if collapsed
-    var panel = document.getElementById('ai-panel');
-    if (panel.classList.contains('collapsed')) panel.classList.remove('collapsed');
-    sendAiMessage();
-  }
-
-  function sendAiMessage() {
-    if (aiSending) return;
-    var input = document.getElementById('ai-input');
-    var rawText = (input.value || '').trim();
-    if (!rawText) return;
-
-    // Extract question text (remove @AgentName prefix)
-    var questionText = rawText;
-    if (selectedAgentId && rawText.indexOf('@' + selectedAgentName) === 0) {
-      questionText = rawText.substring(('@' + selectedAgentName).length).trim();
-    }
-    if (!questionText) { setStatus('Escreva uma pergunta após @' + selectedAgentName, '#f59e0b'); return; }
-
-    input.value = '';
-    aiSending = true;
-    document.getElementById('ai-send-btn').disabled = true;
-
-    var displayText = selectedAgentName ? '@' + selectedAgentName + ' ' + questionText : questionText;
-    appendAiMsg('user', displayText, false);
-
-    // Build context prefix
-    var contextPrefix = '';
-    if (aiHistory.length === 0) {
-      contextPrefix = '[CONTEXTO INTERNO - NÃO ENVIAR AO CLIENTE]\\n';
-      contextPrefix += 'Cliente: ' + CONTACT_NAME + '\\n';
-      if (CHANNEL) contextPrefix += 'Canal: ' + CHANNEL + '\\n';
-      if (CONV_SUMMARY) contextPrefix += 'Histórico recente:\\n' + CONV_SUMMARY + '\\n';
-      contextPrefix += '---\\nPergunta do operador: ';
+    function useResponse(text) {
+      var clientInput = document.getElementById('client-input');
+      if (clientInput) {
+        clientInput.value = text;
+        autoResize(clientInput);
+        clientInput.focus();
+        clientInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        setStatus('Resposta copiada para o campo de envio', '#2283d8');
+      } else {
+        setStatus('Sem campo de envio disponível (inicie uma conversa primeiro)', '#f59e0b');
+      }
     }
 
-    var fullText = contextPrefix + questionText;
-    aiHistory.push({ role: 'user', content: fullText });
-
-    var typingDiv = appendAiMsg('assistant', '', false);
-    typingDiv.innerHTML = '<span class="typing-dots"></span>';
-
-    // Choose endpoint: if agent selected, use ai-playground; else ai-process-message
-    var useAgentEndpoint = !!selectedAgentId;
-    var url, payload;
-
-    if (useAgentEndpoint) {
-      url = SUPABASE_URL + '/functions/v1/ai-playground';
-      payload = {
-        agent_id: selectedAgentId,
-        messages: aiHistory
-      };
-    } else {
-      url = SUPABASE_URL + '/functions/v1/ai-process-message';
-      payload = {
-        message_text: fullText,
-        skip_send: true
-      };
-      if (CONVERSATION_ID) payload.conversation_id = CONVERSATION_ID;
+    function quickAsk(text) {
+      var panel = document.getElementById('ai-panel');
+      if (panel.classList.contains('collapsed')) panel.classList.remove('collapsed');
+      document.getElementById('ai-input').value = text;
+      sendAiMessage();
     }
 
-    fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + SUPABASE_KEY },
-      body: JSON.stringify(payload)
-    })
-    .then(function(r) { return r.json(); })
-    .then(function(d) {
-      typingDiv.parentElement.remove();
-      var reply = d.content || d.reply || d.error || 'Sem resposta da IA';
-      appendAiMsg('assistant', reply, true);
-      aiHistory.push({ role: 'assistant', content: reply });
-    })
-    .catch(function(e) {
-      typingDiv.parentElement.remove();
-      appendAiMsg('assistant', 'Erro: ' + e.message, false);
-    })
-    .finally(function() {
-      aiSending = false;
-      document.getElementById('ai-send-btn').disabled = false;
-      input.focus();
-      // Reset agent selection after send
-      selectedAgentId = null;
-      selectedAgentName = '';
-    });
-  }
+    function sendAiMessage() {
+      if (aiSending) return;
+      var input = document.getElementById('ai-input');
+      var questionText = (input.value || '').trim();
+      if (!questionText) return;
 
-  function setStatus(msg, color) {
-    var el = document.getElementById('status-msg');
-    if (el) { el.textContent = msg; el.style.color = color || '#888'; }
-    if (msg) setTimeout(function() { if (el && el.textContent === msg) el.textContent = ''; }, 4000);
-  }
+      input.value = '';
+      input.style.height = 'auto';
+      aiSending = true;
+      document.getElementById('ai-send-btn').disabled = true;
 
-  function returnToBot() {
-    if (!CONVERSATION_ID) return;
-    setStatus('A devolver ao bot...', '#888');
-    fetch(SUPABASE_URL + '/functions/v1/bitrix24-return-to-bot', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ conversation_id: CONVERSATION_ID, member_id: MEMBER_ID })
-    })
-    .then(function(r) { return r.text(); })
-    .then(function() {
-      setStatus('Emmely AI retomou o atendimento!', '#22c55e');
-      var badge = document.getElementById('mode-badge');
-      if (badge) { badge.textContent = 'Bot Ativo'; badge.style.color = '#22c55e'; badge.style.borderColor = '#22c55e33'; badge.style.background = '#22c55e15'; }
-    })
-    .catch(function(e) { setStatus('❌ Erro: ' + e.message, '#ef4444'); });
-  }
+      appendAiMsg('user', questionText, false);
 
-  function startConversation(channel, phone) {
-    var msgInput = document.getElementById('start-msg-input');
-    var message = msgInput ? msgInput.value.trim() : 'Olá! Em que posso ajudar?';
-    if (!message) { setStatus('Escreva uma mensagem', '#f59e0b'); return; }
+      // Build context on first message
+      var contextPrefix = '';
+      if (aiHistory.length === 0) {
+        contextPrefix = '[CONTEXTO INTERNO - NÃO ENVIAR AO CLIENTE]\\n';
+        contextPrefix += 'Cliente: ' + CONTACT_NAME + '\\n';
+        if (CHANNEL) contextPrefix += 'Canal: ' + CHANNEL + '\\n';
+        if (CONV_SUMMARY) contextPrefix += 'Histórico recente:\\n' + CONV_SUMMARY + '\\n';
+        contextPrefix += '---\\nPergunta do operador: ';
+      }
 
-    setStatus('A iniciar conversa...', '#888');
-    fetch(SUPABASE_URL + '/functions/v1/message-send', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_KEY },
-      body: JSON.stringify({ channel: channel, contact_phone: phone || undefined, message: message })
-    })
-    .then(function(r) { return r.json(); })
-    .then(function(d) {
-      if (d.error) throw new Error(d.error);
-      setStatus('✅ Conversa iniciada! Recarregue a aba.', '#22c55e');
-    })
-    .catch(function(e) { setStatus('❌ ' + e.message, '#ef4444'); });
-  }
+      var fullText = contextPrefix + questionText;
+      aiHistory.push({ role: 'user', content: fullText });
 
-  // Close dropdown on click outside
-  document.addEventListener('click', function(e) {
-    if (!e.target.closest('#ai-input-area')) {
-      document.getElementById('agent-dropdown').classList.remove('visible');
+      var typingDiv = appendAiMsg('assistant', '', false);
+      typingDiv.innerHTML = '<span class="typing-dots"></span>';
+
+      // Always use ai-playground with selected agent; fallback to ai-process-message
+      var url, payload;
+      if (selectedAgentId) {
+        url = SUPABASE_URL + '/functions/v1/ai-playground';
+        payload = { agent_id: selectedAgentId, messages: aiHistory };
+      } else {
+        url = SUPABASE_URL + '/functions/v1/ai-process-message';
+        payload = { message_text: fullText, skip_send: true };
+        if (CONVERSATION_ID) payload.conversation_id = CONVERSATION_ID;
+      }
+
+      fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + SUPABASE_KEY },
+        body: JSON.stringify(payload)
+      })
+      .then(function(r) { return r.json(); })
+      .then(function(d) {
+        typingDiv.parentElement.remove();
+        var reply = d.content || d.reply || d.error || 'Sem resposta da IA';
+        appendAiMsg('assistant', reply, true);
+        aiHistory.push({ role: 'assistant', content: reply });
+      })
+      .catch(function(e) {
+        typingDiv.parentElement.remove();
+        appendAiMsg('assistant', 'Erro: ' + e.message, false);
+      })
+      .finally(function() {
+        aiSending = false;
+        document.getElementById('ai-send-btn').disabled = false;
+        input.focus();
+      });
     }
-  });
+
+    function setStatus(msg, color) {
+      var el = document.getElementById('status-msg');
+      if (el) { el.textContent = msg; el.style.color = color || '#888'; }
+      if (msg) setTimeout(function() { if (el && el.textContent === msg) el.textContent = ''; }, 4000);
+    }
+
+    function returnToBot() {
+      if (!CONVERSATION_ID) return;
+      setStatus('A devolver ao bot...', '#888');
+      fetch(SUPABASE_URL + '/functions/v1/bitrix24-return-to-bot', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ conversation_id: CONVERSATION_ID, member_id: MEMBER_ID })
+      })
+      .then(function(r) { return r.text(); })
+      .then(function() {
+        setStatus('Emmely AI retomou o atendimento!', '#22c55e');
+        var badge = document.getElementById('mode-badge');
+        if (badge) { badge.textContent = 'Bot Ativo'; badge.style.color = '#22c55e'; badge.style.borderColor = '#22c55e33'; badge.style.background = '#22c55e15'; }
+      })
+      .catch(function(e) { setStatus('❌ Erro: ' + e.message, '#ef4444'); });
+    }
+
+    function startConversation(channel, phone) {
+      var msgInput = document.getElementById('start-msg-input');
+      var message = msgInput ? msgInput.value.trim() : 'Olá! Em que posso ajudar?';
+      if (!message) { setStatus('Escreva uma mensagem', '#f59e0b'); return; }
+      setStatus('A iniciar conversa...', '#888');
+      fetch(SUPABASE_URL + '/functions/v1/message-send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_KEY },
+        body: JSON.stringify({ channel: channel, contact_phone: phone || undefined, message: message })
+      })
+      .then(function(r) { return r.json(); })
+      .then(function(d) {
+        if (d.error) throw new Error(d.error);
+        setStatus('✅ Conversa iniciada! Recarregue a aba.', '#22c55e');
+      })
+      .catch(function(e) { setStatus('❌ ' + e.message, '#ef4444'); });
+    }
 
   try {
     BX24.init(function() { BX24.fitWindow(); });
