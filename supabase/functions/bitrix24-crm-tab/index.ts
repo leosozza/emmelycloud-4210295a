@@ -520,22 +520,29 @@ function renderHtml(opts: {
       if (clientInput) {
         clientInput.value = text;
         autoResize(clientInput);
+        switchTab('conversa');
         clientInput.focus();
-        clientInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
         setStatus('Resposta copiada para o campo de envio', '#2283d8');
       } else {
         setStatus('Sem campo de envio disponível (inicie uma conversa primeiro)', '#f59e0b');
       }
     }
 
-    function toggleAiPanel() {
-      var panel = document.getElementById('ai-panel');
-      panel.classList.toggle('collapsed');
+    function switchTab(tab) {
+      document.querySelectorAll('.tab-content').forEach(function(el) { el.classList.remove('active'); });
+      document.querySelectorAll('.tab-btn').forEach(function(el) { el.classList.remove('active'); });
+      var content = document.getElementById('tab-' + tab);
+      var btn = document.getElementById('tab-btn-' + tab);
+      if (content) content.classList.add('active');
+      if (btn) btn.classList.add('active');
+      if (tab === 'consulta') {
+        var aiInput = document.getElementById('ai-input');
+        if (aiInput) aiInput.focus();
+      }
     }
 
     function quickAsk(text) {
-      var panel = document.getElementById('ai-panel');
-      if (panel.classList.contains('collapsed')) panel.classList.remove('collapsed');
+      switchTab('consulta');
       document.getElementById('ai-input').value = text;
       sendAiMessage();
     }
