@@ -305,6 +305,49 @@ Deno.serve(async (req) => {
           if (proof_url || txMeta.proof_url) frUpdate.receipt_url = proof_url || txMeta.proof_url;
           await supabase.from("financial_records").update(frUpdate).eq("id", frId);
           console.log(`[PAYMENT-CREATE] Synced financial_record ${frId} to paga`);
+
+          // Carry-over: if paid less than expected and no discount_reason, add remainder to next installment
+          const carry_over_amount = body.carry_over_amount;
+          if (carry_over_amount && carry_over_amount > 0.001) {
+            // Find next pending installment
+            const { data: currentFr } = await supabase.from("financial_records")
+              .select("contract_id, bitrix24_deal_id, installment_number")
+              .eq("id", frId).maybeSingle();
+            if (currentFr) {
+              const nextInstNum = (currentFr.installment_number || 0) + 1;
+              let nextQuery = supabase.from("financial_records")
+                .select("id, installment_value, metadata")
+                .in("status", ["pendente", "atrasada"])
+                .order("installment_number", { ascending: true })
+                .limit(1);
+              if (currentFr.bitrix24_deal_id) {
+                nextQuery = nextQuery.eq("bitrix24_deal_id", currentFr.bitrix24_deal_id).gte("installment_number", nextInstNum);
+              } else if (currentFr.contract_id) {
+                nextQuery = nextQuery.eq("contract_id", currentFr.contract_id).gte("installment_number", nextInstNum);
+              }
+              const { data: nextInst } = await nextQuery.maybeSingle();
+              if (nextInst) {
+                const newValue = (nextInst.installment_value || 0) + carry_over_amount;
+                const existingMeta = (nextInst.metadata as any) || {};
+                await supabase.from("financial_records").update({
+                  installment_value: Math.round(newValue * 100) / 100,
+                }).eq("id", nextInst.id);
+                // Also update metadata on the matching transaction if exists
+                const { data: nextTx } = await supabase.from("payment_transactions")
+                  .select("id, metadata").eq("financial_record_id", nextInst.id).maybeSingle();
+                if (nextTx) {
+                  const nm = (nextTx.metadata as any) || {};
+                  await supabase.from("payment_transactions").update({
+                    amount: Math.round(newValue * 100) / 100,
+                    metadata: { ...nm, carried_amount: carry_over_amount, carried_from: frId },
+                  }).eq("id", nextTx.id);
+                }
+                console.log(`[PAYMENT-CREATE] Carried over ${carry_over_amount} to next installment ${nextInst.id}`);
+              } else {
+                console.log(`[PAYMENT-CREATE] No next installment found for carry-over`);
+              }
+            }
+          }
         } else {
           // Try to find by bitrix24_deal_id + installment_number in metadata
           const dealId = txMeta.bitrix_deal_id || txMeta.bitrix24_deal_id;

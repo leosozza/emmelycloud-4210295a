@@ -88,6 +88,48 @@ function formatDate(dateStr: string | null): string {
   } catch { return dateStr; }
 }
 
+// ─── Late Fee Calculation ───────────────────────────────────────────────────
+
+interface LateFeeConfig {
+  penalty_pct: number;
+  interest_monthly_pct: number;
+  max_interest_days: number;
+  grace_days: number;
+}
+
+const DEFAULT_LATE_FEE_CONFIG: LateFeeConfig = {
+  penalty_pct: 10,
+  interest_monthly_pct: 1,
+  max_interest_days: 365,
+  grace_days: 0,
+};
+
+interface LateFeeResult {
+  daysLate: number;
+  penalty: number;
+  interest: number;
+  charges: number;
+  total: number;
+}
+
+function calculateLateFees(amount: number, daysLate: number, config: LateFeeConfig): LateFeeResult {
+  const effectiveDays = Math.max(0, daysLate - config.grace_days);
+  const cappedDays = Math.min(effectiveDays, config.max_interest_days);
+  if (cappedDays <= 0) {
+    return { daysLate: 0, penalty: 0, interest: 0, charges: 0, total: amount };
+  }
+  const penalty = Math.round(amount * (config.penalty_pct / 100) * 100) / 100;
+  const interest = Math.round(amount * (config.interest_monthly_pct / 100) * (cappedDays / 30) * 100) / 100;
+  const charges = penalty + interest;
+  return {
+    daysLate: cappedDays,
+    penalty,
+    interest,
+    charges,
+    total: Math.round((amount + charges) * 100) / 100,
+  };
+}
+
 interface InstallmentData {
   id: string;
   number: number;
@@ -107,6 +149,10 @@ interface InstallmentData {
   company_name?: string;
   payment_method?: string;
   metadata?: any;
+  late_penalty?: number;
+  late_interest?: number;
+  late_days?: number;
+  late_total?: number;
 }
 
 function getStatusColor(status: string): { bg: string; bgDark: string; text: string; textDark: string; label: string } {
@@ -166,6 +212,16 @@ function renderPaymentTab(opts: {
     const discountInfo = meta.discount_amount > 0 ? `<span style="color:#e6a817;font-size:11px">Desconto: ${formatCurrency(meta.discount_amount, inst.currency)} — ${meta.discount_reason || ''}</span>` : "";
     const paidAmountInfo = meta.paid_amount != null && inst.status === "paga" ? `<span style="color:var(--value-paid);font-size:11px">Pago: ${formatCurrency(meta.paid_amount, inst.currency)}</span>` : "";
     const proofInfo = meta.proof_url ? `<a href="${meta.proof_url}" target="_blank" class="b24-link" style="font-size:11px">${icon("paperclip", 12)} Comprovante</a>` : "";
+    const carriedInfo = meta.carried_amount > 0 ? `<span style="color:#e6a817;font-size:11px">+${formatCurrency(meta.carried_amount, inst.currency)} juros acumulados da parcela anterior</span>` : "";
+
+    // Late fee breakdown for overdue installments
+    const lateFeeHtml = (inst.status === "atrasada" && inst.late_days && inst.late_days > 0)
+      ? `<div class="b24-item-meta" style="background:rgba(239,68,68,0.06);border-radius:6px;padding:6px 10px;margin:4px 0">
+           <span style="color:var(--accent-overdue)">⚠️ Multa: ${formatCurrency(inst.late_penalty || 0, inst.currency)}</span>
+           <span style="color:var(--accent-overdue)">📈 Juros (${inst.late_days}d): ${formatCurrency(inst.late_interest || 0, inst.currency)}</span>
+           <span style="font-weight:700;color:var(--text-primary)">💵 Total: ${formatCurrency(inst.late_total || inst.value, inst.currency)}</span>
+         </div>`
+      : "";
 
     // Serialize installment data for JS
     const instJson = JSON.stringify({
@@ -182,6 +238,10 @@ function renderPaymentTab(opts: {
       notes: meta.notes || "",
       number: inst.number,
       total: inst.total,
+      late_penalty: inst.late_penalty || 0,
+      late_interest: inst.late_interest || 0,
+      late_days: inst.late_days || 0,
+      late_total: inst.late_total || inst.value,
     }).replace(/"/g, "&quot;");
 
     // Dual currency display
@@ -213,6 +273,8 @@ function renderPaymentTab(opts: {
             : `<span onclick='openEditModal(${instJson})' class="b24-missing b24-clickable" title="Clique para definir">${icon("credit-card", 13)} Método: ${icon("alert-triangle", 11)} Definir</span>`}
           ${totalLabel}
         </div>
+        ${lateFeeHtml}
+        ${carriedInfo ? `<div class="b24-item-meta">${carriedInfo}</div>` : ""}
         ${discountInfo || paidAmountInfo || proofInfo ? `<div class="b24-item-meta">${paidAmountInfo} ${discountInfo} ${proofInfo}</div>` : ""}
         ${inst.description ? `<div class="b24-item-desc">${inst.description}</div>` : ""}
         ${inst.payment_url && inst.status !== "paga" ? `<div class="b24-link-row"><a href="${inst.payment_url}" target="_blank" class="b24-link">Link de pagamento</a><button class="b24-btn-copy" onclick="copyLink(this,'${inst.payment_url.replace(/'/g, "\\'")}')" title="Copiar link"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button></div>` : ""}
@@ -635,6 +697,11 @@ function renderPaymentTab(opts: {
       <label class="b24-form-label">Valor da Parcela</label>
       <div class="b24-readonly" id="baixa-total-display">—</div>
     </div>
+    <div id="baixa-late-breakdown" style="display:none;background:rgba(239,68,68,0.06);border:1px solid rgba(239,68,68,0.2);border-radius:8px;padding:12px 16px;margin-bottom:14px;font-size:12px">
+      <div style="font-weight:700;margin-bottom:6px;color:var(--text-primary)">⚠️ Encargos por atraso</div>
+      <div id="baixa-late-details"></div>
+      <div style="margin-top:6px;font-weight:700;font-size:14px;color:var(--text-primary)" id="baixa-late-total-line"></div>
+    </div>
     <div class="b24-form-row">
       <div class="b24-form-group">
         <label class="b24-form-label">Valor Efetivamente Pago</label>
@@ -1051,15 +1118,42 @@ function renderPaymentTab(opts: {
   }
 
   // === Baixa Modal ===
+  var _baixaLateFees = { penalty: 0, interest: 0, charges: 0, days: 0, total: 0 };
+
   function openBaixaModal(inst) {
     _baixaOriginalAmount = inst.value || 0;
     var cur = inst.currency || 'EUR';
+    var fmt = function(v) { return new Intl.NumberFormat('pt-PT', { style: 'currency', currency: cur }).format(v); };
+
+    // Calculate late fee data from inst
+    var latePenalty = inst.late_penalty || 0;
+    var lateInterest = inst.late_interest || 0;
+    var lateDays = inst.late_days || 0;
+    var lateCharges = latePenalty + lateInterest;
+    var lateTotal = inst.late_total || _baixaOriginalAmount;
+    _baixaLateFees = { penalty: latePenalty, interest: lateInterest, charges: lateCharges, days: lateDays, total: lateTotal };
+
     document.getElementById('baixa-tx-id').value = inst.transaction_id || '';
     document.getElementById('baixa-fr-id').value = inst.financial_record_id || (inst.transaction_id ? '' : inst.id);
     document.getElementById('baixa-invoice-id').value = inst.invoice_id || '';
     document.getElementById('baixa-currency').value = cur;
-    document.getElementById('baixa-total-display').textContent = new Intl.NumberFormat('pt-PT', { style: 'currency', currency: cur }).format(_baixaOriginalAmount);
-    document.getElementById('baixa-paid').value = _baixaOriginalAmount;
+    document.getElementById('baixa-total-display').textContent = fmt(_baixaOriginalAmount);
+
+    // Show late fee breakdown if applicable
+    var breakdownEl = document.getElementById('baixa-late-breakdown');
+    if (lateCharges > 0) {
+      breakdownEl.style.display = 'block';
+      document.getElementById('baixa-late-details').innerHTML =
+        'Multa: <strong>' + fmt(latePenalty) + '</strong><br>' +
+        'Juros (' + lateDays + ' dias): <strong>' + fmt(lateInterest) + '</strong>';
+      document.getElementById('baixa-late-total-line').textContent = '💵 Total com encargos: ' + fmt(lateTotal);
+      // Pre-fill with late total
+      document.getElementById('baixa-paid').value = lateTotal;
+    } else {
+      breakdownEl.style.display = 'none';
+      document.getElementById('baixa-paid').value = _baixaOriginalAmount;
+    }
+
     document.getElementById('baixa-date').value = new Date().toISOString().split('T')[0];
     document.getElementById('baixa-discount-row').style.display = 'none';
     document.getElementById('baixa-reason-group').style.display = 'none';
@@ -1080,12 +1174,15 @@ function renderPaymentTab(opts: {
 
   function calcDiscount() {
     var paid = parseFloat(document.getElementById('baixa-paid').value) || 0;
-    var discount = _baixaOriginalAmount - paid;
+    // The expected full amount is late_total (includes late fees) if there are charges
+    var expectedAmount = _baixaLateFees.charges > 0 ? _baixaLateFees.total : _baixaOriginalAmount;
+    var discount = expectedAmount - paid;
     var cur = document.getElementById('baixa-currency').value || 'EUR';
     var fmt = function(v) { return new Intl.NumberFormat('pt-PT', { style: 'currency', currency: cur }).format(v); };
     if (discount > 0.001) {
       document.getElementById('baixa-discount-row').style.display = 'block';
-      document.getElementById('baixa-discount-display').innerHTML = '💰 <strong>Desconto/Abatimento: ' + fmt(discount) + '</strong><br><span style="font-size:11px">Parcela: ' + fmt(_baixaOriginalAmount) + ' → Pago: ' + fmt(paid) + '</span>';
+      var label = _baixaLateFees.charges > 0 ? 'Total c/ encargos' : 'Parcela';
+      document.getElementById('baixa-discount-display').innerHTML = '💰 <strong>Diferença: ' + fmt(discount) + '</strong><br><span style="font-size:11px">' + label + ': ' + fmt(expectedAmount) + ' → Pago: ' + fmt(paid) + '</span><br><span style="font-size:11px;color:var(--accent-overdue)">⚠️ A diferença será somada à próxima parcela pendente</span>';
       document.getElementById('baixa-reason-group').style.display = 'block';
     } else {
       document.getElementById('baixa-discount-row').style.display = 'none';
@@ -1105,7 +1202,9 @@ function renderPaymentTab(opts: {
     var invoiceId = document.getElementById('baixa-invoice-id').value;
     var paidAmount = parseFloat(document.getElementById('baixa-paid').value) || 0;
     var paidDate = document.getElementById('baixa-date').value || new Date().toISOString().split('T')[0];
-    var discount = _baixaOriginalAmount - paidAmount;
+    // Expected amount is late_total if there are late fees, otherwise original amount
+    var expectedAmount = _baixaLateFees.charges > 0 ? _baixaLateFees.total : _baixaOriginalAmount;
+    var discount = expectedAmount - paidAmount;
     var reason = '';
     if (discount > 0.001) {
       reason = document.getElementById('baixa-reason').value;
@@ -1148,11 +1247,25 @@ function renderPaymentTab(opts: {
         financial_record_id: frId || undefined,
         status_update: 'confirmed',
         paid_amount: paidAmount,
-        metadata_update: { manual_paid: true, paid_at: paidDate + 'T00:00:00Z' },
+        metadata_update: {
+          manual_paid: true,
+          paid_at: paidDate + 'T00:00:00Z',
+          late_fee: _baixaLateFees.charges > 0 ? {
+            penalty: _baixaLateFees.penalty,
+            interest: _baixaLateFees.interest,
+            charges: _baixaLateFees.charges,
+            days_late: _baixaLateFees.days,
+            base_amount: _baixaOriginalAmount
+          } : undefined,
+          expected_amount: _baixaLateFees.charges > 0 ? _baixaLateFees.total : _baixaOriginalAmount
+        },
       };
-      if (discount > 0.001) {
+      if (discount > 0.001 && reason) {
         payload.discount_amount = discount;
         payload.discount_reason = reason;
+      } else if (discount > 0.001 && !reason) {
+        // No reason = carry over to next installment
+        payload.carry_over_amount = discount;
       }
       if (proofUrl) payload.proof_url = proofUrl;
 
@@ -1761,9 +1874,30 @@ Deno.serve(async (req) => {
       .eq("bitrix24_deal_id", String(entityId))
       .order("installment_number", { ascending: true });
     if (directRecords && directRecords.length > 0) {
-      // Use direct records as primary source (covers all installments)
       financialRecords = directRecords;
       console.log("[payment-tab] Using direct financial_records by deal_id:", directRecords.length, "records");
+    }
+
+    // Fetch late fee configuration
+    let lateFeeConfig: LateFeeConfig = DEFAULT_LATE_FEE_CONFIG;
+    try {
+      const { data: lfConfig } = await supabase
+        .from("payment_gateway_config")
+        .select("config")
+        .eq("gateway", "late_fees")
+        .eq("is_active", true)
+        .maybeSingle();
+      if (lfConfig?.config) {
+        const c = lfConfig.config as any;
+        lateFeeConfig = {
+          penalty_pct: c.penalty_pct ?? DEFAULT_LATE_FEE_CONFIG.penalty_pct,
+          interest_monthly_pct: c.interest_monthly_pct ?? DEFAULT_LATE_FEE_CONFIG.interest_monthly_pct,
+          max_interest_days: c.max_interest_days ?? DEFAULT_LATE_FEE_CONFIG.max_interest_days,
+          grace_days: c.grace_days ?? DEFAULT_LATE_FEE_CONFIG.grace_days,
+        };
+      }
+    } catch (e) {
+      console.error("[payment-tab] Failed to load late fee config:", e);
     }
 
     let installments: InstallmentData[] = [];
@@ -1832,6 +1966,27 @@ Deno.serve(async (req) => {
           status: "pendente", due_date: null, paid_at: null, currency: dealCurrency,
           description: dealTitle,
         }];
+      }
+    }
+
+    // Compute late fees for overdue installments
+    const now = new Date();
+    for (const inst of installments) {
+      if (inst.status === "atrasada" && inst.due_date) {
+        const dueDate = new Date(inst.due_date + "T00:00:00Z");
+        const diffMs = now.getTime() - dueDate.getTime();
+        const daysLate = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+        if (daysLate > 0) {
+          const fees = calculateLateFees(inst.value, daysLate, lateFeeConfig);
+          inst.late_penalty = fees.penalty;
+          inst.late_interest = fees.interest;
+          inst.late_days = fees.daysLate;
+          inst.late_total = fees.total;
+        }
+      }
+      // Check for carried amount in metadata
+      if (inst.metadata?.carried_amount > 0) {
+        inst.metadata = inst.metadata || {};
       }
     }
 
