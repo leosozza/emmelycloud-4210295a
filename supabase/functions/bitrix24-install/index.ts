@@ -1188,11 +1188,12 @@ Deno.serve(async (req) => {
         PLACEMENT: "IM_TEXTAREA",
         HANDLER: returnToBotUrl,
         TITLE: "Devolver ao Bot",
+        DESCRIPTION: "Devolver conversa ao assistente IA",
         LANG_ALL: {
-          pt: { TITLE: "Devolver ao Bot" },
-          en: { TITLE: "Return to Bot" },
-          es: { TITLE: "Devolver al Bot" },
-          ru: { TITLE: "Вернуть боту" },
+          pt: { TITLE: "Devolver ao Bot", DESCRIPTION: "Devolver conversa ao assistente IA" },
+          en: { TITLE: "Return to Bot", DESCRIPTION: "Return conversation to AI assistant" },
+          es: { TITLE: "Devolver al Bot", DESCRIPTION: "Devolver conversación al asistente IA" },
+          ru: { TITLE: "Вернуть боту", DESCRIPTION: "Вернуть разговор ИИ-ассистенту" },
         },
         OPTIONS: {
           iconName: "fa-robot",   // OBRIGATÓRIO — Font Awesome icon name
