@@ -685,13 +685,18 @@ function renderPaymentTab(opts: {
 
   // Ensure a real transaction exists — creates one if txId is synthetic (e.g. "deal-123")
   async function ensureTxExists(txId, overlayEl, amount, currency, description, financialRecordId, installmentNumber, totalInstallments) {
-    // If we already have a real transaction_id, return it
-    if (txId && !txId.startsWith('deal-')) return txId;
+    // If we have a real transaction_id that is NOT the same as the financial_record_id, return it
+    // (legacy records may pass financial_record_id as txId by mistake)
+    if (txId && !txId.startsWith('deal-') && txId !== financialRecordId) return txId;
     // Create real transaction via payment-create POST, linking to financial_record if available
+    console.log('[ensureTxExists] Creating synthetic tx. txId=' + txId + ' frId=' + financialRecordId);
     var entityId = (overlayEl && overlayEl.dataset && overlayEl.dataset.entityId) || ENTITY_ID;
     var meta = { bitrix_deal_id: entityId, source: 'bitrix24_payment_tab_synthetic' };
-    if (installmentNumber) meta.installment_number = installmentNumber;
-    if (totalInstallments) meta.total_installments = totalInstallments;
+    if (installmentNumber) meta.installment_number = parseInt(installmentNumber) || installmentNumber;
+    if (totalInstallments) meta.total_installments = parseInt(totalInstallments) || totalInstallments;
+    // Include invoice_id in metadata if available
+    var invoiceVal = document.getElementById('baixa-invoice-id');
+    if (invoiceVal && invoiceVal.value) meta.bitrix_invoice_id = invoiceVal.value;
     var bodyPayload = {
       amount: amount || 0,
       currency: currency || 'EUR',

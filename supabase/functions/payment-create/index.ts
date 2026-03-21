@@ -220,14 +220,59 @@ Deno.serve(async (req) => {
         Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
       );
       const body = await req.json();
-      const { transaction_id, metadata_update, status_update, amount_update, due_date_update, payment_method_update, paid_amount, discount_amount, discount_reason, proof_url, notes } = body;
+      let { transaction_id, metadata_update, status_update, amount_update, due_date_update, payment_method_update, paid_amount, discount_amount, discount_reason, proof_url, notes } = body;
+      const financial_record_id = body.financial_record_id;
+
+      console.log(`[PAYMENT-CREATE PATCH] transaction_id=${transaction_id} financial_record_id=${financial_record_id} status_update=${status_update}`);
+
+      // If no transaction_id but we have financial_record_id, try to resolve or auto-create
+      if (!transaction_id && financial_record_id) {
+        // Look for existing transaction linked to this financial_record
+        const { data: existingTx } = await supabase.from("payment_transactions")
+          .select("id").eq("financial_record_id", financial_record_id).limit(1).maybeSingle();
+        if (existingTx) {
+          transaction_id = existingTx.id;
+          console.log(`[PAYMENT-CREATE PATCH] Resolved tx ${transaction_id} from financial_record_id ${financial_record_id}`);
+        } else {
+          // Auto-create synthetic transaction for legacy record
+          const { data: fr } = await supabase.from("financial_records")
+            .select("installment_value, total_value, bitrix24_deal_id, bitrix24_invoice_id, installment_number, total_installments, description, contract_id")
+            .eq("id", financial_record_id).maybeSingle();
+          const amt = fr?.installment_value || fr?.total_value || 0;
+          const meta: any = { source: "payment_create_auto_legacy", bitrix_deal_id: fr?.bitrix24_deal_id };
+          if (fr?.bitrix24_invoice_id) meta.bitrix_invoice_id = fr.bitrix24_invoice_id;
+          if (fr?.installment_number) meta.installment_number = fr.installment_number;
+          if (fr?.total_installments) meta.total_installments = fr.total_installments;
+          const { data: newTx, error: createErr } = await supabase.from("payment_transactions").insert({
+            financial_record_id,
+            contract_id: fr?.contract_id || null,
+            amount: amt,
+            currency: "EUR",
+            gateway: "direto",
+            gateway_payment_id: `direto_${crypto.randomUUID()}`,
+            payment_method: "parcelado_direto",
+            status: "pending",
+            metadata: meta,
+          }).select().single();
+          if (createErr) throw new Error(`Auto-create tx failed: ${createErr.message}`);
+          transaction_id = newTx.id;
+          console.log(`[PAYMENT-CREATE PATCH] Auto-created tx ${transaction_id} for legacy financial_record ${financial_record_id}`);
+        }
+      }
+
       if (!transaction_id) {
-        return new Response(JSON.stringify({ error: "transaction_id required" }), {
+        return new Response(JSON.stringify({ error: "transaction_id or financial_record_id required" }), {
           status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
+
       // Get existing metadata and merge
       const { data: existing } = await supabase.from("payment_transactions").select("metadata, amount").eq("id", transaction_id).maybeSingle();
+      if (!existing) {
+        return new Response(JSON.stringify({ error: `Transaction ${transaction_id} not found in payment_transactions` }), {
+          status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
       const existingMeta = (existing?.metadata as any) || {};
       const metaUpdates: any = { ...(metadata_update || {}) };
 
@@ -247,17 +292,10 @@ Deno.serve(async (req) => {
       const { data: txRow, error } = await supabase.from("payment_transactions").update(updatePayload).eq("id", transaction_id).select("financial_record_id, metadata, payment_method").maybeSingle();
       if (error) throw new Error(error.message);
 
-      if (!txRow) {
-        // Transaction not found — return explicit error
-        return new Response(JSON.stringify({ error: `Transaction ${transaction_id} not found in payment_transactions` }), {
-          status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      }
-
       // Sync financial_records when marking as confirmed/paid
       if (status_update === "confirmed" || status_update === "paid") {
         const paidAt = new Date().toISOString();
-        const frId = txRow?.financial_record_id || body.financial_record_id;
+        const frId = txRow?.financial_record_id || financial_record_id;
         const txMeta = (txRow?.metadata as any) || {};
         const effectivePaymentMethod = payment_method_update || txRow?.payment_method || txMeta.payment_method;
 
