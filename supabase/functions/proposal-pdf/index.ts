@@ -206,6 +206,7 @@ Deno.serve(async (req) => {
 <html lang="pt">
 <head>
   <meta charset="UTF-8">
+  <title>${escapeHtml(composedTitle || "Proposta")}</title>
   <style>
     body { font-family: 'Helvetica Neue', Arial, sans-serif; margin: 0; padding: 0; color: #1a1a1a; }
     .header { background: linear-gradient(135deg, ${hColor}, ${aColor}); color: white; padding: 50px 40px; text-align: center; }
