@@ -212,6 +212,16 @@ function renderPaymentTab(opts: {
     const discountInfo = meta.discount_amount > 0 ? `<span style="color:#e6a817;font-size:11px">Desconto: ${formatCurrency(meta.discount_amount, inst.currency)} — ${meta.discount_reason || ''}</span>` : "";
     const paidAmountInfo = meta.paid_amount != null && inst.status === "paga" ? `<span style="color:var(--value-paid);font-size:11px">Pago: ${formatCurrency(meta.paid_amount, inst.currency)}</span>` : "";
     const proofInfo = meta.proof_url ? `<a href="${meta.proof_url}" target="_blank" class="b24-link" style="font-size:11px">${icon("paperclip", 12)} Comprovante</a>` : "";
+    const carriedInfo = meta.carried_amount > 0 ? `<span style="color:#e6a817;font-size:11px">+${formatCurrency(meta.carried_amount, inst.currency)} juros acumulados da parcela anterior</span>` : "";
+
+    // Late fee breakdown for overdue installments
+    const lateFeeHtml = (inst.status === "atrasada" && inst.late_days && inst.late_days > 0)
+      ? `<div class="b24-item-meta" style="background:rgba(239,68,68,0.06);border-radius:6px;padding:6px 10px;margin:4px 0">
+           <span style="color:var(--accent-overdue)">⚠️ Multa: ${formatCurrency(inst.late_penalty || 0, inst.currency)}</span>
+           <span style="color:var(--accent-overdue)">📈 Juros (${inst.late_days}d): ${formatCurrency(inst.late_interest || 0, inst.currency)}</span>
+           <span style="font-weight:700;color:var(--text-primary)">💵 Total: ${formatCurrency(inst.late_total || inst.value, inst.currency)}</span>
+         </div>`
+      : "";
 
     // Serialize installment data for JS
     const instJson = JSON.stringify({
