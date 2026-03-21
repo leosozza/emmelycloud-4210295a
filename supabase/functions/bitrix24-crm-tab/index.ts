@@ -487,54 +487,115 @@ function renderHtml(opts: {
       el.style.height = Math.min(el.scrollHeight, 80) + 'px';
     }
 
-  function setStatus(msg, color) {
-    var el = document.getElementById('status-msg');
-    if (el) { el.textContent = msg; el.style.color = color || '#888'; }
-    if (msg) setTimeout(function() { if (el && el.textContent === msg) el.textContent = ''; }, 4000);
-  }
+    // ── AI Chat functions ──
+    var aiHistory = [];
+    var aiSending = false;
 
-  function returnToBot() {
-    if (!CONVERSATION_ID) return;
-    setStatus('A devolver ao bot...', '#888');
-    fetch(SUPABASE_URL + '/functions/v1/bitrix24-return-to-bot', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ conversation_id: CONVERSATION_ID, member_id: MEMBER_ID })
-    })
-    .then(function(r) { return r.text(); })
-    .then(function() {
-      setStatus('Emmely AI retomou o atendimento!', '#22c55e');
-      var badge = document.getElementById('mode-badge');
-      if (badge) { badge.textContent = 'Bot Ativo'; badge.style.color = '#22c55e'; badge.style.borderColor = '#22c55e33'; badge.style.background = '#22c55e15'; }
-    })
-    .catch(function(e) { setStatus('❌ Erro: ' + e.message, '#ef4444'); });
-  }
-
-  function startConversation(channel, phone) {
-    var msgInput = document.getElementById('start-msg-input');
-    var message = msgInput ? msgInput.value.trim() : 'Olá! Em que posso ajudar?';
-    if (!message) { setStatus('Escreva uma mensagem', '#f59e0b'); return; }
-
-    setStatus('A iniciar conversa...', '#888');
-    fetch(SUPABASE_URL + '/functions/v1/message-send', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_KEY },
-      body: JSON.stringify({ channel: channel, contact_phone: phone || undefined, message: message })
-    })
-    .then(function(r) { return r.json(); })
-    .then(function(d) {
-      if (d.error) throw new Error(d.error);
-      setStatus('✅ Conversa iniciada! Recarregue a aba.', '#22c55e');
-    })
-    .catch(function(e) { setStatus('❌ ' + e.message, '#ef4444'); });
-  }
-
-  // Close dropdown on click outside
-  document.addEventListener('click', function(e) {
-    if (!e.target.closest('#ai-input-area')) {
-      document.getElementById('agent-dropdown').classList.remove('visible');
+    function appendAiMsg(role, text, showUseBtn) {
+      var empty = document.getElementById('ai-empty');
+      if (empty) empty.remove();
+      var container = document.getElementById('ai-messages');
+      var wrapper = document.createElement('div');
+      wrapper.style.cssText = 'display:flex;flex-direction:column;' + (role === 'user' ? 'align-items:flex-end' : 'align-items:flex-start');
+      var div = document.createElement('div');
+      div.className = 'ai-msg ' + role;
+      div.textContent = text;
+      wrapper.appendChild(div);
+      if (showUseBtn && role === 'assistant' && text) {
+        var btn = document.createElement('button');
+        btn.className = 'use-response-btn';
+        btn.innerHTML = '${B24_ICONS.use} Usar resposta';
+        btn.onclick = function() { useResponse(text); };
+        wrapper.appendChild(btn);
+      }
+      container.appendChild(wrapper);
+      container.scrollTop = container.scrollHeight;
+      return div;
     }
-  });
+
+    function useResponse(text) {
+      var clientInput = document.getElementById('client-input');
+      if (clientInput) {
+        clientInput.value = text;
+        autoResize(clientInput);
+        clientInput.focus();
+        clientInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        setStatus('Resposta copiada para o campo de envio', '#2283d8');
+      } else {
+        setStatus('Sem campo de envio disponível (inicie uma conversa primeiro)', '#f59e0b');
+      }
+    }
+
+    function quickAsk(text) {
+      var panel = document.getElementById('ai-panel');
+      if (panel.classList.contains('collapsed')) panel.classList.remove('collapsed');
+      document.getElementById('ai-input').value = text;
+      sendAiMessage();
+    }
+
+    function sendAiMessage() {
+      if (aiSending) return;
+      var input = document.getElementById('ai-input');
+      var questionText = (input.value || '').trim();
+      if (!questionText) return;
+
+      input.value = '';
+      input.style.height = 'auto';
+      aiSending = true;
+      document.getElementById('ai-send-btn').disabled = true;
+
+      appendAiMsg('user', questionText, false);
+
+      // Build context on first message
+      var contextPrefix = '';
+      if (aiHistory.length === 0) {
+        contextPrefix = '[CONTEXTO INTERNO - NÃO ENVIAR AO CLIENTE]\\n';
+        contextPrefix += 'Cliente: ' + CONTACT_NAME + '\\n';
+        if (CHANNEL) contextPrefix += 'Canal: ' + CHANNEL + '\\n';
+        if (CONV_SUMMARY) contextPrefix += 'Histórico recente:\\n' + CONV_SUMMARY + '\\n';
+        contextPrefix += '---\\nPergunta do operador: ';
+      }
+
+      var fullText = contextPrefix + questionText;
+      aiHistory.push({ role: 'user', content: fullText });
+
+      var typingDiv = appendAiMsg('assistant', '', false);
+      typingDiv.innerHTML = '<span class="typing-dots"></span>';
+
+      // Always use ai-playground with selected agent; fallback to ai-process-message
+      var url, payload;
+      if (selectedAgentId) {
+        url = SUPABASE_URL + '/functions/v1/ai-playground';
+        payload = { agent_id: selectedAgentId, messages: aiHistory };
+      } else {
+        url = SUPABASE_URL + '/functions/v1/ai-process-message';
+        payload = { message_text: fullText, skip_send: true };
+        if (CONVERSATION_ID) payload.conversation_id = CONVERSATION_ID;
+      }
+
+      fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + SUPABASE_KEY },
+        body: JSON.stringify(payload)
+      })
+      .then(function(r) { return r.json(); })
+      .then(function(d) {
+        typingDiv.parentElement.remove();
+        var reply = d.content || d.reply || d.error || 'Sem resposta da IA';
+        appendAiMsg('assistant', reply, true);
+        aiHistory.push({ role: 'assistant', content: reply });
+      })
+      .catch(function(e) {
+        typingDiv.parentElement.remove();
+        appendAiMsg('assistant', 'Erro: ' + e.message, false);
+      })
+      .finally(function() {
+        aiSending = false;
+        document.getElementById('ai-send-btn').disabled = false;
+        input.focus();
+      });
+    }
+
 
   try {
     BX24.init(function() { BX24.fitWindow(); });
