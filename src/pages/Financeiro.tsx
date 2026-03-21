@@ -164,7 +164,7 @@ const FinanceiroPage = () => {
         </TabsList>
 
         <TabsContent value="overview">
-          <FinanceiroOverview startDate={range.start} endDate={range.end} reminderCount={reminderCount} />
+          <FinanceiroOverview startDate={range.start} endDate={range.end} reminderCount={0} />
         </TabsContent>
 
         <TabsContent value="recebimentos">
