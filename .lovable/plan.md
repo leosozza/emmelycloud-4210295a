@@ -1,52 +1,57 @@
 
 
-# Correção: Juros de Atraso Não Calculados + Comprovante Sem Pendência
+# Revisão de Placements — Install vs Rebind (Inconsistências)
 
-## Problemas Raiz
+## Inventário Completo
 
-### 1. Status nunca muda para "atrasada"
-A tabela `financial_records` mantém `status = 'pendente'` mesmo quando `due_date` já passou. O cálculo de juros no `bitrix24-payment-tab` (linha 2079) verifica `inst.status === "atrasada"` — como o status nunca é atualizado, os juros nunca são calculados.
+| Placement | Install | Rebind | Handler | Problema |
+|-----------|---------|--------|---------|----------|
+| IM_TEXTAREA | ✅ | ✅ | bitrix24-return-to-bot | Install tem `context: "LINES"`, Rebind não. Install não tem DESCRIPTION, Rebind tem. Diferenças no OPTIONS. |
+| IM_SIDEBAR | ✅ | ✅ | bitrix24-im-sidebar | OK — consistente |
+| IM_CONTEXT_MENU | ✅ | ✅ | bitrix24-im-context-menu | OK — consistente |
+| CRM_LEAD_DETAIL_TAB | ✅ | ✅ | bitrix24-crm-tab | OK — mas Rebind só regista este, e Install regista 4 CRM tabs |
+| CRM_CONTACT_DETAIL_TAB | ✅ | ❌ | bitrix24-crm-tab | **Falta no Rebind** |
+| CRM_DEAL_DETAIL_TAB (AI) | ✅ | ❌ | bitrix24-crm-tab | **Falta no Rebind** |
+| CRM_DYNAMIC_DETAIL_TAB | ✅ | ❌ | bitrix24-crm-tab | **Falta no Rebind** |
+| CRM_DEAL_DETAIL_TAB (Pay) | ✅ | ❌ | bitrix24-payment-tab | **Falta no Rebind** |
+| CRM_CONTACT_DETAIL_TAB (Pay) | ✅ | ❌ | bitrix24-payment-tab | **Falta no Rebind** |
+| Payment System (emmely_pay) | ✅ | ❌ | bitrix24-payment-handler | N/A — não é placement |
 
-**Evidência**: Deal 14091, parcela 4 — `due_date: 2026-02-10`, `status: paga`, `installment_value: 120.00` (sem juros). Parcela 5 — `due_date: 2026-03-10`, `status: pendente` (deveria ser `atrasada`).
+## Problemas Encontrados
 
-### 2. Comprovante não mostra juros de parcelas pagas nem pendências
-O `payment-receipt` só calcula juros para parcelas `isOverdue && !isPaid`. Uma vez paga, a parcela mostra apenas o valor original. Não há registo dos juros cobrados.
+### 1. Rebind está incompleto
+O `bitrix24-rebind-events` só re-regista 5 placements (IM_TEXTAREA, CRM_LEAD_DETAIL_TAB, IM_SIDEBAR, IM_CONTEXT_MENU). Faltam **5 placements** que o Install regista:
+- CRM_CONTACT_DETAIL_TAB (Emmely AI)
+- CRM_DEAL_DETAIL_TAB (Emmely AI)
+- CRM_DYNAMIC_DETAIL_TAB (Emmely AI)
+- CRM_DEAL_DETAIL_TAB (Emmely Pay)
+- CRM_CONTACT_DETAIL_TAB (Emmely Pay)
+
+### 2. IM_TEXTAREA com configurações diferentes
+- **Install**: `context: "LINES"`, sem DESCRIPTION, sem ICON
+- **Rebind**: sem `context`, com DESCRIPTION, com ICON externo (flaticon)
+- O `context: "LINES"` é importante para restringir o botão a Open Lines (não aparecer em chats internos)
+
+### 3. Install IM_TEXTAREA não tem DESCRIPTION
+O Rebind adiciona descrições multilínguas que o Install não tem.
 
 ## Correções
 
-### Ficheiro 1: `supabase/functions/bitrix24-payment-tab/index.ts`
+### Ficheiro 1: `supabase/functions/bitrix24-rebind-events/index.ts`
 
-**Linha 2079** — Expandir a condição para incluir parcelas pendentes com `due_date` passada:
-```
-if ((inst.status === "atrasada" || (inst.status === "pendente" && inst.due_date)) && inst.due_date) {
-  const dueDate = new Date(inst.due_date + "T00:00:00Z");
-  const diffMs = now.getTime() - dueDate.getTime();
-  const daysLate = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-  if (daysLate > 0) {
-    inst.status = "atrasada";  // Auto-corrigir status visual
-    // ... cálculo existente
-  }
-}
-```
+Adicionar os placements em falta ao rebind:
+- Loop CRM tabs (Lead, Contact, Deal, Dynamic) → `bitrix24-crm-tab`
+- CRM_DEAL_DETAIL_TAB + CRM_CONTACT_DETAIL_TAB → `bitrix24-payment-tab`
 
-Mesma correção na secção Contact View (~linha 1820-1832) onde os `directFinRecords` são mapeados sem cálculo de late fees.
+Uniformizar IM_TEXTAREA com o Install (adicionar `context: "LINES"`).
 
-### Ficheiro 2: `supabase/functions/payment-receipt/index.ts`
+### Ficheiro 2: `supabase/functions/bitrix24-install/index.ts`
 
-**Mostrar juros para parcelas pagas com atraso**: Se `isPaid && paid_at > due_date`, calcular os juros que foram (ou deveriam ter sido) cobrados e mostrar na coluna "Juros/Multa".
+Uniformizar IM_TEXTAREA com o Rebind:
+- Adicionar DESCRIPTION multilíngue ao Install
 
-**Mostrar juros para parcelas pendentes em atraso**: Já funciona se `isOverdue`, mas a condição `isOverdue` falha porque o status é `pendente` e não `atrasada`. Corrigir para verificar `due_date < now` independente do status.
+### Ficheiros a editar
 
-**Adicionar linha de totais**: Somar juros pendentes ao "Em Aberto" para o cliente ver o valor real em dívida.
-
-### Ficheiro 3: `supabase/functions/payment-create/index.ts`
-
-Na secção de baixa (PATCH), guardar os juros cobrados nos metadata do `financial_records`:
-- Ao atualizar o `financial_records` para `paga`, incluir os late fee metadata (`late_fee_charged`) no update para que o comprovante possa exibi-los posteriormente.
-
-## Ficheiros a editar
-
-1. **`supabase/functions/bitrix24-payment-tab/index.ts`** — auto-detectar atraso por `due_date` (não depender apenas de `status`)
-2. **`supabase/functions/payment-receipt/index.ts`** — mostrar juros de parcelas pagas com atraso + corrigir detecção de overdue
-3. **`supabase/functions/payment-create/index.ts`** — persistir late fee metadata no financial_record ao dar baixa
+1. **`supabase/functions/bitrix24-rebind-events/index.ts`** — adicionar 5 placements CRM em falta + uniformizar IM_TEXTAREA
+2. **`supabase/functions/bitrix24-install/index.ts`** — adicionar DESCRIPTION ao IM_TEXTAREA para consistência
 
