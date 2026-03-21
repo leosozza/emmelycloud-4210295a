@@ -1,57 +1,36 @@
 
 
-# Modelos de Orçamento — Templates com Variáveis (em vez de 24 duplicados)
+# Correção do PDF de Propostas — Título com Nome do Cliente + Layout Dinâmico
 
-## Análise
+## Problemas Encontrados
 
-Os 24 PDFs do Bitrix24 partilham a mesma estrutura visual:
-- Header (Emmely Fernandes Advocacia)
-- Dados do Cliente (nome, documento, morada)
-- Descrição do serviço
-- Valor / Condições de pagamento
-- Condições gerais
-- Footer
+1. **Layout dinâmico perde título e validade** — No path de `layout_blocks` (linha 153-185), o código primeiro tenta inserir o título entre o header e os restantes blocos com manipulação de string (substring/split) que é frágil, e depois **sobrescreve** o HTML completo com uma versão simples que não inclui o título nem a validade (linha 180-185).
 
-O que varia entre eles é apenas: **nome do serviço**, **descrição específica** e **valor**. Como já existem ~60 serviços na tabela `services` com nomes e valores, não faz sentido criar 24 templates quase idênticos.
+2. **Título não inclui nome do cliente** — O título da proposta é apenas `proposal.title` (ex: "Assessoria para Residência"), sem o nome do cliente. Deveria ser algo como "Assessoria para Residência — João Silva".
 
-## Plano
+## Correções
 
-### 1. Criar 5 templates por categoria (em vez de 24)
+### Ficheiro: `supabase/functions/proposal-pdf/index.ts`
 
-Agrupar por tipo de serviço, cada um com a descrição genérica da categoria e variáveis que serão preenchidas automaticamente pelo robot:
+**1. Corrigir o path de layout dinâmico:**
+- Remover o código duplicado/sobrescrito (linhas 165-185)
+- Renderizar os blocos em ordem, mas inserir o título + validade logo após o primeiro bloco `header` (ou no início se não houver header)
+- O título deve incluir o nome do cliente: `"${proposal.title} — ${proposal.client_name}"`
 
-| Template | Categoria | Serviços cobertos |
-|----------|-----------|-------------------|
-| Ação Judicial | Judicial | Todas as ações judiciais (~12 serviços) |
-| Assessoria / Acompanhamento | Imigração | Assessorias, acompanhamentos, ARs (~15 serviços) |
-| Nacionalidade | Nacionalidade | Atribuição, aquisição, renúncia (~8 serviços) |
-| Serviços Administrativos | Fiscal/Civil | NIF, morada, casamento, viagem, carta convite (~6 serviços) |
-| Consulta | Consulta | Presencial, online (~2 serviços) |
+**2. Corrigir o título no path fallback (hardcoded):**
+- Linha 242: alterar de `${title}` para incluir o nome do cliente
 
-### 2. Variáveis nos templates
+**3. Lógica do título composto:**
+```
+const composedTitle = [proposal.title, proposal.client_name]
+  .filter(Boolean)
+  .join(" — ");
+```
 
-Cada template usará placeholders que o motor de PDF já resolve:
-- `{{service_name}}` — nome do serviço (vem da tabela `services` ou do título da proposta)
-- `{{client_name}}`, `{{client_email}}`, etc. — dados do cliente (já funcionam)
-- `{{value}}`, `{{payment_type}}`, `{{installments}}` — valores (já funcionam)
+**4. Layout dinâmico corrigido:**
+- Iterar os blocos e após renderizar o bloco `header`, inserir um bloco de título + validade
+- Não usar manipulação de substring — construir o HTML sequencialmente
 
-A **description** do template será o texto genérico da categoria, e o robot substitui com a description do serviço se existir.
-
-### 3. Implementação
-
-**Migração SQL** — Inserir 5 registos em `proposal_templates`:
-- `name`: Nome da categoria
-- `template_type`: `'proposta'`
-- `company_name`: `'Emmely Fernandes'`
-- `company_tagline`: `'Advocacia Internacional'`
-- `header_color`: `'#1e293b'`
-- `accent_color`: `'#0f172a'`
-- `description`: Texto genérico da categoria com placeholders
-- `conditions`: Condições padrão (prazo de validade, formas de pagamento, etc.)
-- `layout_blocks`: Blocos padrão (header, client_info, description, payment, conditions, footer)
-
-**Sem alteração de código** — A página de propostas e o robot `emmely_generate_proposal` já listam e usam templates da tabela. Os 5 modelos aparecem automaticamente.
-
-### Ficheiros
-- **Migração SQL** (novo) — seed de 5 templates categorizados em `proposal_templates`
+### Ficheiros a editar
+- `supabase/functions/proposal-pdf/index.ts`
 
