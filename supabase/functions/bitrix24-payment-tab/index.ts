@@ -296,7 +296,11 @@ function renderPaymentTab(opts: {
             <button onclick='toggleFlowRow("${inst.id}")' class="b24-btn-outline" style="height:32px;padding:0 10px">✕</button>
           </div>
           ` : ""}
-        ` : ""}
+        ` : `
+          <div class="b24-item-actions">
+            <button onclick='generateReceipt()' class="b24-btn-action" style="border-color:var(--link-color);color:var(--link-color)" title="Gerar Comprovante">${icon("file-text", 13)} Comprovante</button>
+          </div>
+        `}
       </div>`;
   }).join("");
 
@@ -1335,6 +1339,56 @@ function renderPaymentTab(opts: {
   function openInvoice(invoiceId) {
     try { BX24.openPath('/crm/invoice/show/' + invoiceId + '/'); }
     catch(e) { try { BX24.openPath('/crm/type/31/details/' + invoiceId + '/'); } catch(e2) {} setStatus('Fatura #' + invoiceId, 'var(--link-color)'); }
+  }
+
+  function generateReceipt() {
+    var dealName = '${(opts.dealTitle || "Negócio").replace(/'/g, "\\'")}';
+    var currency = '${currency}';
+    var allInst = ${JSON.stringify(installments.map(i => ({
+      n: i.number, t: i.total, v: i.value, s: i.status, due: i.due_date, paid: i.paid_at, cur: i.currency,
+      meta: i.metadata || {}
+    })))};
+
+    var rows = allInst.map(function(inst) {
+      var fmtVal = new Intl.NumberFormat('pt-PT', { style: 'currency', currency: inst.cur || 'EUR' }).format(inst.v);
+      var paidAmt = inst.meta.paid_amount != null ? new Intl.NumberFormat('pt-PT', { style: 'currency', currency: inst.cur || 'EUR' }).format(inst.meta.paid_amount) : (inst.s === 'paga' ? fmtVal : '—');
+      var lf = inst.meta.late_fee || {};
+      var juros = lf.charges > 0 ? new Intl.NumberFormat('pt-PT', { style: 'currency', currency: inst.cur || 'EUR' }).format(lf.charges) : '—';
+      var statusLabel = inst.s === 'paga' ? 'PAGO' : inst.s === 'atrasada' ? 'ATRASADO' : 'PENDENTE';
+      var statusColor = inst.s === 'paga' ? '#10b981' : inst.s === 'atrasada' ? '#ef4444' : '#f59e0b';
+      var dueFmt = inst.due ? new Date(inst.due).toLocaleDateString('pt-PT') : '—';
+      var paidFmt = inst.paid ? new Date(inst.paid).toLocaleDateString('pt-PT') : '—';
+      return '<tr>' +
+        '<td style="padding:8px 10px;border:1px solid #e5e7eb;text-align:center;font-weight:600">' + inst.n + '/' + inst.t + '</td>' +
+        '<td style="padding:8px 10px;border:1px solid #e5e7eb;text-align:center">' + dueFmt + '</td>' +
+        '<td style="padding:8px 10px;border:1px solid #e5e7eb;text-align:right">' + fmtVal + '</td>' +
+        '<td style="padding:8px 10px;border:1px solid #e5e7eb;text-align:right">' + juros + '</td>' +
+        '<td style="padding:8px 10px;border:1px solid #e5e7eb;text-align:right;font-weight:600">' + paidAmt + '</td>' +
+        '<td style="padding:8px 10px;border:1px solid #e5e7eb;text-align:center">' + paidFmt + '</td>' +
+        '<td style="padding:8px 10px;border:1px solid #e5e7eb;text-align:center"><span style="color:' + statusColor + ';font-weight:700;font-size:11px">' + statusLabel + '</span></td>' +
+        '</tr>';
+    }).join('');
+
+    var today = new Date().toLocaleDateString('pt-PT');
+    var html = '<!DOCTYPE html><html><head><title>Comprovante - ' + dealName + '</title>' +
+      '<style>body{font-family:Arial,sans-serif;padding:40px;color:#333;max-width:800px;margin:0 auto}' +
+      'h1{font-size:18px;margin:0;color:#1a1a2e}h2{font-size:14px;margin:0;color:#64748b;font-weight:400}' +
+      '.header{border-bottom:3px solid #1a1a2e;padding-bottom:16px;margin-bottom:24px}' +
+      '.info{margin-bottom:20px;font-size:13px;color:#475569;line-height:1.8}' +
+      'table{width:100%;border-collapse:collapse;margin:16px 0;font-size:12px}' +
+      'th{background:#f1f5f9;padding:10px;border:1px solid #e5e7eb;text-align:center;font-size:10px;text-transform:uppercase;letter-spacing:0.5px;color:#475569}' +
+      '.footer{margin-top:32px;padding-top:16px;border-top:1px solid #e5e7eb;font-size:10px;color:#94a3b8;text-align:center;line-height:1.8}' +
+      '@media print{body{padding:20px}}</style></head><body>' +
+      '<div class="header"><h1>EMMELY FERNANDES ADVOCACIA</h1><h2>Controle de Parcelas</h2></div>' +
+      '<div class="info"><strong>Negócio:</strong> ' + dealName + '<br><strong>Data:</strong> ' + today + '</div>' +
+      '<table><thead><tr>' +
+      '<th>Parcela</th><th>Vencimento</th><th>Valor</th><th>Juros/Multa</th><th>Pago</th><th>Data Pgto</th><th>Status</th>' +
+      '</tr></thead><tbody>' + rows + '</tbody></table>' +
+      '<div class="footer">Emmely Fernandes Advocacia<br>Documento gerado em ' + today + '</div>' +
+      '</body></html>';
+
+    var w = window.open('', '_blank');
+    if (w) { w.document.write(html); w.document.close(); setTimeout(function() { w.print(); }, 500); }
   }
 
   try { BX24.init(function() { BX24.fitWindow(); }); } catch(e) {}
