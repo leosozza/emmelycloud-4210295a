@@ -187,7 +187,7 @@ Deno.serve(async (req) => {
       const installmentValue = proposal.installments > 1
         ? (proposal.value / proposal.installments).toLocaleString("pt-PT", { minimumFractionDigits: 2 })
         : null;
-      const title = escapeHtml(proposal.title);
+      // title is composedTitle (defined above)
       const clientName = escapeHtml(proposal.client_name);
       const clientEmail = escapeHtml(proposal.client_email);
       const clientPhone = escapeHtml(proposal.client_phone);
