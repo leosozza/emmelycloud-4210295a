@@ -1,62 +1,57 @@
 
 
-# Configurações — Aba de Regras de Juros + Comprovante por Parcela
+# Modelos de Orçamento — Templates com Variáveis (em vez de 24 duplicados)
 
-## O que falta
+## Análise
 
-1. **Página de Configurações** (`/configuracoes`) só tem "Aparência" — falta uma secção dedicada às regras de cálculo de juros de atraso
-2. **Comprovante de controlo de parcelas** — após cada baixa, não é gerado um PDF/comprovante com o estado de todas as parcelas do deal (como o PDF do Access que foi partilhado)
+Os 24 PDFs do Bitrix24 partilham a mesma estrutura visual:
+- Header (Emmely Fernandes Advocacia)
+- Dados do Cliente (nome, documento, morada)
+- Descrição do serviço
+- Valor / Condições de pagamento
+- Condições gerais
+- Footer
+
+O que varia entre eles é apenas: **nome do serviço**, **descrição específica** e **valor**. Como já existem ~60 serviços na tabela `services` com nomes e valores, não faz sentido criar 24 templates quase idênticos.
 
 ## Plano
 
-### 1. Adicionar secção "Encargos por Atraso" à página Configurações
+### 1. Criar 5 templates por categoria (em vez de 24)
 
-**Ficheiro:** `src/pages/Configuracoes.tsx`
+Agrupar por tipo de serviço, cada um com a descrição genérica da categoria e variáveis que serão preenchidas automaticamente pelo robot:
 
-Mover o componente `LateFeeConfigCard` que já existe em `Integracoes.tsx` (linhas 900-1019) para a página de Configurações como uma secção dedicada, com:
+| Template | Categoria | Serviços cobertos |
+|----------|-----------|-------------------|
+| Ação Judicial | Judicial | Todas as ações judiciais (~12 serviços) |
+| Assessoria / Acompanhamento | Imigração | Assessorias, acompanhamentos, ARs (~15 serviços) |
+| Nacionalidade | Nacionalidade | Atribuição, aquisição, renúncia (~8 serviços) |
+| Serviços Administrativos | Fiscal/Civil | NIF, morada, casamento, viagem, carta convite (~6 serviços) |
+| Consulta | Consulta | Presencial, online (~2 serviços) |
 
-- **Configuração**: Multa fixa (%), Juros mensais (%), Limite máx. dias, Tolerância (dias)
-- **Fórmulas explicativas** (como nas imagens partilhadas):
-  - `Multa = Valor Parcela × 10%`
-  - `Juros = Valor Parcela × 1% × (Dias em Atraso / 30)`
-  - `Encargo Total = Multa + Juros`
-- **Simulador em tempo real** (já existe no componente) — valor da parcela + dias de atraso → resultado
-- **Botão guardar** → persiste em `payment_gateway_config` (gateway = `late_fees`)
+### 2. Variáveis nos templates
 
-Organizar a página com tabs: **Aparência** | **Encargos**
+Cada template usará placeholders que o motor de PDF já resolve:
+- `{{service_name}}` — nome do serviço (vem da tabela `services` ou do título da proposta)
+- `{{client_name}}`, `{{client_email}}`, etc. — dados do cliente (já funcionam)
+- `{{value}}`, `{{payment_type}}`, `{{installments}}` — valores (já funcionam)
 
-### 2. Gerar comprovante PDF após cada baixa no placement
+A **description** do template será o texto genérico da categoria, e o robot substitui com a description do serviço se existir.
 
-**Ficheiro:** `supabase/functions/bitrix24-payment-tab/index.ts`
+### 3. Implementação
 
-Após confirmar a baixa com sucesso (linha ~1297), gerar um comprovante HTML para impressão/download com o layout do PDF partilhado:
+**Migração SQL** — Inserir 5 registos em `proposal_templates`:
+- `name`: Nome da categoria
+- `template_type`: `'proposta'`
+- `company_name`: `'Emmely Fernandes'`
+- `company_tagline`: `'Advocacia Internacional'`
+- `header_color`: `'#1e293b'`
+- `accent_color`: `'#0f172a'`
+- `description`: Texto genérico da categoria com placeholders
+- `conditions`: Condições padrão (prazo de validade, formas de pagamento, etc.)
+- `layout_blocks`: Blocos padrão (header, client_info, description, payment, conditions, footer)
 
-```text
-┌───────────────────────────────────┐
-│ EMMELY FERNANDES ADVOCACIA        │
-│ Controle de Parcelas              │
-│                                   │
-│ Cliente: NOME                     │
-│ Serviço: TIPO                     │
-│                                   │
-│ Parcela | Vencimento | Pagamento  │
-│         | Juros | Valor | Status  │
-│ ────────────────────────────────  │
-│ 1/6     | 05/03 | 05/03 | PAGO   │
-│ 2/6     | 05/04 | —     | PEND   │
-│ ...                               │
-│                                   │
-│ Morada | Tel | Email | Site       │
-└───────────────────────────────────┘
-```
+**Sem alteração de código** — A página de propostas e o robot `emmely_generate_proposal` já listam e usam templates da tabela. Os 5 modelos aparecem automaticamente.
 
-- Botão "Gerar Comprovante" aparece ao lado de cada parcela paga
-- Abre janela de impressão com HTML formatado (mesmo padrão do `exportToPDF`)
-- Inclui TODAS as parcelas do deal (pagas e pendentes), com coluna de juros e valor pago
-- Dados do escritório (morada, telefone, email) puxados de configuração ou hardcoded
-
-### Ficheiros a editar
-
-1. **`src/pages/Configuracoes.tsx`** — adicionar tabs + secção de encargos com config, fórmulas e simulador
-2. **`supabase/functions/bitrix24-payment-tab/index.ts`** — botão "Comprovante" por parcela paga + geração de HTML para impressão
+### Ficheiros
+- **Migração SQL** (novo) — seed de 5 templates categorizados em `proposal_templates`
 
