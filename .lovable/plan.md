@@ -1,45 +1,52 @@
 
 
-# Corrigir SORT e Labels dos Campos Emmely Pay no Bitrix24
+# Separar Correctamente Provedores Stripe e Asaas
 
 ## Problema
 
-Os campos `UF_CRM_EMMELY_*` estão a ser criados com `SORT: 10, 20, 30...` mas o utilizador quer **SORT: 0** para todos (para aparecerem no topo). Além disso, os labels (`EDIT_FORM_LABEL`, `LIST_COLUMN_LABEL`, `LIST_FILTER_LABEL`) devem estar em **LETRAS MAIUSCULAS**.
+Existem 3 pontos onde a selecção de gateway é incorrecta:
+
+1. **`bitrix24-payment-handler`** (linha 125) — decide gateway apenas pela moeda (`BRL=asaas, resto=stripe`), ignorando completamente o campo `UF_CRM_EMMELY_GATEWAY` do deal
+2. **`payment-create`** — a função `getGateway()` (linha 19) faz o mesmo fallback por moeda, ignorando a selecção explícita quando `force_gateway` não é enviado
+3. **`payment-create`** — quando `force_gateway` é um label resolvido como `"Stripe PT"` em vez do código `"stripe_pt"`, cai no `else` genérico (linha 516) e usa a chave errada
 
 ## Alterações
 
-### Ficheiro: `supabase/functions/bitrix24-install/index.ts`
+### Ficheiro 1: `supabase/functions/payment-create/index.ts`
 
-Existem **duas cópias** do array `emmelyUserFields` (linhas ~180 e ~734). Ambas devem ser actualizadas:
-
-1. **SORT**: Alterar todos os campos de `SORT: 10/20/30/.../130` para `SORT: 0`
-2. **Labels**: Converter todos os valores de `EDIT_FORM_LABEL`, `LIST_COLUMN_LABEL` e `LIST_FILTER_LABEL` para maiusculas
-
-Exemplo de antes/depois:
-
+**a)** Adicionar função de validação de chave Stripe (`validateStripeKey`) que rejeita chaves `pk_`:
 ```typescript
-// ANTES:
-{
-  FIELD_NAME: "UF_CRM_EMMELY_PAYMENT_STATUS",
-  SORT: 10,
-  EDIT_FORM_LABEL: { br: "Status de Pagamento", en: "Payment Status" },
-  LIST_COLUMN_LABEL: { br: "Status Pagamento", en: "Payment Status" },
-}
-
-// DEPOIS:
-{
-  FIELD_NAME: "UF_CRM_EMMELY_PAYMENT_STATUS",
-  SORT: 0,
-  EDIT_FORM_LABEL: { br: "STATUS DE PAGAMENTO", en: "PAYMENT STATUS" },
-  LIST_COLUMN_LABEL: { br: "STATUS PAGAMENTO", en: "PAYMENT STATUS" },
+if (stripeKey.startsWith("pk_")) {
+  return error("A chave configurada é uma Publishable Key (pk_). Configure a Secret Key (sk_).");
 }
 ```
 
-Todos os 13 campos seguem a mesma regra: `SORT: 0` + labels em MAIUSCULAS.
+**b)** Normalizar `force_gateway` para aceitar variantes de texto (case-insensitive):
+- "Stripe PT", "stripe pt", "STRIPE PT" → `stripe_pt`
+- "Stripe BR", "stripe br" → `stripe_br`  
+- "Asaas", "ASAAS" → `asaas`
+- "Direto", "DIRETO" → `direto`
 
-Após o deploy, utilizar o botão **"Reparar Campos"** nas Configurações do Bitrix24 para recriar os campos com os novos valores.
+**c)** Melhorar `getGateway()` para não ser usada quando `force_gateway` está definido (já funciona, mas documentar)
 
-### Ficheiro a editar
+### Ficheiro 2: `supabase/functions/bitrix24-payment-handler/index.ts`
 
-1. **`supabase/functions/bitrix24-install/index.ts`** — alterar SORT para 0 e labels para MAIUSCULAS nas duas cópias do array `emmelyUserFields`
+Este handler é chamado pelo sistema de pagamento do Bitrix24 (CHECKOUT). Actualmente ignora qual gateway foi seleccionado no deal.
+
+**Alteração**: Antes de decidir gateway por moeda, verificar se o body contém um campo `GATEWAY` ou `gateway` enviado pelo Bitrix24. Se não, manter o fallback por moeda mas adicionar suporte para resolver `force_gateway` como no `payment-create`.
+
+Também adicionar validação `pk_` na chave Stripe antes de usar.
+
+### Ficheiro 3: `supabase/functions/manage-credentials/index.ts`
+
+No upsert de credenciais, quando `credential_key` contém "STRIPE" e `credential_value` começa com `pk_`, rejeitar com erro claro:
+```
+"Esta é uma Publishable Key (pk_). Utilize a Secret Key (sk_) do Stripe."
+```
+
+## Ficheiros a editar
+
+1. **`supabase/functions/payment-create/index.ts`** — normalizar force_gateway + validar chave pk_
+2. **`supabase/functions/bitrix24-payment-handler/index.ts`** — respeitar gateway explícito + validar pk_
+3. **`supabase/functions/manage-credentials/index.ts`** — rejeitar chaves pk_ no upsert
 
