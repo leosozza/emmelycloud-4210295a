@@ -8188,4 +8188,14 @@ function PropostasViewBitrix() {
   );
 }
 
+// ==================== INTEGRAÇÕES VIEW (BITRIX24) ====================
+function IntegracoesViewBitrix() {
+  const IntegracoesPage = lazy(() => import("@/pages/Integracoes"));
+  return (
+    <Suspense fallback={<div className="flex items-center justify-center p-12"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>}>
+      <IntegracoesPage />
+    </Suspense>
+  );
+}
+
 export default Bitrix24App;
