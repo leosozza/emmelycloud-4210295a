@@ -2166,6 +2166,7 @@ Deno.serve(async (req) => {
       installments, supabaseUrl, memberId, flows, contactPhone,
       noData: installments.length === 0,
       gateway: gwNames[displayGateway] || displayGateway,
+      rawGateway: displayGateway,
       paymentMethod: methodNames[displayMethod] || displayMethod,
       nextDueDate,
       createdAt: displayCreatedAt,
