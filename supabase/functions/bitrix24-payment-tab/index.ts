@@ -182,6 +182,7 @@ function renderPaymentTab(opts: {
   contactPhone: string;
   noData: boolean;
   gateway?: string;
+  rawGateway?: string;
   paymentMethod?: string;
   nextDueDate?: string | null;
   createdAt?: string | null;
