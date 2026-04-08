@@ -1,26 +1,45 @@
 
 
-# Adicionar Botão "Reparar Campos" na Vista Configurações do Bitrix24
+# Corrigir SORT e Labels dos Campos Emmely Pay no Bitrix24
 
 ## Problema
 
-A edge function `bitrix24-install?action=repair_fields` existe e funciona, mas **não há nenhum botão na UI** para a acionar. A vista de Configurações no iframe Bitrix24 (`Bitrix24App.tsx`) tem botões para "Re-registar Bot", "Re-registar Webhooks" e "Re-sincronizar Conector", mas falta o "Reparar Campos".
+Os campos `UF_CRM_EMMELY_*` estão a ser criados com `SORT: 10, 20, 30...` mas o utilizador quer **SORT: 0** para todos (para aparecerem no topo). Além disso, os labels (`EDIT_FORM_LABEL`, `LIST_COLUMN_LABEL`, `LIST_FILTER_LABEL`) devem estar em **LETRAS MAIUSCULAS**.
 
-## Solução
+## Alterações
 
-### Ficheiro: `src/pages/Bitrix24App.tsx`
+### Ficheiro: `supabase/functions/bitrix24-install/index.ts`
 
-Adicionar um novo botão **"Reparar Campos"** na secção de acções da vista Configurações (após o botão "Re-sincronizar Conector", ~linha 1097):
+Existem **duas cópias** do array `emmelyUserFields` (linhas ~180 e ~734). Ambas devem ser actualizadas:
 
-- Novo state: `repairingFields` + `repairFieldsResult`
-- Ao clicar, chama `POST ${SUPABASE_URL}/functions/v1/bitrix24-install?action=repair_fields` com o auth do BX24 (mesmo padrão do botão "Re-registar Bot")
-- Mostra resultado de sucesso/erro inline (mesmo padrão visual dos outros botões)
-- Ícone: `Wrench` do lucide-react
-- Label: "Reparar Campos"
+1. **SORT**: Alterar todos os campos de `SORT: 10/20/30/.../130` para `SORT: 0`
+2. **Labels**: Converter todos os valores de `EDIT_FORM_LABEL`, `LIST_COLUMN_LABEL` e `LIST_FILTER_LABEL` para maiusculas
 
-Código segue exactamente o mesmo padrão do handler do botão "Re-registar Bot" (linhas 1055-1078), apenas mudando a URL para incluir `?action=repair_fields`.
+Exemplo de antes/depois:
 
-## Ficheiros a editar
+```typescript
+// ANTES:
+{
+  FIELD_NAME: "UF_CRM_EMMELY_PAYMENT_STATUS",
+  SORT: 10,
+  EDIT_FORM_LABEL: { br: "Status de Pagamento", en: "Payment Status" },
+  LIST_COLUMN_LABEL: { br: "Status Pagamento", en: "Payment Status" },
+}
 
-1. **`src/pages/Bitrix24App.tsx`** — adicionar botão "Reparar Campos" + state + handler na vista Configurações
+// DEPOIS:
+{
+  FIELD_NAME: "UF_CRM_EMMELY_PAYMENT_STATUS",
+  SORT: 0,
+  EDIT_FORM_LABEL: { br: "STATUS DE PAGAMENTO", en: "PAYMENT STATUS" },
+  LIST_COLUMN_LABEL: { br: "STATUS PAGAMENTO", en: "PAYMENT STATUS" },
+}
+```
+
+Todos os 13 campos seguem a mesma regra: `SORT: 0` + labels em MAIUSCULAS.
+
+Após o deploy, utilizar o botão **"Reparar Campos"** nas Configurações do Bitrix24 para recriar os campos com os novos valores.
+
+### Ficheiro a editar
+
+1. **`supabase/functions/bitrix24-install/index.ts`** — alterar SORT para 0 e labels para MAIUSCULAS nas duas cópias do array `emmelyUserFields`
 
