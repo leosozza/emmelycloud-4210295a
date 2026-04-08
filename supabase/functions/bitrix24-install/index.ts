@@ -857,6 +857,22 @@ Deno.serve(async (req) => {
           LIST_COLUMN_LABEL: { br: "Notas Pagamento", en: "Payment Notes" },
           LIST_FILTER_LABEL: { br: "Notas Pagamento", en: "Payment Notes" },
         },
+        {
+          FIELD_NAME: "UF_CRM_EMMELY_RECEIPT_URL",
+          USER_TYPE_ID: "url",
+          SORT: 120,
+          EDIT_FORM_LABEL: { br: "Comprovante (Link)", en: "Receipt Link" },
+          LIST_COLUMN_LABEL: { br: "Comprovante", en: "Receipt" },
+          LIST_FILTER_LABEL: { br: "Comprovante", en: "Receipt" },
+        },
+        {
+          FIELD_NAME: "UF_CRM_EMMELY_RECEIPT_PDF",
+          USER_TYPE_ID: "url",
+          SORT: 130,
+          EDIT_FORM_LABEL: { br: "Comprovante (PDF)", en: "Receipt PDF" },
+          LIST_COLUMN_LABEL: { br: "PDF Comprovante", en: "Receipt PDF" },
+          LIST_FILTER_LABEL: { br: "PDF Comprovante", en: "Receipt PDF" },
+        },
       ];
 
       // Step 1: Delete existing EMMELY fields to ensure clean recreation
