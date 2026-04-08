@@ -229,6 +229,7 @@ const Bitrix24App = () => {
     {
       label: "Sistema",
       items: [
+        { id: "integracoes", label: "Integrações", icon: Plug },
         { id: "configuracoes", label: "Configurações", icon: Settings },
       ],
     },
