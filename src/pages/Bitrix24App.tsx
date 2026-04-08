@@ -43,7 +43,7 @@ import {
   Undo2, Redo2, LayoutDashboard, Plug, BookOpen, GitBranch,
   Settings, CreditCard, Zap, CheckCircle, XCircle, Activity,
   Power, ExternalLink, AlertCircle, MessageSquare, BarChart3,
-  DollarSign, Clock, AlertTriangle, TrendingUp, Link,
+  DollarSign, Clock, AlertTriangle, TrendingUp, Link, Wrench,
   ArrowDownLeft, ArrowUpRight, Building2, FileDown, ChevronRight, LayoutTemplate, Pencil, Scale, Users,
 } from "lucide-react";
 import {
