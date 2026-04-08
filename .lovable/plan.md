@@ -1,46 +1,26 @@
 
 
-# Correção: Credenciais de Pagamento Não Carregam na UI
+# Adicionar Botão "Reparar Campos" na Vista Configurações do Bitrix24
 
-## Problema Raiz
+## Problema
 
-A edge function `manage-credentials` usa `supabase.auth.getClaims(token)` que **não existe** no Supabase JS SDK v2. Isto causa erro silencioso — a função retorna 401 "Unauthorized" quando chamada pelo frontend com token de utilizador autenticado. O frontend apanha o erro no `catch {}` vazio e mantém o estado vazio, mostrando "Não configurado" para todas as credenciais.
-
-**Os dados estão salvos na base de dados** — confirmei que todas as chaves Stripe PT, Stripe BR, Asaas e webhooks existem na tabela `integration_credentials`. O problema é apenas na leitura/exibição.
+A edge function `bitrix24-install?action=repair_fields` existe e funciona, mas **não há nenhum botão na UI** para a acionar. A vista de Configurações no iframe Bitrix24 (`Bitrix24App.tsx`) tem botões para "Re-registar Bot", "Re-registar Webhooks" e "Re-sincronizar Conector", mas falta o "Reparar Campos".
 
 ## Solução
 
-### Ficheiro 1: `supabase/functions/manage-credentials/index.ts`
+### Ficheiro: `src/pages/Bitrix24App.tsx`
 
-Substituir `supabase.auth.getClaims(token)` por `supabase.auth.getUser()`:
+Adicionar um novo botão **"Reparar Campos"** na secção de acções da vista Configurações (após o botão "Re-sincronizar Conector", ~linha 1097):
 
-```typescript
-// ANTES (não existe no SDK):
-const { data: claims, error: claimsErr } = await supabase.auth.getClaims(token);
-const userId = claims?.claims?.sub;
+- Novo state: `repairingFields` + `repairFieldsResult`
+- Ao clicar, chama `POST ${SUPABASE_URL}/functions/v1/bitrix24-install?action=repair_fields` com o auth do BX24 (mesmo padrão do botão "Re-registar Bot")
+- Mostra resultado de sucesso/erro inline (mesmo padrão visual dos outros botões)
+- Ícone: `Wrench` do lucide-react
+- Label: "Reparar Campos"
 
-// DEPOIS (método correto):
-const { data: { user }, error: userErr } = await supabase.auth.getUser();
-if (userErr || !user) return 401;
-const userId = user.id;
-```
-
-### Ficheiro 2: `src/pages/Integracoes.tsx`
-
-Melhorar o error handling no `loadCredentials` para não engolir erros silenciosamente:
-
-```typescript
-// ANTES:
-} catch {}
-
-// DEPOIS:
-} catch (e) {
-  console.error("[Credenciais] Falha ao carregar:", e);
-}
-```
+Código segue exactamente o mesmo padrão do handler do botão "Re-registar Bot" (linhas 1055-1078), apenas mudando a URL para incluir `?action=repair_fields`.
 
 ## Ficheiros a editar
 
-1. **`supabase/functions/manage-credentials/index.ts`** — corrigir autenticação de `getClaims` para `getUser`
-2. **`src/pages/Integracoes.tsx`** — adicionar log de erro no catch do `loadCredentials`
+1. **`src/pages/Bitrix24App.tsx`** — adicionar botão "Reparar Campos" + state + handler na vista Configurações
 
