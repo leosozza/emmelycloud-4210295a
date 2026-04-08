@@ -711,7 +711,7 @@ function OmniChannelTab() {
         }
         setCredentials(map);
       }
-    } catch {}
+    } catch (e) { console.error("[Credenciais] Falha ao carregar:", e); }
   }, []);
 
   const handleSaveCredential = async (provider: string, key: string, value: string) => {
@@ -1043,7 +1043,7 @@ function PagamentosTab() {
         }
         setCredentials(map);
       }
-    } catch {}
+    } catch (e) { console.error("[Credenciais] Falha ao carregar:", e); }
   }, []);
 
   const handleSaveCredential = async (provider: string, key: string, value: string) => {
