@@ -1130,11 +1130,15 @@ Deno.serve(async (req) => {
         {
           CODE: "emmely_send_proposal",
           NAME: "Emmely: Enviar Orçamento",
+          DESCRIPTION: {
+            br: "Envia uma proposta já gerada ao cliente via WhatsApp.\n\n📋 CONFIGURAÇÃO:\n• proposal_id: Use o retorno {{proposal_id}} do robot 'Gerar Proposta' na etapa anterior\n• send_method: 'Link com Aceite' = página de aceite online | 'PDF' = documento PDF | 'Link + PDF' = ambos\n• phone: Número com código do país. Se vazio, usa o telefone do cliente na proposta.\n• custom_message: Texto opcional antes do link/PDF (ex: 'Olá, segue a sua proposta')\n\n💡 DICA: Adicione este robot APÓS o 'Gerar Proposta' e use os retornos da etapa anterior para preencher o proposal_id.",
+            en: "Sends a previously generated proposal to the client via WhatsApp. Use proposal_id from the 'Generate Proposal' robot return values."
+          },
           PROPERTIES: {
-            proposal_id: { Name: "ID da Proposta", Type: "string", Required: "Y", Description: "ID da proposta gerada (retornado pelo robot Gerar Proposta)" },
-            send_method: { Name: "Método de Envio", Type: "select", Required: "Y", Options: { link: "Link com Aceite", pdf: "PDF", both: "Link + PDF" }, Default: "link", Description: "O que enviar ao cliente" },
-            phone: { Name: "Telefone", Type: "string", Description: "Número WhatsApp (com código do país). Se vazio, usa o telefone do cliente na proposta" },
-            custom_message: { Name: "Mensagem Personalizada", Type: "text", Description: "Mensagem adicional antes do link/PDF (opcional)" },
+            proposal_id: { Name: "ID da Proposta", Type: "string", Required: "Y", Description: "⚠️ OBRIGATÓRIO — Use o retorno {{proposal_id}} do robot 'Emmely: Gerar Proposta' da etapa anterior" },
+            send_method: { Name: "Método de Envio", Type: "select", Required: "Y", Options: { link: "Link com Aceite", pdf: "PDF", both: "Link + PDF" }, Default: "link", Description: "link = página de aceite online | pdf = documento PDF | both = envia os dois" },
+            phone: { Name: "Telefone", Type: "string", Description: "Número WhatsApp com código do país (ex: 351912345678). Se vazio, usa o telefone do cliente cadastrado na proposta." },
+            custom_message: { Name: "Mensagem Personalizada", Type: "text", Description: "Texto opcional enviado ANTES do link/PDF (ex: 'Olá Sr. João, segue a proposta conforme combinado')" },
           },
           RETURN_PROPERTIES: {
             send_status: { Name: "Status de Envio", Type: "string" },
