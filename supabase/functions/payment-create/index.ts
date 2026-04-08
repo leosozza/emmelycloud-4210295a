@@ -314,7 +314,7 @@ Deno.serve(async (req) => {
           await supabase.from("financial_records").update(frUpdate).eq("id", frId);
           console.log(`[PAYMENT-CREATE] Synced financial_record ${frId} to paga`);
 
-          // Auto-create receipt_link if not exists
+          // Auto-create receipt_link if not exists and update Bitrix24 UF fields
           try {
             const { data: currentFrForReceipt } = await supabase.from("financial_records")
               .select("contract_id, bitrix24_deal_id, description")
@@ -323,18 +323,42 @@ Deno.serve(async (req) => {
               const contractId = currentFrForReceipt.contract_id;
               const dealId = currentFrForReceipt.bitrix24_deal_id;
               // Check if receipt_link already exists
-              let existsQuery = supabase.from("receipt_links").select("id").limit(1);
+              let existsQuery = supabase.from("receipt_links").select("id, token").limit(1);
               if (dealId) existsQuery = existsQuery.eq("bitrix24_deal_id", dealId);
               else if (contractId) existsQuery = existsQuery.eq("contract_id", contractId);
               const { data: existingLink } = await existsQuery.maybeSingle();
+              let receiptToken = existingLink?.token;
               if (!existingLink && (contractId || dealId)) {
-                await supabase.from("receipt_links").insert({
+                const { data: newLink } = await supabase.from("receipt_links").insert({
                   contract_id: contractId || null,
                   bitrix24_deal_id: dealId || null,
                   client_name: body.client_name || txMeta.client_name || null,
                   deal_title: currentFrForReceipt.description || txMeta.deal_title || null,
-                });
+                }).select("token").maybeSingle();
+                receiptToken = newLink?.token;
                 console.log(`[PAYMENT-CREATE] Created receipt_link for contract=${contractId} deal=${dealId}`);
+              }
+              // Update Bitrix24 deal with receipt URL if we have a token and dealId
+              if (receiptToken && dealId) {
+                const receiptUrl = `${Deno.env.get("SUPABASE_URL")}/functions/v1/payment-receipt?token=${receiptToken}`;
+                try {
+                  const { data: integration } = await supabase.from("bitrix24_integrations")
+                    .select("*").limit(1).maybeSingle();
+                  if (integration?.client_endpoint && integration?.access_token) {
+                    await fetch(`${integration.client_endpoint}crm.deal.update`, {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({
+                        auth: integration.access_token,
+                        id: parseInt(dealId),
+                        fields: { UF_CRM_EMMELY_RECEIPT_URL: receiptUrl }
+                      }),
+                    });
+                    console.log(`[PAYMENT-CREATE] Updated Bitrix24 deal ${dealId} with receipt URL`);
+                  }
+                } catch (bxErr) {
+                  console.error(`[PAYMENT-CREATE] Bitrix24 receipt URL update error:`, bxErr);
+                }
               }
             }
           } catch (rlErr) {

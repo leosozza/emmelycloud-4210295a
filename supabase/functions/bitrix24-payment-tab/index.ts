@@ -1299,18 +1299,35 @@ function renderPaymentTab(opts: {
         });
       }
 
-      // Auto-create receipt_link
+      // Auto-create receipt_link and update Bitrix24 UF fields
       try {
         var rlRes = await fetch(SUPABASE_URL + '/rest/v1/receipt_links?bitrix24_deal_id=eq.' + encodeURIComponent(document.getElementById('baixa-overlay').dataset.dealId || '${opts.entityId}') + '&limit=1', {
           headers: { 'apikey': SUPABASE_KEY, 'Authorization': 'Bearer ' + SUPABASE_KEY }
         });
         var rlData = await rlRes.json();
+        var receiptToken = null;
         if (!rlData || rlData.length === 0) {
-          await fetch(SUPABASE_URL + '/rest/v1/receipt_links', {
+          var createRlRes = await fetch(SUPABASE_URL + '/rest/v1/receipt_links', {
             method: 'POST',
             headers: { 'apikey': SUPABASE_KEY, 'Authorization': 'Bearer ' + SUPABASE_KEY, 'Content-Type': 'application/json', 'Prefer': 'return=representation' },
             body: JSON.stringify({ bitrix24_deal_id: '${opts.entityId}', client_name: null, deal_title: '${(opts.dealTitle || "").replace(/'/g, "\\'")}' })
           });
+          var created = await createRlRes.json();
+          receiptToken = (created && created[0]) ? created[0].token : null;
+        } else {
+          receiptToken = rlData[0].token;
+        }
+        // Update Bitrix24 deal with receipt URL
+        if (receiptToken) {
+          var receiptUrl = SUPABASE_URL + '/functions/v1/payment-receipt?token=' + receiptToken;
+          try {
+            BX24.callMethod('crm.deal.update', {
+              id: parseInt('${opts.entityId}'),
+              fields: {
+                UF_CRM_EMMELY_RECEIPT_URL: receiptUrl
+              }
+            }, function(r) { if (r.error()) console.error('Receipt URL update error:', r.error()); });
+          } catch(bxErr) { console.error('BX24 receipt update error:', bxErr); }
         }
       } catch(rlErr) { console.error('Receipt link error:', rlErr); }
 
