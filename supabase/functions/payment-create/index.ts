@@ -541,7 +541,7 @@ Deno.serve(async (req) => {
 
     let result: any;
 
-    if (payment_method === "direto" || force_gateway === "direto") {
+    if (payment_method === "direto" || normalizedGateway === "direto") {
       // Direct payment - no gateway call, just record the transaction
       result = {
         gateway_payment_id: `direto_${crypto.randomUUID()}`,
