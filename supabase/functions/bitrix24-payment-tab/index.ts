@@ -753,6 +753,7 @@ function renderPaymentTab(opts: {
   var SUPABASE_KEY = "${Deno.env.get("SUPABASE_ANON_KEY") || ""}";
   var MEMBER_ID = "${memberId}";
   var ENTITY_ID = "${opts.entityId}";
+  var DEAL_RAW_GATEWAY = "${opts.rawGateway || ""}";
   var EUR_TO_BRL = 6.10;
   var _baixaOriginalAmount = 0;
 
