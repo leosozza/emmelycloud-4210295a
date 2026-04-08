@@ -23,6 +23,7 @@ import {
   BookOpen,
   Activity,
   Settings,
+  Plug,
 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import {
