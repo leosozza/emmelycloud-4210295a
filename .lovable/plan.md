@@ -1,39 +1,35 @@
 
 
-# Correção: Configurações não persistem após guardar
+# Restaurar Acesso à Página de Integrações (WhatsApp/Instâncias)
 
-## Problema Raiz
+## Problema
 
-O Supabase JS SDK **não lança exceções** — retorna `{ data, error }`. O código em `EncargosTab` e `PermissoesTab` usa `try/catch` sem verificar o campo `error`, fazendo com que falhas de escrita sejam ignoradas silenciosamente.
+A página `/integracoes` existe e tem rota registada em `App.tsx`, mas foi removida de ambas as barras laterais:
+- **AppSidebar** (portal principal) — não tem link para `/integracoes`
+- **Bitrix24App** (iframe) — `navCategories` não inclui "Integrações"
 
-**Exemplo do bug (linha 97):**
-```typescript
-// Não verifica error!
-await supabase.from("payment_gateway_config").update({...}).eq("id", configId);
-```
+Resultado: é impossível aceder à página de criar instâncias e conectar WhatsApp.
 
 ## Correções
 
-### Ficheiro 1: `src/pages/Configuracoes.tsx` — EncargosTab
+### Ficheiro 1: `src/components/AppSidebar.tsx`
 
-Na função `handleSave`, verificar `error` em cada operação Supabase:
+Adicionar "Integrações" ao array `secondaryNav` (secção "Gestão"), com ícone `Plug`:
 ```typescript
-const { error } = await supabase.from("payment_gateway_config").update(...);
-if (error) throw error;
+{ title: "Integrações", url: "/integracoes", icon: Plug },
 ```
 
-Aplicar ao `update` (linha 97) e ao `insert` (linha 99).
+### Ficheiro 2: `src/pages/Bitrix24App.tsx`
 
-### Ficheiro 2: `src/components/configuracoes/PermissoesTab.tsx`
+Adicionar "Integrações" ao `navCategories`, na categoria "Sistema" (junto a Configurações):
+```typescript
+{ id: "integracoes", label: "Integrações", icon: Plug },
+```
 
-Na função `handleSave`, verificar `error` em:
-- Delete de permissões existentes
-- Insert de novas permissões
-
-Mostrar `toast.error` com a mensagem real do erro.
+Também adicionar `"integracoes"` ao array `validViews` (linha 98) e tratar o caso no render de views para que carregue o componente `IntegracoesPage` quando `view === "integracoes"`.
 
 ### Ficheiros a editar
 
-1. **`src/pages/Configuracoes.tsx`** — adicionar verificação de `error` no handleSave do EncargosTab
-2. **`src/components/configuracoes/PermissoesTab.tsx`** — adicionar verificação de `error` no handleSave
+1. **`src/components/AppSidebar.tsx`** — adicionar link "Integrações" ao menu lateral
+2. **`src/pages/Bitrix24App.tsx`** — adicionar nav item + view routing para Integrações
 
