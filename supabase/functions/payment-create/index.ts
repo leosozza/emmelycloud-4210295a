@@ -578,6 +578,11 @@ Deno.serve(async (req) => {
           status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
+      if (stripeKey.startsWith("pk_")) {
+        return new Response(JSON.stringify({ error: "A chave Stripe configurada é uma Publishable Key (pk_). Configure a Secret Key (sk_) em Integrações." }), {
+          status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
       result = await createStripePayment(stripeKey, amount, currency, customer_data?.email || "", description, body.return_url, stripeRegion, payment_method);
     } else {
       // Validate CPF/CNPJ before calling Asaas
