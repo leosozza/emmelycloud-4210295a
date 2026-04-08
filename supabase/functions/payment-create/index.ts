@@ -497,21 +497,36 @@ Deno.serve(async (req) => {
       });
     }
 
+    // Normalize force_gateway labels to provider codes (case-insensitive)
+    let normalizedGateway = force_gateway ? force_gateway.trim() : null;
+    if (normalizedGateway) {
+      const gwMap: Record<string, string> = {
+        "stripe pt": "stripe_pt", "stripe_pt": "stripe_pt", "stripept": "stripe_pt",
+        "stripe br": "stripe_br", "stripe_br": "stripe_br", "stripebr": "stripe_br",
+        "stripe": "stripe",
+        "asaas": "asaas",
+        "direto": "direto", "direct": "direto",
+      };
+      normalizedGateway = gwMap[normalizedGateway.toLowerCase()] || normalizedGateway;
+    }
+
     // Determine gateway: force_gateway overrides auto-detection
     let gateway: "stripe" | "asaas";
     let stripeRegion: "pt" | "br" | null = null;
 
-    if (force_gateway) {
-      if (force_gateway === "stripe_pt") {
+    if (normalizedGateway) {
+      if (normalizedGateway === "stripe_pt") {
         gateway = "stripe";
         stripeRegion = "pt";
-      } else if (force_gateway === "stripe_br") {
+      } else if (normalizedGateway === "stripe_br") {
         gateway = "stripe";
         stripeRegion = "br";
-      } else if (force_gateway === "asaas") {
+      } else if (normalizedGateway === "asaas") {
         gateway = "asaas";
-      } else if (force_gateway === "direto") {
+      } else if (normalizedGateway === "direto") {
         gateway = "stripe"; // won't be used, handled below
+      } else if (normalizedGateway === "stripe") {
+        gateway = "stripe";
       } else {
         gateway = "stripe";
       }
@@ -526,7 +541,7 @@ Deno.serve(async (req) => {
 
     let result: any;
 
-    if (payment_method === "direto" || force_gateway === "direto") {
+    if (payment_method === "direto" || normalizedGateway === "direto") {
       // Direct payment - no gateway call, just record the transaction
       result = {
         gateway_payment_id: `direto_${crypto.randomUUID()}`,
@@ -563,6 +578,11 @@ Deno.serve(async (req) => {
           status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
+      if (stripeKey.startsWith("pk_")) {
+        return new Response(JSON.stringify({ error: "A chave Stripe configurada é uma Publishable Key (pk_). Configure a Secret Key (sk_) em Integrações." }), {
+          status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
       result = await createStripePayment(stripeKey, amount, currency, customer_data?.email || "", description, body.return_url, stripeRegion, payment_method);
     } else {
       // Validate CPF/CNPJ before calling Asaas
@@ -590,7 +610,7 @@ Deno.serve(async (req) => {
       result = await createAsaasPayment(asaasKey, amount, payment_method, customer_data, description, asaasEnv, due_date);
     }
 
-    const effectiveGateway = (payment_method === "direto" || force_gateway === "direto") ? "direto" : (force_gateway || gateway);
+    const effectiveGateway = (payment_method === "direto" || normalizedGateway === "direto") ? "direto" : (normalizedGateway || gateway);
 
     // Save transaction
     const { data: tx, error: txError } = await supabase.from("payment_transactions").insert({

@@ -121,9 +121,37 @@ Deno.serve(async (req) => {
       }
     }
 
-    // Determine gateway based on currency
-    const gateway = (currency === "BRL") ? "asaas" : "stripe";
-    const paymentMethod = (currency === "BRL") ? "pix" : "card";
+    // Determine gateway: explicit selection > currency fallback
+    const rawGateway = (body.GATEWAY || body.gateway || "").toString().trim();
+    const gwMap: Record<string, string> = {
+      "stripe pt": "stripe_pt", "stripe_pt": "stripe_pt",
+      "stripe br": "stripe_br", "stripe_br": "stripe_br",
+      "stripe": "stripe", "asaas": "asaas",
+    };
+    const resolvedGateway = rawGateway ? (gwMap[rawGateway.toLowerCase()] || rawGateway) : "";
+    
+    let gateway: string;
+    let stripeProvider = "stripe";
+    let stripeKeyName = "STRIPE_SECRET_KEY";
+    
+    if (resolvedGateway === "asaas") {
+      gateway = "asaas";
+    } else if (resolvedGateway === "stripe_pt") {
+      gateway = "stripe";
+      stripeProvider = "stripe_pt";
+      stripeKeyName = "STRIPE_SECRET_KEY_PT";
+    } else if (resolvedGateway === "stripe_br") {
+      gateway = "stripe";
+      stripeProvider = "stripe_br";
+      stripeKeyName = "STRIPE_SECRET_KEY_BR";
+    } else if (resolvedGateway === "stripe") {
+      gateway = "stripe";
+    } else {
+      // Fallback by currency
+      gateway = (currency === "BRL") ? "asaas" : "stripe";
+    }
+    
+    const paymentMethod = (gateway === "asaas") ? "pix" : "card";
     const description = `Bitrix24 Payment #${paymentId}`;
 
     let result: any;
@@ -226,10 +254,21 @@ Deno.serve(async (req) => {
         pix_code: pixCode,
       };
     } else {
-      // Stripe
-      const stripeKey = await getCredential(supabase, "stripe", "STRIPE_SECRET_KEY");
+      // Stripe — use regional key if selected, fallback to generic
+      let stripeKey = await getCredential(supabase, stripeProvider, stripeKeyName);
+      if (!stripeKey && stripeProvider !== "stripe") {
+        stripeKey = await getCredential(supabase, stripeProvider, "STRIPE_SECRET_KEY");
+      }
+      if (!stripeKey) {
+        stripeKey = await getCredential(supabase, "stripe", "STRIPE_SECRET_KEY");
+      }
       if (!stripeKey) {
         return new Response(JSON.stringify({ PAYMENT_ERRORS: ["Stripe API key não configurada."] }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      if (stripeKey.startsWith("pk_")) {
+        return new Response(JSON.stringify({ PAYMENT_ERRORS: ["A chave Stripe configurada é uma Publishable Key (pk_). Configure a Secret Key (sk_) em Integrações."] }), {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }

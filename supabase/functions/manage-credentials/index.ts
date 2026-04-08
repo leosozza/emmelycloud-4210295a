@@ -171,6 +171,14 @@ Deno.serve(async (req) => {
       );
     }
 
+    // Block Stripe publishable keys from being saved as secret keys
+    if (credential_key?.toUpperCase().includes("STRIPE") && credential_value?.trim().startsWith("pk_")) {
+      return new Response(
+        JSON.stringify({ error: "Esta é uma Publishable Key (pk_). Utilize a Secret Key (sk_) do Stripe." }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
     // Upsert credential
     const { error } = await serviceClient
       .from("integration_credentials")
