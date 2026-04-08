@@ -43,7 +43,7 @@ import {
   Undo2, Redo2, LayoutDashboard, Plug, BookOpen, GitBranch,
   Settings, CreditCard, Zap, CheckCircle, XCircle, Activity,
   Power, ExternalLink, AlertCircle, MessageSquare, BarChart3,
-  DollarSign, Clock, AlertTriangle, TrendingUp, Link,
+  DollarSign, Clock, AlertTriangle, TrendingUp, Link, Wrench,
   ArrowDownLeft, ArrowUpRight, Building2, FileDown, ChevronRight, LayoutTemplate, Pencil, Scale, Users,
 } from "lucide-react";
 import {
@@ -859,6 +859,8 @@ function ConfigView({ integration, botId, domain, loading, onResync, onRefresh }
   const [rebindResult, setRebindResult] = useState<string | null>(null);
   const [reregisteringBot, setReregisteringBot] = useState(false);
   const [reregisterBotResult, setReregisterBotResult] = useState<string | null>(null);
+  const [repairingFields, setRepairingFields] = useState(false);
+  const [repairFieldsResult, setRepairFieldsResult] = useState<string | null>(null);
   const [returnToBotDialogId, setReturnToBotDialogId] = useState("");
   const [returningToBot, setReturningToBot] = useState(false);
   const [returnToBotResult, setReturnToBotResult] = useState<string | null>(null);
@@ -1095,6 +1097,37 @@ function ConfigView({ integration, botId, domain, loading, onResync, onRefresh }
         <Button onClick={onResync} disabled={loading} className="w-full rounded-md" variant="outline">
           {loading ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Sincronizando...</> : <><RefreshCw className="h-4 w-4 mr-2" />Re-sincronizar Conector</>}
         </Button>
+        <Button
+          onClick={async () => {
+            setRepairingFields(true);
+            setRepairFieldsResult(null);
+            try {
+              const auth = (window as any).BX24?.getAuth?.();
+              if (!auth && !integration?.member_id) { setRepairFieldsResult("Sem sessão BX24 disponível."); return; }
+              const res = await fetch(`${SUPABASE_URL}/functions/v1/bitrix24-install?action=repair_fields`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json", apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` },
+                body: JSON.stringify({
+                  auth: auth ? { access_token: auth.access_token, refresh_token: auth.refresh_token, member_id: auth.member_id, domain: auth.domain, client_endpoint: auth.client_endpoint, expires_in: String(auth.expires || 3600) }
+                    : { member_id: integration?.member_id, access_token: integration?.access_token, refresh_token: integration?.refresh_token, client_endpoint: integration?.client_endpoint, domain: integration?.domain, expires_in: "3600" },
+                }),
+              });
+              const data = await res.json();
+              if (data.success || res.ok) { setRepairFieldsResult("Campos reparados com sucesso!"); if (integration?.member_id) setTimeout(() => onRefresh(), 1500); }
+              else { setRepairFieldsResult(`Erro: ${data.error || res.status}`); }
+            } catch (e) { setRepairFieldsResult(`Erro de rede: ${e}`); }
+            finally { setRepairingFields(false); }
+          }}
+          disabled={repairingFields} className="w-full rounded-md" variant="outline"
+        >
+          {repairingFields ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Reparando campos...</> : <><Wrench className="h-4 w-4 mr-2" />Reparar Campos</>}
+        </Button>
+        {repairFieldsResult && (
+          <div className={cn("text-xs text-center px-3 py-2 rounded-lg flex items-center justify-center gap-1.5", repairFieldsResult.includes("Erro") ? "bg-destructive/10 text-destructive" : "bg-success/10 text-success")}>
+            {repairFieldsResult.includes("Erro") ? <XCircle className="h-3 w-3" /> : <CheckCircle className="h-3 w-3" />}
+            {repairFieldsResult}
+          </div>
+        )}
       </div>
 
       {logs.length > 0 && (
