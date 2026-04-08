@@ -926,6 +926,7 @@ function renderPaymentTab(opts: {
           headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_KEY },
           body: JSON.stringify({
             amount: parcel.amount, currency: currency, payment_method: method,
+            force_gateway: DEAL_RAW_GATEWAY || undefined,
             description: desc + (parcels.length > 1 ? (parcel.is_down_payment ? ' (Entrada)' : ' (Parcela ' + parcel.installment_number + '/' + numInstallments + ')') : ''),
             customer_data: { name: name, email: email, cpf_cnpj: cpf || undefined },
             due_date: parcel.due_date, installment_number: parcel.installment_number,
