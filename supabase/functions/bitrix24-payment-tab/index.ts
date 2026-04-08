@@ -182,6 +182,7 @@ function renderPaymentTab(opts: {
   contactPhone: string;
   noData: boolean;
   gateway?: string;
+  rawGateway?: string;
   paymentMethod?: string;
   nextDueDate?: string | null;
   createdAt?: string | null;
@@ -752,6 +753,7 @@ function renderPaymentTab(opts: {
   var SUPABASE_KEY = "${Deno.env.get("SUPABASE_ANON_KEY") || ""}";
   var MEMBER_ID = "${memberId}";
   var ENTITY_ID = "${opts.entityId}";
+  var DEAL_RAW_GATEWAY = "${opts.rawGateway || ""}";
   var EUR_TO_BRL = 6.10;
   var _baixaOriginalAmount = 0;
 
@@ -924,6 +926,7 @@ function renderPaymentTab(opts: {
           headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_KEY },
           body: JSON.stringify({
             amount: parcel.amount, currency: currency, payment_method: method,
+            force_gateway: DEAL_RAW_GATEWAY || undefined,
             description: desc + (parcels.length > 1 ? (parcel.is_down_payment ? ' (Entrada)' : ' (Parcela ' + parcel.installment_number + '/' + numInstallments + ')') : ''),
             customer_data: { name: name, email: email, cpf_cnpj: cpf || undefined },
             due_date: parcel.due_date, installment_number: parcel.installment_number,
@@ -989,6 +992,7 @@ function renderPaymentTab(opts: {
           amount: inst.value || 0,
           currency: inst.currency || 'EUR',
           payment_method: inst.payment_method || 'card',
+          force_gateway: DEAL_RAW_GATEWAY || undefined,
           description: inst.description || 'Pagamento',
           metadata: { bitrix_deal_id: ENTITY_ID, source: 'bitrix24_payment_tab_link' }
         })
@@ -2163,6 +2167,7 @@ Deno.serve(async (req) => {
       installments, supabaseUrl, memberId, flows, contactPhone,
       noData: installments.length === 0,
       gateway: gwNames[displayGateway] || displayGateway,
+      rawGateway: displayGateway,
       paymentMethod: methodNames[displayMethod] || displayMethod,
       nextDueDate,
       createdAt: displayCreatedAt,
