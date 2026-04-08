@@ -991,6 +991,7 @@ function renderPaymentTab(opts: {
           amount: inst.value || 0,
           currency: inst.currency || 'EUR',
           payment_method: inst.payment_method || 'card',
+          force_gateway: DEAL_RAW_GATEWAY || undefined,
           description: inst.description || 'Pagamento',
           metadata: { bitrix_deal_id: ENTITY_ID, source: 'bitrix24_payment_tab_link' }
         })
