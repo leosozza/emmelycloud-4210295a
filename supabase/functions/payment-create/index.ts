@@ -610,7 +610,7 @@ Deno.serve(async (req) => {
       result = await createAsaasPayment(asaasKey, amount, payment_method, customer_data, description, asaasEnv, due_date);
     }
 
-    const effectiveGateway = (payment_method === "direto" || force_gateway === "direto") ? "direto" : (force_gateway || gateway);
+    const effectiveGateway = (payment_method === "direto" || normalizedGateway === "direto") ? "direto" : (normalizedGateway || gateway);
 
     // Save transaction
     const { data: tx, error: txError } = await supabase.from("payment_transactions").insert({

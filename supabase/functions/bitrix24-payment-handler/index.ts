@@ -254,10 +254,21 @@ Deno.serve(async (req) => {
         pix_code: pixCode,
       };
     } else {
-      // Stripe
-      const stripeKey = await getCredential(supabase, "stripe", "STRIPE_SECRET_KEY");
+      // Stripe — use regional key if selected, fallback to generic
+      let stripeKey = await getCredential(supabase, stripeProvider, stripeKeyName);
+      if (!stripeKey && stripeProvider !== "stripe") {
+        stripeKey = await getCredential(supabase, stripeProvider, "STRIPE_SECRET_KEY");
+      }
+      if (!stripeKey) {
+        stripeKey = await getCredential(supabase, "stripe", "STRIPE_SECRET_KEY");
+      }
       if (!stripeKey) {
         return new Response(JSON.stringify({ PAYMENT_ERRORS: ["Stripe API key não configurada."] }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      if (stripeKey.startsWith("pk_")) {
+        return new Response(JSON.stringify({ PAYMENT_ERRORS: ["A chave Stripe configurada é uma Publishable Key (pk_). Configure a Secret Key (sk_) em Integrações."] }), {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
