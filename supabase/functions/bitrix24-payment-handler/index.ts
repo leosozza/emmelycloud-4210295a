@@ -121,9 +121,37 @@ Deno.serve(async (req) => {
       }
     }
 
-    // Determine gateway based on currency
-    const gateway = (currency === "BRL") ? "asaas" : "stripe";
-    const paymentMethod = (currency === "BRL") ? "pix" : "card";
+    // Determine gateway: explicit selection > currency fallback
+    const rawGateway = (body.GATEWAY || body.gateway || "").toString().trim();
+    const gwMap: Record<string, string> = {
+      "stripe pt": "stripe_pt", "stripe_pt": "stripe_pt",
+      "stripe br": "stripe_br", "stripe_br": "stripe_br",
+      "stripe": "stripe", "asaas": "asaas",
+    };
+    const resolvedGateway = rawGateway ? (gwMap[rawGateway.toLowerCase()] || rawGateway) : "";
+    
+    let gateway: string;
+    let stripeProvider = "stripe";
+    let stripeKeyName = "STRIPE_SECRET_KEY";
+    
+    if (resolvedGateway === "asaas") {
+      gateway = "asaas";
+    } else if (resolvedGateway === "stripe_pt") {
+      gateway = "stripe";
+      stripeProvider = "stripe_pt";
+      stripeKeyName = "STRIPE_SECRET_KEY_PT";
+    } else if (resolvedGateway === "stripe_br") {
+      gateway = "stripe";
+      stripeProvider = "stripe_br";
+      stripeKeyName = "STRIPE_SECRET_KEY_BR";
+    } else if (resolvedGateway === "stripe") {
+      gateway = "stripe";
+    } else {
+      // Fallback by currency
+      gateway = (currency === "BRL") ? "asaas" : "stripe";
+    }
+    
+    const paymentMethod = (gateway === "asaas") ? "pix" : "card";
     const description = `Bitrix24 Payment #${paymentId}`;
 
     let result: any;
