@@ -80,7 +80,7 @@ const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
 
 const customNodeTypes = { custom: CustomFlowNode };
 
-type AppView = "loading" | "dashboard" | "agentes" | "training" | "flows" | "playground" | "chatia" | "pagamentos" | "relatorios" | "baixa" | "carteira" | "configuracoes" | "propostas";
+type AppView = "loading" | "dashboard" | "agentes" | "training" | "flows" | "playground" | "chatia" | "pagamentos" | "relatorios" | "baixa" | "carteira" | "configuracoes" | "propostas" | "integracoes";
 
 // ==================== MAIN COMPONENT ====================
 const Bitrix24App = () => {
@@ -95,7 +95,7 @@ const Bitrix24App = () => {
     if (initialLoading) return "loading";
     const sub = location.pathname.replace(/^\/bitrix24\/?/, "").split("/")[0];
     if (!sub || sub === "") return "dashboard";
-    const validViews: AppView[] = ["dashboard", "agentes", "training", "flows", "playground", "chatia", "pagamentos", "relatorios", "baixa", "carteira", "configuracoes", "propostas"];
+    const validViews: AppView[] = ["dashboard", "agentes", "training", "flows", "playground", "chatia", "pagamentos", "relatorios", "baixa", "carteira", "configuracoes", "propostas", "integracoes"];
     return validViews.includes(sub as AppView) ? (sub as AppView) : "dashboard";
   }, [location.pathname, initialLoading]);
 
@@ -229,6 +229,7 @@ const Bitrix24App = () => {
     {
       label: "Sistema",
       items: [
+        { id: "integracoes", label: "Integrações", icon: Plug },
         { id: "configuracoes", label: "Configurações", icon: Settings },
       ],
     },
@@ -335,6 +336,7 @@ const Bitrix24App = () => {
             {view === "relatorios" && <RelatoriosView memberId={memberId || integration?.member_id || undefined} />}
             {view === "carteira" && <CarteiraAccessView integration={integration} memberId={memberId} cachedPortfolio={cachedPortfolio} />}
             {view === "propostas" && <PropostasViewBitrix />}
+            {view === "integracoes" && <IntegracoesViewBitrix />}
             {view === "configuracoes" && (
               <ConfiguracoesWrapper
                 integration={integration}
@@ -8183,6 +8185,16 @@ function PropostasViewBitrix() {
         saving={saveTemplateMutation.isPending}
       />
     </div>
+  );
+}
+
+// ==================== INTEGRAÇÕES VIEW (BITRIX24) ====================
+function IntegracoesViewBitrix() {
+  const IntegracoesPage = lazy(() => import("@/pages/Integracoes"));
+  return (
+    <Suspense fallback={<div className="flex items-center justify-center p-12"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>}>
+      <IntegracoesPage />
+    </Suspense>
   );
 }
 

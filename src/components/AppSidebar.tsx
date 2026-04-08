@@ -23,6 +23,7 @@ import {
   BookOpen,
   Activity,
   Settings,
+  Plug,
 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import {
@@ -65,6 +66,7 @@ const aiNav = [
 
 const secondaryNav = [
   { title: "Financeiro", url: "/financeiro", icon: DollarSign },
+  { title: "Integrações", url: "/integracoes", icon: Plug },
   { title: "Automações", url: "/automacoes", icon: Zap },
   { title: "Relatórios", url: "/relatorios", icon: BarChart3 },
   { title: "API Docs", url: "/api-docs", icon: FileCode },
