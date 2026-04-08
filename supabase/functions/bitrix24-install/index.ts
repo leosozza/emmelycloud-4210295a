@@ -939,6 +939,8 @@ Deno.serve(async (req) => {
           { bitrix_field_key: "UF_CRM_EMMELY_NEXT_DUE_DATE", bitrix_field_title: "Próximo Vencimento", supabase_table: "financial_records", supabase_column: "due_date" },
           { bitrix_field_key: "UF_CRM_EMMELY_PAYMENT_METHOD", bitrix_field_title: "Método de Pagamento", supabase_table: "payment_transactions", supabase_column: "payment_method" },
           { bitrix_field_key: "UF_CRM_EMMELY_PAYMENT_NOTES", bitrix_field_title: "Notas de Pagamento", supabase_table: "financial_records", supabase_column: "description" },
+          { bitrix_field_key: "UF_CRM_EMMELY_RECEIPT_URL", bitrix_field_title: "Comprovante (Link)", supabase_table: "receipt_links", supabase_column: "public_url" },
+          { bitrix_field_key: "UF_CRM_EMMELY_RECEIPT_PDF", bitrix_field_title: "Comprovante (PDF)", supabase_table: "receipt_links", supabase_column: "pdf_url" },
         ];
 
         // Delete existing mappings for this integration

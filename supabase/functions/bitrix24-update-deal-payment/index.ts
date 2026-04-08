@@ -69,6 +69,8 @@ serve(async (req) => {
       payment_method,
       gateway,
       notes,
+      receipt_url,
+      receipt_pdf,
     } = payment_data || {};
 
     console.log(`[update-deal-payment] entity=${entity_type} id=${deal_id} payment:`, payment_data);
@@ -82,6 +84,8 @@ serve(async (req) => {
     if (payment_method) ufFields["UF_CRM_EMMELY_PAYMENT_METHOD"] = payment_method;
     if (gateway) ufFields["UF_CRM_EMMELY_GATEWAY"] = gateway;
     if (notes) ufFields["UF_CRM_EMMELY_PAYMENT_NOTES"] = notes;
+    if (receipt_url) ufFields["UF_CRM_EMMELY_RECEIPT_URL"] = receipt_url;
+    if (receipt_pdf) ufFields["UF_CRM_EMMELY_RECEIPT_PDF"] = receipt_pdf;
 
     let entityUpdateResult = null;
     if (Object.keys(ufFields).length > 0) {
