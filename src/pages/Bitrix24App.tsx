@@ -859,6 +859,8 @@ function ConfigView({ integration, botId, domain, loading, onResync, onRefresh }
   const [rebindResult, setRebindResult] = useState<string | null>(null);
   const [reregisteringBot, setReregisteringBot] = useState(false);
   const [reregisterBotResult, setReregisterBotResult] = useState<string | null>(null);
+  const [repairingFields, setRepairingFields] = useState(false);
+  const [repairFieldsResult, setRepairFieldsResult] = useState<string | null>(null);
   const [returnToBotDialogId, setReturnToBotDialogId] = useState("");
   const [returningToBot, setReturningToBot] = useState(false);
   const [returnToBotResult, setReturnToBotResult] = useState<string | null>(null);
