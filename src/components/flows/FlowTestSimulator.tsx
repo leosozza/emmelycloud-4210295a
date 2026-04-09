@@ -311,7 +311,7 @@ export const FlowTestSimulator = forwardRef<HTMLDivElement, FlowTestSimulatorPro
     setWaitingForInput(false);
 
     // Find trigger node
-    const triggerNode = nodes.find(n => (n.data as unknown as FlowNodeData).nodeType === "trigger");
+    const triggerNode = nodes.find(n => ((n.data as unknown as FlowNodeData).nodeType as string) === "trigger");
     if (!triggerNode) {
       setMessages([{
         id: "no-trigger",
