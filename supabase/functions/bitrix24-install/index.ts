@@ -1446,6 +1446,7 @@ Deno.serve(async (req) => {
             valid_days: { Name: "Dias de Validade", Type: "int", Default: "30", Description: "Quantos dias a proposta fica válida. Após expirar, o cliente não poderá aceitar." },
             send_method: { Name: "Método de Envio", Type: "select", Options: { none: "Não enviar", link: "Enviar Link", pdf: "Enviar PDF", both: "Link + PDF" }, Default: "none", Description: "none = apenas gera a proposta | link = envia link de aceite via WhatsApp | pdf = envia PDF via WhatsApp | both = envia ambos" },
             send_to_phone: { Name: "Telefone para Envio", Type: "string", Description: "Número WhatsApp com código do país (ex: 351912345678). Se vazio, usa o telefone do contacto vinculado ao deal." },
+            accept_stage_id: { Name: "Etapa ao Aceitar", Type: "string", Description: "ID da etapa do funil para onde o deal move quando o cliente aceita a proposta (ex: C5:WON, C5:PREPARATION). Se vazio, não altera a etapa no Bitrix24." },
           },
           RETURN_PROPERTIES: {
             proposal_url: { Name: "URL da Proposta", Type: "string" },
