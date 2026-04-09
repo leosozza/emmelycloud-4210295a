@@ -520,6 +520,7 @@ async function handleGenerateProposal(
   const validDays = parseInt(properties.valid_days || properties.VALID_DAYS || "30") || 30;
 
   const acceptStageId = properties.accept_stage_id || properties.ACCEPT_STAGE_ID || "";
+  const acceptFlowId = properties.accept_flow_id || properties.ACCEPT_FLOW_ID || "";
 
   const entityId = entityType === "lead" ? leadId : dealId;
   if (!entityId) {
