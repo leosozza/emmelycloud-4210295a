@@ -309,7 +309,7 @@ Deno.serve(async (req) => {
             issue_type: "auto_escalation_frustrated",
             rating: 1,
             comment: "Auto-escalated: 2x consecutive frustrated sentiment",
-          }).catch(() => {});
+          }).then(() => {});
           return new Response(JSON.stringify({ transferred: "human", reason: "double_frustration" }), { headers: jsonHeaders });
         }
         await supabase.from("conversations").update({
@@ -1295,7 +1295,7 @@ Extraia o que estiver presente na mensagem. Se não houver dados suficientes, ge
         intention_collected: alreadyCollected,
         next_question: pendingFields[0]?.label
           ? `Pode informar o seu ${pendingFields[0].label}?`
-          : null,
+          : undefined,
       };
     }
 
@@ -1309,7 +1309,7 @@ Extraia o que estiver presente na mensagem. Se não houver dados suficientes, ge
         intention_collected: alreadyCollected,
         next_question: pendingFields[0]?.label
           ? `Pode informar o seu ${pendingFields[0].label}?`
-          : null,
+          : undefined,
       };
     }
 
@@ -1336,7 +1336,7 @@ Extraia o que estiver presente na mensagem. Se não houver dados suficientes, ge
     return {
       intention_completed: isCompleted,
       intention_collected: newCollected,
-      next_question: isCompleted ? undefined : (args.next_question || null),
+      next_question: isCompleted ? undefined : (args.next_question || undefined),
     };
   } catch (e) {
     console.error("[AI-PROCESS] Intention mode error:", e);
@@ -1345,7 +1345,7 @@ Extraia o que estiver presente na mensagem. Se não houver dados suficientes, ge
       intention_collected: alreadyCollected,
       next_question: pendingFields[0]?.label
         ? `Pode informar o seu ${pendingFields[0].label}?`
-        : null,
+        : undefined,
     };
   }
 }

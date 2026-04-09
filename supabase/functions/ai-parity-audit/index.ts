@@ -98,7 +98,7 @@ Deno.serve(async (req) => {
           overall_status,
           errors_count: errors,
           warnings_count: warnings,
-        }).catch(() => {});
+        }).then(() => {});
 
         return new Response(JSON.stringify(report), { headers: jsonHeaders });
       }

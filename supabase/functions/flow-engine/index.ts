@@ -24,13 +24,13 @@ const corsHeaders = {
 const jsonHeaders = { ...corsHeaders, "Content-Type": "application/json" };
 
 // ─── Cache de regras de negócio (60s TTL por instância do Edge Function) ──────
-let cachedRules: any[] | null = null;
+let cachedRules: any[] = [];
 let cacheTimestamp = 0;
 const CACHE_TTL_MS = 60_000;
 
 async function getCachedBusinessRules(supabase: any): Promise<any[]> {
   const now = Date.now();
-  if (cachedRules && now - cacheTimestamp < CACHE_TTL_MS) return cachedRules;
+  if (cachedRules.length > 0 && now - cacheTimestamp < CACHE_TTL_MS) return cachedRules;
   const { data: rules } = await supabase
     .from("business_rules")
     .select("*")
@@ -1284,11 +1284,11 @@ async function callAIIntention(
     return {
       completed: data.intention_completed || false,
       collected: data.intention_collected || collected,
-      nextQuestion: data.next_question || null,
+      nextQuestion: data.next_question || undefined,
     };
   } catch (e) {
     console.error("[FLOW-ENGINE] AI intention error:", e);
-    return { completed: false, collected, nextQuestion: null };
+    return { completed: false, collected, nextQuestion: undefined };
   }
 }
 
