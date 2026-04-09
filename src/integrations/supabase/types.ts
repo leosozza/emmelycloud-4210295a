@@ -2247,10 +2247,12 @@ export type Database = {
       }
       proposals: {
         Row: {
+          accept_stage_id: string | null
           accept_token: string | null
           accepted_at: string | null
           accepted_ip: string | null
           accepted_user_agent: string | null
+          bitrix24_deal_id: string | null
           cancel_reason: string | null
           cancelled_at: string | null
           case_id: string
@@ -2264,6 +2266,7 @@ export type Database = {
           contract_status: string | null
           created_at: string
           created_by: string | null
+          currency: string | null
           description: string | null
           expires_at: string | null
           file_url: string | null
@@ -2271,6 +2274,7 @@ export type Database = {
           installments: number | null
           payment_type: Database["public"]["Enums"]["payment_type"]
           pdf_url: string | null
+          products_json: Json | null
           refund_amount: number | null
           service_id: string | null
           sign_token: string | null
@@ -2287,10 +2291,12 @@ export type Database = {
           value: number
         }
         Insert: {
+          accept_stage_id?: string | null
           accept_token?: string | null
           accepted_at?: string | null
           accepted_ip?: string | null
           accepted_user_agent?: string | null
+          bitrix24_deal_id?: string | null
           cancel_reason?: string | null
           cancelled_at?: string | null
           case_id: string
@@ -2304,6 +2310,7 @@ export type Database = {
           contract_status?: string | null
           created_at?: string
           created_by?: string | null
+          currency?: string | null
           description?: string | null
           expires_at?: string | null
           file_url?: string | null
@@ -2311,6 +2318,7 @@ export type Database = {
           installments?: number | null
           payment_type?: Database["public"]["Enums"]["payment_type"]
           pdf_url?: string | null
+          products_json?: Json | null
           refund_amount?: number | null
           service_id?: string | null
           sign_token?: string | null
@@ -2327,10 +2335,12 @@ export type Database = {
           value?: number
         }
         Update: {
+          accept_stage_id?: string | null
           accept_token?: string | null
           accepted_at?: string | null
           accepted_ip?: string | null
           accepted_user_agent?: string | null
+          bitrix24_deal_id?: string | null
           cancel_reason?: string | null
           cancelled_at?: string | null
           case_id?: string
@@ -2344,6 +2354,7 @@ export type Database = {
           contract_status?: string | null
           created_at?: string
           created_by?: string | null
+          currency?: string | null
           description?: string | null
           expires_at?: string | null
           file_url?: string | null
@@ -2351,6 +2362,7 @@ export type Database = {
           installments?: number | null
           payment_type?: Database["public"]["Enums"]["payment_type"]
           pdf_url?: string | null
+          products_json?: Json | null
           refund_amount?: number | null
           service_id?: string | null
           sign_token?: string | null

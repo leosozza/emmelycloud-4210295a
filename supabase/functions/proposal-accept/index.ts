@@ -67,6 +67,32 @@ Deno.serve(async (req) => {
     }).eq("id", proposal.id);
     if (upErr) throw upErr;
 
+    // 1b. Move deal stage in Bitrix24 if configured
+    if (proposal.bitrix24_deal_id && proposal.accept_stage_id) {
+      try {
+        const { data: bxIntegration } = await supabase
+          .from("bitrix24_integrations")
+          .select("client_endpoint, access_token")
+          .limit(1)
+          .maybeSingle();
+
+        if (bxIntegration?.client_endpoint && bxIntegration?.access_token) {
+          const bxRes = await fetch(`${bxIntegration.client_endpoint}crm.deal.update`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              id: proposal.bitrix24_deal_id,
+              fields: { STAGE_ID: proposal.accept_stage_id },
+            }),
+          });
+          const bxData = await bxRes.json();
+          console.log(`[PROPOSAL-ACCEPT] Bitrix24 deal ${proposal.bitrix24_deal_id} moved to stage ${proposal.accept_stage_id}:`, bxData);
+        }
+      } catch (bxErr) {
+        console.error("[PROPOSAL-ACCEPT] Failed to update Bitrix24 deal stage:", bxErr);
+      }
+    }
+
     // 2. Also create a contract record for backward compat
     const { error: contractErr } = await supabase.from("contracts").insert({
       proposal_id: proposal.id,

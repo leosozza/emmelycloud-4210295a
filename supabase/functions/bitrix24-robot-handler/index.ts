@@ -455,6 +455,8 @@ async function handleGenerateProposal(
   let conditions = properties.conditions || properties.CONDITIONS || "";
   const validDays = parseInt(properties.valid_days || properties.VALID_DAYS || "30") || 30;
 
+  const acceptStageId = properties.accept_stage_id || properties.ACCEPT_STAGE_ID || "";
+
   const entityId = entityType === "lead" ? leadId : dealId;
   if (!entityId) {
     return { proposal_url: "", pdf_url: "", proposal_id: "", status: "error", template_used: "", products_used: "", send_status: "", error: "deal_id or lead_id is required" };
@@ -488,6 +490,11 @@ async function handleGenerateProposal(
 
     const entityTitle = entity.TITLE || "";
     const opportunity = parseFloat(entity.OPPORTUNITY || "0");
+    const currencyId = entity.CURRENCY_ID || "EUR";
+
+    // Currency symbol map
+    const currencySymbols: Record<string, string> = { EUR: "€", BRL: "R$", USD: "$", GBP: "£", CHF: "CHF", CAD: "C$" };
+    const currSymbol = currencySymbols[currencyId] || currencyId;
 
     // 3. Fetch contact data
     let clientName = "";
@@ -566,6 +573,8 @@ async function handleGenerateProposal(
     let productsValue = 0;
     let productsDescription = "";
 
+    let productsJson: Array<{name: string, quantity: number, price: number, total: number, description: string}> = [];
+
     if (productIdsRaw) {
       const productIds = productIdsRaw.split(",").map((id: string) => id.trim()).filter(Boolean);
       if (productIds.length > 0) {
@@ -578,8 +587,9 @@ async function handleGenerateProposal(
           productsUsed = products.map((p: any) => p.name).join(", ");
           productsValue = products.reduce((sum: number, p: any) => sum + (p.value || 0), 0);
           productsDescription = products
-            .map((p: any) => `• ${p.name}: € ${(p.value || 0).toFixed(2)}${p.budget_details ? ` — ${p.budget_details}` : ""}`)
+            .map((p: any) => `• ${p.name}: ${currSymbol} ${(p.value || 0).toFixed(2)}${p.budget_details ? ` — ${p.budget_details}` : ""}`)
             .join("\n");
+          productsJson = products.map((p: any) => ({ name: p.name, quantity: 1, price: p.value || 0, total: p.value || 0, description: p.budget_details || "" }));
           console.log(`[ROBOT-HANDLER] Products found: ${productsUsed} (total: ${productsValue})`);
         }
       }
@@ -589,14 +599,28 @@ async function handleGenerateProposal(
         const productRows = await callBitrix(ep, tk, "crm.deal.productrows.list", { id: entityId });
         const rows = productRows.result || [];
         if (rows.length > 0) {
-          productsUsed = rows.map((r: any) => r.PRODUCT_NAME || `Produto #${r.PRODUCT_ID}`).join(", ");
-          productsValue = rows.reduce((sum: number, r: any) => sum + (parseFloat(r.PRICE || "0") * parseFloat(r.QUANTITY || "1")), 0);
-          productsDescription = rows
-            .map((r: any) => {
-              const price = parseFloat(r.PRICE || "0");
-              const qty = parseFloat(r.QUANTITY || "1");
-              return `• ${r.PRODUCT_NAME || `Produto #${r.PRODUCT_ID}`}: ${qty > 1 ? `${qty}x ` : ""}€ ${(price * qty).toFixed(2)}`;
-            })
+          // Enrich with product descriptions from catalog
+          for (const row of rows) {
+            const qty = parseFloat(row.QUANTITY || "1");
+            const price = parseFloat(row.PRICE || "0");
+            const total = price * qty;
+            let prodDesc = "";
+            let prodName = row.PRODUCT_NAME || `Produto #${row.PRODUCT_ID}`;
+            if (row.PRODUCT_ID) {
+              try {
+                const prodResult = await callBitrix(ep, tk, "crm.product.get", { id: row.PRODUCT_ID });
+                if (prodResult.result) {
+                  prodName = prodResult.result.NAME || prodName;
+                  prodDesc = prodResult.result.DESCRIPTION || "";
+                }
+              } catch (_) { /* use fallback name */ }
+            }
+            productsJson.push({ name: prodName, quantity: qty, price, total, description: prodDesc });
+          }
+          productsUsed = productsJson.map(p => p.name).join(", ");
+          productsValue = productsJson.reduce((sum, p) => sum + p.total, 0);
+          productsDescription = productsJson
+            .map(p => `• ${p.name}: ${p.quantity > 1 ? `${p.quantity}x ` : ""}${currSymbol} ${p.total.toFixed(2)}`)
             .join("\n");
           console.log(`[ROBOT-HANDLER] Bitrix24 deal products loaded: ${productsUsed} (total: ${productsValue})`);
         }
@@ -721,7 +745,11 @@ async function handleGenerateProposal(
         service_id: serviceId,
         template_id: templateId,
         status: "enviada",
-      })
+        products_json: productsJson,
+        currency: currencyId,
+        bitrix24_deal_id: entityType === "deal" ? String(entityId) : null,
+        accept_stage_id: acceptStageId || null,
+      } as any)
       .select("id, accept_token")
       .single();
 
@@ -756,7 +784,7 @@ async function handleGenerateProposal(
     if (sendMethod !== "none" && targetPhone) {
       try {
         if (sendMethod === "link" || sendMethod === "both") {
-          const linkMsg = `📋 *Proposta: ${finalTitle}*\n\nValor: € ${finalValue.toFixed(2)}\nValidade: ${validDays} dias\n\n✅ Aceite a proposta aqui:\n${proposalUrl}`;
+          const linkMsg = `📋 *Proposta: ${finalTitle}*\n\nValor: ${currSymbol} ${finalValue.toFixed(2)}\nValidade: ${validDays} dias\n\n✅ Aceite a proposta aqui:\n${proposalUrl}`;
           await handleSendWhatsApp({ phone: targetPhone, message: linkMsg }, supabaseUrl, serviceKey);
           sendStatus = "link_sent";
         }
