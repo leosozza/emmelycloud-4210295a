@@ -1,52 +1,62 @@
 
-
-# Separar Correctamente Provedores Stripe e Asaas
+# Tornar Badges Editáveis no Placement Emmely Pay
 
 ## Problema
 
-Existem 3 pontos onde a selecção de gateway é incorrecta:
-
-1. **`bitrix24-payment-handler`** (linha 125) — decide gateway apenas pela moeda (`BRL=asaas, resto=stripe`), ignorando completamente o campo `UF_CRM_EMMELY_GATEWAY` do deal
-2. **`payment-create`** — a função `getGateway()` (linha 19) faz o mesmo fallback por moeda, ignorando a selecção explícita quando `force_gateway` não é enviado
-3. **`payment-create`** — quando `force_gateway` é um label resolvido como `"Stripe PT"` em vez do código `"stripe_pt"`, cai no `else` genérico (linha 516) e usa a chave errada
+Os badges de **Gateway**, **Método** e **Próximo Vencimento** no placement `bitrix24-payment-tab` são texto estático. O utilizador quer clicar e editar, especialmente o Gateway (escolher entre Stripe PT, Stripe BR, Asaas, Direto).
 
 ## Alterações
 
-### Ficheiro 1: `supabase/functions/payment-create/index.ts`
+### Ficheiro: `supabase/functions/bitrix24-payment-tab/index.ts`
 
-**a)** Adicionar função de validação de chave Stripe (`validateStripeKey`) que rejeita chaves `pk_`:
-```typescript
-if (stripeKey.startsWith("pk_")) {
-  return error("A chave configurada é uma Publishable Key (pk_). Configure a Secret Key (sk_).");
+#### 1. HTML — Substituir spans estáticos por elementos clicáveis (linhas 544-548)
+
+Cada badge passa a ter um ícone de lápis e ao clicar abre um dropdown inline (para Gateway e Método) ou um date picker (para Próximo Vencimento):
+
+- **Gateway**: dropdown com opções "Stripe Portugal", "Stripe Brasil", "Asaas", "Direto" (mesmas do `bitrix24-install`)
+- **Método**: dropdown com "Cartão", "PIX", "Boleto", "Multibanco", "MB Way", "SEPA", "Direto"
+- **Próx. Vencimento**: input date
+
+Ao seleccionar, o valor é enviado ao servidor para actualizar o campo UF no Bitrix24.
+
+#### 2. Variáveis JS — Passar `rawGateway` e `rawMethod` para o script (linha 756)
+
+Já existe `DEAL_RAW_GATEWAY`. Adicionar `DEAL_RAW_METHOD`.
+
+#### 3. JS — Função `updateDealField(fieldName, value)`
+
+Nova função no bloco `<script>` que chama a edge function `bitrix24-update-deal-payment` (ou directamente `bitrix24-send` com `crm.deal.update`) para actualizar o campo UF no deal:
+
+```javascript
+async function updateDealField(fieldName, value) {
+  const res = await fetch(SUPABASE_URL + '/functions/v1/bitrix24-send', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      member_id: MEMBER_ID,
+      method: 'crm.deal.update',
+      params: { id: ENTITY_ID, fields: { [fieldName]: value } }
+    })
+  });
+  return res.json();
 }
 ```
 
-**b)** Normalizar `force_gateway` para aceitar variantes de texto (case-insensitive):
-- "Stripe PT", "stripe pt", "STRIPE PT" → `stripe_pt`
-- "Stripe BR", "stripe br" → `stripe_br`  
-- "Asaas", "ASAAS" → `asaas`
-- "Direto", "DIRETO" → `direto`
+Ao seleccionar no dropdown:
+- Gateway → `updateDealField('UF_CRM_EMMELY_GATEWAY', selectedEnumId)`
+- Método → `updateDealField('UF_CRM_EMMELY_PAYMENT_METHOD', selectedEnumId)`
+- Vencimento → `updateDealField('UF_CRM_EMMELY_NEXT_DUE_DATE', selectedDate)`
 
-**c)** Melhorar `getGateway()` para não ser usada quando `force_gateway` está definido (já funciona, mas documentar)
+Após sucesso, actualiza o texto do badge e o `DEAL_RAW_GATEWAY` para que cobranças futuras usem o gateway correcto.
 
-### Ficheiro 2: `supabase/functions/bitrix24-payment-handler/index.ts`
+#### 4. CSS — Estilos para badges editáveis
 
-Este handler é chamado pelo sistema de pagamento do Bitrix24 (CHECKOUT). Actualmente ignora qual gateway foi seleccionado no deal.
+Adicionar cursor pointer, hover com sublinhado, e estilo do dropdown inline.
 
-**Alteração**: Antes de decidir gateway por moeda, verificar se o body contém um campo `GATEWAY` ou `gateway` enviado pelo Bitrix24. Se não, manter o fallback por moeda mas adicionar suporte para resolver `force_gateway` como no `payment-create`.
+#### 5. Resolver IDs de enumeração
 
-Também adicionar validação `pk_` na chave Stripe antes de usar.
+Como os campos Gateway e Método são do tipo `enumeration`, o servidor armazena IDs numéricos. O HTML já recebe os metadados dos campos (linhas 1970-1983). Passar o mapa de `{id: label}` para o JS do cliente para que o dropdown mostre labels legíveis e envie os IDs correctos.
 
-### Ficheiro 3: `supabase/functions/manage-credentials/index.ts`
+### Ficheiro a editar
 
-No upsert de credenciais, quando `credential_key` contém "STRIPE" e `credential_value` começa com `pk_`, rejeitar com erro claro:
-```
-"Esta é uma Publishable Key (pk_). Utilize a Secret Key (sk_) do Stripe."
-```
-
-## Ficheiros a editar
-
-1. **`supabase/functions/payment-create/index.ts`** — normalizar force_gateway + validar chave pk_
-2. **`supabase/functions/bitrix24-payment-handler/index.ts`** — respeitar gateway explícito + validar pk_
-3. **`supabase/functions/manage-credentials/index.ts`** — rejeitar chaves pk_ no upsert
-
+1. **`supabase/functions/bitrix24-payment-tab/index.ts`** — badges editáveis + JS updateDealField + CSS
