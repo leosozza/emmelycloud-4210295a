@@ -18,8 +18,11 @@ function resolveNodeType(pbType: string, data: any): FlowNodeType {
     case "messageNode":
       return "message";
 
-    case "conditionalNode":
+    case "conditionalNode": {
+      const conditions = data?.conditions || [];
+      if (conditions.length > 2) return "switch";
       return "condition";
+    }
 
     case "transferNode":
       return "transfer_to_human";
