@@ -1309,7 +1309,7 @@ Extraia o que estiver presente na mensagem. Se não houver dados suficientes, ge
         intention_collected: alreadyCollected,
         next_question: pendingFields[0]?.label
           ? `Pode informar o seu ${pendingFields[0].label}?`
-          : null,
+          : undefined,
       };
     }
 
