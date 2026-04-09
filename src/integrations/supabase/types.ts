@@ -147,6 +147,7 @@ export type Database = {
           id: string
           is_active: boolean
           is_default: boolean
+          monthly_budget_usd: number | null
           name: string
           personality_style: string | null
           routing_rules: Json | null
@@ -178,6 +179,7 @@ export type Database = {
           id?: string
           is_active?: boolean
           is_default?: boolean
+          monthly_budget_usd?: number | null
           name: string
           personality_style?: string | null
           routing_rules?: Json | null
@@ -209,6 +211,7 @@ export type Database = {
           id?: string
           is_active?: boolean
           is_default?: boolean
+          monthly_budget_usd?: number | null
           name?: string
           personality_style?: string | null
           routing_rules?: Json | null
@@ -357,6 +360,7 @@ export type Database = {
           model: string | null
           prompt_tokens: number | null
           provider: string | null
+          session_id: string | null
           total_tokens: number | null
           was_fallback: boolean | null
         }
@@ -372,6 +376,7 @@ export type Database = {
           model?: string | null
           prompt_tokens?: number | null
           provider?: string | null
+          session_id?: string | null
           total_tokens?: number | null
           was_fallback?: boolean | null
         }
@@ -387,6 +392,7 @@ export type Database = {
           model?: string | null
           prompt_tokens?: number | null
           provider?: string | null
+          session_id?: string | null
           total_tokens?: number | null
           was_fallback?: boolean | null
         }
@@ -404,6 +410,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "conversations"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ai_usage_logs_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "ai_sessions"
+            referencedColumns: ["session_id"]
           },
         ]
       }
@@ -2812,6 +2825,10 @@ export type Database = {
         }
       }
       get_dashboard_data: { Args: never; Returns: Json }
+      get_monthly_cost_by_agent: {
+        Args: { p_agent_id: string; p_month?: string }
+        Returns: Json
+      }
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"]
