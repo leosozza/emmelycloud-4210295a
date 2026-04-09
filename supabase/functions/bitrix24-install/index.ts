@@ -395,6 +395,11 @@ Deno.serve(async (req) => {
       (contractTemplates || []).forEach((t: any) => { contractTemplateOptions[t.id] = t.name; });
       if (Object.keys(contractTemplateOptions).length === 0) { contractTemplateOptions[""] = "(Nenhum template de contrato encontrado)"; }
 
+      // Load active flows for dynamic select
+      const { data: activeFlows } = await supabase.from("flows").select("id, name").eq("is_active", true).order("name");
+      const flowOptions: Record<string, string> = { "": "(Não executar flow)" };
+      (activeFlows || []).forEach((f: any) => { flowOptions[f.id] = f.name; });
+
       const repairRobots = [
         {
           CODE: "emmely_send_whatsapp",
@@ -499,6 +504,7 @@ Deno.serve(async (req) => {
             send_method: { Name: "Método de Envio", Type: "select", Options: { none: "Não enviar", link: "Enviar Link", pdf: "Enviar PDF", both: "Link + PDF" }, Default: "none" },
             send_to_phone: { Name: "Telefone para Envio", Type: "string" },
             accept_stage_id: { Name: "Etapa ao Aceitar", Type: "string", Description: "ID da etapa do funil para onde o deal move quando o cliente aceita a proposta (ex: C5:WON). Se vazio, não altera a etapa." },
+            accept_flow_id: { Name: "Flow ao Aceitar", Type: "select", Options: flowOptions, Description: "O flow que será iniciado automaticamente quando o cliente aceitar a proposta." },
           },
           RETURN_PROPERTIES: {
             proposal_url: { Name: "URL da Proposta", Type: "string" },
@@ -575,6 +581,7 @@ Deno.serve(async (req) => {
             duration_months: { Name: "Duração (meses)", Type: "int", Default: "12" },
             send_method: { Name: "Método de Envio", Type: "select", Options: { none: "Não enviar", link: "Enviar Link de Assinatura", pdf: "Enviar PDF", both: "Link + PDF" }, Default: "none" },
             send_to_phone: { Name: "Telefone para Envio", Type: "string" },
+            accept_flow_id: { Name: "Flow ao Aceitar", Type: "select", Options: flowOptions, Description: "O flow que será iniciado automaticamente quando o cliente aceitar/assinar o contrato." },
           },
           RETURN_PROPERTIES: {
             contract_url: { Name: "URL de Assinatura", Type: "string" },
@@ -1313,6 +1320,11 @@ Deno.serve(async (req) => {
         contractTemplateOptions[""] = "(Nenhum template de contrato encontrado)";
       }
 
+      // Load active flows for dynamic select
+      const { data: activeFlows } = await supabase.from("flows").select("id, name").eq("is_active", true).order("name");
+      const flowOptions: Record<string, string> = { "": "(Não executar flow)" };
+      (activeFlows || []).forEach((f: any) => { flowOptions[f.id] = f.name; });
+
       const robots = [
         {
           CODE: "emmely_send_whatsapp",
@@ -1447,6 +1459,7 @@ Deno.serve(async (req) => {
             send_method: { Name: "Método de Envio", Type: "select", Options: { none: "Não enviar", link: "Enviar Link", pdf: "Enviar PDF", both: "Link + PDF" }, Default: "none", Description: "none = apenas gera a proposta | link = envia link de aceite via WhatsApp | pdf = envia PDF via WhatsApp | both = envia ambos" },
             send_to_phone: { Name: "Telefone para Envio", Type: "string", Description: "Número WhatsApp com código do país (ex: 351912345678). Se vazio, usa o telefone do contacto vinculado ao deal." },
             accept_stage_id: { Name: "Etapa ao Aceitar", Type: "string", Description: "ID da etapa do funil para onde o deal move quando o cliente aceita a proposta (ex: C5:WON, C5:PREPARATION). Se vazio, não altera a etapa no Bitrix24." },
+            accept_flow_id: { Name: "Flow ao Aceitar", Type: "select", Options: flowOptions, Description: "O flow que será iniciado automaticamente quando o cliente aceitar a proposta." },
           },
           RETURN_PROPERTIES: {
             proposal_url: { Name: "URL da Proposta", Type: "string" },
@@ -1528,6 +1541,7 @@ Deno.serve(async (req) => {
             duration_months: { Name: "Duração (meses)", Type: "int", Default: "12", Description: "Duração do contrato em meses a partir da data de início." },
             send_method: { Name: "Método de Envio", Type: "select", Options: { none: "Não enviar", link: "Enviar Link de Assinatura", pdf: "Enviar PDF", both: "Link + PDF" }, Default: "none", Description: "none = apenas gera | link = envia link de assinatura digital via WhatsApp | pdf = envia PDF | both = ambos" },
             send_to_phone: { Name: "Telefone para Envio", Type: "string", Description: "Número WhatsApp com código do país. Se vazio, usa o telefone do cliente da proposta." },
+            accept_flow_id: { Name: "Flow ao Aceitar", Type: "select", Options: flowOptions, Description: "O flow que será iniciado automaticamente quando o cliente aceitar/assinar o contrato." },
           },
           RETURN_PROPERTIES: {
             contract_url: { Name: "URL de Assinatura", Type: "string" },

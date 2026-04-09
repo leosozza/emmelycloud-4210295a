@@ -2247,6 +2247,7 @@ export type Database = {
       }
       proposals: {
         Row: {
+          accept_flow_id: string | null
           accept_stage_id: string | null
           accept_token: string | null
           accepted_at: string | null
@@ -2291,6 +2292,7 @@ export type Database = {
           value: number
         }
         Insert: {
+          accept_flow_id?: string | null
           accept_stage_id?: string | null
           accept_token?: string | null
           accepted_at?: string | null
@@ -2335,6 +2337,7 @@ export type Database = {
           value?: number
         }
         Update: {
+          accept_flow_id?: string | null
           accept_stage_id?: string | null
           accept_token?: string | null
           accepted_at?: string | null
