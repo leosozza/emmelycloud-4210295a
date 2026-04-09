@@ -1825,9 +1825,12 @@ export type Database = {
       message_queue: {
         Row: {
           attempts: number | null
+          claimed_at: string | null
+          claimed_by: string | null
           completed_at: string | null
           conversation_id: string
           created_at: string | null
+          error_message: string | null
           id: string
           instance_id: string | null
           interactive_response: Json | null
@@ -1837,13 +1840,17 @@ export type Database = {
           message_type: string | null
           priority: number | null
           processing_at: string | null
+          retry_count: number | null
           status: string | null
         }
         Insert: {
           attempts?: number | null
+          claimed_at?: string | null
+          claimed_by?: string | null
           completed_at?: string | null
           conversation_id: string
           created_at?: string | null
+          error_message?: string | null
           id?: string
           instance_id?: string | null
           interactive_response?: Json | null
@@ -1853,13 +1860,17 @@ export type Database = {
           message_type?: string | null
           priority?: number | null
           processing_at?: string | null
+          retry_count?: number | null
           status?: string | null
         }
         Update: {
           attempts?: number | null
+          claimed_at?: string | null
+          claimed_by?: string | null
           completed_at?: string | null
           conversation_id?: string
           created_at?: string | null
+          error_message?: string | null
           id?: string
           instance_id?: string | null
           interactive_response?: Json | null
@@ -1869,6 +1880,7 @@ export type Database = {
           message_type?: string | null
           priority?: number | null
           processing_at?: string | null
+          retry_count?: number | null
           status?: string | null
         }
         Relationships: [
@@ -2702,6 +2714,40 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      claim_queue_jobs: {
+        Args: {
+          p_cutoff?: string
+          p_limit?: number
+          p_max_retries?: number
+          p_worker_id?: string
+        }
+        Returns: {
+          attempts: number | null
+          claimed_at: string | null
+          claimed_by: string | null
+          completed_at: string | null
+          conversation_id: string
+          created_at: string | null
+          error_message: string | null
+          id: string
+          instance_id: string | null
+          interactive_response: Json | null
+          last_error: string | null
+          max_attempts: number | null
+          message_text: string
+          message_type: string | null
+          priority: number | null
+          processing_at: string | null
+          retry_count: number | null
+          status: string | null
+        }[]
+        SetofOptions: {
+          from: "*"
+          to: "message_queue"
+          isOneToOne: false
+          isSetofReturn: true
+        }
+      }
       get_dashboard_data: { Args: never; Returns: Json }
       has_role: {
         Args: {
@@ -2727,6 +2773,10 @@ export type Database = {
           id: string
           similarity: number
         }[]
+      }
+      release_stuck_jobs: {
+        Args: { p_stuck_minutes?: number }
+        Returns: number
       }
       search_chunks_fts: {
         Args: { doc_ids: string[]; max_results?: number; search_query: string }
