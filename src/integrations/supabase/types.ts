@@ -281,6 +281,69 @@ export type Database = {
         }
         Relationships: []
       }
+      ai_sessions: {
+        Row: {
+          agent_id: string | null
+          avg_latency_ms: number | null
+          completed_at: string | null
+          conversation_id: string | null
+          created_at: string
+          last_activity_at: string
+          session_id: string
+          session_metadata: Json | null
+          status: string
+          total_cost_usd: number
+          total_tokens: number
+          turn_count: number
+          updated_at: string
+        }
+        Insert: {
+          agent_id?: string | null
+          avg_latency_ms?: number | null
+          completed_at?: string | null
+          conversation_id?: string | null
+          created_at?: string
+          last_activity_at?: string
+          session_id?: string
+          session_metadata?: Json | null
+          status?: string
+          total_cost_usd?: number
+          total_tokens?: number
+          turn_count?: number
+          updated_at?: string
+        }
+        Update: {
+          agent_id?: string | null
+          avg_latency_ms?: number | null
+          completed_at?: string | null
+          conversation_id?: string | null
+          created_at?: string
+          last_activity_at?: string
+          session_id?: string
+          session_metadata?: Json | null
+          status?: string
+          total_cost_usd?: number
+          total_tokens?: number
+          turn_count?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ai_sessions_agent_id_fkey"
+            columns: ["agent_id"]
+            isOneToOne: false
+            referencedRelation: "ai_agents"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ai_sessions_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: false
+            referencedRelation: "conversations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       ai_usage_logs: {
         Row: {
           agent_id: string | null
@@ -2787,6 +2850,10 @@ export type Database = {
           id: string
           rank: number
         }[]
+      }
+      timeout_inactive_sessions: {
+        Args: { p_timeout_minutes?: number }
+        Returns: number
       }
       upsert_user_memory: {
         Args: {
