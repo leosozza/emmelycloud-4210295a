@@ -2688,6 +2688,17 @@ export type Database = {
           rank: number
         }[]
       }
+      upsert_user_memory: {
+        Args: {
+          p_channel: string
+          p_confidence?: number
+          p_contact_id: string
+          p_key: string
+          p_source?: string
+          p_value: string
+        }
+        Returns: string
+      }
     }
     Enums: {
       app_role: "admin" | "advogado" | "comercial" | "financeiro"
