@@ -236,6 +236,33 @@ export type Database = {
           },
         ]
       }
+      ai_audit_logs: {
+        Row: {
+          created_at: string
+          errors_count: number
+          id: string
+          overall_status: string
+          report: Json
+          warnings_count: number
+        }
+        Insert: {
+          created_at?: string
+          errors_count?: number
+          id?: string
+          overall_status: string
+          report: Json
+          warnings_count?: number
+        }
+        Update: {
+          created_at?: string
+          errors_count?: number
+          id?: string
+          overall_status?: string
+          report?: Json
+          warnings_count?: number
+        }
+        Relationships: []
+      }
       ai_providers: {
         Row: {
           auth_header: string | null
