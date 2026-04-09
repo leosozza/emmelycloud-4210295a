@@ -1336,7 +1336,7 @@ Extraia o que estiver presente na mensagem. Se não houver dados suficientes, ge
     return {
       intention_completed: isCompleted,
       intention_collected: newCollected,
-      next_question: isCompleted ? undefined : (args.next_question || null),
+      next_question: isCompleted ? undefined : (args.next_question || undefined),
     };
   } catch (e) {
     console.error("[AI-PROCESS] Intention mode error:", e);
