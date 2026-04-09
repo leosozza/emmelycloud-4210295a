@@ -2074,27 +2074,38 @@ Deno.serve(async (req) => {
       const rawGateway = deal.UF_CRM_EMMELY_GATEWAY || "";
       const rawMethod = deal.UF_CRM_EMMELY_PAYMENT_METHOD || "";
 
-      if (rawGateway || rawMethod) {
-        try {
-          const fieldsResult = await callBitrix(endpoint, accessToken, "crm.deal.fields", {});
-          const fields = fieldsResult.result || {};
-          const resolveListValue = (fieldDef: any, rawVal: string): string => {
-            if (!fieldDef || !rawVal) return "";
-            const items = fieldDef.items || fieldDef.ITEMS || [];
-            if (Array.isArray(items)) {
-              const match = items.find((item: any) => String(item.ID) === String(rawVal) || String(item.VALUE) === String(rawVal));
-              if (match) return match.VALUE || match.value || rawVal;
-            }
-            if (/^\d+$/.test(rawVal)) return "";
-            return rawVal;
-          };
-          dealGateway = resolveListValue(fields.UF_CRM_EMMELY_GATEWAY, rawGateway);
-          dealPaymentMethod = resolveListValue(fields.UF_CRM_EMMELY_PAYMENT_METHOD, rawMethod);
-        } catch (e) {
-          console.error("[PAYMENT-TAB] Error resolving list fields:", e);
-          dealGateway = /^\d+$/.test(rawGateway) ? "" : rawGateway;
-          dealPaymentMethod = /^\d+$/.test(rawMethod) ? "" : rawMethod;
-        }
+      rawGatewayValue = rawGateway;
+      rawMethodValue = rawMethod;
+
+      // Always fetch fields to get enum options for editable badges
+      try {
+        const fieldsResult = await callBitrix(endpoint, accessToken, "crm.deal.fields", {});
+        const fields = fieldsResult.result || {};
+        const extractItems = (fieldDef: any): { id: string; label: string }[] => {
+          if (!fieldDef) return [];
+          const items = fieldDef.items || fieldDef.ITEMS || [];
+          if (!Array.isArray(items)) return [];
+          return items.map((item: any) => ({ id: String(item.ID), label: item.VALUE || item.value || String(item.ID) }));
+        };
+        gatewayEnumOptions = extractItems(fields.UF_CRM_EMMELY_GATEWAY);
+        methodEnumOptions = extractItems(fields.UF_CRM_EMMELY_PAYMENT_METHOD);
+
+        const resolveListValue = (fieldDef: any, rawVal: string): string => {
+          if (!fieldDef || !rawVal) return "";
+          const items = fieldDef.items || fieldDef.ITEMS || [];
+          if (Array.isArray(items)) {
+            const match = items.find((item: any) => String(item.ID) === String(rawVal) || String(item.VALUE) === String(rawVal));
+            if (match) return match.VALUE || match.value || rawVal;
+          }
+          if (/^\d+$/.test(rawVal)) return "";
+          return rawVal;
+        };
+        dealGateway = resolveListValue(fields.UF_CRM_EMMELY_GATEWAY, rawGateway);
+        dealPaymentMethod = resolveListValue(fields.UF_CRM_EMMELY_PAYMENT_METHOD, rawMethod);
+      } catch (e) {
+        console.error("[PAYMENT-TAB] Error resolving list fields:", e);
+        dealGateway = /^\d+$/.test(rawGateway) ? "" : rawGateway;
+        dealPaymentMethod = /^\d+$/.test(rawMethod) ? "" : rawMethod;
       }
       if (contactId) {
         const contactResult = await callBitrix(endpoint, accessToken, "crm.contact.get", { ID: contactId });
