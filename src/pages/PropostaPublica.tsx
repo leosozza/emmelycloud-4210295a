@@ -135,6 +135,41 @@ export default function PropostaPublica() {
             </>
           )}
 
+          {/* Products table */}
+          {products && (
+            <>
+              <Separator />
+              <div className="space-y-3">
+                <h3 className="font-semibold text-sm uppercase tracking-wide text-muted-foreground">Produtos / Serviços</h3>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b">
+                        <th className="text-left py-2 font-medium text-muted-foreground">Produto</th>
+                        <th className="text-center py-2 font-medium text-muted-foreground">Qtd</th>
+                        <th className="text-right py-2 font-medium text-muted-foreground">Preço</th>
+                        <th className="text-right py-2 font-medium text-muted-foreground">Total</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {products.map((prod: any, idx: number) => (
+                        <tr key={idx} className="border-b last:border-b-0">
+                          <td className="py-2">
+                            <div className="font-medium">{prod.name}</div>
+                            {prod.description && <div className="text-xs text-muted-foreground mt-0.5">{prod.description}</div>}
+                          </td>
+                          <td className="py-2 text-center">{prod.quantity || 1}</td>
+                          <td className="py-2 text-right">{curr} {Number(prod.price || 0).toLocaleString("pt-PT", { minimumFractionDigits: 2 })}</td>
+                          <td className="py-2 text-right font-medium">{curr} {Number(prod.total || 0).toLocaleString("pt-PT", { minimumFractionDigits: 2 })}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </>
+          )
+
           {/* Pricing */}
           <Separator />
           <div className="space-y-4">
