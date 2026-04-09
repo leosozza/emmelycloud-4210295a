@@ -1,64 +1,54 @@
 
 
-# Corrigir Build Errors + Importer PowerBot (Edges & Handles)
+# Aplicar Melhorias do Relatório Estratégico — Todas as Fases
 
 ## Resumo
 
-Há **20 erros de build** nas edge functions + **~15 erros** no FlowTestSimulator. Além disso, o importer PowerBot precisa de correcções para que os edges conectem visualmente.
+As **migrações SQL** e **edge functions** já existem. O trabalho principal é ligar o frontend às novas capacidades: `base_prompt`, `monthly_budget_usd`, sessões IA, audit logs, conversation summaries, e melhorar a observabilidade.
 
-## Alterações
+## Fase 1 — Fundação (Frontend para infra existente)
 
-### 1. `src/lib/powerbotImporter.ts` — Corrigir importer
+### 1.1 Agentes: campos `base_prompt` e `monthly_budget_usd`
+- **`src/pages/Agentes.tsx`** — Adicionar `base_prompt` e `monthly_budget_usd` ao `AIAgent` interface e `defaultAgent`
+- **`src/components/agentes/AgentFormDialog.tsx`** — Novo campo "Prompt Base (Persona)" (Textarea) separado do system_prompt + campo "Budget Mensal (USD)" (Input number). O `base_prompt` é o prompt gerado pelo persona trainer, enquanto o `system_prompt` são instruções manuais
 
-**a) Multi-branch condition → switch**: `conditionalNode` com >2 condições → `nodeType: "switch"` com `switchCases` usando os IDs originais como `handleId`.
+### 1.2 Observabilidade: sessões + audit logs + summaries
+- **`src/pages/ObservabilidadeIA.tsx`** — Expandir com 3 novas tabs:
+  - **Sessões**: tabela de `ai_sessions` com status, turns, latência, custo
+  - **Audit Logs**: tabela de `ai_audit_logs` com acções e detalhes
+  - **Summaries**: tabela de `conversation_summaries` com resumos gerados
+- **`src/hooks/useAiObservability.ts`** — Adicionar queries para `ai_sessions`, `ai_audit_logs`, `conversation_summaries`
 
-**b) Limpar sourceHandle**: Para nós não-branching, forçar `sourceHandle: null` para usar o handle default do CustomFlowNode.
+### 1.3 Observabilidade: alertas de budget
+- Na tab "Por Agente" da observabilidade, mostrar `monthly_budget_usd` vs custo actual com barra de progresso e badge de alerta (>80% amarelo, >100% vermelho)
 
-**c) Limpar targetHandle**: `"null"` (string) → `null`.
+## Fase 2 — Inteligência
 
-### 2. `src/components/flows/FlowTestSimulator.tsx` — Corrigir tipos
+### 2.1 Auto-payment em propostas
+- **`src/pages/PropostaPublica.tsx`** — Após aceite, se `auto_payment_config` está configurado na proposta, redirigir automaticamente para pagamento
+- **`src/components/propostas/PropostaForm.tsx`** — Adicionar secção "Pagamento Automático" com toggle e configuração (gateway, parcelamento)
 
-Substituir tipos inexistentes no switch:
-- `"trigger"` → processar como nó inicial (já existente como fallback)
-- `"whatsapp"` → agrupar com `"message"`
-- `"message_poll"` → remover (não existe no FlowNodeType)
-- `"message_media"` → usar `"media"`
-- `"wait_response"` → usar `"wait_reply"`
-- `"end_flow"` → usar `"end"`
-- `"bitrix_update_field"` / `"bitrix_move_stage"` etc → agrupar em default bitrix
-- `b.text` → `b.label` (FlowButtonItem não tem `text`)
-- `data.pollOptions` / `data.listSections` / `data.bitrixGetData` → remover ou adaptar
-- Cast `data.nodeType` como `string` no switch para evitar erros de comparação
+### 2.2 Persona Trainer melhorado
+- O `AgentTrainingChat.tsx` já usa `persona_training_history` — verificar se funciona com a nova coluna `base_prompt` e actualizar para gravar em `base_prompt` em vez de `system_prompt`
 
-### 3. `src/pages/Flows.tsx` — Sanitizar flows carregados
+### 2.3 User Memory omnichannel
+- Já funciona via RPC `upsert_user_memory` — sem alteração frontend necessária (o backend já usa nos webhooks)
 
-Ao carregar flow da BD, aplicar sanitização:
-- `nodeType: "transfer"` → `"transfer_to_human"`
-- `sourceHandle` de nós não-branching → `null`
+## Fase 3 — Escala
 
-### 4. Edge Functions — Type guards (20 erros)
+### 3.1 Dashboard de custos por agente (RPC existente)
+- **`src/pages/ObservabilidadeIA.tsx`** — Na tab "Por Agente", chamar `get_monthly_cost_by_agent` para cada agente e mostrar custo vs budget com gráfico
 
-| Ficheiro | Erro | Fix |
-|---|---|---|
-| `manage-credentials` (L121, L158) | `e` is unknown | `(e instanceof Error ? e.message : "unknown")` |
-| `message-send` (L92, L105) | Redeclare `resolvedInteractiveData` | Rename inner var to `finalInteractiveData` |
-| `message-send` (L400) | `.catch()` on Postgrest | `.then(() => {})` |
-| `ollama-url-webhook` (L163) | `.catch()` on Postgrest | `.then(() => {})` |
-| `parse-document` (L113, L353) | `error`/`e` unknown | Type guards |
-| `parse-document` (L258) | `"raw"` not CompressionFormat | Cast `"raw" as any` |
-| `payment-create` (L471, L680) | `err` unknown | Type guards |
-| `payment-reminder` (L381, L394) | `err` unknown | Type guards |
-| `payment-status` (L100) | `err` unknown | Type guard |
-| `payment-webhook-stripe` (L364) | `err` unknown | Type guard |
-| `proposal-pdf` (L297) | `e` unknown | Type guard |
-| `queue-worker` (L48) | `.select("id", {count,head})` 2 args | `.select("id", { count: "exact" }).limit(0)` — or just remove 2nd arg |
-| `signature-certificate` (L64) | `e` unknown | Type guard |
-| `bitrix24-fetch-entities` (L320) | `unknown[]` not `string[]` | Already has `String()` map — cast `as string[]` |
+### 3.2 Health check (Parity Audit)
+- Já existe no PlaygroundIA — mover/duplicar para a observabilidade como tab "Saúde do Sistema"
 
 ## Ficheiros a editar
 
-1. `src/lib/powerbotImporter.ts`
-2. `src/components/flows/FlowTestSimulator.tsx`
-3. `src/pages/Flows.tsx`
-4. 12 edge functions (type guard fixes)
+1. **`src/pages/Agentes.tsx`** — interface + defaults (base_prompt, monthly_budget_usd)
+2. **`src/components/agentes/AgentFormDialog.tsx`** — 2 novos campos no formulário
+3. **`src/pages/ObservabilidadeIA.tsx`** — tabs para sessões, audit logs, summaries, budget alerts, health check
+4. **`src/hooks/useAiObservability.ts`** — queries adicionais
+5. **`src/components/propostas/PropostaForm.tsx`** — secção auto-payment config
+6. **`src/pages/PropostaPublica.tsx`** — lógica de auto-redirect após aceite
+7. **`src/components/agentes/AgentTrainingChat.tsx`** — usar base_prompt
 
