@@ -285,7 +285,7 @@ Deno.serve(async (req) => {
       const customerEmail = body.CUSTOMER_EMAIL || body.customer_email || "";
       if (customerEmail) params.append("customer_email", customerEmail);
 
-      const successUrl = returnUrl || "https://emmelycloud.lovable.app";
+      const successUrl = returnUrl || Deno.env.get("FRONTEND_URL") || "https://emmelycloud.pages.dev";
       params.append("success_url", `${successUrl}?payment=success&session_id={CHECKOUT_SESSION_ID}`);
       params.append("cancel_url", `${successUrl}?payment=cancelled`);
 

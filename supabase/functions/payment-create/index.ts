@@ -60,7 +60,7 @@ async function createStripePayment(apiKey: string, amount: number, currency: str
 
   if (customerEmail) params.append("customer_email", customerEmail);
 
-  const baseUrl = returnUrl || "https://emmelycloud.lovable.app";
+  const baseUrl = returnUrl || Deno.env.get("FRONTEND_URL") || "https://emmelycloud.pages.dev";
   params.append("success_url", `${baseUrl}?payment=success&session_id={CHECKOUT_SESSION_ID}`);
   params.append("cancel_url", `${baseUrl}?payment=cancelled`);
 
