@@ -42,6 +42,7 @@ export interface AIAgent {
   name: string;
   description: string | null;
   system_prompt: string;
+  base_prompt: string | null;
   ai_provider: string;
   ai_model: string;
   ai_base_url: string | null;
@@ -63,6 +64,7 @@ export interface AIAgent {
   personality_style: string | null;
   communication_tone: string | null;
   strategic_objective: string | null;
+  monthly_budget_usd: number | null;
   created_at: string;
 }
 
@@ -74,6 +76,7 @@ export const defaultAgent: Partial<AIAgent> = {
   name: "",
   description: "",
   system_prompt: "Você é um assistente jurídico profissional. Responda de forma clara, precisa e empática.",
+  base_prompt: null,
   ai_provider: "lovable",
   ai_model: "google/gemini-3-flash-preview",
   temperature: 0.7,
@@ -92,6 +95,7 @@ export const defaultAgent: Partial<AIAgent> = {
   personality_style: "professional",
   communication_tone: "empathetic",
   strategic_objective: null,
+  monthly_budget_usd: null,
 };
 
 export default function AgentesPage() {

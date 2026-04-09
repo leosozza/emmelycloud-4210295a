@@ -79,6 +79,14 @@ export default function PropostaPublica() {
 
       setAcceptResult({ sign_url: signUrl || undefined, already_accepted: data.already_accepted });
       setAccepted(true);
+
+      // Auto-redirect to payment if configured
+      const apc = proposal.auto_payment_config;
+      if (apc && apc.enabled && data.payment_url) {
+        setTimeout(() => {
+          window.location.href = data.payment_url;
+        }, 2000);
+      }
     } catch (e: any) {
       setError(e.message);
     } finally {
