@@ -1459,6 +1459,7 @@ Deno.serve(async (req) => {
             send_method: { Name: "Método de Envio", Type: "select", Options: { none: "Não enviar", link: "Enviar Link", pdf: "Enviar PDF", both: "Link + PDF" }, Default: "none", Description: "none = apenas gera a proposta | link = envia link de aceite via WhatsApp | pdf = envia PDF via WhatsApp | both = envia ambos" },
             send_to_phone: { Name: "Telefone para Envio", Type: "string", Description: "Número WhatsApp com código do país (ex: 351912345678). Se vazio, usa o telefone do contacto vinculado ao deal." },
             accept_stage_id: { Name: "Etapa ao Aceitar", Type: "string", Description: "ID da etapa do funil para onde o deal move quando o cliente aceita a proposta (ex: C5:WON, C5:PREPARATION). Se vazio, não altera a etapa no Bitrix24." },
+            accept_flow_id: { Name: "Flow ao Aceitar", Type: "select", Options: flowOptions, Description: "O flow que será iniciado automaticamente quando o cliente aceitar a proposta." },
           },
           RETURN_PROPERTIES: {
             proposal_url: { Name: "URL da Proposta", Type: "string" },
