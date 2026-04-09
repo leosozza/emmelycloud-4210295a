@@ -137,6 +137,7 @@ export type Database = {
           ai_model: string
           ai_provider: string
           avatar_url: string | null
+          base_prompt: string | null
           communication_tone: string | null
           created_at: string
           default_flow_id: string | null
@@ -146,6 +147,7 @@ export type Database = {
           id: string
           is_active: boolean
           is_default: boolean
+          monthly_budget_usd: number | null
           name: string
           personality_style: string | null
           routing_rules: Json | null
@@ -167,6 +169,7 @@ export type Database = {
           ai_model?: string
           ai_provider?: string
           avatar_url?: string | null
+          base_prompt?: string | null
           communication_tone?: string | null
           created_at?: string
           default_flow_id?: string | null
@@ -176,6 +179,7 @@ export type Database = {
           id?: string
           is_active?: boolean
           is_default?: boolean
+          monthly_budget_usd?: number | null
           name: string
           personality_style?: string | null
           routing_rules?: Json | null
@@ -197,6 +201,7 @@ export type Database = {
           ai_model?: string
           ai_provider?: string
           avatar_url?: string | null
+          base_prompt?: string | null
           communication_tone?: string | null
           created_at?: string
           default_flow_id?: string | null
@@ -206,6 +211,7 @@ export type Database = {
           id?: string
           is_active?: boolean
           is_default?: boolean
+          monthly_budget_usd?: number | null
           name?: string
           personality_style?: string | null
           routing_rules?: Json | null
@@ -229,6 +235,33 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      ai_audit_logs: {
+        Row: {
+          created_at: string
+          errors_count: number
+          id: string
+          overall_status: string
+          report: Json
+          warnings_count: number
+        }
+        Insert: {
+          created_at?: string
+          errors_count?: number
+          id?: string
+          overall_status: string
+          report: Json
+          warnings_count?: number
+        }
+        Update: {
+          created_at?: string
+          errors_count?: number
+          id?: string
+          overall_status?: string
+          report?: Json
+          warnings_count?: number
+        }
+        Relationships: []
       }
       ai_providers: {
         Row: {
@@ -278,6 +311,69 @@ export type Database = {
         }
         Relationships: []
       }
+      ai_sessions: {
+        Row: {
+          agent_id: string | null
+          avg_latency_ms: number | null
+          completed_at: string | null
+          conversation_id: string | null
+          created_at: string
+          last_activity_at: string
+          session_id: string
+          session_metadata: Json | null
+          status: string
+          total_cost_usd: number
+          total_tokens: number
+          turn_count: number
+          updated_at: string
+        }
+        Insert: {
+          agent_id?: string | null
+          avg_latency_ms?: number | null
+          completed_at?: string | null
+          conversation_id?: string | null
+          created_at?: string
+          last_activity_at?: string
+          session_id?: string
+          session_metadata?: Json | null
+          status?: string
+          total_cost_usd?: number
+          total_tokens?: number
+          turn_count?: number
+          updated_at?: string
+        }
+        Update: {
+          agent_id?: string | null
+          avg_latency_ms?: number | null
+          completed_at?: string | null
+          conversation_id?: string | null
+          created_at?: string
+          last_activity_at?: string
+          session_id?: string
+          session_metadata?: Json | null
+          status?: string
+          total_cost_usd?: number
+          total_tokens?: number
+          turn_count?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ai_sessions_agent_id_fkey"
+            columns: ["agent_id"]
+            isOneToOne: false
+            referencedRelation: "ai_agents"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ai_sessions_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: false
+            referencedRelation: "conversations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       ai_usage_logs: {
         Row: {
           agent_id: string | null
@@ -291,6 +387,7 @@ export type Database = {
           model: string | null
           prompt_tokens: number | null
           provider: string | null
+          session_id: string | null
           total_tokens: number | null
           was_fallback: boolean | null
         }
@@ -306,6 +403,7 @@ export type Database = {
           model?: string | null
           prompt_tokens?: number | null
           provider?: string | null
+          session_id?: string | null
           total_tokens?: number | null
           was_fallback?: boolean | null
         }
@@ -321,6 +419,7 @@ export type Database = {
           model?: string | null
           prompt_tokens?: number | null
           provider?: string | null
+          session_id?: string | null
           total_tokens?: number | null
           was_fallback?: boolean | null
         }
@@ -338,6 +437,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "conversations"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ai_usage_logs_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "ai_sessions"
+            referencedColumns: ["session_id"]
           },
         ]
       }
@@ -1235,6 +1341,47 @@ export type Database = {
           },
         ]
       }
+      conversation_summaries: {
+        Row: {
+          conversation_id: string
+          created_at: string
+          id: string
+          message_count_at_compaction: number
+          messages_summarized: number
+          newest_summarized_id: string | null
+          oldest_message_id: string | null
+          summary_text: string
+        }
+        Insert: {
+          conversation_id: string
+          created_at?: string
+          id?: string
+          message_count_at_compaction?: number
+          messages_summarized?: number
+          newest_summarized_id?: string | null
+          oldest_message_id?: string | null
+          summary_text: string
+        }
+        Update: {
+          conversation_id?: string
+          created_at?: string
+          id?: string
+          message_count_at_compaction?: number
+          messages_summarized?: number
+          newest_summarized_id?: string | null
+          oldest_message_id?: string | null
+          summary_text?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "conversation_summaries_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: false
+            referencedRelation: "conversations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       conversations: {
         Row: {
           assigned_to: string | null
@@ -1822,9 +1969,12 @@ export type Database = {
       message_queue: {
         Row: {
           attempts: number | null
+          claimed_at: string | null
+          claimed_by: string | null
           completed_at: string | null
           conversation_id: string
           created_at: string | null
+          error_message: string | null
           id: string
           instance_id: string | null
           interactive_response: Json | null
@@ -1834,13 +1984,17 @@ export type Database = {
           message_type: string | null
           priority: number | null
           processing_at: string | null
+          retry_count: number | null
           status: string | null
         }
         Insert: {
           attempts?: number | null
+          claimed_at?: string | null
+          claimed_by?: string | null
           completed_at?: string | null
           conversation_id: string
           created_at?: string | null
+          error_message?: string | null
           id?: string
           instance_id?: string | null
           interactive_response?: Json | null
@@ -1850,13 +2004,17 @@ export type Database = {
           message_type?: string | null
           priority?: number | null
           processing_at?: string | null
+          retry_count?: number | null
           status?: string | null
         }
         Update: {
           attempts?: number | null
+          claimed_at?: string | null
+          claimed_by?: string | null
           completed_at?: string | null
           conversation_id?: string
           created_at?: string | null
+          error_message?: string | null
           id?: string
           instance_id?: string | null
           interactive_response?: Json | null
@@ -1866,6 +2024,7 @@ export type Database = {
           message_type?: string | null
           priority?: number | null
           processing_at?: string | null
+          retry_count?: number | null
           status?: string | null
         }
         Relationships: [
@@ -2135,6 +2294,53 @@ export type Database = {
           },
         ]
       }
+      persona_training_history: {
+        Row: {
+          agent_id: string
+          applied_at: string | null
+          category: string | null
+          created_at: string
+          created_by: string | null
+          id: string
+          instruction: string
+          is_active: boolean | null
+          priority: number | null
+          rule_text: string | null
+        }
+        Insert: {
+          agent_id: string
+          applied_at?: string | null
+          category?: string | null
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          instruction: string
+          is_active?: boolean | null
+          priority?: number | null
+          rule_text?: string | null
+        }
+        Update: {
+          agent_id?: string
+          applied_at?: string | null
+          category?: string | null
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          instruction?: string
+          is_active?: boolean | null
+          priority?: number | null
+          rule_text?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "persona_training_history_agent_id_fkey"
+            columns: ["agent_id"]
+            isOneToOne: false
+            referencedRelation: "ai_agents"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       profiles: {
         Row: {
           avatar_url: string | null
@@ -2253,6 +2459,7 @@ export type Database = {
           accepted_at: string | null
           accepted_ip: string | null
           accepted_user_agent: string | null
+          auto_payment_config: Json | null
           bitrix24_deal_id: string | null
           cancel_reason: string | null
           cancelled_at: string | null
@@ -2298,6 +2505,7 @@ export type Database = {
           accepted_at?: string | null
           accepted_ip?: string | null
           accepted_user_agent?: string | null
+          auto_payment_config?: Json | null
           bitrix24_deal_id?: string | null
           cancel_reason?: string | null
           cancelled_at?: string | null
@@ -2343,6 +2551,7 @@ export type Database = {
           accepted_at?: string | null
           accepted_ip?: string | null
           accepted_user_agent?: string | null
+          auto_payment_config?: Json | null
           bitrix24_deal_id?: string | null
           cancel_reason?: string | null
           cancelled_at?: string | null
@@ -2649,7 +2858,45 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      claim_queue_jobs: {
+        Args: {
+          p_cutoff?: string
+          p_limit?: number
+          p_max_retries?: number
+          p_worker_id?: string
+        }
+        Returns: {
+          attempts: number | null
+          claimed_at: string | null
+          claimed_by: string | null
+          completed_at: string | null
+          conversation_id: string
+          created_at: string | null
+          error_message: string | null
+          id: string
+          instance_id: string | null
+          interactive_response: Json | null
+          last_error: string | null
+          max_attempts: number | null
+          message_text: string
+          message_type: string | null
+          priority: number | null
+          processing_at: string | null
+          retry_count: number | null
+          status: string | null
+        }[]
+        SetofOptions: {
+          from: "*"
+          to: "message_queue"
+          isOneToOne: false
+          isSetofReturn: true
+        }
+      }
       get_dashboard_data: { Args: never; Returns: Json }
+      get_monthly_cost_by_agent: {
+        Args: { p_agent_id: string; p_month?: string }
+        Returns: Json
+      }
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"]
@@ -2675,6 +2922,10 @@ export type Database = {
           similarity: number
         }[]
       }
+      release_stuck_jobs: {
+        Args: { p_stuck_minutes?: number }
+        Returns: number
+      }
       search_chunks_fts: {
         Args: { doc_ids: string[]; max_results?: number; search_query: string }
         Returns: {
@@ -2684,6 +2935,21 @@ export type Database = {
           id: string
           rank: number
         }[]
+      }
+      timeout_inactive_sessions: {
+        Args: { p_timeout_minutes?: number }
+        Returns: number
+      }
+      upsert_user_memory: {
+        Args: {
+          p_channel: string
+          p_confidence?: number
+          p_contact_id: string
+          p_key: string
+          p_source?: string
+          p_value: string
+        }
+        Returns: string
       }
     }
     Enums: {
