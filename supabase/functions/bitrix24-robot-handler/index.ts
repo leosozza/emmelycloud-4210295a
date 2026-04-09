@@ -917,6 +917,10 @@ async function handleGenerateContract(
   const durationMonths = parseInt(properties.duration_months || properties.DURATION_MONTHS || "12") || 12;
   const sendMethod = (properties.send_method || properties.SEND_METHOD || "none").toLowerCase();
   const sendToPhone = properties.send_to_phone || properties.SEND_TO_PHONE || "";
+  // Auto-payment after signing
+  const sendPaymentAfterSign = (properties.send_payment_after_sign || properties.SEND_PAYMENT_AFTER_SIGN || "N").toUpperCase() === "Y";
+  const autoPaymentMethod = properties.payment_method || properties.PAYMENT_METHOD || "card";
+  const autoPaymentInstallments = parseInt(properties.payment_installments || properties.PAYMENT_INSTALLMENTS || "1") || 1;
 
   try {
     const supabase = createClient(supabaseUrl, serviceKey);
@@ -975,6 +979,10 @@ async function handleGenerateContract(
           }
         }
 
+        const autoPaymentConfig = sendPaymentAfterSign
+          ? { enabled: true, payment_method: autoPaymentMethod, installments: autoPaymentInstallments, deal_id: dealId }
+          : null;
+
         const { error: upErr } = await supabase
           .from("proposals")
           .update({
@@ -983,6 +991,7 @@ async function handleGenerateContract(
             starts_at: startsAt,
             expires_at: expiresAt,
             status: "aceite",
+            ...(autoPaymentConfig ? { auto_payment_config: autoPaymentConfig } : {}),
           })
           .eq("id", proposal.id);
 
@@ -1074,6 +1083,7 @@ async function handleGenerateContract(
           sign_token: signToken,
           starts_at: startsAt,
           expires_at: expiresAt,
+          ...(sendPaymentAfterSign ? { auto_payment_config: { enabled: true, payment_method: autoPaymentMethod, installments: autoPaymentInstallments, deal_id: dealId } } : {}),
         })
         .select("*")
         .single();

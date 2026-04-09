@@ -40,7 +40,23 @@ async function ensureValidToken(supabase: any, integration: any): Promise<string
   return data.access_token;
 }
 
-async function notifyBitrix24DealPayment(supabase: any, txMeta: any, paidAmount: number, currency: string) {
+/**
+ * Notifica o Bitrix24 quando um pagamento é confirmado.
+ *
+ * Lógica corrigida:
+ * - NÃO subtrai o valor do OPPORTUNITY (isso corrompe o dado do negócio)
+ * - Verifica se há parcelas pendentes para o mesmo deal
+ * - Se todas as parcelas foram pagas → move o deal para WON (STAGE_ID = "WON")
+ * - Se ainda há parcelas → apenas registra o pagamento na timeline
+ * - Envia notificação WhatsApp ao cliente com recibo
+ */
+async function notifyBitrix24DealPayment(
+  supabase: any,
+  txMeta: any,
+  paidAmount: number,
+  currency: string,
+  proposalId?: string | null,
+) {
   const dealId = txMeta?.bitrix_deal_id;
   if (!dealId) return;
 
@@ -59,68 +75,98 @@ async function notifyBitrix24DealPayment(supabase: any, txMeta: any, paidAmount:
       ? integration.client_endpoint
       : integration.client_endpoint + "/";
 
-    // 1. Get current deal data
-    const dealRes = await fetch(`${endpoint}crm.deal.get`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ID: dealId, auth: accessToken }),
-    });
-    const dealData = await dealRes.json();
-    const deal = dealData.result || {};
-    const currentAmount = parseFloat(deal.OPPORTUNITY || "0");
+    const curr = currency || "EUR";
+    const formattedAmount = new Intl.NumberFormat("pt-PT", { style: "currency", currency: curr }).format(paidAmount);
 
-    // 2. Update OPPORTUNITY: subtract paid amount (floor at 0)
-    const newAmount = Math.max(0, currentAmount - paidAmount);
-    const updateRes = await fetch(`${endpoint}crm.deal.update`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        ID: dealId,
-        fields: { OPPORTUNITY: newAmount },
-        auth: accessToken,
-      }),
-    });
-    const updateData = await updateRes.json();
-    console.log("[WEBHOOK] Bitrix24 deal.update result:", JSON.stringify(updateData).substring(0, 200));
+    // 1. Check remaining pending installments for this deal
+    const { data: pendingTxs } = await supabase
+      .from("payment_transactions")
+      .select("id, status, amount")
+      .eq("metadata->>bitrix_deal_id", String(dealId))
+      .in("status", ["pending", "overdue"]);
 
-    // 3. Add a timeline activity
-    const formattedAmount = new Intl.NumberFormat("pt-PT", { style: "currency", currency: currency || "EUR" }).format(paidAmount);
+    const pendingCount = pendingTxs?.length ?? 0;
+    const pendingTotal = (pendingTxs || []).reduce(
+      (sum: number, t: any) => sum + Number(t.amount || 0), 0
+    );
+    const isFullyPaid = pendingCount === 0;
+
+    // 2. Update deal in Bitrix24
+    const dealUpdateFields: Record<string, any> = {};
+    if (isFullyPaid) {
+      // All installments paid → close deal as WON
+      dealUpdateFields.STAGE_ID = "WON";
+      dealUpdateFields.CLOSED = "Y";
+      console.log(`[ASAAS-WEBHOOK] Deal ${dealId} fully paid → marking as WON`);
+    } else {
+      // Partial payment — do NOT touch OPPORTUNITY; just log
+      console.log(`[ASAAS-WEBHOOK] Deal ${dealId} partial payment — ${pendingCount} installment(s) remaining`);
+    }
+
+    if (Object.keys(dealUpdateFields).length > 0) {
+      const updateRes = await fetch(`${endpoint}crm.deal.update`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ID: dealId, fields: dealUpdateFields, auth: accessToken }),
+      });
+      const updateData = await updateRes.json();
+      console.log("[ASAAS-WEBHOOK] crm.deal.update:", JSON.stringify(updateData).substring(0, 200));
+    }
+
+    // 3. Timeline comment
+    const commentText = isFullyPaid
+      ? `✅ *Pagamento integral confirmado!*\n\nValor pago: ${formattedAmount}\n\n🎉 Todas as parcelas foram quitadas. Negócio marcado como GANHO.`
+      : `✅ Pagamento confirmado: ${formattedAmount}\n\nParcelas restantes: ${pendingCount}\nSaldo em aberto: ${new Intl.NumberFormat("pt-PT", { style: "currency", currency: curr }).format(pendingTotal)}`;
+
     await fetch(`${endpoint}crm.timeline.comment.add`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        fields: {
-          ENTITY_ID: dealId,
-          ENTITY_TYPE: "deal",
-          COMMENT: `✅ Pagamento confirmado: ${formattedAmount}\nSaldo em aberto atualizado para ${new Intl.NumberFormat("pt-PT", { style: "currency", currency: currency || "EUR" }).format(newAmount)}`,
-        },
+        fields: { ENTITY_ID: dealId, ENTITY_TYPE: "deal", COMMENT: commentText },
         auth: accessToken,
       }),
     });
 
-    // 4. Create configurable activity (badge)
+    // 4. Configurable activity badge (correct API: crm.activity.configurable.add)
     try {
       await fetch(`${endpoint}crm.activity.configurable.add`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          ownerTypeId: 2, // Deal
-          ownerId: dealId,
-          typeId: "emmely_payment_confirmed",
-          title: `Pagamento confirmado: ${formattedAmount}`,
-          description: `Saldo em aberto: ${new Intl.NumberFormat("pt-PT", { style: "currency", currency: currency || "EUR" }).format(newAmount)}`,
-          completed: true,
+          ownerTypeId: 2,
+          ownerId: parseInt(String(dealId)),
+          fields: {
+            completed: true,
+            isIncomingChannel: "N",
+            responsibleId: 1,
+            badgeCode: isFullyPaid ? "emmely_payment_confirmed" : "emmely_deal_payment_updated",
+          },
+          layout: {
+            icon: { code: isFullyPaid ? "done" : "info" },
+            header: { title: isFullyPaid ? `Pago: ${formattedAmount}` : `Parcela: ${formattedAmount}` },
+            body: {
+              logo: { code: "robot" },
+              blocks: {
+                amount: { type: "text", properties: { value: formattedAmount } },
+                remaining: {
+                  type: "text",
+                  properties: {
+                    value: isFullyPaid
+                      ? "Quitado ✅"
+                      : `${pendingCount} parcela(s) restante(s)`,
+                  },
+                },
+              },
+            },
+          },
           auth: accessToken,
         }),
       });
-    } catch { /* badge may not be registered */ }
-
-    console.log(`[WEBHOOK] Bitrix24 deal ${dealId} updated: ${currentAmount} -> ${newAmount}`);
+    } catch { /* badge may not be registered yet — non-fatal */ }
 
     // 5. Mark Smart Invoice as paid if linked
     if (txMeta?.bitrix_invoice_id) {
       try {
-        // Get available stages to find "paid" stage
         const stagesRes = await fetch(`${endpoint}crm.status.list`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -128,12 +174,11 @@ async function notifyBitrix24DealPayment(supabase: any, txMeta: any, paidAmount:
         });
         const stagesData = await stagesRes.json();
         const stages = stagesData.result || [];
-        // Find a stage that indicates "paid" - look for semantic IDs
         const paidStage = stages.find((s: any) =>
           s.STATUS_ID?.includes("WON") || s.STATUS_ID?.includes("FINAL_INVOICE") ||
           s.NAME?.toLowerCase().includes("pag") || s.NAME?.toLowerCase().includes("paid")
         );
-        const stageId = paidStage?.STATUS_ID || "DT31_6:WON"; // fallback
+        const stageId = paidStage?.STATUS_ID || "DT31_6:WON";
 
         await fetch(`${endpoint}crm.item.update`, {
           method: "POST",
@@ -146,7 +191,6 @@ async function notifyBitrix24DealPayment(supabase: any, txMeta: any, paidAmount:
           }),
         });
 
-        // Add timeline comment to the invoice
         await fetch(`${endpoint}crm.timeline.comment.add`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -160,17 +204,83 @@ async function notifyBitrix24DealPayment(supabase: any, txMeta: any, paidAmount:
           }),
         });
 
-        console.log(`[WEBHOOK] Smart Invoice ${txMeta.bitrix_invoice_id} marked as paid`);
+        console.log(`[ASAAS-WEBHOOK] Smart Invoice ${txMeta.bitrix_invoice_id} marked as paid`);
       } catch (invErr) {
-        console.error("[WEBHOOK] Smart Invoice update error:", invErr);
+        console.error("[ASAAS-WEBHOOK] Smart Invoice update error:", invErr);
       }
     }
   } catch (err) {
-    console.error("[WEBHOOK] Bitrix24 notification error:", err);
+    console.error("[ASAAS-WEBHOOK] Bitrix24 notification error:", err);
   }
 }
 
-// Also handle Bitrix24 native paysystem notification
+/**
+ * Notifica o cliente via WhatsApp com o recibo de pagamento.
+ */
+async function notifyClientPaymentConfirmed(
+  supabase: any,
+  txMeta: any,
+  paidAmount: number,
+  currency: string,
+) {
+  const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+  const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+
+  try {
+    // Resolve conversation via proposal → case → lead
+    let conversationId: string | null = null;
+    let clientName: string | null = null;
+
+    if (txMeta?.proposal_id) {
+      const { data: proposal } = await supabase
+        .from("proposals")
+        .select("case_id, client_name")
+        .eq("id", txMeta.proposal_id)
+        .single();
+
+      if (proposal) {
+        clientName = proposal.client_name;
+        if (proposal.case_id) {
+          const { data: lc } = await supabase
+            .from("cases").select("lead_id").eq("id", proposal.case_id).single();
+          if (lc?.lead_id) {
+            const { data: ld } = await supabase
+              .from("leads").select("conversation_id").eq("id", lc.lead_id).single();
+            conversationId = ld?.conversation_id || null;
+          }
+        }
+      }
+    }
+
+    if (!conversationId) return;
+
+    const curr = currency || "EUR";
+    const formattedAmount = new Intl.NumberFormat("pt-PT", { style: "currency", currency: curr }).format(paidAmount);
+    const greeting = clientName ? `, ${clientName}` : "";
+
+    const msg =
+      `✅ *Pagamento confirmado!*\n\n` +
+      `Obrigado${greeting}! Recebemos o seu pagamento de *${formattedAmount}*.\n\n` +
+      `📋 O seu processo está em andamento.\n` +
+      `Em breve entraremos em contacto com as próximas etapas.\n\n` +
+      `_Emmely Fernandes Advocacia_`;
+
+    await fetch(`${supabaseUrl}/functions/v1/message-send`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${serviceKey}`,
+      },
+      body: JSON.stringify({ conversation_id: conversationId, content: msg }),
+    });
+
+    console.log(`[ASAAS-WEBHOOK] Client notified via conversation ${conversationId}`);
+  } catch (err) {
+    console.error("[ASAAS-WEBHOOK] Client notification error:", err);
+  }
+}
+
+// Handle Bitrix24 native paysystem notification
 async function notifyBitrix24PaySystem(supabase: any, txMeta: any) {
   if (!txMeta?.bitrix24_payment_id || !txMeta?.bitrix24_paysystem_id) return;
   try {
@@ -234,7 +344,7 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Map Asaas events to status
+    // Map Asaas events to internal status
     const statusMap: Record<string, string> = {
       PAYMENT_CONFIRMED: "confirmed",
       PAYMENT_RECEIVED: "received",
@@ -253,7 +363,7 @@ Deno.serve(async (req) => {
       });
     }
 
-    // First get existing transaction to preserve metadata
+    // Fetch existing transaction to preserve metadata
     const { data: existingTx } = await supabase
       .from("payment_transactions")
       .select("id, financial_record_id, metadata, amount, currency")
@@ -261,7 +371,11 @@ Deno.serve(async (req) => {
       .eq("gateway", "asaas")
       .maybeSingle();
 
-    const mergedMeta = { ...(existingTx?.metadata as any || {}), asaas_event: event, updated_via: "webhook" };
+    const mergedMeta = {
+      ...(existingTx?.metadata as any || {}),
+      asaas_event: event,
+      updated_via: "webhook",
+    };
 
     // Update payment_transactions
     const { data: tx } = await supabase
@@ -272,7 +386,7 @@ Deno.serve(async (req) => {
       .select("id, financial_record_id, metadata, amount, currency")
       .maybeSingle();
 
-    // Also update financial_records if linked
+    // Update financial_records if linked and payment confirmed
     if (tx?.financial_record_id && (newStatus === "confirmed" || newStatus === "received")) {
       await supabase
         .from("financial_records")
@@ -280,19 +394,21 @@ Deno.serve(async (req) => {
         .eq("id", tx.financial_record_id);
     }
 
-    // Notify Bitrix24 on payment confirmation
+    // Notify Bitrix24 and client on payment confirmation
     if (tx && (newStatus === "confirmed" || newStatus === "received")) {
       const txMeta = tx.metadata as any;
       await Promise.all([
-        notifyBitrix24DealPayment(supabase, txMeta, tx.amount, tx.currency),
+        notifyBitrix24DealPayment(supabase, txMeta, tx.amount, tx.currency, txMeta?.proposal_id),
         notifyBitrix24PaySystem(supabase, txMeta),
+        notifyClientPaymentConfirmed(supabase, txMeta, tx.amount, tx.currency),
       ]);
     }
 
     return new Response(JSON.stringify({ ok: true, status: newStatus }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
-  } catch (err) {
+
+  } catch (err: any) {
     return new Response(JSON.stringify({ error: err.message }), {
       status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
     });

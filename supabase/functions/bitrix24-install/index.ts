@@ -582,6 +582,9 @@ Deno.serve(async (req) => {
             send_method: { Name: "Método de Envio", Type: "select", Options: { none: "Não enviar", link: "Enviar Link de Assinatura", pdf: "Enviar PDF", both: "Link + PDF" }, Default: "none" },
             send_to_phone: { Name: "Telefone para Envio", Type: "string" },
             accept_flow_id: { Name: "Flow ao Aceitar", Type: "select", Options: flowOptions, Description: "O flow que será iniciado automaticamente quando o cliente aceitar/assinar o contrato." },
+            send_payment_after_sign: { Name: "Enviar Cobrança Após Assinatura", Type: "select", Options: { "Y": "Sim — enviar link de pagamento automaticamente", "N": "Não" }, Default: "N", Description: "Se 'Sim', o link de pagamento será enviado automaticamente via WhatsApp após o cliente assinar o contrato." },
+            payment_method: { Name: "Método de Pagamento (cobrança automática)", Type: "select", Options: { card: "Cartão", multibanco: "Multibanco", mb_way: "MB Way", pix: "Pix", boleto: "Boleto" }, Default: "card" },
+            payment_installments: { Name: "Número de Parcelas", Type: "int", Default: "1" },
           },
           RETURN_PROPERTIES: {
             contract_url: { Name: "URL de Assinatura", Type: "string" },
@@ -1542,6 +1545,9 @@ Deno.serve(async (req) => {
             send_method: { Name: "Método de Envio", Type: "select", Options: { none: "Não enviar", link: "Enviar Link de Assinatura", pdf: "Enviar PDF", both: "Link + PDF" }, Default: "none", Description: "none = apenas gera | link = envia link de assinatura digital via WhatsApp | pdf = envia PDF | both = ambos" },
             send_to_phone: { Name: "Telefone para Envio", Type: "string", Description: "Número WhatsApp com código do país. Se vazio, usa o telefone do cliente da proposta." },
             accept_flow_id: { Name: "Flow ao Aceitar", Type: "select", Options: flowOptions, Description: "O flow que será iniciado automaticamente quando o cliente aceitar/assinar o contrato." },
+            send_payment_after_sign: { Name: "Enviar Cobrança Após Assinatura", Type: "select", Options: { "Y": "Sim — enviar link de pagamento automaticamente", "N": "Não" }, Default: "N", Description: "Se 'Sim', o link de pagamento será enviado automaticamente via WhatsApp após o cliente assinar o contrato." },
+            payment_method: { Name: "Método de Pagamento (cobrança automática)", Type: "select", Options: { card: "Cartão", multibanco: "Multibanco", mb_way: "MB Way", pix: "Pix", boleto: "Boleto" }, Default: "card" },
+            payment_installments: { Name: "Número de Parcelas", Type: "int", Default: "1" },
           },
           RETURN_PROPERTIES: {
             contract_url: { Name: "URL de Assinatura", Type: "string" },
@@ -1553,7 +1559,6 @@ Deno.serve(async (req) => {
           },
         },
       ];
-
       for (const robot of robots) {
         // Delete existing robot first (safe for reinstall)
         await callBitrix(clientEndpoint, accessToken, "bizproc.robot.delete", { CODE: robot.CODE });
