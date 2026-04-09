@@ -2287,10 +2287,13 @@ Deno.serve(async (req) => {
       installments, supabaseUrl, memberId, flows, contactPhone,
       noData: installments.length === 0,
       gateway: gwNames[displayGateway] || displayGateway,
-      rawGateway: displayGateway,
+      rawGateway: rawGatewayValue || displayGateway,
+      rawMethod: rawMethodValue || displayMethod,
       paymentMethod: methodNames[displayMethod] || displayMethod,
       nextDueDate,
       createdAt: displayCreatedAt,
+      gatewayOptions: gatewayEnumOptions,
+      methodOptions: methodEnumOptions,
     }), { headers: htmlHeaders });
 
   } catch (err) {
