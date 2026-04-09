@@ -319,6 +319,22 @@ Deno.serve(async (req) => {
           LIST_COLUMN_LABEL: { br: "PDF COMPROVANTE", en: "RECEIPT PDF" },
           LIST_FILTER_LABEL: { br: "PDF COMPROVANTE", en: "RECEIPT PDF" },
         },
+        {
+          FIELD_NAME: "UF_CRM_EMMELY_PROPOSAL_URL",
+          USER_TYPE_ID: "url",
+          SORT: 0,
+          EDIT_FORM_LABEL: { br: "LINK DA PROPOSTA", en: "PROPOSAL LINK" },
+          LIST_COLUMN_LABEL: { br: "LINK PROPOSTA", en: "PROPOSAL LINK" },
+          LIST_FILTER_LABEL: { br: "LINK PROPOSTA", en: "PROPOSAL LINK" },
+        },
+        {
+          FIELD_NAME: "UF_CRM_EMMELY_PROPOSAL_PDF",
+          USER_TYPE_ID: "url",
+          SORT: 0,
+          EDIT_FORM_LABEL: { br: "PDF DA PROPOSTA", en: "PROPOSAL PDF" },
+          LIST_COLUMN_LABEL: { br: "PDF PROPOSTA", en: "PROPOSAL PDF" },
+          LIST_FILTER_LABEL: { br: "PDF PROPOSTA", en: "PROPOSAL PDF" },
+        },
       ];
 
       const entityApis = [
@@ -873,6 +889,22 @@ Deno.serve(async (req) => {
           LIST_COLUMN_LABEL: { br: "PDF COMPROVANTE", en: "RECEIPT PDF" },
           LIST_FILTER_LABEL: { br: "PDF COMPROVANTE", en: "RECEIPT PDF" },
         },
+        {
+          FIELD_NAME: "UF_CRM_EMMELY_PROPOSAL_URL",
+          USER_TYPE_ID: "url",
+          SORT: 0,
+          EDIT_FORM_LABEL: { br: "LINK DA PROPOSTA", en: "PROPOSAL LINK" },
+          LIST_COLUMN_LABEL: { br: "LINK PROPOSTA", en: "PROPOSAL LINK" },
+          LIST_FILTER_LABEL: { br: "LINK PROPOSTA", en: "PROPOSAL LINK" },
+        },
+        {
+          FIELD_NAME: "UF_CRM_EMMELY_PROPOSAL_PDF",
+          USER_TYPE_ID: "url",
+          SORT: 0,
+          EDIT_FORM_LABEL: { br: "PDF DA PROPOSTA", en: "PROPOSAL PDF" },
+          LIST_COLUMN_LABEL: { br: "PDF PROPOSTA", en: "PROPOSAL PDF" },
+          LIST_FILTER_LABEL: { br: "PDF PROPOSTA", en: "PROPOSAL PDF" },
+        },
       ];
 
       // Step 1: Delete existing EMMELY fields to ensure clean recreation
@@ -941,6 +973,8 @@ Deno.serve(async (req) => {
           { bitrix_field_key: "UF_CRM_EMMELY_PAYMENT_NOTES", bitrix_field_title: "Notas de Pagamento", supabase_table: "financial_records", supabase_column: "description" },
           { bitrix_field_key: "UF_CRM_EMMELY_RECEIPT_URL", bitrix_field_title: "Comprovante (Link)", supabase_table: "receipt_links", supabase_column: "public_url" },
           { bitrix_field_key: "UF_CRM_EMMELY_RECEIPT_PDF", bitrix_field_title: "Comprovante (PDF)", supabase_table: "receipt_links", supabase_column: "pdf_url" },
+          { bitrix_field_key: "UF_CRM_EMMELY_PROPOSAL_URL", bitrix_field_title: "Link da Proposta", supabase_table: "proposals", supabase_column: "accept_token" },
+          { bitrix_field_key: "UF_CRM_EMMELY_PROPOSAL_PDF", bitrix_field_title: "PDF da Proposta", supabase_table: "proposals", supabase_column: "pdf_url" },
         ];
 
         // Delete existing mappings for this integration
@@ -981,6 +1015,21 @@ Deno.serve(async (req) => {
     // --- Register BizProc Robots ---
     try {
       const robotHandlerUrl = `${supabaseUrl}/functions/v1/bitrix24-robot-handler`;
+
+      // Load proposal templates for dynamic select in robot
+      const { data: proposalTemplates } = await supabase
+        .from("proposal_templates")
+        .select("id, name")
+        .eq("template_type", "proposta");
+
+      const templateOptions: Record<string, string> = {};
+      (proposalTemplates || []).forEach((t: any) => {
+        templateOptions[t.id] = t.name;
+      });
+      // Add a fallback option if no templates exist
+      if (Object.keys(templateOptions).length === 0) {
+        templateOptions[""] = "(Nenhum template encontrado)";
+      }
 
       const robots = [
         {
@@ -1103,8 +1152,8 @@ Deno.serve(async (req) => {
             deal_id: { Name: "ID do Negócio", Type: "string", Description: "Use {{ID}} para preencher automaticamente com o ID do negócio atual" },
             lead_id: { Name: "ID do Lead", Type: "string", Description: "Use {{ID}} para preencher automaticamente com o ID do lead atual" },
             entity_type: { Name: "Tipo de Entidade", Type: "select", Options: { deal: "Negócio", lead: "Lead" }, Default: "deal", Description: "Escolha 'Negócio' se o robot está numa automação de Deals, ou 'Lead' se está em Leads" },
-            template_name: { Name: "Modelo de Proposta", Type: "string", Description: "⚠️ Nome EXATO do modelo cadastrado em Propostas > Modelos (ex: 'Ação Judicial', 'Assessoria', 'Nacionalidade'). O sistema filtra apenas templates do tipo 'proposta'." },
-            product_ids: { Name: "Produtos/Serviços", Type: "string", Description: "UUIDs dos serviços separados por vírgula. O valor será a soma dos produtos. Consulte em Serviços." },
+            template_name: { Name: "Modelo de Proposta", Type: "select", Options: templateOptions, Description: "Selecione o modelo de proposta. Os templates são carregados automaticamente de Propostas > Modelos." },
+            product_ids: { Name: "Produtos/Serviços", Type: "string", Description: "UUIDs dos serviços separados por vírgula. Se vazio, carrega automaticamente os produtos do negócio no Bitrix24." },
             title: { Name: "Título da Proposta", Type: "string", Description: "Título personalizado. Se vazio, usa o nome do template ou o título do negócio." },
             service_name: { Name: "Nome do Serviço", Type: "string", Description: "Nome do serviço na tabela de Serviços (busca valor e descrição automaticamente). Modo legado — prefira usar template_name." },
             payment_type: { Name: "Tipo de Pagamento", Type: "select", Options: { fixo: "Fixo", exito: "Êxito", hibrido: "Híbrido", parcelado: "Parcelado" }, Default: "fixo", Description: "Fixo = valor único | Êxito = % sobre resultado | Híbrido = entrada + êxito | Parcelado = dividido em parcelas" },
