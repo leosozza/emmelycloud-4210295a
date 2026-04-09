@@ -1320,6 +1320,11 @@ Deno.serve(async (req) => {
         contractTemplateOptions[""] = "(Nenhum template de contrato encontrado)";
       }
 
+      // Load active flows for dynamic select
+      const { data: activeFlows } = await supabase.from("flows").select("id, name").eq("is_active", true).order("name");
+      const flowOptions: Record<string, string> = { "": "(Não executar flow)" };
+      (activeFlows || []).forEach((f: any) => { flowOptions[f.id] = f.name; });
+
       const robots = [
         {
           CODE: "emmely_send_whatsapp",
