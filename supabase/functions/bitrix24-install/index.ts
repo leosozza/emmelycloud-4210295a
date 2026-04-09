@@ -581,6 +581,7 @@ Deno.serve(async (req) => {
             duration_months: { Name: "Duração (meses)", Type: "int", Default: "12" },
             send_method: { Name: "Método de Envio", Type: "select", Options: { none: "Não enviar", link: "Enviar Link de Assinatura", pdf: "Enviar PDF", both: "Link + PDF" }, Default: "none" },
             send_to_phone: { Name: "Telefone para Envio", Type: "string" },
+            accept_flow_id: { Name: "Flow ao Aceitar", Type: "select", Options: flowOptions, Description: "O flow que será iniciado automaticamente quando o cliente aceitar/assinar o contrato." },
           },
           RETURN_PROPERTIES: {
             contract_url: { Name: "URL de Assinatura", Type: "string" },
