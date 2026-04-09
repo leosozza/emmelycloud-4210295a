@@ -105,6 +105,17 @@ function extractFlowData(pbType: string, nodeType: FlowNodeType, data: any): Par
       break;
     }
 
+    case "switch": {
+      const conditions = data.conditions || [];
+      result.switchCases = conditions.map((c: any) => ({
+        id: c.id,
+        handleId: c.id,
+        label: `${c.firstValue || ""} ${c.comparisonType || ""} ${c.secondValue || ""}`.trim() || c.type || c.id,
+        value: c.secondValue || c.type || "",
+      }));
+      break;
+    }
+
     case "transfer_to_human": {
       result.config = { transferType: data.transferType || "" };
       break;
