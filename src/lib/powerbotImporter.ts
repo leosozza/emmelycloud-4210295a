@@ -102,7 +102,7 @@ function extractFlowData(pbType: string, nodeType: FlowNodeType, data: any): Par
       break;
     }
 
-    case "transfer": {
+    case "transfer_to_human": {
       result.config = { transferType: data.transferType || "" };
       break;
     }
