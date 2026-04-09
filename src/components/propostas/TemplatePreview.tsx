@@ -16,7 +16,8 @@ export function TemplatePreview({
   selectedBlockId, onSelectBlock,
 }: TemplatePreviewProps) {
   const renderBlock = (block: LayoutBlock) => {
-    if (!block.visible) return null;
+    if (!block || !block.visible) return null;
+    if (!block.content) block = { ...block, content: {} as any };
 
     const isSelected = selectedBlockId === block.id;
     const selectClass = isSelected ? "ring-2 ring-primary ring-offset-2" : "hover:ring-1 hover:ring-muted-foreground/30";
