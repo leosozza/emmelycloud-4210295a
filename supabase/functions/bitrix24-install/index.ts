@@ -1016,6 +1016,21 @@ Deno.serve(async (req) => {
     try {
       const robotHandlerUrl = `${supabaseUrl}/functions/v1/bitrix24-robot-handler`;
 
+      // Load proposal templates for dynamic select in robot
+      const { data: proposalTemplates } = await supabase
+        .from("proposal_templates")
+        .select("id, name")
+        .eq("template_type", "proposta");
+
+      const templateOptions: Record<string, string> = {};
+      (proposalTemplates || []).forEach((t: any) => {
+        templateOptions[t.id] = t.name;
+      });
+      // Add a fallback option if no templates exist
+      if (Object.keys(templateOptions).length === 0) {
+        templateOptions[""] = "(Nenhum template encontrado)";
+      }
+
       const robots = [
         {
           CODE: "emmely_send_whatsapp",
