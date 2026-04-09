@@ -38,7 +38,31 @@ async function callBitrix(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ ...params, auth: accessToken }),
   });
-  return await response.json();
+  const data = await response.json();
+  return data;
+}
+
+// callBitrix with auto-retry on expired token
+async function callBitrixWithRefresh(
+  supabase: any,
+  integration: any,
+  method: string,
+  params: Record<string, any> = {}
+): Promise<any> {
+  const ep = integration.client_endpoint;
+  let tk = integration.access_token;
+
+  let result = await callBitrix(ep, tk, method, params);
+
+  if (result?.error === "expired_token" || result?.error === "WRONG_TOKEN") {
+    console.log(`[ROBOT-HANDLER] Token expired on ${method}, refreshing reactively...`);
+    const refreshed = await refreshBitrixToken(supabase, integration);
+    tk = refreshed.token;
+    integration.access_token = tk; // update in-memory for subsequent calls
+    result = await callBitrix(ep, tk, method, params);
+  }
+
+  return result;
 }
 
 async function debugLog(
