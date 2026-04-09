@@ -266,7 +266,7 @@ serve(async (req) => {
         if (data.error) return json({ error: data.error, error_description: data.error_description }, 400);
 
         const deals = data.result || [];
-        const contactIds = [...new Set(deals.filter((d: any) => d.CONTACT_ID).map((d: any) => d.CONTACT_ID))];
+        const contactIds = [...new Set(deals.filter((d: any) => d.CONTACT_ID).map((d: any) => String(d.CONTACT_ID)))] as string[];
         const contactsMap = await fetchContacts(ep, auth, contactIds);
 
         const catId = categoryId ? parseInt(categoryId) : 0;

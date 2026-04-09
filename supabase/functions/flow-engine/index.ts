@@ -1284,11 +1284,11 @@ async function callAIIntention(
     return {
       completed: data.intention_completed || false,
       collected: data.intention_collected || collected,
-      nextQuestion: data.next_question || null,
+      nextQuestion: data.next_question || undefined,
     };
   } catch (e) {
     console.error("[FLOW-ENGINE] AI intention error:", e);
-    return { completed: false, collected, nextQuestion: null };
+    return { completed: false, collected, nextQuestion: undefined };
   }
 }
 

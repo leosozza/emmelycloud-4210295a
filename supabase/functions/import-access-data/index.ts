@@ -1612,8 +1612,8 @@ serve(async (req) => {
               LAST_NAME: lastName,
               UF_CRM_1733687549802: docNumber || "",
             };
-            if (phones.length > 0) contactFields.PHONE = phones.map(p => ({ VALUE: p, VALUE_TYPE: "WORK" }));
-            if (emails.length > 0) contactFields.EMAIL = emails.map(e => ({ VALUE: e, VALUE_TYPE: "WORK" }));
+            if (phones.length > 0) contactFields.PHONE = phones.map((p: string) => ({ VALUE: p, VALUE_TYPE: "WORK" }));
+            if (emails.length > 0) contactFields.EMAIL = emails.map((e: string) => ({ VALUE: e, VALUE_TYPE: "WORK" }));
             if (client.address) contactFields.ADDRESS = client.address;
             if (client.birth_date) contactFields.BIRTHDATE = client.birth_date;
 

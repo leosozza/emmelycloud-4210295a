@@ -285,7 +285,7 @@ Deno.serve(async (req) => {
           transactions.push(result.transaction);
         }
       } catch (e) {
-        errors.push(`${label}: ${e.message}`);
+        errors.push(`${label}: ${e instanceof Error ? e.message : String(e)}`);
       }
     }
 

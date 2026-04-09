@@ -216,7 +216,7 @@ export function convertPowerBotFlow(json: any): ImportedFlow {
     return {
       id: pbNode.id,
       type: "custom",
-      position: pbNode.position || { x: 0, y: 0 },
+      position: { x: 0, y: 0 }, // will be set by auto-layout
       data: {
         label: `${label}${pbNode.type === "initialNode" ? " (Início)" : ""}`,
         ...flowData,
@@ -241,5 +241,89 @@ export function convertPowerBotFlow(json: any): ImportedFlow {
     markerEnd: { type: MarkerType.ArrowClosed },
   }));
 
+  // ── Auto-layout: BFS layered graph ──
+  applyAutoLayout(nodes, edges);
+
   return { name, nodes, edges };
+}
+
+// ── Auto-layout algorithm (BFS layers + vertical centering) ──
+
+function applyAutoLayout(nodes: any[], edges: any[]) {
+  const H_GAP = 320;
+  const V_GAP = 180;
+
+  const nodeIds = new Set(nodes.map((n: any) => n.id));
+  const outEdges = new Map<string, string[]>();
+  const inDegree = new Map<string, number>();
+
+  for (const id of nodeIds) {
+    outEdges.set(id, []);
+    inDegree.set(id, 0);
+  }
+
+  for (const e of edges) {
+    if (nodeIds.has(e.source) && nodeIds.has(e.target)) {
+      outEdges.get(e.source)!.push(e.target);
+      inDegree.set(e.target, (inDegree.get(e.target) || 0) + 1);
+    }
+  }
+
+  // BFS from roots (nodes with no incoming edges)
+  const layers = new Map<string, number>();
+  const queue: string[] = [];
+
+  for (const id of nodeIds) {
+    if ((inDegree.get(id) || 0) === 0) {
+      queue.push(id);
+      layers.set(id, 0);
+    }
+  }
+
+  // If no roots found (cycle), pick first node
+  if (queue.length === 0 && nodes.length > 0) {
+    queue.push(nodes[0].id);
+    layers.set(nodes[0].id, 0);
+  }
+
+  let head = 0;
+  while (head < queue.length) {
+    const current = queue[head++];
+    const currentLayer = layers.get(current) || 0;
+    for (const target of (outEdges.get(current) || [])) {
+      const existingLayer = layers.get(target);
+      if (existingLayer === undefined) {
+        layers.set(target, currentLayer + 1);
+        queue.push(target);
+      } else if (existingLayer < currentLayer + 1) {
+        // Push deeper to avoid backward overlaps
+        layers.set(target, currentLayer + 1);
+      }
+    }
+  }
+
+  // Assign any orphan nodes
+  for (const id of nodeIds) {
+    if (!layers.has(id)) layers.set(id, 0);
+  }
+
+  // Group nodes by layer
+  const layerGroups = new Map<number, string[]>();
+  for (const [id, layer] of layers) {
+    if (!layerGroups.has(layer)) layerGroups.set(layer, []);
+    layerGroups.get(layer)!.push(id);
+  }
+
+  // Position nodes, vertically centered per layer
+  const nodeMap = new Map(nodes.map((n: any) => [n.id, n]));
+  for (const [layer, ids] of layerGroups) {
+    const totalHeight = (ids.length - 1) * V_GAP;
+    const startY = -totalHeight / 2;
+    ids.forEach((id, idx) => {
+      const node = nodeMap.get(id);
+      if (node) {
+        node.position = { x: layer * H_GAP, y: startY + idx * V_GAP };
+      }
+    });
+  }
 }

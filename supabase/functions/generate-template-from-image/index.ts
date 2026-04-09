@@ -77,7 +77,7 @@ Return the JSON structure for recreating this document layout as a template edit
     });
   } catch (e) {
     console.error("generate-template-from-image error:", e);
-    return new Response(JSON.stringify({ error: e.message }), {
+    return new Response(JSON.stringify({ error: e instanceof Error ? e.message : String(e) }), {
       status: 400,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });

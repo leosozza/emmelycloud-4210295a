@@ -359,7 +359,7 @@ Deno.serve(async (req) => {
 
   } catch (err) {
     console.error("[BX24-PAYMENT] Error:", err);
-    return new Response(JSON.stringify({ PAYMENT_ERRORS: [err.message || "Erro interno"] }), {
+    return new Response(JSON.stringify({ PAYMENT_ERRORS: [(err instanceof Error ? err.message : "Erro interno")] }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
