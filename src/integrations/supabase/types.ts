@@ -137,6 +137,7 @@ export type Database = {
           ai_model: string
           ai_provider: string
           avatar_url: string | null
+          base_prompt: string | null
           communication_tone: string | null
           created_at: string
           default_flow_id: string | null
@@ -167,6 +168,7 @@ export type Database = {
           ai_model?: string
           ai_provider?: string
           avatar_url?: string | null
+          base_prompt?: string | null
           communication_tone?: string | null
           created_at?: string
           default_flow_id?: string | null
@@ -197,6 +199,7 @@ export type Database = {
           ai_model?: string
           ai_provider?: string
           avatar_url?: string | null
+          base_prompt?: string | null
           communication_tone?: string | null
           created_at?: string
           default_flow_id?: string | null
@@ -2131,6 +2134,53 @@ export type Database = {
             columns: ["proposal_id"]
             isOneToOne: false
             referencedRelation: "proposals"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      persona_training_history: {
+        Row: {
+          agent_id: string
+          applied_at: string | null
+          category: string | null
+          created_at: string
+          created_by: string | null
+          id: string
+          instruction: string
+          is_active: boolean | null
+          priority: number | null
+          rule_text: string | null
+        }
+        Insert: {
+          agent_id: string
+          applied_at?: string | null
+          category?: string | null
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          instruction: string
+          is_active?: boolean | null
+          priority?: number | null
+          rule_text?: string | null
+        }
+        Update: {
+          agent_id?: string
+          applied_at?: string | null
+          category?: string | null
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          instruction?: string
+          is_active?: boolean | null
+          priority?: number | null
+          rule_text?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "persona_training_history_agent_id_fkey"
+            columns: ["agent_id"]
+            isOneToOne: false
+            referencedRelation: "ai_agents"
             referencedColumns: ["id"]
           },
         ]
