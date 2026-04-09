@@ -255,7 +255,7 @@ async function findFileInZip(zipBytes: Uint8Array, targetName: string): Promise<
           return decoder.decode(rawData);
         } else if (compressionMethod === 8) {
           try {
-            const ds = new DecompressionStream("raw");
+            const ds = new DecompressionStream("deflate-raw" as CompressionFormat);
             const writer = ds.writable.getWriter();
             writer.write(rawData);
             writer.close();
