@@ -1113,14 +1113,14 @@ function ConfigView({ integration, botId, domain, loading, onResync, onRefresh }
                 }),
               });
               const data = await res.json();
-              if (data.success || res.ok) { setRepairFieldsResult("Campos reparados com sucesso!"); if (integration?.member_id) setTimeout(() => onRefresh(), 1500); }
+              if (data.success || res.ok) { setRepairFieldsResult("Campos e robots reparados com sucesso!"); if (integration?.member_id) setTimeout(() => onRefresh(), 1500); }
               else { setRepairFieldsResult(`Erro: ${data.error || res.status}`); }
             } catch (e) { setRepairFieldsResult(`Erro de rede: ${e}`); }
             finally { setRepairingFields(false); }
           }}
           disabled={repairingFields} className="w-full rounded-md" variant="outline"
         >
-          {repairingFields ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Reparando campos...</> : <><Wrench className="h-4 w-4 mr-2" />Reparar Campos</>}
+          {repairingFields ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Reparando campos e robots...</> : <><Wrench className="h-4 w-4 mr-2" />Reparar Campos e Robots</>}
         </Button>
         {repairFieldsResult && (
           <div className={cn("text-xs text-center px-3 py-2 rounded-lg flex items-center justify-center gap-1.5", repairFieldsResult.includes("Erro") ? "bg-destructive/10 text-destructive" : "bg-success/10 text-success")}>

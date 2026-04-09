@@ -370,7 +370,242 @@ Deno.serve(async (req) => {
         }
       }
 
-      await debugLog(supabase, integration.id, "repair_fields", "outbound", report);
+      // --- Re-register robots with updated template options ---
+      const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+      const robotHandlerUrl = `${supabaseUrl}/functions/v1/bitrix24-robot-handler`;
+      report.robots_registered = [];
+
+      // Load proposal templates for dynamic select
+      const { data: proposalTemplates } = await supabase
+        .from("proposal_templates")
+        .select("id, name")
+        .eq("template_type", "proposta");
+
+      const templateOptions: Record<string, string> = {};
+      (proposalTemplates || []).forEach((t: any) => { templateOptions[t.id] = t.name; });
+      if (Object.keys(templateOptions).length === 0) { templateOptions[""] = "(Nenhum template encontrado)"; }
+
+      // Load contract templates for dynamic select
+      const { data: contractTemplates } = await supabase
+        .from("proposal_templates")
+        .select("id, name")
+        .eq("template_type", "contrato");
+
+      const contractTemplateOptions: Record<string, string> = {};
+      (contractTemplates || []).forEach((t: any) => { contractTemplateOptions[t.id] = t.name; });
+      if (Object.keys(contractTemplateOptions).length === 0) { contractTemplateOptions[""] = "(Nenhum template de contrato encontrado)"; }
+
+      const repairRobots = [
+        {
+          CODE: "emmely_send_whatsapp",
+          NAME: "Emmely: Enviar WhatsApp",
+          PROPERTIES: {
+            phone: { Name: "Telefone", Type: "string", Required: "Y", Description: "Número de telefone com código do país" },
+            message: { Name: "Mensagem", Type: "text", Required: "Y", Description: "Texto da mensagem" },
+          },
+          RETURN_PROPERTIES: {
+            message_id: { Name: "ID da Mensagem", Type: "string" },
+            status: { Name: "Status", Type: "string" },
+            error: { Name: "Erro", Type: "string" },
+          },
+        },
+        {
+          CODE: "emmely_send_instagram",
+          NAME: "Emmely: Enviar Instagram",
+          PROPERTIES: {
+            instagram_user: { Name: "Utilizador Instagram", Type: "string", Required: "Y", Description: "Username ou ID do Instagram" },
+            message: { Name: "Mensagem", Type: "text", Required: "Y", Description: "Texto da mensagem" },
+          },
+          RETURN_PROPERTIES: {
+            message_id: { Name: "ID da Mensagem", Type: "string" },
+            status: { Name: "Status", Type: "string" },
+            error: { Name: "Erro", Type: "string" },
+          },
+        },
+        {
+          CODE: "emmely_create_charge",
+          NAME: "Emmely: Criar Cobrança",
+          PROPERTIES: {
+            amount: { Name: "Valor Total", Type: "double", Required: "Y", Description: "Valor total da cobrança" },
+            currency: { Name: "Moeda", Type: "select", Required: "Y", Options: { EUR: "EUR", BRL: "BRL" }, Default: "EUR" },
+            gateway: { Name: "Gateway", Type: "select", Options: { auto: "Automático", stripe_pt: "Stripe Portugal (EUR)", stripe_br: "Stripe Brasil (BRL)", asaas: "Asaas (Brasil)", direto: "Crediário Próprio" }, Default: "auto", Description: "Automático: EUR→Stripe PT, BRL→Stripe BR ou Asaas" },
+            payment_method: { Name: "Método de Pagamento", Type: "select", Options: { card: "Cartão", multibanco: "Multibanco (PT)", mb_way: "MB WAY (PT)", sepa_debit: "Débito SEPA (PT)", pix: "PIX (BR)", boleto: "Boleto (BR)", link: "Link de Pagamento", direto: "Recebimento Direto" }, Default: "card" },
+            customer_name: { Name: "Nome do Cliente", Type: "string" },
+            customer_email: { Name: "Email do Cliente", Type: "string" },
+            customer_cpf: { Name: "CPF/CNPJ", Type: "string", Description: "Obrigatório para Asaas" },
+            description: { Name: "Descrição", Type: "string" },
+            installments: { Name: "Número de Parcelas", Type: "int", Default: "1", Description: "Quantidade de parcelas mensais" },
+            down_payment: { Name: "Valor de Entrada", Type: "double", Default: "0", Description: "Valor de entrada (opcional)" },
+            first_due_date: { Name: "Data 1º Vencimento", Type: "date", Description: "Data da primeira parcela (YYYY-MM-DD)" },
+            deal_id: { Name: "ID do Negócio", Type: "string", Description: "ID do Deal para vincular faturas" },
+            contact_id: { Name: "ID do Contacto", Type: "string", Description: "ID do Contacto para vincular faturas" },
+            company_id: { Name: "ID da Empresa", Type: "string", Description: "UUID da empresa/filial em Emmely" },
+          },
+          RETURN_PROPERTIES: {
+            charge_id: { Name: "ID da Cobrança", Type: "string" },
+            charge_status: { Name: "Status", Type: "string" },
+            payment_url: { Name: "URL de Pagamento", Type: "string" },
+            pix_code: { Name: "Código PIX", Type: "string" },
+            gateway_used: { Name: "Gateway Utilizado", Type: "string" },
+            invoices_created: { Name: "Faturas Criadas", Type: "string" },
+            error: { Name: "Erro", Type: "string" },
+          },
+        },
+        {
+          CODE: "emmely_check_payment",
+          NAME: "Emmely: Verificar Pagamento",
+          PROPERTIES: {
+            charge_id: { Name: "ID da Cobrança", Type: "string", Required: "Y", Description: "ID retornado ao criar a cobrança" },
+          },
+          RETURN_PROPERTIES: {
+            status: { Name: "Status", Type: "string" },
+            paid_at: { Name: "Data de Pagamento", Type: "string" },
+            paid_value: { Name: "Valor Pago", Type: "string" },
+            error: { Name: "Erro", Type: "string" },
+          },
+        },
+        {
+          CODE: "emmely_execute_flow",
+          NAME: "Emmely: Executar Flow",
+          PROPERTIES: {
+            flow_id: { Name: "ID do Flow", Type: "string", Required: "Y", Description: "UUID do flow a executar" },
+            phone: { Name: "Telefone", Type: "string", Required: "Y", Description: "Número de telefone com código do país" },
+            trigger_message: { Name: "Mensagem Trigger", Type: "string", Description: "Mensagem para iniciar o flow", Default: "iniciar" },
+          },
+          RETURN_PROPERTIES: {
+            status: { Name: "Status", Type: "string" },
+            conversation_id: { Name: "ID da Conversa", Type: "string" },
+            flow_name: { Name: "Nome do Flow", Type: "string" },
+            error: { Name: "Erro", Type: "string" },
+          },
+        },
+        {
+          CODE: "emmely_generate_proposal",
+          NAME: "Emmely: Gerar Proposta",
+          PROPERTIES: {
+            deal_id: { Name: "ID do Negócio", Type: "string", Description: "Use {{ID}} para preencher automaticamente" },
+            lead_id: { Name: "ID do Lead", Type: "string", Description: "Use {{ID}} para preencher automaticamente" },
+            entity_type: { Name: "Tipo de Entidade", Type: "select", Options: { deal: "Negócio", lead: "Lead" }, Default: "deal" },
+            template_name: { Name: "Modelo de Proposta", Type: "select", Options: templateOptions, Description: "Selecione o modelo de proposta." },
+            product_ids: { Name: "Produtos/Serviços", Type: "string", Description: "UUIDs separados por vírgula. Se vazio, carrega do negócio." },
+            title: { Name: "Título da Proposta", Type: "string" },
+            service_name: { Name: "Nome do Serviço", Type: "string" },
+            payment_type: { Name: "Tipo de Pagamento", Type: "select", Options: { fixo: "Fixo", exito: "Êxito", hibrido: "Híbrido", parcelado: "Parcelado" }, Default: "fixo" },
+            installments: { Name: "Parcelas", Type: "int", Default: "1" },
+            value: { Name: "Valor", Type: "double" },
+            description: { Name: "Descrição", Type: "text" },
+            conditions: { Name: "Condições", Type: "text" },
+            valid_days: { Name: "Dias de Validade", Type: "int", Default: "30" },
+            send_method: { Name: "Método de Envio", Type: "select", Options: { none: "Não enviar", link: "Enviar Link", pdf: "Enviar PDF", both: "Link + PDF" }, Default: "none" },
+            send_to_phone: { Name: "Telefone para Envio", Type: "string" },
+          },
+          RETURN_PROPERTIES: {
+            proposal_url: { Name: "URL da Proposta", Type: "string" },
+            pdf_url: { Name: "URL do PDF", Type: "string" },
+            proposal_id: { Name: "ID da Proposta", Type: "string" },
+            template_used: { Name: "Template Utilizado", Type: "string" },
+            products_used: { Name: "Produtos Utilizados", Type: "string" },
+            send_status: { Name: "Status de Envio", Type: "string" },
+            status: { Name: "Status", Type: "string" },
+            error: { Name: "Erro", Type: "string" },
+          },
+        },
+        {
+          CODE: "emmely_send_proposal",
+          NAME: "Emmely: Enviar Orçamento",
+          PROPERTIES: {
+            proposal_id: { Name: "ID da Proposta", Type: "string", Required: "Y" },
+            send_method: { Name: "Método de Envio", Type: "select", Required: "Y", Options: { link: "Link com Aceite", pdf: "PDF", both: "Link + PDF" }, Default: "link" },
+            phone: { Name: "Telefone", Type: "string" },
+            custom_message: { Name: "Mensagem Personalizada", Type: "text" },
+          },
+          RETURN_PROPERTIES: {
+            send_status: { Name: "Status de Envio", Type: "string" },
+            proposal_url: { Name: "URL da Proposta", Type: "string" },
+            pdf_url: { Name: "URL do PDF", Type: "string" },
+            error: { Name: "Erro", Type: "string" },
+          },
+        },
+        {
+          CODE: "emmely_convert_currency",
+          NAME: "Emmely: Converter Moeda",
+          PROPERTIES: {
+            source_value: { Name: "Valor Original", Type: "double", Required: "Y" },
+            source_currency: { Name: "Moeda Origem", Type: "select", Required: "Y", Options: { EUR: "EUR", BRL: "BRL", USD: "USD", GBP: "GBP", CHF: "CHF", CAD: "CAD" }, Default: "EUR" },
+            target_currency: { Name: "Moeda Destino", Type: "select", Required: "Y", Options: { BRL: "BRL", EUR: "EUR", USD: "USD", GBP: "GBP", CHF: "CHF", CAD: "CAD" }, Default: "BRL" },
+            spread_percent: { Name: "Spread (%)", Type: "double", Default: "0" },
+          },
+          RETURN_PROPERTIES: {
+            converted_value: { Name: "Valor Convertido", Type: "double" },
+            exchange_rate: { Name: "Taxa de Câmbio", Type: "double" },
+            rate_date: { Name: "Data da Cotação", Type: "string" },
+            error: { Name: "Erro", Type: "string" },
+          },
+        },
+        {
+          CODE: "emmely_create_badge",
+          NAME: "Emmely: Criar Badge",
+          PROPERTIES: {
+            badge_code: { Name: "Código da Badge", Type: "string", Required: "Y" },
+            header_title: { Name: "Título", Type: "string", Required: "Y" },
+            message_preview: { Name: "Preview", Type: "string" },
+            entity_type: { Name: "Tipo de Entidade", Type: "select", Options: { deal: "Negócio", lead: "Lead", contact: "Contacto" }, Default: "deal" },
+            entity_id: { Name: "ID da Entidade", Type: "string", Required: "Y" },
+            badge_type: { Name: "Tipo Visual", Type: "select", Options: { success: "Sucesso (verde)", primary: "Primário (azul)", warning: "Alerta (amarelo)", failure: "Erro (vermelho)", secondary: "Secundário (cinza)" }, Default: "success" },
+          },
+          RETURN_PROPERTIES: {
+            badge_status: { Name: "Status", Type: "string" },
+            activity_id: { Name: "ID da Atividade", Type: "string" },
+            error: { Name: "Erro", Type: "string" },
+          },
+        },
+        {
+          CODE: "emmely_generate_contract",
+          NAME: "Emmely: Gerar Contrato",
+          PROPERTIES: {
+            proposal_id: { Name: "ID da Proposta", Type: "string", Description: "Use o retorno {{proposal_id}} do robot 'Gerar Proposta'. Se vazio, cria contrato novo." },
+            deal_id: { Name: "ID do Negócio", Type: "string", Description: "Use {{ID}} para vincular ao negócio" },
+            entity_type: { Name: "Tipo de Entidade", Type: "select", Options: { deal: "Negócio", lead: "Lead" }, Default: "deal" },
+            template_name: { Name: "Modelo de Contrato", Type: "select", Options: contractTemplateOptions, Description: "Selecione o modelo de contrato." },
+            title: { Name: "Título do Contrato", Type: "string" },
+            value: { Name: "Valor", Type: "double" },
+            conditions: { Name: "Condições", Type: "text" },
+            starts_at: { Name: "Data de Início", Type: "date" },
+            duration_months: { Name: "Duração (meses)", Type: "int", Default: "12" },
+            send_method: { Name: "Método de Envio", Type: "select", Options: { none: "Não enviar", link: "Enviar Link de Assinatura", pdf: "Enviar PDF", both: "Link + PDF" }, Default: "none" },
+            send_to_phone: { Name: "Telefone para Envio", Type: "string" },
+          },
+          RETURN_PROPERTIES: {
+            contract_url: { Name: "URL de Assinatura", Type: "string" },
+            contract_pdf: { Name: "URL do PDF", Type: "string" },
+            contract_id: { Name: "ID do Contrato", Type: "string" },
+            status: { Name: "Status", Type: "string" },
+            send_status: { Name: "Status de Envio", Type: "string" },
+            error: { Name: "Erro", Type: "string" },
+          },
+        },
+      ];
+
+      for (const robot of repairRobots) {
+        await callBitrix(ep, token, "bizproc.robot.delete", { CODE: robot.CODE });
+        const addResult = await callBitrix(ep, token, "bizproc.robot.add", {
+          CODE: robot.CODE,
+          HANDLER: robotHandlerUrl,
+          AUTH_USER_ID: 1,
+          NAME: robot.NAME,
+          USE_SUBSCRIPTION: "Y",
+          PROPERTIES: robot.PROPERTIES,
+          RETURN_PROPERTIES: robot.RETURN_PROPERTIES,
+        });
+        const errStr = String(addResult.error || "");
+        if (addResult.error && !errStr.includes("ALREADY")) {
+          report.errors.push(`robot ${robot.CODE}: ${addResult.error}`);
+        } else {
+          report.robots_registered.push(robot.CODE);
+        }
+      }
+
+      await debugLog(supabase, integration.id, "repair_fields_and_robots", "outbound", report);
       return new Response(JSON.stringify({ ok: true, report }), { headers: jsonHeaders });
     } catch (err) {
       return new Response(JSON.stringify({ error: String(err) }), { status: 500, headers: jsonHeaders });
