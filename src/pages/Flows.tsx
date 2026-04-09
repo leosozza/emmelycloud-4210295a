@@ -32,11 +32,13 @@ import {
 } from "lucide-react";
 import { previewPowerBotFlow, convertPowerBotFlow, type PowerBotImportPreview } from "@/lib/powerbotImporter";
 import CustomFlowNode from "@/components/flows/CustomFlowNode";
+import AddNodeOnEdge from "@/components/flows/AddNodeOnEdge";
 import FlowNodePalette from "@/components/flows/FlowNodePalette";
 import NodeConfigPanel from "@/components/flows/NodeConfigPanel";
 import { type FlowNodeType, type FlowNodeData, getDefaultData, NODE_TYPE_META } from "@/components/flows/FlowNodeTypes";
 import { useFlowHistory } from "@/hooks/useFlowHistory";
 import { FLOW_TEMPLATES, type FlowTemplate } from "@/lib/flowTemplates";
+import { getLayoutedElements } from "@/lib/flowLayout";
 
 interface Flow {
   id: string;
@@ -55,6 +57,7 @@ interface Flow {
 }
 
 const customNodeTypes = { custom: CustomFlowNode };
+const customEdgeTypes = { custom: AddNodeOnEdge };
 
 const FLOW_TYPE_LABELS: Record<string, { label: string; color: string }> = {
   flow: { label: "Fluxo", color: "bg-blue-500/10 text-blue-700" },
@@ -111,10 +114,73 @@ export default function FlowsPage() {
     setLoading(false);
   };
 
+  const handleInsertNode = useCallback((edgeId: string) => {
+    const edge = edges.find(e => e.id === edgeId);
+    if (!edge) return;
+
+    const sourceNode = nodes.find(n => n.id === edge.source);
+    const targetNode = nodes.find(n => n.id === edge.target);
+    if (!sourceNode || !targetNode) return;
+
+    const position = {
+      x: (sourceNode.position.x + targetNode.position.x) / 2,
+      y: (sourceNode.position.y + targetNode.position.y) / 2,
+    };
+
+    const newNodeId = `node_${Date.now()}`;
+    const newNode: Node = { 
+      id: newNodeId, 
+      type: "custom", 
+      position, 
+      data: getDefaultData("message") as any 
+    };
+
+    setNodes((nds) => [...nds, newNode]);
+    
+    setEdges((eds) => {
+      const filtered = eds.filter(e => e.id !== edgeId);
+      return [
+        ...filtered,
+        { 
+          id: `e_${edge.source}-${newNodeId}`, 
+          source: edge.source, 
+          target: newNodeId, 
+          type: "custom", 
+          data: { onInsertNode: handleInsertNode },
+          markerEnd: { type: MarkerType.ArrowClosed } 
+        },
+        { 
+          id: `e_${newNodeId}-${edge.target}`, 
+          source: newNodeId, 
+          target: edge.target, 
+          type: "custom", 
+          data: { onInsertNode: handleInsertNode },
+          markerEnd: { type: MarkerType.ArrowClosed } 
+        },
+      ];
+    });
+
+    setSelectedNodeId(newNodeId);
+    setTimeout(pushState, 50);
+  }, [nodes, edges, setNodes, setEdges, pushState]);
+
   const onConnect = useCallback((params: Connection) => {
-    setEdges((eds) => addEdge({ ...params, markerEnd: { type: MarkerType.ArrowClosed } }, eds));
+    setEdges((eds) => addEdge({ 
+      ...params, 
+      type: "custom",
+      markerEnd: { type: MarkerType.ArrowClosed },
+      data: { onInsertNode: handleInsertNode }
+    }, eds));
     setTimeout(pushState, 0);
-  }, [setEdges, pushState]);
+  }, [setEdges, pushState, handleInsertNode]);
+
+  const onLayout = useCallback(() => {
+    const { nodes: layoutedNodes, edges: layoutedEdges } = getLayoutedElements(nodes, edges);
+    setNodes([...layoutedNodes]);
+    setEdges([...layoutedEdges]);
+    setTimeout(pushState, 0);
+    toast.success("Fluxo organizado");
+  }, [nodes, edges, setNodes, setEdges, pushState]);
 
   const addNode = useCallback((type: FlowNodeType, position?: { x: number; y: number }) => {
     const id = `node_${Date.now()}`;
@@ -149,13 +215,33 @@ export default function FlowsPage() {
     setTimeout(pushState, 100);
   }, [selectedNodeId, setNodes, pushState]);
 
-  const handleDeleteNode = useCallback(() => {
+  const handleDeleteNode = useCallback((withDescendants = false) => {
     if (!selectedNodeId) return;
-    setNodes((nds) => nds.filter((n) => n.id !== selectedNodeId));
-    setEdges((eds) => eds.filter((e) => e.source !== selectedNodeId && e.target !== selectedNodeId));
+
+    if (!withDescendants) {
+      setNodes((nds) => nds.filter((n) => n.id !== selectedNodeId));
+      setEdges((eds) => eds.filter((e) => e.source !== selectedNodeId && e.target !== selectedNodeId));
+    } else {
+      // Logic to find all descendants
+      const descendants = new Set<string>();
+      const findDescendants = (id: string) => {
+        edges.filter(e => e.source === id).forEach(e => {
+          if (!descendants.has(e.target)) {
+            descendants.add(e.target);
+            findDescendants(e.target);
+          }
+        });
+      };
+      findDescendants(selectedNodeId);
+      
+      const toDelete = new Set([...descendants, selectedNodeId]);
+      setNodes((nds) => nds.filter((n) => !toDelete.has(n.id)));
+      setEdges((eds) => eds.filter((e) => !toDelete.has(e.source) && !toDelete.has(e.target)));
+    }
+
     setSelectedNodeId(null);
     setTimeout(pushState, 0);
-  }, [selectedNodeId, setNodes, setEdges, pushState]);
+  }, [selectedNodeId, edges, setNodes, setEdges, pushState]);
 
   const duplicateNode = useCallback(() => {
     if (!selectedNodeId) return;
@@ -174,7 +260,14 @@ export default function FlowsPage() {
       data: n.data?.nodeType ? n.data : { nodeType: n.data?.nodeType || "message", ...n.data },
     }));
     setNodes(convertedNodes);
-    setEdges(flow.edges || []);
+    // Ensure edges use the custom type and have the callback
+    const enhancedEdges = (flow.edges || []).map((e: any) => ({
+      ...e,
+      type: "custom",
+      data: { onInsertNode },
+      markerEnd: e.markerEnd || { type: MarkerType.ArrowClosed }
+    }));
+    setEdges(enhancedEdges);
     setSelectedNodeId(null);
     setTimeout(pushState, 50);
   };
@@ -411,6 +504,9 @@ export default function FlowsPage() {
             <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => exportFlow({ ...selectedFlow, nodes, edges })} title="Exportar JSON">
               <Download className="h-3.5 w-3.5" />
             </Button>
+            <Button variant="outline" size="sm" className="h-8" onClick={onLayout} title="Organizar fluxo">
+              <Shuffle className="h-3.5 w-3.5 mr-1" /> Organizar
+            </Button>
             <Button variant="outline" size="sm" onClick={handleSaveFlow} disabled={saving}>
               <Save className="h-3 w-3 mr-1" /> {saving ? "Guardando..." : "Guardar"}
             </Button>
@@ -425,7 +521,9 @@ export default function FlowsPage() {
               nodes={nodes} edges={edges}
               onNodesChange={onNodesChange} onEdgesChange={onEdgesChange}
               onConnect={onConnect} onNodeClick={onNodeClick} onPaneClick={onPaneClick}
-              nodeTypes={customNodeTypes} fitView
+              nodeTypes={customNodeTypes} 
+              edgeTypes={customEdgeTypes}
+              fitView
               deleteKeyCode="Delete"
               onNodesDelete={() => setTimeout(pushState, 0)}
               onEdgesDelete={() => setTimeout(pushState, 0)}
@@ -439,8 +537,11 @@ export default function FlowsPage() {
                     <Button variant="ghost" size="sm" className="h-7 text-[11px]" onClick={duplicateNode}>
                       <Copy className="h-3 w-3 mr-1" /> Duplicar
                     </Button>
-                    <Button variant="ghost" size="sm" className="h-7 text-[11px] text-destructive" onClick={handleDeleteNode}>
+                    <Button variant="ghost" size="sm" className="h-7 text-[11px] text-destructive" onClick={() => handleDeleteNode(false)}>
                       <Trash2 className="h-3 w-3 mr-1" /> Excluir
+                    </Button>
+                    <Button variant="ghost" size="sm" className="h-7 text-[11px] text-destructive" onClick={() => handleDeleteNode(true)}>
+                      <GitBranch className="h-3 w-3 mr-1" /> + Descendentes
                     </Button>
                   </div>
                 </Panel>
