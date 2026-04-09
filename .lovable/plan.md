@@ -1,43 +1,52 @@
 
 
-# Adicionar Flow ao Aceite de Proposta
+# Corrigir Layout do Flow Importado do PowerBot
 
-## Resumo
+## Problema
 
-Adicionar um campo `accept_flow_id` ao robot "Gerar Proposta" (dropdown dinâmico com flows activos) e ao robot "Gerar Contrato". Quando o cliente aceitar a proposta, o sistema dispara automaticamente o flow seleccionado.
+O importador PowerBot preserva as posições originais dos nós (`pbNode.position`), que vêm do PowerBot sem organização visual adequada. Resultado: nós sobrepostos e layout confuso.
+
+## Solução
+
+Implementar **auto-layout** baseado em grafo dirigido (topological sort + camadas) no `convertPowerBotFlow`, organizando os nós automaticamente em colunas/linhas com espaçamento adequado.
 
 ## Alterações
 
-### 1. Migração: novo campo na tabela `proposals`
+### 1. `src/lib/powerbotImporter.ts` — Adicionar auto-layout
 
-```sql
-ALTER TABLE proposals ADD COLUMN IF NOT EXISTS accept_flow_id uuid;
+Após converter nós e edges, aplicar algoritmo de layout:
+
+1. **Topological sort** usando BFS (Kahn's algorithm) a partir dos nós raiz (sem edges de entrada)
+2. **Atribuir camadas (layers)**: cada nó recebe um nível baseado na profundidade máxima desde a raiz
+3. **Posicionar**: X = camada × 320px, Y = índice dentro da camada × 180px
+4. **Centrar verticalmente** cada camada para evitar layouts em escada
+
+```text
+Camada 0     Camada 1     Camada 2     Camada 3
+[Início] --> [Condição] --> [IA]     --> [Bitrix]
+                        --> [Msg]    --> [Transfer]
 ```
 
-### 2. `supabase/functions/bitrix24-install/index.ts`
+Espaçamento: **320px horizontal**, **180px vertical** entre nós.
 
-- Carregar flows activos da tabela `flows` (mesmo padrão dos templates):
-```typescript
-const { data: activeFlows } = await supabase.from("flows").select("id, name").eq("is_active", true).order("name");
-const flowOptions: Record<string, string> = { "": "(Não executar flow)" };
-(activeFlows || []).forEach((f: any) => { flowOptions[f.id] = f.name; });
-```
-- Adicionar campo `accept_flow_id` como `select` com `flowOptions` nos robots `emmely_generate_proposal` e `emmely_generate_contract` (nas 2 secções: repair e install)
+### 2. Também corrigir os build errors pré-existentes
 
-### 3. `supabase/functions/bitrix24-robot-handler/index.ts`
+Corrigir os erros de TypeScript nas edge functions (`.catch()` em Postgrest builders, tipos `unknown`, `null` vs `undefined`):
 
-- Ler `properties.accept_flow_id` e guardar na proposta ao inserir (`accept_flow_id`)
+- **`ai-parity-audit`** — `.catch()` → `.then()` pattern
+- **`ai-process-message`** — `null` → `undefined` para `next_question`, `.catch()` fix
+- **`bitrix24-events`** — `.catch()` fix
+- **`bitrix24-fetch-entities`** — cast `contactIds` para `string[]`
+- **`bitrix24-payment-handler`** — type guard no `err`
+- **`bitrix24-payment-webhook`** — type guard no `e`
+- **`bitrix24-send`** — `.catch()` fix
+- **`bitrix24-test-connection`** — type guard no `err`
+- **`flow-engine`** — `null` → `undefined`, return type fix
+- **`generate-template-from-image`** — type guard
+- **`import-access-data`** — implicit `any` parameter
 
-### 4. `supabase/functions/proposal-accept/index.ts`
+## Ficheiros a editar
 
-Após o aceite (depois do bloco Bitrix24 stage), adicionar:
-- Se `proposal.accept_flow_id` existir, buscar o lead vinculado → conversation_id
-- Chamar `flow-engine` com `conversation_id` e `force_flow_id` definido no `bot_state`, ou invocar directamente a edge function `flow-engine` passando os dados necessários
-
-### Ficheiros a editar
-
-1. **Migração SQL** — `accept_flow_id uuid` na tabela `proposals`
-2. **`supabase/functions/bitrix24-install/index.ts`** — dropdown de flows nos robots (4 locais: repair + install × proposta + contrato)
-3. **`supabase/functions/bitrix24-robot-handler/index.ts`** — ler e guardar `accept_flow_id`
-4. **`supabase/functions/proposal-accept/index.ts`** — disparar flow ao aceitar
+1. **`src/lib/powerbotImporter.ts`** — auto-layout no `convertPowerBotFlow`
+2. **Edge functions com build errors** — fixes de TypeScript (10+ ficheiros, alterações mínimas de tipagem)
 
