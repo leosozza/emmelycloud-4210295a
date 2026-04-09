@@ -1,31 +1,28 @@
 
+
 # Tornar Badges Editáveis no Placement Emmely Pay
 
 ## Problema
 
-Os badges de **Gateway**, **Método** e **Próximo Vencimento** no placement `bitrix24-payment-tab` são texto estático. O utilizador quer clicar e editar, especialmente o Gateway (escolher entre Stripe PT, Stripe BR, Asaas, Direto).
+Os badges de **Gateway**, **Método** e **Próximo Vencimento** no placement Emmely Pay são texto estático — não permitem edição. O utilizador quer clicar e alterar o Gateway directamente no placement.
 
 ## Alterações
 
 ### Ficheiro: `supabase/functions/bitrix24-payment-tab/index.ts`
 
-#### 1. HTML — Substituir spans estáticos por elementos clicáveis (linhas 544-548)
+#### 1. Passar mapa de enumeração para o JS do cliente
 
-Cada badge passa a ter um ícone de lápis e ao clicar abre um dropdown inline (para Gateway e Método) ou um date picker (para Próximo Vencimento):
+Na secção onde os metadados dos campos são resolvidos (linhas ~1968-1988), serializar o mapa `{id: label}` dos campos `UF_CRM_EMMELY_GATEWAY` e `UF_CRM_EMMELY_PAYMENT_METHOD` e injectá-lo como variáveis JS no HTML (`GATEWAY_OPTIONS`, `METHOD_OPTIONS`).
 
-- **Gateway**: dropdown com opções "Stripe Portugal", "Stripe Brasil", "Asaas", "Direto" (mesmas do `bitrix24-install`)
-- **Método**: dropdown com "Cartão", "PIX", "Boleto", "Multibanco", "MB Way", "SEPA", "Direto"
-- **Próx. Vencimento**: input date
+#### 2. Substituir spans estáticos por badges clicáveis (linhas 544-548)
 
-Ao seleccionar, o valor é enviado ao servidor para actualizar o campo UF no Bitrix24.
+- **Gateway**: `<span>` com cursor pointer + ícone lápis → ao clicar, mostra dropdown inline com as opções (Stripe Portugal, Stripe Brasil, Asaas, Direto)
+- **Método**: Mesmo padrão com opções (Cartão, PIX, Boleto, Multibanco, MB Way, SEPA, Direto)
+- **Próx. Vencimento**: Ao clicar, mostra `<input type="date">` inline
 
-#### 2. Variáveis JS — Passar `rawGateway` e `rawMethod` para o script (linha 756)
+#### 3. Nova função JS `updateDealField(fieldName, value)`
 
-Já existe `DEAL_RAW_GATEWAY`. Adicionar `DEAL_RAW_METHOD`.
-
-#### 3. JS — Função `updateDealField(fieldName, value)`
-
-Nova função no bloco `<script>` que chama a edge function `bitrix24-update-deal-payment` (ou directamente `bitrix24-send` com `crm.deal.update`) para actualizar o campo UF no deal:
+Chama `bitrix24-send` com `crm.deal.update` para actualizar o campo UF no Bitrix24. Após sucesso, actualiza o texto do badge e a variável `DEAL_RAW_GATEWAY` para que cobranças futuras usem o gateway correcto.
 
 ```javascript
 async function updateDealField(fieldName, value) {
@@ -42,21 +39,11 @@ async function updateDealField(fieldName, value) {
 }
 ```
 
-Ao seleccionar no dropdown:
-- Gateway → `updateDealField('UF_CRM_EMMELY_GATEWAY', selectedEnumId)`
-- Método → `updateDealField('UF_CRM_EMMELY_PAYMENT_METHOD', selectedEnumId)`
-- Vencimento → `updateDealField('UF_CRM_EMMELY_NEXT_DUE_DATE', selectedDate)`
+#### 4. CSS para badges editáveis
 
-Após sucesso, actualiza o texto do badge e o `DEAL_RAW_GATEWAY` para que cobranças futuras usem o gateway correcto.
-
-#### 4. CSS — Estilos para badges editáveis
-
-Adicionar cursor pointer, hover com sublinhado, e estilo do dropdown inline.
-
-#### 5. Resolver IDs de enumeração
-
-Como os campos Gateway e Método são do tipo `enumeration`, o servidor armazena IDs numéricos. O HTML já recebe os metadados dos campos (linhas 1970-1983). Passar o mapa de `{id: label}` para o JS do cliente para que o dropdown mostre labels legíveis e envie os IDs correctos.
+Cursor pointer, hover com fundo subtil, ícone lápis, e estilos para dropdown/date inline.
 
 ### Ficheiro a editar
 
-1. **`supabase/functions/bitrix24-payment-tab/index.ts`** — badges editáveis + JS updateDealField + CSS
+1. **`supabase/functions/bitrix24-payment-tab/index.ts`** — badges editáveis + JS + CSS + mapa de enumeração
+
