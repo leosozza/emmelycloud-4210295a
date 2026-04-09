@@ -490,6 +490,11 @@ async function handleGenerateProposal(
 
     const entityTitle = entity.TITLE || "";
     const opportunity = parseFloat(entity.OPPORTUNITY || "0");
+    const currencyId = entity.CURRENCY_ID || "EUR";
+
+    // Currency symbol map
+    const currencySymbols: Record<string, string> = { EUR: "€", BRL: "R$", USD: "$", GBP: "£", CHF: "CHF", CAD: "C$" };
+    const currSymbol = currencySymbols[currencyId] || currencyId;
 
     // 3. Fetch contact data
     let clientName = "";
