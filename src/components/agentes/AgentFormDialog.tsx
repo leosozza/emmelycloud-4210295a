@@ -234,9 +234,17 @@ export function AgentFormDialog({
             <Input type="number" step="0.01" min="0" value={editingAgent.monthly_budget_usd ?? ""} onChange={(e) => setEditingAgent(prev => ({ ...prev, monthly_budget_usd: e.target.value ? parseFloat(e.target.value) : null }))} placeholder="Ex: 50.00 (deixe vazio para ilimitado)" />
             <p className="text-[10px] text-muted-foreground mt-1">Limite de custo mensal para este agente. Alertas aparecem na Observabilidade.</p>
           </div>
+          {/* Base Prompt (Persona) */}
           <Separator />
           <div>
-            <Label>System Prompt</Label>
+            <Label>Prompt Base (Persona) <Badge variant="outline" className="ml-1 text-[8px]">Gerado pelo Trainer</Badge></Label>
+            <Textarea value={editingAgent.base_prompt || ""} onChange={(e) => setEditingAgent(prev => ({ ...prev, base_prompt: e.target.value }))} rows={4} placeholder="Persona gerada automaticamente pelo treino do agente..." />
+            <p className="text-[10px] text-muted-foreground mt-1">Este prompt é gerado/actualizado pelo Persona Trainer. Pode editar manualmente se necessário.</p>
+          </div>
+
+          {/* System Prompt (Manual) */}
+          <div>
+            <Label>System Prompt (Instruções Manuais)</Label>
             <Textarea value={editingAgent.system_prompt || ""} onChange={(e) => setEditingAgent(prev => ({ ...prev, system_prompt: e.target.value }))} rows={6} placeholder="Instruções de comportamento do agente..." />
           </div>
 
