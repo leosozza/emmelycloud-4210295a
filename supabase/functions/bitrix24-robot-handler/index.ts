@@ -561,7 +561,7 @@ async function handleGenerateProposal(
       }
     }
 
-    // 5. Fetch products if product_ids provided
+    // 5. Fetch products — from manual IDs or auto-load from Bitrix24 deal
     let productsUsed = "";
     let productsValue = 0;
     let productsDescription = "";
@@ -582,6 +582,26 @@ async function handleGenerateProposal(
             .join("\n");
           console.log(`[ROBOT-HANDLER] Products found: ${productsUsed} (total: ${productsValue})`);
         }
+      }
+    } else if (entityType === "deal" && entityId) {
+      // Auto-load products from Bitrix24 deal
+      try {
+        const productRows = await callBitrix(ep, tk, "crm.deal.productrows.list", { id: entityId });
+        const rows = productRows.result || [];
+        if (rows.length > 0) {
+          productsUsed = rows.map((r: any) => r.PRODUCT_NAME || `Produto #${r.PRODUCT_ID}`).join(", ");
+          productsValue = rows.reduce((sum: number, r: any) => sum + (parseFloat(r.PRICE || "0") * parseFloat(r.QUANTITY || "1")), 0);
+          productsDescription = rows
+            .map((r: any) => {
+              const price = parseFloat(r.PRICE || "0");
+              const qty = parseFloat(r.QUANTITY || "1");
+              return `• ${r.PRODUCT_NAME || `Produto #${r.PRODUCT_ID}`}: ${qty > 1 ? `${qty}x ` : ""}€ ${(price * qty).toFixed(2)}`;
+            })
+            .join("\n");
+          console.log(`[ROBOT-HANDLER] Bitrix24 deal products loaded: ${productsUsed} (total: ${productsValue})`);
+        }
+      } catch (prodErr) {
+        console.error("[ROBOT-HANDLER] Failed to load deal products:", prodErr);
       }
     }
 
