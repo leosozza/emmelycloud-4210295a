@@ -93,6 +93,57 @@ Deno.serve(async (req) => {
       }
     }
 
+    // 1c. Trigger flow if configured
+    if (proposal.accept_flow_id) {
+      try {
+        // Find conversation via case → lead → conversation
+        let conversationId: string | null = null;
+        const { data: flowCase } = await supabase
+          .from("cases")
+          .select("lead_id")
+          .eq("id", proposal.case_id)
+          .single();
+
+        if (flowCase?.lead_id) {
+          const { data: flowLead } = await supabase
+            .from("leads")
+            .select("conversation_id")
+            .eq("id", flowCase.lead_id)
+            .single();
+          conversationId = flowLead?.conversation_id || null;
+        }
+
+        if (conversationId) {
+          // Set force_flow_id in bot_state so flow-engine picks it up
+          await supabase
+            .from("conversations")
+            .update({
+              bot_state: { force_flow_id: proposal.accept_flow_id },
+              attendance_mode: "bot",
+            })
+            .eq("id", conversationId);
+
+          // Invoke flow-engine
+          await fetch(`${supabaseUrl}/functions/v1/flow-engine`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Authorization": `Bearer ${serviceKey}`,
+            },
+            body: JSON.stringify({
+              conversation_id: conversationId,
+              message: `[SISTEMA] Proposta "${proposal.title}" aceite pelo cliente.`,
+            }),
+          });
+          console.log(`[PROPOSAL-ACCEPT] Flow ${proposal.accept_flow_id} triggered for conversation ${conversationId}`);
+        } else {
+          console.log(`[PROPOSAL-ACCEPT] No conversation found to trigger flow ${proposal.accept_flow_id}`);
+        }
+      } catch (flowErr) {
+        console.error("[PROPOSAL-ACCEPT] Flow trigger error:", flowErr);
+      }
+    }
+
     // 2. Also create a contract record for backward compat
     const { error: contractErr } = await supabase.from("contracts").insert({
       proposal_id: proposal.id,
