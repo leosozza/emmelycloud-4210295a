@@ -244,6 +244,35 @@ Deno.serve(async (req) => {
       }
     }
 
+    // 6a-CLAW. Inject compact history summary (inspired by compact_messages_if_needed from Claw Code)
+    // When a conversation has >30 messages, the history compactor generates a structured summary
+    // of older messages and injects it into the system prompt, keeping the context window lean.
+    let compactSummaryContext = "";
+    if (conversation_id) {
+      try {
+        const compactRes = await fetch(`${supabaseUrl}/functions/v1/ai-history-compactor`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "Authorization": `Bearer ${serviceKey}` },
+          body: JSON.stringify({ action: "get_compact_context", conversation_id }),
+        });
+        if (compactRes.ok) {
+          const compactData = await compactRes.json();
+          if (compactData.has_summary && compactData.context_prompt) {
+            compactSummaryContext = `\n\n${compactData.context_prompt}\n`;
+            console.log(`[AI-PROCESS] Compact context injected (${compactData.summary?.messages_summarized || 0} msgs summarized)`);
+          }
+          // Trigger async compaction if needed (fire-and-forget)
+          fetch(`${supabaseUrl}/functions/v1/ai-history-compactor`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "Authorization": `Bearer ${serviceKey}` },
+            body: JSON.stringify({ action: "compact_if_needed", conversation_id }),
+          }).catch(() => {});
+        }
+      } catch (e) {
+        console.log("[AI-PROCESS] History compactor unavailable, using inline compression");
+      }
+    }
+
     // 6b. Load long-term user memory
     let memoryContext = "";
     if (conversation) {
@@ -339,7 +368,9 @@ Deno.serve(async (req) => {
       if (agent.strategic_objective) personalityPrompt += `- OBJECTIVO ESTRATÉGICO: ${agent.strategic_objective}\n`;
     }
 
-    const systemPrompt = (agent.system_prompt || "") + personalityPrompt + knowledgeContext + memoryContext + compressedHistory + contactContext + antiRepetitionPrompt + sentimentFlag + autoLangPrompt;
+    // Use compact summary if available, otherwise fall back to inline compressed history
+    const historySection = compactSummaryContext || compressedHistory;
+    const systemPrompt = (agent.system_prompt || "") + personalityPrompt + knowledgeContext + memoryContext + historySection + contactContext + antiRepetitionPrompt + sentimentFlag + autoLangPrompt;
 
     console.log(`[AI-PROCESS] Context: recent=${recentMessages.length}, older=${olderMessages.length}, kb=${linkedDocs?.length || 0}, memory=${memoryContext ? "yes" : "no"}`);
 
