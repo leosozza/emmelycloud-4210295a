@@ -56,8 +56,8 @@ export const FLOW_TEMPLATES: FlowTemplate[] = [
     triggerType: "keyword",
     nodes: [
       { id: "n1", type: "custom", position: { x: 250, y: 50 }, data: { nodeType: "message_buttons", label: "Menu Principal", message: "Olá! Como posso ajudá-lo?", buttons: [{ id: "btn_1", label: "Suporte Técnico" }, { id: "btn_2", label: "Financeiro" }, { id: "btn_3", label: "Outros" }] } },
-      { id: "n2", type: "custom", position: { x: 100, y: 220 }, data: { nodeType: "transfer", label: "→ Suporte", department: "suporte", transferMessage: "Vou transferir para o suporte técnico..." } },
-      { id: "n3", type: "custom", position: { x: 300, y: 220 }, data: { nodeType: "transfer", label: "→ Financeiro", department: "financeiro", transferMessage: "Transferindo para o setor financeiro..." } },
+      { id: "n2", type: "custom", position: { x: 100, y: 220 }, data: { nodeType: "transfer_to_human" as const, label: "→ Suporte", department: "suporte", transferMessage: "Vou transferir para o suporte técnico..." } },
+      { id: "n3", type: "custom", position: { x: 300, y: 220 }, data: { nodeType: "transfer_to_human" as const, label: "→ Financeiro", department: "financeiro", transferMessage: "Transferindo para o setor financeiro..." } },
       { id: "n4", type: "custom", position: { x: 500, y: 220 }, data: { nodeType: "ai_response", label: "IA Responde", prompt: "Responda de forma empática e tente resolver a dúvida do cliente." } },
     ],
     edges: [
