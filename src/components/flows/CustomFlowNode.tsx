@@ -42,7 +42,7 @@ function CustomFlowNode({ data, selected }: NodeProps) {
   const isIntention = nd.nodeType === "ai_intention";
   const hasButtons = nd.nodeType === "message_buttons" && nd.buttons && nd.buttons.length > 0;
   const hasList = nd.nodeType === "message_list" && nd.listItems && nd.listItems.length > 0;
-  const isEnd = nd.nodeType === "end" || nd.nodeType === "end_flow";
+  const isEnd = nd.nodeType === "end";
 
   return (
     <div
@@ -119,7 +119,7 @@ function CustomFlowNode({ data, selected }: NodeProps) {
         )}
 
         {/* Webhook */}
-        {(nd.nodeType === "webhook" || nd.nodeType === "webhook_call") && nd.webhook?.url && (
+        {nd.nodeType === "webhook_call" && nd.webhook?.url && (
           <div className="flex items-center gap-1.5 p-1.5 rounded bg-muted/30 border border-border/50">
             <Globe className="w-3 h-3 text-muted-foreground" />
             <p className="text-[10px] text-muted-foreground truncate font-mono">
@@ -218,7 +218,7 @@ function CustomFlowNode({ data, selected }: NodeProps) {
         )}
 
         {/* Transfer */}
-        {(nd.nodeType === "transfer" || nd.nodeType === "transfer_to_human") && nd.department && (
+        {nd.nodeType === "transfer_to_human" && nd.department && (
           <p className="text-[10px] text-muted-foreground">→ {nd.department}</p>
         )}
 
