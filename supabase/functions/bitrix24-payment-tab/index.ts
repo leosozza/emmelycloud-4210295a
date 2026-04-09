@@ -840,22 +840,18 @@ function renderPaymentTab(opts: {
     closeInlineEditor(type);
 
     try {
-      var res = await fetch(SUPABASE_URL + '/functions/v1/bitrix24-send', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_KEY },
-        body: JSON.stringify({
-          member_id: MEMBER_ID,
-          method: 'crm.deal.update',
-          params: { id: ENTITY_ID, fields: { [config.field]: value } }
-        })
+      var fields = {};
+      fields[config.field] = value;
+      BX24.callMethod('crm.deal.update', { id: ENTITY_ID, fields: fields }, function(result) {
+        if (result.error()) {
+          if (badge) badge.textContent = '❌ Erro';
+          setStatus('Erro ao atualizar: ' + result.error().ex.error_description, 'var(--accent-overdue)');
+        } else {
+          if (badge) badge.textContent = displayLabel;
+          if (config.varName) window[config.varName] = value;
+          setStatus('✅ ' + type + ' atualizado!', 'var(--value-paid)');
+        }
       });
-      var data = await res.json();
-      if (data.error) throw new Error(data.error);
-      // Update badge text
-      if (badge) badge.textContent = displayLabel;
-      // Update JS var
-      if (config.varName) window[config.varName] = value;
-      setStatus('✅ ' + type + ' atualizado!', 'var(--value-paid)');
     } catch (e) {
       if (badge) badge.textContent = '❌ Erro';
       setStatus('Erro ao atualizar: ' + e.message, 'var(--accent-overdue)');
