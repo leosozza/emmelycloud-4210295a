@@ -220,7 +220,7 @@ serve(async (req) => {
         if (data.error) return json({ error: data.error, error_description: data.error_description }, 400);
 
         const leads = data.result || [];
-        const contactIds = [...new Set(leads.filter((l: any) => l.CONTACT_ID).map((l: any) => l.CONTACT_ID))];
+        const contactIds = [...new Set(leads.filter((l: any) => l.CONTACT_ID).map((l: any) => String(l.CONTACT_ID)))] as string[];
         const contactsMap = await fetchContacts(ep, auth, contactIds);
 
         // Fetch stage names
