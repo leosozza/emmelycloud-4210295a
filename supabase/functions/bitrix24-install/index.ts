@@ -335,6 +335,22 @@ Deno.serve(async (req) => {
           LIST_COLUMN_LABEL: { br: "PDF PROPOSTA", en: "PROPOSAL PDF" },
           LIST_FILTER_LABEL: { br: "PDF PROPOSTA", en: "PROPOSAL PDF" },
         },
+        {
+          FIELD_NAME: "UF_CRM_EMMELY_CONTRACT_URL",
+          USER_TYPE_ID: "url",
+          SORT: 0,
+          EDIT_FORM_LABEL: { br: "LINK DO CONTRATO", en: "CONTRACT LINK" },
+          LIST_COLUMN_LABEL: { br: "LINK CONTRATO", en: "CONTRACT LINK" },
+          LIST_FILTER_LABEL: { br: "LINK CONTRATO", en: "CONTRACT LINK" },
+        },
+        {
+          FIELD_NAME: "UF_CRM_EMMELY_CONTRACT_PDF",
+          USER_TYPE_ID: "url",
+          SORT: 0,
+          EDIT_FORM_LABEL: { br: "PDF DO CONTRATO", en: "CONTRACT PDF" },
+          LIST_COLUMN_LABEL: { br: "PDF CONTRATO", en: "CONTRACT PDF" },
+          LIST_FILTER_LABEL: { br: "PDF CONTRATO", en: "CONTRACT PDF" },
+        },
       ];
 
       const entityApis = [
@@ -905,9 +921,23 @@ Deno.serve(async (req) => {
           LIST_COLUMN_LABEL: { br: "PDF PROPOSTA", en: "PROPOSAL PDF" },
           LIST_FILTER_LABEL: { br: "PDF PROPOSTA", en: "PROPOSAL PDF" },
         },
+        {
+          FIELD_NAME: "UF_CRM_EMMELY_CONTRACT_URL",
+          USER_TYPE_ID: "url",
+          SORT: 0,
+          EDIT_FORM_LABEL: { br: "LINK DO CONTRATO", en: "CONTRACT LINK" },
+          LIST_COLUMN_LABEL: { br: "LINK CONTRATO", en: "CONTRACT LINK" },
+          LIST_FILTER_LABEL: { br: "LINK CONTRATO", en: "CONTRACT LINK" },
+        },
+        {
+          FIELD_NAME: "UF_CRM_EMMELY_CONTRACT_PDF",
+          USER_TYPE_ID: "url",
+          SORT: 0,
+          EDIT_FORM_LABEL: { br: "PDF DO CONTRATO", en: "CONTRACT PDF" },
+          LIST_COLUMN_LABEL: { br: "PDF CONTRATO", en: "CONTRACT PDF" },
+          LIST_FILTER_LABEL: { br: "PDF CONTRATO", en: "CONTRACT PDF" },
+        },
       ];
-
-      // Step 1: Delete existing EMMELY fields to ensure clean recreation
       const deleteApis = [
         { name: "Deal", listMethod: "crm.deal.userfield.list", deleteMethod: "crm.deal.userfield.delete" },
         { name: "Lead", listMethod: "crm.lead.userfield.list", deleteMethod: "crm.lead.userfield.delete" },
@@ -975,6 +1005,8 @@ Deno.serve(async (req) => {
           { bitrix_field_key: "UF_CRM_EMMELY_RECEIPT_PDF", bitrix_field_title: "Comprovante (PDF)", supabase_table: "receipt_links", supabase_column: "pdf_url" },
           { bitrix_field_key: "UF_CRM_EMMELY_PROPOSAL_URL", bitrix_field_title: "Link da Proposta", supabase_table: "proposals", supabase_column: "accept_token" },
           { bitrix_field_key: "UF_CRM_EMMELY_PROPOSAL_PDF", bitrix_field_title: "PDF da Proposta", supabase_table: "proposals", supabase_column: "pdf_url" },
+          { bitrix_field_key: "UF_CRM_EMMELY_CONTRACT_URL", bitrix_field_title: "Link do Contrato", supabase_table: "proposals", supabase_column: "sign_token" },
+          { bitrix_field_key: "UF_CRM_EMMELY_CONTRACT_PDF", bitrix_field_title: "PDF do Contrato", supabase_table: "proposals", supabase_column: "file_url" },
         ];
 
         // Delete existing mappings for this integration
@@ -1029,6 +1061,20 @@ Deno.serve(async (req) => {
       // Add a fallback option if no templates exist
       if (Object.keys(templateOptions).length === 0) {
         templateOptions[""] = "(Nenhum template encontrado)";
+      }
+
+      // Load contract templates for dynamic select in robot
+      const { data: contractTemplates } = await supabase
+        .from("proposal_templates")
+        .select("id, name")
+        .eq("template_type", "contrato");
+
+      const contractTemplateOptions: Record<string, string> = {};
+      (contractTemplates || []).forEach((t: any) => {
+        contractTemplateOptions[t.id] = t.name;
+      });
+      if (Object.keys(contractTemplateOptions).length === 0) {
+        contractTemplateOptions[""] = "(Nenhum template de contrato encontrado)";
       }
 
       const robots = [
@@ -1226,6 +1272,32 @@ Deno.serve(async (req) => {
           RETURN_PROPERTIES: {
             badge_status: { Name: "Status", Type: "string" },
             activity_id: { Name: "ID da Atividade", Type: "string" },
+            error: { Name: "Erro", Type: "string" },
+          },
+        },
+        {
+          CODE: "emmely_generate_contract",
+          NAME: "Emmely: Gerar Contrato",
+          DESCRIPTION: {
+            br: "Gera um contrato a partir de uma proposta aceite ou directamente.\n\n📋 CONFIGURAÇÃO:\n• proposal_id: Use o retorno {{proposal_id}} do robot 'Gerar Proposta' OU deixe vazio para criar um contrato novo\n• template_name: Selecione o modelo de contrato (templates do tipo 'contrato')\n• deal_id: Use {{ID}} para vincular ao negócio\n\n📤 ENVIO:\n• send_method: Enviar link de assinatura ou PDF via WhatsApp\n\n🔄 RETORNOS:\n• contract_url — link de assinatura digital\n• contract_pdf — PDF do contrato\n• contract_id — ID interno",
+            en: "Generates a contract from an accepted proposal or directly. Can send the signing link via WhatsApp."
+          },
+          PROPERTIES: {
+            proposal_id: { Name: "ID da Proposta", Type: "string", Description: "Use o retorno {{proposal_id}} do robot 'Gerar Proposta'. Se vazio, cria contrato novo com os dados do template." },
+            deal_id: { Name: "ID do Negócio", Type: "string", Description: "Use {{ID}} para vincular ao negócio actual" },
+            entity_type: { Name: "Tipo de Entidade", Type: "select", Options: { deal: "Negócio", lead: "Lead" }, Default: "deal" },
+            template_name: { Name: "Modelo de Contrato", Type: "select", Options: contractTemplateOptions, Description: "Selecione o modelo de contrato. Usado quando não há proposal_id ou para substituir o template da proposta." },
+            starts_at: { Name: "Data de Início", Type: "date", Description: "Data de início do contrato (YYYY-MM-DD). Se vazio, usa a data actual." },
+            duration_months: { Name: "Duração (meses)", Type: "int", Default: "12", Description: "Duração do contrato em meses a partir da data de início." },
+            send_method: { Name: "Método de Envio", Type: "select", Options: { none: "Não enviar", link: "Enviar Link de Assinatura", pdf: "Enviar PDF", both: "Link + PDF" }, Default: "none", Description: "none = apenas gera | link = envia link de assinatura digital via WhatsApp | pdf = envia PDF | both = ambos" },
+            send_to_phone: { Name: "Telefone para Envio", Type: "string", Description: "Número WhatsApp com código do país. Se vazio, usa o telefone do cliente da proposta." },
+          },
+          RETURN_PROPERTIES: {
+            contract_url: { Name: "URL de Assinatura", Type: "string" },
+            contract_pdf: { Name: "URL do PDF", Type: "string" },
+            contract_id: { Name: "ID do Contrato", Type: "string" },
+            status: { Name: "Status", Type: "string" },
+            send_status: { Name: "Status de Envio", Type: "string" },
             error: { Name: "Erro", Type: "string" },
           },
         },
