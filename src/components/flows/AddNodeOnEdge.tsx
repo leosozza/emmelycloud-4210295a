@@ -30,8 +30,9 @@ export default function AddNodeOnEdge({
 
   const onEdgeClick = (evt: React.MouseEvent) => {
     evt.stopPropagation();
-    if (data?.onInsertNode) {
-      data.onInsertNode(id);
+    const insertFn = data?.onInsertNode as ((edgeId: string) => void) | undefined;
+    if (insertFn) {
+      insertFn(id);
     }
   };
 
