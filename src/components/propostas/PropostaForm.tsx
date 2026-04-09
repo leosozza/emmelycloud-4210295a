@@ -51,6 +51,8 @@ export function PropostaForm({ open, onOpenChange, proposta, cases, onSave, savi
   const [clientAddress, setClientAddress] = useState("");
   const [serviceId, setServiceId] = useState<string>("");
   const [description, setDescription] = useState("");
+  const [autoPaymentEnabled, setAutoPaymentEnabled] = useState(false);
+  const [autoPaymentGateway, setAutoPaymentGateway] = useState("stripe_pt");
 
   const { data: services = [] } = useQuery({
     queryKey: ["services-select"],
@@ -98,6 +100,14 @@ export function PropostaForm({ open, onOpenChange, proposta, cases, onSave, savi
       setClientAddress((proposta as any)?.client_address || "");
       setServiceId((proposta as any)?.service_id || "");
       setDescription((proposta as any)?.description || "");
+      const apc = (proposta as any)?.auto_payment_config;
+      if (apc && apc.enabled) {
+        setAutoPaymentEnabled(true);
+        setAutoPaymentGateway(apc.gateway || "stripe_pt");
+      } else {
+        setAutoPaymentEnabled(false);
+        setAutoPaymentGateway("stripe_pt");
+      }
     }
   }, [proposta, open, preselectedCaseId]);
 
