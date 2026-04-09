@@ -1314,6 +1314,47 @@ export type Database = {
           },
         ]
       }
+      conversation_summaries: {
+        Row: {
+          conversation_id: string
+          created_at: string
+          id: string
+          message_count_at_compaction: number
+          messages_summarized: number
+          newest_summarized_id: string | null
+          oldest_message_id: string | null
+          summary_text: string
+        }
+        Insert: {
+          conversation_id: string
+          created_at?: string
+          id?: string
+          message_count_at_compaction?: number
+          messages_summarized?: number
+          newest_summarized_id?: string | null
+          oldest_message_id?: string | null
+          summary_text: string
+        }
+        Update: {
+          conversation_id?: string
+          created_at?: string
+          id?: string
+          message_count_at_compaction?: number
+          messages_summarized?: number
+          newest_summarized_id?: string | null
+          oldest_message_id?: string | null
+          summary_text?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "conversation_summaries_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: false
+            referencedRelation: "conversations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       conversations: {
         Row: {
           assigned_to: string | null
