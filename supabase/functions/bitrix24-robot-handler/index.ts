@@ -455,6 +455,8 @@ async function handleGenerateProposal(
   let conditions = properties.conditions || properties.CONDITIONS || "";
   const validDays = parseInt(properties.valid_days || properties.VALID_DAYS || "30") || 30;
 
+  const acceptStageId = properties.accept_stage_id || properties.ACCEPT_STAGE_ID || "";
+
   const entityId = entityType === "lead" ? leadId : dealId;
   if (!entityId) {
     return { proposal_url: "", pdf_url: "", proposal_id: "", status: "error", template_used: "", products_used: "", send_status: "", error: "deal_id or lead_id is required" };
