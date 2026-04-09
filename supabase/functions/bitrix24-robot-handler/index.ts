@@ -38,7 +38,31 @@ async function callBitrix(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ ...params, auth: accessToken }),
   });
-  return await response.json();
+  const data = await response.json();
+  return data;
+}
+
+// callBitrix with auto-retry on expired token
+async function callBitrixWithRefresh(
+  supabase: any,
+  integration: any,
+  method: string,
+  params: Record<string, any> = {}
+): Promise<any> {
+  const ep = integration.client_endpoint;
+  let tk = integration.access_token;
+
+  let result = await callBitrix(ep, tk, method, params);
+
+  if (result?.error === "expired_token" || result?.error === "WRONG_TOKEN") {
+    console.log(`[ROBOT-HANDLER] Token expired on ${method}, refreshing reactively...`);
+    const refreshed = await refreshBitrixToken(supabase, integration);
+    tk = refreshed.token;
+    integration.access_token = tk; // update in-memory for subsequent calls
+    result = await callBitrix(ep, tk, method, params);
+  }
+
+  return result;
 }
 
 async function debugLog(
@@ -60,6 +84,46 @@ async function debugLog(
   } catch (e) {
     console.error("[DEBUG LOG] Failed:", e);
   }
+}
+
+// --- Token Refresh ---
+async function refreshBitrixToken(supabase: any, integration: any): Promise<{ endpoint: string; token: string }> {
+  const ep = integration.client_endpoint;
+  let tk = integration.access_token;
+
+  // Check if token is expired or about to expire (5 min buffer)
+  const expiresAt = integration.expires_at ? new Date(integration.expires_at).getTime() : 0;
+  const now = Date.now();
+  const needsRefresh = !expiresAt || (expiresAt - now) < 5 * 60 * 1000;
+
+  if (needsRefresh && integration.refresh_token) {
+    console.log("[ROBOT-HANDLER] Token expired/expiring, refreshing...");
+    const clientId = Deno.env.get("BITRIX24_CLIENT_ID") || "";
+    const clientSecret = Deno.env.get("BITRIX24_CLIENT_SECRET") || "";
+
+    try {
+      const refreshUrl = `https://oauth.bitrix.info/oauth/token/?grant_type=refresh_token&client_id=${clientId}&client_secret=${clientSecret}&refresh_token=${integration.refresh_token}`;
+      const refreshRes = await fetch(refreshUrl);
+      const refreshData = await refreshRes.json();
+
+      if (refreshData.access_token) {
+        tk = refreshData.access_token;
+        const newExpiresAt = new Date(Date.now() + (refreshData.expires_in || 3600) * 1000).toISOString();
+        await supabase.from("bitrix24_integrations").update({
+          access_token: refreshData.access_token,
+          refresh_token: refreshData.refresh_token || integration.refresh_token,
+          expires_at: newExpiresAt,
+        }).eq("id", integration.id);
+        console.log("[ROBOT-HANDLER] Token refreshed successfully");
+      } else {
+        console.error("[ROBOT-HANDLER] Token refresh failed:", JSON.stringify(refreshData));
+      }
+    } catch (refreshErr) {
+      console.error("[ROBOT-HANDLER] Token refresh error:", refreshErr);
+    }
+  }
+
+  return { endpoint: ep, token: tk };
 }
 
 // --- Robot Handlers ---
@@ -476,8 +540,7 @@ async function handleGenerateProposal(
       return { proposal_url: "", pdf_url: "", proposal_id: "", status: "error", template_used: "", products_used: "", send_status: "", error: "Bitrix24 integration not found" };
     }
 
-    const ep = integration.client_endpoint;
-    const tk = integration.access_token;
+    const { endpoint: ep, token: tk } = await refreshBitrixToken(supabase, integration);
 
     // 2. Fetch entity data from Bitrix24
     const method = entityType === "lead" ? "crm.lead.get" : "crm.deal.get";
@@ -867,8 +930,7 @@ async function handleGenerateContract(
       return { contract_url: "", contract_pdf: "", contract_id: "", status: "error", send_status: "", error: "Bitrix24 integration not found" };
     }
 
-    const ep = integration.client_endpoint;
-    const tk = integration.access_token;
+    const { endpoint: ep, token: tk } = await refreshBitrixToken(supabase, integration);
 
     let proposal: any = null;
     const frontendUrl = Deno.env.get("FRONTEND_URL") || "https://emmelycloud.pages.dev";
@@ -1517,9 +1579,10 @@ Deno.serve(async (req) => {
         .maybeSingle();
 
       if (integration?.client_endpoint && integration?.access_token) {
+        const { endpoint: sendEp, token: sendTk } = await refreshBitrixToken(supabase, integration);
         const sendResult = await callBitrix(
-          integration.client_endpoint,
-          integration.access_token,
+          sendEp,
+          sendTk,
           "bizproc.event.send",
           {
             EVENT_TOKEN: eventToken,
