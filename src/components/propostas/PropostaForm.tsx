@@ -302,6 +302,34 @@ export function PropostaForm({ open, onOpenChange, proposta, cases, onSave, savi
               </Select>
             </div>
           </div>
+
+          {/* Auto-payment */}
+          <Separator />
+          <div className="rounded-lg border border-dashed p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <CreditCard className="h-4 w-4 text-muted-foreground" />
+                <Label className="text-sm font-semibold">Pagamento Automático</Label>
+              </div>
+              <Switch checked={autoPaymentEnabled} onCheckedChange={setAutoPaymentEnabled} />
+            </div>
+            {autoPaymentEnabled && (
+              <div>
+                <Label className="text-xs">Gateway</Label>
+                <Select value={autoPaymentGateway} onValueChange={setAutoPaymentGateway}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="stripe_pt">Stripe Portugal</SelectItem>
+                    <SelectItem value="stripe_br">Stripe Brasil</SelectItem>
+                    <SelectItem value="stripe">Stripe Global</SelectItem>
+                    <SelectItem value="asaas">Asaas (Brasil)</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-[10px] text-muted-foreground mt-1">Ao aceitar a proposta, o cliente será redirigido automaticamente para o pagamento.</p>
+              </div>
+            )}
+          </div>
+
           <div>
             <Label>Condições</Label>
             <Textarea value={conditions} onChange={(e) => setConditions(e.target.value)} rows={3} />
