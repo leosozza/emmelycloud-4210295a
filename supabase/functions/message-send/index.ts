@@ -102,7 +102,7 @@ Deno.serve(async (req) => {
     }
 
     // If media_base64 is provided, upload to Supabase Storage and get public URL
-    let resolvedInteractiveData = resolvedInteractiveData;
+    let resolvedInteractiveData = bodyInteractiveData;
     if (media_base64 && media_mime_type) {
       const supabaseTemp = createClient(
         Deno.env.get("SUPABASE_URL")!,
