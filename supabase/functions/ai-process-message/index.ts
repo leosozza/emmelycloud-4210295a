@@ -89,10 +89,37 @@ Deno.serve(async (req) => {
   const auxTokens = newTokenAccumulator();
 
   try {
-    const { conversation_id, message_text, agent_id, skip_send } = await req.json();
+    const body = await req.json();
+    const {
+      conversation_id,
+      message_text,
+      agent_id,
+      skip_send,
+      // ─── intention_mode: coleta estruturada de campos via IA ───
+      intention_mode,
+      intention_fields,
+      intention_collected,
+      intention_turn,
+    } = body;
+
     if (!message_text) {
       return new Response(JSON.stringify({ error: "message_text required" }), { status: 400, headers: jsonHeaders });
     }
+
+    // ─── INTENTION MODE: extrai campos estruturados com tool calling ───────────
+    if (intention_mode && intention_fields && Array.isArray(intention_fields)) {
+      const result = await processIntentionMode(
+        supabase,
+        conversation_id,
+        message_text,
+        intention_fields,
+        intention_collected || {},
+        intention_turn || 1,
+        auxTokens
+      );
+      return new Response(JSON.stringify(result), { headers: jsonHeaders });
+    }
+    // ────────────────────────────────────────────────────────────────────────────
 
     const noConversationMode = !conversation_id && skip_send;
     const startTime = Date.now();
@@ -1078,16 +1105,21 @@ async function extractUserMemory(supabase: any, supabaseUrl: string, serviceKey:
   }
 
   const facts = JSON.parse(jsonMatch[0]);
-  const phoneCol = conversation.contact_phone ? "contact_phone" : conversation.contact_instagram ? "contact_instagram" : "contact_email";
+  const channel = conversation.channel || "whatsapp";
 
   for (const fact of facts) {
     if (!fact.key || !fact.value) continue;
-    const { error: upsertErr } = await supabase.from("user_memory").upsert({
-      [phoneCol]: contactId,
-      key: fact.key,
-      value: String(fact.value),
-      updated_at: new Date().toISOString(),
-    }, { onConflict: `${phoneCol},key` });
+    // Bug #3 fix: usa RPC upsert_user_memory com índices parciais por canal
+    // em vez de ON CONFLICT genérico que falha para Instagram/Email
+    const { error: upsertErr } = await supabase.rpc("upsert_user_memory", {
+      p_contact_phone: conversation.contact_phone || null,
+      p_contact_instagram: conversation.contact_instagram || null,
+      p_contact_email: conversation.contact_email || null,
+      p_channel: channel,
+      p_key: fact.key,
+      p_value: String(fact.value),
+      p_source: "auto",
+    });
 
     if (upsertErr) {
       console.error(`[AI-PROCESS] Memory upsert error for key "${fact.key}":`, upsertErr.message);
@@ -1096,3 +1128,194 @@ async function extractUserMemory(supabase: any, supabaseUrl: string, serviceKey:
 
   console.log(`[AI-PROCESS] Extracted ${facts.length} memory facts for ${contactId}`);
 }
+
+// ─── INTENTION MODE: extrai campos estruturados via tool calling ─────────────
+// Chamado pelo flow-engine quando um nó ai_intention está ativo.
+// Usa o agente padrão para fazer uma chamada com tool calling forçado,
+// extraindo os campos configurados no nó de forma conversacional.
+async function processIntentionMode(
+  supabase: any,
+  conversationId: string,
+  userMessage: string,
+  fields: Array<{ name: string; label: string; type?: string; required?: boolean }>,
+  alreadyCollected: Record<string, string>,
+  turn: number,
+  auxTokens: TokenAccumulator
+): Promise<{
+  intention_completed: boolean;
+  intention_collected: Record<string, string>;
+  next_question?: string;
+}> {
+  // 1. Carregar o agente padrão para usar o provedor configurado
+  const { data: agent } = await supabase
+    .from("ai_agents")
+    .select("*")
+    .eq("is_default", true)
+    .eq("is_active", true)
+    .maybeSingle();
+
+  const apiKey = Deno.env.get("LOVABLE_API_KEY") || "";
+  const apiUrl = "https://ai.gateway.lovable.dev/v1/chat/completions";
+  const model = agent?.ai_model || "google/gemini-2.5-flash";
+
+  // 2. Identificar campos ainda não coletados
+  const pendingFields = fields.filter(f => !alreadyCollected[f.name]);
+
+  if (pendingFields.length === 0) {
+    return { intention_completed: true, intention_collected: alreadyCollected };
+  }
+
+  // 3. Construir o schema de tool calling dinamicamente com base nos campos pendentes
+  const toolProperties: Record<string, any> = {};
+  const toolRequired: string[] = [];
+
+  for (const field of pendingFields) {
+    toolProperties[field.name] = {
+      type: field.type === "number" ? "number" : "string",
+      description: field.label,
+    };
+    // Não marcar como required para permitir extração parcial
+  }
+
+  // 4. Construir o contexto do histórico recente
+  let historyContext = "";
+  if (conversationId) {
+    const { data: recentMsgs } = await supabase
+      .from("messages")
+      .select("direction, content")
+      .eq("conversation_id", conversationId)
+      .order("created_at", { ascending: false })
+      .limit(10);
+
+    if (recentMsgs && recentMsgs.length > 0) {
+      const msgs = recentMsgs.reverse().map((m: any) =>
+        `${m.direction === "inbound" ? "Cliente" : "Assistente"}: ${m.content}`
+      ).join("\n");
+      historyContext = `\n\nHISTÓRICO RECENTE:\n${msgs}\n`;
+    }
+  }
+
+  // 5. Campos já coletados para contexto
+  const collectedContext = Object.keys(alreadyCollected).length > 0
+    ? `\n\nJÁ COLETADO: ${JSON.stringify(alreadyCollected)}\n`
+    : "";
+
+  const systemPrompt = `Você é um assistente de coleta de informações.
+Analise a mensagem do cliente e extraia os dados solicitados de forma natural.
+Se o cliente forneceu algum dos campos pedidos, extraia-os.
+Se não forneceu, gere uma pergunta natural e amigável para solicitar o próximo campo pendente.
+${collectedContext}${historyContext}`;
+
+  const userPrompt = `Mensagem do cliente: "${userMessage}"
+
+Campos a coletar (ainda não preenchidos): ${pendingFields.map(f => `${f.name} (${f.label})`).join(", ")}
+
+Extraia o que estiver presente na mensagem. Se não houver dados suficientes, gere a próxima pergunta.`;
+
+  try {
+    const res = await fetch(apiUrl, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model,
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: userPrompt },
+        ],
+        temperature: 0.2,
+        tools: [
+          {
+            type: "function",
+            function: {
+              name: "extract_fields",
+              description: "Extrai os campos coletados da mensagem do cliente",
+              parameters: {
+                type: "object",
+                properties: {
+                  extracted: {
+                    type: "object",
+                    description: "Campos extraídos da mensagem",
+                    properties: toolProperties,
+                    additionalProperties: false,
+                  },
+                  next_question: {
+                    type: "string",
+                    description: "Próxima pergunta a fazer ao cliente (se ainda há campos pendentes após esta extração)",
+                  },
+                  all_collected: {
+                    type: "boolean",
+                    description: "true se todos os campos obrigatórios foram coletados",
+                  },
+                },
+                required: ["extracted", "all_collected"],
+                additionalProperties: false,
+              },
+            },
+          },
+        ],
+        tool_choice: { type: "function", function: { name: "extract_fields" } },
+      }),
+    });
+
+    if (!res.ok) {
+      console.error("[AI-PROCESS] Intention mode API error:", res.status);
+      return {
+        intention_completed: false,
+        intention_collected: alreadyCollected,
+        next_question: pendingFields[0]?.label
+          ? `Pode informar o seu ${pendingFields[0].label}?`
+          : null,
+      };
+    }
+
+    const result = await res.json();
+    accumulateUsage(auxTokens, result.usage);
+
+    const toolCall = result.choices?.[0]?.message?.tool_calls?.[0];
+    if (!toolCall?.function?.arguments) {
+      return {
+        intention_completed: false,
+        intention_collected: alreadyCollected,
+        next_question: pendingFields[0]?.label
+          ? `Pode informar o seu ${pendingFields[0].label}?`
+          : null,
+      };
+    }
+
+    let args: any = {};
+    try { args = JSON.parse(toolCall.function.arguments); } catch {}
+
+    // Mesclar campos extraídos com os já coletados
+    const newCollected = { ...alreadyCollected };
+    const extracted = args.extracted || {};
+    for (const [key, value] of Object.entries(extracted)) {
+      if (value !== null && value !== undefined && String(value).trim() !== "") {
+        newCollected[key] = String(value).trim();
+      }
+    }
+
+    // Verificar se todos os campos obrigatórios foram coletados
+    const requiredFields = fields.filter(f => f.required !== false);
+    const allRequiredCollected = requiredFields.every(f => newCollected[f.name]);
+    const allOptionalCollected = fields.every(f => newCollected[f.name]);
+    const isCompleted = args.all_collected === true || allRequiredCollected;
+
+    console.log(`[AI-PROCESS] Intention turn ${turn}: extracted=${JSON.stringify(extracted)}, completed=${isCompleted}`);
+
+    return {
+      intention_completed: isCompleted,
+      intention_collected: newCollected,
+      next_question: isCompleted ? undefined : (args.next_question || null),
+    };
+  } catch (e) {
+    console.error("[AI-PROCESS] Intention mode error:", e);
+    return {
+      intention_completed: false,
+      intention_collected: alreadyCollected,
+      next_question: pendingFields[0]?.label
+        ? `Pode informar o seu ${pendingFields[0].label}?`
+        : null,
+    };
+  }
+}
+// ─────────────────────────────────────────────────────────────────────────────
