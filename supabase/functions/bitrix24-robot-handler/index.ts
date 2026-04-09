@@ -62,6 +62,46 @@ async function debugLog(
   }
 }
 
+// --- Token Refresh ---
+async function refreshBitrixToken(supabase: any, integration: any): Promise<{ endpoint: string; token: string }> {
+  const ep = integration.client_endpoint;
+  let tk = integration.access_token;
+
+  // Check if token is expired or about to expire (5 min buffer)
+  const expiresAt = integration.expires_at ? new Date(integration.expires_at).getTime() : 0;
+  const now = Date.now();
+  const needsRefresh = !expiresAt || (expiresAt - now) < 5 * 60 * 1000;
+
+  if (needsRefresh && integration.refresh_token) {
+    console.log("[ROBOT-HANDLER] Token expired/expiring, refreshing...");
+    const clientId = Deno.env.get("BITRIX24_CLIENT_ID") || "";
+    const clientSecret = Deno.env.get("BITRIX24_CLIENT_SECRET") || "";
+
+    try {
+      const refreshUrl = `https://oauth.bitrix.info/oauth/token/?grant_type=refresh_token&client_id=${clientId}&client_secret=${clientSecret}&refresh_token=${integration.refresh_token}`;
+      const refreshRes = await fetch(refreshUrl);
+      const refreshData = await refreshRes.json();
+
+      if (refreshData.access_token) {
+        tk = refreshData.access_token;
+        const newExpiresAt = new Date(Date.now() + (refreshData.expires_in || 3600) * 1000).toISOString();
+        await supabase.from("bitrix24_integrations").update({
+          access_token: refreshData.access_token,
+          refresh_token: refreshData.refresh_token || integration.refresh_token,
+          expires_at: newExpiresAt,
+        }).eq("id", integration.id);
+        console.log("[ROBOT-HANDLER] Token refreshed successfully");
+      } else {
+        console.error("[ROBOT-HANDLER] Token refresh failed:", JSON.stringify(refreshData));
+      }
+    } catch (refreshErr) {
+      console.error("[ROBOT-HANDLER] Token refresh error:", refreshErr);
+    }
+  }
+
+  return { endpoint: ep, token: tk };
+}
+
 // --- Robot Handlers ---
 
 async function handleSendWhatsApp(properties: Record<string, any>, supabaseUrl: string, serviceKey: string): Promise<Record<string, string>> {
