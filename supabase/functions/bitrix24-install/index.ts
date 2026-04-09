@@ -1302,6 +1302,8 @@ Deno.serve(async (req) => {
           },
         },
       ];
+
+      for (const robot of robots) {
         // Delete existing robot first (safe for reinstall)
         await callBitrix(clientEndpoint, accessToken, "bizproc.robot.delete", { CODE: robot.CODE });
 
