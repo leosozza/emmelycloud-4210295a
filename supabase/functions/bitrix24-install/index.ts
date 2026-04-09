@@ -921,9 +921,23 @@ Deno.serve(async (req) => {
           LIST_COLUMN_LABEL: { br: "PDF PROPOSTA", en: "PROPOSAL PDF" },
           LIST_FILTER_LABEL: { br: "PDF PROPOSTA", en: "PROPOSAL PDF" },
         },
+        {
+          FIELD_NAME: "UF_CRM_EMMELY_CONTRACT_URL",
+          USER_TYPE_ID: "url",
+          SORT: 0,
+          EDIT_FORM_LABEL: { br: "LINK DO CONTRATO", en: "CONTRACT LINK" },
+          LIST_COLUMN_LABEL: { br: "LINK CONTRATO", en: "CONTRACT LINK" },
+          LIST_FILTER_LABEL: { br: "LINK CONTRATO", en: "CONTRACT LINK" },
+        },
+        {
+          FIELD_NAME: "UF_CRM_EMMELY_CONTRACT_PDF",
+          USER_TYPE_ID: "url",
+          SORT: 0,
+          EDIT_FORM_LABEL: { br: "PDF DO CONTRATO", en: "CONTRACT PDF" },
+          LIST_COLUMN_LABEL: { br: "PDF CONTRATO", en: "CONTRACT PDF" },
+          LIST_FILTER_LABEL: { br: "PDF CONTRATO", en: "CONTRACT PDF" },
+        },
       ];
-
-      // Step 1: Delete existing EMMELY fields to ensure clean recreation
       const deleteApis = [
         { name: "Deal", listMethod: "crm.deal.userfield.list", deleteMethod: "crm.deal.userfield.delete" },
         { name: "Lead", listMethod: "crm.lead.userfield.list", deleteMethod: "crm.lead.userfield.delete" },
