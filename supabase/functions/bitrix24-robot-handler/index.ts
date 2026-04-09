@@ -794,6 +794,7 @@ async function handleGenerateProposal(
       }
     }
 
+    return {
       proposal_url: proposalUrl,
       pdf_url: pdfUrl,
       proposal_id: proposal.id,
