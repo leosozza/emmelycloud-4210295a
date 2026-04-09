@@ -1579,9 +1579,10 @@ Deno.serve(async (req) => {
         .maybeSingle();
 
       if (integration?.client_endpoint && integration?.access_token) {
+        const { endpoint: sendEp, token: sendTk } = await refreshBitrixToken(supabase, integration);
         const sendResult = await callBitrix(
-          integration.client_endpoint,
-          integration.access_token,
+          sendEp,
+          sendTk,
           "bizproc.event.send",
           {
             EVENT_TOKEN: eventToken,
