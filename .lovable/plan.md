@@ -1,29 +1,43 @@
 
 
-# Diagnóstico: A Mudança de Etapa NÃO Vem do Código
+# Adicionar Flow ao Aceite de Proposta
 
-## Análise
+## Resumo
 
-Revisei todos os ficheiros envolvidos no fluxo do robot de proposta:
+Adicionar um campo `accept_flow_id` ao robot "Gerar Proposta" (dropdown dinâmico com flows activos) e ao robot "Gerar Contrato". Quando o cliente aceitar a proposta, o sistema dispara automaticamente o flow seleccionado.
 
-1. **`bitrix24-robot-handler`** — O `crm.deal.update` (linha 875) apenas actualiza os campos `UF_CRM_EMMELY_PROPOSAL_URL` e `UF_CRM_EMMELY_PROPOSAL_PDF`. **Não inclui `STAGE_ID`**, portanto não altera a etapa.
+## Alterações
 
-2. **`bitrix24-events`** — O evento `ONCRMDEALUPDATE` é enfileirado quando o deal é actualizado (o update dos campos UF dispara este evento).
+### 1. Migração: novo campo na tabela `proposals`
 
-3. **`bitrix24-worker` → `handleDealUpdate`** — Apenas verifica se o deal está na etapa WON para auto-charge. Se não está em WON, retorna imediatamente sem fazer nada. **Não altera a etapa.**
+```sql
+ALTER TABLE proposals ADD COLUMN IF NOT EXISTS accept_flow_id uuid;
+```
 
-4. **`proposal-accept`** — Só muda a etapa quando o cliente **aceita** a proposta (e apenas se `accept_stage_id` estiver configurado). Na geração, não é chamado.
+### 2. `supabase/functions/bitrix24-install/index.ts`
 
-## Conclusão
+- Carregar flows activos da tabela `flows` (mesmo padrão dos templates):
+```typescript
+const { data: activeFlows } = await supabase.from("flows").select("id, name").eq("is_active", true).order("name");
+const flowOptions: Record<string, string> = { "": "(Não executar flow)" };
+(activeFlows || []).forEach((f: any) => { flowOptions[f.id] = f.name; });
+```
+- Adicionar campo `accept_flow_id` como `select` com `flowOptions` nos robots `emmely_generate_proposal` e `emmely_generate_contract` (nas 2 secções: repair e install)
 
-**O código Emmely não muda a etapa do deal ao gerar a proposta.** A mudança para "negócio não fechado" está a ser causada por outra acção na **automação do Bitrix24** (BizProc/Workflow) — provavelmente há uma acção "Alterar Negócio" ou outra regra de automação configurada **depois** do robot "Gerar Proposta" no fluxo.
+### 3. `supabase/functions/bitrix24-robot-handler/index.ts`
 
-## O Que Verificar no Bitrix24
+- Ler `properties.accept_flow_id` e guardar na proposta ao inserir (`accept_flow_id`)
 
-1. Abra o deal 21851 e veja o **histórico/timeline** — vai aparecer quem/o quê mudou a etapa
-2. Vá a **CRM > Automação** na etapa onde o robot está configurado
-3. Verifique se existe outra acção **após** o robot `emmely_generate_proposal` que muda a etapa (ex: "Alterar Negócio", "Mover para etapa")
-4. Se encontrar essa acção, remova-a ou ajuste-a
+### 4. `supabase/functions/proposal-accept/index.ts`
 
-Não há alteração de código necessária — o problema está na configuração do workflow no Bitrix24.
+Após o aceite (depois do bloco Bitrix24 stage), adicionar:
+- Se `proposal.accept_flow_id` existir, buscar o lead vinculado → conversation_id
+- Chamar `flow-engine` com `conversation_id` e `force_flow_id` definido no `bot_state`, ou invocar directamente a edge function `flow-engine` passando os dados necessários
+
+### Ficheiros a editar
+
+1. **Migração SQL** — `accept_flow_id uuid` na tabela `proposals`
+2. **`supabase/functions/bitrix24-install/index.ts`** — dropdown de flows nos robots (4 locais: repair + install × proposta + contrato)
+3. **`supabase/functions/bitrix24-robot-handler/index.ts`** — ler e guardar `accept_flow_id`
+4. **`supabase/functions/proposal-accept/index.ts`** — disparar flow ao aceitar
 
