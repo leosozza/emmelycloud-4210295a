@@ -1063,6 +1063,20 @@ Deno.serve(async (req) => {
         templateOptions[""] = "(Nenhum template encontrado)";
       }
 
+      // Load contract templates for dynamic select in robot
+      const { data: contractTemplates } = await supabase
+        .from("proposal_templates")
+        .select("id, name")
+        .eq("template_type", "contrato");
+
+      const contractTemplateOptions: Record<string, string> = {};
+      (contractTemplates || []).forEach((t: any) => {
+        contractTemplateOptions[t.id] = t.name;
+      });
+      if (Object.keys(contractTemplateOptions).length === 0) {
+        contractTemplateOptions[""] = "(Nenhum template de contrato encontrado)";
+      }
+
       const robots = [
         {
           CODE: "emmely_send_whatsapp",
