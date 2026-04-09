@@ -545,9 +545,36 @@ function renderPaymentTab(opts: {
       <div class="b24-progress-label">${paidPct}%</div>
     </div>
     <div class="b24-summary-info">
-      <span>${icon("bank", 13)} Gateway: <strong>${opts.gateway || "—"}</strong></span>
-      <span>${icon("credit-card", 13)} Método: <strong>${opts.paymentMethod || "—"}</strong></span>
-      ${opts.nextDueDate ? `<span>${icon("calendar", 13)} Próx. vencimento: <strong>${formatDate(opts.nextDueDate)}</strong></span>` : `<span>${icon("calendar", 13)} Próx. vencimento: <strong>—</strong></span>`}
+      <span class="b24-editable-badge" onclick="openInlineEditor('gateway', this)" title="Clique para editar">
+        ${icon("bank", 13)} Gateway: <strong id="badge-gateway">${opts.gateway || "—"}</strong> ${icon("pencil", 10)}
+      </span>
+      <div class="b24-inline-editor" id="editor-gateway" style="display:none">
+        <select id="select-gateway" onchange="saveBadgeField('gateway')">
+          <option value="">— Seleccionar —</option>
+          ${(opts.gatewayOptions || []).map(o => `<option value="${o.id}" ${String(o.id) === String(opts.rawGateway || "") ? "selected" : ""}>${o.label}</option>`).join("")}
+        </select>
+        <button class="b24-inline-cancel" onclick="closeInlineEditor('gateway')">✕</button>
+      </div>
+
+      <span class="b24-editable-badge" onclick="openInlineEditor('method', this)" title="Clique para editar">
+        ${icon("credit-card", 13)} Método: <strong id="badge-method">${opts.paymentMethod || "—"}</strong> ${icon("pencil", 10)}
+      </span>
+      <div class="b24-inline-editor" id="editor-method" style="display:none">
+        <select id="select-method" onchange="saveBadgeField('method')">
+          <option value="">— Seleccionar —</option>
+          ${(opts.methodOptions || []).map(o => `<option value="${o.id}" ${String(o.id) === String(opts.rawMethod || "") ? "selected" : ""}>${o.label}</option>`).join("")}
+        </select>
+        <button class="b24-inline-cancel" onclick="closeInlineEditor('method')">✕</button>
+      </div>
+
+      <span class="b24-editable-badge" onclick="openInlineEditor('duedate', this)" title="Clique para editar">
+        ${icon("calendar", 13)} Próx. vencimento: <strong id="badge-duedate">${opts.nextDueDate ? formatDate(opts.nextDueDate) : "—"}</strong> ${icon("pencil", 10)}
+      </span>
+      <div class="b24-inline-editor" id="editor-duedate" style="display:none">
+        <input type="date" id="input-duedate" value="${opts.nextDueDate || ""}" onchange="saveBadgeField('duedate')">
+        <button class="b24-inline-cancel" onclick="closeInlineEditor('duedate')">✕</button>
+      </div>
+
       <span>${icon("clock", 13)} Criado: <strong>${opts.createdAt ? formatDate(opts.createdAt) : "—"}</strong></span>
     </div>
   </div>
