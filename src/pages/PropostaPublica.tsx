@@ -11,6 +11,10 @@ const paymentTypeLabels: Record<string, string> = {
   fixo: "Fixo", exito: "Êxito", hibrido: "Híbrido", parcelado: "Parcelado",
 };
 
+const currencySymbols: Record<string, string> = {
+  EUR: "€", BRL: "R$", USD: "$", GBP: "£", CHF: "CHF", CAD: "C$",
+};
+
 export default function PropostaPublica() {
   const { token } = useParams<{ token: string }>();
   const [proposal, setProposal] = useState<any>(null);
