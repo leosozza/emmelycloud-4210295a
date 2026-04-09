@@ -2253,6 +2253,7 @@ export type Database = {
           accepted_at: string | null
           accepted_ip: string | null
           accepted_user_agent: string | null
+          auto_payment_config: Json | null
           bitrix24_deal_id: string | null
           cancel_reason: string | null
           cancelled_at: string | null
@@ -2298,6 +2299,7 @@ export type Database = {
           accepted_at?: string | null
           accepted_ip?: string | null
           accepted_user_agent?: string | null
+          auto_payment_config?: Json | null
           bitrix24_deal_id?: string | null
           cancel_reason?: string | null
           cancelled_at?: string | null
@@ -2343,6 +2345,7 @@ export type Database = {
           accepted_at?: string | null
           accepted_ip?: string | null
           accepted_user_agent?: string | null
+          auto_payment_config?: Json | null
           bitrix24_deal_id?: string | null
           cancel_reason?: string | null
           cancelled_at?: string | null
