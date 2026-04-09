@@ -376,9 +376,9 @@ Deno.serve(async (req) => {
       try {
         const result = await processRecord(supabase, supabaseUrl, serviceKey, record, lateFeeConfig);
         results.push({ id: record.id, ...result });
-      } catch (err) {
+      } catch (err: unknown) {
         console.error(`[PAYMENT-REMINDER] Error processing ${record.id}:`, err);
-        results.push({ id: record.id, ok: false, reason: err.message });
+        results.push({ id: record.id, ok: false, reason: err instanceof Error ? err.message : "Unknown error" });
       }
     }
 
