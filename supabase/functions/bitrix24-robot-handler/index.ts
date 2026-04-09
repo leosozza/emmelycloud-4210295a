@@ -906,8 +906,7 @@ async function handleGenerateContract(
       return { contract_url: "", contract_pdf: "", contract_id: "", status: "error", send_status: "", error: "Bitrix24 integration not found" };
     }
 
-    const ep = integration.client_endpoint;
-    const tk = integration.access_token;
+    const { endpoint: ep, token: tk } = await refreshBitrixToken(supabase, integration);
 
     let proposal: any = null;
     const frontendUrl = Deno.env.get("FRONTEND_URL") || "https://emmelycloud.pages.dev";
