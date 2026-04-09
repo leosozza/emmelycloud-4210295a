@@ -430,6 +430,12 @@ function renderPaymentTab(opts: {
     .b24-summary-info span { display: inline-flex; align-items: center; gap: 5px; background: var(--bg-page); border: 1px solid var(--border-color); border-radius: 20px; padding: 5px 14px 5px 10px; font-size: 11px; color: var(--text-secondary); white-space: nowrap; transition: all 0.15s; }
     .b24-summary-info span:hover { border-color: var(--progress-fill-flat); background: var(--stat-total-bg-flat); }
     .b24-summary-info strong { font-weight: 700; color: var(--text-primary); }
+    .b24-editable-badge { cursor: pointer !important; }
+    .b24-editable-badge svg:last-child { opacity: 0.3; margin-left: 2px; transition: opacity 0.15s; }
+    .b24-editable-badge:hover svg:last-child { opacity: 0.8; }
+    .b24-inline-editor { display: flex; align-items: center; gap: 4px; }
+    .b24-inline-editor select, .b24-inline-editor input[type="date"] { font-size: 11px; padding: 4px 8px; border: 1px solid var(--progress-fill-flat); border-radius: 6px; background: var(--bg-page); color: var(--text-primary); outline: none; height: 28px; }
+    .b24-inline-cancel { background: none; border: none; color: var(--text-secondary); cursor: pointer; font-size: 14px; padding: 2px 4px; line-height: 1; }
 
     /* ── List ── */
     .b24-list { padding: 16px 24px; display: flex; flex-direction: column; gap: 12px; }
