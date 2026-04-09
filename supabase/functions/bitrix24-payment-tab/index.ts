@@ -183,9 +183,12 @@ function renderPaymentTab(opts: {
   noData: boolean;
   gateway?: string;
   rawGateway?: string;
+  rawMethod?: string;
   paymentMethod?: string;
   nextDueDate?: string | null;
   createdAt?: string | null;
+  gatewayOptions?: { id: string; label: string }[];
+  methodOptions?: { id: string; label: string }[];
 }): string {
   const { dealTitle, totalValue, paidValue, openValue, currency, installments, supabaseUrl, memberId, flows, contactPhone, noData } = opts;
   const EUR_TO_BRL = 6.10;
@@ -427,6 +430,12 @@ function renderPaymentTab(opts: {
     .b24-summary-info span { display: inline-flex; align-items: center; gap: 5px; background: var(--bg-page); border: 1px solid var(--border-color); border-radius: 20px; padding: 5px 14px 5px 10px; font-size: 11px; color: var(--text-secondary); white-space: nowrap; transition: all 0.15s; }
     .b24-summary-info span:hover { border-color: var(--progress-fill-flat); background: var(--stat-total-bg-flat); }
     .b24-summary-info strong { font-weight: 700; color: var(--text-primary); }
+    .b24-editable-badge { cursor: pointer !important; }
+    .b24-editable-badge svg:last-child { opacity: 0.3; margin-left: 2px; transition: opacity 0.15s; }
+    .b24-editable-badge:hover svg:last-child { opacity: 0.8; }
+    .b24-inline-editor { display: flex; align-items: center; gap: 4px; }
+    .b24-inline-editor select, .b24-inline-editor input[type="date"] { font-size: 11px; padding: 4px 8px; border: 1px solid var(--progress-fill-flat); border-radius: 6px; background: var(--bg-page); color: var(--text-primary); outline: none; height: 28px; }
+    .b24-inline-cancel { background: none; border: none; color: var(--text-secondary); cursor: pointer; font-size: 14px; padding: 2px 4px; line-height: 1; }
 
     /* ── List ── */
     .b24-list { padding: 16px 24px; display: flex; flex-direction: column; gap: 12px; }
@@ -542,9 +551,36 @@ function renderPaymentTab(opts: {
       <div class="b24-progress-label">${paidPct}%</div>
     </div>
     <div class="b24-summary-info">
-      <span>${icon("bank", 13)} Gateway: <strong>${opts.gateway || "—"}</strong></span>
-      <span>${icon("credit-card", 13)} Método: <strong>${opts.paymentMethod || "—"}</strong></span>
-      ${opts.nextDueDate ? `<span>${icon("calendar", 13)} Próx. vencimento: <strong>${formatDate(opts.nextDueDate)}</strong></span>` : `<span>${icon("calendar", 13)} Próx. vencimento: <strong>—</strong></span>`}
+      <span class="b24-editable-badge" onclick="openInlineEditor('gateway', this)" title="Clique para editar">
+        ${icon("bank", 13)} Gateway: <strong id="badge-gateway">${opts.gateway || "—"}</strong> ${icon("pencil", 10)}
+      </span>
+      <div class="b24-inline-editor" id="editor-gateway" style="display:none">
+        <select id="select-gateway" onchange="saveBadgeField('gateway')">
+          <option value="">— Seleccionar —</option>
+          ${(opts.gatewayOptions || []).map(o => `<option value="${o.id}" ${String(o.id) === String(opts.rawGateway || "") ? "selected" : ""}>${o.label}</option>`).join("")}
+        </select>
+        <button class="b24-inline-cancel" onclick="closeInlineEditor('gateway')">✕</button>
+      </div>
+
+      <span class="b24-editable-badge" onclick="openInlineEditor('method', this)" title="Clique para editar">
+        ${icon("credit-card", 13)} Método: <strong id="badge-method">${opts.paymentMethod || "—"}</strong> ${icon("pencil", 10)}
+      </span>
+      <div class="b24-inline-editor" id="editor-method" style="display:none">
+        <select id="select-method" onchange="saveBadgeField('method')">
+          <option value="">— Seleccionar —</option>
+          ${(opts.methodOptions || []).map(o => `<option value="${o.id}" ${String(o.id) === String(opts.rawMethod || "") ? "selected" : ""}>${o.label}</option>`).join("")}
+        </select>
+        <button class="b24-inline-cancel" onclick="closeInlineEditor('method')">✕</button>
+      </div>
+
+      <span class="b24-editable-badge" onclick="openInlineEditor('duedate', this)" title="Clique para editar">
+        ${icon("calendar", 13)} Próx. vencimento: <strong id="badge-duedate">${opts.nextDueDate ? formatDate(opts.nextDueDate) : "—"}</strong> ${icon("pencil", 10)}
+      </span>
+      <div class="b24-inline-editor" id="editor-duedate" style="display:none">
+        <input type="date" id="input-duedate" value="${opts.nextDueDate || ""}" onchange="saveBadgeField('duedate')">
+        <button class="b24-inline-cancel" onclick="closeInlineEditor('duedate')">✕</button>
+      </div>
+
       <span>${icon("clock", 13)} Criado: <strong>${opts.createdAt ? formatDate(opts.createdAt) : "—"}</strong></span>
     </div>
   </div>
@@ -754,8 +790,73 @@ function renderPaymentTab(opts: {
   var MEMBER_ID = "${memberId}";
   var ENTITY_ID = "${opts.entityId}";
   var DEAL_RAW_GATEWAY = "${opts.rawGateway || ""}";
+  var DEAL_RAW_METHOD = "${opts.rawMethod || ""}";
+  var GATEWAY_OPTIONS = ${JSON.stringify(opts.gatewayOptions || [])};
+  var METHOD_OPTIONS = ${JSON.stringify(opts.methodOptions || [])};
   var EUR_TO_BRL = 6.10;
   var _baixaOriginalAmount = 0;
+
+  // ─── Editable Badges ─────────────────────────────────────────────
+  var FIELD_MAP = {
+    gateway: { field: 'UF_CRM_EMMELY_GATEWAY', varName: 'DEAL_RAW_GATEWAY' },
+    method:  { field: 'UF_CRM_EMMELY_PAYMENT_METHOD', varName: 'DEAL_RAW_METHOD' },
+    duedate: { field: 'UF_CRM_EMMELY_NEXT_DUE_DATE', varName: null }
+  };
+
+  function openInlineEditor(type, badgeEl) {
+    var editor = document.getElementById('editor-' + type);
+    if (!editor) return;
+    // Hide badge, show editor
+    if (badgeEl) badgeEl.style.display = 'none';
+    editor.style.display = 'flex';
+    editor.dataset.badgeEl = badgeEl ? 'badge-' + type : '';
+  }
+
+  function closeInlineEditor(type) {
+    var editor = document.getElementById('editor-' + type);
+    if (editor) editor.style.display = 'none';
+    // Show badge again
+    var badges = document.querySelectorAll('.b24-editable-badge');
+    badges.forEach(function(b) { b.style.display = ''; });
+  }
+
+  async function saveBadgeField(type) {
+    var config = FIELD_MAP[type];
+    if (!config) return;
+    var value = '';
+    var displayLabel = '';
+    if (type === 'duedate') {
+      value = document.getElementById('input-duedate').value || '';
+      displayLabel = value ? new Date(value + 'T00:00:00').toLocaleDateString('pt-PT', {day:'2-digit',month:'2-digit',year:'numeric'}) : '—';
+    } else {
+      var sel = document.getElementById('select-' + type);
+      value = sel.value;
+      displayLabel = sel.options[sel.selectedIndex].text || value;
+    }
+    if (!value) { closeInlineEditor(type); return; }
+    // Visual feedback
+    var badge = document.getElementById('badge-' + type);
+    if (badge) badge.innerHTML = '⏳ Salvando...';
+    closeInlineEditor(type);
+
+    try {
+      var fields = {};
+      fields[config.field] = value;
+      BX24.callMethod('crm.deal.update', { id: ENTITY_ID, fields: fields }, function(result) {
+        if (result.error()) {
+          if (badge) badge.textContent = '❌ Erro';
+          setStatus('Erro ao atualizar: ' + result.error().ex.error_description, 'var(--accent-overdue)');
+        } else {
+          if (badge) badge.textContent = displayLabel;
+          if (config.varName) window[config.varName] = value;
+          setStatus('✅ ' + type + ' atualizado!', 'var(--value-paid)');
+        }
+      });
+    } catch (e) {
+      if (badge) badge.textContent = '❌ Erro';
+      setStatus('Erro ao atualizar: ' + e.message, 'var(--accent-overdue)');
+    }
+  }
 
   // Ensure a real transaction exists — creates one if txId is synthetic (e.g. "deal-123")
   async function ensureTxExists(txId, overlayEl, amount, currency, description, financialRecordId, installmentNumber, totalInstallments) {
@@ -1953,6 +2054,10 @@ Deno.serve(async (req) => {
     let dealGateway = "";
     let dealPaymentMethod = "";
     let dealCreatedAt = "";
+    let rawGatewayValue = "";
+    let rawMethodValue = "";
+    let gatewayEnumOptions: { id: string; label: string }[] = [];
+    let methodEnumOptions: { id: string; label: string }[] = [];
 
     try {
       const dealResult = await callBitrix(endpoint, accessToken, "crm.deal.get", { ID: entityId });
@@ -1965,27 +2070,38 @@ Deno.serve(async (req) => {
       const rawGateway = deal.UF_CRM_EMMELY_GATEWAY || "";
       const rawMethod = deal.UF_CRM_EMMELY_PAYMENT_METHOD || "";
 
-      if (rawGateway || rawMethod) {
-        try {
-          const fieldsResult = await callBitrix(endpoint, accessToken, "crm.deal.fields", {});
-          const fields = fieldsResult.result || {};
-          const resolveListValue = (fieldDef: any, rawVal: string): string => {
-            if (!fieldDef || !rawVal) return "";
-            const items = fieldDef.items || fieldDef.ITEMS || [];
-            if (Array.isArray(items)) {
-              const match = items.find((item: any) => String(item.ID) === String(rawVal) || String(item.VALUE) === String(rawVal));
-              if (match) return match.VALUE || match.value || rawVal;
-            }
-            if (/^\d+$/.test(rawVal)) return "";
-            return rawVal;
-          };
-          dealGateway = resolveListValue(fields.UF_CRM_EMMELY_GATEWAY, rawGateway);
-          dealPaymentMethod = resolveListValue(fields.UF_CRM_EMMELY_PAYMENT_METHOD, rawMethod);
-        } catch (e) {
-          console.error("[PAYMENT-TAB] Error resolving list fields:", e);
-          dealGateway = /^\d+$/.test(rawGateway) ? "" : rawGateway;
-          dealPaymentMethod = /^\d+$/.test(rawMethod) ? "" : rawMethod;
-        }
+      rawGatewayValue = rawGateway;
+      rawMethodValue = rawMethod;
+
+      // Always fetch fields to get enum options for editable badges
+      try {
+        const fieldsResult = await callBitrix(endpoint, accessToken, "crm.deal.fields", {});
+        const fields = fieldsResult.result || {};
+        const extractItems = (fieldDef: any): { id: string; label: string }[] => {
+          if (!fieldDef) return [];
+          const items = fieldDef.items || fieldDef.ITEMS || [];
+          if (!Array.isArray(items)) return [];
+          return items.map((item: any) => ({ id: String(item.ID), label: item.VALUE || item.value || String(item.ID) }));
+        };
+        gatewayEnumOptions = extractItems(fields.UF_CRM_EMMELY_GATEWAY);
+        methodEnumOptions = extractItems(fields.UF_CRM_EMMELY_PAYMENT_METHOD);
+
+        const resolveListValue = (fieldDef: any, rawVal: string): string => {
+          if (!fieldDef || !rawVal) return "";
+          const items = fieldDef.items || fieldDef.ITEMS || [];
+          if (Array.isArray(items)) {
+            const match = items.find((item: any) => String(item.ID) === String(rawVal) || String(item.VALUE) === String(rawVal));
+            if (match) return match.VALUE || match.value || rawVal;
+          }
+          if (/^\d+$/.test(rawVal)) return "";
+          return rawVal;
+        };
+        dealGateway = resolveListValue(fields.UF_CRM_EMMELY_GATEWAY, rawGateway);
+        dealPaymentMethod = resolveListValue(fields.UF_CRM_EMMELY_PAYMENT_METHOD, rawMethod);
+      } catch (e) {
+        console.error("[PAYMENT-TAB] Error resolving list fields:", e);
+        dealGateway = /^\d+$/.test(rawGateway) ? "" : rawGateway;
+        dealPaymentMethod = /^\d+$/.test(rawMethod) ? "" : rawMethod;
       }
       if (contactId) {
         const contactResult = await callBitrix(endpoint, accessToken, "crm.contact.get", { ID: contactId });
@@ -2167,10 +2283,13 @@ Deno.serve(async (req) => {
       installments, supabaseUrl, memberId, flows, contactPhone,
       noData: installments.length === 0,
       gateway: gwNames[displayGateway] || displayGateway,
-      rawGateway: displayGateway,
+      rawGateway: rawGatewayValue || displayGateway,
+      rawMethod: rawMethodValue || displayMethod,
       paymentMethod: methodNames[displayMethod] || displayMethod,
       nextDueDate,
       createdAt: displayCreatedAt,
+      gatewayOptions: gatewayEnumOptions,
+      methodOptions: methodEnumOptions,
     }), { headers: htmlHeaders });
 
   } catch (err) {
