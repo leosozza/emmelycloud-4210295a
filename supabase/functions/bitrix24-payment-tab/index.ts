@@ -784,8 +784,77 @@ function renderPaymentTab(opts: {
   var MEMBER_ID = "${memberId}";
   var ENTITY_ID = "${opts.entityId}";
   var DEAL_RAW_GATEWAY = "${opts.rawGateway || ""}";
+  var DEAL_RAW_METHOD = "${opts.rawMethod || ""}";
+  var GATEWAY_OPTIONS = ${JSON.stringify(opts.gatewayOptions || [])};
+  var METHOD_OPTIONS = ${JSON.stringify(opts.methodOptions || [])};
   var EUR_TO_BRL = 6.10;
   var _baixaOriginalAmount = 0;
+
+  // ─── Editable Badges ─────────────────────────────────────────────
+  var FIELD_MAP = {
+    gateway: { field: 'UF_CRM_EMMELY_GATEWAY', varName: 'DEAL_RAW_GATEWAY' },
+    method:  { field: 'UF_CRM_EMMELY_PAYMENT_METHOD', varName: 'DEAL_RAW_METHOD' },
+    duedate: { field: 'UF_CRM_EMMELY_NEXT_DUE_DATE', varName: null }
+  };
+
+  function openInlineEditor(type, badgeEl) {
+    var editor = document.getElementById('editor-' + type);
+    if (!editor) return;
+    // Hide badge, show editor
+    if (badgeEl) badgeEl.style.display = 'none';
+    editor.style.display = 'flex';
+    editor.dataset.badgeEl = badgeEl ? 'badge-' + type : '';
+  }
+
+  function closeInlineEditor(type) {
+    var editor = document.getElementById('editor-' + type);
+    if (editor) editor.style.display = 'none';
+    // Show badge again
+    var badges = document.querySelectorAll('.b24-editable-badge');
+    badges.forEach(function(b) { b.style.display = ''; });
+  }
+
+  async function saveBadgeField(type) {
+    var config = FIELD_MAP[type];
+    if (!config) return;
+    var value = '';
+    var displayLabel = '';
+    if (type === 'duedate') {
+      value = document.getElementById('input-duedate').value || '';
+      displayLabel = value ? new Date(value + 'T00:00:00').toLocaleDateString('pt-PT', {day:'2-digit',month:'2-digit',year:'numeric'}) : '—';
+    } else {
+      var sel = document.getElementById('select-' + type);
+      value = sel.value;
+      displayLabel = sel.options[sel.selectedIndex].text || value;
+    }
+    if (!value) { closeInlineEditor(type); return; }
+    // Visual feedback
+    var badge = document.getElementById('badge-' + type);
+    if (badge) badge.innerHTML = '⏳ Salvando...';
+    closeInlineEditor(type);
+
+    try {
+      var res = await fetch(SUPABASE_URL + '/functions/v1/bitrix24-send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_KEY },
+        body: JSON.stringify({
+          member_id: MEMBER_ID,
+          method: 'crm.deal.update',
+          params: { id: ENTITY_ID, fields: { [config.field]: value } }
+        })
+      });
+      var data = await res.json();
+      if (data.error) throw new Error(data.error);
+      // Update badge text
+      if (badge) badge.textContent = displayLabel;
+      // Update JS var
+      if (config.varName) window[config.varName] = value;
+      setStatus('✅ ' + type + ' atualizado!', 'var(--value-paid)');
+    } catch (e) {
+      if (badge) badge.textContent = '❌ Erro';
+      setStatus('Erro ao atualizar: ' + e.message, 'var(--accent-overdue)');
+    }
+  }
 
   // Ensure a real transaction exists — creates one if txId is synthetic (e.g. "deal-123")
   async function ensureTxExists(txId, overlayEl, amount, currency, description, financialRecordId, installmentNumber, totalInstallments) {
