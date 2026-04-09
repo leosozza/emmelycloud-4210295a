@@ -843,7 +843,7 @@ async function handleGenerateContract(
     const tk = integration.access_token;
 
     let proposal: any = null;
-    const frontendUrl = Deno.env.get("FRONTEND_URL") || "https://emmelycloud.lovable.app";
+    const frontendUrl = Deno.env.get("FRONTEND_URL") || "https://emmelycloud.pages.dev";
 
     if (proposalId) {
       // 2a. Load existing proposal
