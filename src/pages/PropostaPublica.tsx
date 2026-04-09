@@ -176,11 +176,11 @@ export default function PropostaPublica() {
             <h3 className="font-semibold text-sm uppercase tracking-wide text-muted-foreground">Orçamento</h3>
             <div className="bg-slate-50 rounded-xl p-6 text-center">
               <p className="text-3xl font-bold text-foreground">
-                € {Number(p.value).toLocaleString("pt-PT", { minimumFractionDigits: 2 })}
+                {curr} {Number(p.value).toLocaleString("pt-PT", { minimumFractionDigits: 2 })}
               </p>
               <p className="text-sm text-muted-foreground mt-1">
                 {paymentTypeLabels[p.payment_type]}
-                {p.installments > 1 ? ` — ${p.installments}x de € ${(p.value / p.installments).toLocaleString("pt-PT", { minimumFractionDigits: 2 })}` : ""}
+                {p.installments > 1 ? ` — ${p.installments}x de ${curr} ${(p.value / p.installments).toLocaleString("pt-PT", { minimumFractionDigits: 2 })}` : ""}
               </p>
             </div>
           </div>
