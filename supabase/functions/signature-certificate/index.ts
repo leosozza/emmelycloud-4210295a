@@ -60,8 +60,8 @@ Deno.serve(async (req) => {
 
     // Get digital signature - try proposal_id first, then contract_id fallback
     return generateCertificate(supabase, proposal, { title: proposal.title, value: proposal.value, description: proposal.description }, proposal.id, format, corsHeaders);
-  } catch (e) {
-    return new Response(JSON.stringify({ error: e.message }), {
+  } catch (e: unknown) {
+    return new Response(JSON.stringify({ error: e instanceof Error ? e.message : "Unknown error" }), {
       status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }

@@ -45,7 +45,7 @@ Deno.serve(async (req) => {
       .update({ status: "pending", processing_at: null })
       .eq("status", "processing")
       .lt("processing_at", stuckCutoff)
-      .select("id", { count: "exact", head: true });
+      .select("id");
 
     if (releasedCount && releasedCount > 0) {
       console.log(`[QUEUE-WORKER] Released ${releasedCount} stuck jobs`);

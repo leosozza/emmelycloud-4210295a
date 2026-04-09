@@ -127,13 +127,13 @@ export const FlowTestSimulator = forwardRef<HTMLDivElement, FlowTestSimulatorPro
     // Delay for visual effect
     await new Promise(resolve => setTimeout(resolve, 500));
 
-    switch (data.nodeType) {
+    const nt = data.nodeType as string;
+    switch (nt) {
       case "trigger":
         // Just proceed to next node
         break;
 
       case "message":
-      case "whatsapp":
         if (data.message) {
           setMessages(prev => [...prev, {
             id: `msg-${Date.now()}`,
@@ -150,7 +150,7 @@ export const FlowTestSimulator = forwardRef<HTMLDivElement, FlowTestSimulatorPro
             id: `msg-${Date.now()}`,
             type: "bot",
             content: replaceVariables(data.message),
-            buttons: data.buttons?.map(b => ({ id: b.id, text: b.text })),
+            buttons: data.buttons?.map(b => ({ id: b.id, text: b.label })),
             timestamp: new Date(),
           }]);
         }
@@ -160,21 +160,7 @@ export const FlowTestSimulator = forwardRef<HTMLDivElement, FlowTestSimulatorPro
         }
         break;
 
-      case "message_poll":
-        if (data.message && data.pollOptions) {
-          setMessages(prev => [...prev, {
-            id: `msg-${Date.now()}`,
-            type: "bot",
-            content: replaceVariables(data.message),
-            pollOptions: data.pollOptions.map((o: any) => ({ id: o.id, text: o.text })),
-            timestamp: new Date(),
-          }]);
-          setWaitingForInput(true);
-          return; // Wait for poll vote
-        }
-        break;
-
-      case "message_media":
+      case "media":
         if (data.mediaUrl) {
           setMessages(prev => [...prev, {
             id: `msg-${Date.now()}`,
@@ -188,13 +174,8 @@ export const FlowTestSimulator = forwardRef<HTMLDivElement, FlowTestSimulatorPro
         break;
 
       case "message_list":
-        if (data.message && data.listSections) {
+        if (data.message) {
           const listItems: Array<{ id: string; text: string }> = [];
-          data.listSections.forEach((section: any) => {
-            section.items?.forEach((item: any) => {
-              listItems.push({ id: item.id, text: `${section.title}: ${item.title}` });
-            });
-          });
           setMessages(prev => [...prev, {
             id: `msg-${Date.now()}`,
             type: "bot",
@@ -209,7 +190,7 @@ export const FlowTestSimulator = forwardRef<HTMLDivElement, FlowTestSimulatorPro
         }
         break;
 
-      case "wait_response":
+      case "wait_reply":
         setMessages(prev => [...prev, {
           id: `sys-${Date.now()}`,
           type: "system",
@@ -219,7 +200,7 @@ export const FlowTestSimulator = forwardRef<HTMLDivElement, FlowTestSimulatorPro
         setWaitingForInput(true);
         return; // Wait for user input
 
-      case "delay":
+      case "delay": {
         const delaySeconds = data.delay || 1;
         setMessages(prev => [...prev, {
           id: `sys-${Date.now()}`,
@@ -229,6 +210,7 @@ export const FlowTestSimulator = forwardRef<HTMLDivElement, FlowTestSimulatorPro
         }]);
         await new Promise(resolve => setTimeout(resolve, delaySeconds * 1000));
         break;
+      }
 
       case "set_variable":
         if (data.variable?.name) {
@@ -278,47 +260,6 @@ export const FlowTestSimulator = forwardRef<HTMLDivElement, FlowTestSimulatorPro
         }]);
         break;
 
-      case "bitrix_update_field":
-      case "bitrix_create_lead":
-      case "bitrix_create_deal":
-      case "bitrix_move_stage":
-      case "bitrix_assign":
-      case "bitrix_add_activity":
-      case "bitrix_schedule_activity":
-        setMessages(prev => [...prev, {
-          id: `sys-${Date.now()}`,
-          type: "system",
-          content: `📊 [Bitrix24] ${data.label || data.nodeType} executado (simulação)`,
-          timestamp: new Date(),
-        }]);
-        break;
-
-      case "bitrix_get_data":
-        // Simulate fetching data from Bitrix
-        const getDataConfig = data.bitrixGetData;
-        if (getDataConfig) {
-          const simulatedValues: Record<string, string> = {};
-          getDataConfig.fields.forEach((field: string) => {
-            const varName = getDataConfig.saveToVariables[field] || field.toLowerCase();
-            simulatedValues[varName] = `[valor_${field}]`;
-          });
-          setVariables(prev => ({ ...prev, ...simulatedValues }));
-          setMessages(prev => [...prev, {
-            id: `sys-${Date.now()}`,
-            type: "system",
-            content: `🔍 [Bitrix24] Dados buscados: ${getDataConfig.fields.join(", ")} (simulação)`,
-            timestamp: new Date(),
-          }]);
-        } else {
-          setMessages(prev => [...prev, {
-            id: `sys-${Date.now()}`,
-            type: "system",
-            content: `🔍 [Bitrix24] Buscar Dados executado (simulação)`,
-            timestamp: new Date(),
-          }]);
-        }
-        break;
-
       case "webhook_call":
         setMessages(prev => [...prev, {
           id: `sys-${Date.now()}`,
@@ -328,7 +269,7 @@ export const FlowTestSimulator = forwardRef<HTMLDivElement, FlowTestSimulatorPro
         }]);
         break;
 
-      case "end_flow":
+      case "end":
         setMessages(prev => [...prev, {
           id: `sys-${Date.now()}`,
           type: "system",
@@ -338,6 +279,16 @@ export const FlowTestSimulator = forwardRef<HTMLDivElement, FlowTestSimulatorPro
         setIsRunning(false);
         onHighlightNode(null);
         return;
+
+      default:
+        // Bitrix24 nodes, ai_intention, ai_action, ai_router, switch, condition, etc.
+        setMessages(prev => [...prev, {
+          id: `sys-${Date.now()}`,
+          type: "system",
+          content: `📊 [${nt}] ${data.label || nt} executado (simulação)`,
+          timestamp: new Date(),
+        }]);
+        break;
     }
 
     // Get next nodes and continue

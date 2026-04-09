@@ -251,9 +251,24 @@ export function convertPowerBotFlow(json: any): ImportedFlow {
     source: pbEdge.source,
     target: pbEdge.target,
     sourceHandle: pbEdge.sourceHandle || null,
-    targetHandle: pbEdge.targetHandle || null,
+    targetHandle: pbEdge.targetHandle === "null" ? null : (pbEdge.targetHandle || null),
     markerEnd: { type: MarkerType.ArrowClosed },
   }));
+
+  // ── Clean up sourceHandle for non-branching nodes ──
+  const branchingNodeIds = new Set(
+    nodes
+      .filter((n: any) => ["condition", "switch", "ai_router", "message_buttons", "message_list"].includes(n.data.nodeType))
+      .map((n: any) => n.id)
+  );
+  edges.forEach((e: any) => {
+    if (!branchingNodeIds.has(e.source)) {
+      e.sourceHandle = null;
+    }
+    if (e.targetHandle === "null") {
+      e.targetHandle = null;
+    }
+  });
 
   // ── Auto-layout: BFS layered graph ──
   applyAutoLayout(nodes, edges);

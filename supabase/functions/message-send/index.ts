@@ -397,7 +397,7 @@ Deno.serve(async (req) => {
           entity_id: conversation_id,
           external_id: externalMessageId,
           source: "emmely",
-        }, { onConflict: "entity_type,external_id,source" }).catch(() => {})
+        }, { onConflict: "entity_type,external_id,source" }).then(() => {})
       }
 
       await supabase.from("conversations").update({

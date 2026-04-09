@@ -349,8 +349,8 @@ async function extractWithAI(blob: Blob, ext: string): Promise<string> {
 
     const data = await response.json();
     return data.choices?.[0]?.message?.content || "";
-  } catch (e) {
-    if (e.name === "AbortError") console.error("AI extraction timed out (60s)");
+  } catch (e: unknown) {
+    if (e instanceof Error && e.name === "AbortError") console.error("AI extraction timed out (60s)");
     else console.error("AI extraction error:", e);
     return "";
   }
