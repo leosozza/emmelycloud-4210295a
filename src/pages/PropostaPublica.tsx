@@ -81,6 +81,8 @@ export default function PropostaPublica() {
 
   const p = proposal;
   const isExpired = p.valid_until && new Date(p.valid_until) < new Date() && p.status !== "aceita";
+  const curr = currencySymbols[p.currency || "EUR"] || "€";
+  const products = Array.isArray(p.products_json) && p.products_json.length > 0 ? p.products_json : null;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 py-8 px-4">
