@@ -183,9 +183,12 @@ function renderPaymentTab(opts: {
   noData: boolean;
   gateway?: string;
   rawGateway?: string;
+  rawMethod?: string;
   paymentMethod?: string;
   nextDueDate?: string | null;
   createdAt?: string | null;
+  gatewayOptions?: { id: string; label: string }[];
+  methodOptions?: { id: string; label: string }[];
 }): string {
   const { dealTitle, totalValue, paidValue, openValue, currency, installments, supabaseUrl, memberId, flows, contactPhone, noData } = opts;
   const EUR_TO_BRL = 6.10;
