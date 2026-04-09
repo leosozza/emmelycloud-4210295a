@@ -516,8 +516,7 @@ async function handleGenerateProposal(
       return { proposal_url: "", pdf_url: "", proposal_id: "", status: "error", template_used: "", products_used: "", send_status: "", error: "Bitrix24 integration not found" };
     }
 
-    const ep = integration.client_endpoint;
-    const tk = integration.access_token;
+    const { endpoint: ep, token: tk } = await refreshBitrixToken(supabase, integration);
 
     // 2. Fetch entity data from Bitrix24
     const method = entityType === "lead" ? "crm.lead.get" : "crm.deal.get";
