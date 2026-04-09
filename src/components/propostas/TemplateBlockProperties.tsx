@@ -27,6 +27,11 @@ export function TemplateBlockProperties({
   const { toast } = useToast();
   const [uploading, setUploading] = useState(false);
 
+  // Ensure block.content is always defined
+  if (!block.content) {
+    block = { ...block, content: {} as any };
+  }
+
   const updateContent = (key: string, value: any) => {
     onUpdateBlock({ ...block, content: { ...block.content, [key]: value } });
   };
