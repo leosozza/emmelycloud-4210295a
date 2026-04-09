@@ -729,7 +729,7 @@ async function handleGenerateProposal(
       return { proposal_url: "", pdf_url: "", proposal_id: "", status: "error", template_used: templateUsed, products_used: productsUsed, send_status: "", error: proposalErr?.message || "Failed to create proposal" };
     }
 
-    const frontendUrl = Deno.env.get("FRONTEND_URL") || "https://emmelycloud.lovable.app";
+    const frontendUrl = Deno.env.get("FRONTEND_URL") || "https://emmelycloud.pages.dev";
     const proposalUrl = `${frontendUrl}/proposta/${proposal.accept_token}`;
 
     // 10. Generate PDF
@@ -843,7 +843,7 @@ async function handleGenerateContract(
     const tk = integration.access_token;
 
     let proposal: any = null;
-    const frontendUrl = Deno.env.get("FRONTEND_URL") || "https://emmelycloud.lovable.app";
+    const frontendUrl = Deno.env.get("FRONTEND_URL") || "https://emmelycloud.pages.dev";
 
     if (proposalId) {
       // 2a. Load existing proposal
@@ -1095,7 +1095,7 @@ async function handleSendProposal(
       return { send_status: "no_phone", proposal_url: "", pdf_url: "", error: "No phone number available" };
     }
 
-    const frontendUrl = Deno.env.get("FRONTEND_URL") || "https://emmelycloud.lovable.app";
+    const frontendUrl = Deno.env.get("FRONTEND_URL") || "https://emmelycloud.pages.dev";
     const proposalUrl = `${frontendUrl}/proposta/${proposal.accept_token}`;
 
     // Generate PDF if not yet available
