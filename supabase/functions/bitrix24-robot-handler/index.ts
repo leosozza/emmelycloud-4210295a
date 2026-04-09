@@ -778,7 +778,22 @@ async function handleGenerateProposal(
       sendStatus = "no_phone";
     }
 
-    return {
+    // 12. Save proposal URLs back to Bitrix24 deal
+    if (entityType === "deal" && entityId) {
+      try {
+        await callBitrix(ep, tk, "crm.deal.update", {
+          ID: entityId,
+          fields: {
+            UF_CRM_EMMELY_PROPOSAL_URL: proposalUrl,
+            UF_CRM_EMMELY_PROPOSAL_PDF: pdfUrl || "",
+          },
+        });
+        console.log(`[ROBOT-HANDLER] Saved proposal URLs to deal ${entityId}`);
+      } catch (saveErr) {
+        console.error("[ROBOT-HANDLER] Failed to save proposal URLs to deal:", saveErr);
+      }
+    }
+
       proposal_url: proposalUrl,
       pdf_url: pdfUrl,
       proposal_id: proposal.id,
