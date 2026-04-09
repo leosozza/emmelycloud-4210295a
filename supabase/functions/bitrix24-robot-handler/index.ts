@@ -1404,6 +1404,9 @@ Deno.serve(async (req) => {
       case "emmely_send_proposal":
         returnValues = await handleSendProposal(properties, supabaseUrl, serviceKey);
         break;
+      case "emmely_generate_contract":
+        returnValues = await handleGenerateContract(properties, memberId, supabaseUrl, serviceKey);
+        break;
       case "emmely_convert_currency":
         returnValues = await handleConvertCurrency(properties);
         break;
