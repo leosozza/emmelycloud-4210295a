@@ -2058,6 +2058,10 @@ Deno.serve(async (req) => {
     let dealGateway = "";
     let dealPaymentMethod = "";
     let dealCreatedAt = "";
+    let rawGatewayValue = "";
+    let rawMethodValue = "";
+    let gatewayEnumOptions: { id: string; label: string }[] = [];
+    let methodEnumOptions: { id: string; label: string }[] = [];
 
     try {
       const dealResult = await callBitrix(endpoint, accessToken, "crm.deal.get", { ID: entityId });
