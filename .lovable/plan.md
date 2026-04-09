@@ -1,49 +1,66 @@
 
 
-# Tornar Badges Editáveis no Placement Emmely Pay
+# Melhorar Robot "Gerar Proposta" + Salvar Links no Bitrix24
 
-## Problema
+## Problemas identificados
 
-Os badges de **Gateway**, **Método** e **Próximo Vencimento** no placement Emmely Pay são texto estático — não permitem edição. O utilizador quer clicar e alterar o Gateway directamente no placement.
+1. **Template**: O campo `template_name` é texto livre — o utilizador tem que digitar o nome exacto. Robots do Bitrix24 **não suportam listas dinâmicas** (apenas `select` com opções fixas). A solução é carregar os templates da BD no momento do install/repair e registar as opções no robot.
+
+2. **Produtos**: O campo `product_ids` exige UUIDs manuais. O robot deve suportar carregar automaticamente os produtos vinculados ao deal no Bitrix24 (`crm.deal.productrows.list`).
+
+3. **Salvar no Bitrix24**: Após gerar a proposta, o robot **não escreve** `proposal_url` nem `pdf_url` de volta no deal. Precisamos de 2 novos campos UF e a lógica de update.
 
 ## Alterações
 
-### Ficheiro: `supabase/functions/bitrix24-payment-tab/index.ts`
+### 1. Novos campos UF no Bitrix24 (`bitrix24-install/index.ts`)
 
-#### 1. Passar mapa de enumeração para o JS do cliente
+Criar 2 campos `url` no install e repair_fields:
+- `UF_CRM_EMMELY_PROPOSAL_URL` — LINK DA PROPOSTA (SORT: 0)
+- `UF_CRM_EMMELY_PROPOSAL_PDF` — PDF DA PROPOSTA (SORT: 0)
 
-Na secção onde os metadados dos campos são resolvidos (linhas ~1968-1988), serializar o mapa `{id: label}` dos campos `UF_CRM_EMMELY_GATEWAY` e `UF_CRM_EMMELY_PAYMENT_METHOD` e injectá-lo como variáveis JS no HTML (`GATEWAY_OPTIONS`, `METHOD_OPTIONS`).
+### 2. Template como select dinâmico (`bitrix24-install/index.ts`)
 
-#### 2. Substituir spans estáticos por badges clicáveis (linhas 544-548)
+No momento do registo dos robots, carregar os templates tipo `proposta` da tabela `proposal_templates` e construir o objecto `Options` dinamicamente:
 
-- **Gateway**: `<span>` com cursor pointer + ícone lápis → ao clicar, mostra dropdown inline com as opções (Stripe Portugal, Stripe Brasil, Asaas, Direto)
-- **Método**: Mesmo padrão com opções (Cartão, PIX, Boleto, Multibanco, MB Way, SEPA, Direto)
-- **Próx. Vencimento**: Ao clicar, mostra `<input type="date">` inline
+```
+// Carregar templates
+const { data: templates } = await supabase.from("proposal_templates")
+  .select("id, name").eq("template_type", "proposta");
 
-#### 3. Nova função JS `updateDealField(fieldName, value)`
+const templateOptions = {};
+templates?.forEach(t => { templateOptions[t.id] = t.name; });
 
-Chama `bitrix24-send` com `crm.deal.update` para actualizar o campo UF no Bitrix24. Após sucesso, actualiza o texto do badge e a variável `DEAL_RAW_GATEWAY` para que cobranças futuras usem o gateway correcto.
+// No robot PROPERTIES:
+template_name: { Type: "select", Options: templateOptions }
+```
 
-```javascript
-async function updateDealField(fieldName, value) {
-  const res = await fetch(SUPABASE_URL + '/functions/v1/bitrix24-send', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      member_id: MEMBER_ID,
-      method: 'crm.deal.update',
-      params: { id: ENTITY_ID, fields: { [fieldName]: value } }
-    })
+Assim o utilizador vê um dropdown com os nomes dos templates.
+
+### 3. Produtos do Deal Bitrix24 (`bitrix24-robot-handler/index.ts`)
+
+Quando `product_ids` estiver vazio, carregar automaticamente os produtos do deal via `crm.deal.productrows.list` e usar os nomes/valores como descrição da proposta.
+
+### 4. Salvar links no deal após gerar (`bitrix24-robot-handler/index.ts`)
+
+Após a linha 746 (depois de gerar e enviar), adicionar `crm.deal.update` para salvar:
+- `UF_CRM_EMMELY_PROPOSAL_URL` = proposalUrl
+- `UF_CRM_EMMELY_PROPOSAL_PDF` = pdfUrl
+
+```typescript
+// Save proposal URLs to Bitrix24 deal
+if (entityType === "deal" && entityId) {
+  await callBitrix(ep, tk, "crm.deal.update", {
+    ID: entityId,
+    fields: {
+      UF_CRM_EMMELY_PROPOSAL_URL: proposalUrl,
+      UF_CRM_EMMELY_PROPOSAL_PDF: pdfUrl || "",
+    }
   });
-  return res.json();
 }
 ```
 
-#### 4. CSS para badges editáveis
+## Ficheiros a editar
 
-Cursor pointer, hover com fundo subtil, ícone lápis, e estilos para dropdown/date inline.
-
-### Ficheiro a editar
-
-1. **`supabase/functions/bitrix24-payment-tab/index.ts`** — badges editáveis + JS + CSS + mapa de enumeração
+1. **`supabase/functions/bitrix24-install/index.ts`** — novos campos UF_CRM_EMMELY_PROPOSAL_URL/PDF + template_name como select dinâmico
+2. **`supabase/functions/bitrix24-robot-handler/index.ts`** — carregar produtos do deal + salvar links no Bitrix24 após gerar proposta
 
