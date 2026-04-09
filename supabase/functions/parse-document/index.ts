@@ -108,9 +108,9 @@ serve(async (req) => {
     return new Response(JSON.stringify({ text: extractedText.substring(0, 500), chunks: chunks.length }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
-  } catch (error) {
+  } catch (error: unknown) {
     console.error("parse-document error:", error);
-    return new Response(JSON.stringify({ error: error.message }), {
+    return new Response(JSON.stringify({ error: error instanceof Error ? error.message : "Unknown error" }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
@@ -255,7 +255,7 @@ async function findFileInZip(zipBytes: Uint8Array, targetName: string): Promise<
           return decoder.decode(rawData);
         } else if (compressionMethod === 8) {
           try {
-            const ds = new DecompressionStream("raw");
+            const ds = new DecompressionStream("deflate-raw" as CompressionFormat);
             const writer = ds.writable.getWriter();
             writer.write(rawData);
             writer.close();
@@ -349,8 +349,8 @@ async function extractWithAI(blob: Blob, ext: string): Promise<string> {
 
     const data = await response.json();
     return data.choices?.[0]?.message?.content || "";
-  } catch (e) {
-    if (e.name === "AbortError") console.error("AI extraction timed out (60s)");
+  } catch (e: unknown) {
+    if (e instanceof Error && e.name === "AbortError") console.error("AI extraction timed out (60s)");
     else console.error("AI extraction error:", e);
     return "";
   }

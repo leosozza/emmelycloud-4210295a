@@ -294,6 +294,11 @@ function CredentialInput({
   const [showValue, setShowValue] = useState(false);
   const isSaving = saving === fullKey;
 
+  // Validação visual em tempo real: detectar Publishable Key do Stripe
+  const isStripeField = credentialKey.toUpperCase().includes("STRIPE");
+  const isPublishableKey = isStripeField && draftValue.trim().startsWith("pk_");
+  const isValidSecretKey = isStripeField && draftValue.trim().startsWith("sk_");
+
   return (
     <div className="space-y-1">
       <label className="text-xs text-muted-foreground">{label}</label>
@@ -304,7 +309,13 @@ function CredentialInput({
             placeholder={existing?.has_value ? existing.masked : "Não configurado"}
             value={draftValue}
             onChange={(e) => setDrafts((prev) => ({ ...prev, [fullKey]: e.target.value }))}
-            className="h-8 text-xs pr-8"
+            className={`h-8 text-xs pr-8 ${
+              isPublishableKey
+                ? "border-red-400 focus-visible:ring-red-400"
+                : isValidSecretKey
+                ? "border-green-400 focus-visible:ring-green-400"
+                : ""
+            }`}
           />
           <button
             type="button"
@@ -318,12 +329,24 @@ function CredentialInput({
           size="sm"
           variant="outline"
           className="h-8 px-2"
-          disabled={!draftValue || isSaving}
+          disabled={!draftValue || isSaving || isPublishableKey}
           onClick={() => onSave(provider, credentialKey, draftValue)}
         >
           {isSaving ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
         </Button>
       </div>
+      {/* Feedback visual em tempo real */}
+      {isPublishableKey && (
+        <div className="flex items-center gap-1.5 rounded-md bg-red-50 border border-red-200 px-2 py-1.5">
+          <AlertCircle className="h-3.5 w-3.5 text-red-500 shrink-0" />
+          <span className="text-xs text-red-700">
+            Esta é uma <strong>Publishable Key (pk_)</strong>. Use a <strong>Secret Key (sk_live_... ou sk_test_...)</strong> no Dashboard Stripe → Developers → API Keys.
+          </span>
+        </div>
+      )}
+      {isValidSecretKey && draftValue && (
+        <span className="text-xs text-green-600">✓ Secret Key válida detectada</span>
+      )}
       {existing?.has_value && !draftValue && (
         <span className="text-xs text-green-600">✓ Configurado</span>
       )}
@@ -716,14 +739,20 @@ function OmniChannelTab() {
 
   const handleSaveCredential = async (provider: string, key: string, value: string) => {
     const fullKey = `${provider}::${key}`;
+    // Validação prévia no frontend: rejeitar Publishable Keys do Stripe
+    if (key.toUpperCase().includes("STRIPE") && value.trim().startsWith("pk_")) {
+      toast.error("A chave Stripe configurada é uma Publishable Key (pk_). Configure a Secret Key (sk_) em Integrações.");
+      return;
+    }
     setSaving(fullKey);
     try {
-      const { error } = await supabase.functions.invoke("manage-credentials", {
+      const { data, error } = await supabase.functions.invoke("manage-credentials", {
         method: "POST",
         body: { provider, credential_key: key, credential_value: value },
       });
-      if (error) {
-        toast.error("Erro ao guardar credencial");
+      // Verificar erro retornado pelo backend no corpo da resposta (status 400)
+      if (error || data?.error) {
+        toast.error(data?.error || "Erro ao guardar credencial");
       } else {
         toast.success(`${key} guardado com sucesso`);
         setDrafts((prev) => ({ ...prev, [fullKey]: "" }));
@@ -1048,14 +1077,20 @@ function PagamentosTab() {
 
   const handleSaveCredential = async (provider: string, key: string, value: string) => {
     const fullKey = `${provider}::${key}`;
+    // Validação prévia no frontend: rejeitar Publishable Keys do Stripe
+    if (key.toUpperCase().includes("STRIPE") && value.trim().startsWith("pk_")) {
+      toast.error("A chave Stripe configurada é uma Publishable Key (pk_). Configure a Secret Key (sk_) em Integrações.");
+      return;
+    }
     setSaving(fullKey);
     try {
-      const { error } = await supabase.functions.invoke("manage-credentials", {
+      const { data, error } = await supabase.functions.invoke("manage-credentials", {
         method: "POST",
         body: { provider, credential_key: key, credential_value: value },
       });
-      if (error) {
-        toast.error("Erro ao guardar credencial");
+      // Verificar erro retornado pelo backend no corpo da resposta (status 400)
+      if (error || data?.error) {
+        toast.error(data?.error || "Erro ao guardar credencial");
       } else {
         toast.success(`${key} guardado com sucesso`);
         setDrafts((prev) => ({ ...prev, [fullKey]: "" }));

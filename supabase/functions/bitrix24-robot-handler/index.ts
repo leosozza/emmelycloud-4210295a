@@ -38,7 +38,31 @@ async function callBitrix(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ ...params, auth: accessToken }),
   });
-  return await response.json();
+  const data = await response.json();
+  return data;
+}
+
+// callBitrix with auto-retry on expired token
+async function callBitrixWithRefresh(
+  supabase: any,
+  integration: any,
+  method: string,
+  params: Record<string, any> = {}
+): Promise<any> {
+  const ep = integration.client_endpoint;
+  let tk = integration.access_token;
+
+  let result = await callBitrix(ep, tk, method, params);
+
+  if (result?.error === "expired_token" || result?.error === "WRONG_TOKEN") {
+    console.log(`[ROBOT-HANDLER] Token expired on ${method}, refreshing reactively...`);
+    const refreshed = await refreshBitrixToken(supabase, integration);
+    tk = refreshed.token;
+    integration.access_token = tk; // update in-memory for subsequent calls
+    result = await callBitrix(ep, tk, method, params);
+  }
+
+  return result;
 }
 
 async function debugLog(
@@ -60,6 +84,46 @@ async function debugLog(
   } catch (e) {
     console.error("[DEBUG LOG] Failed:", e);
   }
+}
+
+// --- Token Refresh ---
+async function refreshBitrixToken(supabase: any, integration: any): Promise<{ endpoint: string; token: string }> {
+  const ep = integration.client_endpoint;
+  let tk = integration.access_token;
+
+  // Check if token is expired or about to expire (5 min buffer)
+  const expiresAt = integration.expires_at ? new Date(integration.expires_at).getTime() : 0;
+  const now = Date.now();
+  const needsRefresh = !expiresAt || (expiresAt - now) < 5 * 60 * 1000;
+
+  if (needsRefresh && integration.refresh_token) {
+    console.log("[ROBOT-HANDLER] Token expired/expiring, refreshing...");
+    const clientId = Deno.env.get("BITRIX24_CLIENT_ID") || "";
+    const clientSecret = Deno.env.get("BITRIX24_CLIENT_SECRET") || "";
+
+    try {
+      const refreshUrl = `https://oauth.bitrix.info/oauth/token/?grant_type=refresh_token&client_id=${clientId}&client_secret=${clientSecret}&refresh_token=${integration.refresh_token}`;
+      const refreshRes = await fetch(refreshUrl);
+      const refreshData = await refreshRes.json();
+
+      if (refreshData.access_token) {
+        tk = refreshData.access_token;
+        const newExpiresAt = new Date(Date.now() + (refreshData.expires_in || 3600) * 1000).toISOString();
+        await supabase.from("bitrix24_integrations").update({
+          access_token: refreshData.access_token,
+          refresh_token: refreshData.refresh_token || integration.refresh_token,
+          expires_at: newExpiresAt,
+        }).eq("id", integration.id);
+        console.log("[ROBOT-HANDLER] Token refreshed successfully");
+      } else {
+        console.error("[ROBOT-HANDLER] Token refresh failed:", JSON.stringify(refreshData));
+      }
+    } catch (refreshErr) {
+      console.error("[ROBOT-HANDLER] Token refresh error:", refreshErr);
+    }
+  }
+
+  return { endpoint: ep, token: tk };
 }
 
 // --- Robot Handlers ---
@@ -455,6 +519,9 @@ async function handleGenerateProposal(
   let conditions = properties.conditions || properties.CONDITIONS || "";
   const validDays = parseInt(properties.valid_days || properties.VALID_DAYS || "30") || 30;
 
+  const acceptStageId = properties.accept_stage_id || properties.ACCEPT_STAGE_ID || "";
+  const acceptFlowId = properties.accept_flow_id || properties.ACCEPT_FLOW_ID || "";
+
   const entityId = entityType === "lead" ? leadId : dealId;
   if (!entityId) {
     return { proposal_url: "", pdf_url: "", proposal_id: "", status: "error", template_used: "", products_used: "", send_status: "", error: "deal_id or lead_id is required" };
@@ -474,8 +541,7 @@ async function handleGenerateProposal(
       return { proposal_url: "", pdf_url: "", proposal_id: "", status: "error", template_used: "", products_used: "", send_status: "", error: "Bitrix24 integration not found" };
     }
 
-    const ep = integration.client_endpoint;
-    const tk = integration.access_token;
+    const { endpoint: ep, token: tk } = await refreshBitrixToken(supabase, integration);
 
     // 2. Fetch entity data from Bitrix24
     const method = entityType === "lead" ? "crm.lead.get" : "crm.deal.get";
@@ -488,6 +554,11 @@ async function handleGenerateProposal(
 
     const entityTitle = entity.TITLE || "";
     const opportunity = parseFloat(entity.OPPORTUNITY || "0");
+    const currencyId = entity.CURRENCY_ID || "EUR";
+
+    // Currency symbol map
+    const currencySymbols: Record<string, string> = { EUR: "€", BRL: "R$", USD: "$", GBP: "£", CHF: "CHF", CAD: "C$" };
+    const currSymbol = currencySymbols[currencyId] || currencyId;
 
     // 3. Fetch contact data
     let clientName = "";
@@ -524,12 +595,26 @@ async function handleGenerateProposal(
     let templateId: string | null = null;
 
     if (templateName) {
-      const { data: tmpl } = await supabase
+      // Try by ID first (new select-based flow), then fallback to name search (legacy)
+      let tmpl: any = null;
+      const { data: tmplById } = await supabase
         .from("proposal_templates")
         .select("*")
+        .eq("id", templateName)
         .eq("template_type", "proposta")
-        .ilike("name", `%${templateName}%`)
         .maybeSingle();
+
+      if (tmplById) {
+        tmpl = tmplById;
+      } else {
+        const { data: tmplByName } = await supabase
+          .from("proposal_templates")
+          .select("*")
+          .eq("template_type", "proposta")
+          .ilike("name", `%${templateName}%`)
+          .maybeSingle();
+        tmpl = tmplByName;
+      }
 
       if (tmpl) {
         templateId = tmpl.id;
@@ -547,10 +632,12 @@ async function handleGenerateProposal(
       }
     }
 
-    // 5. Fetch products if product_ids provided
+    // 5. Fetch products — from manual IDs or auto-load from Bitrix24 deal
     let productsUsed = "";
     let productsValue = 0;
     let productsDescription = "";
+
+    let productsJson: Array<{name: string, quantity: number, price: number, total: number, description: string}> = [];
 
     if (productIdsRaw) {
       const productIds = productIdsRaw.split(",").map((id: string) => id.trim()).filter(Boolean);
@@ -564,10 +651,45 @@ async function handleGenerateProposal(
           productsUsed = products.map((p: any) => p.name).join(", ");
           productsValue = products.reduce((sum: number, p: any) => sum + (p.value || 0), 0);
           productsDescription = products
-            .map((p: any) => `• ${p.name}: € ${(p.value || 0).toFixed(2)}${p.budget_details ? ` — ${p.budget_details}` : ""}`)
+            .map((p: any) => `• ${p.name}: ${currSymbol} ${(p.value || 0).toFixed(2)}${p.budget_details ? ` — ${p.budget_details}` : ""}`)
             .join("\n");
+          productsJson = products.map((p: any) => ({ name: p.name, quantity: 1, price: p.value || 0, total: p.value || 0, description: p.budget_details || "" }));
           console.log(`[ROBOT-HANDLER] Products found: ${productsUsed} (total: ${productsValue})`);
         }
+      }
+    } else if (entityType === "deal" && entityId) {
+      // Auto-load products from Bitrix24 deal
+      try {
+        const productRows = await callBitrix(ep, tk, "crm.deal.productrows.list", { id: entityId });
+        const rows = productRows.result || [];
+        if (rows.length > 0) {
+          // Enrich with product descriptions from catalog
+          for (const row of rows) {
+            const qty = parseFloat(row.QUANTITY || "1");
+            const price = parseFloat(row.PRICE || "0");
+            const total = price * qty;
+            let prodDesc = "";
+            let prodName = row.PRODUCT_NAME || `Produto #${row.PRODUCT_ID}`;
+            if (row.PRODUCT_ID) {
+              try {
+                const prodResult = await callBitrix(ep, tk, "crm.product.get", { id: row.PRODUCT_ID });
+                if (prodResult.result) {
+                  prodName = prodResult.result.NAME || prodName;
+                  prodDesc = prodResult.result.DESCRIPTION || "";
+                }
+              } catch (_) { /* use fallback name */ }
+            }
+            productsJson.push({ name: prodName, quantity: qty, price, total, description: prodDesc });
+          }
+          productsUsed = productsJson.map(p => p.name).join(", ");
+          productsValue = productsJson.reduce((sum, p) => sum + p.total, 0);
+          productsDescription = productsJson
+            .map(p => `• ${p.name}: ${p.quantity > 1 ? `${p.quantity}x ` : ""}${currSymbol} ${p.total.toFixed(2)}`)
+            .join("\n");
+          console.log(`[ROBOT-HANDLER] Bitrix24 deal products loaded: ${productsUsed} (total: ${productsValue})`);
+        }
+      } catch (prodErr) {
+        console.error("[ROBOT-HANDLER] Failed to load deal products:", prodErr);
       }
     }
 
@@ -687,7 +809,12 @@ async function handleGenerateProposal(
         service_id: serviceId,
         template_id: templateId,
         status: "enviada",
-      })
+        products_json: productsJson,
+        currency: currencyId,
+        bitrix24_deal_id: entityType === "deal" ? String(entityId) : null,
+        accept_stage_id: acceptStageId || null,
+        accept_flow_id: acceptFlowId || null,
+      } as any)
       .select("id, accept_token")
       .single();
 
@@ -695,7 +822,7 @@ async function handleGenerateProposal(
       return { proposal_url: "", pdf_url: "", proposal_id: "", status: "error", template_used: templateUsed, products_used: productsUsed, send_status: "", error: proposalErr?.message || "Failed to create proposal" };
     }
 
-    const frontendUrl = Deno.env.get("FRONTEND_URL") || "https://emmelycloud.lovable.app";
+    const frontendUrl = Deno.env.get("FRONTEND_URL") || "https://emmelycloud.pages.dev";
     const proposalUrl = `${frontendUrl}/proposta/${proposal.accept_token}`;
 
     // 10. Generate PDF
@@ -722,7 +849,7 @@ async function handleGenerateProposal(
     if (sendMethod !== "none" && targetPhone) {
       try {
         if (sendMethod === "link" || sendMethod === "both") {
-          const linkMsg = `📋 *Proposta: ${finalTitle}*\n\nValor: € ${finalValue.toFixed(2)}\nValidade: ${validDays} dias\n\n✅ Aceite a proposta aqui:\n${proposalUrl}`;
+          const linkMsg = `📋 *Proposta: ${finalTitle}*\n\nValor: ${currSymbol} ${finalValue.toFixed(2)}\nValidade: ${validDays} dias\n\n✅ Aceite a proposta aqui:\n${proposalUrl}`;
           await handleSendWhatsApp({ phone: targetPhone, message: linkMsg }, supabaseUrl, serviceKey);
           sendStatus = "link_sent";
         }
@@ -744,6 +871,22 @@ async function handleGenerateProposal(
       sendStatus = "no_phone";
     }
 
+    // 12. Save proposal URLs back to Bitrix24 deal
+    if (entityType === "deal" && entityId) {
+      try {
+        await callBitrix(ep, tk, "crm.deal.update", {
+          ID: entityId,
+          fields: {
+            UF_CRM_EMMELY_PROPOSAL_URL: proposalUrl,
+            UF_CRM_EMMELY_PROPOSAL_PDF: pdfUrl || "",
+          },
+        });
+        console.log(`[ROBOT-HANDLER] Saved proposal URLs to deal ${entityId}`);
+      } catch (saveErr) {
+        console.error("[ROBOT-HANDLER] Failed to save proposal URLs to deal:", saveErr);
+      }
+    }
+
     return {
       proposal_url: proposalUrl,
       pdf_url: pdfUrl,
@@ -756,6 +899,268 @@ async function handleGenerateProposal(
     };
   } catch (e) {
     return { proposal_url: "", pdf_url: "", proposal_id: "", status: "error", template_used: "", products_used: "", send_status: "", error: String(e) };
+  }
+}
+
+// --- Generate Contract Handler ---
+async function handleGenerateContract(
+  properties: Record<string, any>,
+  memberId: string,
+  supabaseUrl: string,
+  serviceKey: string
+): Promise<Record<string, string>> {
+  const proposalId = properties.proposal_id || properties.PROPOSAL_ID || "";
+  const dealId = properties.deal_id || properties.DEAL_ID || "";
+  const entityType = (properties.entity_type || properties.ENTITY_TYPE || "deal").toLowerCase();
+  const templateName = properties.template_name || properties.TEMPLATE_NAME || "";
+  const startsAtRaw = properties.starts_at || properties.STARTS_AT || "";
+  const durationMonths = parseInt(properties.duration_months || properties.DURATION_MONTHS || "12") || 12;
+  const sendMethod = (properties.send_method || properties.SEND_METHOD || "none").toLowerCase();
+  const sendToPhone = properties.send_to_phone || properties.SEND_TO_PHONE || "";
+  // Auto-payment after signing
+  const sendPaymentAfterSign = (properties.send_payment_after_sign || properties.SEND_PAYMENT_AFTER_SIGN || "N").toUpperCase() === "Y";
+  const autoPaymentMethod = properties.payment_method || properties.PAYMENT_METHOD || "card";
+  const autoPaymentInstallments = parseInt(properties.payment_installments || properties.PAYMENT_INSTALLMENTS || "1") || 1;
+
+  try {
+    const supabase = createClient(supabaseUrl, serviceKey);
+
+    // 1. Get Bitrix24 integration
+    const { data: integration } = await supabase
+      .from("bitrix24_integrations")
+      .select("*")
+      .eq("member_id", memberId)
+      .maybeSingle();
+
+    if (!integration?.client_endpoint || !integration?.access_token) {
+      return { contract_url: "", contract_pdf: "", contract_id: "", status: "error", send_status: "", error: "Bitrix24 integration not found" };
+    }
+
+    const { endpoint: ep, token: tk } = await refreshBitrixToken(supabase, integration);
+
+    let proposal: any = null;
+    const frontendUrl = Deno.env.get("FRONTEND_URL") || "https://emmelycloud.pages.dev";
+
+    if (proposalId) {
+      // 2a. Load existing proposal
+      const { data: prop, error: propErr } = await supabase
+        .from("proposals")
+        .select("*")
+        .eq("id", proposalId)
+        .single();
+
+      if (propErr || !prop) {
+        return { contract_url: "", contract_pdf: "", contract_id: "", status: "error", send_status: "", error: "Proposal not found: " + proposalId };
+      }
+      proposal = prop;
+
+      // If proposal not yet set as contract, set contract_status to pendente
+      if (!proposal.contract_status || proposal.contract_status === "rascunho") {
+        const signToken = proposal.sign_token || crypto.randomUUID();
+        const startsAt = startsAtRaw || new Date().toISOString().split("T")[0];
+        const expiresAt = new Date(new Date(startsAt).getTime() + durationMonths * 30 * 24 * 60 * 60 * 1000).toISOString().split("T")[0];
+
+        // Apply contract template if provided
+        if (templateName) {
+          let tmpl: any = null;
+          const { data: tmplById } = await supabase.from("proposal_templates").select("*").eq("id", templateName).eq("template_type", "contrato").maybeSingle();
+          tmpl = tmplById;
+          if (!tmpl) {
+            const { data: tmplByName } = await supabase.from("proposal_templates").select("*").eq("template_type", "contrato").ilike("name", `%${templateName}%`).maybeSingle();
+            tmpl = tmplByName;
+          }
+          if (tmpl) {
+            // Update proposal with contract template data
+            await supabase.from("proposals").update({
+              template_id: tmpl.id,
+              conditions: tmpl.conditions || proposal.conditions,
+              description: tmpl.description || proposal.description,
+            }).eq("id", proposal.id);
+          }
+        }
+
+        const autoPaymentConfig = sendPaymentAfterSign
+          ? { enabled: true, payment_method: autoPaymentMethod, installments: autoPaymentInstallments, deal_id: dealId }
+          : null;
+
+        const { error: upErr } = await supabase
+          .from("proposals")
+          .update({
+            contract_status: "pendente",
+            sign_token: signToken,
+            starts_at: startsAt,
+            expires_at: expiresAt,
+            status: "aceite",
+            ...(autoPaymentConfig ? { auto_payment_config: autoPaymentConfig } : {}),
+          })
+          .eq("id", proposal.id);
+
+        if (upErr) {
+          return { contract_url: "", contract_pdf: "", contract_id: "", status: "error", send_status: "", error: "Failed to update proposal: " + upErr.message };
+        }
+
+        proposal.sign_token = signToken;
+      }
+    } else {
+      // 2b. Create new contract from template + deal data
+      const entityId = dealId;
+      if (!entityId) {
+        return { contract_url: "", contract_pdf: "", contract_id: "", status: "error", send_status: "", error: "proposal_id or deal_id is required" };
+      }
+
+      const method = entityType === "lead" ? "crm.lead.get" : "crm.deal.get";
+      const entityResult = await callBitrix(ep, tk, method, { ID: entityId });
+      const entity = entityResult.result;
+      if (!entity) {
+        return { contract_url: "", contract_pdf: "", contract_id: "", status: "error", send_status: "", error: `Entity ${entityId} not found` };
+      }
+
+      let clientName = "", clientEmail = "", clientPhone = "";
+      const contactId = entity.CONTACT_ID || entity.CONTACT_IDS?.[0];
+      if (contactId) {
+        const contactResult = await callBitrix(ep, tk, "crm.contact.get", { ID: contactId });
+        const contact = contactResult.result;
+        if (contact) {
+          clientName = `${contact.NAME || ""} ${contact.LAST_NAME || ""}`.trim();
+          if (contact.EMAIL?.length > 0) clientEmail = contact.EMAIL[0].VALUE || "";
+          if (contact.PHONE?.length > 0) clientPhone = contact.PHONE[0].VALUE || "";
+        }
+      }
+
+      let tmpl: any = null;
+      if (templateName) {
+        const { data: tmplById } = await supabase.from("proposal_templates").select("*").eq("id", templateName).eq("template_type", "contrato").maybeSingle();
+        tmpl = tmplById;
+        if (!tmpl) {
+          const { data: tmplByName } = await supabase.from("proposal_templates").select("*").eq("template_type", "contrato").ilike("name", `%${templateName}%`).maybeSingle();
+          tmpl = tmplByName;
+        }
+      }
+
+      const finalTitle = tmpl?.title || entity.TITLE || "Contrato";
+      const finalValue = parseFloat(entity.OPPORTUNITY || "0") || tmpl?.value || 0;
+      const startsAt = startsAtRaw || new Date().toISOString().split("T")[0];
+      const expiresAt = new Date(new Date(startsAt).getTime() + durationMonths * 30 * 24 * 60 * 60 * 1000).toISOString().split("T")[0];
+
+      // Find or create case
+      let caseId = "";
+      const { data: existingLead } = await supabase.from("leads").select("id").eq("bitrix24_id", String(entityId)).maybeSingle();
+      if (existingLead) {
+        const { data: existingCase } = await supabase.from("cases").select("id").eq("lead_id", existingLead.id).maybeSingle();
+        if (existingCase) {
+          caseId = existingCase.id;
+        } else {
+          const { data: newCase } = await supabase.from("cases").insert({ title: finalTitle, description: `Contrato via Bitrix24 (${entityType} #${entityId})`, legal_area: "outro", status: "aberto", lead_id: existingLead.id }).select("id").single();
+          caseId = newCase?.id || "";
+        }
+      } else {
+        const { data: newCase } = await supabase.from("cases").insert({ title: finalTitle, description: `Contrato via Bitrix24 (${entityType} #${entityId})`, legal_area: "outro", status: "aberto" }).select("id").single();
+        caseId = newCase?.id || "";
+      }
+
+      if (!caseId) {
+        return { contract_url: "", contract_pdf: "", contract_id: "", status: "error", send_status: "", error: "Failed to create case" };
+      }
+
+      const signToken = crypto.randomUUID();
+      const { data: newProposal, error: insertErr } = await supabase
+        .from("proposals")
+        .insert({
+          title: clientName ? `${finalTitle} — ${clientName}` : finalTitle,
+          case_id: caseId,
+          value: finalValue,
+          payment_type: tmpl?.payment_type || "fixo",
+          installments: tmpl?.installments || 1,
+          description: tmpl?.description || "",
+          conditions: tmpl?.conditions || "",
+          client_name: clientName,
+          client_email: clientEmail,
+          client_phone: clientPhone,
+          template_id: tmpl?.id || null,
+          service_id: tmpl?.service_id || null,
+          status: "aceite",
+          contract_status: "pendente",
+          sign_token: signToken,
+          starts_at: startsAt,
+          expires_at: expiresAt,
+          ...(sendPaymentAfterSign ? { auto_payment_config: { enabled: true, payment_method: autoPaymentMethod, installments: autoPaymentInstallments, deal_id: dealId } } : {}),
+        })
+        .select("*")
+        .single();
+
+      if (insertErr || !newProposal) {
+        return { contract_url: "", contract_pdf: "", contract_id: "", status: "error", send_status: "", error: "Failed to create contract: " + (insertErr?.message || "") };
+      }
+      proposal = newProposal;
+    }
+
+    // 3. Build URLs
+    const contractUrl = `${frontendUrl}/sign/${proposal.sign_token}`;
+
+    // 4. Generate PDF
+    let contractPdf = "";
+    try {
+      const pdfRes = await fetch(`${supabaseUrl}/functions/v1/proposal-pdf`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${serviceKey}` },
+        body: JSON.stringify({ proposal_id: proposal.id }),
+      });
+      const pdfData = await pdfRes.json();
+      contractPdf = pdfData.pdf_url || pdfData.url || "";
+    } catch (pdfErr) {
+      console.error("[ROBOT-HANDLER] Contract PDF generation error:", pdfErr);
+    }
+
+    // 5. Save URLs to Bitrix24 deal
+    if (dealId) {
+      try {
+        await callBitrix(ep, tk, "crm.deal.update", {
+          ID: dealId,
+          fields: {
+            UF_CRM_EMMELY_CONTRACT_URL: contractUrl,
+            UF_CRM_EMMELY_CONTRACT_PDF: contractPdf || "",
+          },
+        });
+        console.log(`[ROBOT-HANDLER] Saved contract URLs to deal ${dealId}`);
+      } catch (saveErr) {
+        console.error("[ROBOT-HANDLER] Failed to save contract URLs:", saveErr);
+      }
+    }
+
+    // 6. Send via WhatsApp if requested
+    let sendStatus = "";
+    const targetPhone = sendToPhone || proposal.client_phone || "";
+
+    if (sendMethod !== "none" && targetPhone) {
+      try {
+        if (sendMethod === "link" || sendMethod === "both") {
+          const linkMsg = `📝 *Contrato: ${proposal.title}*\n\n✍️ Assine digitalmente aqui:\n${contractUrl}`;
+          await handleSendWhatsApp({ phone: targetPhone, message: linkMsg }, supabaseUrl, serviceKey);
+          sendStatus = "link_sent";
+        }
+        if ((sendMethod === "pdf" || sendMethod === "both") && contractPdf) {
+          const pdfMsg = `📄 Segue o PDF do contrato *${proposal.title}*:\n${contractPdf}`;
+          await handleSendWhatsApp({ phone: targetPhone, message: pdfMsg }, supabaseUrl, serviceKey);
+          sendStatus = sendMethod === "both" ? "link_and_pdf_sent" : "pdf_sent";
+        }
+      } catch (sendErr) {
+        console.error("[ROBOT-HANDLER] Contract send error:", sendErr);
+        sendStatus = "send_error";
+      }
+    } else if (sendMethod !== "none" && !targetPhone) {
+      sendStatus = "no_phone";
+    }
+
+    return {
+      contract_url: contractUrl,
+      contract_pdf: contractPdf,
+      contract_id: proposal.id,
+      status: "created",
+      send_status: sendStatus,
+      error: "",
+    };
+  } catch (e) {
+    return { contract_url: "", contract_pdf: "", contract_id: "", status: "error", send_status: "", error: String(e) };
   }
 }
 
@@ -792,7 +1197,7 @@ async function handleSendProposal(
       return { send_status: "no_phone", proposal_url: "", pdf_url: "", error: "No phone number available" };
     }
 
-    const frontendUrl = Deno.env.get("FRONTEND_URL") || "https://emmelycloud.lovable.app";
+    const frontendUrl = Deno.env.get("FRONTEND_URL") || "https://emmelycloud.pages.dev";
     const proposalUrl = `${frontendUrl}/proposta/${proposal.accept_token}`;
 
     // Generate PDF if not yet available
@@ -1101,6 +1506,9 @@ Deno.serve(async (req) => {
       case "emmely_send_proposal":
         returnValues = await handleSendProposal(properties, supabaseUrl, serviceKey);
         break;
+      case "emmely_generate_contract":
+        returnValues = await handleGenerateContract(properties, memberId, supabaseUrl, serviceKey);
+        break;
       case "emmely_convert_currency":
         returnValues = await handleConvertCurrency(properties);
         break;
@@ -1183,9 +1591,10 @@ Deno.serve(async (req) => {
         .maybeSingle();
 
       if (integration?.client_endpoint && integration?.access_token) {
+        const { endpoint: sendEp, token: sendTk } = await refreshBitrixToken(supabase, integration);
         const sendResult = await callBitrix(
-          integration.client_endpoint,
-          integration.access_token,
+          sendEp,
+          sendTk,
           "bizproc.event.send",
           {
             EVENT_TOKEN: eventToken,

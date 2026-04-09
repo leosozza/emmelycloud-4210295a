@@ -15,7 +15,7 @@ const fieldCache: Record<string, { fields: BitrixFieldInfo[]; ts: number }> = {}
 const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 
 export function useBitrixFields(
-  entity: "lead" | "deal" | "spa",
+  entity: "lead" | "deal" | "contact" | "spa",
   spaEntityTypeId?: string,
   memberId?: string
 ) {

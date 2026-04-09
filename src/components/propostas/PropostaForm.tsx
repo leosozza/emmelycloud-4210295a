@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Switch } from "@/components/ui/switch";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
@@ -13,7 +14,7 @@ import { Separator } from "@/components/ui/separator";
 import { Constants, Tables } from "@/integrations/supabase/types";
 import { supabase } from "@/integrations/supabase/client";
 import { useQuery } from "@tanstack/react-query";
-import { User, FileText, LayoutTemplate } from "lucide-react";
+import { User, FileText, LayoutTemplate, CreditCard } from "lucide-react";
 
 type Proposal = Tables<"proposals">;
 
@@ -50,6 +51,8 @@ export function PropostaForm({ open, onOpenChange, proposta, cases, onSave, savi
   const [clientAddress, setClientAddress] = useState("");
   const [serviceId, setServiceId] = useState<string>("");
   const [description, setDescription] = useState("");
+  const [autoPaymentEnabled, setAutoPaymentEnabled] = useState(false);
+  const [autoPaymentGateway, setAutoPaymentGateway] = useState("stripe_pt");
 
   const { data: services = [] } = useQuery({
     queryKey: ["services-select"],
@@ -97,6 +100,14 @@ export function PropostaForm({ open, onOpenChange, proposta, cases, onSave, savi
       setClientAddress((proposta as any)?.client_address || "");
       setServiceId((proposta as any)?.service_id || "");
       setDescription((proposta as any)?.description || "");
+      const apc = (proposta as any)?.auto_payment_config;
+      if (apc && apc.enabled) {
+        setAutoPaymentEnabled(true);
+        setAutoPaymentGateway(apc.gateway || "stripe_pt");
+      } else {
+        setAutoPaymentEnabled(false);
+        setAutoPaymentGateway("stripe_pt");
+      }
     }
   }, [proposta, open, preselectedCaseId]);
 
@@ -154,6 +165,7 @@ export function PropostaForm({ open, onOpenChange, proposta, cases, onSave, savi
               client_address: clientAddress || null,
               service_id: serviceId || null,
               description: description || null,
+              auto_payment_config: autoPaymentEnabled ? { enabled: true, gateway: autoPaymentGateway } : null,
             });
           }}
           className="space-y-5"
@@ -290,6 +302,34 @@ export function PropostaForm({ open, onOpenChange, proposta, cases, onSave, savi
               </Select>
             </div>
           </div>
+
+          {/* Auto-payment */}
+          <Separator />
+          <div className="rounded-lg border border-dashed p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <CreditCard className="h-4 w-4 text-muted-foreground" />
+                <Label className="text-sm font-semibold">Pagamento Automático</Label>
+              </div>
+              <Switch checked={autoPaymentEnabled} onCheckedChange={setAutoPaymentEnabled} />
+            </div>
+            {autoPaymentEnabled && (
+              <div>
+                <Label className="text-xs">Gateway</Label>
+                <Select value={autoPaymentGateway} onValueChange={setAutoPaymentGateway}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="stripe_pt">Stripe Portugal</SelectItem>
+                    <SelectItem value="stripe_br">Stripe Brasil</SelectItem>
+                    <SelectItem value="stripe">Stripe Global</SelectItem>
+                    <SelectItem value="asaas">Asaas (Brasil)</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-[10px] text-muted-foreground mt-1">Ao aceitar a proposta, o cliente será redirigido automaticamente para o pagamento.</p>
+              </div>
+            )}
+          </div>
+
           <div>
             <Label>Condições</Label>
             <Textarea value={conditions} onChange={(e) => setConditions(e.target.value)} rows={3} />

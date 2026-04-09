@@ -181,10 +181,10 @@ Deno.serve(async (req) => {
         {
           FIELD_NAME: "UF_CRM_EMMELY_PAYMENT_STATUS",
           USER_TYPE_ID: "enumeration",
-          SORT: 10,
-          EDIT_FORM_LABEL: { br: "Status de Pagamento", en: "Payment Status" },
-          LIST_COLUMN_LABEL: { br: "Status Pagamento", en: "Payment Status" },
-          LIST_FILTER_LABEL: { br: "Status Pagamento", en: "Payment Status" },
+          SORT: 0,
+          EDIT_FORM_LABEL: { br: "STATUS DE PAGAMENTO", en: "PAYMENT STATUS" },
+          LIST_COLUMN_LABEL: { br: "STATUS PAGAMENTO", en: "PAYMENT STATUS" },
+          LIST_FILTER_LABEL: { br: "STATUS PAGAMENTO", en: "PAYMENT STATUS" },
           LIST: [
             { VALUE: "Pendente", SORT: 100, DEF: "Y" },
             { VALUE: "Parcial", SORT: 200 },
@@ -196,18 +196,18 @@ Deno.serve(async (req) => {
         {
           FIELD_NAME: "UF_CRM_EMMELY_INSTALLMENT_GROUP",
           USER_TYPE_ID: "string",
-          SORT: 20,
-          EDIT_FORM_LABEL: { br: "Grupo de Parcelas", en: "Installment Group" },
-          LIST_COLUMN_LABEL: { br: "Grupo Parcelas", en: "Installment Group" },
-          LIST_FILTER_LABEL: { br: "Grupo Parcelas", en: "Installment Group" },
+          SORT: 0,
+          EDIT_FORM_LABEL: { br: "GRUPO DE PARCELAS", en: "INSTALLMENT GROUP" },
+          LIST_COLUMN_LABEL: { br: "GRUPO PARCELAS", en: "INSTALLMENT GROUP" },
+          LIST_FILTER_LABEL: { br: "GRUPO PARCELAS", en: "INSTALLMENT GROUP" },
         },
         {
           FIELD_NAME: "UF_CRM_EMMELY_GATEWAY",
           USER_TYPE_ID: "enumeration",
-          SORT: 30,
-          EDIT_FORM_LABEL: { br: "Gateway de Pagamento", en: "Payment Gateway" },
-          LIST_COLUMN_LABEL: { br: "Gateway", en: "Gateway" },
-          LIST_FILTER_LABEL: { br: "Gateway", en: "Gateway" },
+          SORT: 0,
+          EDIT_FORM_LABEL: { br: "GATEWAY DE PAGAMENTO", en: "PAYMENT GATEWAY" },
+          LIST_COLUMN_LABEL: { br: "GATEWAY", en: "GATEWAY" },
+          LIST_FILTER_LABEL: { br: "GATEWAY", en: "GATEWAY" },
           LIST: [
             { VALUE: "Stripe Portugal", SORT: 100, DEF: "Y" },
             { VALUE: "Stripe Brasil", SORT: 200 },
@@ -218,26 +218,26 @@ Deno.serve(async (req) => {
         {
           FIELD_NAME: "UF_CRM_EMMELY_TOTAL_PAID",
           USER_TYPE_ID: "double",
-          SORT: 40,
-          EDIT_FORM_LABEL: { br: "Total Pago", en: "Total Paid" },
-          LIST_COLUMN_LABEL: { br: "Total Pago", en: "Total Paid" },
-          LIST_FILTER_LABEL: { br: "Total Pago", en: "Total Paid" },
+          SORT: 0,
+          EDIT_FORM_LABEL: { br: "TOTAL PAGO", en: "TOTAL PAID" },
+          LIST_COLUMN_LABEL: { br: "TOTAL PAGO", en: "TOTAL PAID" },
+          LIST_FILTER_LABEL: { br: "TOTAL PAGO", en: "TOTAL PAID" },
         },
         {
           FIELD_NAME: "UF_CRM_EMMELY_PAYMENT_URL",
           USER_TYPE_ID: "url",
-          SORT: 50,
-          EDIT_FORM_LABEL: { br: "Link de Pagamento", en: "Payment Link" },
-          LIST_COLUMN_LABEL: { br: "Link Pagamento", en: "Payment Link" },
-          LIST_FILTER_LABEL: { br: "Link Pagamento", en: "Payment Link" },
+          SORT: 0,
+          EDIT_FORM_LABEL: { br: "LINK DE PAGAMENTO", en: "PAYMENT LINK" },
+          LIST_COLUMN_LABEL: { br: "LINK PAGAMENTO", en: "PAYMENT LINK" },
+          LIST_FILTER_LABEL: { br: "LINK PAGAMENTO", en: "PAYMENT LINK" },
         },
         {
           FIELD_NAME: "UF_CRM_EMMELY_TOTAL_INSTALLMENTS",
           USER_TYPE_ID: "enumeration",
-          SORT: 60,
-          EDIT_FORM_LABEL: { br: "Nº de Parcelas", en: "Installments" },
-          LIST_COLUMN_LABEL: { br: "Nº Parcelas", en: "Installments" },
-          LIST_FILTER_LABEL: { br: "Nº Parcelas", en: "Installments" },
+          SORT: 0,
+          EDIT_FORM_LABEL: { br: "Nº DE PARCELAS", en: "INSTALLMENTS" },
+          LIST_COLUMN_LABEL: { br: "Nº PARCELAS", en: "INSTALLMENTS" },
+          LIST_FILTER_LABEL: { br: "Nº PARCELAS", en: "INSTALLMENTS" },
           LIST: [
             { VALUE: "1 Parcela", SORT: 100, DEF: "Y" },
             { VALUE: "2 Parcelas", SORT: 200 },
@@ -257,34 +257,34 @@ Deno.serve(async (req) => {
         {
           FIELD_NAME: "UF_CRM_EMMELY_PAID_INSTALLMENTS",
           USER_TYPE_ID: "integer",
-          SORT: 70,
-          EDIT_FORM_LABEL: { br: "Parcelas Pagas", en: "Paid Installments" },
-          LIST_COLUMN_LABEL: { br: "Parcelas Pagas", en: "Paid Installments" },
-          LIST_FILTER_LABEL: { br: "Parcelas Pagas", en: "Paid Installments" },
+          SORT: 0,
+          EDIT_FORM_LABEL: { br: "PARCELAS PAGAS", en: "PAID INSTALLMENTS" },
+          LIST_COLUMN_LABEL: { br: "PARCELAS PAGAS", en: "PAID INSTALLMENTS" },
+          LIST_FILTER_LABEL: { br: "PARCELAS PAGAS", en: "PAID INSTALLMENTS" },
         },
         {
           FIELD_NAME: "UF_CRM_EMMELY_INSTALLMENT_VALUE",
           USER_TYPE_ID: "double",
-          SORT: 80,
-          EDIT_FORM_LABEL: { br: "Valor da Parcela", en: "Installment Value" },
-          LIST_COLUMN_LABEL: { br: "Valor Parcela", en: "Installment Value" },
-          LIST_FILTER_LABEL: { br: "Valor Parcela", en: "Installment Value" },
+          SORT: 0,
+          EDIT_FORM_LABEL: { br: "VALOR DA PARCELA", en: "INSTALLMENT VALUE" },
+          LIST_COLUMN_LABEL: { br: "VALOR PARCELA", en: "INSTALLMENT VALUE" },
+          LIST_FILTER_LABEL: { br: "VALOR PARCELA", en: "INSTALLMENT VALUE" },
         },
         {
           FIELD_NAME: "UF_CRM_EMMELY_NEXT_DUE_DATE",
           USER_TYPE_ID: "date",
-          SORT: 90,
-          EDIT_FORM_LABEL: { br: "Próximo Vencimento", en: "Next Due Date" },
-          LIST_COLUMN_LABEL: { br: "Próx. Vencimento", en: "Next Due Date" },
-          LIST_FILTER_LABEL: { br: "Próx. Vencimento", en: "Next Due Date" },
+          SORT: 0,
+          EDIT_FORM_LABEL: { br: "PRÓXIMO VENCIMENTO", en: "NEXT DUE DATE" },
+          LIST_COLUMN_LABEL: { br: "PRÓX. VENCIMENTO", en: "NEXT DUE DATE" },
+          LIST_FILTER_LABEL: { br: "PRÓX. VENCIMENTO", en: "NEXT DUE DATE" },
         },
         {
           FIELD_NAME: "UF_CRM_EMMELY_PAYMENT_METHOD",
           USER_TYPE_ID: "enumeration",
-          SORT: 100,
-          EDIT_FORM_LABEL: { br: "Método de Pagamento", en: "Payment Method" },
-          LIST_COLUMN_LABEL: { br: "Método Pagamento", en: "Payment Method" },
-          LIST_FILTER_LABEL: { br: "Método Pagamento", en: "Payment Method" },
+          SORT: 0,
+          EDIT_FORM_LABEL: { br: "MÉTODO DE PAGAMENTO", en: "PAYMENT METHOD" },
+          LIST_COLUMN_LABEL: { br: "MÉTODO PAGAMENTO", en: "PAYMENT METHOD" },
+          LIST_FILTER_LABEL: { br: "MÉTODO PAGAMENTO", en: "PAYMENT METHOD" },
           LIST: [
             { VALUE: "Cartão", SORT: 100, DEF: "Y" },
             { VALUE: "PIX", SORT: 200 },
@@ -298,26 +298,58 @@ Deno.serve(async (req) => {
         {
           FIELD_NAME: "UF_CRM_EMMELY_PAYMENT_NOTES",
           USER_TYPE_ID: "string",
-          SORT: 110,
-          EDIT_FORM_LABEL: { br: "Notas de Pagamento", en: "Payment Notes" },
-          LIST_COLUMN_LABEL: { br: "Notas Pagamento", en: "Payment Notes" },
-          LIST_FILTER_LABEL: { br: "Notas Pagamento", en: "Payment Notes" },
+          SORT: 0,
+          EDIT_FORM_LABEL: { br: "NOTAS DE PAGAMENTO", en: "PAYMENT NOTES" },
+          LIST_COLUMN_LABEL: { br: "NOTAS PAGAMENTO", en: "PAYMENT NOTES" },
+          LIST_FILTER_LABEL: { br: "NOTAS PAGAMENTO", en: "PAYMENT NOTES" },
         },
         {
           FIELD_NAME: "UF_CRM_EMMELY_RECEIPT_URL",
           USER_TYPE_ID: "url",
-          SORT: 120,
-          EDIT_FORM_LABEL: { br: "Comprovante (Link)", en: "Receipt Link" },
-          LIST_COLUMN_LABEL: { br: "Comprovante", en: "Receipt" },
-          LIST_FILTER_LABEL: { br: "Comprovante", en: "Receipt" },
+          SORT: 0,
+          EDIT_FORM_LABEL: { br: "COMPROVANTE (LINK)", en: "RECEIPT LINK" },
+          LIST_COLUMN_LABEL: { br: "COMPROVANTE", en: "RECEIPT" },
+          LIST_FILTER_LABEL: { br: "COMPROVANTE", en: "RECEIPT" },
         },
         {
           FIELD_NAME: "UF_CRM_EMMELY_RECEIPT_PDF",
           USER_TYPE_ID: "url",
-          SORT: 130,
-          EDIT_FORM_LABEL: { br: "Comprovante (PDF)", en: "Receipt PDF" },
-          LIST_COLUMN_LABEL: { br: "PDF Comprovante", en: "Receipt PDF" },
-          LIST_FILTER_LABEL: { br: "PDF Comprovante", en: "Receipt PDF" },
+          SORT: 0,
+          EDIT_FORM_LABEL: { br: "COMPROVANTE (PDF)", en: "RECEIPT PDF" },
+          LIST_COLUMN_LABEL: { br: "PDF COMPROVANTE", en: "RECEIPT PDF" },
+          LIST_FILTER_LABEL: { br: "PDF COMPROVANTE", en: "RECEIPT PDF" },
+        },
+        {
+          FIELD_NAME: "UF_CRM_EMMELY_PROPOSAL_URL",
+          USER_TYPE_ID: "url",
+          SORT: 0,
+          EDIT_FORM_LABEL: { br: "LINK DA PROPOSTA", en: "PROPOSAL LINK" },
+          LIST_COLUMN_LABEL: { br: "LINK PROPOSTA", en: "PROPOSAL LINK" },
+          LIST_FILTER_LABEL: { br: "LINK PROPOSTA", en: "PROPOSAL LINK" },
+        },
+        {
+          FIELD_NAME: "UF_CRM_EMMELY_PROPOSAL_PDF",
+          USER_TYPE_ID: "url",
+          SORT: 0,
+          EDIT_FORM_LABEL: { br: "PDF DA PROPOSTA", en: "PROPOSAL PDF" },
+          LIST_COLUMN_LABEL: { br: "PDF PROPOSTA", en: "PROPOSAL PDF" },
+          LIST_FILTER_LABEL: { br: "PDF PROPOSTA", en: "PROPOSAL PDF" },
+        },
+        {
+          FIELD_NAME: "UF_CRM_EMMELY_CONTRACT_URL",
+          USER_TYPE_ID: "url",
+          SORT: 0,
+          EDIT_FORM_LABEL: { br: "LINK DO CONTRATO", en: "CONTRACT LINK" },
+          LIST_COLUMN_LABEL: { br: "LINK CONTRATO", en: "CONTRACT LINK" },
+          LIST_FILTER_LABEL: { br: "LINK CONTRATO", en: "CONTRACT LINK" },
+        },
+        {
+          FIELD_NAME: "UF_CRM_EMMELY_CONTRACT_PDF",
+          USER_TYPE_ID: "url",
+          SORT: 0,
+          EDIT_FORM_LABEL: { br: "PDF DO CONTRATO", en: "CONTRACT PDF" },
+          LIST_COLUMN_LABEL: { br: "PDF CONTRATO", en: "CONTRACT PDF" },
+          LIST_FILTER_LABEL: { br: "PDF CONTRATO", en: "CONTRACT PDF" },
         },
       ];
 
@@ -338,7 +370,253 @@ Deno.serve(async (req) => {
         }
       }
 
-      await debugLog(supabase, integration.id, "repair_fields", "outbound", report);
+      // --- Re-register robots with updated template options ---
+      const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+      const robotHandlerUrl = `${supabaseUrl}/functions/v1/bitrix24-robot-handler`;
+      report.robots_registered = [];
+
+      // Load proposal templates for dynamic select
+      const { data: proposalTemplates } = await supabase
+        .from("proposal_templates")
+        .select("id, name")
+        .eq("template_type", "proposta");
+
+      const templateOptions: Record<string, string> = {};
+      (proposalTemplates || []).forEach((t: any) => { templateOptions[t.id] = t.name; });
+      if (Object.keys(templateOptions).length === 0) { templateOptions[""] = "(Nenhum template encontrado)"; }
+
+      // Load contract templates for dynamic select
+      const { data: contractTemplates } = await supabase
+        .from("proposal_templates")
+        .select("id, name")
+        .eq("template_type", "contrato");
+
+      const contractTemplateOptions: Record<string, string> = {};
+      (contractTemplates || []).forEach((t: any) => { contractTemplateOptions[t.id] = t.name; });
+      if (Object.keys(contractTemplateOptions).length === 0) { contractTemplateOptions[""] = "(Nenhum template de contrato encontrado)"; }
+
+      // Load active flows for dynamic select
+      const { data: activeFlows } = await supabase.from("flows").select("id, name").eq("is_active", true).order("name");
+      const flowOptions: Record<string, string> = { "": "(Não executar flow)" };
+      (activeFlows || []).forEach((f: any) => { flowOptions[f.id] = f.name; });
+
+      const repairRobots = [
+        {
+          CODE: "emmely_send_whatsapp",
+          NAME: "Emmely: Enviar WhatsApp",
+          PROPERTIES: {
+            phone: { Name: "Telefone", Type: "string", Required: "Y", Description: "Número de telefone com código do país" },
+            message: { Name: "Mensagem", Type: "text", Required: "Y", Description: "Texto da mensagem" },
+          },
+          RETURN_PROPERTIES: {
+            message_id: { Name: "ID da Mensagem", Type: "string" },
+            status: { Name: "Status", Type: "string" },
+            error: { Name: "Erro", Type: "string" },
+          },
+        },
+        {
+          CODE: "emmely_send_instagram",
+          NAME: "Emmely: Enviar Instagram",
+          PROPERTIES: {
+            instagram_user: { Name: "Utilizador Instagram", Type: "string", Required: "Y", Description: "Username ou ID do Instagram" },
+            message: { Name: "Mensagem", Type: "text", Required: "Y", Description: "Texto da mensagem" },
+          },
+          RETURN_PROPERTIES: {
+            message_id: { Name: "ID da Mensagem", Type: "string" },
+            status: { Name: "Status", Type: "string" },
+            error: { Name: "Erro", Type: "string" },
+          },
+        },
+        {
+          CODE: "emmely_create_charge",
+          NAME: "Emmely: Criar Cobrança",
+          PROPERTIES: {
+            amount: { Name: "Valor Total", Type: "double", Required: "Y", Description: "Valor total da cobrança" },
+            currency: { Name: "Moeda", Type: "select", Required: "Y", Options: { EUR: "EUR", BRL: "BRL" }, Default: "EUR" },
+            gateway: { Name: "Gateway", Type: "select", Options: { auto: "Automático", stripe_pt: "Stripe Portugal (EUR)", stripe_br: "Stripe Brasil (BRL)", asaas: "Asaas (Brasil)", direto: "Crediário Próprio" }, Default: "auto", Description: "Automático: EUR→Stripe PT, BRL→Stripe BR ou Asaas" },
+            payment_method: { Name: "Método de Pagamento", Type: "select", Options: { card: "Cartão", multibanco: "Multibanco (PT)", mb_way: "MB WAY (PT)", sepa_debit: "Débito SEPA (PT)", pix: "PIX (BR)", boleto: "Boleto (BR)", link: "Link de Pagamento", direto: "Recebimento Direto" }, Default: "card" },
+            customer_name: { Name: "Nome do Cliente", Type: "string" },
+            customer_email: { Name: "Email do Cliente", Type: "string" },
+            customer_cpf: { Name: "CPF/CNPJ", Type: "string", Description: "Obrigatório para Asaas" },
+            description: { Name: "Descrição", Type: "string" },
+            installments: { Name: "Número de Parcelas", Type: "int", Default: "1", Description: "Quantidade de parcelas mensais" },
+            down_payment: { Name: "Valor de Entrada", Type: "double", Default: "0", Description: "Valor de entrada (opcional)" },
+            first_due_date: { Name: "Data 1º Vencimento", Type: "date", Description: "Data da primeira parcela (YYYY-MM-DD)" },
+            deal_id: { Name: "ID do Negócio", Type: "string", Description: "ID do Deal para vincular faturas" },
+            contact_id: { Name: "ID do Contacto", Type: "string", Description: "ID do Contacto para vincular faturas" },
+            company_id: { Name: "ID da Empresa", Type: "string", Description: "UUID da empresa/filial em Emmely" },
+          },
+          RETURN_PROPERTIES: {
+            charge_id: { Name: "ID da Cobrança", Type: "string" },
+            charge_status: { Name: "Status", Type: "string" },
+            payment_url: { Name: "URL de Pagamento", Type: "string" },
+            pix_code: { Name: "Código PIX", Type: "string" },
+            gateway_used: { Name: "Gateway Utilizado", Type: "string" },
+            invoices_created: { Name: "Faturas Criadas", Type: "string" },
+            error: { Name: "Erro", Type: "string" },
+          },
+        },
+        {
+          CODE: "emmely_check_payment",
+          NAME: "Emmely: Verificar Pagamento",
+          PROPERTIES: {
+            charge_id: { Name: "ID da Cobrança", Type: "string", Required: "Y", Description: "ID retornado ao criar a cobrança" },
+          },
+          RETURN_PROPERTIES: {
+            status: { Name: "Status", Type: "string" },
+            paid_at: { Name: "Data de Pagamento", Type: "string" },
+            paid_value: { Name: "Valor Pago", Type: "string" },
+            error: { Name: "Erro", Type: "string" },
+          },
+        },
+        {
+          CODE: "emmely_execute_flow",
+          NAME: "Emmely: Executar Flow",
+          PROPERTIES: {
+            flow_id: { Name: "ID do Flow", Type: "string", Required: "Y", Description: "UUID do flow a executar" },
+            phone: { Name: "Telefone", Type: "string", Required: "Y", Description: "Número de telefone com código do país" },
+            trigger_message: { Name: "Mensagem Trigger", Type: "string", Description: "Mensagem para iniciar o flow", Default: "iniciar" },
+          },
+          RETURN_PROPERTIES: {
+            status: { Name: "Status", Type: "string" },
+            conversation_id: { Name: "ID da Conversa", Type: "string" },
+            flow_name: { Name: "Nome do Flow", Type: "string" },
+            error: { Name: "Erro", Type: "string" },
+          },
+        },
+        {
+          CODE: "emmely_generate_proposal",
+          NAME: "Emmely: Gerar Proposta",
+          PROPERTIES: {
+            deal_id: { Name: "ID do Negócio", Type: "string", Description: "Use {{ID}} para preencher automaticamente" },
+            lead_id: { Name: "ID do Lead", Type: "string", Description: "Use {{ID}} para preencher automaticamente" },
+            entity_type: { Name: "Tipo de Entidade", Type: "select", Options: { deal: "Negócio", lead: "Lead" }, Default: "deal" },
+            template_name: { Name: "Modelo de Proposta", Type: "select", Options: templateOptions, Description: "Selecione o modelo de proposta." },
+            product_ids: { Name: "Produtos/Serviços", Type: "string", Description: "UUIDs separados por vírgula. Se vazio, carrega do negócio." },
+            title: { Name: "Título da Proposta", Type: "string" },
+            service_name: { Name: "Nome do Serviço", Type: "string" },
+            payment_type: { Name: "Tipo de Pagamento", Type: "select", Options: { fixo: "Fixo", exito: "Êxito", hibrido: "Híbrido", parcelado: "Parcelado" }, Default: "fixo" },
+            installments: { Name: "Parcelas", Type: "int", Default: "1" },
+            value: { Name: "Valor", Type: "double" },
+            description: { Name: "Descrição", Type: "text" },
+            conditions: { Name: "Condições", Type: "text" },
+            valid_days: { Name: "Dias de Validade", Type: "int", Default: "30" },
+            send_method: { Name: "Método de Envio", Type: "select", Options: { none: "Não enviar", link: "Enviar Link", pdf: "Enviar PDF", both: "Link + PDF" }, Default: "none" },
+            send_to_phone: { Name: "Telefone para Envio", Type: "string" },
+            accept_stage_id: { Name: "Etapa ao Aceitar", Type: "string", Description: "ID da etapa do funil para onde o deal move quando o cliente aceita a proposta (ex: C5:WON). Se vazio, não altera a etapa." },
+            accept_flow_id: { Name: "Flow ao Aceitar", Type: "select", Options: flowOptions, Description: "O flow que será iniciado automaticamente quando o cliente aceitar a proposta." },
+          },
+          RETURN_PROPERTIES: {
+            proposal_url: { Name: "URL da Proposta", Type: "string" },
+            pdf_url: { Name: "URL do PDF", Type: "string" },
+            proposal_id: { Name: "ID da Proposta", Type: "string" },
+            template_used: { Name: "Template Utilizado", Type: "string" },
+            products_used: { Name: "Produtos Utilizados", Type: "string" },
+            send_status: { Name: "Status de Envio", Type: "string" },
+            status: { Name: "Status", Type: "string" },
+            error: { Name: "Erro", Type: "string" },
+          },
+        },
+        {
+          CODE: "emmely_send_proposal",
+          NAME: "Emmely: Enviar Orçamento",
+          PROPERTIES: {
+            proposal_id: { Name: "ID da Proposta", Type: "string", Required: "Y" },
+            send_method: { Name: "Método de Envio", Type: "select", Required: "Y", Options: { link: "Link com Aceite", pdf: "PDF", both: "Link + PDF" }, Default: "link" },
+            phone: { Name: "Telefone", Type: "string" },
+            custom_message: { Name: "Mensagem Personalizada", Type: "text" },
+          },
+          RETURN_PROPERTIES: {
+            send_status: { Name: "Status de Envio", Type: "string" },
+            proposal_url: { Name: "URL da Proposta", Type: "string" },
+            pdf_url: { Name: "URL do PDF", Type: "string" },
+            error: { Name: "Erro", Type: "string" },
+          },
+        },
+        {
+          CODE: "emmely_convert_currency",
+          NAME: "Emmely: Converter Moeda",
+          PROPERTIES: {
+            source_value: { Name: "Valor Original", Type: "double", Required: "Y" },
+            source_currency: { Name: "Moeda Origem", Type: "select", Required: "Y", Options: { EUR: "EUR", BRL: "BRL", USD: "USD", GBP: "GBP", CHF: "CHF", CAD: "CAD" }, Default: "EUR" },
+            target_currency: { Name: "Moeda Destino", Type: "select", Required: "Y", Options: { BRL: "BRL", EUR: "EUR", USD: "USD", GBP: "GBP", CHF: "CHF", CAD: "CAD" }, Default: "BRL" },
+            spread_percent: { Name: "Spread (%)", Type: "double", Default: "0" },
+          },
+          RETURN_PROPERTIES: {
+            converted_value: { Name: "Valor Convertido", Type: "double" },
+            exchange_rate: { Name: "Taxa de Câmbio", Type: "double" },
+            rate_date: { Name: "Data da Cotação", Type: "string" },
+            error: { Name: "Erro", Type: "string" },
+          },
+        },
+        {
+          CODE: "emmely_create_badge",
+          NAME: "Emmely: Criar Badge",
+          PROPERTIES: {
+            badge_code: { Name: "Código da Badge", Type: "string", Required: "Y" },
+            header_title: { Name: "Título", Type: "string", Required: "Y" },
+            message_preview: { Name: "Preview", Type: "string" },
+            entity_type: { Name: "Tipo de Entidade", Type: "select", Options: { deal: "Negócio", lead: "Lead", contact: "Contacto" }, Default: "deal" },
+            entity_id: { Name: "ID da Entidade", Type: "string", Required: "Y" },
+            badge_type: { Name: "Tipo Visual", Type: "select", Options: { success: "Sucesso (verde)", primary: "Primário (azul)", warning: "Alerta (amarelo)", failure: "Erro (vermelho)", secondary: "Secundário (cinza)" }, Default: "success" },
+          },
+          RETURN_PROPERTIES: {
+            badge_status: { Name: "Status", Type: "string" },
+            activity_id: { Name: "ID da Atividade", Type: "string" },
+            error: { Name: "Erro", Type: "string" },
+          },
+        },
+        {
+          CODE: "emmely_generate_contract",
+          NAME: "Emmely: Gerar Contrato",
+          PROPERTIES: {
+            proposal_id: { Name: "ID da Proposta", Type: "string", Description: "Use o retorno {{proposal_id}} do robot 'Gerar Proposta'. Se vazio, cria contrato novo." },
+            deal_id: { Name: "ID do Negócio", Type: "string", Description: "Use {{ID}} para vincular ao negócio" },
+            entity_type: { Name: "Tipo de Entidade", Type: "select", Options: { deal: "Negócio", lead: "Lead" }, Default: "deal" },
+            template_name: { Name: "Modelo de Contrato", Type: "select", Options: contractTemplateOptions, Description: "Selecione o modelo de contrato." },
+            title: { Name: "Título do Contrato", Type: "string" },
+            value: { Name: "Valor", Type: "double" },
+            conditions: { Name: "Condições", Type: "text" },
+            starts_at: { Name: "Data de Início", Type: "date" },
+            duration_months: { Name: "Duração (meses)", Type: "int", Default: "12" },
+            send_method: { Name: "Método de Envio", Type: "select", Options: { none: "Não enviar", link: "Enviar Link de Assinatura", pdf: "Enviar PDF", both: "Link + PDF" }, Default: "none" },
+            send_to_phone: { Name: "Telefone para Envio", Type: "string" },
+            accept_flow_id: { Name: "Flow ao Aceitar", Type: "select", Options: flowOptions, Description: "O flow que será iniciado automaticamente quando o cliente aceitar/assinar o contrato." },
+            send_payment_after_sign: { Name: "Enviar Cobrança Após Assinatura", Type: "select", Options: { "Y": "Sim — enviar link de pagamento automaticamente", "N": "Não" }, Default: "N", Description: "Se 'Sim', o link de pagamento será enviado automaticamente via WhatsApp após o cliente assinar o contrato." },
+            payment_method: { Name: "Método de Pagamento (cobrança automática)", Type: "select", Options: { card: "Cartão", multibanco: "Multibanco", mb_way: "MB Way", pix: "Pix", boleto: "Boleto" }, Default: "card" },
+            payment_installments: { Name: "Número de Parcelas", Type: "int", Default: "1" },
+          },
+          RETURN_PROPERTIES: {
+            contract_url: { Name: "URL de Assinatura", Type: "string" },
+            contract_pdf: { Name: "URL do PDF", Type: "string" },
+            contract_id: { Name: "ID do Contrato", Type: "string" },
+            status: { Name: "Status", Type: "string" },
+            send_status: { Name: "Status de Envio", Type: "string" },
+            error: { Name: "Erro", Type: "string" },
+          },
+        },
+      ];
+
+      for (const robot of repairRobots) {
+        await callBitrix(ep, token, "bizproc.robot.delete", { CODE: robot.CODE });
+        const addResult = await callBitrix(ep, token, "bizproc.robot.add", {
+          CODE: robot.CODE,
+          HANDLER: robotHandlerUrl,
+          AUTH_USER_ID: 1,
+          NAME: robot.NAME,
+          USE_SUBSCRIPTION: "Y",
+          PROPERTIES: robot.PROPERTIES,
+          RETURN_PROPERTIES: robot.RETURN_PROPERTIES,
+        });
+        const errStr = String(addResult.error || "");
+        if (addResult.error && !errStr.includes("ALREADY")) {
+          report.errors.push(`robot ${robot.CODE}: ${addResult.error}`);
+        } else {
+          report.robots_registered.push(robot.CODE);
+        }
+      }
+
+      await debugLog(supabase, integration.id, "repair_fields_and_robots", "outbound", report);
       return new Response(JSON.stringify({ ok: true, report }), { headers: jsonHeaders });
     } catch (err) {
       return new Response(JSON.stringify({ error: String(err) }), { status: 500, headers: jsonHeaders });
@@ -735,10 +1013,10 @@ Deno.serve(async (req) => {
         {
           FIELD_NAME: "UF_CRM_EMMELY_PAYMENT_STATUS",
           USER_TYPE_ID: "enumeration",
-          SORT: 10,
-          EDIT_FORM_LABEL: { br: "Status de Pagamento", en: "Payment Status" },
-          LIST_COLUMN_LABEL: { br: "Status Pagamento", en: "Payment Status" },
-          LIST_FILTER_LABEL: { br: "Status Pagamento", en: "Payment Status" },
+          SORT: 0,
+          EDIT_FORM_LABEL: { br: "STATUS DE PAGAMENTO", en: "PAYMENT STATUS" },
+          LIST_COLUMN_LABEL: { br: "STATUS PAGAMENTO", en: "PAYMENT STATUS" },
+          LIST_FILTER_LABEL: { br: "STATUS PAGAMENTO", en: "PAYMENT STATUS" },
           LIST: [
             { VALUE: "Pendente", SORT: 100, DEF: "Y" },
             { VALUE: "Parcial", SORT: 200 },
@@ -750,18 +1028,18 @@ Deno.serve(async (req) => {
         {
           FIELD_NAME: "UF_CRM_EMMELY_INSTALLMENT_GROUP",
           USER_TYPE_ID: "string",
-          SORT: 20,
-          EDIT_FORM_LABEL: { br: "Grupo de Parcelas", en: "Installment Group" },
-          LIST_COLUMN_LABEL: { br: "Grupo Parcelas", en: "Installment Group" },
-          LIST_FILTER_LABEL: { br: "Grupo Parcelas", en: "Installment Group" },
+          SORT: 0,
+          EDIT_FORM_LABEL: { br: "GRUPO DE PARCELAS", en: "INSTALLMENT GROUP" },
+          LIST_COLUMN_LABEL: { br: "GRUPO PARCELAS", en: "INSTALLMENT GROUP" },
+          LIST_FILTER_LABEL: { br: "GRUPO PARCELAS", en: "INSTALLMENT GROUP" },
         },
         {
           FIELD_NAME: "UF_CRM_EMMELY_GATEWAY",
           USER_TYPE_ID: "enumeration",
-          SORT: 30,
-          EDIT_FORM_LABEL: { br: "Gateway de Pagamento", en: "Payment Gateway" },
-          LIST_COLUMN_LABEL: { br: "Gateway", en: "Gateway" },
-          LIST_FILTER_LABEL: { br: "Gateway", en: "Gateway" },
+          SORT: 0,
+          EDIT_FORM_LABEL: { br: "GATEWAY DE PAGAMENTO", en: "PAYMENT GATEWAY" },
+          LIST_COLUMN_LABEL: { br: "GATEWAY", en: "GATEWAY" },
+          LIST_FILTER_LABEL: { br: "GATEWAY", en: "GATEWAY" },
           LIST: [
             { VALUE: "Stripe Portugal", SORT: 100, DEF: "Y" },
             { VALUE: "Stripe Brasil", SORT: 200 },
@@ -772,26 +1050,26 @@ Deno.serve(async (req) => {
         {
           FIELD_NAME: "UF_CRM_EMMELY_TOTAL_PAID",
           USER_TYPE_ID: "double",
-          SORT: 40,
-          EDIT_FORM_LABEL: { br: "Total Pago", en: "Total Paid" },
-          LIST_COLUMN_LABEL: { br: "Total Pago", en: "Total Paid" },
-          LIST_FILTER_LABEL: { br: "Total Pago", en: "Total Paid" },
+          SORT: 0,
+          EDIT_FORM_LABEL: { br: "TOTAL PAGO", en: "TOTAL PAID" },
+          LIST_COLUMN_LABEL: { br: "TOTAL PAGO", en: "TOTAL PAID" },
+          LIST_FILTER_LABEL: { br: "TOTAL PAGO", en: "TOTAL PAID" },
         },
         {
           FIELD_NAME: "UF_CRM_EMMELY_PAYMENT_URL",
           USER_TYPE_ID: "url",
-          SORT: 50,
-          EDIT_FORM_LABEL: { br: "Link de Pagamento", en: "Payment Link" },
-          LIST_COLUMN_LABEL: { br: "Link Pagamento", en: "Payment Link" },
-          LIST_FILTER_LABEL: { br: "Link Pagamento", en: "Payment Link" },
+          SORT: 0,
+          EDIT_FORM_LABEL: { br: "LINK DE PAGAMENTO", en: "PAYMENT LINK" },
+          LIST_COLUMN_LABEL: { br: "LINK PAGAMENTO", en: "PAYMENT LINK" },
+          LIST_FILTER_LABEL: { br: "LINK PAGAMENTO", en: "PAYMENT LINK" },
         },
         {
           FIELD_NAME: "UF_CRM_EMMELY_TOTAL_INSTALLMENTS",
           USER_TYPE_ID: "enumeration",
-          SORT: 60,
-          EDIT_FORM_LABEL: { br: "Nº de Parcelas", en: "Installments" },
-          LIST_COLUMN_LABEL: { br: "Nº Parcelas", en: "Installments" },
-          LIST_FILTER_LABEL: { br: "Nº Parcelas", en: "Installments" },
+          SORT: 0,
+          EDIT_FORM_LABEL: { br: "Nº DE PARCELAS", en: "INSTALLMENTS" },
+          LIST_COLUMN_LABEL: { br: "Nº PARCELAS", en: "INSTALLMENTS" },
+          LIST_FILTER_LABEL: { br: "Nº PARCELAS", en: "INSTALLMENTS" },
           LIST: [
             { VALUE: "1 Parcela", SORT: 100, DEF: "Y" },
             { VALUE: "2 Parcelas", SORT: 200 },
@@ -811,34 +1089,34 @@ Deno.serve(async (req) => {
         {
           FIELD_NAME: "UF_CRM_EMMELY_PAID_INSTALLMENTS",
           USER_TYPE_ID: "integer",
-          SORT: 70,
-          EDIT_FORM_LABEL: { br: "Parcelas Pagas", en: "Paid Installments" },
-          LIST_COLUMN_LABEL: { br: "Parcelas Pagas", en: "Paid Installments" },
-          LIST_FILTER_LABEL: { br: "Parcelas Pagas", en: "Paid Installments" },
+          SORT: 0,
+          EDIT_FORM_LABEL: { br: "PARCELAS PAGAS", en: "PAID INSTALLMENTS" },
+          LIST_COLUMN_LABEL: { br: "PARCELAS PAGAS", en: "PAID INSTALLMENTS" },
+          LIST_FILTER_LABEL: { br: "PARCELAS PAGAS", en: "PAID INSTALLMENTS" },
         },
         {
           FIELD_NAME: "UF_CRM_EMMELY_INSTALLMENT_VALUE",
           USER_TYPE_ID: "double",
-          SORT: 80,
-          EDIT_FORM_LABEL: { br: "Valor da Parcela", en: "Installment Value" },
-          LIST_COLUMN_LABEL: { br: "Valor Parcela", en: "Installment Value" },
-          LIST_FILTER_LABEL: { br: "Valor Parcela", en: "Installment Value" },
+          SORT: 0,
+          EDIT_FORM_LABEL: { br: "VALOR DA PARCELA", en: "INSTALLMENT VALUE" },
+          LIST_COLUMN_LABEL: { br: "VALOR PARCELA", en: "INSTALLMENT VALUE" },
+          LIST_FILTER_LABEL: { br: "VALOR PARCELA", en: "INSTALLMENT VALUE" },
         },
         {
           FIELD_NAME: "UF_CRM_EMMELY_NEXT_DUE_DATE",
           USER_TYPE_ID: "date",
-          SORT: 90,
-          EDIT_FORM_LABEL: { br: "Próximo Vencimento", en: "Next Due Date" },
-          LIST_COLUMN_LABEL: { br: "Próx. Vencimento", en: "Next Due Date" },
-          LIST_FILTER_LABEL: { br: "Próx. Vencimento", en: "Next Due Date" },
+          SORT: 0,
+          EDIT_FORM_LABEL: { br: "PRÓXIMO VENCIMENTO", en: "NEXT DUE DATE" },
+          LIST_COLUMN_LABEL: { br: "PRÓX. VENCIMENTO", en: "NEXT DUE DATE" },
+          LIST_FILTER_LABEL: { br: "PRÓX. VENCIMENTO", en: "NEXT DUE DATE" },
         },
         {
           FIELD_NAME: "UF_CRM_EMMELY_PAYMENT_METHOD",
           USER_TYPE_ID: "enumeration",
-          SORT: 100,
-          EDIT_FORM_LABEL: { br: "Método de Pagamento", en: "Payment Method" },
-          LIST_COLUMN_LABEL: { br: "Método Pagamento", en: "Payment Method" },
-          LIST_FILTER_LABEL: { br: "Método Pagamento", en: "Payment Method" },
+          SORT: 0,
+          EDIT_FORM_LABEL: { br: "MÉTODO DE PAGAMENTO", en: "PAYMENT METHOD" },
+          LIST_COLUMN_LABEL: { br: "MÉTODO PAGAMENTO", en: "PAYMENT METHOD" },
+          LIST_FILTER_LABEL: { br: "MÉTODO PAGAMENTO", en: "PAYMENT METHOD" },
           LIST: [
             { VALUE: "Cartão", SORT: 100, DEF: "Y" },
             { VALUE: "PIX", SORT: 200 },
@@ -852,30 +1130,60 @@ Deno.serve(async (req) => {
         {
           FIELD_NAME: "UF_CRM_EMMELY_PAYMENT_NOTES",
           USER_TYPE_ID: "string",
-          SORT: 110,
-          EDIT_FORM_LABEL: { br: "Notas de Pagamento", en: "Payment Notes" },
-          LIST_COLUMN_LABEL: { br: "Notas Pagamento", en: "Payment Notes" },
-          LIST_FILTER_LABEL: { br: "Notas Pagamento", en: "Payment Notes" },
+          SORT: 0,
+          EDIT_FORM_LABEL: { br: "NOTAS DE PAGAMENTO", en: "PAYMENT NOTES" },
+          LIST_COLUMN_LABEL: { br: "NOTAS PAGAMENTO", en: "PAYMENT NOTES" },
+          LIST_FILTER_LABEL: { br: "NOTAS PAGAMENTO", en: "PAYMENT NOTES" },
         },
         {
           FIELD_NAME: "UF_CRM_EMMELY_RECEIPT_URL",
           USER_TYPE_ID: "url",
-          SORT: 120,
-          EDIT_FORM_LABEL: { br: "Comprovante (Link)", en: "Receipt Link" },
-          LIST_COLUMN_LABEL: { br: "Comprovante", en: "Receipt" },
-          LIST_FILTER_LABEL: { br: "Comprovante", en: "Receipt" },
+          SORT: 0,
+          EDIT_FORM_LABEL: { br: "COMPROVANTE (LINK)", en: "RECEIPT LINK" },
+          LIST_COLUMN_LABEL: { br: "COMPROVANTE", en: "RECEIPT" },
+          LIST_FILTER_LABEL: { br: "COMPROVANTE", en: "RECEIPT" },
         },
         {
           FIELD_NAME: "UF_CRM_EMMELY_RECEIPT_PDF",
           USER_TYPE_ID: "url",
-          SORT: 130,
-          EDIT_FORM_LABEL: { br: "Comprovante (PDF)", en: "Receipt PDF" },
-          LIST_COLUMN_LABEL: { br: "PDF Comprovante", en: "Receipt PDF" },
-          LIST_FILTER_LABEL: { br: "PDF Comprovante", en: "Receipt PDF" },
+          SORT: 0,
+          EDIT_FORM_LABEL: { br: "COMPROVANTE (PDF)", en: "RECEIPT PDF" },
+          LIST_COLUMN_LABEL: { br: "PDF COMPROVANTE", en: "RECEIPT PDF" },
+          LIST_FILTER_LABEL: { br: "PDF COMPROVANTE", en: "RECEIPT PDF" },
+        },
+        {
+          FIELD_NAME: "UF_CRM_EMMELY_PROPOSAL_URL",
+          USER_TYPE_ID: "url",
+          SORT: 0,
+          EDIT_FORM_LABEL: { br: "LINK DA PROPOSTA", en: "PROPOSAL LINK" },
+          LIST_COLUMN_LABEL: { br: "LINK PROPOSTA", en: "PROPOSAL LINK" },
+          LIST_FILTER_LABEL: { br: "LINK PROPOSTA", en: "PROPOSAL LINK" },
+        },
+        {
+          FIELD_NAME: "UF_CRM_EMMELY_PROPOSAL_PDF",
+          USER_TYPE_ID: "url",
+          SORT: 0,
+          EDIT_FORM_LABEL: { br: "PDF DA PROPOSTA", en: "PROPOSAL PDF" },
+          LIST_COLUMN_LABEL: { br: "PDF PROPOSTA", en: "PROPOSAL PDF" },
+          LIST_FILTER_LABEL: { br: "PDF PROPOSTA", en: "PROPOSAL PDF" },
+        },
+        {
+          FIELD_NAME: "UF_CRM_EMMELY_CONTRACT_URL",
+          USER_TYPE_ID: "url",
+          SORT: 0,
+          EDIT_FORM_LABEL: { br: "LINK DO CONTRATO", en: "CONTRACT LINK" },
+          LIST_COLUMN_LABEL: { br: "LINK CONTRATO", en: "CONTRACT LINK" },
+          LIST_FILTER_LABEL: { br: "LINK CONTRATO", en: "CONTRACT LINK" },
+        },
+        {
+          FIELD_NAME: "UF_CRM_EMMELY_CONTRACT_PDF",
+          USER_TYPE_ID: "url",
+          SORT: 0,
+          EDIT_FORM_LABEL: { br: "PDF DO CONTRATO", en: "CONTRACT PDF" },
+          LIST_COLUMN_LABEL: { br: "PDF CONTRATO", en: "CONTRACT PDF" },
+          LIST_FILTER_LABEL: { br: "PDF CONTRATO", en: "CONTRACT PDF" },
         },
       ];
-
-      // Step 1: Delete existing EMMELY fields to ensure clean recreation
       const deleteApis = [
         { name: "Deal", listMethod: "crm.deal.userfield.list", deleteMethod: "crm.deal.userfield.delete" },
         { name: "Lead", listMethod: "crm.lead.userfield.list", deleteMethod: "crm.lead.userfield.delete" },
@@ -941,6 +1249,10 @@ Deno.serve(async (req) => {
           { bitrix_field_key: "UF_CRM_EMMELY_PAYMENT_NOTES", bitrix_field_title: "Notas de Pagamento", supabase_table: "financial_records", supabase_column: "description" },
           { bitrix_field_key: "UF_CRM_EMMELY_RECEIPT_URL", bitrix_field_title: "Comprovante (Link)", supabase_table: "receipt_links", supabase_column: "public_url" },
           { bitrix_field_key: "UF_CRM_EMMELY_RECEIPT_PDF", bitrix_field_title: "Comprovante (PDF)", supabase_table: "receipt_links", supabase_column: "pdf_url" },
+          { bitrix_field_key: "UF_CRM_EMMELY_PROPOSAL_URL", bitrix_field_title: "Link da Proposta", supabase_table: "proposals", supabase_column: "accept_token" },
+          { bitrix_field_key: "UF_CRM_EMMELY_PROPOSAL_PDF", bitrix_field_title: "PDF da Proposta", supabase_table: "proposals", supabase_column: "pdf_url" },
+          { bitrix_field_key: "UF_CRM_EMMELY_CONTRACT_URL", bitrix_field_title: "Link do Contrato", supabase_table: "proposals", supabase_column: "sign_token" },
+          { bitrix_field_key: "UF_CRM_EMMELY_CONTRACT_PDF", bitrix_field_title: "PDF do Contrato", supabase_table: "proposals", supabase_column: "file_url" },
         ];
 
         // Delete existing mappings for this integration
@@ -981,6 +1293,40 @@ Deno.serve(async (req) => {
     // --- Register BizProc Robots ---
     try {
       const robotHandlerUrl = `${supabaseUrl}/functions/v1/bitrix24-robot-handler`;
+
+      // Load proposal templates for dynamic select in robot
+      const { data: proposalTemplates } = await supabase
+        .from("proposal_templates")
+        .select("id, name")
+        .eq("template_type", "proposta");
+
+      const templateOptions: Record<string, string> = {};
+      (proposalTemplates || []).forEach((t: any) => {
+        templateOptions[t.id] = t.name;
+      });
+      // Add a fallback option if no templates exist
+      if (Object.keys(templateOptions).length === 0) {
+        templateOptions[""] = "(Nenhum template encontrado)";
+      }
+
+      // Load contract templates for dynamic select in robot
+      const { data: contractTemplates } = await supabase
+        .from("proposal_templates")
+        .select("id, name")
+        .eq("template_type", "contrato");
+
+      const contractTemplateOptions: Record<string, string> = {};
+      (contractTemplates || []).forEach((t: any) => {
+        contractTemplateOptions[t.id] = t.name;
+      });
+      if (Object.keys(contractTemplateOptions).length === 0) {
+        contractTemplateOptions[""] = "(Nenhum template de contrato encontrado)";
+      }
+
+      // Load active flows for dynamic select
+      const { data: activeFlows } = await supabase.from("flows").select("id, name").eq("is_active", true).order("name");
+      const flowOptions: Record<string, string> = { "": "(Não executar flow)" };
+      (activeFlows || []).forEach((f: any) => { flowOptions[f.id] = f.name; });
 
       const robots = [
         {
@@ -1103,8 +1449,8 @@ Deno.serve(async (req) => {
             deal_id: { Name: "ID do Negócio", Type: "string", Description: "Use {{ID}} para preencher automaticamente com o ID do negócio atual" },
             lead_id: { Name: "ID do Lead", Type: "string", Description: "Use {{ID}} para preencher automaticamente com o ID do lead atual" },
             entity_type: { Name: "Tipo de Entidade", Type: "select", Options: { deal: "Negócio", lead: "Lead" }, Default: "deal", Description: "Escolha 'Negócio' se o robot está numa automação de Deals, ou 'Lead' se está em Leads" },
-            template_name: { Name: "Modelo de Proposta", Type: "string", Description: "⚠️ Nome EXATO do modelo cadastrado em Propostas > Modelos (ex: 'Ação Judicial', 'Assessoria', 'Nacionalidade'). O sistema filtra apenas templates do tipo 'proposta'." },
-            product_ids: { Name: "Produtos/Serviços", Type: "string", Description: "UUIDs dos serviços separados por vírgula. O valor será a soma dos produtos. Consulte em Serviços." },
+            template_name: { Name: "Modelo de Proposta", Type: "select", Options: templateOptions, Description: "Selecione o modelo de proposta. Os templates são carregados automaticamente de Propostas > Modelos." },
+            product_ids: { Name: "Produtos/Serviços", Type: "string", Description: "UUIDs dos serviços separados por vírgula. Se vazio, carrega automaticamente os produtos do negócio no Bitrix24." },
             title: { Name: "Título da Proposta", Type: "string", Description: "Título personalizado. Se vazio, usa o nome do template ou o título do negócio." },
             service_name: { Name: "Nome do Serviço", Type: "string", Description: "Nome do serviço na tabela de Serviços (busca valor e descrição automaticamente). Modo legado — prefira usar template_name." },
             payment_type: { Name: "Tipo de Pagamento", Type: "select", Options: { fixo: "Fixo", exito: "Êxito", hibrido: "Híbrido", parcelado: "Parcelado" }, Default: "fixo", Description: "Fixo = valor único | Êxito = % sobre resultado | Híbrido = entrada + êxito | Parcelado = dividido em parcelas" },
@@ -1115,6 +1461,8 @@ Deno.serve(async (req) => {
             valid_days: { Name: "Dias de Validade", Type: "int", Default: "30", Description: "Quantos dias a proposta fica válida. Após expirar, o cliente não poderá aceitar." },
             send_method: { Name: "Método de Envio", Type: "select", Options: { none: "Não enviar", link: "Enviar Link", pdf: "Enviar PDF", both: "Link + PDF" }, Default: "none", Description: "none = apenas gera a proposta | link = envia link de aceite via WhatsApp | pdf = envia PDF via WhatsApp | both = envia ambos" },
             send_to_phone: { Name: "Telefone para Envio", Type: "string", Description: "Número WhatsApp com código do país (ex: 351912345678). Se vazio, usa o telefone do contacto vinculado ao deal." },
+            accept_stage_id: { Name: "Etapa ao Aceitar", Type: "string", Description: "ID da etapa do funil para onde o deal move quando o cliente aceita a proposta (ex: C5:WON, C5:PREPARATION). Se vazio, não altera a etapa no Bitrix24." },
+            accept_flow_id: { Name: "Flow ao Aceitar", Type: "select", Options: flowOptions, Description: "O flow que será iniciado automaticamente quando o cliente aceitar a proposta." },
           },
           RETURN_PROPERTIES: {
             proposal_url: { Name: "URL da Proposta", Type: "string" },
@@ -1180,8 +1528,37 @@ Deno.serve(async (req) => {
             error: { Name: "Erro", Type: "string" },
           },
         },
+        {
+          CODE: "emmely_generate_contract",
+          NAME: "Emmely: Gerar Contrato",
+          DESCRIPTION: {
+            br: "Gera um contrato a partir de uma proposta aceite ou directamente.\n\n📋 CONFIGURAÇÃO:\n• proposal_id: Use o retorno {{proposal_id}} do robot 'Gerar Proposta' OU deixe vazio para criar um contrato novo\n• template_name: Selecione o modelo de contrato (templates do tipo 'contrato')\n• deal_id: Use {{ID}} para vincular ao negócio\n\n📤 ENVIO:\n• send_method: Enviar link de assinatura ou PDF via WhatsApp\n\n🔄 RETORNOS:\n• contract_url — link de assinatura digital\n• contract_pdf — PDF do contrato\n• contract_id — ID interno",
+            en: "Generates a contract from an accepted proposal or directly. Can send the signing link via WhatsApp."
+          },
+          PROPERTIES: {
+            proposal_id: { Name: "ID da Proposta", Type: "string", Description: "Use o retorno {{proposal_id}} do robot 'Gerar Proposta'. Se vazio, cria contrato novo com os dados do template." },
+            deal_id: { Name: "ID do Negócio", Type: "string", Description: "Use {{ID}} para vincular ao negócio actual" },
+            entity_type: { Name: "Tipo de Entidade", Type: "select", Options: { deal: "Negócio", lead: "Lead" }, Default: "deal" },
+            template_name: { Name: "Modelo de Contrato", Type: "select", Options: contractTemplateOptions, Description: "Selecione o modelo de contrato. Usado quando não há proposal_id ou para substituir o template da proposta." },
+            starts_at: { Name: "Data de Início", Type: "date", Description: "Data de início do contrato (YYYY-MM-DD). Se vazio, usa a data actual." },
+            duration_months: { Name: "Duração (meses)", Type: "int", Default: "12", Description: "Duração do contrato em meses a partir da data de início." },
+            send_method: { Name: "Método de Envio", Type: "select", Options: { none: "Não enviar", link: "Enviar Link de Assinatura", pdf: "Enviar PDF", both: "Link + PDF" }, Default: "none", Description: "none = apenas gera | link = envia link de assinatura digital via WhatsApp | pdf = envia PDF | both = ambos" },
+            send_to_phone: { Name: "Telefone para Envio", Type: "string", Description: "Número WhatsApp com código do país. Se vazio, usa o telefone do cliente da proposta." },
+            accept_flow_id: { Name: "Flow ao Aceitar", Type: "select", Options: flowOptions, Description: "O flow que será iniciado automaticamente quando o cliente aceitar/assinar o contrato." },
+            send_payment_after_sign: { Name: "Enviar Cobrança Após Assinatura", Type: "select", Options: { "Y": "Sim — enviar link de pagamento automaticamente", "N": "Não" }, Default: "N", Description: "Se 'Sim', o link de pagamento será enviado automaticamente via WhatsApp após o cliente assinar o contrato." },
+            payment_method: { Name: "Método de Pagamento (cobrança automática)", Type: "select", Options: { card: "Cartão", multibanco: "Multibanco", mb_way: "MB Way", pix: "Pix", boleto: "Boleto" }, Default: "card" },
+            payment_installments: { Name: "Número de Parcelas", Type: "int", Default: "1" },
+          },
+          RETURN_PROPERTIES: {
+            contract_url: { Name: "URL de Assinatura", Type: "string" },
+            contract_pdf: { Name: "URL do PDF", Type: "string" },
+            contract_id: { Name: "ID do Contrato", Type: "string" },
+            status: { Name: "Status", Type: "string" },
+            send_status: { Name: "Status de Envio", Type: "string" },
+            error: { Name: "Erro", Type: "string" },
+          },
+        },
       ];
-
       for (const robot of robots) {
         // Delete existing robot first (safe for reinstall)
         await callBitrix(clientEndpoint, accessToken, "bizproc.robot.delete", { CODE: robot.CODE });

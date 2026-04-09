@@ -8,7 +8,7 @@ import { ChevronDown, Loader2, RefreshCw, Search } from "lucide-react";
 import { useBitrixFields, type BitrixFieldInfo } from "@/hooks/useBitrixFields";
 
 interface BitrixFieldSelectorProps {
-  entity: "lead" | "deal" | "spa";
+  entity: "lead" | "deal" | "contact" | "spa";
   spaEntityTypeId?: string;
   value: string;
   onChange: (key: string) => void;

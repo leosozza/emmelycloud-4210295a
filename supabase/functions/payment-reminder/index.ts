@@ -376,9 +376,9 @@ Deno.serve(async (req) => {
       try {
         const result = await processRecord(supabase, supabaseUrl, serviceKey, record, lateFeeConfig);
         results.push({ id: record.id, ...result });
-      } catch (err) {
+      } catch (err: unknown) {
         console.error(`[PAYMENT-REMINDER] Error processing ${record.id}:`, err);
-        results.push({ id: record.id, ok: false, reason: err.message });
+        results.push({ id: record.id, ok: false, reason: err instanceof Error ? err.message : "Unknown error" });
       }
     }
 
@@ -389,9 +389,9 @@ Deno.serve(async (req) => {
       JSON.stringify({ ok: true, total: records?.length || 0, sent, skipped, details: results }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
-  } catch (err) {
+  } catch (err: unknown) {
     console.error("[PAYMENT-REMINDER] Fatal error:", err);
-    return new Response(JSON.stringify({ error: err.message }), {
+    return new Response(JSON.stringify({ error: err instanceof Error ? err.message : "Unknown error" }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });

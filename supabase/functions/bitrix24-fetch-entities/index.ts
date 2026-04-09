@@ -220,7 +220,7 @@ serve(async (req) => {
         if (data.error) return json({ error: data.error, error_description: data.error_description }, 400);
 
         const leads = data.result || [];
-        const contactIds = [...new Set(leads.filter((l: any) => l.CONTACT_ID).map((l: any) => l.CONTACT_ID))];
+        const contactIds = [...new Set(leads.filter((l: any) => l.CONTACT_ID).map((l: any) => String(l.CONTACT_ID)))] as string[];
         const contactsMap = await fetchContacts(ep, auth, contactIds);
 
         // Fetch stage names
@@ -266,7 +266,7 @@ serve(async (req) => {
         if (data.error) return json({ error: data.error, error_description: data.error_description }, 400);
 
         const deals = data.result || [];
-        const contactIds = [...new Set(deals.filter((d: any) => d.CONTACT_ID).map((d: any) => d.CONTACT_ID))];
+        const contactIds = [...new Set(deals.filter((d: any) => d.CONTACT_ID).map((d: any) => String(d.CONTACT_ID)))] as string[];
         const contactsMap = await fetchContacts(ep, auth, contactIds);
 
         const catId = categoryId ? parseInt(categoryId) : 0;
@@ -317,7 +317,7 @@ serve(async (req) => {
 
         const spaItems = data.result?.items || [];
         const contactIds = [...new Set(spaItems.filter((i: any) => i.contactId).map((i: any) => String(i.contactId)))];
-        const contactsMap = await fetchContacts(ep, auth, contactIds);
+        const contactsMap = await fetchContacts(ep, auth, contactIds as string[]);
 
         const items = spaItems.map((i: any) => {
           const contact = contactsMap[String(i.contactId)] || {};

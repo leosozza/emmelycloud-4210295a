@@ -117,8 +117,8 @@ Deno.serve(async (req) => {
         return new Response(JSON.stringify({ ok: true, message: "Conexão Stripe válida" }), {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
-      } catch (e) {
-        return new Response(JSON.stringify({ error: `Erro de rede: ${e.message}` }), {
+      } catch (e: unknown) {
+        return new Response(JSON.stringify({ error: `Erro de rede: ${e instanceof Error ? e.message : "unknown"}` }), {
           status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
@@ -154,8 +154,8 @@ Deno.serve(async (req) => {
         return new Response(JSON.stringify({ ok: true, message: "Conexão Asaas válida" }), {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
-      } catch (e) {
-        return new Response(JSON.stringify({ error: `Erro de rede: ${e.message}` }), {
+      } catch (e: unknown) {
+        return new Response(JSON.stringify({ error: `Erro de rede: ${e instanceof Error ? e.message : "unknown"}` }), {
           status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
@@ -167,6 +167,14 @@ Deno.serve(async (req) => {
     if (!provider || !credential_key) {
       return new Response(
         JSON.stringify({ error: "provider and credential_key are required" }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // Block Stripe publishable keys from being saved as secret keys
+    if (credential_key?.toUpperCase().includes("STRIPE") && credential_value?.trim().startsWith("pk_")) {
+      return new Response(
+        JSON.stringify({ error: "Esta é uma Publishable Key (pk_). Utilize a Secret Key (sk_) do Stripe." }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }

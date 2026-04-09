@@ -760,6 +760,169 @@ Deno.serve(async (req) => {
             headers: { ...corsHeaders, "Content-Type": "application/json" },
           });
         }
+
+        // ── Helper: resolve integration from conversation_id (multi-tenant safe) ──
+        async function resolveIntegrationFromConversation(conversationId: string): Promise<any> {
+          const { data: conv } = await supabase
+            .from("conversations")
+            .select("workspace_id")
+            .eq("id", conversationId)
+            .single();
+          if (!conv?.workspace_id) return null;
+          const { data } = await supabase
+            .from("bitrix24_integrations")
+            .select("*")
+            .eq("workspace_id", conv.workspace_id)
+            .eq("is_active", true)
+            .order("created_at", { ascending: false })
+            .limit(1)
+            .single();
+          return data || null;
+        }
+
+        // ── CRM Request (flow-engine: bitrix_create_lead, bitrix_create_deal, etc.) ──
+        if (body._crmRequest) {
+          console.log("[WORKER] CRM request:", body.operation, body.entity);
+          const integration = body.conversation_id
+            ? await resolveIntegrationFromConversation(body.conversation_id)
+            : null;
+          if (!integration) {
+            return new Response(JSON.stringify({ error: "integration_not_found" }), {
+              status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" },
+            });
+          }
+          const accessToken = await ensureValidToken(supabase, integration);
+          const endpoint = integration.client_endpoint;
+          const { operation, entity, entityId, spaEntityTypeId, fields, filters, targetPipelineId, targetStageId } = body;
+          const entityMethodMap: Record<string, string> = {
+            lead: "crm.lead", deal: "crm.deal", contact: "crm.contact", company: "crm.company",
+          };
+          const base = entity === "spa" ? "crm.item" : (entityMethodMap[entity] || `crm.${entity}`);
+          let result: any = null;
+          if (operation === "create") {
+            const params: any = { fields };
+            if (entity === "spa" && spaEntityTypeId) params.entityTypeId = spaEntityTypeId;
+            result = await callBitrix(endpoint, accessToken, `${base}.add`, params);
+          } else if (operation === "update") {
+            const params: any = { id: entityId, fields };
+            if (entity === "spa" && spaEntityTypeId) params.entityTypeId = spaEntityTypeId;
+            result = await callBitrix(endpoint, accessToken, `${base}.update`, params);
+          } else if (operation === "get") {
+            const params: any = { id: entityId };
+            if (entity === "spa" && spaEntityTypeId) params.entityTypeId = spaEntityTypeId;
+            result = await callBitrix(endpoint, accessToken, `${base}.get`, params);
+          } else if (operation === "search") {
+            const filterObj: Record<string, any> = typeof filters === "object" ? { ...filters } : {};
+            const params: any = { filter: filterObj, select: ["ID", "NAME", "PHONE", "EMAIL"] };
+            if (entity === "spa" && spaEntityTypeId) params.entityTypeId = spaEntityTypeId;
+            result = await callBitrix(endpoint, accessToken, `${base}.list`, params);
+          } else if (operation === "delete") {
+            const params: any = { id: entityId };
+            if (entity === "spa" && spaEntityTypeId) params.entityTypeId = spaEntityTypeId;
+            result = await callBitrix(endpoint, accessToken, `${base}.delete`, params);
+          } else if (operation === "move") {
+            result = await callBitrix(endpoint, accessToken, `${base}.update`, {
+              id: entityId,
+              fields: {
+                ...(targetPipelineId ? { CATEGORY_ID: targetPipelineId } : {}),
+                ...(targetStageId ? { STAGE_ID: targetStageId } : {}),
+              },
+            });
+          }
+          const id = result?.result?.ID || result?.result?.id || result?.result || null;
+          console.log(`[WORKER] CRM ${operation} ${entity} => id:`, id);
+          return new Response(JSON.stringify({ ok: true, result: result?.result, id }), {
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+
+        // ── Comment Request (flow-engine: bitrix_add_comment) ──
+        if (body._commentRequest) {
+          console.log("[WORKER] Comment request for", body.entityType, body.entityId);
+          const integration = body.conversation_id
+            ? await resolveIntegrationFromConversation(body.conversation_id)
+            : null;
+          if (!integration) {
+            return new Response(JSON.stringify({ error: "integration_not_found" }), {
+              status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" },
+            });
+          }
+          const accessToken = await ensureValidToken(supabase, integration);
+          const entityTypeIdMap: Record<string, number> = { lead: 1, deal: 2, contact: 3, company: 4 };
+          const ownerTypeId = entityTypeIdMap[body.entityType] || 2;
+          const result = await callBitrix(integration.client_endpoint, accessToken, "crm.timeline.comment.add", {
+            fields: {
+              ENTITY_ID: body.entityId,
+              ENTITY_TYPE_ID: ownerTypeId,
+              COMMENT: body.comment,
+            },
+          });
+          if (result?.error) console.error("[WORKER] Comment error:", result.error);
+          else console.log("[WORKER] Comment added:", result?.result);
+          return new Response(JSON.stringify({ ok: true, result: result?.result }), {
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+
+        // ── Activity Request (flow-engine: bitrix_add_activity) ──
+        if (body._activityRequest) {
+          console.log("[WORKER] Activity request for", body.entityType, body.entityId);
+          const integration = body.conversation_id
+            ? await resolveIntegrationFromConversation(body.conversation_id)
+            : null;
+          if (!integration) {
+            return new Response(JSON.stringify({ error: "integration_not_found" }), {
+              status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" },
+            });
+          }
+          const accessToken = await ensureValidToken(supabase, integration);
+          const entityTypeIdMap: Record<string, number> = { lead: 1, deal: 2, contact: 3, company: 4 };
+          const ownerTypeId = entityTypeIdMap[body.entityType] || 2;
+          const result = await callBitrix(integration.client_endpoint, accessToken, "crm.activity.add", {
+            fields: {
+              OWNER_ID: body.entityId,
+              OWNER_TYPE_ID: ownerTypeId,
+              TYPE_ID: 6,
+              SUBJECT: body.subject || "Tarefa via Bot",
+              DESCRIPTION: body.description || "",
+              DESCRIPTION_TYPE: 1,
+              DEADLINE: body.deadline || "",
+              RESPONSIBLE_ID: body.responsibleId || integration.user_id || 1,
+              COMPLETED: "N",
+            },
+          });
+          if (result?.error) console.error("[WORKER] Activity error:", result.error);
+          else console.log("[WORKER] Activity added:", result?.result);
+          return new Response(JSON.stringify({ ok: true, result: result?.result }), {
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+
+        // ── Assign Request (flow-engine: bitrix_assign_user) ──
+        if (body._assignRequest) {
+          console.log("[WORKER] Assign request for", body.entityType, body.entityId, "=> user", body.userId);
+          const integration = body.conversation_id
+            ? await resolveIntegrationFromConversation(body.conversation_id)
+            : null;
+          if (!integration) {
+            return new Response(JSON.stringify({ error: "integration_not_found" }), {
+              status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" },
+            });
+          }
+          const accessToken = await ensureValidToken(supabase, integration);
+          const entityMethodMap: Record<string, string> = { lead: "crm.lead", deal: "crm.deal", contact: "crm.contact" };
+          const base = entityMethodMap[body.entityType] || "crm.deal";
+          const result = await callBitrix(integration.client_endpoint, accessToken, `${base}.update`, {
+            id: body.entityId,
+            fields: { ASSIGNED_BY_ID: body.userId },
+          });
+          if (result?.error) console.error("[WORKER] Assign error:", result.error);
+          else console.log("[WORKER] Assign result:", result?.result);
+          return new Response(JSON.stringify({ ok: true, result: result?.result }), {
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+
       } catch {}
     }
 

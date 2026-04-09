@@ -254,17 +254,38 @@ export default function FlowsPage() {
 
   const openFlow = (flow: Flow) => {
     setSelectedFlow(flow);
-    const convertedNodes = (flow.nodes || []).map((n: any) => ({
-      ...n,
-      type: n.type === "default" ? "custom" : (n.type || "custom"),
-      data: n.data?.nodeType ? n.data : { nodeType: n.data?.nodeType || "message", ...n.data },
+
+    // Sanitize node types from legacy imports
+    const nodeTypeMap: Record<string, string> = { transfer: "transfer_to_human" };
+    const convertedNodes = (flow.nodes || []).map((n: any) => {
+      const nt = n.data?.nodeType;
+      const fixedNodeType = (nt && nodeTypeMap[nt]) || nt || "message";
+      return {
+        ...n,
+        type: n.type === "default" ? "custom" : (n.type || "custom"),
+        data: { ...n.data, nodeType: fixedNodeType },
+      };
+    });
+
+    // Sanitize edges: clean sourceHandle for non-branching nodes
+    const branchingIds = new Set(
+      convertedNodes
+        .filter((n: any) => ["condition", "switch", "ai_router", "message_buttons", "message_list"].includes(n.data?.nodeType))
+        .map((n: any) => n.id)
+    );
+    const sanitizedEdges = (flow.edges || []).map((e: any) => ({
+      ...e,
+      sourceHandle: branchingIds.has(e.source) ? e.sourceHandle : null,
+      targetHandle: e.targetHandle === "null" ? null : e.targetHandle,
     }));
+
     setNodes(convertedNodes);
+    
     // Ensure edges use the custom type and have the callback
-    const enhancedEdges = (flow.edges || []).map((e: any) => ({
+    const enhancedEdges = sanitizedEdges.map((e: any) => ({
       ...e,
       type: "custom",
-      data: { onInsertNode },
+      data: { onInsertNode: handleInsertNode },
       markerEnd: e.markerEnd || { type: MarkerType.ArrowClosed }
     }));
     setEdges(enhancedEdges);

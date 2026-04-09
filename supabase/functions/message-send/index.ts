@@ -88,12 +88,38 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const { conversation_id, content, message_type, interactive_data, skip_db_save, instance_id } = await req.json();
-    if (!conversation_id || !content) {
-      return new Response(JSON.stringify({ error: "conversation_id and content required" }), {
+    const body = await req.json();
+    const { conversation_id, content, message_type, resolvedInteractiveData: bodyInteractiveData, skip_db_save, instance_id } = body;
+    const media_base64: string | undefined = body.media_base64;
+    const media_mime_type: string | undefined = body.media_mime_type;
+    const file_name: string | undefined = body.file_name;
+
+    if (!conversation_id) {
+      return new Response(JSON.stringify({ error: "conversation_id required" }), {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
+    }
+
+    // If media_base64 is provided, upload to Supabase Storage and get public URL
+    let resolvedInteractiveData = bodyInteractiveData;
+    if (media_base64 && media_mime_type) {
+      const supabaseTemp = createClient(
+        Deno.env.get("SUPABASE_URL")!,
+        Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
+      );
+      const ext = media_mime_type.split("/")[1]?.split(";")[0] || "bin";
+      const storagePath = `operator-media/${Date.now()}-${file_name || `media.${ext}`}`;
+      const binaryData = Uint8Array.from(atob(media_base64), (c) => c.charCodeAt(0));
+      const { error: uploadError } = await supabaseTemp.storage
+        .from("media")
+        .upload(storagePath, binaryData, { contentType: media_mime_type, upsert: false });
+      if (!uploadError) {
+        const { data: urlData } = supabaseTemp.storage.from("media").getPublicUrl(storagePath);
+        resolvedInteractiveData = { url: urlData.publicUrl, filename: file_name };
+      } else {
+        console.error("[MESSAGE-SEND] Storage upload failed:", uploadError.message);
+      }
     }
 
     const supabase = createClient(
@@ -227,37 +253,37 @@ Deno.serve(async (req) => {
         let wuzapiEndpoint = "/chat/send/text";
         let wuzapiPayload: any = { Phone: phone, Body: content };
 
-        if (message_type === "interactive_buttons" && interactive_data) {
+        if (message_type === "interactive_buttons" && resolvedInteractiveData) {
           wuzapiEndpoint = "/chat/send/buttons";
-          const buttons = (interactive_data as any[]).slice(0, 3).map((btn: any, i: number) => ({
+          const buttons = (resolvedInteractiveData as any[]).slice(0, 3).map((btn: any, i: number) => ({
             buttonId: btn.id || `btn_${i}`,
             buttonText: { displayText: (btn.title || btn.label || `Opção ${i + 1}`).substring(0, 20) },
             type: 1,
           }));
           wuzapiPayload = { Phone: phone, Body: content, Buttons: buttons };
-        } else if (message_type === "interactive_list" && interactive_data) {
+        } else if (message_type === "interactive_list" && resolvedInteractiveData) {
           wuzapiEndpoint = "/chat/send/list";
-          const rows = (interactive_data as any[]).slice(0, 10).map((item: any, i: number) => ({
+          const rows = (resolvedInteractiveData as any[]).slice(0, 10).map((item: any, i: number) => ({
             RowId: item.id || `item_${i}`,
             Title: (item.title || `Item ${i + 1}`).substring(0, 24),
             Description: (item.description || "").substring(0, 72),
           }));
           wuzapiPayload = { Phone: phone, Body: content, ButtonText: "Selecionar", Title: "Opções", Sections: [{ Title: "Opções", Rows: rows }] };
-        } else if (message_type === "image" && interactive_data) {
+        } else if (message_type === "image" && resolvedInteractiveData) {
           wuzapiEndpoint = "/chat/send/image";
-          wuzapiPayload = { Phone: phone, Image: interactive_data.url || interactive_data, Caption: content };
-        } else if (message_type === "document" && interactive_data) {
+          wuzapiPayload = { Phone: phone, Image: resolvedInteractiveData.url || resolvedInteractiveData, Caption: content };
+        } else if (message_type === "document" && resolvedInteractiveData) {
           wuzapiEndpoint = "/chat/send/document";
-          wuzapiPayload = { Phone: phone, Document: interactive_data.url || interactive_data, FileName: interactive_data.filename || "documento", Caption: content };
-        } else if (message_type === "audio" && interactive_data) {
+          wuzapiPayload = { Phone: phone, Document: resolvedInteractiveData.url || resolvedInteractiveData, FileName: resolvedInteractiveData.filename || "documento", Caption: content };
+        } else if (message_type === "audio" && resolvedInteractiveData) {
           wuzapiEndpoint = "/chat/send/audio";
-          wuzapiPayload = { Phone: phone, Audio: interactive_data.url || interactive_data };
-        } else if (message_type === "video" && interactive_data) {
+          wuzapiPayload = { Phone: phone, Audio: resolvedInteractiveData.url || resolvedInteractiveData };
+        } else if (message_type === "video" && resolvedInteractiveData) {
           wuzapiEndpoint = "/chat/send/video";
-          wuzapiPayload = { Phone: phone, Video: interactive_data.url || interactive_data, Caption: content };
-        } else if (message_type === "location" && interactive_data) {
+          wuzapiPayload = { Phone: phone, Video: resolvedInteractiveData.url || resolvedInteractiveData, Caption: content };
+        } else if (message_type === "location" && resolvedInteractiveData) {
           wuzapiEndpoint = "/chat/send/location";
-          wuzapiPayload = { Phone: phone, Latitude: interactive_data.latitude, Longitude: interactive_data.longitude, Name: interactive_data.name || "", Address: interactive_data.address || "" };
+          wuzapiPayload = { Phone: phone, Latitude: resolvedInteractiveData.latitude, Longitude: resolvedInteractiveData.longitude, Name: resolvedInteractiveData.name || "", Address: resolvedInteractiveData.address || "" };
         }
 
         console.log(`[MESSAGE-SEND] Sending via WhatsApp QRCode: ${wuzapiEndpoint}`);
@@ -289,33 +315,33 @@ Deno.serve(async (req) => {
 
         let waPayload: any;
 
-        if (message_type === "interactive_buttons" && interactive_data) {
-          const buttons = (interactive_data as any[]).slice(0, 3).map((btn: any, i: number) => ({
+        if (message_type === "interactive_buttons" && resolvedInteractiveData) {
+          const buttons = (resolvedInteractiveData as any[]).slice(0, 3).map((btn: any, i: number) => ({
             type: "reply",
             reply: { id: btn.id || `btn_${i}`, title: (btn.title || btn.label || `Opção ${i + 1}`).substring(0, 20) },
           }));
           waPayload = { messaging_product: "whatsapp", to: phone, type: "interactive", interactive: { type: "button", body: { text: content }, action: { buttons } } };
-        } else if (message_type === "interactive_list" && interactive_data) {
-          const rows = (interactive_data as any[]).slice(0, 10).map((item: any, i: number) => ({
+        } else if (message_type === "interactive_list" && resolvedInteractiveData) {
+          const rows = (resolvedInteractiveData as any[]).slice(0, 10).map((item: any, i: number) => ({
             id: item.id || `item_${i}`,
             title: (item.title || `Item ${i + 1}`).substring(0, 24),
             description: (item.description || "").substring(0, 72),
           }));
           waPayload = { messaging_product: "whatsapp", to: phone, type: "interactive", interactive: { type: "list", body: { text: content }, action: { button: "Selecionar", sections: [{ title: "Opções", rows }] } } };
-        } else if (message_type === "image" && interactive_data) {
-          waPayload = { messaging_product: "whatsapp", to: phone, type: "image", image: { link: interactive_data.url || interactive_data, caption: content } };
-        } else if (message_type === "document" && interactive_data) {
-          waPayload = { messaging_product: "whatsapp", to: phone, type: "document", document: { link: interactive_data.url || interactive_data, caption: content, filename: interactive_data.filename || "documento" } };
-        } else if (message_type === "audio" && interactive_data) {
-          waPayload = { messaging_product: "whatsapp", to: phone, type: "audio", audio: { link: interactive_data.url || interactive_data } };
-        } else if (message_type === "video" && interactive_data) {
-          waPayload = { messaging_product: "whatsapp", to: phone, type: "video", video: { link: interactive_data.url || interactive_data, caption: content } };
-        } else if (message_type === "location" && interactive_data) {
-          waPayload = { messaging_product: "whatsapp", to: phone, type: "location", location: { latitude: interactive_data.latitude, longitude: interactive_data.longitude, name: interactive_data.name || "", address: interactive_data.address || "" } };
-        } else if (message_type === "template" && interactive_data) {
-          waPayload = { messaging_product: "whatsapp", to: phone, type: "template", template: { name: interactive_data.name, language: { code: interactive_data.language || "pt_BR" }, components: interactive_data.components || [] } };
-        } else if (message_type === "reaction" && interactive_data) {
-          waPayload = { messaging_product: "whatsapp", to: phone, type: "reaction", reaction: { message_id: interactive_data.message_id, emoji: interactive_data.emoji || "👍" } };
+        } else if (message_type === "image" && resolvedInteractiveData) {
+          waPayload = { messaging_product: "whatsapp", to: phone, type: "image", image: { link: resolvedInteractiveData.url || resolvedInteractiveData, caption: content } };
+        } else if (message_type === "document" && resolvedInteractiveData) {
+          waPayload = { messaging_product: "whatsapp", to: phone, type: "document", document: { link: resolvedInteractiveData.url || resolvedInteractiveData, caption: content, filename: resolvedInteractiveData.filename || "documento" } };
+        } else if (message_type === "audio" && resolvedInteractiveData) {
+          waPayload = { messaging_product: "whatsapp", to: phone, type: "audio", audio: { link: resolvedInteractiveData.url || resolvedInteractiveData } };
+        } else if (message_type === "video" && resolvedInteractiveData) {
+          waPayload = { messaging_product: "whatsapp", to: phone, type: "video", video: { link: resolvedInteractiveData.url || resolvedInteractiveData, caption: content } };
+        } else if (message_type === "location" && resolvedInteractiveData) {
+          waPayload = { messaging_product: "whatsapp", to: phone, type: "location", location: { latitude: resolvedInteractiveData.latitude, longitude: resolvedInteractiveData.longitude, name: resolvedInteractiveData.name || "", address: resolvedInteractiveData.address || "" } };
+        } else if (message_type === "template" && resolvedInteractiveData) {
+          waPayload = { messaging_product: "whatsapp", to: phone, type: "template", template: { name: resolvedInteractiveData.name, language: { code: resolvedInteractiveData.language || "pt_BR" }, components: resolvedInteractiveData.components || [] } };
+        } else if (message_type === "reaction" && resolvedInteractiveData) {
+          waPayload = { messaging_product: "whatsapp", to: phone, type: "reaction", reaction: { message_id: resolvedInteractiveData.message_id, emoji: resolvedInteractiveData.emoji || "👍" } };
         } else {
           waPayload = { messaging_product: "whatsapp", to: phone, type: "text", text: { body: content } };
         }
@@ -371,7 +397,7 @@ Deno.serve(async (req) => {
           entity_id: conversation_id,
           external_id: externalMessageId,
           source: "emmely",
-        }, { onConflict: "entity_type,external_id,source" }).catch(() => {})
+        }, { onConflict: "entity_type,external_id,source" }).then(() => {})
       }
 
       await supabase.from("conversations").update({

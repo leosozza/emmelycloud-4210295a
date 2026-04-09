@@ -214,7 +214,7 @@ Deno.serve(async (req) => {
           entity_id: String(eventEntityId),
           external_id: dedupKey,
           source: "bitrix24",
-        }, { onConflict: "entity_type,external_id,source" }).catch(() => {});
+        }, { onConflict: "entity_type,external_id,source" }).then(() => {});
       }
 
       const { error: insertError } = await supabase.from("bitrix_event_queue").insert({

@@ -1,56 +1,20 @@
-import { useState, useEffect } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useState, useEffect, useCallback, useRef } from "react";
+import { useQuery, useMutation, useQueryClient, useInfiniteQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { ConversationList } from "@/components/atendimento/ConversationList";
 import { ChatPanel } from "@/components/atendimento/ChatPanel";
 import { ContactProfile } from "@/components/atendimento/ContactProfile";
+import type { Conversation, Message, QuickReply } from "@/types/conversation";
+import type { MediaPayload } from "@/components/atendimento/ChatInput";
 
-type Channel = "whatsapp" | "instagram" | "email" | "webchat";
-type Status = "aberta" | "em_atendimento" | "aguardando" | "fechada";
-type Direction = "inbound" | "outbound";
-
-interface Conversation {
-  id: string;
-  channel: Channel;
-  contact_name: string;
-  contact_phone: string | null;
-  contact_email: string | null;
-  contact_instagram: string | null;
-  contact_avatar_url: string | null;
-  client_id: string | null;
-  status: Status;
-  assigned_to: string | null;
-  department: string | null;
-  last_message_at: string | null;
-  last_message_preview: string | null;
-  unread_count: number;
-}
-
-interface Message {
-  id: string;
-  conversation_id: string;
-  direction: Direction;
-  content: string;
-  sender_name: string | null;
-  media_url: string | null;
-  media_type: string | null;
-  read_at: string | null;
-  created_at: string;
-  delivery_status: string | null;
-}
-
-interface QuickReply {
-  id: string;
-  title: string;
-  content: string;
-  category: string | null;
-}
+const MESSAGES_PAGE_SIZE = 50;
 
 export default function AtendimentoPage() {
   const [selectedId, setSelectedId] = useState<string | undefined>();
   const queryClient = useQueryClient();
+  const realtimeRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
 
-  // Fetch conversations
+  // ─── Conversations ───────────────────────────────────────────────────────────
   const { data: conversations = [] } = useQuery<Conversation[]>({
     queryKey: ["conversations"],
     queryFn: async () => {
@@ -61,24 +25,43 @@ export default function AtendimentoPage() {
       if (error) throw error;
       return (data ?? []) as unknown as Conversation[];
     },
+    staleTime: 30_000,
   });
 
-  // Fetch messages for selected conversation
-  const { data: messages = [] } = useQuery<Message[]>({
+  // ─── Messages (infinite scroll) ──────────────────────────────────────────────
+  const {
+    data: messagesData,
+    fetchNextPage,
+    hasNextPage,
+  } = useInfiniteQuery({
     queryKey: ["messages", selectedId],
     enabled: !!selectedId,
-    queryFn: async () => {
+    initialPageParam: 0,
+    queryFn: async ({ pageParam }) => {
       const { data, error } = await supabase
         .from("messages")
         .select("*")
         .eq("conversation_id", selectedId!)
-        .order("created_at", { ascending: true });
+        .order("created_at", { ascending: false })
+        .range(
+          (pageParam as number) * MESSAGES_PAGE_SIZE,
+          ((pageParam as number) + 1) * MESSAGES_PAGE_SIZE - 1
+        );
       if (error) throw error;
-      return (data ?? []) as unknown as Message[];
+      return (data ?? []).reverse() as unknown as Message[];
     },
+    getNextPageParam: (lastPage, allPages) =>
+      lastPage.length === MESSAGES_PAGE_SIZE ? allPages.length : undefined,
   });
 
-  // Fetch quick replies
+  const messages: Message[] = messagesData
+    ? messagesData.pages.flat().sort(
+        (a, b) =>
+          new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+      )
+    : [];
+
+  // ─── Quick replies ────────────────────────────────────────────────────────────
   const { data: quickReplies = [] } = useQuery<QuickReply[]>({
     queryKey: ["quick_replies"],
     queryFn: async () => {
@@ -86,47 +69,116 @@ export default function AtendimentoPage() {
       if (error) throw error;
       return (data ?? []) as unknown as QuickReply[];
     },
+    staleTime: 60_000,
   });
 
-  // Send message mutation
-  const sendMessage = useMutation({
-    mutationFn: async (content: string) => {
-      if (!selectedId) return;
-      const conv = conversations.find((c) => c.id === selectedId);
+  // ─── Mark as read when conversation is selected ───────────────────────────────
+  useEffect(() => {
+    if (!selectedId) return;
+    supabase
+      .from("conversations")
+      .update({ unread_count: 0 } as any)
+      .eq("id", selectedId)
+      .then(() => {
+        queryClient.setQueryData<Conversation[]>(["conversations"], (prev) =>
+          (prev ?? []).map((c) =>
+            c.id === selectedId ? { ...c, unread_count: 0 } : c
+          )
+        );
+      });
+  }, [selectedId, queryClient]);
 
-      // Use unified message-send for Instagram and WhatsApp (direct Meta API)
-      if (conv?.channel === "instagram" || conv?.channel === "whatsapp") {
-        const { data, error } = await supabase.functions.invoke("message-send", {
-          body: { conversation_id: selectedId, content },
-        });
-        if (error) throw error;
-        if (data?.error) throw new Error(data.error);
-        return;
-      }
+  // ─── Realtime subscriptions ───────────────────────────────────────────────────
+  useEffect(() => {
+    // Clean up previous subscription
+    if (realtimeRef.current) {
+      supabase.removeChannel(realtimeRef.current);
+    }
 
-      // Other channels: direct DB insert
-      const { error } = await supabase.from("messages").insert({
-        conversation_id: selectedId,
-        direction: "outbound" as Direction,
-        content,
-        sender_name: "Atendente",
-      } as any);
-      if (error) throw error;
-      await supabase
-        .from("conversations")
-        .update({
-          last_message_at: new Date().toISOString(),
-          last_message_preview: content.slice(0, 100),
-        } as any)
-        .eq("id", selectedId);
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["messages", selectedId] });
-      queryClient.invalidateQueries({ queryKey: ["conversations"] });
-    },
-  });
+    const channel = supabase
+      .channel(`atendimento-realtime-${selectedId ?? "global"}`)
+      // Conversations: optimistic update instead of full refetch
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "conversations" },
+        (payload) => {
+          if (payload.eventType === "INSERT") {
+            queryClient.setQueryData<Conversation[]>(["conversations"], (prev) => {
+              const newConv = payload.new as unknown as Conversation;
+              if ((prev ?? []).some((c) => c.id === newConv.id)) return prev;
+              return [newConv, ...(prev ?? [])];
+            });
+          } else if (payload.eventType === "UPDATE") {
+            queryClient.setQueryData<Conversation[]>(["conversations"], (prev) =>
+              (prev ?? []).map((c) =>
+                c.id === payload.new.id
+                  ? { ...c, ...(payload.new as unknown as Conversation) }
+                  : c
+              )
+            );
+          } else {
+            queryClient.invalidateQueries({ queryKey: ["conversations"] });
+          }
+        }
+      )
+      // Messages: only for the selected conversation
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "messages" },
+        (payload) => {
+          const msg = payload.new as unknown as Message;
+          if (msg.conversation_id === selectedId) {
+            queryClient.setQueryData(
+              ["messages", selectedId],
+              (prev: any) => {
+                if (!prev) return prev;
+                const allMsgs = prev.pages.flat() as Message[];
+                if (allMsgs.some((m) => m.id === msg.id)) return prev;
+                const newPages = [...prev.pages];
+                newPages[newPages.length - 1] = [
+                  ...newPages[newPages.length - 1],
+                  msg,
+                ];
+                return { ...prev, pages: newPages };
+              }
+            );
+          }
+        }
+      )
+      // Delivery status updates
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "messages" },
+        (payload) => {
+          const updated = payload.new as unknown as Message;
+          if (updated.conversation_id === selectedId) {
+            queryClient.setQueryData(
+              ["messages", selectedId],
+              (prev: any) => {
+                if (!prev) return prev;
+                return {
+                  ...prev,
+                  pages: prev.pages.map((page: Message[]) =>
+                    page.map((m) =>
+                      m.id === updated.id ? { ...m, ...updated } : m
+                    )
+                  ),
+                };
+              }
+            );
+          }
+        }
+      )
+      .subscribe();
 
-  // Close conversation mutation
+    realtimeRef.current = channel;
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [selectedId, queryClient]);
+
+  // ─── Close conversation ───────────────────────────────────────────────────────
   const closeConversation = useMutation({
     mutationFn: async () => {
       if (!selectedId) return;
@@ -140,33 +192,27 @@ export default function AtendimentoPage() {
     },
   });
 
-  // Realtime subscriptions
-  useEffect(() => {
-    const channel = supabase
-      .channel("atendimento-realtime")
-      .on("postgres_changes", { event: "*", schema: "public", table: "conversations" }, () => {
-        queryClient.invalidateQueries({ queryKey: ["conversations"] });
-      })
-      .on("postgres_changes", { event: "INSERT", schema: "public", table: "messages" }, (payload) => {
-        const msg = payload.new as any;
-        if (msg.conversation_id === selectedId) {
-          queryClient.invalidateQueries({ queryKey: ["messages", selectedId] });
-        }
-      })
-      .subscribe();
+  // ─── Attendance mode change ───────────────────────────────────────────────────
+  const handleAttendanceModeChange = useCallback(
+    (mode: "ai" | "human") => {
+      queryClient.setQueryData<Conversation[]>(["conversations"], (prev) =>
+        (prev ?? []).map((c) =>
+          c.id === selectedId ? { ...c, attendance_mode: mode } : c
+        )
+      );
+    },
+    [selectedId, queryClient]
+  );
 
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [selectedId, queryClient]);
-
-  // No longer polling Callbell status - delivery status comes from Meta webhooks
-
-  const selectedConversation = conversations.find((c) => c.id === selectedId) ?? null;
+  const selectedConversation =
+    conversations.find((c) => c.id === selectedId) ?? null;
 
   return (
-    <div className="-m-6 flex bg-background" style={{ height: 'calc(100vh - 5.5rem)' }}>
-      {/* Left panel - conversation list */}
+    <div
+      className="-m-6 flex bg-background"
+      style={{ height: "calc(100vh - 5.5rem)" }}
+    >
+      {/* Left panel — conversation list */}
       <div className="w-[420px] shrink-0 border-r flex flex-col">
         <ConversationList
           conversations={conversations}
@@ -175,18 +221,24 @@ export default function AtendimentoPage() {
         />
       </div>
 
-      {/* Center panel - chat (flexible) */}
+      {/* Center panel — chat */}
       <div className="flex-1 min-w-0 flex flex-col">
         <ChatPanel
           conversation={selectedConversation}
           messages={messages}
           quickReplies={quickReplies}
-          onSendMessage={(content) => sendMessage.mutate(content)}
+          onSendMessage={() => {
+            queryClient.invalidateQueries({ queryKey: ["conversations"] });
+          }}
+          onSendMedia={(_media: MediaPayload) => {
+            queryClient.invalidateQueries({ queryKey: ["conversations"] });
+          }}
           onCloseConversation={() => closeConversation.mutate()}
+          onAttendanceModeChange={handleAttendanceModeChange}
         />
       </div>
 
-      {/* Right panel - contact profile (fixed width like Callbell) */}
+      {/* Right panel — contact profile */}
       <ContactProfile conversation={selectedConversation} />
     </div>
   );

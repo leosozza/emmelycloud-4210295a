@@ -234,7 +234,7 @@ Deno.serve(async (req) => {
       entity_id: conversationId || "unknown",
       external_id: messageImId,
       source: "emmely",
-    }, { onConflict: "entity_type,external_id,source" }).catch(() => {});
+    }, { onConflict: "entity_type,external_id,source" }).then(() => {});
 
     return new Response(JSON.stringify({ ok: true, sentCount }), { headers: jsonHeaders });
   } catch (error) {
