@@ -1,52 +1,35 @@
 
 
-# Corrigir Layout do Flow Importado do PowerBot
+# Executar 8 Migrações SQL — EmmelyCloud
 
-## Problema
+## Resumo
 
-O importador PowerBot preserva as posições originais dos nós (`pbNode.position`), que vêm do PowerBot sem organização visual adequada. Resultado: nós sobrepostos e layout confuso.
+Executar 8 migrações SQL na ordem correcta para implementar: pagamento automático em propostas, user_memory omnichannel, persona trainer melhorado, queue worker com SKIP LOCKED, AI sessions, cost tracker, history compactor e audit logs.
 
-## Solução
+## Migrações (por ordem de dependências FK)
 
-Implementar **auto-layout** baseado em grafo dirigido (topological sort + camadas) no `convertPowerBotFlow`, organizando os nós automaticamente em colunas/linhas com espaçamento adequado.
+| # | Tabela/Função | Tipo |
+|---|---|---|
+| 1 | `proposals.auto_payment_config` | Nova coluna JSONB |
+| 2 | `user_memory` — fix constraint + omnichannel + `upsert_user_memory()` RPC | ALTER + nova função |
+| 3 | `persona_training_history` + `ai_agents.base_prompt` | Novas colunas |
+| 4 | `message_queue` + `claim_queue_jobs()` + `release_stuck_jobs()` | ALTER + RPCs |
+| 5 | `ai_sessions` + `timeout_inactive_sessions()` | Nova tabela + RPC |
+| 6 | `ai_usage_logs.session_id` + `ai_agents.monthly_budget_usd` + `get_monthly_cost_by_agent()` | ALTER + RPC (depende de #5) |
+| 7 | `conversation_summaries` + cleanup trigger | Nova tabela |
+| 8 | `ai_audit_logs` + cleanup trigger | Nova tabela |
 
-## Alterações
+## Implementação
 
-### 1. `src/lib/powerbotImporter.ts` — Adicionar auto-layout
+Executar cada migração como um ficheiro SQL separado via ferramenta de migração, na ordem 1→8. Todas usam `IF NOT EXISTS` / `IF EXISTS` para serem idempotentes.
 
-Após converter nós e edges, aplicar algoritmo de layout:
+A migração 3 inclui um `UPDATE` para copiar `system_prompt` → `base_prompt` nos agentes existentes — isto será executado dentro da migração (é seguro pois é parte da mesma DDL de setup).
 
-1. **Topological sort** usando BFS (Kahn's algorithm) a partir dos nós raiz (sem edges de entrada)
-2. **Atribuir camadas (layers)**: cada nó recebe um nível baseado na profundidade máxima desde a raiz
-3. **Posicionar**: X = camada × 320px, Y = índice dentro da camada × 180px
-4. **Centrar verticalmente** cada camada para evitar layouts em escada
+## Nota sobre CHECK constraint (Migração 5)
 
-```text
-Camada 0     Camada 1     Camada 2     Camada 3
-[Início] --> [Condição] --> [IA]     --> [Bitrix]
-                        --> [Msg]    --> [Transfer]
-```
+A tabela `ai_sessions` usa `CHECK (status IN (...))` que é imutável e seguro neste caso (não depende de `now()`). Não há necessidade de trigger de validação aqui.
 
-Espaçamento: **320px horizontal**, **180px vertical** entre nós.
+## Ficheiros a criar
 
-### 2. Também corrigir os build errors pré-existentes
-
-Corrigir os erros de TypeScript nas edge functions (`.catch()` em Postgrest builders, tipos `unknown`, `null` vs `undefined`):
-
-- **`ai-parity-audit`** — `.catch()` → `.then()` pattern
-- **`ai-process-message`** — `null` → `undefined` para `next_question`, `.catch()` fix
-- **`bitrix24-events`** — `.catch()` fix
-- **`bitrix24-fetch-entities`** — cast `contactIds` para `string[]`
-- **`bitrix24-payment-handler`** — type guard no `err`
-- **`bitrix24-payment-webhook`** — type guard no `e`
-- **`bitrix24-send`** — `.catch()` fix
-- **`bitrix24-test-connection`** — type guard no `err`
-- **`flow-engine`** — `null` → `undefined`, return type fix
-- **`generate-template-from-image`** — type guard
-- **`import-access-data`** — implicit `any` parameter
-
-## Ficheiros a editar
-
-1. **`src/lib/powerbotImporter.ts`** — auto-layout no `convertPowerBotFlow`
-2. **Edge functions com build errors** — fixes de TypeScript (10+ ficheiros, alterações mínimas de tipagem)
+8 ficheiros de migração SQL em `supabase/migrations/`
 
