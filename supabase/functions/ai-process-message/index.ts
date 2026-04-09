@@ -309,7 +309,7 @@ Deno.serve(async (req) => {
             issue_type: "auto_escalation_frustrated",
             rating: 1,
             comment: "Auto-escalated: 2x consecutive frustrated sentiment",
-          }).catch(() => {});
+          }).then(() => {});
           return new Response(JSON.stringify({ transferred: "human", reason: "double_frustration" }), { headers: jsonHeaders });
         }
         await supabase.from("conversations").update({
