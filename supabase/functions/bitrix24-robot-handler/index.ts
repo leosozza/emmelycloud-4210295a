@@ -784,7 +784,7 @@ async function handleGenerateProposal(
     if (sendMethod !== "none" && targetPhone) {
       try {
         if (sendMethod === "link" || sendMethod === "both") {
-          const linkMsg = `📋 *Proposta: ${finalTitle}*\n\nValor: € ${finalValue.toFixed(2)}\nValidade: ${validDays} dias\n\n✅ Aceite a proposta aqui:\n${proposalUrl}`;
+          const linkMsg = `📋 *Proposta: ${finalTitle}*\n\nValor: ${currSymbol} ${finalValue.toFixed(2)}\nValidade: ${validDays} dias\n\n✅ Aceite a proposta aqui:\n${proposalUrl}`;
           await handleSendWhatsApp({ phone: targetPhone, message: linkMsg }, supabaseUrl, serviceKey);
           sendStatus = "link_sent";
         }
