@@ -22,7 +22,7 @@ function resolveNodeType(pbType: string, data: any): FlowNodeType {
       return "condition";
 
     case "transferNode":
-      return "transfer";
+      return "transfer_to_human";
 
     case "openAINode": {
       const hasMission = data?.type === "mission" && Array.isArray(data?.missionVariables) && data.missionVariables.length > 0;
