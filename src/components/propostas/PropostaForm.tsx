@@ -165,6 +165,7 @@ export function PropostaForm({ open, onOpenChange, proposta, cases, onSave, savi
               client_address: clientAddress || null,
               service_id: serviceId || null,
               description: description || null,
+              auto_payment_config: autoPaymentEnabled ? { enabled: true, gateway: autoPaymentGateway } : null,
             });
           }}
           className="space-y-5"
