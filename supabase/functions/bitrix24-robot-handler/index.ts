@@ -813,6 +813,7 @@ async function handleGenerateProposal(
         currency: currencyId,
         bitrix24_deal_id: entityType === "deal" ? String(entityId) : null,
         accept_stage_id: acceptStageId || null,
+        accept_flow_id: acceptFlowId || null,
       } as any)
       .select("id, accept_token")
       .single();
