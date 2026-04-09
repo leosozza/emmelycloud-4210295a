@@ -809,6 +809,259 @@ async function handleGenerateProposal(
   }
 }
 
+// --- Generate Contract Handler ---
+async function handleGenerateContract(
+  properties: Record<string, any>,
+  memberId: string,
+  supabaseUrl: string,
+  serviceKey: string
+): Promise<Record<string, string>> {
+  const proposalId = properties.proposal_id || properties.PROPOSAL_ID || "";
+  const dealId = properties.deal_id || properties.DEAL_ID || "";
+  const entityType = (properties.entity_type || properties.ENTITY_TYPE || "deal").toLowerCase();
+  const templateName = properties.template_name || properties.TEMPLATE_NAME || "";
+  const startsAtRaw = properties.starts_at || properties.STARTS_AT || "";
+  const durationMonths = parseInt(properties.duration_months || properties.DURATION_MONTHS || "12") || 12;
+  const sendMethod = (properties.send_method || properties.SEND_METHOD || "none").toLowerCase();
+  const sendToPhone = properties.send_to_phone || properties.SEND_TO_PHONE || "";
+
+  try {
+    const supabase = createClient(supabaseUrl, serviceKey);
+
+    // 1. Get Bitrix24 integration
+    const { data: integration } = await supabase
+      .from("bitrix24_integrations")
+      .select("*")
+      .eq("member_id", memberId)
+      .maybeSingle();
+
+    if (!integration?.client_endpoint || !integration?.access_token) {
+      return { contract_url: "", contract_pdf: "", contract_id: "", status: "error", send_status: "", error: "Bitrix24 integration not found" };
+    }
+
+    const ep = integration.client_endpoint;
+    const tk = integration.access_token;
+
+    let proposal: any = null;
+    const frontendUrl = Deno.env.get("FRONTEND_URL") || "https://emmelycloud.lovable.app";
+
+    if (proposalId) {
+      // 2a. Load existing proposal
+      const { data: prop, error: propErr } = await supabase
+        .from("proposals")
+        .select("*")
+        .eq("id", proposalId)
+        .single();
+
+      if (propErr || !prop) {
+        return { contract_url: "", contract_pdf: "", contract_id: "", status: "error", send_status: "", error: "Proposal not found: " + proposalId };
+      }
+      proposal = prop;
+
+      // If proposal not yet set as contract, set contract_status to pendente
+      if (!proposal.contract_status || proposal.contract_status === "rascunho") {
+        const signToken = proposal.sign_token || crypto.randomUUID();
+        const startsAt = startsAtRaw || new Date().toISOString().split("T")[0];
+        const expiresAt = new Date(new Date(startsAt).getTime() + durationMonths * 30 * 24 * 60 * 60 * 1000).toISOString().split("T")[0];
+
+        // Apply contract template if provided
+        if (templateName) {
+          let tmpl: any = null;
+          const { data: tmplById } = await supabase.from("proposal_templates").select("*").eq("id", templateName).eq("template_type", "contrato").maybeSingle();
+          tmpl = tmplById;
+          if (!tmpl) {
+            const { data: tmplByName } = await supabase.from("proposal_templates").select("*").eq("template_type", "contrato").ilike("name", `%${templateName}%`).maybeSingle();
+            tmpl = tmplByName;
+          }
+          if (tmpl) {
+            // Update proposal with contract template data
+            await supabase.from("proposals").update({
+              template_id: tmpl.id,
+              conditions: tmpl.conditions || proposal.conditions,
+              description: tmpl.description || proposal.description,
+            }).eq("id", proposal.id);
+          }
+        }
+
+        const { error: upErr } = await supabase
+          .from("proposals")
+          .update({
+            contract_status: "pendente",
+            sign_token: signToken,
+            starts_at: startsAt,
+            expires_at: expiresAt,
+            status: "aceite",
+          })
+          .eq("id", proposal.id);
+
+        if (upErr) {
+          return { contract_url: "", contract_pdf: "", contract_id: "", status: "error", send_status: "", error: "Failed to update proposal: " + upErr.message };
+        }
+
+        proposal.sign_token = signToken;
+      }
+    } else {
+      // 2b. Create new contract from template + deal data
+      const entityId = dealId;
+      if (!entityId) {
+        return { contract_url: "", contract_pdf: "", contract_id: "", status: "error", send_status: "", error: "proposal_id or deal_id is required" };
+      }
+
+      const method = entityType === "lead" ? "crm.lead.get" : "crm.deal.get";
+      const entityResult = await callBitrix(ep, tk, method, { ID: entityId });
+      const entity = entityResult.result;
+      if (!entity) {
+        return { contract_url: "", contract_pdf: "", contract_id: "", status: "error", send_status: "", error: `Entity ${entityId} not found` };
+      }
+
+      let clientName = "", clientEmail = "", clientPhone = "";
+      const contactId = entity.CONTACT_ID || entity.CONTACT_IDS?.[0];
+      if (contactId) {
+        const contactResult = await callBitrix(ep, tk, "crm.contact.get", { ID: contactId });
+        const contact = contactResult.result;
+        if (contact) {
+          clientName = `${contact.NAME || ""} ${contact.LAST_NAME || ""}`.trim();
+          if (contact.EMAIL?.length > 0) clientEmail = contact.EMAIL[0].VALUE || "";
+          if (contact.PHONE?.length > 0) clientPhone = contact.PHONE[0].VALUE || "";
+        }
+      }
+
+      let tmpl: any = null;
+      if (templateName) {
+        const { data: tmplById } = await supabase.from("proposal_templates").select("*").eq("id", templateName).eq("template_type", "contrato").maybeSingle();
+        tmpl = tmplById;
+        if (!tmpl) {
+          const { data: tmplByName } = await supabase.from("proposal_templates").select("*").eq("template_type", "contrato").ilike("name", `%${templateName}%`).maybeSingle();
+          tmpl = tmplByName;
+        }
+      }
+
+      const finalTitle = tmpl?.title || entity.TITLE || "Contrato";
+      const finalValue = parseFloat(entity.OPPORTUNITY || "0") || tmpl?.value || 0;
+      const startsAt = startsAtRaw || new Date().toISOString().split("T")[0];
+      const expiresAt = new Date(new Date(startsAt).getTime() + durationMonths * 30 * 24 * 60 * 60 * 1000).toISOString().split("T")[0];
+
+      // Find or create case
+      let caseId = "";
+      const { data: existingLead } = await supabase.from("leads").select("id").eq("bitrix24_id", String(entityId)).maybeSingle();
+      if (existingLead) {
+        const { data: existingCase } = await supabase.from("cases").select("id").eq("lead_id", existingLead.id).maybeSingle();
+        if (existingCase) {
+          caseId = existingCase.id;
+        } else {
+          const { data: newCase } = await supabase.from("cases").insert({ title: finalTitle, description: `Contrato via Bitrix24 (${entityType} #${entityId})`, legal_area: "outro", status: "aberto", lead_id: existingLead.id }).select("id").single();
+          caseId = newCase?.id || "";
+        }
+      } else {
+        const { data: newCase } = await supabase.from("cases").insert({ title: finalTitle, description: `Contrato via Bitrix24 (${entityType} #${entityId})`, legal_area: "outro", status: "aberto" }).select("id").single();
+        caseId = newCase?.id || "";
+      }
+
+      if (!caseId) {
+        return { contract_url: "", contract_pdf: "", contract_id: "", status: "error", send_status: "", error: "Failed to create case" };
+      }
+
+      const signToken = crypto.randomUUID();
+      const { data: newProposal, error: insertErr } = await supabase
+        .from("proposals")
+        .insert({
+          title: clientName ? `${finalTitle} — ${clientName}` : finalTitle,
+          case_id: caseId,
+          value: finalValue,
+          payment_type: tmpl?.payment_type || "fixo",
+          installments: tmpl?.installments || 1,
+          description: tmpl?.description || "",
+          conditions: tmpl?.conditions || "",
+          client_name: clientName,
+          client_email: clientEmail,
+          client_phone: clientPhone,
+          template_id: tmpl?.id || null,
+          service_id: tmpl?.service_id || null,
+          status: "aceite",
+          contract_status: "pendente",
+          sign_token: signToken,
+          starts_at: startsAt,
+          expires_at: expiresAt,
+        })
+        .select("*")
+        .single();
+
+      if (insertErr || !newProposal) {
+        return { contract_url: "", contract_pdf: "", contract_id: "", status: "error", send_status: "", error: "Failed to create contract: " + (insertErr?.message || "") };
+      }
+      proposal = newProposal;
+    }
+
+    // 3. Build URLs
+    const contractUrl = `${frontendUrl}/sign/${proposal.sign_token}`;
+
+    // 4. Generate PDF
+    let contractPdf = "";
+    try {
+      const pdfRes = await fetch(`${supabaseUrl}/functions/v1/proposal-pdf`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${serviceKey}` },
+        body: JSON.stringify({ proposal_id: proposal.id }),
+      });
+      const pdfData = await pdfRes.json();
+      contractPdf = pdfData.pdf_url || pdfData.url || "";
+    } catch (pdfErr) {
+      console.error("[ROBOT-HANDLER] Contract PDF generation error:", pdfErr);
+    }
+
+    // 5. Save URLs to Bitrix24 deal
+    if (dealId) {
+      try {
+        await callBitrix(ep, tk, "crm.deal.update", {
+          ID: dealId,
+          fields: {
+            UF_CRM_EMMELY_CONTRACT_URL: contractUrl,
+            UF_CRM_EMMELY_CONTRACT_PDF: contractPdf || "",
+          },
+        });
+        console.log(`[ROBOT-HANDLER] Saved contract URLs to deal ${dealId}`);
+      } catch (saveErr) {
+        console.error("[ROBOT-HANDLER] Failed to save contract URLs:", saveErr);
+      }
+    }
+
+    // 6. Send via WhatsApp if requested
+    let sendStatus = "";
+    const targetPhone = sendToPhone || proposal.client_phone || "";
+
+    if (sendMethod !== "none" && targetPhone) {
+      try {
+        if (sendMethod === "link" || sendMethod === "both") {
+          const linkMsg = `📝 *Contrato: ${proposal.title}*\n\n✍️ Assine digitalmente aqui:\n${contractUrl}`;
+          await handleSendWhatsApp({ phone: targetPhone, message: linkMsg }, supabaseUrl, serviceKey);
+          sendStatus = "link_sent";
+        }
+        if ((sendMethod === "pdf" || sendMethod === "both") && contractPdf) {
+          const pdfMsg = `📄 Segue o PDF do contrato *${proposal.title}*:\n${contractPdf}`;
+          await handleSendWhatsApp({ phone: targetPhone, message: pdfMsg }, supabaseUrl, serviceKey);
+          sendStatus = sendMethod === "both" ? "link_and_pdf_sent" : "pdf_sent";
+        }
+      } catch (sendErr) {
+        console.error("[ROBOT-HANDLER] Contract send error:", sendErr);
+        sendStatus = "send_error";
+      }
+    } else if (sendMethod !== "none" && !targetPhone) {
+      sendStatus = "no_phone";
+    }
+
+    return {
+      contract_url: contractUrl,
+      contract_pdf: contractPdf,
+      contract_id: proposal.id,
+      status: "created",
+      send_status: sendStatus,
+      error: "",
+    };
+  } catch (e) {
+    return { contract_url: "", contract_pdf: "", contract_id: "", status: "error", send_status: "", error: String(e) };
+  }
+}
+
 async function handleSendProposal(
   properties: Record<string, any>,
   supabaseUrl: string,
