@@ -498,6 +498,7 @@ Deno.serve(async (req) => {
             valid_days: { Name: "Dias de Validade", Type: "int", Default: "30" },
             send_method: { Name: "Método de Envio", Type: "select", Options: { none: "Não enviar", link: "Enviar Link", pdf: "Enviar PDF", both: "Link + PDF" }, Default: "none" },
             send_to_phone: { Name: "Telefone para Envio", Type: "string" },
+            accept_stage_id: { Name: "Etapa ao Aceitar", Type: "string", Description: "ID da etapa do funil para onde o deal move quando o cliente aceita a proposta (ex: C5:WON). Se vazio, não altera a etapa." },
           },
           RETURN_PROPERTIES: {
             proposal_url: { Name: "URL da Proposta", Type: "string" },
