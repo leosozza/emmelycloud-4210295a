@@ -117,8 +117,8 @@ Deno.serve(async (req) => {
         return new Response(JSON.stringify({ ok: true, message: "Conexão Stripe válida" }), {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
-      } catch (e) {
-        return new Response(JSON.stringify({ error: `Erro de rede: ${e.message}` }), {
+      } catch (e: unknown) {
+        return new Response(JSON.stringify({ error: `Erro de rede: ${e instanceof Error ? e.message : "unknown"}` }), {
           status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
@@ -154,8 +154,8 @@ Deno.serve(async (req) => {
         return new Response(JSON.stringify({ ok: true, message: "Conexão Asaas válida" }), {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
-      } catch (e) {
-        return new Response(JSON.stringify({ error: `Erro de rede: ${e.message}` }), {
+      } catch (e: unknown) {
+        return new Response(JSON.stringify({ error: `Erro de rede: ${e instanceof Error ? e.message : "unknown"}` }), {
           status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }

@@ -89,7 +89,7 @@ Deno.serve(async (req) => {
 
   try {
     const body = await req.json();
-    const { conversation_id, content, message_type, resolvedInteractiveData, skip_db_save, instance_id } = body;
+    const { conversation_id, content, message_type, resolvedInteractiveData: bodyInteractiveData, skip_db_save, instance_id } = body;
     const media_base64: string | undefined = body.media_base64;
     const media_mime_type: string | undefined = body.media_mime_type;
     const file_name: string | undefined = body.file_name;
@@ -102,7 +102,7 @@ Deno.serve(async (req) => {
     }
 
     // If media_base64 is provided, upload to Supabase Storage and get public URL
-    let resolvedInteractiveData = resolvedInteractiveData;
+    let resolvedInteractiveData = bodyInteractiveData;
     if (media_base64 && media_mime_type) {
       const supabaseTemp = createClient(
         Deno.env.get("SUPABASE_URL")!,
@@ -397,7 +397,7 @@ Deno.serve(async (req) => {
           entity_id: conversation_id,
           external_id: externalMessageId,
           source: "emmely",
-        }, { onConflict: "entity_type,external_id,source" }).catch(() => {})
+        }, { onConflict: "entity_type,external_id,source" }).then(() => {})
       }
 
       await supabase.from("conversations").update({

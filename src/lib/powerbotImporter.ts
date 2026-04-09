@@ -18,8 +18,11 @@ function resolveNodeType(pbType: string, data: any): FlowNodeType {
     case "messageNode":
       return "message";
 
-    case "conditionalNode":
+    case "conditionalNode": {
+      const conditions = data?.conditions || [];
+      if (conditions.length > 2) return "switch";
       return "condition";
+    }
 
     case "transferNode":
       return "transfer_to_human";
@@ -99,6 +102,17 @@ function extractFlowData(pbType: string, nodeType: FlowNodeType, data: any): Par
 
     case "condition": {
       result.config = { conditions: data.conditions || [] };
+      break;
+    }
+
+    case "switch": {
+      const conditions = data.conditions || [];
+      result.switchCases = conditions.map((c: any) => ({
+        id: c.id,
+        handleId: c.id,
+        label: `${c.firstValue || ""} ${c.comparisonType || ""} ${c.secondValue || ""}`.trim() || c.type || c.id,
+        value: c.secondValue || c.type || "",
+      }));
       break;
     }
 
@@ -237,9 +251,24 @@ export function convertPowerBotFlow(json: any): ImportedFlow {
     source: pbEdge.source,
     target: pbEdge.target,
     sourceHandle: pbEdge.sourceHandle || null,
-    targetHandle: pbEdge.targetHandle || null,
+    targetHandle: pbEdge.targetHandle === "null" ? null : (pbEdge.targetHandle || null),
     markerEnd: { type: MarkerType.ArrowClosed },
   }));
+
+  // ── Clean up sourceHandle for non-branching nodes ──
+  const branchingNodeIds = new Set(
+    nodes
+      .filter((n: any) => ["condition", "switch", "ai_router", "message_buttons", "message_list"].includes(n.data.nodeType))
+      .map((n: any) => n.id)
+  );
+  edges.forEach((e: any) => {
+    if (!branchingNodeIds.has(e.source)) {
+      e.sourceHandle = null;
+    }
+    if (e.targetHandle === "null") {
+      e.targetHandle = null;
+    }
+  });
 
   // ── Auto-layout: BFS layered graph ──
   applyAutoLayout(nodes, edges);

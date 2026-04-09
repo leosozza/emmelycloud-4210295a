@@ -317,7 +317,7 @@ serve(async (req) => {
 
         const spaItems = data.result?.items || [];
         const contactIds = [...new Set(spaItems.filter((i: any) => i.contactId).map((i: any) => String(i.contactId)))];
-        const contactsMap = await fetchContacts(ep, auth, contactIds);
+        const contactsMap = await fetchContacts(ep, auth, contactIds as string[]);
 
         const items = spaItems.map((i: any) => {
           const contact = contactsMap[String(i.contactId)] || {};

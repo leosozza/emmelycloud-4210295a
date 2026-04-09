@@ -293,8 +293,8 @@ Deno.serve(async (req) => {
     return new Response(JSON.stringify({ pdf_url: pdfUrl, html, document_title: composedTitle || proposal.title || "Proposta" }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
-  } catch (e) {
-    return new Response(JSON.stringify({ error: e.message }), {
+  } catch (e: unknown) {
+    return new Response(JSON.stringify({ error: e instanceof Error ? e.message : "Unknown error" }), {
       status: 400,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
