@@ -1261,9 +1261,33 @@ Deno.serve(async (req) => {
             error: { Name: "Erro", Type: "string" },
           },
         },
+        {
+          CODE: "emmely_generate_contract",
+          NAME: "Emmely: Gerar Contrato",
+          DESCRIPTION: {
+            br: "Gera um contrato a partir de uma proposta aceite ou directamente.\n\n📋 CONFIGURAÇÃO:\n• proposal_id: Use o retorno {{proposal_id}} do robot 'Gerar Proposta' OU deixe vazio para criar um contrato novo\n• template_name: Selecione o modelo de contrato (templates do tipo 'contrato')\n• deal_id: Use {{ID}} para vincular ao negócio\n\n📤 ENVIO:\n• send_method: Enviar link de assinatura ou PDF via WhatsApp\n\n🔄 RETORNOS:\n• contract_url — link de assinatura digital\n• contract_pdf — PDF do contrato\n• contract_id — ID interno",
+            en: "Generates a contract from an accepted proposal or directly. Can send the signing link via WhatsApp."
+          },
+          PROPERTIES: {
+            proposal_id: { Name: "ID da Proposta", Type: "string", Description: "Use o retorno {{proposal_id}} do robot 'Gerar Proposta'. Se vazio, cria contrato novo com os dados do template." },
+            deal_id: { Name: "ID do Negócio", Type: "string", Description: "Use {{ID}} para vincular ao negócio actual" },
+            entity_type: { Name: "Tipo de Entidade", Type: "select", Options: { deal: "Negócio", lead: "Lead" }, Default: "deal" },
+            template_name: { Name: "Modelo de Contrato", Type: "select", Options: contractTemplateOptions, Description: "Selecione o modelo de contrato. Usado quando não há proposal_id ou para substituir o template da proposta." },
+            starts_at: { Name: "Data de Início", Type: "date", Description: "Data de início do contrato (YYYY-MM-DD). Se vazio, usa a data actual." },
+            duration_months: { Name: "Duração (meses)", Type: "int", Default: "12", Description: "Duração do contrato em meses a partir da data de início." },
+            send_method: { Name: "Método de Envio", Type: "select", Options: { none: "Não enviar", link: "Enviar Link de Assinatura", pdf: "Enviar PDF", both: "Link + PDF" }, Default: "none", Description: "none = apenas gera | link = envia link de assinatura digital via WhatsApp | pdf = envia PDF | both = ambos" },
+            send_to_phone: { Name: "Telefone para Envio", Type: "string", Description: "Número WhatsApp com código do país. Se vazio, usa o telefone do cliente da proposta." },
+          },
+          RETURN_PROPERTIES: {
+            contract_url: { Name: "URL de Assinatura", Type: "string" },
+            contract_pdf: { Name: "URL do PDF", Type: "string" },
+            contract_id: { Name: "ID do Contrato", Type: "string" },
+            status: { Name: "Status", Type: "string" },
+            send_status: { Name: "Status de Envio", Type: "string" },
+            error: { Name: "Erro", Type: "string" },
+          },
+        },
       ];
-
-      for (const robot of robots) {
         // Delete existing robot first (safe for reinstall)
         await callBitrix(clientEndpoint, accessToken, "bizproc.robot.delete", { CODE: robot.CODE });
 
