@@ -228,7 +228,12 @@ export function AgentFormDialog({
             <Input value={editingAgent.strategic_objective || ""} onChange={(e) => setEditingAgent(prev => ({ ...prev, strategic_objective: e.target.value }))} placeholder="Ex: Converter leads em clientes, Resolver tickets rapidamente" />
           </div>
 
-          {/* System Prompt */}
+          {/* Budget */}
+          <div>
+            <Label>Budget Mensal (USD)</Label>
+            <Input type="number" step="0.01" min="0" value={editingAgent.monthly_budget_usd ?? ""} onChange={(e) => setEditingAgent(prev => ({ ...prev, monthly_budget_usd: e.target.value ? parseFloat(e.target.value) : null }))} placeholder="Ex: 50.00 (deixe vazio para ilimitado)" />
+            <p className="text-[10px] text-muted-foreground mt-1">Limite de custo mensal para este agente. Alertas aparecem na Observabilidade.</p>
+          </div>
           <Separator />
           <div>
             <Label>System Prompt</Label>
