@@ -524,12 +524,26 @@ async function handleGenerateProposal(
     let templateId: string | null = null;
 
     if (templateName) {
-      const { data: tmpl } = await supabase
+      // Try by ID first (new select-based flow), then fallback to name search (legacy)
+      let tmpl: any = null;
+      const { data: tmplById } = await supabase
         .from("proposal_templates")
         .select("*")
+        .eq("id", templateName)
         .eq("template_type", "proposta")
-        .ilike("name", `%${templateName}%`)
         .maybeSingle();
+
+      if (tmplById) {
+        tmpl = tmplById;
+      } else {
+        const { data: tmplByName } = await supabase
+          .from("proposal_templates")
+          .select("*")
+          .eq("template_type", "proposta")
+          .ilike("name", `%${templateName}%`)
+          .maybeSingle();
+        tmpl = tmplByName;
+      }
 
       if (tmpl) {
         templateId = tmpl.id;
