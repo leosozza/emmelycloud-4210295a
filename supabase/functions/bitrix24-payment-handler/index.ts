@@ -273,14 +273,7 @@ Deno.serve(async (req) => {
         });
       }
 
-      const params = new URLSearchParams();
-      params.append("mode", "payment");
-      params.append("line_items[0][price_data][currency]", currency.toLowerCase());
-      params.append("line_items[0][price_data][unit_amount]", Math.round(sum * 100).toString());
-      params.append("line_items[0][price_data][product_data][name]", description);
-      params.append("line_items[0][quantity]", "1");
-
-      // Explicitly set payment method types based on resolved region + currency
+      // Determine regional payment methods
       const stripeRegion = stripeProvider === "stripe_pt" ? "pt" : stripeProvider === "stripe_br" ? "br" : null;
       const cur = currency.toUpperCase();
       let regionalMethods: string[];
@@ -291,27 +284,46 @@ Deno.serve(async (req) => {
       } else {
         regionalMethods = ["card"];
       }
-      regionalMethods.forEach((m, i) => {
-        params.append(`payment_method_types[${i}]`, m);
-      });
 
       const customerEmail = body.CUSTOMER_EMAIL || body.customer_email || "";
-      if (customerEmail) params.append("customer_email", customerEmail);
-
       const successUrl = returnUrl || Deno.env.get("FRONTEND_URL") || "https://emmelycloud.pages.dev";
-      params.append("success_url", `${successUrl}?payment=success&session_id={CHECKOUT_SESSION_ID}`);
-      params.append("cancel_url", `${successUrl}?payment=cancelled`);
 
-      const res = await fetch("https://api.stripe.com/v1/checkout/sessions", {
-        method: "POST",
-        headers: {
-          "Authorization": `Bearer ${stripeKey}`,
-          "Content-Type": "application/x-www-form-urlencoded",
-        },
-        body: params.toString(),
-      });
+      const buildParams = (methods: string[]) => {
+        const params = new URLSearchParams();
+        params.append("mode", "payment");
+        params.append("line_items[0][price_data][currency]", currency.toLowerCase());
+        params.append("line_items[0][price_data][unit_amount]", Math.round(sum * 100).toString());
+        params.append("line_items[0][price_data][product_data][name]", description);
+        params.append("line_items[0][quantity]", "1");
+        methods.forEach((m, i) => {
+          params.append(`payment_method_types[${i}]`, m);
+        });
+        if (customerEmail) params.append("customer_email", customerEmail);
+        params.append("success_url", `${successUrl}?payment=success&session_id={CHECKOUT_SESSION_ID}`);
+        params.append("cancel_url", `${successUrl}?payment=cancelled`);
+        return params;
+      };
 
-      const data = await res.json();
+      const callStripe = async (params: URLSearchParams) => {
+        const res = await fetch("https://api.stripe.com/v1/checkout/sessions", {
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${stripeKey}`,
+            "Content-Type": "application/x-www-form-urlencoded",
+          },
+          body: params.toString(),
+        });
+        return await res.json();
+      };
+
+      let data = await callStripe(buildParams(regionalMethods));
+
+      // If a payment method type is invalid (not enabled in dashboard), retry with card-only
+      if (data.error?.message?.includes("payment method type provided")) {
+        console.log("[BX24-PAYMENT] Regional methods failed, retrying card-only:", data.error.message);
+        data = await callStripe(buildParams(["card"]));
+      }
+
       if (data.error) {
         return new Response(JSON.stringify({ PAYMENT_ERRORS: [data.error.message] }), {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
