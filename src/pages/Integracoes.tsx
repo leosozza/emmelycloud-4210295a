@@ -1216,7 +1216,11 @@ function PagamentosTab() {
               <CardDescription>Europa (EUR) — Cartão, Multibanco, MB WAY, SEPA</CardDescription>
             </div>
           </div>
-          <StatusBadge status={stripePtConfigured ? "active" : "inactive"} />
+          {stripePtWarning ? (
+            <Badge variant="destructive" className="text-xs"><AlertCircle className="h-3 w-3 mr-1" />pk_ inválida</Badge>
+          ) : (
+            <StatusBadge status={stripePtConfigured ? "active" : "inactive"} />
+          )}
         </CardHeader>
         <CardContent className="space-y-3 text-sm">
           <CredentialInput provider="stripe_pt" credentialKey="STRIPE_SECRET_KEY_PT" label="Secret Key (sk_...)" {...credProps} />
