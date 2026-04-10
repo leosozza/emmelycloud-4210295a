@@ -23,57 +23,82 @@ function getGateway(country: string | null, currency: string): "stripe" | "asaas
   return "stripe";
 }
 
-function getStripePaymentMethods(region?: "pt" | "br" | null, requestedMethod?: string | null): string[] {
-  // Base methods per region
-  let methods: string[];
-  if (region === "pt") {
-    methods = ["card", "multibanco", "mb_way", "sepa_debit", "link"];
-  } else if (region === "br") {
-    methods = ["card", "boleto", "pix", "link"];
-  } else {
-    methods = ["card", "sepa_debit", "multibanco", "mb_way", "link"];
-  }
+function getStripePaymentMethods(region?: "pt" | "br" | null, requestedMethod?: string | null, currency?: string): string[] {
+  const cur = (currency || "").toUpperCase();
   
-  // If a specific method was requested and it's valid for Stripe, prioritize it
+  // Currency-compatible methods — only include methods enabled & valid for the currency
+  const brlMethods = ["card", "boleto", "pix"];
+  const eurMethods = ["card", "multibanco", "mb_way", "sepa_debit"];
+  const defaultMethods = ["card"];
+  
+  let methods: string[];
+  if (region === "br") {
+    methods = cur === "BRL" ? brlMethods : ["card"];
+  } else if (region === "pt") {
+    methods = (cur === "EUR" || !cur) ? eurMethods : ["card"];
+  } else {
+    // No region — pick by currency
+    if (cur === "BRL") methods = brlMethods;
+    else if (cur === "EUR") methods = eurMethods;
+    else methods = defaultMethods;
+  }
+
+  // If a specific method was requested and it's valid, prioritize it
   if (requestedMethod && requestedMethod !== "card" && requestedMethod !== "direto") {
-    // Move requested method to front if present, or add it if valid
     const validStripeMethods = ["card", "multibanco", "mb_way", "sepa_debit", "pix", "boleto", "link"];
-    if (validStripeMethods.includes(requestedMethod)) {
+    if (validStripeMethods.includes(requestedMethod) && !methods.includes(requestedMethod)) {
+      // Don't add currency-incompatible methods
+    } else if (methods.includes(requestedMethod)) {
       methods = methods.filter(m => m !== requestedMethod);
       methods.unshift(requestedMethod);
     }
   }
-  
+
   return methods;
 }
 
 async function createStripePayment(apiKey: string, amount: number, currency: string, customerEmail: string, description: string, returnUrl?: string, region?: "pt" | "br" | null, requestedMethod?: string | null) {
-  // Create a Checkout Session — do NOT hardcode payment_method_types
-  // Instead, omit them so Stripe uses "automatic_payment_methods" (default behavior)
-  // which only shows methods activated in the merchant's dashboard
-  const params = new URLSearchParams();
-  params.append("mode", "payment");
-  params.append("line_items[0][price_data][currency]", currency.toLowerCase());
-  params.append("line_items[0][price_data][unit_amount]", Math.round(amount * 100).toString());
-  params.append("line_items[0][price_data][product_data][name]", description);
-  params.append("line_items[0][quantity]", "1");
-
-  if (customerEmail) params.append("customer_email", customerEmail);
-
   const baseUrl = returnUrl || Deno.env.get("FRONTEND_URL") || "https://emmelycloud.pages.dev";
-  params.append("success_url", `${baseUrl}?payment=success&session_id={CHECKOUT_SESSION_ID}`);
-  params.append("cancel_url", `${baseUrl}?payment=cancelled`);
+  
+  // Try with regional methods first, fallback to card-only if Stripe rejects any method
+  const methods = getStripePaymentMethods(region, requestedMethod, currency);
+  
+  const buildParams = (paymentMethods: string[]) => {
+    const params = new URLSearchParams();
+    params.append("mode", "payment");
+    params.append("line_items[0][price_data][currency]", currency.toLowerCase());
+    params.append("line_items[0][price_data][unit_amount]", Math.round(amount * 100).toString());
+    params.append("line_items[0][price_data][product_data][name]", description);
+    params.append("line_items[0][quantity]", "1");
+    paymentMethods.forEach((m, i) => {
+      params.append(`payment_method_types[${i}]`, m);
+    });
+    if (customerEmail) params.append("customer_email", customerEmail);
+    params.append("success_url", `${baseUrl}?payment=success&session_id={CHECKOUT_SESSION_ID}`);
+    params.append("cancel_url", `${baseUrl}?payment=cancelled`);
+    return params;
+  };
 
-  const res = await fetch("https://api.stripe.com/v1/checkout/sessions", {
-    method: "POST",
-    headers: {
-      "Authorization": `Bearer ${apiKey}`,
-      "Content-Type": "application/x-www-form-urlencoded",
-    },
-    body: params.toString(),
-  });
+  const callStripe = async (params: URLSearchParams) => {
+    const res = await fetch("https://api.stripe.com/v1/checkout/sessions", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${apiKey}`,
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: params.toString(),
+    });
+    return await res.json();
+  };
 
-  const data = await res.json();
+  let data = await callStripe(buildParams(methods));
+  
+  // If a payment method type is invalid (not enabled), retry with card-only
+  if (data.error?.message?.includes("payment method type provided")) {
+    console.log("[STRIPE] Regional methods failed, retrying with card-only:", data.error.message);
+    data = await callStripe(buildParams(["card"]));
+  }
+  
   if (data.error) throw new Error(data.error.message);
 
   return {
