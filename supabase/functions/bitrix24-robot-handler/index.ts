@@ -997,6 +997,10 @@ async function handleGenerateContract(
             expires_at: expiresAt,
             status: "aceite",
             ...(autoPaymentConfig ? { auto_payment_config: autoPaymentConfig } : {}),
+            ...(signedFlowId ? { signed_flow_id: signedFlowId } : {}),
+            ...(paidFlowId ? { paid_flow_id: paidFlowId } : {}),
+            ...(overdueFlowId ? { overdue_flow_id: overdueFlowId } : {}),
+            ...(overdueDays ? { overdue_days: overdueDays } : {}),
           })
           .eq("id", proposal.id);
 
