@@ -1118,7 +1118,9 @@ function PagamentosTab() {
   const credProps = { credentials, drafts, setDrafts, onSave: handleSaveCredential, saving };
 
   const stripePtConfigured = credentials["stripe_pt::STRIPE_SECRET_KEY_PT"]?.has_value;
+  const stripePtWarning = credentials["stripe_pt::STRIPE_SECRET_KEY_PT"]?.warning;
   const stripeBrConfigured = credentials["stripe_br::STRIPE_SECRET_KEY_BR"]?.has_value;
+  const stripeBrWarning = credentials["stripe_br::STRIPE_SECRET_KEY_BR"]?.warning;
   const asaasConfigured = credentials["asaas::ASAAS_API_KEY"]?.has_value;
 
   // Test connections via lightweight API validation (no real transactions created)
