@@ -539,6 +539,12 @@ Deno.serve(async (req) => {
       gateway = getGateway(clientCountry, currency);
     }
 
+    // Auto-detect Stripe region by currency when not explicitly set
+    if (gateway === "stripe" && !stripeRegion) {
+      if (currency === "EUR") stripeRegion = "pt";
+      else if (currency === "BRL") stripeRegion = "br";
+    }
+
     let result: any;
 
     if (payment_method === "direto" || normalizedGateway === "direto") {
