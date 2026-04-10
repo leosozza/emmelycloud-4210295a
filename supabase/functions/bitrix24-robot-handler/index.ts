@@ -392,6 +392,9 @@ async function handleCreateCharge(
           source: "bitrix24_robot",
           company_name: companyName || undefined,
           requested_payment_method: paymentMethod,
+          paid_flow_id: chargePaidFlowId || undefined,
+          overdue_flow_id: chargeOverdueFlowId || undefined,
+          overdue_days: chargeOverdueDays || undefined,
         },
       };
       // Add credential overrides if company has them
