@@ -280,7 +280,16 @@ Deno.serve(async (req) => {
       params.append("line_items[0][price_data][product_data][name]", description);
       params.append("line_items[0][quantity]", "1");
 
-      // Don't hardcode payment_method_types — let Stripe auto-select based on dashboard settings
+      // Explicitly set payment method types based on resolved region
+      const stripeRegion = stripeProvider === "stripe_pt" ? "pt" : stripeProvider === "stripe_br" ? "br" : null;
+      const regionalMethods = stripeRegion === "pt"
+        ? ["card", "multibanco", "mb_way", "sepa_debit", "link"]
+        : stripeRegion === "br"
+        ? ["card", "boleto", "pix", "link"]
+        : ["card", "link"];
+      regionalMethods.forEach((m, i) => {
+        params.append(`payment_method_types[${i}]`, m);
+      });
 
       const customerEmail = body.CUSTOMER_EMAIL || body.customer_email || "";
       if (customerEmail) params.append("customer_email", customerEmail);

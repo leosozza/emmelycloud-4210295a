@@ -58,6 +58,12 @@ async function createStripePayment(apiKey: string, amount: number, currency: str
   params.append("line_items[0][price_data][product_data][name]", description);
   params.append("line_items[0][quantity]", "1");
 
+  // Explicitly set payment method types based on region
+  const methods = getStripePaymentMethods(region, requestedMethod);
+  methods.forEach((m, i) => {
+    params.append(`payment_method_types[${i}]`, m);
+  });
+
   if (customerEmail) params.append("customer_email", customerEmail);
 
   const baseUrl = returnUrl || Deno.env.get("FRONTEND_URL") || "https://emmelycloud.pages.dev";
