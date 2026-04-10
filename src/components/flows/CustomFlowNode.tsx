@@ -48,10 +48,10 @@ function CustomFlowNode({ data, selected }: NodeProps) {
     <div
       className={`min-w-[190px] max-w-[250px] rounded-xl bg-card border-2 shadow-sm transition-all duration-200 ${
         selected ? "shadow-md scale-[1.02]" : "hover:shadow-soft hover:border-muted-foreground/30"
-      }`}
+      } ${nd.error ? "border-destructive animate-pulse shadow-[0_0_10px_rgba(239,68,68,0.2)]" : ""}`}
       style={{
-        borderColor: selected ? meta.color : `${meta.color}40`,
-        boxShadow: selected ? `0 0 0 3px ${meta.color}20, 0 4px 12px -2px rgba(0,0,0,0.1)` : undefined,
+        borderColor: nd.error ? undefined : (selected ? meta.color : `${meta.color}40`),
+        boxShadow: selected && !nd.error ? `0 0 0 3px ${meta.color}20, 0 4px 12px -2px rgba(0,0,0,0.1)` : undefined,
       }}
     >
       {/* Handle de entrada (topo) */}
@@ -65,11 +65,11 @@ function CustomFlowNode({ data, selected }: NodeProps) {
       <div className="flex items-center gap-2.5 px-3.5 py-2.5 border-b border-border/40">
         <div 
           className="w-6 h-6 rounded-lg flex items-center justify-center shadow-inner shrink-0" 
-          style={{ backgroundColor: `${meta.color}15` }}
+          style={{ backgroundColor: nd.error ? "rgba(239,68,68,0.1)" : `${meta.color}15` }}
         >
-          <Icon className="w-3.5 h-3.5" style={{ color: meta.color }} />
+          <Icon className="w-3.5 h-3.5" style={{ color: nd.error ? "#ef4444" : meta.color }} />
         </div>
-        <span className="text-[12px] font-bold text-foreground/90 truncate tracking-tight flex-1">
+        <span className={`text-[12px] font-bold truncate tracking-tight flex-1 ${nd.error ? "text-destructive" : "text-foreground/90"}`}>
           {nd.label || meta.label}
         </span>
       </div>

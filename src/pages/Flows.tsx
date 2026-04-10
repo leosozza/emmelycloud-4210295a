@@ -17,6 +17,9 @@ import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import {
+  Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription,
+} from "@/components/ui/sheet";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import {
@@ -29,6 +32,7 @@ import {
   Plus, Workflow, Save, Trash2, ArrowLeft,
   Loader2, GitBranch, Upload, Undo2, Redo2, Download, Copy,
   Bot, Zap, Shuffle, Calendar, Clock, Tag, ArrowRightLeft, Bell,
+  ShieldCheck, AlertTriangle, CheckCircle2,
 } from "lucide-react";
 import { previewPowerBotFlow, convertPowerBotFlow, type PowerBotImportPreview } from "@/lib/powerbotImporter";
 import CustomFlowNode from "@/components/flows/CustomFlowNode";
@@ -114,29 +118,24 @@ export default function FlowsPage() {
     setLoading(false);
   };
 
-  const handleInsertNode = useCallback((edgeId: string) => {
+  const handleInsertNode = useCallback((edgeId: string, type: FlowNodeType = "message") => {
     const edge = edges.find(e => e.id === edgeId);
     if (!edge) return;
-
     const sourceNode = nodes.find(n => n.id === edge.source);
     const targetNode = nodes.find(n => n.id === edge.target);
     if (!sourceNode || !targetNode) return;
-
     const position = {
       x: (sourceNode.position.x + targetNode.position.x) / 2,
       y: (sourceNode.position.y + targetNode.position.y) / 2,
     };
-
     const newNodeId = `node_${Date.now()}`;
     const newNode: Node = { 
       id: newNodeId, 
       type: "custom", 
       position, 
-      data: getDefaultData("message") as any 
+      data: getDefaultData(type) as any 
     };
-
     setNodes((nds) => [...nds, newNode]);
-    
     setEdges((eds) => {
       const filtered = eds.filter(e => e.id !== edgeId);
       return [
@@ -159,7 +158,6 @@ export default function FlowsPage() {
         },
       ];
     });
-
     setSelectedNodeId(newNodeId);
     setTimeout(pushState, 50);
   }, [nodes, edges, setNodes, setEdges, pushState]);
@@ -173,6 +171,50 @@ export default function FlowsPage() {
     }, eds));
     setTimeout(pushState, 0);
   }, [setEdges, pushState, handleInsertNode]);
+
+  const onValidate = useCallback(() => {
+    let errorCount = 0;
+    const newNodes = nodes.map(node => {
+      const data = node.data as unknown as FlowNodeData;
+      const errors: string[] = [];
+
+      // Basic validation rules
+      if (["message", "message_buttons", "message_list"].includes(data.nodeType) && !data.message?.trim()) {
+        errors.push("Mensagem vazia");
+      }
+      if (data.nodeType === "webhook_call" && !data.webhook?.url?.trim()) {
+        errors.push("URL do Webhook ausente");
+      }
+      if (data.nodeType === "condition" && (!data.condition?.field || !data.condition?.value)) {
+        errors.push("Condição mal configurada");
+      }
+      if (data.nodeType === "input_capture" && !data.inputCapture?.variableName) {
+        errors.push("Nome da variável ausente");
+      }
+
+      // Check for disconnected outputs (except for "end" nodes)
+      if (data.nodeType !== "end" && data.nodeType !== "end_flow") {
+        const hasOutgoing = edges.some(e => e.source === node.id);
+        if (!hasOutgoing) {
+          errors.push("Beco sem saída (sem conexão de saída)");
+        }
+      }
+
+      if (errors.length > 0) errorCount++;
+      return { ...node, data: { ...data, error: errors.length > 0 ? errors[0] : null } };
+    });
+
+    setNodes(newNodes);
+    if (errorCount > 0) {
+      toast.error(`Encontrados ${errorCount} blocos com problemas`, {
+        description: "Os blocos problemáticos foram destacados em vermelho."
+      });
+    } else {
+      toast.success("Fluxo validado com sucesso!", {
+        icon: <CheckCircle2 className="h-4 w-4 text-green-500" />
+      });
+    }
+  }, [nodes, edges, setNodes]);
 
   const onLayout = useCallback(() => {
     const { nodes: layoutedNodes, edges: layoutedEdges } = getLayoutedElements(nodes, edges);
@@ -525,6 +567,9 @@ export default function FlowsPage() {
             <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => exportFlow({ ...selectedFlow, nodes, edges })} title="Exportar JSON">
               <Download className="h-3.5 w-3.5" />
             </Button>
+            <Button variant="outline" size="sm" className="h-8" onClick={onValidate} title="Validar integridade do fluxo">
+              <ShieldCheck className="h-3.5 w-3.5 mr-1" /> Validar
+            </Button>
             <Button variant="outline" size="sm" className="h-8" onClick={onLayout} title="Organizar fluxo">
               <Shuffle className="h-3.5 w-3.5 mr-1" /> Organizar
             </Button>
@@ -548,10 +593,19 @@ export default function FlowsPage() {
               deleteKeyCode="Delete"
               onNodesDelete={() => setTimeout(pushState, 0)}
               onEdgesDelete={() => setTimeout(pushState, 0)}
+              defaultEdgeOptions={{
+                type: 'custom',
+                markerEnd: { type: MarkerType.ArrowClosed, color: '#94a3b8' },
+                style: { strokeWidth: 2, stroke: '#94a3b8' }
+              }}
             >
-              <Controls />
-              <MiniMap />
-              <Background />
+              <Controls className="bg-card border-none shadow-soft" />
+              <MiniMap 
+                className="rounded-lg border shadow-sm !bg-card" 
+                nodeColor={(n) => (n.data as any)?.error ? "#ef4444" : "#e2e8f0"}
+                maskColor="rgba(0,0,0,0.05)"
+              />
+              <Background variant={Background.variant || "dots"} gap={20} size={1} color="#cbd5e1" />
               {selectedNodeId && (
                 <Panel position="top-right">
                   <div className="flex gap-1 bg-card border rounded-md p-1 shadow-sm">
@@ -576,7 +630,20 @@ export default function FlowsPage() {
           </div>
 
           {selectedNodeData && (
-            <NodeConfigPanel data={selectedNodeData} onChange={handleNodeDataChange} onDelete={handleDeleteNode} onClose={() => setSelectedNodeId(null)} />
+            <Sheet open={!!selectedNodeId} onOpenChange={(open) => !open && setSelectedNodeId(null)}>
+              <SheetContent className="w-[450px] p-0 overflow-hidden border-l shadow-2xl">
+                <SheetHeader className="sr-only">
+                  <SheetTitle>Configuração do Nó</SheetTitle>
+                  <SheetDescription>Ajuste os parâmetros do bloco selecionado</SheetDescription>
+                </SheetHeader>
+                <NodeConfigPanel 
+                  data={selectedNodeData} 
+                  onChange={handleNodeDataChange} 
+                  onDelete={() => handleDeleteNode(false)} 
+                  onClose={() => setSelectedNodeId(null)} 
+                />
+              </SheetContent>
+            </Sheet>
           )}
         </div>
       </div>
