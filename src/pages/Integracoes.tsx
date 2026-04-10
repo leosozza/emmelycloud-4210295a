@@ -1048,7 +1048,7 @@ function LateFeeConfigCard() {
 }
 
 function PagamentosTab() {
-  const [credentials, setCredentials] = useState<Record<string, { has_value: boolean; masked: string }>>({});
+  const [credentials, setCredentials] = useState<Record<string, { has_value: boolean; masked: string; warning?: string }>>({});
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState<string | null>(null);
   const [transactions, setTransactions] = useState<PaymentTransaction[]>([]);
@@ -1063,11 +1063,12 @@ function PagamentosTab() {
     try {
       const { data, error } = await supabase.functions.invoke("manage-credentials", { method: "GET" });
       if (!error && data?.credentials) {
-        const map: Record<string, { has_value: boolean; masked: string }> = {};
+        const map: Record<string, { has_value: boolean; masked: string; warning?: string }> = {};
         for (const c of data.credentials) {
           map[`${c.provider}::${c.credential_key}`] = {
             has_value: c.has_value,
             masked: c.credential_value_masked || "",
+            ...(c.warning ? { warning: c.warning } : {}),
           };
         }
         setCredentials(map);
