@@ -1,33 +1,31 @@
 
 
-# Fix: Fallback Stripe usa pk_ key global
+# Fix: PIX not showing in Stripe Checkout for Brasil
 
-## Problema
-A cadeia de fallback no `payment-create` (linhas 561-574) tenta 4 providers em sequência. Quando nenhum `force_gateway` regional é especificado, o último fallback é `stripe` → `STRIPE_SECRET_KEY`, que contém uma `pk_live_` key. As chaves `stripe_pt` e `stripe_br` estão correctas com `sk_live_`.
+## Problem
+The `createStripePayment` function and `bitrix24-payment-handler` both create Stripe Checkout Sessions without specifying `payment_method_types`. This relies on Stripe's "automatic payment methods" setting in the dashboard. For the BR account, PIX may not be enabled there, or Stripe doesn't auto-detect it.
 
-## Solução (2 alterações)
+The function `getStripePaymentMethods` already exists and returns `["card", "boleto", "pix", "link"]` for region `"br"`, but is never called.
+
+## Solution
 
 ### 1. `supabase/functions/payment-create/index.ts`
-Na cadeia de fallback (linhas 561-574), após cada `getCredential`, verificar se a key retornada começa com `pk_` e tratá-la como `null` (forçar continuar a cadeia ou falhar com mensagem clara):
+In `createStripePayment` (line 50), use `getStripePaymentMethods` to explicitly pass `payment_method_types` to the Checkout Session when a region is specified:
 
 ```typescript
-// After each getCredential call, reject pk_ keys
-if (stripeKey?.startsWith("pk_")) stripeKey = null;
+// After line 59, add payment method types for regional accounts
+const methods = getStripePaymentMethods(region, requestedMethod);
+methods.forEach((m, i) => {
+  params.append(`payment_method_types[${i}]`, m);
+});
 ```
 
-Isto garante que mesmo que a credencial global tenha `pk_`, o sistema nunca a usa e dá erro claro.
+This ensures PIX, Boleto, Multibanco, MB WAY etc. appear based on region.
 
-### 2. `supabase/functions/payment-create/index.ts` — default region
-Quando `currency === "EUR"` e não há `force_gateway`, auto-detectar `stripeRegion = "pt"` como default para clientes europeus, evitando o fallback global:
+### 2. `supabase/functions/bitrix24-payment-handler/index.ts`
+Same fix — add explicit `payment_method_types` based on the resolved gateway region. When `stripe_br` is selected, include `["card", "pix", "boleto", "link"]`.
 
-Na lógica de auto-detection (linhas 533-540), adicionar:
-```typescript
-if (gateway === "stripe" && !stripeRegion) {
-  if (currency === "EUR") stripeRegion = "pt";
-  else if (currency === "BRL") stripeRegion = "br";
-}
-```
-
-### Ficheiros
-1. `supabase/functions/payment-create/index.ts` — rejeitar pk_ keys no fallback + auto-region por moeda
+### Files
+1. `supabase/functions/payment-create/index.ts` — wire `getStripePaymentMethods` into `createStripePayment`
+2. `supabase/functions/bitrix24-payment-handler/index.ts` — add payment method types for regional Stripe
 
