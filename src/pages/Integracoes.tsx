@@ -1264,7 +1264,11 @@ function PagamentosTab() {
               <CardDescription>Brasil (BRL) — Cartão</CardDescription>
             </div>
           </div>
-          <StatusBadge status={stripeBrConfigured ? "active" : "inactive"} />
+          {stripeBrWarning ? (
+            <Badge variant="destructive" className="text-xs"><AlertCircle className="h-3 w-3 mr-1" />pk_ inválida</Badge>
+          ) : (
+            <StatusBadge status={stripeBrConfigured ? "active" : "inactive"} />
+          )}
         </CardHeader>
         <CardContent className="space-y-3 text-sm">
           <CredentialInput provider="stripe_br" credentialKey="STRIPE_SECRET_KEY_BR" label="Secret Key (sk_...)" {...credProps} />
