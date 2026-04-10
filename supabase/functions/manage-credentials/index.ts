@@ -71,13 +71,18 @@ Deno.serve(async (req) => {
     }
 
     // Mask values for frontend display
-    const masked = (data || []).map((row: any) => ({
-      ...row,
-      credential_value_masked: row.credential_value
-        ? row.credential_value.slice(0, 4) + "••••" + row.credential_value.slice(-4)
-        : "",
-      has_value: !!row.credential_value,
-    }));
+    const masked = (data || []).map((row: any) => {
+      const val = row.credential_value || "";
+      const isStripePk = row.credential_key?.toUpperCase().includes("STRIPE") && val.startsWith("pk_");
+      return {
+        ...row,
+        credential_value_masked: val
+          ? val.slice(0, 4) + "••••" + val.slice(-4)
+          : "",
+        has_value: !!val,
+        ...(isStripePk ? { warning: "Publishable Key (pk_) detectada. Utilize a Secret Key (sk_)." } : {}),
+      };
+    });
 
     return new Response(JSON.stringify({ credentials: masked }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -100,6 +105,12 @@ Deno.serve(async (req) => {
       const sk = cred?.credential_value?.trim();
       if (!sk) {
         return new Response(JSON.stringify({ error: "Credencial não encontrada" }), {
+          status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      if (sk.startsWith("pk_")) {
+        return new Response(JSON.stringify({ error: "A chave configurada é uma Publishable Key (pk_). Configure a Secret Key (sk_) do Stripe." }), {
           status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
