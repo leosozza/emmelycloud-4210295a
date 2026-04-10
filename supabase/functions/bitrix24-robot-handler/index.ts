@@ -1093,6 +1093,10 @@ async function handleGenerateContract(
           starts_at: startsAt,
           expires_at: expiresAt,
           ...(sendPaymentAfterSign ? { auto_payment_config: { enabled: true, payment_method: autoPaymentMethod, installments: autoPaymentInstallments, deal_id: dealId } } : {}),
+          ...(signedFlowId ? { signed_flow_id: signedFlowId } : {}),
+          ...(paidFlowId ? { paid_flow_id: paidFlowId } : {}),
+          ...(overdueFlowId ? { overdue_flow_id: overdueFlowId } : {}),
+          ...(overdueDays ? { overdue_days: overdueDays } : {}),
         })
         .select("*")
         .single();
