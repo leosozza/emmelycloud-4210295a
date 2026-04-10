@@ -261,6 +261,10 @@ async function handleCreateCharge(
   const dealId = properties.deal_id || properties.DEAL_ID || "";
   const contactId = properties.contact_id || properties.CONTACT_ID || "";
   const companyId = properties.company_id || properties.COMPANY_ID || "";
+  // Flow automation for charge
+  const chargePaidFlowId = properties.paid_flow_id || properties.PAID_FLOW_ID || "";
+  const chargeOverdueFlowId = properties.overdue_flow_id || properties.OVERDUE_FLOW_ID || "";
+  const chargeOverdueDays = parseInt(properties.overdue_days || properties.OVERDUE_DAYS || "3") || 3;
 
   const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
   const supabase = createClient(supabaseUrl, serviceKey);
@@ -388,6 +392,9 @@ async function handleCreateCharge(
           source: "bitrix24_robot",
           company_name: companyName || undefined,
           requested_payment_method: paymentMethod,
+          paid_flow_id: chargePaidFlowId || undefined,
+          overdue_flow_id: chargeOverdueFlowId || undefined,
+          overdue_days: chargeOverdueDays || undefined,
         },
       };
       // Add credential overrides if company has them
@@ -921,6 +928,11 @@ async function handleGenerateContract(
   const sendPaymentAfterSign = (properties.send_payment_after_sign || properties.SEND_PAYMENT_AFTER_SIGN || "N").toUpperCase() === "Y";
   const autoPaymentMethod = properties.payment_method || properties.PAYMENT_METHOD || "card";
   const autoPaymentInstallments = parseInt(properties.payment_installments || properties.PAYMENT_INSTALLMENTS || "1") || 1;
+  // Flow automation
+  const signedFlowId = properties.signed_flow_id || properties.SIGNED_FLOW_ID || "";
+  const paidFlowId = properties.paid_flow_id || properties.PAID_FLOW_ID || "";
+  const overdueFlowId = properties.overdue_flow_id || properties.OVERDUE_FLOW_ID || "";
+  const overdueDays = parseInt(properties.overdue_days || properties.OVERDUE_DAYS || "0") || 0;
 
   try {
     const supabase = createClient(supabaseUrl, serviceKey);
@@ -992,6 +1004,10 @@ async function handleGenerateContract(
             expires_at: expiresAt,
             status: "aceite",
             ...(autoPaymentConfig ? { auto_payment_config: autoPaymentConfig } : {}),
+            ...(signedFlowId ? { signed_flow_id: signedFlowId } : {}),
+            ...(paidFlowId ? { paid_flow_id: paidFlowId } : {}),
+            ...(overdueFlowId ? { overdue_flow_id: overdueFlowId } : {}),
+            ...(overdueDays ? { overdue_days: overdueDays } : {}),
           })
           .eq("id", proposal.id);
 
@@ -1084,6 +1100,10 @@ async function handleGenerateContract(
           starts_at: startsAt,
           expires_at: expiresAt,
           ...(sendPaymentAfterSign ? { auto_payment_config: { enabled: true, payment_method: autoPaymentMethod, installments: autoPaymentInstallments, deal_id: dealId } } : {}),
+          ...(signedFlowId ? { signed_flow_id: signedFlowId } : {}),
+          ...(paidFlowId ? { paid_flow_id: paidFlowId } : {}),
+          ...(overdueFlowId ? { overdue_flow_id: overdueFlowId } : {}),
+          ...(overdueDays ? { overdue_days: overdueDays } : {}),
         })
         .select("*")
         .single();

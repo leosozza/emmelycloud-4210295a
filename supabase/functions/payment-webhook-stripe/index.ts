@@ -306,6 +306,47 @@ Deno.serve(async (req) => {
     // Notify Bitrix24 on payment confirmation
     if (tx && newStatus === "confirmed") {
       await notifyBitrix24DealPayment(supabase, tx.metadata as any, tx.amount, tx.currency);
+
+      // Trigger paid_flow_id if configured in transaction metadata
+      const paidFlowId = (tx.metadata as any)?.paid_flow_id;
+      if (paidFlowId) {
+        try {
+          const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+          const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+          // Resolve conversation via proposal → case → lead
+          const proposalId = (tx.metadata as any)?.proposal_id;
+          let flowConversationId: string | null = null;
+          if (proposalId) {
+            const { data: prop } = await supabase.from("proposals").select("case_id").eq("id", proposalId).maybeSingle();
+            if (prop?.case_id) {
+              const { data: cs } = await supabase.from("cases").select("lead_id").eq("id", prop.case_id).maybeSingle();
+              if (cs?.lead_id) {
+                const { data: ld } = await supabase.from("leads").select("conversation_id").eq("id", cs.lead_id).maybeSingle();
+                flowConversationId = ld?.conversation_id || null;
+              }
+            }
+          }
+          if (flowConversationId) {
+            await fetch(`${supabaseUrl}/functions/v1/flow-engine`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json", "Authorization": `Bearer ${serviceKey}` },
+              body: JSON.stringify({
+                conversation_id: flowConversationId,
+                flow_id: paidFlowId,
+                trigger: "payment_confirmed",
+                variables: {
+                  amount: tx.amount,
+                  currency: tx.currency,
+                  proposal_id: proposalId || "",
+                },
+              }),
+            });
+            console.log(`[STRIPE-WEBHOOK] Flow ${paidFlowId} triggered for conversation ${flowConversationId}`);
+          }
+        } catch (flowErr) {
+          console.error("[STRIPE-WEBHOOK] Flow trigger error:", flowErr);
+        }
+      }
     }
 
     // --- Bitrix24 Badge based on status ---
