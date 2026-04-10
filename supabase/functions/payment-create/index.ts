@@ -23,27 +23,37 @@ function getGateway(country: string | null, currency: string): "stripe" | "asaas
   return "stripe";
 }
 
-function getStripePaymentMethods(region?: "pt" | "br" | null, requestedMethod?: string | null): string[] {
-  // Base methods per region
-  let methods: string[];
-  if (region === "pt") {
-    methods = ["card", "multibanco", "mb_way", "sepa_debit", "link"];
-  } else if (region === "br") {
-    methods = ["card", "boleto", "pix", "link"];
-  } else {
-    methods = ["card", "sepa_debit", "multibanco", "mb_way", "link"];
-  }
+function getStripePaymentMethods(region?: "pt" | "br" | null, requestedMethod?: string | null, currency?: string): string[] {
+  const cur = (currency || "").toUpperCase();
   
-  // If a specific method was requested and it's valid for Stripe, prioritize it
+  // Currency-compatible methods
+  const brlMethods = ["card", "boleto", "pix"];
+  const eurMethods = ["card", "multibanco", "mb_way", "sepa_debit", "link"];
+  const defaultMethods = ["card", "link"];
+  
+  let methods: string[];
+  if (region === "br") {
+    methods = cur === "BRL" ? brlMethods : ["card", "link"];
+  } else if (region === "pt") {
+    methods = (cur === "EUR" || !cur) ? eurMethods : ["card", "link"];
+  } else {
+    // No region — pick by currency
+    if (cur === "BRL") methods = brlMethods;
+    else if (cur === "EUR") methods = eurMethods;
+    else methods = defaultMethods;
+  }
+
+  // If a specific method was requested and it's valid, prioritize it
   if (requestedMethod && requestedMethod !== "card" && requestedMethod !== "direto") {
-    // Move requested method to front if present, or add it if valid
     const validStripeMethods = ["card", "multibanco", "mb_way", "sepa_debit", "pix", "boleto", "link"];
-    if (validStripeMethods.includes(requestedMethod)) {
+    if (validStripeMethods.includes(requestedMethod) && !methods.includes(requestedMethod)) {
+      // Don't add currency-incompatible methods
+    } else if (methods.includes(requestedMethod)) {
       methods = methods.filter(m => m !== requestedMethod);
       methods.unshift(requestedMethod);
     }
   }
-  
+
   return methods;
 }
 
@@ -59,7 +69,7 @@ async function createStripePayment(apiKey: string, amount: number, currency: str
   params.append("line_items[0][quantity]", "1");
 
   // Explicitly set payment method types based on region
-  const methods = getStripePaymentMethods(region, requestedMethod);
+  const methods = getStripePaymentMethods(region, requestedMethod, currency);
   methods.forEach((m, i) => {
     params.append(`payment_method_types[${i}]`, m);
   });

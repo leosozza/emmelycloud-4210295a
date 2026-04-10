@@ -280,13 +280,17 @@ Deno.serve(async (req) => {
       params.append("line_items[0][price_data][product_data][name]", description);
       params.append("line_items[0][quantity]", "1");
 
-      // Explicitly set payment method types based on resolved region
+      // Explicitly set payment method types based on resolved region + currency
       const stripeRegion = stripeProvider === "stripe_pt" ? "pt" : stripeProvider === "stripe_br" ? "br" : null;
-      const regionalMethods = stripeRegion === "pt"
-        ? ["card", "multibanco", "mb_way", "sepa_debit", "link"]
-        : stripeRegion === "br"
-        ? ["card", "boleto", "pix", "link"]
-        : ["card", "link"];
+      const cur = currency.toUpperCase();
+      let regionalMethods: string[];
+      if (stripeRegion === "br" && cur === "BRL") {
+        regionalMethods = ["card", "boleto", "pix"];
+      } else if (stripeRegion === "pt" && cur === "EUR") {
+        regionalMethods = ["card", "multibanco", "mb_way", "sepa_debit", "link"];
+      } else {
+        regionalMethods = ["card", "link"];
+      }
       regionalMethods.forEach((m, i) => {
         params.append(`payment_method_types[${i}]`, m);
       });
