@@ -402,6 +402,45 @@ Deno.serve(async (req) => {
         notifyBitrix24PaySystem(supabase, txMeta),
         notifyClientPaymentConfirmed(supabase, txMeta, tx.amount, tx.currency),
       ]);
+
+      // Trigger paid_flow_id if configured in transaction metadata
+      const paidFlowId = txMeta?.paid_flow_id;
+      if (paidFlowId) {
+        try {
+          const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+          const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+          let flowConversationId: string | null = null;
+          if (txMeta?.proposal_id) {
+            const { data: prop } = await supabase.from("proposals").select("case_id").eq("id", txMeta.proposal_id).maybeSingle();
+            if (prop?.case_id) {
+              const { data: cs } = await supabase.from("cases").select("lead_id").eq("id", prop.case_id).maybeSingle();
+              if (cs?.lead_id) {
+                const { data: ld } = await supabase.from("leads").select("conversation_id").eq("id", cs.lead_id).maybeSingle();
+                flowConversationId = ld?.conversation_id || null;
+              }
+            }
+          }
+          if (flowConversationId) {
+            await fetch(`${supabaseUrl}/functions/v1/flow-engine`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json", "Authorization": `Bearer ${serviceKey}` },
+              body: JSON.stringify({
+                conversation_id: flowConversationId,
+                flow_id: paidFlowId,
+                trigger: "payment_confirmed",
+                variables: {
+                  amount: tx.amount,
+                  currency: tx.currency,
+                  proposal_id: txMeta?.proposal_id || "",
+                },
+              }),
+            });
+            console.log(`[ASAAS-WEBHOOK] Flow ${paidFlowId} triggered for conversation ${flowConversationId}`);
+          }
+        } catch (flowErr) {
+          console.error("[ASAAS-WEBHOOK] Flow trigger error:", flowErr);
+        }
+      }
     }
 
     return new Response(JSON.stringify({ ok: true, status: newStatus }), {
