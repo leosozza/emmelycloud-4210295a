@@ -304,6 +304,56 @@ async function processRecord(
     });
   }
 
+  // 9. Trigger overdue_flow_id if configured and days late meets threshold
+  const overdueFlowId = meta.overdue_flow_id;
+  const overdueDaysThreshold = parseInt(meta.overdue_days || "3") || 3;
+  if (overdueFlowId && feeResult && feeResult.daysLate >= overdueDaysThreshold) {
+    // Only trigger once — check if already triggered
+    if (!meta.overdue_flow_triggered) {
+      try {
+        if (conversationId) {
+          await fetch(`${supabaseUrl}/functions/v1/flow-engine`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${serviceKey}`,
+            },
+            body: JSON.stringify({
+              conversation_id: conversationId,
+              flow_id: overdueFlowId,
+              trigger: "payment_overdue",
+              variables: {
+                days_late: feeResult.daysLate,
+                amount: baseAmount,
+                total_with_fees: feeResult.total,
+                currency,
+                client_name: clientName,
+              },
+            }),
+          });
+          console.log(`[PAYMENT-REMINDER] Overdue flow ${overdueFlowId} triggered for conversation ${conversationId}`);
+
+          // Mark as triggered to avoid re-triggering
+          if (transactionId) {
+            await fetch(`${supabaseUrl}/functions/v1/payment-create`, {
+              method: "PATCH",
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${serviceKey}`,
+              },
+              body: JSON.stringify({
+                transaction_id: transactionId,
+                metadata_update: { overdue_flow_triggered: new Date().toISOString() },
+              }),
+            });
+          }
+        }
+      } catch (flowErr) {
+        console.error("[PAYMENT-REMINDER] Overdue flow trigger error:", flowErr);
+      }
+    }
+  }
+
   return { ok: true };
 }
 
