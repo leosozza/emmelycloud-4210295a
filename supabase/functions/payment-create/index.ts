@@ -539,6 +539,12 @@ Deno.serve(async (req) => {
       gateway = getGateway(clientCountry, currency);
     }
 
+    // Auto-detect Stripe region by currency when not explicitly set
+    if (gateway === "stripe" && !stripeRegion) {
+      if (currency === "EUR") stripeRegion = "pt";
+      else if (currency === "BRL") stripeRegion = "br";
+    }
+
     let result: any;
 
     if (payment_method === "direto" || normalizedGateway === "direto") {
@@ -563,14 +569,18 @@ Deno.serve(async (req) => {
         const stripeKeyName = stripeRegion === "br" ? "STRIPE_SECRET_KEY_BR" : (stripeRegion === "pt" ? "STRIPE_SECRET_KEY_PT" : "STRIPE_SECRET_KEY");
         const stripeProvider = stripeRegion === "br" ? "stripe_br" : (stripeRegion === "pt" ? "stripe_pt" : "stripe");
         stripeKey = await getCredential(supabase, stripeProvider, stripeKeyName);
+        if (stripeKey?.startsWith("pk_")) stripeKey = null;
         if (!stripeKey && stripeRegion) {
           stripeKey = await getCredential(supabase, stripeProvider, "STRIPE_SECRET_KEY");
+          if (stripeKey?.startsWith("pk_")) stripeKey = null;
         }
         if (!stripeKey) {
           stripeKey = await getCredential(supabase, "stripe", stripeKeyName);
+          if (stripeKey?.startsWith("pk_")) stripeKey = null;
         }
         if (!stripeKey) {
           stripeKey = await getCredential(supabase, "stripe", "STRIPE_SECRET_KEY");
+          if (stripeKey?.startsWith("pk_")) stripeKey = null;
         }
       }
       if (!stripeKey) {
