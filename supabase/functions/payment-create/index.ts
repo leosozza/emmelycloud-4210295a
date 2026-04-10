@@ -26,16 +26,16 @@ function getGateway(country: string | null, currency: string): "stripe" | "asaas
 function getStripePaymentMethods(region?: "pt" | "br" | null, requestedMethod?: string | null, currency?: string): string[] {
   const cur = (currency || "").toUpperCase();
   
-  // Currency-compatible methods
+  // Currency-compatible methods — only include methods enabled & valid for the currency
   const brlMethods = ["card", "boleto", "pix"];
-  const eurMethods = ["card", "multibanco", "mb_way", "sepa_debit", "link"];
-  const defaultMethods = ["card", "link"];
+  const eurMethods = ["card", "multibanco", "mb_way", "sepa_debit"];
+  const defaultMethods = ["card"];
   
   let methods: string[];
   if (region === "br") {
-    methods = cur === "BRL" ? brlMethods : ["card", "link"];
+    methods = cur === "BRL" ? brlMethods : ["card"];
   } else if (region === "pt") {
-    methods = (cur === "EUR" || !cur) ? eurMethods : ["card", "link"];
+    methods = (cur === "EUR" || !cur) ? eurMethods : ["card"];
   } else {
     // No region — pick by currency
     if (cur === "BRL") methods = brlMethods;

@@ -287,9 +287,9 @@ Deno.serve(async (req) => {
       if (stripeRegion === "br" && cur === "BRL") {
         regionalMethods = ["card", "boleto", "pix"];
       } else if (stripeRegion === "pt" && cur === "EUR") {
-        regionalMethods = ["card", "multibanco", "mb_way", "sepa_debit", "link"];
+        regionalMethods = ["card", "multibanco", "mb_way", "sepa_debit"];
       } else {
-        regionalMethods = ["card", "link"];
+        regionalMethods = ["card"];
       }
       regionalMethods.forEach((m, i) => {
         params.append(`payment_method_types[${i}]`, m);
