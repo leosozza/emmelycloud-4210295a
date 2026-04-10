@@ -261,6 +261,10 @@ async function handleCreateCharge(
   const dealId = properties.deal_id || properties.DEAL_ID || "";
   const contactId = properties.contact_id || properties.CONTACT_ID || "";
   const companyId = properties.company_id || properties.COMPANY_ID || "";
+  // Flow automation for charge
+  const chargePaidFlowId = properties.paid_flow_id || properties.PAID_FLOW_ID || "";
+  const chargeOverdueFlowId = properties.overdue_flow_id || properties.OVERDUE_FLOW_ID || "";
+  const chargeOverdueDays = parseInt(properties.overdue_days || properties.OVERDUE_DAYS || "3") || 3;
 
   const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
   const supabase = createClient(supabaseUrl, serviceKey);
