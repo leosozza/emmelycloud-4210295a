@@ -1403,6 +1403,9 @@ Deno.serve(async (req) => {
             deal_id: { Name: "ID do Negócio", Type: "string", Description: "ID do Deal para vincular faturas" },
             contact_id: { Name: "ID do Contacto", Type: "string", Description: "ID do Contacto para vincular faturas" },
             company_id: { Name: "ID da Empresa", Type: "string", Description: "UUID da empresa/filial em Emmely" },
+            paid_flow_id: { Name: "Flow ao Confirmar Pagamento", Type: "select", Options: flowOptions, Description: "Flow executado automaticamente quando o pagamento é confirmado." },
+            overdue_flow_id: { Name: "Flow ao Atrasar Pagamento", Type: "select", Options: flowOptions, Description: "Flow executado automaticamente quando o pagamento atrasa X dias." },
+            overdue_days: { Name: "Dias de Atraso para Flow", Type: "int", Default: "3", Description: "Número de dias em atraso para disparar o flow de cobrança (default: 3)." },
           },
           RETURN_PROPERTIES: {
             charge_id: { Name: "ID da Cobrança", Type: "string" },
@@ -1549,6 +1552,7 @@ Deno.serve(async (req) => {
             send_method: { Name: "Método de Envio", Type: "select", Options: { none: "Não enviar", link: "Enviar Link de Assinatura", pdf: "Enviar PDF", both: "Link + PDF" }, Default: "none", Description: "none = apenas gera | link = envia link de assinatura digital via WhatsApp | pdf = envia PDF | both = ambos" },
             send_to_phone: { Name: "Telefone para Envio", Type: "string", Description: "Número WhatsApp com código do país. Se vazio, usa o telefone do cliente da proposta." },
             accept_flow_id: { Name: "Flow ao Aceitar", Type: "select", Options: flowOptions, Description: "O flow que será iniciado automaticamente quando o cliente aceitar/assinar o contrato." },
+            signed_flow_id: { Name: "Flow ao Assinar", Type: "select", Options: flowOptions, Description: "Flow executado automaticamente quando o cliente assina o contrato digitalmente." },
             send_payment_after_sign: { Name: "Enviar Cobrança Após Assinatura", Type: "select", Options: { "Y": "Sim — enviar link de pagamento automaticamente", "N": "Não" }, Default: "N", Description: "Se 'Sim', o link de pagamento será enviado automaticamente via WhatsApp após o cliente assinar o contrato." },
             payment_method: { Name: "Método de Pagamento (cobrança automática)", Type: "select", Options: { card: "Cartão", multibanco: "Multibanco", mb_way: "MB Way", pix: "Pix", boleto: "Boleto" }, Default: "card" },
             payment_installments: { Name: "Número de Parcelas", Type: "int", Default: "1" },
