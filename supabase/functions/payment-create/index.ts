@@ -58,38 +58,47 @@ function getStripePaymentMethods(region?: "pt" | "br" | null, requestedMethod?: 
 }
 
 async function createStripePayment(apiKey: string, amount: number, currency: string, customerEmail: string, description: string, returnUrl?: string, region?: "pt" | "br" | null, requestedMethod?: string | null) {
-  // Create a Checkout Session — do NOT hardcode payment_method_types
-  // Instead, omit them so Stripe uses "automatic_payment_methods" (default behavior)
-  // which only shows methods activated in the merchant's dashboard
-  const params = new URLSearchParams();
-  params.append("mode", "payment");
-  params.append("line_items[0][price_data][currency]", currency.toLowerCase());
-  params.append("line_items[0][price_data][unit_amount]", Math.round(amount * 100).toString());
-  params.append("line_items[0][price_data][product_data][name]", description);
-  params.append("line_items[0][quantity]", "1");
-
-  // Explicitly set payment method types based on region
-  const methods = getStripePaymentMethods(region, requestedMethod, currency);
-  methods.forEach((m, i) => {
-    params.append(`payment_method_types[${i}]`, m);
-  });
-
-  if (customerEmail) params.append("customer_email", customerEmail);
-
   const baseUrl = returnUrl || Deno.env.get("FRONTEND_URL") || "https://emmelycloud.pages.dev";
-  params.append("success_url", `${baseUrl}?payment=success&session_id={CHECKOUT_SESSION_ID}`);
-  params.append("cancel_url", `${baseUrl}?payment=cancelled`);
+  
+  // Try with regional methods first, fallback to card-only if Stripe rejects any method
+  const methods = getStripePaymentMethods(region, requestedMethod, currency);
+  
+  const buildParams = (paymentMethods: string[]) => {
+    const params = new URLSearchParams();
+    params.append("mode", "payment");
+    params.append("line_items[0][price_data][currency]", currency.toLowerCase());
+    params.append("line_items[0][price_data][unit_amount]", Math.round(amount * 100).toString());
+    params.append("line_items[0][price_data][product_data][name]", description);
+    params.append("line_items[0][quantity]", "1");
+    paymentMethods.forEach((m, i) => {
+      params.append(`payment_method_types[${i}]`, m);
+    });
+    if (customerEmail) params.append("customer_email", customerEmail);
+    params.append("success_url", `${baseUrl}?payment=success&session_id={CHECKOUT_SESSION_ID}`);
+    params.append("cancel_url", `${baseUrl}?payment=cancelled`);
+    return params;
+  };
 
-  const res = await fetch("https://api.stripe.com/v1/checkout/sessions", {
-    method: "POST",
-    headers: {
-      "Authorization": `Bearer ${apiKey}`,
-      "Content-Type": "application/x-www-form-urlencoded",
-    },
-    body: params.toString(),
-  });
+  const callStripe = async (params: URLSearchParams) => {
+    const res = await fetch("https://api.stripe.com/v1/checkout/sessions", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${apiKey}`,
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: params.toString(),
+    });
+    return await res.json();
+  };
 
-  const data = await res.json();
+  let data = await callStripe(buildParams(methods));
+  
+  // If a payment method type is invalid (not enabled), retry with card-only
+  if (data.error?.message?.includes("payment method type provided")) {
+    console.log("[STRIPE] Regional methods failed, retrying with card-only:", data.error.message);
+    data = await callStripe(buildParams(["card"]));
+  }
+  
   if (data.error) throw new Error(data.error.message);
 
   return {
