@@ -921,6 +921,11 @@ async function handleGenerateContract(
   const sendPaymentAfterSign = (properties.send_payment_after_sign || properties.SEND_PAYMENT_AFTER_SIGN || "N").toUpperCase() === "Y";
   const autoPaymentMethod = properties.payment_method || properties.PAYMENT_METHOD || "card";
   const autoPaymentInstallments = parseInt(properties.payment_installments || properties.PAYMENT_INSTALLMENTS || "1") || 1;
+  // Flow automation
+  const signedFlowId = properties.signed_flow_id || properties.SIGNED_FLOW_ID || "";
+  const paidFlowId = properties.paid_flow_id || properties.PAID_FLOW_ID || "";
+  const overdueFlowId = properties.overdue_flow_id || properties.OVERDUE_FLOW_ID || "";
+  const overdueDays = parseInt(properties.overdue_days || properties.OVERDUE_DAYS || "0") || 0;
 
   try {
     const supabase = createClient(supabaseUrl, serviceKey);
