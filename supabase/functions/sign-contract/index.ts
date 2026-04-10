@@ -98,7 +98,7 @@ Deno.serve(async (req) => {
       // Fetch full proposal (need client_phone, bitrix24_deal_id, case_id, auto_payment_config, etc.)
       const { data: proposal, error: proposalError } = await supabase
         .from("proposals")
-        .select("id, contract_status, case_id, title, value, currency, client_name, client_phone, client_email, bitrix24_deal_id, auto_payment_config")
+        .select("id, contract_status, case_id, title, value, currency, client_name, client_phone, client_email, bitrix24_deal_id, auto_payment_config, signed_flow_id")
         .eq("sign_token", token)
         .single();
 
