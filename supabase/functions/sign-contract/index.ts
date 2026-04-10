@@ -98,7 +98,7 @@ Deno.serve(async (req) => {
       // Fetch full proposal (need client_phone, bitrix24_deal_id, case_id, auto_payment_config, etc.)
       const { data: proposal, error: proposalError } = await supabase
         .from("proposals")
-        .select("id, contract_status, case_id, title, value, currency, client_name, client_phone, client_email, bitrix24_deal_id, auto_payment_config")
+        .select("id, contract_status, case_id, title, value, currency, client_name, client_phone, client_email, bitrix24_deal_id, auto_payment_config, signed_flow_id")
         .eq("sign_token", token)
         .single();
 
@@ -291,6 +291,40 @@ Deno.serve(async (req) => {
         }
       } catch (bxErr) {
         console.error("[SIGN-CONTRACT] Bitrix24 error:", bxErr);
+      }
+
+      // ── Trigger signed_flow_id if configured ─────────────────────────────
+      if (proposal.signed_flow_id) {
+        try {
+          let flowConversationId: string | null = null;
+          if (proposal.case_id) {
+            const { data: fc } = await supabase.from("cases").select("lead_id").eq("id", proposal.case_id).single();
+            if (fc?.lead_id) {
+              const { data: fl } = await supabase.from("leads").select("conversation_id").eq("id", fc.lead_id).single();
+              flowConversationId = fl?.conversation_id || null;
+            }
+          }
+          if (flowConversationId) {
+            await fetch(`${supabaseUrl}/functions/v1/flow-engine`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json", "Authorization": `Bearer ${serviceKey}` },
+              body: JSON.stringify({
+                conversation_id: flowConversationId,
+                flow_id: proposal.signed_flow_id,
+                trigger: "contract_signed",
+                variables: {
+                  proposal_id: proposal.id,
+                  client_name: signer_name || proposal.client_name || "",
+                  contract_value: proposal.value,
+                  currency: proposal.currency || "EUR",
+                },
+              }),
+            });
+            console.log(`[SIGN-CONTRACT] Flow ${proposal.signed_flow_id} triggered for conversation ${flowConversationId}`);
+          }
+        } catch (flowErr) {
+          console.error("[SIGN-CONTRACT] Flow trigger error:", flowErr);
+        }
       }
 
       // ── Notify client via WhatsApp with payment instructions ──────────────

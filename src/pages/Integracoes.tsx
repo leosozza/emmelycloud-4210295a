@@ -1048,7 +1048,7 @@ function LateFeeConfigCard() {
 }
 
 function PagamentosTab() {
-  const [credentials, setCredentials] = useState<Record<string, { has_value: boolean; masked: string }>>({});
+  const [credentials, setCredentials] = useState<Record<string, { has_value: boolean; masked: string; warning?: string }>>({});
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState<string | null>(null);
   const [transactions, setTransactions] = useState<PaymentTransaction[]>([]);
@@ -1063,11 +1063,12 @@ function PagamentosTab() {
     try {
       const { data, error } = await supabase.functions.invoke("manage-credentials", { method: "GET" });
       if (!error && data?.credentials) {
-        const map: Record<string, { has_value: boolean; masked: string }> = {};
+        const map: Record<string, { has_value: boolean; masked: string; warning?: string }> = {};
         for (const c of data.credentials) {
           map[`${c.provider}::${c.credential_key}`] = {
             has_value: c.has_value,
             masked: c.credential_value_masked || "",
+            ...(c.warning ? { warning: c.warning } : {}),
           };
         }
         setCredentials(map);
@@ -1117,7 +1118,9 @@ function PagamentosTab() {
   const credProps = { credentials, drafts, setDrafts, onSave: handleSaveCredential, saving };
 
   const stripePtConfigured = credentials["stripe_pt::STRIPE_SECRET_KEY_PT"]?.has_value;
+  const stripePtWarning = credentials["stripe_pt::STRIPE_SECRET_KEY_PT"]?.warning;
   const stripeBrConfigured = credentials["stripe_br::STRIPE_SECRET_KEY_BR"]?.has_value;
+  const stripeBrWarning = credentials["stripe_br::STRIPE_SECRET_KEY_BR"]?.warning;
   const asaasConfigured = credentials["asaas::ASAAS_API_KEY"]?.has_value;
 
   // Test connections via lightweight API validation (no real transactions created)
@@ -1213,7 +1216,11 @@ function PagamentosTab() {
               <CardDescription>Europa (EUR) — Cartão, Multibanco, MB WAY, SEPA</CardDescription>
             </div>
           </div>
-          <StatusBadge status={stripePtConfigured ? "active" : "inactive"} />
+          {stripePtWarning ? (
+            <Badge variant="destructive" className="text-xs"><AlertCircle className="h-3 w-3 mr-1" />pk_ inválida</Badge>
+          ) : (
+            <StatusBadge status={stripePtConfigured ? "active" : "inactive"} />
+          )}
         </CardHeader>
         <CardContent className="space-y-3 text-sm">
           <CredentialInput provider="stripe_pt" credentialKey="STRIPE_SECRET_KEY_PT" label="Secret Key (sk_...)" {...credProps} />
@@ -1257,7 +1264,11 @@ function PagamentosTab() {
               <CardDescription>Brasil (BRL) — Cartão</CardDescription>
             </div>
           </div>
-          <StatusBadge status={stripeBrConfigured ? "active" : "inactive"} />
+          {stripeBrWarning ? (
+            <Badge variant="destructive" className="text-xs"><AlertCircle className="h-3 w-3 mr-1" />pk_ inválida</Badge>
+          ) : (
+            <StatusBadge status={stripeBrConfigured ? "active" : "inactive"} />
+          )}
         </CardHeader>
         <CardContent className="space-y-3 text-sm">
           <CredentialInput provider="stripe_br" credentialKey="STRIPE_SECRET_KEY_BR" label="Secret Key (sk_...)" {...credProps} />

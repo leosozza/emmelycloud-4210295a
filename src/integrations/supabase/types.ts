@@ -2206,6 +2206,9 @@ export type Database = {
           gateway_payment_id: string | null
           id: string
           metadata: Json | null
+          overdue_days: number | null
+          overdue_flow_id: string | null
+          paid_flow_id: string | null
           payment_method: string
           payment_url: string | null
           pix_code: string | null
@@ -2227,6 +2230,9 @@ export type Database = {
           gateway_payment_id?: string | null
           id?: string
           metadata?: Json | null
+          overdue_days?: number | null
+          overdue_flow_id?: string | null
+          paid_flow_id?: string | null
           payment_method?: string
           payment_url?: string | null
           pix_code?: string | null
@@ -2248,6 +2254,9 @@ export type Database = {
           gateway_payment_id?: string | null
           id?: string
           metadata?: Json | null
+          overdue_days?: number | null
+          overdue_flow_id?: string | null
+          paid_flow_id?: string | null
           payment_method?: string
           payment_url?: string | null
           pix_code?: string | null
@@ -2480,6 +2489,9 @@ export type Database = {
           file_url: string | null
           id: string
           installments: number | null
+          overdue_days: number | null
+          overdue_flow_id: string | null
+          paid_flow_id: string | null
           payment_type: Database["public"]["Enums"]["payment_type"]
           pdf_url: string | null
           products_json: Json | null
@@ -2487,6 +2499,7 @@ export type Database = {
           service_id: string | null
           sign_token: string | null
           signed_at: string | null
+          signed_flow_id: string | null
           signer_email: string | null
           signer_name: string | null
           signer_phone: string | null
@@ -2526,6 +2539,9 @@ export type Database = {
           file_url?: string | null
           id?: string
           installments?: number | null
+          overdue_days?: number | null
+          overdue_flow_id?: string | null
+          paid_flow_id?: string | null
           payment_type?: Database["public"]["Enums"]["payment_type"]
           pdf_url?: string | null
           products_json?: Json | null
@@ -2533,6 +2549,7 @@ export type Database = {
           service_id?: string | null
           sign_token?: string | null
           signed_at?: string | null
+          signed_flow_id?: string | null
           signer_email?: string | null
           signer_name?: string | null
           signer_phone?: string | null
@@ -2572,6 +2589,9 @@ export type Database = {
           file_url?: string | null
           id?: string
           installments?: number | null
+          overdue_days?: number | null
+          overdue_flow_id?: string | null
+          paid_flow_id?: string | null
           payment_type?: Database["public"]["Enums"]["payment_type"]
           pdf_url?: string | null
           products_json?: Json | null
@@ -2579,6 +2599,7 @@ export type Database = {
           service_id?: string | null
           sign_token?: string | null
           signed_at?: string | null
+          signed_flow_id?: string | null
           signer_email?: string | null
           signer_name?: string | null
           signer_phone?: string | null

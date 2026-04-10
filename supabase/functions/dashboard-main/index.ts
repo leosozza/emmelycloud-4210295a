@@ -37,13 +37,31 @@ async function ensureValidToken(sb: any, integration: any): Promise<string> {
   return data.access_token;
 }
 
-async function bitrixPost(endpoint: string, method: string, params: Record<string, unknown> = {}) {
-  const res = await fetch(`${endpoint}${method}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(params),
-  });
-  return await res.json();
+async function bitrixPost(endpoint: string, method: string, params: Record<string, unknown> = {}, retries = 3): Promise<any> {
+  for (let attempt = 0; attempt < retries; attempt++) {
+    try {
+      const res = await fetch(`${endpoint}${method}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(params),
+      });
+      const text = await res.text();
+      try {
+        return JSON.parse(text);
+      } catch {
+        console.warn(`[dashboard-main] Non-JSON response (attempt ${attempt + 1}): ${text.slice(0, 200)}`);
+        if (attempt === retries - 1) return { error: "non_json_response", error_description: text.slice(0, 500) };
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.warn(`[dashboard-main] Fetch error (attempt ${attempt + 1}/${retries}): ${msg}`);
+      if (attempt === retries - 1) {
+        return { error: "fetch_failed", error_description: msg };
+      }
+      await new Promise((r) => setTimeout(r, 1000 * (attempt + 1)));
+    }
+  }
+  return { error: "max_retries_exceeded" };
 }
 
 async function fetchAllDeals(endpoint: string, auth: string) {
