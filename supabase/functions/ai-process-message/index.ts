@@ -108,6 +108,7 @@ Deno.serve(async (req) => {
       intention_fields,
       intention_collected,
       intention_turn,
+      delegation_depth = 0,
     } = body;
 
     if (!message_text) {
@@ -159,6 +160,33 @@ Deno.serve(async (req) => {
 
       conversation = conv;
       (conversation as any)._channelSetting = channelSetting;
+
+      // Phase 4: HITL — check if there's a pending action awaiting confirmation
+      const botState = conv.bot_state as any;
+      if (botState?.pending_action) {
+        const normalizedMsg = message_text.trim().toLowerCase();
+        const isConfirm = ["sim", "yes", "confirmo", "ok", "confirmar", "s"].includes(normalizedMsg);
+        const isDeny = ["não", "nao", "no", "cancelar", "n", "cancel"].includes(normalizedMsg);
+
+        if (isConfirm || isDeny) {
+          const pending = botState.pending_action;
+          // Clear pending action
+          const { pending_action, ...cleanState } = botState;
+          await supabase.from("conversations").update({ bot_state: cleanState }).eq("id", conversation_id);
+
+          if (isConfirm) {
+            console.log(`[AI-PROCESS] HITL confirmed: executing ${pending.tool}`);
+            const toolResult = await executeReACTTool(supabase, supabaseUrl, serviceKey, conv, null, pending.tool, pending.args, []);
+            const confirmReply = `✅ Ação executada: ${pending.tool}. Resultado: ${JSON.stringify(toolResult).substring(0, 300)}`;
+            if (!skip_send) await sendReply(supabase, supabaseUrl, serviceKey, conv, null, confirmReply);
+            return new Response(JSON.stringify({ reply: confirmReply, hitl_executed: true }), { headers: jsonHeaders });
+          } else {
+            const denyReply = "❌ Ação cancelada. Como posso ajudá-lo de outra forma?";
+            if (!skip_send) await sendReply(supabase, supabaseUrl, serviceKey, conv, null, denyReply);
+            return new Response(JSON.stringify({ reply: denyReply, hitl_cancelled: true }), { headers: jsonHeaders });
+          }
+        }
+      }
     }
 
     // 4. Find agent
@@ -208,12 +236,15 @@ Deno.serve(async (req) => {
     // 4c. Load agent skills to determine available ReACT tools
     const { data: agentSkills } = await supabase
       .from("agent_skills")
-      .select("skill_type, skill_config")
+      .select("skill_type, skill_config, requires_confirmation, output_schema")
       .eq("agent_id", agent.id)
       .eq("is_enabled", true);
 
-    // 4d. Multi-agent routing
-    if (agent.sub_agent_ids && agent.sub_agent_ids.length > 0 && conversation) {
+    // 4d. Hierarchical routing — manager agent dispatches to sub-agents
+    if (agent.routing_mode === "hierarchical" && agent.sub_agent_ids?.length > 0 && delegation_depth === 0) {
+      console.log(`[AI-PROCESS] Hierarchical mode: manager ${agent.name} will delegate`);
+      // In hierarchical mode, the manager prompt is augmented to delegate
+    } else if (agent.sub_agent_ids && agent.sub_agent_ids.length > 0 && conversation && agent.routing_mode !== "hierarchical") {
       const routedAgent = await routeToSubAgent(supabase, agent, conversation, message_text, auxTokens);
       if (routedAgent) {
         console.log(`[AI-PROCESS] Routed to sub-agent: ${routedAgent.name}`);
@@ -516,6 +547,32 @@ Deno.serve(async (req) => {
       },
     });
 
+    // Phase 1: Delegation tool — only if agent has sub-agents and not already delegated
+    if (agent.sub_agent_ids?.length > 0 && delegation_depth < 1) {
+      // Load sub-agent names for the tool description
+      const { data: subAgents } = await supabase
+        .from("ai_agents")
+        .select("id, name, description")
+        .in("id", agent.sub_agent_ids)
+        .eq("is_active", true);
+      const subAgentList = (subAgents || []).map((a: any) => `${a.id}: ${a.name} — ${a.description || "sem descrição"}`).join("\n");
+      allTools.push({
+        type: "function",
+        function: {
+          name: "delegate_to_agent",
+          description: `Delegar uma sub-tarefa a um agente especializado. Agentes disponíveis:\n${subAgentList}`,
+          parameters: {
+            type: "object",
+            properties: {
+              agent_id: { type: "string", description: "ID do sub-agente" },
+              task: { type: "string", description: "Descrição da tarefa a delegar" },
+            },
+            required: ["agent_id", "task"],
+          },
+        },
+      });
+    }
+
     // Check governance mode — restricted agents get no tools
     const isRestricted = agent.governance_mode === "restricted";
     const tools = isRestricted ? undefined : (allTools.length > 0 ? allTools : undefined);
@@ -531,7 +588,12 @@ Deno.serve(async (req) => {
     }
 
     // ReACT system prompt injection
-    const reactSystemAddendum = tools ? `\n\nREACT MODE: Podes usar ferramentas para buscar informação antes de responder. Se precisares de dados, chama a ferramenta apropriada. Quando tiveres informação suficiente, responde diretamente ao cliente sem chamar mais ferramentas. Nunca exponhas detalhes internos das ferramentas ao cliente.\n` : "";
+    let reactSystemAddendum = tools ? `\n\nREACT MODE: Podes usar ferramentas para buscar informação antes de responder. Se precisares de dados, chama a ferramenta apropriada. Quando tiveres informação suficiente, responde diretamente ao cliente sem chamar mais ferramentas. Nunca exponhas detalhes internos das ferramentas ao cliente.\n` : "";
+
+    // Hierarchical manager prompt
+    if (agent.routing_mode === "hierarchical" && agent.sub_agent_ids?.length > 0 && delegation_depth === 0) {
+      reactSystemAddendum += `\n\nHIERARCHICAL MODE: És o agente manager. Analisa a mensagem do cliente e delega sub-tarefas aos agentes especialistas via 'delegate_to_agent'. Depois consolida as respostas numa resposta final coerente. Se a mensagem é simples, podes responder directamente.\n`;
+    }
 
     const messages: any[] = [
       { role: "system", content: systemPrompt + reactSystemAddendum },
@@ -601,6 +663,9 @@ Deno.serve(async (req) => {
       // Add assistant message with tool calls to conversation
       messages.push(choice);
 
+      // Build skill lookup for HITL checks
+      const skillMap = new Map((agentSkills || []).map((s: any) => [s.skill_type, s]));
+
       for (const tc of toolCalls) {
         const toolStart = Date.now();
         const fnName = tc.function.name;
@@ -615,7 +680,67 @@ Deno.serve(async (req) => {
           timestamp: new Date().toISOString(),
         });
 
-        const toolResult = await executeReACTTool(supabase, supabaseUrl, serviceKey, conversation, agent, fnName, args, linkedDocs);
+        // Phase 4: HITL — check if skill requires confirmation
+        const matchingSkill = skillMap.get(fnName);
+        if (matchingSkill?.requires_confirmation && conversation && agent.governance_mode !== "autonomous") {
+          console.log(`[AI-PROCESS] HITL: tool ${fnName} requires confirmation`);
+          // Save pending action in bot_state
+          const pendingAction = { tool: fnName, args, tool_call_id: tc.id, iteration };
+          await supabase.from("conversations").update({
+            bot_state: { ...(conversation.bot_state || {}), pending_action: pendingAction },
+          }).eq("id", conversation.id);
+
+          const confirmMsg = `⏸️ **Confirmação necessária**: Pretendo executar a ação *${fnName}* com os dados: ${JSON.stringify(args)}. Responda **sim** para confirmar ou **não** para cancelar.`;
+          if (!skip_send) await sendReply(supabase, supabaseUrl, serviceKey, conversation, agent, confirmMsg);
+
+          reactSteps.push({
+            type: "reflection",
+            content: `HITL: awaiting confirmation for ${fnName}`,
+            duration_ms: Date.now() - toolStart,
+            timestamp: new Date().toISOString(),
+          });
+
+          await logUsage(supabase, conversation_id, agent.id, agent.ai_model, agent.ai_provider,
+            totalUsage.prompt_tokens, totalUsage.completion_tokens, totalUsage.total_tokens, Date.now() - startTime, false, null, auxTokens, reactSteps);
+
+          return new Response(JSON.stringify({ reply: confirmMsg, hitl_pending: true, agent_id: agent.id }), { headers: jsonHeaders });
+        }
+
+        // Phase 1: Delegation tool execution
+        let toolResult: any;
+        if (fnName === "delegate_to_agent") {
+          console.log(`[AI-PROCESS] Delegating to sub-agent ${args.agent_id}`);
+          try {
+            const delegateRes = await fetch(`${supabaseUrl}/functions/v1/ai-process-message`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json", "Authorization": `Bearer ${serviceKey}` },
+              body: JSON.stringify({
+                message_text: args.task,
+                agent_id: args.agent_id,
+                conversation_id: conversation?.id || null,
+                skip_send: true,
+                delegation_depth: delegation_depth + 1,
+              }),
+            });
+            const delegateData = await delegateRes.json();
+            toolResult = { response: delegateData.reply || delegateData.content || "Sem resposta do sub-agente" };
+            // Accumulate sub-agent usage
+            if (delegateData.usage) {
+              totalUsage.prompt_tokens += delegateData.usage.prompt_tokens || 0;
+              totalUsage.completion_tokens += delegateData.usage.completion_tokens || 0;
+              totalUsage.total_tokens += delegateData.usage.total_tokens || 0;
+            }
+          } catch (e: any) {
+            toolResult = { error: `Delegation failed: ${e.message}` };
+          }
+        } else {
+          toolResult = await executeReACTTool(supabase, supabaseUrl, serviceKey, conversation, agent, fnName, args, linkedDocs);
+        }
+
+        // Phase 2: Apply output_schema validation if defined
+        if (matchingSkill?.output_schema && typeof toolResult === "object") {
+          toolResult = { _structured: true, ...toolResult };
+        }
 
         const resultStr = JSON.stringify(toolResult);
         reactSteps.push({

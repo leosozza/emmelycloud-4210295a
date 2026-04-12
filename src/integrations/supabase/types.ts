@@ -103,6 +103,8 @@ export type Database = {
           created_at: string | null
           id: string
           is_enabled: boolean | null
+          output_schema: Json | null
+          requires_confirmation: boolean | null
           skill_config: Json | null
           skill_type: string
         }
@@ -111,6 +113,8 @@ export type Database = {
           created_at?: string | null
           id?: string
           is_enabled?: boolean | null
+          output_schema?: Json | null
+          requires_confirmation?: boolean | null
           skill_config?: Json | null
           skill_type: string
         }
@@ -119,6 +123,8 @@ export type Database = {
           created_at?: string | null
           id?: string
           is_enabled?: boolean | null
+          output_schema?: Json | null
+          requires_confirmation?: boolean | null
           skill_config?: Json | null
           skill_type?: string
         }
@@ -233,6 +239,7 @@ export type Database = {
           monthly_budget_usd: number | null
           name: string
           personality_style: string | null
+          routing_mode: string
           routing_rules: Json | null
           strategic_objective: string | null
           sub_agent_ids: string[] | null
@@ -266,6 +273,7 @@ export type Database = {
           monthly_budget_usd?: number | null
           name: string
           personality_style?: string | null
+          routing_mode?: string
           routing_rules?: Json | null
           strategic_objective?: string | null
           sub_agent_ids?: string[] | null
@@ -299,6 +307,7 @@ export type Database = {
           monthly_budget_usd?: number | null
           name?: string
           personality_style?: string | null
+          routing_mode?: string
           routing_rules?: Json | null
           strategic_objective?: string | null
           sub_agent_ids?: string[] | null

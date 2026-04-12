@@ -104,6 +104,7 @@ export default function AgentesPage() {
   const [flows, setFlows] = useState<FlowOption[]>([]);
   const [docs, setDocs] = useState<DocOption[]>([]);
   const [collections, setCollections] = useState<CollectionOption[]>([]);
+  const [skills, setSkills] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [deleteId, setDeleteId] = useState<string | null>(null);
@@ -207,8 +208,40 @@ export default function AgentesPage() {
     else { toast.success("Agente duplicado"); loadData(); }
   };
 
-  const openEdit = (agent: AIAgent) => { setEditingAgent({ ...agent }); setDialogOpen(true); };
-  const openCreate = () => { setEditingAgent({ ...defaultAgent }); setDialogOpen(true); };
+  const openEdit = async (agent: AIAgent) => {
+    setEditingAgent({ ...agent });
+    // Load skills for this agent
+    const { data: agentSkills } = await supabase
+      .from("agent_skills")
+      .select("skill_type, is_enabled, requires_confirmation")
+      .eq("agent_id", agent.id);
+    setSkills(agentSkills || []);
+    setDialogOpen(true);
+  };
+  const openCreate = () => { setEditingAgent({ ...defaultAgent }); setSkills([]); setDialogOpen(true); };
+
+  const handleSkillToggle = async (skillKey: string, enabled: boolean) => {
+    if (!editingAgent.id) return;
+    const isConfirmToggle = skillKey.endsWith(":confirm");
+    const skillType = isConfirmToggle ? skillKey.replace(":confirm", "") : skillKey;
+
+    if (isConfirmToggle) {
+      // Update requires_confirmation
+      await supabase.from("agent_skills").update({ requires_confirmation: enabled } as any)
+        .eq("agent_id", editingAgent.id).eq("skill_type", skillType);
+      setSkills(prev => prev.map(s => s.skill_type === skillType ? { ...s, requires_confirmation: enabled } : s));
+    } else {
+      const existing = skills.find(s => s.skill_type === skillType);
+      if (existing) {
+        await supabase.from("agent_skills").update({ is_enabled: enabled } as any)
+          .eq("agent_id", editingAgent.id).eq("skill_type", skillType);
+        setSkills(prev => prev.map(s => s.skill_type === skillType ? { ...s, is_enabled: enabled } : s));
+      } else {
+        await supabase.from("agent_skills").insert({ agent_id: editingAgent.id, skill_type: skillType, is_enabled: enabled } as any);
+        setSkills(prev => [...prev, { skill_type: skillType, is_enabled: enabled, requires_confirmation: false }]);
+      }
+    }
+  };
 
   return (
     <div>
@@ -256,6 +289,8 @@ export default function AgentesPage() {
         agents={agents}
         saving={saving}
         onSave={handleSave}
+        skills={skills}
+        onSkillToggle={handleSkillToggle}
       />
 
       {/* Delete confirmation */}
