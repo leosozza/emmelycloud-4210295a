@@ -32,7 +32,8 @@ export function AgentCard({ agent, providers, onEdit, onDelete, onToggleDefault,
       p_agent_id: agent.id,
       p_month: monthStart.toISOString().slice(0, 10),
     }).then(({ data }) => {
-      if (data?.cost_usd !== undefined) setMonthlyCost(Number(data.cost_usd));
+      const d = data as any;
+      if (d?.cost_usd !== undefined) setMonthlyCost(Number(d.cost_usd));
     });
   }, [agent.id]);
 

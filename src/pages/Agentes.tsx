@@ -199,6 +199,14 @@ export default function AgentesPage() {
     loadData();
   };
 
+  const duplicateAgent = async (agent: AIAgent) => {
+    const { id, created_at, ...rest } = agent;
+    const clone = { ...rest, name: `${agent.name} (cópia)`, is_default: false };
+    const { error } = await supabase.from("ai_agents").insert(clone as any);
+    if (error) toast.error(error.message);
+    else { toast.success("Agente duplicado"); loadData(); }
+  };
+
   const openEdit = (agent: AIAgent) => { setEditingAgent({ ...agent }); setDialogOpen(true); };
   const openCreate = () => { setEditingAgent({ ...defaultAgent }); setDialogOpen(true); };
 
@@ -230,6 +238,7 @@ export default function AgentesPage() {
               onEdit={openEdit}
               onDelete={(id) => setDeleteId(id)}
               onToggleDefault={toggleDefault}
+              onDuplicate={duplicateAgent}
             />
           ))}
         </div>
