@@ -1,108 +1,67 @@
 
 
-# Analise Completa: Sistema de Agentes IA e Motor de Fluxos
+# Wizard Passo-a-Passo para Criacao de Agentes IA
 
-## Arquitectura Geral
+## Problema
 
-O sistema opera em 3 camadas:
-1. **Webhooks** (whatsapp/instagram/bitrix24) recebem mensagens
-2. **Flow Engine** decide: regra de negocio -> flow keyword -> flow all_messages -> fallback IA
-3. **AI Process Message** executa ReACT loop com tools, RAG, sentiment, memoria
+O formulario actual e um dialog unico com 15+ campos, separadores, termos tecnicos (governance, HITL, temperature, provider), e seccoes condicionais. Um utilizador que nunca criou um agente IA fica perdido.
 
----
+## Solucao
 
-## BUGS CRITICOS ENCONTRADOS
+Substituir o dialog por um **wizard de 5 passos** com progresso visual, explicacoes contextuais em cada passo, e valores inteligentes pre-preenchidos. O utilizador so ve o que precisa em cada momento.
 
-### BUG 1: `wait_reply` nao tem handler (CRITICO)
-O no `wait_reply` define `waiting_for_reply: true` no `bot_state` (linha 458), mas o switch principal do flow-engine (linhas 92-117) so verifica:
-- `waiting_for_button`
-- `waiting_for_input`
-- `waiting_for_ai_intention`
-- `force_flow_id`
+## Os 5 Passos
 
-**Resultado:** Quando um flow usa o no `wait_reply`, a conversa fica presa para sempre — a proxima mensagem do usuario nao e reconhecida como continuacao do flow e cai no matching normal ou fallback IA.
+### Passo 1 — Identidade (Quem e o seu agente?)
+- Nome, descricao, tipo (texto/voz/hibrido)
+- Estilo de personalidade + tom (com preview de como o agente falaria)
+- Objectivo estrategico
+- **Dica contextual:** "Dê um nome ao seu agente e escolha como ele se comunica. Ex: 'Sofia' — profissional e empática."
 
-**Correcao:** Adicionar `else if (botState.waiting_for_reply)` no switch principal que resume o flow a partir do no seguinte.
+### Passo 2 — Inteligencia (Como ele pensa?)
+- Provider + modelo (com recomendacao: "Recomendado para iniciantes" no modelo nativo)
+- Temperatura com explicacao visual ("Mais criativo ↔ Mais preciso")
+- Opcao de voz (so aparece se tipo = voz/hibrido)
+- **Dica:** "O modelo define a 'inteligencia' do agente. Para a maioria dos casos, o modelo recomendado e suficiente."
 
-### BUG 2: `integration_id` inexistente na query (MEDIO)
-`matchFlow()` linha 232 faz `.eq("integration_id", conversation.integration_id)` na tabela `ai_agents`. A tabela `conversations` NAO tem coluna `integration_id` e `ai_agents` tambem nao. Resultado: a query do default_flow_id via agente nunca retorna resultados.
+### Passo 3 — Conhecimento (O que ele sabe?)
+- System prompt com template pre-preenchido editavel
+- Colecoes de knowledge base (com explicacao: "Adicione documentos para o agente consultar")
+- Fluxo padrao
+- **Dica:** "Ensine ao agente sobre o seu negocio. Pode escrever instrucoes ou vincular documentos."
 
-**Correcao:** Remover o `.eq("integration_id", ...)` — usar apenas `.eq("is_default", true)`.
+### Passo 4 — Habilidades (O que ele pode fazer?)
+- Skills com switches + explicacao inline de cada uma
+- Sub-agentes (com explicacao: "O agente pode delegar tarefas a outros agentes")
+- **Dica:** "Active as ferramentas que o agente pode usar. Comece com poucas e adicione conforme necessario."
 
-### BUG 3: `base_prompt` nao e injectado no system prompt (MEDIO)
-A tabela `ai_agents` tem `base_prompt` (persona do trainer), mas `ai-process-message` so usa `agent.system_prompt` (linha 420). O `base_prompt` gerado pelo Persona Trainer e completamente ignorado.
+### Passo 5 — Revisao e Publicacao
+- Resumo visual tipo card com tudo configurado
+- Mensagem de boas-vindas e fallback editaveis
+- Toggle activo/inactivo + definir como padrao
+- Botao "Criar Agente" ou "Guardar"
+- **Dica:** "Revise as configuracoes. Pode alterar tudo depois."
 
-**Correcao:** Concatenar `(agent.base_prompt || "") + "\n" + (agent.system_prompt || "")` no system prompt.
+## UI do Wizard
 
-### BUG 4: HITL skill matching por tipo errado (BAIXO)
-Na linha 684, `skillMap.get(fnName)` procura pelo nome da tool (ex: `query_crm`), mas as skills sao guardadas com `skill_type` (ex: `crm`, `leads`). Os nomes nao coincidem, logo o HITL nunca dispara.
+- Barra de progresso no topo com 5 circulos numerados e labels
+- Botoes "Voltar" e "Proximo" no footer
+- Cada passo tem um titulo grande, subtitulo explicativo, e uma dica lateral
+- Animacao suave de transicao entre passos
+- O dialog ocupa `max-w-3xl` para dar espaco as explicacoes
 
-**Correcao:** Criar mapping de tool name -> skill_type, ou alterar o `SKILL_TYPES` no frontend para usar os mesmos nomes das tools.
+## Detalhes Tecnicos
 
----
+### Ficheiros a alterar
 
-## PROBLEMAS DE CONSISTENCIA
-
-### P1: Skills UI vs Backend desalinhadas
-O frontend (`AgentFormDialog.tsx` linha 18-26) define 7 skill types: `bitrix_crm`, `generate_proposal`, `generate_contract`, `create_payment`, `search_knowledge`, `run_flow`, `webhook`. O backend (`ai-process-message`) usa tools com nomes diferentes: `query_crm`, `check_payments`, `list_services`, `search_knowledge`, `navigate_graph`, `transfer_to_human`, `delegate_to_agent`. Nao ha mapping entre eles.
-
-### P2: `navigate_graph` sempre disponivel
-A tool `navigate_graph` e adicionada a TODOS os agentes (linha 488), independentemente de skills. Deveria depender de uma skill habilitada.
-
-### P3: Governance mode "restricted" nao bloqueia delegation
-Um agente `restricted` nao recebe tools (linha 578), mas o routing hierarquico e delegacao acontecem ANTES da verificacao de governance (linhas 244-253).
-
-### P4: Custo de sub-agentes nao e contabilizado no budget
-Quando `delegate_to_agent` invoca recursivamente o `ai-process-message`, o sub-agente verifica o SEU proprio budget, nao o do manager. Se o manager tem budget de $10 e delega a 5 sub-agentes, cada um pode gastar ate o seu proprio limite independentemente.
-
----
-
-## OPORTUNIDADES DE MELHORIA
-
-### M1: ReACT tool `create_lead` e `search_leads` duplicadas
-Existem `query_crm` (entity=lead) E `search_leads`, ambas fazendo o mesmo. Consolidar.
-
-### M2: Flow execution log incompleto
-O `node_results` (linha 989) so grava `{ node_id }` sem o resultado ou duracoes por no. Deveria incluir `{ node_id, type, duration_ms, result }`.
-
-### M3: Timeout de delegacao
-`delegate_to_agent` nao tem timeout — se o sub-agente demorar, o manager fica preso.
-
----
-
-## PLANO DE CORRECAO (4 items)
-
-### 1. Corrigir handler `waiting_for_reply` no flow-engine
-Adicionar ao switch principal (apos `waiting_for_ai_intention`):
-```
-else if (botState.waiting_for_reply) {
-  // Resume flow from next node
-  result = await handleWaitReplyResponse(...)
-}
-```
-Criar funcao `handleWaitReplyResponse` que carrega o flow, salva `ultima_mensagem` nas variaveis, e continua execucao no no seguinte.
-
-### 2. Corrigir `matchFlow` e injectar `base_prompt`
-- Remover `.eq("integration_id", ...)` da query do default agent em `matchFlow`
-- Concatenar `base_prompt` + `system_prompt` na construcao do system prompt no ai-process-message
-
-### 3. Alinhar skill types UI/backend + corrigir HITL matching
-- Criar mapping constante `TOOL_TO_SKILL` no ai-process-message:
-  ```
-  { query_crm: "crm", check_payments: "payments", list_services: "services", ... }
-  ```
-- Usar este mapping no HITL check em vez de `skillMap.get(fnName)`
-- Actualizar `SKILL_TYPES` no frontend para corresponder as tools reais
-
-### 4. Restricoes de governance e navigate_graph
-- Mover `navigate_graph` para depender de uma skill `graph` ou `crm`
-- Verificar governance mode ANTES do routing hierarquico
-
-### Ficheiros a Alterar
-
-| Ficheiro | Correcao |
+| Ficheiro | Accao |
 |---|---|
-| `supabase/functions/flow-engine/index.ts` | Handler `waiting_for_reply` + remover `integration_id` |
-| `supabase/functions/ai-process-message/index.ts` | `base_prompt` injection + skill mapping HITL + `navigate_graph` condicional + governance check |
-| `src/components/agentes/AgentFormDialog.tsx` | Alinhar `SKILL_TYPES` com tools reais |
+| `src/components/agentes/AgentFormDialog.tsx` | Reescrever como wizard multi-step |
+| `src/pages/Agentes.tsx` | Sem alteracoes significativas (a interface ja passa os props correctos) |
+
+### Notas
+- A logica de save (`onSave`) nao muda — so e chamada no ultimo passo
+- Os skills continuam a so aparecer em modo edicao (agente ja criado), com nota explicativa no passo 4 para novos agentes
+- Governanca (autonomo/supervisionado/restrito) fica no passo 4 junto com skills, com linguagem simplificada: "O agente pode agir sozinho?" em vez de "Modo de Governanca"
+- Budget fica no passo 2 junto com o modelo, como "Limite de custo mensal (opcional)"
 
