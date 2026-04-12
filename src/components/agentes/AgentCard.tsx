@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -22,24 +22,8 @@ export function AgentCard({ agent, providers, onEdit, onDelete, onToggleDefault,
   const textProvider = providers.find(p => p.slug === agent.ai_provider);
   const voiceProvider = agent.voice_provider ? providers.find(p => p.slug === agent.voice_provider) : null;
   const [trainingOpen, setTrainingOpen] = useState(false);
-  const [monthlyCost, setMonthlyCost] = useState<number | null>(null);
 
-  useEffect(() => {
-    const monthStart = new Date();
-    monthStart.setDate(1);
-    monthStart.setHours(0, 0, 0, 0);
-    supabase.rpc("get_monthly_cost_by_agent", {
-      p_agent_id: agent.id,
-      p_month: monthStart.toISOString().slice(0, 10),
-    }).then(({ data }) => {
-      const d = data as any;
-      if (d?.cost_usd !== undefined) setMonthlyCost(Number(d.cost_usd));
-    });
-  }, [agent.id]);
 
-  const budgetPct = agent.monthly_budget_usd && monthlyCost !== null
-    ? Math.min(100, Math.round((monthlyCost / agent.monthly_budget_usd) * 100))
-    : null;
 
   return (
     <Card className={`relative ${!agent.is_active ? 'opacity-60' : ''}`}>
