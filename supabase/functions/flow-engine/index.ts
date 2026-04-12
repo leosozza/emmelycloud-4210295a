@@ -1131,6 +1131,7 @@ async function handleWaitReplyResponse(
 
 
 async function handleAIIntentionResponse(
+  supabase: any, supabaseUrl: string, serviceKey: string,
   conversation: any, botState: Record<string, any>, inputText: string,
   instanceId?: string | null
 ): Promise<any> {
