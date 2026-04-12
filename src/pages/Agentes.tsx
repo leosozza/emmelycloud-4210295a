@@ -222,6 +222,28 @@ export default function AgentesPage() {
   };
   const openCreate = () => { setEditingAgent({ ...defaultAgent }); setSkills([]); setDialogOpen(true); };
 
+  const handleBuilderSave = async (config: any) => {
+    const { skills: skillKeys, ...agentFields } = config;
+    const agentData = {
+      ...agentFields,
+      is_active: true,
+      is_default: false,
+      training_collection_ids: [],
+      sub_agent_ids: [],
+      routing_rules: {},
+    };
+    const { data, error } = await supabase.from("ai_agents").insert(agentData as any).select("id").single();
+    if (error) throw error;
+    // Insert skills
+    if (skillKeys?.length > 0 && data?.id) {
+      await supabase.from("agent_skills").insert(
+        skillKeys.map((sk: string) => ({ agent_id: data.id, skill_type: sk, is_enabled: true })) as any
+      );
+    }
+    toast.success(`Agente "${config.name}" criado com sucesso!`);
+    loadData();
+  };
+
   const handleSkillToggle = async (skillKey: string, enabled: boolean) => {
     if (!editingAgent.id) return;
     const isConfirmToggle = skillKey.endsWith(":confirm");
