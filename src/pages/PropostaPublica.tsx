@@ -10,6 +10,8 @@ import {
   CheckCircle2, Loader2, FileWarning, FileText,
   PenLine, ArrowRight, Clock, Shield, User, Phone, Mail, MapPin,
 } from "lucide-react";
+import { BlockRenderer } from "@/lib/templates/BlockRenderer";
+import { LayoutBlock } from "@/components/propostas/TemplateBlockPalette";
 
 const paymentTypeLabels: Record<string, string> = {
   fixo: "Pagamento Único", exito: "Honorários de Êxito",
@@ -29,6 +31,7 @@ interface AcceptResult {
 export default function PropostaPublica() {
   const { token } = useParams<{ token: string }>();
   const [proposal, setProposal] = useState<any>(null);
+  const [template, setTemplate] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [accepting, setAccepting] = useState(false);
   const [accepted, setAccepted] = useState(false);
@@ -43,19 +46,33 @@ export default function PropostaPublica() {
       .select("*")
       .eq("accept_token", token)
       .single()
-      .then(({ data, error: err }) => {
-        if (err || !data) setError("Proposta não encontrada.");
-        else {
-          setProposal(data);
-          // If already accepted, show the sign link if available
-          if (data.status === "aceita") {
-            setAccepted(true);
-            if (data.sign_token) {
-              const frontendUrl = window.location.origin;
-              setAcceptResult({ sign_url: `${frontendUrl}/sign/${data.sign_token}` });
-            }
+      .then(async ({ data, error: err }) => {
+        if (err || !data) {
+          setError("Proposta não encontrada.");
+          setLoading(false);
+          return;
+        }
+
+        setProposal(data);
+        // If already accepted, show the sign link if available
+        if (data.status === "aceita") {
+          setAccepted(true);
+          if (data.sign_token) {
+            const frontendUrl = window.location.origin;
+            setAcceptResult({ sign_url: `${frontendUrl}/sign/${data.sign_token}` });
           }
         }
+
+        // Fetch associated template when template_id is set
+        if (data.template_id) {
+          const { data: tpl } = await supabase
+            .from("proposal_templates")
+            .select("*")
+            .eq("id", data.template_id)
+            .single();
+          if (tpl) setTemplate(tpl);
+        }
+
         setLoading(false);
       });
   }, [token]);
@@ -125,6 +142,170 @@ export default function PropostaPublica() {
   const products = Array.isArray(p.products_json) && p.products_json.length > 0 ? p.products_json : null;
   const hasSignUrl = acceptResult?.sign_url;
 
+  // ── Template-based rendering (when layout_blocks are available) ─────────
+  const layoutBlocks: LayoutBlock[] | null =
+    template?.layout_blocks && Array.isArray(template.layout_blocks) && template.layout_blocks.length > 0
+      ? (template.layout_blocks as LayoutBlock[])
+      : null;
+
+  // Shared accept/status section used by both template and fallback layouts
+  const acceptSection = (
+    <>
+      {accepted ? (
+        <div className="space-y-4">
+          <Card className="p-8 text-center bg-green-50 border-green-200 shadow-md">
+            <CheckCircle2 className="h-14 w-14 mx-auto text-green-600 mb-4" />
+            <h3 className="text-xl font-bold text-green-800 mb-2">
+              {acceptResult?.already_accepted ? "Proposta Já Aceita" : "Proposta Aceita com Sucesso!"}
+            </h3>
+            <p className="text-green-700 text-sm leading-relaxed">
+              {acceptResult?.already_accepted
+                ? "Esta proposta já foi aceita anteriormente."
+                : "O seu aceite foi registado com prova digital. O próximo passo é assinar o contrato."}
+            </p>
+          </Card>
+
+          {hasSignUrl && (
+            <Card className="p-6 border-blue-200 bg-blue-50 shadow-md">
+              <div className="flex flex-col sm:flex-row items-center gap-4">
+                <div className="flex-shrink-0 bg-blue-100 rounded-full p-3">
+                  <PenLine className="h-7 w-7 text-blue-700" />
+                </div>
+                <div className="flex-1 text-center sm:text-left">
+                  <h4 className="font-bold text-blue-900 text-lg">Assine o Contrato Agora</h4>
+                  <p className="text-blue-700 text-sm mt-1">
+                    O contrato foi gerado automaticamente. Assine digitalmente para confirmar o início dos serviços.
+                  </p>
+                </div>
+                <a
+                  href={acceptResult!.sign_url}
+                  className="shrink-0 inline-flex items-center gap-2 bg-blue-700 hover:bg-blue-800 text-white font-semibold px-6 py-3 rounded-xl shadow transition-colors"
+                >
+                  Assinar Contrato
+                  <ArrowRight className="h-4 w-4" />
+                </a>
+              </div>
+            </Card>
+          )}
+
+          {!hasSignUrl && (
+            <Card className="p-6 border-slate-200 bg-slate-50">
+              <div className="flex items-start gap-3">
+                <FileText className="h-5 w-5 text-slate-500 mt-0.5 shrink-0" />
+                <p className="text-sm text-slate-600">
+                  O contrato será enviado para o seu WhatsApp / email em breve. Aguarde o contacto da nossa equipa.
+                </p>
+              </div>
+            </Card>
+          )}
+        </div>
+
+      ) : isExpired ? (
+        <Card className="p-8 text-center bg-amber-50 border-amber-200 shadow-md">
+          <FileWarning className="h-14 w-14 mx-auto text-amber-600 mb-4" />
+          <h3 className="text-xl font-bold text-amber-800 mb-2">Proposta Expirada</h3>
+          <p className="text-amber-700 text-sm">
+            Esta proposta expirou em {new Date(p.valid_until).toLocaleDateString("pt-PT")}. Entre em contacto para solicitar uma nova proposta.
+          </p>
+        </Card>
+
+      ) : p.status === "recusada" ? (
+        <Card className="p-8 text-center bg-red-50 border-red-200 shadow-md">
+          <FileWarning className="h-14 w-14 mx-auto text-red-500 mb-4" />
+          <h3 className="text-xl font-bold text-red-800">Proposta Recusada</h3>
+          <p className="text-red-600 text-sm mt-2">Esta proposta foi recusada. Entre em contacto para mais informações.</p>
+        </Card>
+
+      ) : (
+        <Card className="p-8 space-y-5 shadow-md">
+          <div className="text-center space-y-1">
+            <h3 className="text-lg font-bold">Aceitar Proposta</h3>
+            <p className="text-sm text-muted-foreground">Ao aceitar, o contrato será gerado automaticamente.</p>
+          </div>
+
+          {error && (
+            <div className="bg-destructive/10 text-destructive text-sm rounded-lg px-4 py-3 text-center">
+              {error}
+            </div>
+          )}
+
+          <div className="flex items-start gap-3 bg-slate-50 rounded-xl p-4 border">
+            <Checkbox
+              id="confirm-accept"
+              checked={confirmed}
+              onCheckedChange={(checked) => setConfirmed(checked === true)}
+              className="mt-0.5"
+            />
+            <label htmlFor="confirm-accept" className="text-sm text-foreground/80 cursor-pointer leading-relaxed">
+              Li e compreendo os termos e condições apresentados nesta proposta, incluindo o valor, forma de pagamento e condições gerais, e desejo aceitá-la formalmente.
+            </label>
+          </div>
+
+          <Button
+            size="lg"
+            className="w-full bg-green-600 hover:bg-green-700 text-white py-6 text-base rounded-xl shadow-lg disabled:opacity-50 transition-all"
+            onClick={handleAccept}
+            disabled={accepting || !confirmed}
+          >
+            {accepting
+              ? <><Loader2 className="h-5 w-5 animate-spin mr-2" /> A processar…</>
+              : <><CheckCircle2 className="h-5 w-5 mr-2" /> Aceitar Proposta</>
+            }
+          </Button>
+
+          <div className="flex items-center justify-center gap-2 text-xs text-muted-foreground">
+            <Shield className="h-3.5 w-3.5" />
+            <span>O seu IP, data e hora serão registados como prova legal de aceite digital.</span>
+          </div>
+        </Card>
+      )}
+    </>
+  );
+
+  // ── Shared footer ────────────────────────────────────────────────────────
+  const pageFooter = (
+    <div className="text-center text-xs text-muted-foreground pb-6 space-y-1">
+      <p className="font-medium">Emmely Fernandes — Advocacia Internacional</p>
+      <p>Powered by Emmely Cloud</p>
+    </div>
+  );
+
+  // ── Template-based layout ────────────────────────────────────────────────
+  if (layoutBlocks) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 py-8 px-4">
+        <div className="max-w-3xl mx-auto space-y-6">
+
+          {/* Status badge */}
+          <div className="text-center">
+            <Badge variant="outline" className="text-xs uppercase tracking-wide">
+              {p.status === "aceita" ? "Aceita" : p.status === "enviada" ? "Aguardando Aceite" : p.status}
+            </Badge>
+            {p.valid_until && !isExpired && (
+              <div className="flex items-center justify-center gap-1.5 text-sm text-muted-foreground mt-2">
+                <Clock className="h-3.5 w-3.5" />
+                <span>Válida até {new Date(p.valid_until).toLocaleDateString("pt-PT")}</span>
+              </div>
+            )}
+          </div>
+
+          {/* Template-rendered proposal body */}
+          <BlockRenderer
+            blocks={layoutBlocks}
+            proposal={p}
+            template={template}
+          />
+
+          {/* Accept / status section */}
+          {acceptSection}
+
+          {pageFooter}
+        </div>
+      </div>
+    );
+  }
+
+  // ── Fallback: original hardcoded layout ──────────────────────────────────
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 py-8 px-4">
       <div className="max-w-3xl mx-auto space-y-6">
@@ -274,123 +455,10 @@ export default function PropostaPublica() {
         </Card>
 
         {/* ── Accept / Status Section ── */}
-        {accepted ? (
-          <div className="space-y-4">
-            {/* Success card */}
-            <Card className="p-8 text-center bg-green-50 border-green-200 shadow-md">
-              <CheckCircle2 className="h-14 w-14 mx-auto text-green-600 mb-4" />
-              <h3 className="text-xl font-bold text-green-800 mb-2">
-                {acceptResult?.already_accepted ? "Proposta Já Aceita" : "Proposta Aceita com Sucesso!"}
-              </h3>
-              <p className="text-green-700 text-sm leading-relaxed">
-                {acceptResult?.already_accepted
-                  ? "Esta proposta já foi aceita anteriormente."
-                  : "O seu aceite foi registado com prova digital. O próximo passo é assinar o contrato."}
-              </p>
-            </Card>
-
-            {/* Sign contract CTA — shown immediately after accept */}
-            {hasSignUrl && (
-              <Card className="p-6 border-blue-200 bg-blue-50 shadow-md">
-                <div className="flex flex-col sm:flex-row items-center gap-4">
-                  <div className="flex-shrink-0 bg-blue-100 rounded-full p-3">
-                    <PenLine className="h-7 w-7 text-blue-700" />
-                  </div>
-                  <div className="flex-1 text-center sm:text-left">
-                    <h4 className="font-bold text-blue-900 text-lg">Assine o Contrato Agora</h4>
-                    <p className="text-blue-700 text-sm mt-1">
-                      O contrato foi gerado automaticamente. Assine digitalmente para confirmar o início dos serviços.
-                    </p>
-                  </div>
-                  <a
-                    href={acceptResult!.sign_url}
-                    className="shrink-0 inline-flex items-center gap-2 bg-blue-700 hover:bg-blue-800 text-white font-semibold px-6 py-3 rounded-xl shadow transition-colors"
-                  >
-                    Assinar Contrato
-                    <ArrowRight className="h-4 w-4" />
-                  </a>
-                </div>
-              </Card>
-            )}
-
-            {/* If no sign URL yet, show instructions */}
-            {!hasSignUrl && (
-              <Card className="p-6 border-slate-200 bg-slate-50">
-                <div className="flex items-start gap-3">
-                  <FileText className="h-5 w-5 text-slate-500 mt-0.5 shrink-0" />
-                  <p className="text-sm text-slate-600">
-                    O contrato será enviado para o seu WhatsApp / email em breve. Aguarde o contacto da nossa equipa.
-                  </p>
-                </div>
-              </Card>
-            )}
-          </div>
-
-        ) : isExpired ? (
-          <Card className="p-8 text-center bg-amber-50 border-amber-200 shadow-md">
-            <FileWarning className="h-14 w-14 mx-auto text-amber-600 mb-4" />
-            <h3 className="text-xl font-bold text-amber-800 mb-2">Proposta Expirada</h3>
-            <p className="text-amber-700 text-sm">
-              Esta proposta expirou em {new Date(p.valid_until).toLocaleDateString("pt-PT")}. Entre em contacto para solicitar uma nova proposta.
-            </p>
-          </Card>
-
-        ) : p.status === "recusada" ? (
-          <Card className="p-8 text-center bg-red-50 border-red-200 shadow-md">
-            <FileWarning className="h-14 w-14 mx-auto text-red-500 mb-4" />
-            <h3 className="text-xl font-bold text-red-800">Proposta Recusada</h3>
-            <p className="text-red-600 text-sm mt-2">Esta proposta foi recusada. Entre em contacto para mais informações.</p>
-          </Card>
-
-        ) : (
-          <Card className="p-8 space-y-5 shadow-md">
-            <div className="text-center space-y-1">
-              <h3 className="text-lg font-bold">Aceitar Proposta</h3>
-              <p className="text-sm text-muted-foreground">Ao aceitar, o contrato será gerado automaticamente.</p>
-            </div>
-
-            {error && (
-              <div className="bg-destructive/10 text-destructive text-sm rounded-lg px-4 py-3 text-center">
-                {error}
-              </div>
-            )}
-
-            <div className="flex items-start gap-3 bg-slate-50 rounded-xl p-4 border">
-              <Checkbox
-                id="confirm-accept"
-                checked={confirmed}
-                onCheckedChange={(checked) => setConfirmed(checked === true)}
-                className="mt-0.5"
-              />
-              <label htmlFor="confirm-accept" className="text-sm text-foreground/80 cursor-pointer leading-relaxed">
-                Li e compreendo os termos e condições apresentados nesta proposta, incluindo o valor, forma de pagamento e condições gerais, e desejo aceitá-la formalmente.
-              </label>
-            </div>
-
-            <Button
-              size="lg"
-              className="w-full bg-green-600 hover:bg-green-700 text-white py-6 text-base rounded-xl shadow-lg disabled:opacity-50 transition-all"
-              onClick={handleAccept}
-              disabled={accepting || !confirmed}
-            >
-              {accepting
-                ? <><Loader2 className="h-5 w-5 animate-spin mr-2" /> A processar…</>
-                : <><CheckCircle2 className="h-5 w-5 mr-2" /> Aceitar Proposta</>
-              }
-            </Button>
-
-            <div className="flex items-center justify-center gap-2 text-xs text-muted-foreground">
-              <Shield className="h-3.5 w-3.5" />
-              <span>O seu IP, data e hora serão registados como prova legal de aceite digital.</span>
-            </div>
-          </Card>
-        )}
+        {acceptSection}
 
         {/* Footer */}
-        <div className="text-center text-xs text-muted-foreground pb-6 space-y-1">
-          <p className="font-medium">Emmely Fernandes — Advocacia Internacional</p>
-          <p>Powered by Emmely Cloud</p>
-        </div>
+        {pageFooter}
       </div>
     </div>
   );
