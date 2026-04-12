@@ -1,25 +1,46 @@
 
 
-# Atualizar ChatbotTab em /integracoes para Multi-Bot
+# Igualar /bitrix24/agentes a /agentes
 
 ## Problema
-A secção "Chatbot" na página Integrações ainda mostra apenas um bot fixo "Emmely AI" com um único `bot_id` do `config`. Com a nova arquitectura multi-bot, deve mostrar **todos os agentes ativos** e o seu estado individual de registo no Bitrix24.
+A vista de agentes dentro do Bitrix24 (`AgentesView` no `Bitrix24App.tsx`, linhas 1209-1419) é uma versão simplificada que não usa o componente `AgentCard` nem tem os mesmos recursos da página principal `/agentes`.
 
-## Alterações
+**Funcionalidades em falta no Bitrix24:**
+- Componente `AgentCard` (usa cards inline simplificados)
+- Botão "Criar com IA" (AgentBuilderChat)
+- Botão "Sincronizar Bots Bitrix24"
+- Duplicar agente
+- Treinar agente (botão Sparkles no card)
+- Badge do Bot Bitrix24 no card
+- Confirmação de eliminação (usa `confirm()` nativo)
+- Skills (toggle de skills na edição)
+- Sync de `agent_knowledge_documents`
 
-### `src/pages/Integracoes.tsx` — ChatbotTab
+## Solução
+Refactorizar `AgentesView` para reutilizar os mesmos componentes e lógica da página `/agentes`, adaptando apenas o header ao estilo Bitrix24.
 
-1. **Carregar agentes com `bitrix_bot_id`**: Alterar a query para incluir `id, name, bitrix_bot_id, is_active`
-2. **Substituir o card único "Emmely AI"** por uma lista de cards — um por agente ativo — mostrando:
-   - Nome do agente
-   - Badge "Registado (Bot #ID)" se `bitrix_bot_id` existe, ou "Não registado" se null
-3. **Atualizar `handleReregisterBot`**: Após sucesso, mostrar o número de bots registados (usar `data.registered` do response) em vez de um único `bot_id`
-4. **Atualizar instruções**: Em vez de "selecione Emmely AI", explicar que cada agente aparece como bot separado no Contact Center
-5. **Remover referência a `config.bot_id`** (já não relevante)
+### `src/pages/Bitrix24App.tsx` — `AgentesView`
 
-### Ficheiro
+1. **Importar** `AgentCard`, `AgentBuilderChat`, `AlertDialog` (já importados parcialmente)
+2. **Substituir os cards inline** (linhas 1353-1401) por `<AgentCard>` — o mesmo componente usado em `/agentes`
+3. **Adicionar** estados e handlers em falta:
+   - `builderOpen` + `AgentBuilderChat`
+   - `deleteId` + `AlertDialog` de confirmação
+   - `duplicateAgent()`
+   - `syncBitrixBots()`
+   - `syncKnowledgeDocuments()`
+   - `skills` + `handleSkillToggle()`
+4. **Adicionar botões no header**:
+   - "Sincronizar Bots Bitrix24" (se integração existe)
+   - "Criar com IA"
+   - "Novo Agente"
+5. **Passar `skills` e `onSkillToggle`** ao `AgentFormDialog`
+6. **Remover** o código inline dos cards e handlers simplificados (`handleToggleActive`, `handleRepublishBot`, `handleSetDefault` inline) — substituídos pela lógica do `AgentCard`
+7. **Usar grid** `md:grid-cols-2 lg:grid-cols-3` como na página principal
+
+### Ficheiro a alterar
 
 | Ficheiro | Acção |
 |---|---|
-| `src/pages/Integracoes.tsx` | Refactoring do `ChatbotTab` para listar agentes com estado multi-bot |
+| `src/pages/Bitrix24App.tsx` | Reescrever `AgentesView` (~linhas 1209-1419) para reutilizar `AgentCard`, `AgentBuilderChat`, e toda a lógica de `/agentes` |
 
