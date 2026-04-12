@@ -64,6 +64,8 @@ const aiNav = [
   { title: "Playground", url: "/playground", icon: Sparkles },
   { title: "Chat IA", url: "/chat", icon: MessageSquare },
   { title: "Observabilidade", url: "/observabilidade-ia", icon: Activity },
+  { title: "Simulação Swarm", url: "/simulation", icon: FlaskConical },
+  { title: "Relatórios Swarm", url: "/swarm-reports", icon: FileBarChart },
 ];
 
 const secondaryNav = [
