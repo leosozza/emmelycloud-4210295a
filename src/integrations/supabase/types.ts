@@ -473,6 +473,7 @@ export type Database = {
           prompt_tokens: number | null
           provider: string | null
           session_id: string | null
+          step_details: Json | null
           total_tokens: number | null
           was_fallback: boolean | null
         }
@@ -489,6 +490,7 @@ export type Database = {
           prompt_tokens?: number | null
           provider?: string | null
           session_id?: string | null
+          step_details?: Json | null
           total_tokens?: number | null
           was_fallback?: boolean | null
         }
@@ -505,6 +507,7 @@ export type Database = {
           prompt_tokens?: number | null
           provider?: string | null
           session_id?: string | null
+          step_details?: Json | null
           total_tokens?: number | null
           was_fallback?: boolean | null
         }
@@ -1615,6 +1618,42 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      entity_graph: {
+        Row: {
+          created_at: string
+          id: string
+          metadata: Json | null
+          relation: string
+          source_id: string
+          source_type: string
+          target_id: string
+          target_type: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          metadata?: Json | null
+          relation: string
+          source_id: string
+          source_type: string
+          target_id: string
+          target_type: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          metadata?: Json | null
+          relation?: string
+          source_id?: string
+          source_type?: string
+          target_id?: string
+          target_type?: string
+          updated_at?: string
+        }
+        Relationships: []
       }
       financial_records: {
         Row: {
