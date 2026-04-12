@@ -39,6 +39,8 @@ import SignContract from "./pages/SignContract";
 import NotFound from "./pages/NotFound";
 import Configuracoes from "./pages/Configuracoes";
 import TemplateEditor from "./pages/TemplateEditor";
+import SimulationPage from "./pages/Simulation";
+import SwarmReportsPage from "./pages/SwarmReports";
 
 const queryClient = new QueryClient();
 
@@ -85,6 +87,8 @@ const App = () => (
             <Route path="/chat" element={<ChatIAPage />} />
             <Route path="/observabilidade-ia" element={<ObservabilidadeIAPage />} />
             <Route path="/configuracoes" element={<Configuracoes />} />
+            <Route path="/simulation" element={<SimulationPage />} />
+            <Route path="/swarm-reports" element={<SwarmReportsPage />} />
           </Route>
           <Route path="*" element={<NotFound />} />
         </Routes>

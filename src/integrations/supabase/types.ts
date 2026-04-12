@@ -2964,6 +2964,134 @@ export type Database = {
         }
         Relationships: []
       }
+      simulation_messages: {
+        Row: {
+          content: string
+          created_at: string
+          id: string
+          metadata: Json | null
+          persona_id: string | null
+          role: string
+          round: number
+          simulation_id: string
+        }
+        Insert: {
+          content?: string
+          created_at?: string
+          id?: string
+          metadata?: Json | null
+          persona_id?: string | null
+          role?: string
+          round?: number
+          simulation_id: string
+        }
+        Update: {
+          content?: string
+          created_at?: string
+          id?: string
+          metadata?: Json | null
+          persona_id?: string | null
+          role?: string
+          round?: number
+          simulation_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "simulation_messages_persona_id_fkey"
+            columns: ["persona_id"]
+            isOneToOne: false
+            referencedRelation: "ai_agents"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "simulation_messages_simulation_id_fkey"
+            columns: ["simulation_id"]
+            isOneToOne: false
+            referencedRelation: "simulations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      simulations: {
+        Row: {
+          completed_at: string | null
+          created_at: string
+          id: string
+          name: string
+          persona_ids: string[]
+          results: Json | null
+          rounds: number
+          scenario_prompt: string
+          status: string
+        }
+        Insert: {
+          completed_at?: string | null
+          created_at?: string
+          id?: string
+          name: string
+          persona_ids?: string[]
+          results?: Json | null
+          rounds?: number
+          scenario_prompt?: string
+          status?: string
+        }
+        Update: {
+          completed_at?: string | null
+          created_at?: string
+          id?: string
+          name?: string
+          persona_ids?: string[]
+          results?: Json | null
+          rounds?: number
+          scenario_prompt?: string
+          status?: string
+        }
+        Relationships: []
+      }
+      swarm_reports: {
+        Row: {
+          content: string
+          created_at: string
+          data_snapshot: Json | null
+          id: string
+          period_end: string | null
+          period_start: string | null
+          persona_id: string | null
+          report_type: string
+          title: string
+        }
+        Insert: {
+          content?: string
+          created_at?: string
+          data_snapshot?: Json | null
+          id?: string
+          period_end?: string | null
+          period_start?: string | null
+          persona_id?: string | null
+          report_type?: string
+          title?: string
+        }
+        Update: {
+          content?: string
+          created_at?: string
+          data_snapshot?: Json | null
+          id?: string
+          period_end?: string | null
+          period_start?: string | null
+          persona_id?: string | null
+          report_type?: string
+          title?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "swarm_reports_persona_id_fkey"
+            columns: ["persona_id"]
+            isOneToOne: false
+            referencedRelation: "ai_agents"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       sync_dedup_cache: {
         Row: {
           created_at: string
@@ -2993,34 +3121,43 @@ export type Database = {
       }
       user_memory: {
         Row: {
+          access_count: number
           contact_email: string | null
           contact_instagram: string | null
           contact_phone: string | null
           created_at: string | null
+          decay_factor: number
           id: string
           key: string
+          last_accessed_at: string | null
           source: string | null
           updated_at: string | null
           value: string
         }
         Insert: {
+          access_count?: number
           contact_email?: string | null
           contact_instagram?: string | null
           contact_phone?: string | null
           created_at?: string | null
+          decay_factor?: number
           id?: string
           key: string
+          last_accessed_at?: string | null
           source?: string | null
           updated_at?: string | null
           value: string
         }
         Update: {
+          access_count?: number
           contact_email?: string | null
           contact_instagram?: string | null
           contact_phone?: string | null
           created_at?: string | null
+          decay_factor?: number
           id?: string
           key?: string
+          last_accessed_at?: string | null
           source?: string | null
           updated_at?: string | null
           value?: string
@@ -3050,6 +3187,10 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      calculate_memory_relevance: {
+        Args: { p_memory_id: string }
+        Returns: number
+      }
       claim_queue_jobs: {
         Args: {
           p_cutoff?: string
