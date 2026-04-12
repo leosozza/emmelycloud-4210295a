@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { cn } from "@/lib/utils";
 import {
   Bot,
@@ -15,6 +15,7 @@ import {
 import { AudioMessageBubble } from "@/components/atendimento/AudioMessageBubble";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+import { shrinkWrapWidth } from "@/lib/messageLayout";
 import type { Message } from "@/types/conversation";
 
 // Source label helper
