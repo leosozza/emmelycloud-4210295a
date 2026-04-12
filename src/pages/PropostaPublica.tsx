@@ -65,12 +65,16 @@ export default function PropostaPublica() {
 
         // Fetch associated template when template_id is set
         if (data.template_id) {
-          const { data: tpl } = await supabase
+          const { data: tpl, error: tplErr } = await supabase
             .from("proposal_templates")
             .select("*")
             .eq("id", data.template_id)
             .single();
-          if (tpl) setTemplate(tpl);
+          if (tplErr) {
+            console.warn("Could not load proposal template:", tplErr.message);
+          } else if (tpl) {
+            setTemplate(tpl);
+          }
         }
 
         setLoading(false);

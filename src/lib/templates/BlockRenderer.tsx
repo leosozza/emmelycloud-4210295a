@@ -386,7 +386,7 @@ export function BlockRenderer({ blocks, proposal, template }: BlockRendererProps
   const placeholders = buildPlaceholders(proposal);
 
   const renderBlock = (block: LayoutBlock, index: number) => {
-    if (!block || !block.visible) return null;
+    if (!block.visible) return null;
 
     const addSeparator = index > 0 && block.type !== "header" && block.type !== "footer";
 
