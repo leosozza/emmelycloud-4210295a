@@ -3,7 +3,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Bot, Edit, Trash2, Star, GitBranch, BookOpen, Users, Volume2, Sparkles, Copy, DollarSign } from "lucide-react";
+import { Bot, Edit, Trash2, Star, GitBranch, BookOpen, Users, Volume2, Sparkles, Copy } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { AgentTrainingChat } from "@/components/agentes/AgentTrainingChat";
 import { supabase } from "@/integrations/supabase/client";
