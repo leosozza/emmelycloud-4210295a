@@ -333,6 +333,15 @@ export default function AgentesPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <AgentBuilderChat
+        open={builderOpen}
+        onOpenChange={setBuilderOpen}
+        onSave={handleBuilderSave}
+        flows={flows}
+        collections={collections}
+        agents={agents}
+      />
     </div>
   );
 }
