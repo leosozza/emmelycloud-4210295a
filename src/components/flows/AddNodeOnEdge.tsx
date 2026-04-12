@@ -43,8 +43,9 @@ export default function AddNodeOnEdge({
   });
 
   const onSelectType = (type: FlowNodeType) => {
-    if (data?.onInsertNode) {
-      data.onInsertNode(id, type);
+    const edgeData = data as Record<string, unknown> | undefined;
+    if (edgeData?.onInsertNode && typeof edgeData.onInsertNode === 'function') {
+      edgeData.onInsertNode(id, type);
     }
   };
 

@@ -410,6 +410,8 @@ export interface FlowNodeData {
   transferMessage?: string;
   // Extra
   config?: Record<string, unknown>;
+  // Validação
+  error?: string;
 }
 
 // ─── Dados padrão ao criar novo nó ───────────────────────────────────────────
