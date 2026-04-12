@@ -97,7 +97,7 @@ export default function NodeConfigPanel({ data, onChange, onDelete, onClose }: N
 
   useEffect(() => {
     const loadCrews = async () => {
-      const { data: crewsData } = await supabase
+      const { data: crewsData } = await (supabase as any)
         .from("ai_crews")
         .select("id, name")
         .eq("is_active", true);

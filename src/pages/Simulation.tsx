@@ -95,7 +95,7 @@ function SimulationMessages({ messages, selected, personaMap }: { messages: SimM
                   <span className="text-sm font-semibold">{msg.role}</span>
                   <Badge variant="outline" className="text-[10px]">R{msg.round}</Badge>
                   {msg.metadata?.latency_ms && <span className="text-[10px] text-muted-foreground">{msg.metadata.latency_ms}ms</span>}
-                  {msg.metadata?.model?.includes('ollama') && <Zap className="h-3 w-3 text-amber-500" title="Executado localmente via Ollama" />}
+                  {msg.metadata?.model?.includes('ollama') && <span title="Executado localmente via Ollama"><Zap className="h-3 w-3 text-amber-500" /></span>}
                 </div>
                 <p className="text-sm text-foreground/90 whitespace-pre-wrap leading-relaxed">{msg.content}</p>
               </div>
@@ -207,7 +207,7 @@ export default function SimulationPage() {
 
   async function injectIntervention() {
     if (!selected || !interventionText) return;
-    await supabase.from("simulations").update({ intervention_prompt: interventionText }).eq("id", selected.id);
+    await supabase.from("simulations").update({ intervention_prompt: interventionText } as any).eq("id", selected.id);
     toast.success("Intervenção injetada!");
     setInterventionText("");
   }

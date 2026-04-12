@@ -124,7 +124,7 @@ Responda de forma concisa (máx 3 parágrafos). Reaja ao que os outros disseram.
             metadata: { latency_ms: latency, model: modelToUse },
           });
         } catch (e) {
-          console.error(`[SIM-ENGINE] Error calling AI for persona ${persona.name}:`, e.message);
+          console.error(`[SIM-ENGINE] Error calling AI for persona ${persona.name}:`, (e as any).message);
         }
       }
       
