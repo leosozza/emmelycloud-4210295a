@@ -2607,14 +2607,8 @@ export type Database = {
           case_id: string
           client_address: string | null
           client_document: string | null
-          client_document_issuer: string | null
-          client_document_number: string | null
-          client_document_type: string | null
-          client_document_validity: string | null
           client_email: string | null
-          client_gender: string | null
           client_name: string | null
-          client_nationality: string | null
           client_phone: string | null
           conditions: string | null
           contract_notes: string | null
@@ -2626,7 +2620,6 @@ export type Database = {
           expires_at: string | null
           file_url: string | null
           id: string
-          installment_value: number | null
           installments: number | null
           overdue_days: number | null
           overdue_flow_id: string | null
@@ -2647,7 +2640,6 @@ export type Database = {
           template_id: string | null
           title: string
           updated_at: string
-          upfront_value: number | null
           valid_until: string | null
           value: number
         }
@@ -2665,14 +2657,8 @@ export type Database = {
           case_id: string
           client_address?: string | null
           client_document?: string | null
-          client_document_issuer?: string | null
-          client_document_number?: string | null
-          client_document_type?: string | null
-          client_document_validity?: string | null
           client_email?: string | null
-          client_gender?: string | null
           client_name?: string | null
-          client_nationality?: string | null
           client_phone?: string | null
           conditions?: string | null
           contract_notes?: string | null
@@ -2684,7 +2670,6 @@ export type Database = {
           expires_at?: string | null
           file_url?: string | null
           id?: string
-          installment_value?: number | null
           installments?: number | null
           overdue_days?: number | null
           overdue_flow_id?: string | null
@@ -2705,7 +2690,6 @@ export type Database = {
           template_id?: string | null
           title: string
           updated_at?: string
-          upfront_value?: number | null
           valid_until?: string | null
           value?: number
         }
@@ -2723,14 +2707,8 @@ export type Database = {
           case_id?: string
           client_address?: string | null
           client_document?: string | null
-          client_document_issuer?: string | null
-          client_document_number?: string | null
-          client_document_type?: string | null
-          client_document_validity?: string | null
           client_email?: string | null
-          client_gender?: string | null
           client_name?: string | null
-          client_nationality?: string | null
           client_phone?: string | null
           conditions?: string | null
           contract_notes?: string | null
@@ -2742,7 +2720,6 @@ export type Database = {
           expires_at?: string | null
           file_url?: string | null
           id?: string
-          installment_value?: number | null
           installments?: number | null
           overdue_days?: number | null
           overdue_flow_id?: string | null
@@ -2763,7 +2740,6 @@ export type Database = {
           template_id?: string | null
           title?: string
           updated_at?: string
-          upfront_value?: number | null
           valid_until?: string | null
           value?: number
         }
