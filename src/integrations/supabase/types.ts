@@ -544,6 +544,66 @@ export type Database = {
           },
         ]
       }
+      automation_runs: {
+        Row: {
+          automation_type: string
+          created_at: string
+          entity_id: string | null
+          entity_type: string | null
+          error_message: string | null
+          id: string
+          result: Json | null
+          status: string
+        }
+        Insert: {
+          automation_type: string
+          created_at?: string
+          entity_id?: string | null
+          entity_type?: string | null
+          error_message?: string | null
+          id?: string
+          result?: Json | null
+          status?: string
+        }
+        Update: {
+          automation_type?: string
+          created_at?: string
+          entity_id?: string | null
+          entity_type?: string | null
+          error_message?: string | null
+          id?: string
+          result?: Json | null
+          status?: string
+        }
+        Relationships: []
+      }
+      automation_settings: {
+        Row: {
+          automation_type: string
+          config: Json | null
+          id: string
+          is_enabled: boolean
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: {
+          automation_type: string
+          config?: Json | null
+          id?: string
+          is_enabled?: boolean
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Update: {
+          automation_type?: string
+          config?: Json | null
+          id?: string
+          is_enabled?: boolean
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Relationships: []
+      }
       bitrix_event_queue: {
         Row: {
           attempts: number
