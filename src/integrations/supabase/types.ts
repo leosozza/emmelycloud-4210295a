@@ -226,6 +226,7 @@ export type Database = {
           ai_provider: string
           avatar_url: string | null
           base_prompt: string | null
+          bitrix_bot_id: string | null
           communication_tone: string | null
           created_at: string
           default_flow_id: string | null
@@ -260,6 +261,7 @@ export type Database = {
           ai_provider?: string
           avatar_url?: string | null
           base_prompt?: string | null
+          bitrix_bot_id?: string | null
           communication_tone?: string | null
           created_at?: string
           default_flow_id?: string | null
@@ -294,6 +296,7 @@ export type Database = {
           ai_provider?: string
           avatar_url?: string | null
           base_prompt?: string | null
+          bitrix_bot_id?: string | null
           communication_tone?: string | null
           created_at?: string
           default_flow_id?: string | null
@@ -942,7 +945,6 @@ export type Database = {
         Row: {
           access_token: string | null
           application_token: string | null
-          bitrix_agent_id: string | null
           client_endpoint: string | null
           config: Json | null
           connector_active: boolean
@@ -958,7 +960,6 @@ export type Database = {
         Insert: {
           access_token?: string | null
           application_token?: string | null
-          bitrix_agent_id?: string | null
           client_endpoint?: string | null
           config?: Json | null
           connector_active?: boolean
@@ -974,7 +975,6 @@ export type Database = {
         Update: {
           access_token?: string | null
           application_token?: string | null
-          bitrix_agent_id?: string | null
           client_endpoint?: string | null
           config?: Json | null
           connector_active?: boolean
@@ -987,15 +987,7 @@ export type Database = {
           refresh_token?: string | null
           updated_at?: string
         }
-        Relationships: [
-          {
-            foreignKeyName: "bitrix24_integrations_bitrix_agent_id_fkey"
-            columns: ["bitrix_agent_id"]
-            isOneToOne: false
-            referencedRelation: "ai_agents"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
       bitrix24_sync_cache: {
         Row: {

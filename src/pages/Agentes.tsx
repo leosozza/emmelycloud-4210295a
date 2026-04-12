@@ -112,7 +112,8 @@ export default function AgentesPage() {
   const [editingAgent, setEditingAgent] = useState<Partial<AIAgent>>(defaultAgent);
   const [saving, setSaving] = useState(false);
   const [builderOpen, setBuilderOpen] = useState(false);
-  const [bitrixIntegration, setBitrixIntegration] = useState<{ id: string; bitrix_agent_id: string | null } | null>(null);
+  const [hasBitrixIntegration, setHasBitrixIntegration] = useState(false);
+  const [syncingBots, setSyncingBots] = useState(false);
 
   useEffect(() => { loadData(); }, []);
 
@@ -123,12 +124,12 @@ export default function AgentesPage() {
       supabase.from("ai_providers").select("*").order("name"),
       supabase.from("flows").select("id, name").order("name"),
       supabase.from("knowledge_documents").select("id, title, collection_id, collection_name").order("title"),
-      supabase.from("bitrix24_integrations").select("id, bitrix_agent_id").order("created_at", { ascending: false }).limit(1).maybeSingle(),
+      supabase.from("bitrix24_integrations").select("id").order("created_at", { ascending: false }).limit(1).maybeSingle(),
     ]);
     if (agentsRes.data) setAgents(agentsRes.data as unknown as AIAgent[]);
     if (providersRes.data) setProviders(providersRes.data as unknown as AIProvider[]);
     if (flowsRes.data) setFlows(flowsRes.data as FlowOption[]);
-    if (bitrixRes.data) setBitrixIntegration(bitrixRes.data as any);
+    if (bitrixRes.data) setHasBitrixIntegration(true);
     if (docsRes.data) {
       setDocs(docsRes.data as DocOption[]);
       const collMap = new Map<string, CollectionOption>();
@@ -212,21 +213,23 @@ export default function AgentesPage() {
     else { toast.success("Agente duplicado"); loadData(); }
   };
 
-  const toggleBitrixAgent = async (agentId: string) => {
-    if (!bitrixIntegration) {
-      toast.error("Nenhuma integração Bitrix24 encontrada");
-      return;
+  const syncBitrixBots = async () => {
+    setSyncingBots(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await supabase.functions.invoke("bitrix24-reregister-bot", {});
+      const result = res.data;
+      if (result?.success) {
+        toast.success(`${result.registered?.length || 0} bots sincronizados no Bitrix24`);
+        loadData();
+      } else {
+        toast.error(result?.error || "Erro ao sincronizar bots");
+      }
+    } catch (e: any) {
+      toast.error(e.message || "Erro ao sincronizar");
+    } finally {
+      setSyncingBots(false);
     }
-    const { error } = await supabase
-      .from("bitrix24_integrations")
-      .update({ bitrix_agent_id: agentId || null } as any)
-      .eq("id", bitrixIntegration.id);
-    if (error) {
-      toast.error("Erro ao atualizar agente Bitrix24");
-      return;
-    }
-    setBitrixIntegration(prev => prev ? { ...prev, bitrix_agent_id: agentId || null } : null);
-    toast.success(agentId ? "Agente ativado como chatbot no Bitrix24" : "Agente desativado do Bitrix24");
   };
 
   const openEdit = async (agent: AIAgent) => {
@@ -291,6 +294,12 @@ export default function AgentesPage() {
       <PageHeader title="Agentes IA" description="Configure agentes inteligentes com diferentes personalidades e modelos de IA" />
 
       <div className="flex justify-end gap-2 mb-4">
+        {hasBitrixIntegration && (
+          <Button variant="outline" onClick={syncBitrixBots} disabled={syncingBots}>
+            {syncingBots ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Bot className="h-4 w-4 mr-2" />}
+            Sincronizar Bots Bitrix24
+          </Button>
+        )}
         <Button variant="outline" onClick={() => setBuilderOpen(true)}>
           <Sparkles className="h-4 w-4 mr-2" /> Criar com IA
         </Button>
@@ -318,8 +327,6 @@ export default function AgentesPage() {
               onDelete={(id) => setDeleteId(id)}
               onToggleDefault={toggleDefault}
               onDuplicate={duplicateAgent}
-              bitrixAgentId={bitrixIntegration?.bitrix_agent_id}
-              onToggleBitrix={bitrixIntegration ? toggleBitrixAgent : undefined}
             />
           ))}
         </div>

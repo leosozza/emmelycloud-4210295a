@@ -3,7 +3,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Bot, Edit, Trash2, Star, GitBranch, BookOpen, Users, Volume2, Sparkles, Copy, Loader2 } from "lucide-react";
+import { Bot, Edit, Trash2, Star, GitBranch, BookOpen, Users, Volume2, Sparkles, Copy } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { AgentTrainingChat } from "@/components/agentes/AgentTrainingChat";
 import type { AIAgent, AIProvider } from "@/pages/Agentes";
@@ -15,27 +15,14 @@ interface AgentCardProps {
   onDelete: (id: string) => void;
   onToggleDefault: (agent: AIAgent) => void;
   onDuplicate?: (agent: AIAgent) => void;
-  bitrixAgentId?: string | null;
-  onToggleBitrix?: (agentId: string) => Promise<void>;
 }
 
-export function AgentCard({ agent, providers, onEdit, onDelete, onToggleDefault, onDuplicate, bitrixAgentId, onToggleBitrix }: AgentCardProps) {
+export function AgentCard({ agent, providers, onEdit, onDelete, onToggleDefault, onDuplicate }: AgentCardProps) {
   const textProvider = providers.find(p => p.slug === agent.ai_provider);
   const voiceProvider = agent.voice_provider ? providers.find(p => p.slug === agent.voice_provider) : null;
   const [trainingOpen, setTrainingOpen] = useState(false);
-  const [togglingBitrix, setTogglingBitrix] = useState(false);
 
-  const isBitrixActive = bitrixAgentId === agent.id;
-
-  const handleToggleBitrix = async () => {
-    if (!onToggleBitrix) return;
-    setTogglingBitrix(true);
-    try {
-      await onToggleBitrix(isBitrixActive ? "" : agent.id);
-    } finally {
-      setTogglingBitrix(false);
-    }
-  };
+  const bitrixBotId = (agent as any).bitrix_bot_id;
 
   return (
     <Card className={`relative ${!agent.is_active ? 'opacity-60' : ''}`}>
@@ -86,27 +73,12 @@ export function AgentCard({ agent, providers, onEdit, onDelete, onToggleDefault,
           {agent.default_flow_id && <Badge variant="outline" className="text-[10px]"><GitBranch className="h-2 w-2 mr-1" />Fluxo</Badge>}
           {agent.training_collection_ids?.length > 0 && <Badge variant="outline" className="text-[10px]"><BookOpen className="h-2 w-2 mr-1" />{agent.training_collection_ids.length} doc(s)</Badge>}
           {agent.sub_agent_ids?.length > 0 && <Badge variant="outline" className="text-[10px]"><Users className="h-2 w-2 mr-1" />{agent.sub_agent_ids.length} sub</Badge>}
+          {bitrixBotId && (
+            <Badge variant="outline" className="text-[10px] border-blue-300 text-blue-600">
+              🤖 Bot Bitrix24 #{bitrixBotId}
+            </Badge>
+          )}
         </div>
-
-        {/* Bitrix24 Chatbot toggle */}
-        {onToggleBitrix && (
-          <div className="mb-3">
-            <Button
-              variant={isBitrixActive ? "default" : "outline"}
-              size="sm"
-              className="w-full h-7 text-[11px] gap-1.5"
-              onClick={handleToggleBitrix}
-              disabled={togglingBitrix}
-            >
-              {togglingBitrix ? (
-                <Loader2 className="h-3 w-3 animate-spin" />
-              ) : (
-                <Bot className="h-3 w-3" />
-              )}
-              {isBitrixActive ? "✓ Chatbot Bitrix24 Ativo" : "Ativar no Bitrix24"}
-            </Button>
-          </div>
-        )}
 
         <div className="flex items-center justify-between">
           <span className="text-xs text-muted-foreground">{agent.is_active ? "Ativo" : "Inativo"}</span>
