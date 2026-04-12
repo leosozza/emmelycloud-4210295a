@@ -43,6 +43,57 @@ interface Agent {
 }
 
 const PERSONA_COLORS = ["bg-blue-500", "bg-emerald-500", "bg-amber-500", "bg-purple-500", "bg-pink-500", "bg-cyan-500"];
+const MSG_HEIGHT = 80;
+
+function SimulationMessages({ messages, selected, personaMap }: { messages: SimMessage[]; selected: Simulation; personaMap: Record<string, string> }) {
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const virtualizer = useVirtualizer({
+    count: messages.length,
+    getScrollElement: () => scrollRef.current,
+    estimateSize: () => MSG_HEIGHT,
+    overscan: 10,
+  });
+
+  if (!messages.length && selected.status === "draft") {
+    return <p className="text-center text-muted-foreground py-12">Clique "Executar" para iniciar a simulação.</p>;
+  }
+
+  const personaColor = (idx: number) => PERSONA_COLORS[idx % PERSONA_COLORS.length];
+
+  return (
+    <div ref={scrollRef} className="h-[500px] overflow-y-auto pr-4">
+      <div style={{ height: `${virtualizer.getTotalSize()}px`, position: "relative" }}>
+        {virtualizer.getVirtualItems().map((vRow) => {
+          const msg = messages[vRow.index];
+          const pIdx = selected.persona_ids?.indexOf(msg.persona_id) ?? 0;
+          return (
+            <div
+              key={msg.id}
+              style={{
+                position: "absolute",
+                top: 0, left: 0, width: "100%",
+                transform: `translateY(${vRow.start}px)`,
+              }}
+              className="flex gap-3 py-2"
+            >
+              <Avatar className={`h-8 w-8 ${personaColor(pIdx)}`}>
+                <AvatarFallback className="text-white text-xs">{msg.role?.slice(0, 2).toUpperCase()}</AvatarFallback>
+              </Avatar>
+              <div className="flex-1">
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="text-sm font-semibold">{msg.role}</span>
+                  <Badge variant="outline" className="text-[10px]">R{msg.round}</Badge>
+                  {msg.metadata?.latency_ms && <span className="text-[10px] text-muted-foreground">{msg.metadata.latency_ms}ms</span>}
+                </div>
+                <p className="text-sm text-foreground/90 whitespace-pre-wrap">{msg.content}</p>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
 
 export default function SimulationPage() {
   const [simulations, setSimulations] = useState<Simulation[]>([]);
