@@ -1445,82 +1445,35 @@ interface BitrixIntegrationBot {
 }
 
 function ChatbotTab() {
-  const [settings, setSettings] = useState<ChatbotSettings[]>(
-    DIRECT_CHANNELS.map((c) => ({ channel: c.channel, enabled: false, agent_id: null }))
-  );
-  const [agents, setAgents] = useState<{ id: string; name: string }[]>([]);
+  const [agents, setAgents] = useState<{ id: string; name: string; bitrix_bot_id: string | null; is_active: boolean }[]>([]);
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState<string | null>(null);
   const [integration, setIntegration] = useState<BitrixIntegrationBot | null>(null);
   const [reregistering, setReregistering] = useState(false);
 
-  useEffect(() => {
-    async function load() {
-      setLoading(true);
-      const [agentsRes, settingsRes, intRes] = await Promise.all([
-        supabase.from("ai_agents").select("id, name").eq("is_active", true).order("name"),
-        supabase.from("chatbot_channel_settings" as any).select("channel, enabled, agent_id"),
-        supabase.from("bitrix24_integrations").select("id, domain, config, connector_registered").limit(1).single(),
-      ]);
-
-      if (agentsRes.data) setAgents(agentsRes.data as { id: string; name: string }[]);
-      if (intRes.data) setIntegration(intRes.data as BitrixIntegrationBot);
-
-      if (settingsRes.data && settingsRes.data.length > 0) {
-        setSettings((prev) =>
-          prev.map((s) => {
-            const row = (settingsRes.data as unknown as ChatbotSettings[]).find((r) => r.channel === s.channel);
-            return row ? { channel: s.channel, enabled: row.enabled ?? false, agent_id: row.agent_id ?? null } : s;
-          })
-        );
-      }
-      setLoading(false);
-    }
-    load();
+  const loadData = useCallback(async () => {
+    setLoading(true);
+    const [agentsRes, intRes] = await Promise.all([
+      supabase.from("ai_agents").select("id, name, bitrix_bot_id, is_active").eq("is_active", true).order("name"),
+      supabase.from("bitrix24_integrations").select("id, domain, config, connector_registered").limit(1).single(),
+    ]);
+    if (agentsRes.data) setAgents(agentsRes.data as any[]);
+    if (intRes.data) setIntegration(intRes.data as BitrixIntegrationBot);
+    setLoading(false);
   }, []);
 
-  const handleToggle = async (channel: string, enabled: boolean) => {
-    setSettings((prev) => prev.map((s) => (s.channel === channel ? { ...s, enabled } : s)));
-    await saveChannel(channel, enabled, settings.find((s) => s.channel === channel)?.agent_id ?? null);
-  };
-
-  const handleAgentChange = async (channel: string, agentId: string) => {
-    const newAgentId = agentId === "none" ? null : agentId;
-    setSettings((prev) => prev.map((s) => (s.channel === channel ? { ...s, agent_id: newAgentId } : s)));
-    await saveChannel(channel, settings.find((s) => s.channel === channel)?.enabled ?? false, newAgentId);
-  };
-
-  const saveChannel = async (channel: string, enabled: boolean, agentId: string | null) => {
-    setSaving(channel);
-    try {
-      const { error } = await supabase.from("chatbot_channel_settings" as any).upsert({
-        channel,
-        enabled,
-        agent_id: agentId,
-        updated_at: new Date().toISOString(),
-      }, { onConflict: "channel" });
-      if (error) throw error;
-      toast.success(`Chatbot ${channel} ${enabled ? "ativado" : "desativado"}`);
-    } catch (e: unknown) {
-      toast.error((e as Error)?.message || "Erro ao guardar");
-    } finally {
-      setSaving(null);
-    }
-  };
+  useEffect(() => { loadData(); }, [loadData]);
 
   const handleReregisterBot = async () => {
     setReregistering(true);
     try {
-      // Calls dedicated re-registration function (NOT rebind-events which only rebinds webhooks)
       const { data, error } = await supabase.functions.invoke("bitrix24-reregister-bot");
       if (error) throw error;
       if (data?.success) {
-        const botIdNew = data?.bot_id;
-        toast.success(`Bot Emmely AI registado com ID: ${botIdNew}. Agora vá ao Contact Center → Open Lines → Chatbot e selecione "Emmely AI".`);
-        const { data: intData } = await supabase.from("bitrix24_integrations").select("id, domain, config, connector_registered").limit(1).single();
-        if (intData) setIntegration(intData as BitrixIntegrationBot);
+        const count = data?.registered ?? 0;
+        toast.success(`${count} bot(s) registado(s) no Bitrix24. Vá ao Contact Center → Open Lines → Chatbot para selecionar.`);
+        await loadData();
       } else {
-        toast.error(data?.error || data?.fallback_error || "Erro ao re-registar bot");
+        toast.error(data?.error || data?.fallback_error || "Erro ao re-registar bots");
       }
     } catch (e: unknown) {
       toast.error((e as Error)?.message || "Erro de rede");
@@ -1537,87 +1490,105 @@ function ChatbotTab() {
     );
   }
 
-  const botId = (integration?.config as any)?.bot_id;
-  const botRegistered = integration?.connector_registered;
+  const registeredAgents = agents.filter((a) => a.bitrix_bot_id);
+  const unregisteredAgents = agents.filter((a) => !a.bitrix_bot_id);
 
   return (
     <div className="space-y-6">
 
-      {/* ── Secção 1: Bot Bitrix24 (Contact Center) ── */}
+      {/* ── Secção 1: Bots Bitrix24 (Contact Center) ── */}
       <div>
-        <div className="mb-3">
-          <h3 className="text-sm font-semibold">Bot Bitrix24 — Contact Center</h3>
-          <p className="text-xs text-muted-foreground mt-0.5">
-            O bot "Emmely AI" registado no Bitrix24. Para ativá-lo numa Open Line vá a{" "}
-            <strong>Contact Center → selecione a linha → Configurações → Chatbot → Emmely AI</strong>.
-          </p>
+        <div className="mb-3 flex items-center justify-between">
+          <div>
+            <h3 className="text-sm font-semibold">Bots Bitrix24 — Contact Center</h3>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Cada agente ativo é registado como um chatbot individual no Bitrix24.
+              Para ativar, vá a <strong>Contact Center → Open Line → Configurações → Chatbot</strong> e selecione o agente desejado.
+            </p>
+          </div>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={handleReregisterBot}
+            disabled={reregistering || !integration}
+          >
+            {reregistering
+              ? <><RefreshCw className="h-3.5 w-3.5 mr-1.5 animate-spin" />A sincronizar…</>
+              : <><RefreshCw className="h-3.5 w-3.5 mr-1.5" />Sincronizar Bots</>
+            }
+          </Button>
         </div>
 
-        <Card>
-          <CardContent className="pt-5 space-y-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-blue-100">
-                  <Bot className="h-5 w-5 text-blue-600" />
-                </div>
-                <div>
-                  <p className="text-sm font-medium">Emmely AI</p>
-                  <p className="text-xs text-muted-foreground">
-                    {integration?.domain ? `Registado em ${integration.domain}` : "Não conectado ao Bitrix24"}
-                  </p>
-                </div>
-              </div>
-              <div className="flex items-center gap-2">
-                {botRegistered ? (
-                  <Badge variant="outline" className="bg-green-100 text-green-800 border-green-200">
-                    <CheckCircle2 className="h-3 w-3 mr-1" />
-                    Registado
-                  </Badge>
-                ) : (
-                  <Badge variant="outline" className="bg-yellow-100 text-yellow-800 border-yellow-200">
-                    <Clock className="h-3 w-3 mr-1" />
-                    Pendente
-                  </Badge>
-                )}
-              </div>
-            </div>
-
-            {botId && (
-              <div className="flex items-center gap-2 rounded-md bg-muted/50 px-3 py-2 text-xs">
-                <span className="text-muted-foreground">Bot ID:</span>
-                <span className="font-mono font-medium">{botId}</span>
-              </div>
-            )}
-
-            <div className="rounded-md border border-blue-200 bg-blue-50 px-4 py-3 text-xs text-blue-800 space-y-1">
-              <p className="font-semibold">📋 Como ativar o chatbot no Contact Center:</p>
-              <ol className="list-decimal ml-4 space-y-0.5">
-                <li>No Bitrix24, abra <strong>Contact Center</strong></li>
-                <li>Selecione a <strong>Open Line</strong> desejada → <strong>Configurações</strong></li>
-                <li>Na secção <strong>Chatbot</strong>, selecione <strong>Emmely AI</strong></li>
-                <li>Guarde as configurações</li>
-              </ol>
-            </div>
-
-            <Button
-              size="sm"
-              variant="outline"
-              className="w-full"
-              onClick={handleReregisterBot}
-              disabled={reregistering || !integration}
-            >
-              {reregistering
-                ? <><RefreshCw className="h-3.5 w-3.5 mr-1.5 animate-spin" />A re-registar…</>
-                : <><RefreshCw className="h-3.5 w-3.5 mr-1.5" />Re-registar Bot no Bitrix24</>
-              }
-            </Button>
-            {!integration && (
-              <p className="text-xs text-muted-foreground text-center">
+        {!integration && (
+          <Card>
+            <CardContent className="pt-5">
+              <p className="text-sm text-muted-foreground text-center">
                 Nenhuma integração Bitrix24 encontrada. Instale a app primeiro.
               </p>
-            )}
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
+        )}
+
+        {integration && agents.length === 0 && (
+          <Card>
+            <CardContent className="pt-5">
+              <p className="text-sm text-muted-foreground text-center">
+                Nenhum agente ativo. Crie e ative agentes na página Agentes.
+              </p>
+            </CardContent>
+          </Card>
+        )}
+
+        {integration && agents.length > 0 && (
+          <div className="grid gap-3 md:grid-cols-2">
+            {agents.map((agent) => (
+              <Card key={agent.id}>
+                <CardContent className="pt-5">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-blue-100">
+                        <Bot className="h-5 w-5 text-blue-600" />
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium">{agent.name}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {integration.domain || "Bitrix24"}
+                        </p>
+                      </div>
+                    </div>
+                    {agent.bitrix_bot_id ? (
+                      <Badge variant="outline" className="bg-green-100 text-green-800 border-green-200">
+                        <CheckCircle2 className="h-3 w-3 mr-1" />
+                        Bot #{agent.bitrix_bot_id}
+                      </Badge>
+                    ) : (
+                      <Badge variant="outline" className="bg-yellow-100 text-yellow-800 border-yellow-200">
+                        <Clock className="h-3 w-3 mr-1" />
+                        Não registado
+                      </Badge>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        )}
+
+        {integration && (
+          <div className="rounded-md border border-blue-200 bg-blue-50 px-4 py-3 text-xs text-blue-800 space-y-1 mt-4">
+            <p className="font-semibold">📋 Como ativar um chatbot no Contact Center:</p>
+            <ol className="list-decimal ml-4 space-y-0.5">
+              <li>No Bitrix24, abra <strong>Contact Center</strong></li>
+              <li>Selecione a <strong>Open Line</strong> desejada → <strong>Configurações</strong></li>
+              <li>Na secção <strong>Chatbot</strong>, selecione o agente desejado</li>
+              <li>Guarde as configurações</li>
+            </ol>
+            <p className="mt-1">
+              <strong>Nota:</strong> {registeredAgents.length} de {agents.length} agente(s) registado(s).
+              {unregisteredAgents.length > 0 && " Clique em \"Sincronizar Bots\" para registar os restantes."}
+            </p>
+          </div>
+        )}
       </div>
 
     </div>
