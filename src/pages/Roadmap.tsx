@@ -125,31 +125,65 @@ const defaultPhases: RoadmapPhase[] = [
       { name: "Cobranças Automáticas", description: "Envio automático de links de pagamento via WhatsApp com CRON diário e botão manual", progress: 100, status: "concluido" },
       { name: "Processamento PDF/DOCX", description: "Extração de texto de ficheiros PDF/DOCX para base de conhecimento via parse-document", progress: 100, status: "concluido" },
       { name: "Notificações em Tempo Real", description: "Alertas in-app com realtime, triggers para leads, mensagens, pagamentos e SLA", progress: 100, status: "concluido" },
+      { name: "Emmely Pay Stripe (Validado)", description: "Pagamentos Stripe validados e integrados com automações de status e webhooks", progress: 100, status: "concluido" },
+      { name: "Agendamentos Bitrix24", description: "Placement interativo no CRM (Deal/Lead/Contact) com calendário, slots disponíveis e criação de eventos com link de reunião online", progress: 100, status: "concluido" },
     ],
   },
   {
     title: "Em Progresso",
     icon: <Clock className="h-5 w-5 text-primary" />,
     modules: [
-      { name: "Gestão de Roles (Admin)", description: "Admin atribui/remove roles à equipa", progress: 60, status: "em_progresso",
+      { name: "Reestruturação Leads → Negócios", description: "Eliminar etapa Lead no Bitrix, migrar para Negócios sem perda de dados, histórico e automações", progress: 10, status: "em_progresso", priority: "critica",
+        details: "Eliminar por completo a etapa de Lead no Bitrix24. Transformar a entrada inicial em processo dentro de Negócios ou estrutura mais adequada no CRM. Garantir que não haja perda de dados, histórico, observações, atividades, responsáveis ou registos já existentes.",
+        prompt: "Implementar migração de Leads para Negócios no Bitrix24. 1) Criar edge function 'bitrix24-migrate-leads' que: a) Lista todos os leads via crm.lead.list, b) Para cada lead cria um deal correspondente via crm.deal.add preservando todos os campos, c) Move atividades e histórico via crm.activity.list + crm.timeline.comment.list, d) Marca o lead original como convertido. 2) Criar backup antes da migração. 3) Desativar criação de novos leads no Bitrix. 4) Atualizar robots e automações para trabalhar com deals em vez de leads."
+      },
+      { name: "Transformação Pipelines → SPA", description: "Migrar Nacionalidade, AR, Visto, Ação Judicial, Outros Serviços, Avulsos e Oficiosos para Smart Process", progress: 5, status: "em_progresso", priority: "critica",
+        details: "Transformar 7 pipelines de Negócios em Smart Process Automation (SPA) para libertar pipelines no plano profissional (limite de 20). Itens: Nacionalidade, Autorização de Residência, Visto, Ação Judicial, Outros Serviços, Serviços Avulsos, Oficiosos. Não perder dados, histórico nem automações úteis.",
+        prompt: "Implementar migração de pipelines para SPA no Bitrix24. 1) Criar edge function 'bitrix24-migrate-to-spa' que: a) Para cada pipeline, cria um SPA correspondente via crm.type.add, b) Define campos e etapas do SPA via crm.status.add, c) Migra deals existentes para o SPA via crm.item.add preservando campos e histórico, d) Move automações úteis. 2) Criar de forma incremental (uma pipeline por vez). 3) Validar dados antes e depois da migração. 4) Libertar as pipelines originais após confirmação."
+      },
+      { name: "Fluxos Automáticos entre Pipelines/SPA", description: "Parar movimentação manual, criar validações de avanço e padronizar progressão de processos", progress: 10, status: "em_progresso", priority: "critica",
+        details: "Atualmente a equipa move cards manualmente de uma pipeline para outra. Esse processo deve ser automatizado com fluxos que incluem validações antes de permitir avanço, impedindo saltos indevidos de etapa e padronizando a progressão dos processos.",
+        prompt: "Implementar fluxos automáticos entre estruturas no Bitrix24. 1) Criar robots de validação nas etapas-chave que verificam campos obrigatórios antes de permitir avanço. 2) Criar robots de transição que movem automaticamente deals/items entre pipelines/SPAs quando condições são cumpridas. 3) Bloquear movimentação manual não autorizada. 4) Criar regras de negócio na tabela business_rules para definir condições de avanço por etapa."
+      },
+      { name: "Gestão de Roles (Admin)", description: "Admin atribui/remove roles à equipa", progress: 60, status: "em_progresso", priority: "alta",
         details: "Painel administrativo para gerir roles dos utilizadores. O admin deve poder ver todos os utilizadores registados, atribuir e remover roles (admin, advogado, comercial, financeiro). Já existe a tabela user_roles e as funções de verificação.",
-        prompt: "Criar uma página /admin/roles completa para gestão de roles de utilizadores. O admin deve ver uma tabela com todos os utilizadores (da tabela profiles) com as suas roles atuais (da tabela user_roles). Deve poder adicionar ou remover roles (admin, advogado, comercial, financeiro) para cada utilizador através de checkboxes ou toggles. Incluir busca por nome/email, e feedback visual ao alterar roles. Usar os tipos existentes app_role do enum e as funções is_admin() para proteger o acesso."
+        prompt: "Criar uma página /admin/roles completa para gestão de roles de utilizadores."
       },
-      { name: "Bitrix24 Sync Bidirecional", description: "Leads, deals, contactos sincronizados", progress: 40, status: "em_progresso",
-        details: "Sincronização bidirecional de dados entre Emmely e Bitrix24 CRM. Quando um lead é criado/atualizado no Emmely, reflete no Bitrix24 e vice-versa. Abrange leads, deals e contactos.",
-        prompt: "Implementar a sincronização bidirecional Emmely <-> Bitrix24 para leads, deals e contactos. Criar uma edge function 'bitrix24-sync' que: 1) Ao criar/atualizar um lead no Emmely, cria/atualiza o lead correspondente no Bitrix24 via REST API (crm.lead.add/update). 2) Ao receber eventos do Bitrix24 (ONCRMLEAD*, ONCRMDEAL*) via a edge function bitrix24-events existente, cria/atualiza os dados no Emmely. 3) Mapear campos: nome→TITLE, telefone→PHONE, email→EMAIL, legal_area→UF_LEGAL_AREA, funnel_stage→STATUS_ID. 4) Adicionar um campo 'bitrix24_id' na tabela leads para tracking. 5) Prevenir loops de sincronização usando um campo 'sync_source' temporário. Usar a integração Bitrix24 existente (tabela bitrix24_integrations) para tokens de acesso."
+      { name: "Bitrix24 Sync Bidirecional", description: "Leads, deals, contactos sincronizados + eliminação de leads + transformação pipelines→SPA", progress: 40, status: "em_progresso", priority: "alta",
+        details: "Sincronização bidirecional de dados entre Emmely e Bitrix24 CRM, incluindo a reestruturação de leads para negócios e a transformação de pipelines em SPA.",
+        prompt: "Implementar a sincronização bidirecional Emmely <-> Bitrix24 para leads, deals e contactos, com suporte a SPAs."
       },
-      { name: "Bitrix24 Prevenção Loops", description: "Anti-loop e deduplicação de mensagens", progress: 30, status: "em_progresso",
-        details: "Sistema para prevenir loops infinitos quando mensagens são enviadas/recebidas entre Emmely e Bitrix24. Inclui deduplicação por external_id e controlo de origem.",
-        prompt: "Implementar sistema anti-loop para a integração Bitrix24. 1) Adicionar campo 'sync_source' (text, nullable) nas tabelas messages e leads para identificar a origem da alteração ('emmely' ou 'bitrix24'). 2) Na edge function callbell-webhook e bitrix24-events, verificar se a mensagem já existe pelo external_id antes de inserir. 3) Criar uma tabela 'sync_dedup_cache' com colunas (id, entity_type, entity_id, external_id, source, created_at) com TTL de 5 minutos para cache de deduplicação. 4) Nas edge functions de envio (bitrix24-send, callbell-send), marcar mensagens enviadas no cache para ignorar o webhook de retorno. 5) Adicionar RLS para service role na tabela de cache."
+      { name: "Bitrix24 Prevenção Loops", description: "Anti-loop e deduplicação de mensagens", progress: 30, status: "em_progresso", priority: "alta",
+        details: "Sistema para prevenir loops infinitos quando mensagens são enviadas/recebidas entre Emmely e Bitrix24.",
+        prompt: "Implementar sistema anti-loop para a integração Bitrix24."
       },
-      { name: "Agentes IA para Atendimento", description: "Agentes que atendem clientes nos canais (WA, IG, Webchat) com RAG e fluxos", progress: 40, status: "em_progresso",
-        details: "Agentes de IA que respondem automaticamente a mensagens dos clientes nos canais de atendimento. O agente usa o system_prompt configurado, a base de conhecimento vinculada (RAG), e pode executar fluxos de automação. O agente default é ativado automaticamente em novas conversas.",
-        prompt: "Implementar agentes IA para atendimento automático de clientes. 1) Criar uma edge function 'ai-auto-reply' que é chamada pelo callbell-webhook quando uma mensagem inbound é recebida. 2) A função deve: buscar o agente default (is_default=true) ou o agente vinculado à conversa, carregar os documentos de conhecimento vinculados (agent_knowledge_documents → knowledge_chunks), montar o contexto com o histórico das últimas 10 mensagens da conversa, chamar a API do provedor configurado no agente (usando a mesma lógica do ai-playground), e enviar a resposta via callbell-send. 3) Adicionar campo 'ai_enabled' (boolean, default true) na tabela conversations para permitir desativar a IA por conversa. 4) Na UI do Atendimento, adicionar toggle para ativar/desativar IA por conversa. 5) Quando um atendente humano envia uma mensagem, desativar a IA automaticamente naquela conversa. 6) Respeitar o fallback_message do agente em caso de erro."
+      { name: "Agentes IA para Atendimento", description: "Agentes que atendem clientes nos canais com RAG, fluxos, resumos automáticos e análise de conversas", progress: 40, status: "em_progresso", priority: "alta",
+        details: "Agentes de IA que respondem automaticamente a mensagens dos clientes nos canais de atendimento. Inclui também: gerar resumos automáticos de conversas, análise do conteúdo trocado no chat, e envio de informações resumidas para a equipa.",
+        prompt: "Implementar agentes IA para atendimento automático com capacidades de resumo e análise de conversas."
       },
-      { name: "Agentes IA para Automações", description: "Agentes internos para ações do sistema (classificar leads, criar tarefas, notificar)", progress: 20, status: "em_progresso",
-        details: "Agentes de IA que executam ações internas do sistema automaticamente: classificar leads por viabilidade, extrair dados de conversas, gerar resumos, sugerir próximos passos, e disparar automações.",
-        prompt: "Implementar agentes IA para automações internas do sistema. 1) Criar uma edge function 'ai-automation-agent' que executa ações do sistema usando IA. Ações suportadas: a) 'classify_lead': recebe lead_id, analisa notas e conversas, retorna ai_score (0-100) e ai_viability (viável/inviável/inconclusivo) e atualiza o lead. b) 'summarize_conversation': recebe conversation_id, gera resumo da conversa e salva nas notas do lead vinculado. c) 'suggest_next_action': recebe lead_id, analisa o estado atual e sugere próxima ação (ligar, enviar proposta, etc.). d) 'extract_lead_data': recebe conversation_id, extrai nome, telefone, email, área jurídica da conversa e atualiza/cria o lead. 2) Usar o provedor Emmely AI (google/gemini-3-flash-preview) sem necessidade de API key. 3) Na página de Leads, adicionar botão 'Classificar com IA' que chama classify_lead. 4) Na Central de Atendimento, adicionar botão 'Resumir Conversa' no painel do contacto."
+      { name: "Agentes IA para Automações", description: "Agentes internos para ações do sistema (classificar leads, criar tarefas, notificar)", progress: 20, status: "em_progresso", priority: "alta",
+        details: "Agentes de IA que executam ações internas do sistema automaticamente.",
+        prompt: "Implementar agentes IA para automações internas do sistema."
+      },
+      { name: "Envio Automatizado de Orçamento", description: "Robot + fluxo para envio padronizado de orçamento ao cliente", progress: 0, status: "em_progresso", priority: "alta",
+        details: "Implementar envio automatizado de orçamento ao cliente. Verificar melhor formato de envio (PDF, link, WhatsApp). Garantir padronização do processo comercial.",
+        prompt: "Criar robot Bitrix24 + edge function para envio automático de orçamento. 1) Gerar PDF/link da proposta automaticamente ao atingir etapa X do pipeline. 2) Enviar via WhatsApp/email ao cliente. 3) Registar envio e tracking de abertura."
+      },
+      { name: "Comprovativo de Pagamento", description: "Enviar confirmação + controle de pagamento ao cliente após pagamento confirmado", progress: 0, status: "em_progresso", priority: "alta",
+        details: "Quando o pagamento for confirmado, não enviar apenas fatura. Enviar ao cliente um comprovativo de recebimento / confirmação de pagamento, incluindo controle de pagamento claro.",
+        prompt: "Criar edge function 'payment-receipt' que ao detectar pagamento confirmado: 1) Gera comprovativo PDF com dados do pagamento. 2) Envia ao cliente via WhatsApp/email. 3) Inclui resumo do controle de pagamentos (parcelas pagas/pendentes)."
+      },
+      { name: "Relatório Clientes em Atraso", description: "Dashboard de fácil visualização de clientes com pagamentos atrasados", progress: 0, status: "em_progresso", priority: "alta",
+        details: "Criar relatório de clientes com pagamentos atrasados. O relatório deve ser de fácil visualização e acompanhamento.",
+        prompt: "Criar componente InadimplenciaReport na página /financeiro ou /relatorios com: lista de clientes em atraso, valor total em atraso, dias de atraso por cliente, filtros por período e área jurídica."
+      },
+      { name: "Regras Operacionais Automáticas", description: "Verificação periódica (60 dias), follow-ups automáticos e alertas de inactividade", progress: 0, status: "em_progresso", priority: "alta",
+        details: "A cada 60 dias, verificar determinada etapa do processo. Se não houver movimentação, gerar nova ação interna (novo requerimento, follow-up ou verificação). Objetivo: reduzir esquecimento, garantir acompanhamento processual, padronizar rotinas.",
+        prompt: "Criar sistema de heartbeats/regras operacionais: 1) Usar agent_heartbeats com cron_expression para verificação periódica. 2) Criar edge function que verifica deals/items sem movimentação há X dias. 3) Gerar notificações, tarefas ou follow-ups automáticos. 4) Configuração flexível por etapa e pipeline."
+      },
+      { name: "Correção Follow-ups de Etapas", description: "Revisar e corrigir todas as mensagens automáticas de follow-up das etapas", progress: 0, status: "em_progresso", priority: "alta",
+        details: "Revisar todas as mensagens automáticas de follow-up configuradas nas etapas. Corrigir textos com erros, inconsistências ou abordagens inadequadas. Ajustar linguagem ao padrão do escritório. Validar etapa, intervalos de envio e eliminar duplicados.",
+        prompt: "Criar interface para revisão de follow-ups: 1) Listar todos os robots de follow-up por pipeline/SPA. 2) Mostrar mensagem actual, etapa, intervalo. 3) Permitir edição inline. 4) Validação de duplicados e inconsistências."
       },
     ],
   },
@@ -157,37 +191,53 @@ const defaultPhases: RoadmapPhase[] = [
     title: "Próximas Etapas",
     icon: <Calendar className="h-5 w-5 text-warning" />,
     modules: [
+      { name: "Dashboard BI Operacional", description: "Leads recebidos, clientes respondidos, mensagens, ranking equipa, indicadores comerciais", progress: 0, status: "por_iniciar", priority: "alta",
+        details: "Criar dashboard operacional para acompanhamento da equipa. Indicadores: leads recebidos, clientes respondidos, quem está respondendo/não respondendo, quantidade de mensagens enviadas, visão geral da operação, indicadores comerciais e de atendimento.",
+        prompt: "Criar dashboard BI no Bitrix24 via placement ou na app Emmely com: 1) KPIs em cards (leads recebidos, respondidos, não respondidos). 2) Ranking de atendentes por mensagens e respostas. 3) Gráfico de mensagens por dia/semana. 4) Filtros por período e responsável. 5) Dados via edge function que consulta Bitrix24 + tabelas Emmely."
+      },
+      { name: "Controlo de Caixa Interno", description: "Caixa Brasil (Érica), acesso restrito, lançamentos, saldo e histórico", progress: 0, status: "por_iniciar", priority: "alta",
+        details: "Criar controlo de caixa interno da empresa dentro do sistema. Existe um caixa no Brasil que fica com a Érica. O acesso deve ser restrito apenas ao admin e à Érica. Estrutura com segurança de acesso, lançamentos, saldo e histórico.",
+        prompt: "Criar módulo de caixa interno: 1) Tabela cash_entries (id, description, amount, type entrada/saida, category, responsible_id, created_at). 2) RLS restritivo (apenas admin + utilizador específico). 3) Página /financeiro/caixa com lançamentos, saldo actual, filtros por período. 4) Gráfico de entradas/saídas por mês."
+      },
+      { name: "Higienização da Base de Contactos", description: "Limpeza gradual de contactos com critérios de segurança e sem exclusão por engano", progress: 0, status: "por_iniciar", priority: "media",
+        details: "Iniciar processo de limpeza de contactos. Existem muitos contactos que não deveriam estar no sistema. Fazer limpeza gradual, por etapas, com critérios de identificação antes da exclusão. Não excluir clientes por engano.",
+        prompt: "Criar ferramenta de higienização: 1) Edge function que identifica contactos sem actividade há X meses, sem deals/leads associados, duplicados. 2) Interface de revisão com preview antes de excluir. 3) Soft-delete com possibilidade de restaurar. 4) Processo por lotes com confirmação."
+      },
+      { name: "Controlo de Ativos em SPA", description: "SPA dedicado para controlo de ativos com campos, responsáveis e relatórios", progress: 0, status: "por_iniciar", priority: "media",
+        details: "Criar um SPA no Bitrix24 para controlo de ativos. Definir o que será controlado, campos necessários, responsáveis e relatórios.",
+        prompt: "Criar SPA de controlo de ativos no Bitrix24 via crm.type.add: 1) Definir campos (nome do ativo, tipo, valor, responsável, estado, data aquisição). 2) Criar etapas (ativo, em manutenção, desativado). 3) Relatório de ativos por tipo e estado."
+      },
       { name: "Integração Telefonia VoIP", description: "SIP trunking para receber/fazer chamadas reais", progress: 0, status: "por_iniciar",
         details: "Integração com provedor VoIP (Twilio ou similar) para receber e efetuar chamadas telefónicas reais que são roteadas para o agente de voz ElevenLabs.",
-        prompt: "Implementar integração VoIP para chamadas telefónicas reais. 1) Criar edge function 'voip-incoming' que recebe chamadas Twilio via webhook (TwiML), conecta a chamada ao agente de voz ElevenLabs via WebSocket streaming. 2) Criar edge function 'voip-outgoing' que inicia uma chamada para um número de telefone, conectando ao agente de voz. 3) Na Central de Integrações, adicionar secção 'Telefonia VoIP' com campos para Twilio Account SID, Auth Token, e Phone Number (usar integration_credentials). 4) Na ficha do Lead, adicionar botão 'Ligar' que inicia chamada outbound via voip-outgoing. 5) Criar tabela 'call_logs' com colunas: id, conversation_id, lead_id, direction (inbound/outbound), phone_number, duration_seconds, recording_url, transcript, status, started_at, ended_at. 6) Adicionar RLS para admins e comerciais."
+        prompt: "Implementar integração VoIP para chamadas telefónicas reais."
       },
       { name: "Gravação & Transcrição", description: "Gravar chamadas e transcrever com ElevenLabs STT", progress: 0, status: "por_iniciar",
-        details: "Gravação automática de chamadas e transcrição usando ElevenLabs Speech-to-Text (scribe_v2) para arquivo e análise posterior.",
-        prompt: "Implementar gravação e transcrição de chamadas. 1) Criar edge function 'elevenlabs-transcribe' que recebe um ficheiro de áudio e usa a API ElevenLabs STT (POST https://api.elevenlabs.io/v1/speech-to-text, model_id='scribe_v2', diarize=true) para transcrever. 2) Após cada chamada VoIP, enviar a gravação para transcrição automática. 3) Salvar a transcrição na tabela call_logs (campo transcript) e opcionalmente criar um documento na base de conhecimento (knowledge_documents) com o conteúdo transcrito. 4) Na UI, adicionar player de áudio e visualização da transcrição com timestamps na ficha da chamada. 5) Criar componente RealtimeTranscription.tsx usando useScribe do @elevenlabs/react para transcrição em tempo real durante chamadas ativas, com edge function 'elevenlabs-scribe-token' para gerar tokens."
+        details: "Gravação automática de chamadas e transcrição usando ElevenLabs Speech-to-Text.",
+        prompt: "Implementar gravação e transcrição de chamadas."
       },
       { name: "Gestão de Recebimentos", description: "Controlo de recebimentos, conciliação, relatórios", progress: 0, status: "por_iniciar",
-        details: "Módulo para controlar recebimentos de pagamentos, conciliar com registos financeiros, e gerar relatórios de receitas por período, cliente e serviço.",
-        prompt: "Implementar módulo de gestão de recebimentos na página /financeiro. 1) Adicionar aba 'Recebimentos' que mostra todas as payment_transactions com status 'paid', agrupadas por mês. 2) Para cada recebimento mostrar: cliente, contrato, valor, data de pagamento, gateway, método. 3) Adicionar filtros por período (data início/fim), gateway (Stripe/Asaas), status. 4) Criar cards de resumo: total recebido no mês, total pendente, total atrasado, previsão do mês. 5) Adicionar funcionalidade de conciliação: marcar manualmente transferências bancárias como recebidas (atualizar financial_records.status para 'paga' e paid_at). 6) Gráfico de receitas mensais (últimos 12 meses) usando recharts. 7) Botão de exportar CSV com os dados filtrados."
+        details: "Módulo para controlar recebimentos de pagamentos, conciliar com registos financeiros.",
+        prompt: "Implementar módulo de gestão de recebimentos na página /financeiro."
       },
       { name: "WhatsApp Templates (HSM)", description: "Templates oficiais para mensagens proativas", progress: 0, status: "por_iniciar",
-        details: "Gestão de templates HSM do WhatsApp Business para envio de mensagens proativas (notificações, cobranças, confirmações).",
-        prompt: "Implementar gestão de templates HSM do WhatsApp Business. 1) Criar tabela 'whatsapp_templates' com: id, name, language, category (MARKETING/UTILITY/AUTHENTICATION), status (PENDING/APPROVED/REJECTED), components (jsonb - header, body, footer, buttons), meta_template_id, created_at. RLS: authenticated full access. 2) Criar página /integracoes/whatsapp-templates com CRUD de templates. 3) Criar edge function 'whatsapp-template-submit' que submete o template para aprovação via Meta API (POST /{WABA_ID}/message_templates). 4) Criar edge function 'whatsapp-template-send' que envia uma mensagem usando template aprovado a um contacto. 5) Na Central de Atendimento, adicionar botão 'Enviar Template' que abre selector de templates com preview e preenchimento de variáveis."
+        details: "Gestão de templates HSM do WhatsApp Business para envio de mensagens proativas.",
+        prompt: "Implementar gestão de templates HSM do WhatsApp Business."
       },
       { name: "Webchat Widget Embeddable", description: "Widget de chat para websites com customização", progress: 0, status: "por_iniciar",
-        details: "Widget de chat embeddable que pode ser instalado em qualquer website para atendimento via Emmely AI.",
-        prompt: "Implementar widget de webchat embeddable. 1) Criar componente WebchatWidget.tsx standalone (React) com: botão flutuante, janela de chat expansível, input de mensagem, lista de mensagens, indicador de digitação. 2) Criar edge function 'webchat-init' que cria uma conversa (channel='webchat') e retorna conversation_id + token. 3) Criar edge function 'webchat-message' que recebe mensagens do widget, salva em messages, e dispara a resposta do agente IA. 4) Usar SSE (Server-Sent Events) ou polling para receber respostas em tempo real. 5) Gerar snippet de embed: <script src='https://emmely.app/widget.js' data-key='...'></script>. 6) Customização via data attributes: cor primária, posição, mensagem de boas-vindas, avatar. 7) Página de configuração em /integracoes/webchat com preview e código de embed."
+        details: "Widget de chat embeddable que pode ser instalado em qualquer website.",
+        prompt: "Implementar widget de webchat embeddable."
       },
       { name: "Relatórios Avançados", description: "Benchmarks, previsão de faturamento, exportações", progress: 0, status: "por_iniciar",
-        details: "Módulo de relatórios avançados com análises de performance, benchmarks e exportação de dados.",
-        prompt: "Implementar módulo de relatórios avançados na página /relatorios. 1) Relatório de Leads: funil de conversão (leads → triagem → proposta → contrato → fechado) com taxas de conversão por etapa, tempo médio em cada etapa, origem dos leads (pie chart). 2) Relatório Financeiro: receita por área jurídica, por advogado, por mês; comparação período anterior; projeção. 3) Relatório de Atendimento: volume de conversas por canal, tempo médio de resposta, conversas por agente, satisfação. 4) Relatório de Performance: leads por comercial, casos por advogado, valores por período. 5) Filtros globais: período, área jurídica, responsável. 6) Exportação CSV e PDF para cada relatório. 7) Usar recharts para gráficos interativos."
+        details: "Módulo de relatórios avançados com análises de performance.",
+        prompt: "Implementar módulo de relatórios avançados."
       },
       { name: "Multi-escritórios (SaaS)", description: "Suporte multi-tenant para vários escritórios", progress: 0, status: "por_iniciar",
-        details: "Transformar o Emmely Cloud em SaaS multi-tenant, permitindo que múltiplos escritórios usem a plataforma de forma isolada.",
-        prompt: "Implementar suporte multi-tenant para SaaS. 1) Criar tabela 'organizations' com: id, name, slug, logo_url, settings (jsonb), plan, created_at. 2) Adicionar campo 'organization_id' em todas as tabelas principais (leads, clients, cases, etc.). 3) Atualizar todas as políticas RLS para filtrar por organization_id do utilizador autenticado. 4) Criar tabela 'organization_members' com: id, organization_id, user_id, role, invited_at, accepted_at. 5) Criar fluxo de onboarding: registo → criar organização → convidar equipa. 6) Isolar dados completamente entre organizações. 7) Página /settings/organization para configurações do escritório (nome, logo, dados fiscais). NOTA: Esta é uma alteração estrutural significativa que afeta toda a base de dados."
+        details: "Transformar o Emmely Cloud em SaaS multi-tenant.",
+        prompt: "Implementar suporte multi-tenant para SaaS."
       },
       { name: "App Mobile (PWA)", description: "Acesso mobile progressivo com offline", progress: 0, status: "por_iniciar",
-        details: "Progressive Web App com suporte offline, notificações push e instalação no dispositivo móvel.",
-        prompt: "Implementar PWA (Progressive Web App). 1) Criar manifest.json com: name, short_name, icons (192x192, 512x512), start_url, display: standalone, theme_color, background_color. 2) Criar service worker para cache de assets estáticos e páginas visitadas. 3) Implementar offline-first para dados já carregados usando IndexedDB. 4) Adicionar meta tags para iOS (apple-touch-icon, apple-mobile-web-app-capable). 5) Banner de instalação customizado ('Adicionar ao ecrã inicial'). 6) Otimizar layout mobile existente para touch (tamanhos de toque mínimos 44px). 7) Push notifications via Web Push API integradas com o sistema de notificações."
+        details: "Progressive Web App com suporte offline, notificações push.",
+        prompt: "Implementar PWA (Progressive Web App)."
       },
     ],
   },
