@@ -191,37 +191,53 @@ const defaultPhases: RoadmapPhase[] = [
     title: "Próximas Etapas",
     icon: <Calendar className="h-5 w-5 text-warning" />,
     modules: [
+      { name: "Dashboard BI Operacional", description: "Leads recebidos, clientes respondidos, mensagens, ranking equipa, indicadores comerciais", progress: 0, status: "por_iniciar", priority: "alta",
+        details: "Criar dashboard operacional para acompanhamento da equipa. Indicadores: leads recebidos, clientes respondidos, quem está respondendo/não respondendo, quantidade de mensagens enviadas, visão geral da operação, indicadores comerciais e de atendimento.",
+        prompt: "Criar dashboard BI no Bitrix24 via placement ou na app Emmely com: 1) KPIs em cards (leads recebidos, respondidos, não respondidos). 2) Ranking de atendentes por mensagens e respostas. 3) Gráfico de mensagens por dia/semana. 4) Filtros por período e responsável. 5) Dados via edge function que consulta Bitrix24 + tabelas Emmely."
+      },
+      { name: "Controlo de Caixa Interno", description: "Caixa Brasil (Érica), acesso restrito, lançamentos, saldo e histórico", progress: 0, status: "por_iniciar", priority: "alta",
+        details: "Criar controlo de caixa interno da empresa dentro do sistema. Existe um caixa no Brasil que fica com a Érica. O acesso deve ser restrito apenas ao admin e à Érica. Estrutura com segurança de acesso, lançamentos, saldo e histórico.",
+        prompt: "Criar módulo de caixa interno: 1) Tabela cash_entries (id, description, amount, type entrada/saida, category, responsible_id, created_at). 2) RLS restritivo (apenas admin + utilizador específico). 3) Página /financeiro/caixa com lançamentos, saldo actual, filtros por período. 4) Gráfico de entradas/saídas por mês."
+      },
+      { name: "Higienização da Base de Contactos", description: "Limpeza gradual de contactos com critérios de segurança e sem exclusão por engano", progress: 0, status: "por_iniciar", priority: "media",
+        details: "Iniciar processo de limpeza de contactos. Existem muitos contactos que não deveriam estar no sistema. Fazer limpeza gradual, por etapas, com critérios de identificação antes da exclusão. Não excluir clientes por engano.",
+        prompt: "Criar ferramenta de higienização: 1) Edge function que identifica contactos sem actividade há X meses, sem deals/leads associados, duplicados. 2) Interface de revisão com preview antes de excluir. 3) Soft-delete com possibilidade de restaurar. 4) Processo por lotes com confirmação."
+      },
+      { name: "Controlo de Ativos em SPA", description: "SPA dedicado para controlo de ativos com campos, responsáveis e relatórios", progress: 0, status: "por_iniciar", priority: "media",
+        details: "Criar um SPA no Bitrix24 para controlo de ativos. Definir o que será controlado, campos necessários, responsáveis e relatórios.",
+        prompt: "Criar SPA de controlo de ativos no Bitrix24 via crm.type.add: 1) Definir campos (nome do ativo, tipo, valor, responsável, estado, data aquisição). 2) Criar etapas (ativo, em manutenção, desativado). 3) Relatório de ativos por tipo e estado."
+      },
       { name: "Integração Telefonia VoIP", description: "SIP trunking para receber/fazer chamadas reais", progress: 0, status: "por_iniciar",
         details: "Integração com provedor VoIP (Twilio ou similar) para receber e efetuar chamadas telefónicas reais que são roteadas para o agente de voz ElevenLabs.",
-        prompt: "Implementar integração VoIP para chamadas telefónicas reais. 1) Criar edge function 'voip-incoming' que recebe chamadas Twilio via webhook (TwiML), conecta a chamada ao agente de voz ElevenLabs via WebSocket streaming. 2) Criar edge function 'voip-outgoing' que inicia uma chamada para um número de telefone, conectando ao agente de voz. 3) Na Central de Integrações, adicionar secção 'Telefonia VoIP' com campos para Twilio Account SID, Auth Token, e Phone Number (usar integration_credentials). 4) Na ficha do Lead, adicionar botão 'Ligar' que inicia chamada outbound via voip-outgoing. 5) Criar tabela 'call_logs' com colunas: id, conversation_id, lead_id, direction (inbound/outbound), phone_number, duration_seconds, recording_url, transcript, status, started_at, ended_at. 6) Adicionar RLS para admins e comerciais."
+        prompt: "Implementar integração VoIP para chamadas telefónicas reais."
       },
       { name: "Gravação & Transcrição", description: "Gravar chamadas e transcrever com ElevenLabs STT", progress: 0, status: "por_iniciar",
-        details: "Gravação automática de chamadas e transcrição usando ElevenLabs Speech-to-Text (scribe_v2) para arquivo e análise posterior.",
-        prompt: "Implementar gravação e transcrição de chamadas. 1) Criar edge function 'elevenlabs-transcribe' que recebe um ficheiro de áudio e usa a API ElevenLabs STT (POST https://api.elevenlabs.io/v1/speech-to-text, model_id='scribe_v2', diarize=true) para transcrever. 2) Após cada chamada VoIP, enviar a gravação para transcrição automática. 3) Salvar a transcrição na tabela call_logs (campo transcript) e opcionalmente criar um documento na base de conhecimento (knowledge_documents) com o conteúdo transcrito. 4) Na UI, adicionar player de áudio e visualização da transcrição com timestamps na ficha da chamada. 5) Criar componente RealtimeTranscription.tsx usando useScribe do @elevenlabs/react para transcrição em tempo real durante chamadas ativas, com edge function 'elevenlabs-scribe-token' para gerar tokens."
+        details: "Gravação automática de chamadas e transcrição usando ElevenLabs Speech-to-Text.",
+        prompt: "Implementar gravação e transcrição de chamadas."
       },
       { name: "Gestão de Recebimentos", description: "Controlo de recebimentos, conciliação, relatórios", progress: 0, status: "por_iniciar",
-        details: "Módulo para controlar recebimentos de pagamentos, conciliar com registos financeiros, e gerar relatórios de receitas por período, cliente e serviço.",
-        prompt: "Implementar módulo de gestão de recebimentos na página /financeiro. 1) Adicionar aba 'Recebimentos' que mostra todas as payment_transactions com status 'paid', agrupadas por mês. 2) Para cada recebimento mostrar: cliente, contrato, valor, data de pagamento, gateway, método. 3) Adicionar filtros por período (data início/fim), gateway (Stripe/Asaas), status. 4) Criar cards de resumo: total recebido no mês, total pendente, total atrasado, previsão do mês. 5) Adicionar funcionalidade de conciliação: marcar manualmente transferências bancárias como recebidas (atualizar financial_records.status para 'paga' e paid_at). 6) Gráfico de receitas mensais (últimos 12 meses) usando recharts. 7) Botão de exportar CSV com os dados filtrados."
+        details: "Módulo para controlar recebimentos de pagamentos, conciliar com registos financeiros.",
+        prompt: "Implementar módulo de gestão de recebimentos na página /financeiro."
       },
       { name: "WhatsApp Templates (HSM)", description: "Templates oficiais para mensagens proativas", progress: 0, status: "por_iniciar",
-        details: "Gestão de templates HSM do WhatsApp Business para envio de mensagens proativas (notificações, cobranças, confirmações).",
-        prompt: "Implementar gestão de templates HSM do WhatsApp Business. 1) Criar tabela 'whatsapp_templates' com: id, name, language, category (MARKETING/UTILITY/AUTHENTICATION), status (PENDING/APPROVED/REJECTED), components (jsonb - header, body, footer, buttons), meta_template_id, created_at. RLS: authenticated full access. 2) Criar página /integracoes/whatsapp-templates com CRUD de templates. 3) Criar edge function 'whatsapp-template-submit' que submete o template para aprovação via Meta API (POST /{WABA_ID}/message_templates). 4) Criar edge function 'whatsapp-template-send' que envia uma mensagem usando template aprovado a um contacto. 5) Na Central de Atendimento, adicionar botão 'Enviar Template' que abre selector de templates com preview e preenchimento de variáveis."
+        details: "Gestão de templates HSM do WhatsApp Business para envio de mensagens proativas.",
+        prompt: "Implementar gestão de templates HSM do WhatsApp Business."
       },
       { name: "Webchat Widget Embeddable", description: "Widget de chat para websites com customização", progress: 0, status: "por_iniciar",
-        details: "Widget de chat embeddable que pode ser instalado em qualquer website para atendimento via Emmely AI.",
-        prompt: "Implementar widget de webchat embeddable. 1) Criar componente WebchatWidget.tsx standalone (React) com: botão flutuante, janela de chat expansível, input de mensagem, lista de mensagens, indicador de digitação. 2) Criar edge function 'webchat-init' que cria uma conversa (channel='webchat') e retorna conversation_id + token. 3) Criar edge function 'webchat-message' que recebe mensagens do widget, salva em messages, e dispara a resposta do agente IA. 4) Usar SSE (Server-Sent Events) ou polling para receber respostas em tempo real. 5) Gerar snippet de embed: <script src='https://emmely.app/widget.js' data-key='...'></script>. 6) Customização via data attributes: cor primária, posição, mensagem de boas-vindas, avatar. 7) Página de configuração em /integracoes/webchat com preview e código de embed."
+        details: "Widget de chat embeddable que pode ser instalado em qualquer website.",
+        prompt: "Implementar widget de webchat embeddable."
       },
       { name: "Relatórios Avançados", description: "Benchmarks, previsão de faturamento, exportações", progress: 0, status: "por_iniciar",
-        details: "Módulo de relatórios avançados com análises de performance, benchmarks e exportação de dados.",
-        prompt: "Implementar módulo de relatórios avançados na página /relatorios. 1) Relatório de Leads: funil de conversão (leads → triagem → proposta → contrato → fechado) com taxas de conversão por etapa, tempo médio em cada etapa, origem dos leads (pie chart). 2) Relatório Financeiro: receita por área jurídica, por advogado, por mês; comparação período anterior; projeção. 3) Relatório de Atendimento: volume de conversas por canal, tempo médio de resposta, conversas por agente, satisfação. 4) Relatório de Performance: leads por comercial, casos por advogado, valores por período. 5) Filtros globais: período, área jurídica, responsável. 6) Exportação CSV e PDF para cada relatório. 7) Usar recharts para gráficos interativos."
+        details: "Módulo de relatórios avançados com análises de performance.",
+        prompt: "Implementar módulo de relatórios avançados."
       },
       { name: "Multi-escritórios (SaaS)", description: "Suporte multi-tenant para vários escritórios", progress: 0, status: "por_iniciar",
-        details: "Transformar o Emmely Cloud em SaaS multi-tenant, permitindo que múltiplos escritórios usem a plataforma de forma isolada.",
-        prompt: "Implementar suporte multi-tenant para SaaS. 1) Criar tabela 'organizations' com: id, name, slug, logo_url, settings (jsonb), plan, created_at. 2) Adicionar campo 'organization_id' em todas as tabelas principais (leads, clients, cases, etc.). 3) Atualizar todas as políticas RLS para filtrar por organization_id do utilizador autenticado. 4) Criar tabela 'organization_members' com: id, organization_id, user_id, role, invited_at, accepted_at. 5) Criar fluxo de onboarding: registo → criar organização → convidar equipa. 6) Isolar dados completamente entre organizações. 7) Página /settings/organization para configurações do escritório (nome, logo, dados fiscais). NOTA: Esta é uma alteração estrutural significativa que afeta toda a base de dados."
+        details: "Transformar o Emmely Cloud em SaaS multi-tenant.",
+        prompt: "Implementar suporte multi-tenant para SaaS."
       },
       { name: "App Mobile (PWA)", description: "Acesso mobile progressivo com offline", progress: 0, status: "por_iniciar",
-        details: "Progressive Web App com suporte offline, notificações push e instalação no dispositivo móvel.",
-        prompt: "Implementar PWA (Progressive Web App). 1) Criar manifest.json com: name, short_name, icons (192x192, 512x512), start_url, display: standalone, theme_color, background_color. 2) Criar service worker para cache de assets estáticos e páginas visitadas. 3) Implementar offline-first para dados já carregados usando IndexedDB. 4) Adicionar meta tags para iOS (apple-touch-icon, apple-mobile-web-app-capable). 5) Banner de instalação customizado ('Adicionar ao ecrã inicial'). 6) Otimizar layout mobile existente para touch (tamanhos de toque mínimos 44px). 7) Push notifications via Web Push API integradas com o sistema de notificações."
+        details: "Progressive Web App com suporte offline, notificações push.",
+        prompt: "Implementar PWA (Progressive Web App)."
       },
     ],
   },
