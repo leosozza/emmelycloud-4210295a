@@ -294,6 +294,12 @@ export default function AgentesPage() {
       <PageHeader title="Agentes IA" description="Configure agentes inteligentes com diferentes personalidades e modelos de IA" />
 
       <div className="flex justify-end gap-2 mb-4">
+        {hasBitrixIntegration && (
+          <Button variant="outline" onClick={syncBitrixBots} disabled={syncingBots}>
+            {syncingBots ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Bot className="h-4 w-4 mr-2" />}
+            Sincronizar Bots Bitrix24
+          </Button>
+        )}
         <Button variant="outline" onClick={() => setBuilderOpen(true)}>
           <Sparkles className="h-4 w-4 mr-2" /> Criar com IA
         </Button>
@@ -321,8 +327,6 @@ export default function AgentesPage() {
               onDelete={(id) => setDeleteId(id)}
               onToggleDefault={toggleDefault}
               onDuplicate={duplicateAgent}
-              bitrixAgentId={bitrixIntegration?.bitrix_agent_id}
-              onToggleBitrix={bitrixIntegration ? toggleBitrixAgent : undefined}
             />
           ))}
         </div>
