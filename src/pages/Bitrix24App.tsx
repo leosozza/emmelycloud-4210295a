@@ -62,6 +62,12 @@ import {
   SidebarHeader, SidebarFooter, SidebarTrigger, useSidebar,
 } from "@/components/ui/sidebar";
 import { AgentFormDialog } from "@/components/agentes/AgentFormDialog";
+import { AgentCard } from "@/components/agentes/AgentCard";
+import { AgentBuilderChat } from "@/components/agentes/AgentBuilderChat";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Switch } from "@/components/ui/switch";
 import { Slider } from "@/components/ui/slider";
 import { Separator } from "@/components/ui/separator";
