@@ -160,6 +160,33 @@ Deno.serve(async (req) => {
 
       conversation = conv;
       (conversation as any)._channelSetting = channelSetting;
+
+      // Phase 4: HITL — check if there's a pending action awaiting confirmation
+      const botState = conv.bot_state as any;
+      if (botState?.pending_action) {
+        const normalizedMsg = message_text.trim().toLowerCase();
+        const isConfirm = ["sim", "yes", "confirmo", "ok", "confirmar", "s"].includes(normalizedMsg);
+        const isDeny = ["não", "nao", "no", "cancelar", "n", "cancel"].includes(normalizedMsg);
+
+        if (isConfirm || isDeny) {
+          const pending = botState.pending_action;
+          // Clear pending action
+          const { pending_action, ...cleanState } = botState;
+          await supabase.from("conversations").update({ bot_state: cleanState }).eq("id", conversation_id);
+
+          if (isConfirm) {
+            console.log(`[AI-PROCESS] HITL confirmed: executing ${pending.tool}`);
+            const toolResult = await executeReACTTool(supabase, supabaseUrl, serviceKey, conv, null, pending.tool, pending.args, []);
+            const confirmReply = `✅ Ação executada: ${pending.tool}. Resultado: ${JSON.stringify(toolResult).substring(0, 300)}`;
+            if (!skip_send) await sendReply(supabase, supabaseUrl, serviceKey, conv, null, confirmReply);
+            return new Response(JSON.stringify({ reply: confirmReply, hitl_executed: true }), { headers: jsonHeaders });
+          } else {
+            const denyReply = "❌ Ação cancelada. Como posso ajudá-lo de outra forma?";
+            if (!skip_send) await sendReply(supabase, supabaseUrl, serviceKey, conv, null, denyReply);
+            return new Response(JSON.stringify({ reply: denyReply, hitl_cancelled: true }), { headers: jsonHeaders });
+          }
+        }
+      }
     }
 
     // 4. Find agent
