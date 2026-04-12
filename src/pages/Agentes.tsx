@@ -22,9 +22,10 @@ import {
 } from "@/components/ui/alert-dialog";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
-import { Plus, Bot, Edit, Trash2, Star, Loader2, GitBranch, BookOpen, Users, Volume2 } from "lucide-react";
+import { Plus, Bot, Edit, Trash2, Star, Loader2, GitBranch, BookOpen, Users, Volume2, Sparkles } from "lucide-react";
 import { AgentFormDialog } from "@/components/agentes/AgentFormDialog";
 import { AgentCard } from "@/components/agentes/AgentCard";
+import { AgentBuilderChat } from "@/components/agentes/AgentBuilderChat";
 
 export interface AIProvider {
   id: string;
