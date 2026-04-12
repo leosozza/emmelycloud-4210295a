@@ -22,9 +22,10 @@ import {
 } from "@/components/ui/alert-dialog";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
-import { Plus, Bot, Edit, Trash2, Star, Loader2, GitBranch, BookOpen, Users, Volume2 } from "lucide-react";
+import { Plus, Bot, Edit, Trash2, Star, Loader2, GitBranch, BookOpen, Users, Volume2, Sparkles } from "lucide-react";
 import { AgentFormDialog } from "@/components/agentes/AgentFormDialog";
 import { AgentCard } from "@/components/agentes/AgentCard";
+import { AgentBuilderChat } from "@/components/agentes/AgentBuilderChat";
 
 export interface AIProvider {
   id: string;
@@ -110,6 +111,7 @@ export default function AgentesPage() {
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [editingAgent, setEditingAgent] = useState<Partial<AIAgent>>(defaultAgent);
   const [saving, setSaving] = useState(false);
+  const [builderOpen, setBuilderOpen] = useState(false);
 
   useEffect(() => { loadData(); }, []);
 
@@ -220,6 +222,28 @@ export default function AgentesPage() {
   };
   const openCreate = () => { setEditingAgent({ ...defaultAgent }); setSkills([]); setDialogOpen(true); };
 
+  const handleBuilderSave = async (config: any) => {
+    const { skills: skillKeys, ...agentFields } = config;
+    const agentData = {
+      ...agentFields,
+      is_active: true,
+      is_default: false,
+      training_collection_ids: [],
+      sub_agent_ids: [],
+      routing_rules: {},
+    };
+    const { data, error } = await supabase.from("ai_agents").insert(agentData as any).select("id").single();
+    if (error) throw error;
+    // Insert skills
+    if (skillKeys?.length > 0 && data?.id) {
+      await supabase.from("agent_skills").insert(
+        skillKeys.map((sk: string) => ({ agent_id: data.id, skill_type: sk, is_enabled: true })) as any
+      );
+    }
+    toast.success(`Agente "${config.name}" criado com sucesso!`);
+    loadData();
+  };
+
   const handleSkillToggle = async (skillKey: string, enabled: boolean) => {
     if (!editingAgent.id) return;
     const isConfirmToggle = skillKey.endsWith(":confirm");
@@ -247,7 +271,10 @@ export default function AgentesPage() {
     <div>
       <PageHeader title="Agentes IA" description="Configure agentes inteligentes com diferentes personalidades e modelos de IA" />
 
-      <div className="flex justify-end mb-4">
+      <div className="flex justify-end gap-2 mb-4">
+        <Button variant="outline" onClick={() => setBuilderOpen(true)}>
+          <Sparkles className="h-4 w-4 mr-2" /> Criar com IA
+        </Button>
         <Button onClick={openCreate}><Plus className="h-4 w-4 mr-2" /> Novo Agente</Button>
       </div>
 
@@ -306,6 +333,15 @@ export default function AgentesPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <AgentBuilderChat
+        open={builderOpen}
+        onOpenChange={setBuilderOpen}
+        onSave={handleBuilderSave}
+        flows={flows}
+        collections={collections}
+        agents={agents}
+      />
     </div>
   );
 }
