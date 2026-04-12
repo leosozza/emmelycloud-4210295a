@@ -1089,7 +1089,47 @@ async function handleInputResponse(
   return { completed: true };
 }
 
-async function handleAIIntentionResponse(
+// ─── WAIT REPLY HANDLER ────────────────────────────────────────────────────────
+
+async function handleWaitReplyResponse(
+  supabase: any, supabaseUrl: string, serviceKey: string,
+  conversation: any, botState: Record<string, any>, inputText: string,
+  instanceId?: string | null
+): Promise<any> {
+  const flowId = botState.flow_id;
+  const currentNodeId = botState.current_node_id;
+
+  if (!flowId || !currentNodeId) {
+    await clearBotState(supabase, conversation.id);
+    return { error: "wait_reply: missing flow_id or current_node_id" };
+  }
+
+  const { data: flow } = await supabase.from("flows").select("*").eq("id", flowId).single();
+  if (!flow) {
+    await clearBotState(supabase, conversation.id);
+    return { error: "wait_reply: flow not found" };
+  }
+
+  const edges = (flow.edges || []) as any[];
+  const nextNodeId = edges.find((e: any) => e.source === currentNodeId)?.target || null;
+
+  // Save user reply in variables
+  const variables = { ...(botState.flow_variables || {}), ultima_mensagem: inputText || "" };
+
+  const newState: Record<string, any> = {
+    flow_id: flowId,
+    current_node_id: nextNodeId,
+    flow_variables: variables,
+  };
+
+  if (nextNodeId) {
+    return executeFlow(supabase, supabaseUrl, serviceKey, conversation, flow, newState, inputText, instanceId);
+  }
+  await clearBotState(supabase, conversation.id);
+  return { completed: true };
+}
+
+
   supabase: any, supabaseUrl: string, serviceKey: string,
   conversation: any, botState: Record<string, any>, inputText: string,
   instanceId?: string | null
