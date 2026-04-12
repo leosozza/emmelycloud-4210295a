@@ -16,11 +16,11 @@ import { Loader2, GitBranch, BookOpen, Users, Volume2, Shield, Wrench } from "lu
 import type { AIAgent, AIProvider, FlowOption, DocOption, CollectionOption } from "@/pages/Agentes";
 
 const SKILL_TYPES = [
-  { type: "bitrix_crm", label: "Consultar CRM (Bitrix24)", description: "Buscar leads, deals e contactos" },
-  { type: "generate_proposal", label: "Gerar Proposta", description: "Criar propostas automaticamente" },
-  { type: "generate_contract", label: "Gerar Contrato", description: "Criar contratos a partir de propostas" },
-  { type: "create_payment", label: "Criar Cobrança", description: "Criar pagamentos e cobranças" },
+  { type: "crm", label: "Consultar CRM", description: "Buscar leads, propostas, contratos e casos no CRM" },
+  { type: "payments", label: "Pagamentos", description: "Verificar e gerir pagamentos e parcelas" },
+  { type: "services", label: "Serviços / Propostas", description: "Listar serviços disponíveis com preços" },
   { type: "search_knowledge", label: "Pesquisar Knowledge Base", description: "Buscar na base de conhecimento" },
+  { type: "graph", label: "Navegar Grafo de Entidades", description: "Encontrar relações entre leads, contratos e pagamentos" },
   { type: "run_flow", label: "Chamar Flow", description: "Executar um flow como acção" },
   { type: "webhook", label: "Webhook Externo", description: "Chamar APIs externas" },
 ];
