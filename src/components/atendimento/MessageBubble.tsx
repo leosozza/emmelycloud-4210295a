@@ -98,6 +98,7 @@ export function MessageBubble({ msg, conversationId, workspaceId, containerWidth
           "relative max-w-[80%] md:max-w-[65%] px-3.5 py-2 overflow-hidden break-words",
           bubbleClass
         )}
+        style={bubbleStyle}
       >
         {/* Source label */}
         {sourceLabel && (
