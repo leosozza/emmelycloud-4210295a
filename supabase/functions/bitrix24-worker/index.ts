@@ -437,11 +437,11 @@ async function handleBotMessage(supabase: any, integration: any, payload: any) {
     return;
   }
 
-  // Find AI agent: prioridade bitrix_agent_id > is_default > qualquer ativo
+  // Find AI agent by BOT_ID > is_default > any active
   let agent: any = null;
-  if (integration.bitrix_agent_id) {
+  if (botIdFromPayload) {
     const { data } = await supabase.from("ai_agents").select("id, welcome_message")
-      .eq("id", integration.bitrix_agent_id).eq("is_active", true).maybeSingle();
+      .eq("bitrix_bot_id", String(botIdFromPayload)).eq("is_active", true).maybeSingle();
     agent = data;
   }
   if (!agent) {
@@ -511,10 +511,12 @@ async function handleWelcome(supabase: any, integration: any, payload: any) {
   const configData = integration.config as any || {};
   const botId = configData.bot_id || params.BOT_ID || params.bot_id || "";
 
+  const botIdFromPayload = params.BOT_ID || params.bot_id || "";
+
   let agent: any = null;
-  if (integration.bitrix_agent_id) {
+  if (botIdFromPayload) {
     const { data } = await supabase.from("ai_agents").select("welcome_message")
-      .eq("id", integration.bitrix_agent_id).eq("is_active", true).maybeSingle();
+      .eq("bitrix_bot_id", String(botIdFromPayload)).eq("is_active", true).maybeSingle();
     agent = data;
   }
   if (!agent) {
