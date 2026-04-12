@@ -277,6 +277,34 @@ Deno.serve(async (req) => {
       console.error("[REBIND] placement.bind IM_CONTEXT_MENU error:", ctxMenuErr);
     }
 
+    // ── CRM Detail Tabs — Emmely Agenda (booking-tab) ──
+    const bookingTabUrl = `${supabaseUrl}/functions/v1/bitrix24-booking-tab`;
+    const agendaPlacements = ["CRM_DEAL_DETAIL_TAB", "CRM_LEAD_DETAIL_TAB", "CRM_CONTACT_DETAIL_TAB"];
+    for (const placement of agendaPlacements) {
+      try {
+        await callBitrix(integration.client_endpoint, accessToken, "placement.unbind", {
+          PLACEMENT: placement,
+          HANDLER: bookingTabUrl,
+        });
+        const r = await callBitrix(integration.client_endpoint, accessToken, "placement.bind", {
+          PLACEMENT: placement,
+          HANDLER: bookingTabUrl,
+          TITLE: "Emmely Agenda",
+          DESCRIPTION: "Agendamento de reuniões",
+          LANG_ALL: {
+            pt: { TITLE: "Emmely Agenda", DESCRIPTION: "Agendamento de reuniões" },
+            en: { TITLE: "Emmely Agenda", DESCRIPTION: "Meeting scheduling" },
+            es: { TITLE: "Emmely Agenda", DESCRIPTION: "Agendamiento de reuniones" },
+          },
+        });
+        results[`placement_${placement}_AGENDA`] = r.error ? `ERROR: ${r.error}` : "OK";
+        console.log(`[REBIND] placement.bind ${placement} (Agenda):`, JSON.stringify(r));
+      } catch (e) {
+        results[`placement_${placement}_AGENDA`] = `ERROR: ${e}`;
+        console.error(`[REBIND] placement.bind ${placement} (Agenda) error:`, e);
+      }
+    }
+
     // Verify bindings
     const boundEvents = await callBitrix(integration.client_endpoint, accessToken, "event.get", {});
     console.log("[REBIND] Current bindings:", JSON.stringify(boundEvents).substring(0, 500));
