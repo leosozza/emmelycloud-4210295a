@@ -1,9 +1,6 @@
 /**
  * BlockRenderer — renders a list of LayoutBlocks as React elements,
  * resolving proposal/client placeholders from real data.
- *
- * Used by PropostaPublica.tsx so that the public page shows the same
- * visual layout that was built in TemplateEditor.
  */
 import React from "react";
 import { LayoutBlock } from "@/components/propostas/TemplateBlockPalette";
@@ -17,6 +14,8 @@ export interface ProposalData {
   currency?: string | null;
   payment_type?: string | null;
   installments?: number | null;
+  upfront_value?: number | null;
+  installment_value?: number | null;
   valid_until?: string | null;
   description?: string | null;
   conditions?: string | null;
@@ -25,6 +24,12 @@ export interface ProposalData {
   client_phone?: string | null;
   client_document?: string | null;
   client_address?: string | null;
+  client_gender?: string | null;
+  client_nationality?: string | null;
+  client_document_type?: string | null;
+  client_document_number?: string | null;
+  client_document_validity?: string | null;
+  client_document_issuer?: string | null;
   products_json?: any[] | null;
   [key: string]: any;
 }
@@ -40,17 +45,33 @@ const currencySymbols: Record<string, string> = {
   EUR: "€", BRL: "R$", USD: "$", GBP: "£", CHF: "CHF", CAD: "C$",
 };
 
+function getGenderTreatment(gender?: string | null): string {
+  if (gender === "feminino") return "Prezada";
+  if (gender === "masculino") return "Prezado";
+  return "Prezado(a)";
+}
+
 /** Build a map of {placeholder} → resolved value from proposal data */
 function buildPlaceholders(proposal: ProposalData): Record<string, string> {
   const curr = currencySymbols[proposal.currency ?? "EUR"] ?? "€";
   const value = proposal.value ? Number(proposal.value) : null;
   const installments = proposal.installments ? Number(proposal.installments) : 1;
-  const installmentValue = value && installments > 1
-    ? `${curr} ${(value / installments).toLocaleString("pt-PT", { minimumFractionDigits: 2 })}`
-    : "";
+
+  const upfrontValue = proposal.upfront_value ? Number(proposal.upfront_value) : null;
+  const instValue = proposal.installment_value ? Number(proposal.installment_value) : null;
+
+  const calcInstallmentValue = instValue
+    ?? (value && installments > 1 ? value / installments : null);
+
+  const fmtNum = (n: number | null) =>
+    n !== null ? `${curr} ${n.toLocaleString("pt-PT", { minimumFractionDigits: 2 })}` : "";
 
   const validUntil = proposal.valid_until
     ? new Date(proposal.valid_until).toLocaleDateString("pt-PT")
+    : "";
+
+  const docValidity = proposal.client_document_validity
+    ? new Date(proposal.client_document_validity).toLocaleDateString("pt-PT")
     : "";
 
   return {
@@ -59,17 +80,22 @@ function buildPlaceholders(proposal: ProposalData): Record<string, string> {
     "{cliente.telefone}": proposal.client_phone ?? "",
     "{cliente.documento}": proposal.client_document ?? "",
     "{cliente.morada}": proposal.client_address ?? "",
+    "{cliente.tratamento}": getGenderTreatment(proposal.client_gender),
+    "{cliente.nacionalidade}": proposal.client_nationality ?? "",
+    "{cliente.tipo_documento}": proposal.client_document_type ?? "",
+    "{cliente.numero_documento}": proposal.client_document_number ?? "",
+    "{cliente.validade_documento}": docValidity,
+    "{cliente.orgao_emissor}": proposal.client_document_issuer ?? "",
     "{proposta.titulo}": proposal.title ?? "",
-    "{proposta.valor}": value
-      ? `${curr} ${value.toLocaleString("pt-PT", { minimumFractionDigits: 2 })}`
-      : "",
+    "{proposta.valor}": fmtNum(value),
     "{proposta.validade}": validUntil,
-    "{valor}": value
-      ? `${curr} ${value.toLocaleString("pt-PT", { minimumFractionDigits: 2 })}`
-      : "",
+    "{valor}": fmtNum(value),
+    "{valor_total}": fmtNum(value),
+    "{valor_entrada}": fmtNum(upfrontValue),
+    "{valor_parcela}": fmtNum(calcInstallmentValue),
     "{tipo_pagamento}": paymentTypeLabels[proposal.payment_type ?? ""] ?? (proposal.payment_type ?? ""),
     "{parcelas}": String(installments),
-    "{parcelas_valor}": installmentValue,
+    "{parcelas_valor}": fmtNum(calcInstallmentValue),
     "{data}": new Date().toLocaleDateString("pt-PT"),
     "{nome_contratante}": proposal.client_name ?? "",
     "{nome_contratado}": "Emmely Fernandes Advocacia",
@@ -79,7 +105,7 @@ function buildPlaceholders(proposal: ProposalData): Record<string, string> {
 /** Replace all known placeholders in a string */
 function resolvePlaceholders(text: string, placeholders: Record<string, string>): string {
   return Object.entries(placeholders).reduce((acc, [key, val]) => {
-    return acc.replaceAll(key, val);
+    return acc.split(key).join(val);
   }, text);
 }
 
@@ -122,6 +148,13 @@ function HeaderBlock({
 }
 
 function ClientInfoBlock({ block, proposal }: { block: LayoutBlock; proposal: ProposalData }) {
+  const docTypeLabels: Record<string, string> = {
+    nif: "NIF", cpf: "CPF", passaporte: "Passaporte", cc: "Cartão de Cidadão", bi: "BI",
+  };
+  const docTypeLabel = proposal.client_document_type
+    ? docTypeLabels[proposal.client_document_type] ?? proposal.client_document_type
+    : null;
+
   return (
     <div className="p-6">
       <h3 className="text-xs uppercase tracking-widest text-muted-foreground font-semibold border-b pb-1 mb-3">
@@ -132,6 +165,12 @@ function ClientInfoBlock({ block, proposal }: { block: LayoutBlock; proposal: Pr
           <div>
             <span className="text-muted-foreground">Nome: </span>
             <span className="font-medium">{proposal.client_name}</span>
+          </div>
+        )}
+        {proposal.client_nationality && (
+          <div>
+            <span className="text-muted-foreground">Nacionalidade: </span>
+            <span>{proposal.client_nationality}</span>
           </div>
         )}
         {proposal.client_email && (
@@ -146,10 +185,24 @@ function ClientInfoBlock({ block, proposal }: { block: LayoutBlock; proposal: Pr
             <span>{proposal.client_phone}</span>
           </div>
         )}
-        {proposal.client_document && (
+        {(proposal.client_document_number || proposal.client_document) && (
           <div>
-            <span className="text-muted-foreground">Documento: </span>
-            <span>{proposal.client_document}</span>
+            <span className="text-muted-foreground">
+              {docTypeLabel ?? "Documento"}:{" "}
+            </span>
+            <span>{proposal.client_document_number || proposal.client_document}</span>
+          </div>
+        )}
+        {proposal.client_document_validity && (
+          <div>
+            <span className="text-muted-foreground">Validade: </span>
+            <span>{new Date(proposal.client_document_validity).toLocaleDateString("pt-PT")}</span>
+          </div>
+        )}
+        {proposal.client_document_issuer && (
+          <div>
+            <span className="text-muted-foreground">Órgão Emissor: </span>
+            <span>{proposal.client_document_issuer}</span>
           </div>
         )}
         {proposal.client_address && (
@@ -228,6 +281,11 @@ function PaymentBlock({
   const curr = currencySymbols[proposal.currency ?? "EUR"] ?? "€";
   const value = proposal.value ? Number(proposal.value) : null;
   const installments = proposal.installments ? Number(proposal.installments) : 1;
+  const upfrontValue = proposal.upfront_value ? Number(proposal.upfront_value) : null;
+  const instValue = proposal.installment_value ? Number(proposal.installment_value) : null;
+  const calcInstValue = instValue ?? (value && installments > 1 ? value / installments : null);
+
+  const fmtNum = (n: number) => `${curr} ${n.toLocaleString("pt-PT", { minimumFractionDigits: 2 })}`;
 
   return (
     <div className="p-6">
@@ -238,14 +296,21 @@ function PaymentBlock({
         {value !== null ? (
           <>
             <p className="text-3xl font-bold" style={{ color: accentColor }}>
-              {curr} {value.toLocaleString("pt-PT", { minimumFractionDigits: 2 })}
+              {fmtNum(value)}
             </p>
             <p className="text-sm text-muted-foreground mt-2">
               {paymentTypeLabels[proposal.payment_type ?? ""] ?? proposal.payment_type ?? ""}
-              {installments > 1
-                ? ` — ${installments}x de ${curr} ${(value / installments).toLocaleString("pt-PT", { minimumFractionDigits: 2 })}`
-                : ""}
             </p>
+            {(upfrontValue || calcInstValue) && (
+              <div className="mt-3 text-sm text-muted-foreground space-y-1">
+                {upfrontValue && (
+                  <p>Entrada: <span className="font-semibold text-foreground">{fmtNum(upfrontValue)}</span></p>
+                )}
+                {calcInstValue && installments > 1 && (
+                  <p>{installments}x de <span className="font-semibold text-foreground">{fmtNum(calcInstValue)}</span></p>
+                )}
+              </div>
+            )}
           </>
         ) : (
           <p className="text-muted-foreground text-sm italic">Valor a definir</p>
@@ -371,11 +436,6 @@ function FooterBlock({ block, companyName }: { block: LayoutBlock; companyName: 
 
 // ── Main exported component ─────────────────────────────────────────────────
 
-/**
- * Renders a list of LayoutBlocks as React, hydrated with real proposal data.
- * Visual styling follows the same conventions as TemplatePreview but without
- * the editor-specific selection/hover rings.
- */
 export function BlockRenderer({ blocks, proposal, template }: BlockRendererProps) {
   const headerColor = template.header_color ?? "#1e293b";
   const accentColor = template.accent_color ?? "#0f172a";
