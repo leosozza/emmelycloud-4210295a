@@ -318,6 +318,8 @@ export default function AgentesPage() {
               onDelete={(id) => setDeleteId(id)}
               onToggleDefault={toggleDefault}
               onDuplicate={duplicateAgent}
+              bitrixAgentId={bitrixIntegration?.bitrix_agent_id}
+              onToggleBitrix={bitrixIntegration ? toggleBitrixAgent : undefined}
             />
           ))}
         </div>
