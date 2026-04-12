@@ -750,7 +750,7 @@ Deno.serve(async (req) => {
             toolResult = { error: `Delegation failed: ${e.message}` };
           }
         } else {
-          toolResult = await executeReACTTool(supabase, supabaseUrl, serviceKey, conversation, agent, fnName, args, linkedDocs);
+          toolResult = await executeReACTTool(supabase, supabaseUrl, serviceKey, conversation, agent, fnName, args, linkedDocs || []);
         }
 
         // Phase 2: Apply output_schema validation if defined
