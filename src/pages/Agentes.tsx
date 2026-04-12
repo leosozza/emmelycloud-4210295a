@@ -111,6 +111,7 @@ export default function AgentesPage() {
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [editingAgent, setEditingAgent] = useState<Partial<AIAgent>>(defaultAgent);
   const [saving, setSaving] = useState(false);
+  const [builderOpen, setBuilderOpen] = useState(false);
 
   useEffect(() => { loadData(); }, []);
 
