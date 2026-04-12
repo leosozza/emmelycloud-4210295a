@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Save, RefreshCw, Calendar, Clock, Video } from "lucide-react";
+import { Save, RefreshCw, Calendar, Clock, Video, User } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -9,6 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Checkbox } from "@/components/ui/checkbox";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+import { useBitrixUsers } from "@/hooks/useBitrixUsers";
 
 const WEEKDAYS = [
   { id: 1, label: "Seg" },
@@ -38,6 +39,7 @@ interface AgendaConfig {
   meeting_type: "presencial" | "online" | "both";
   send_meeting_link: boolean;
   event_title_template: string;
+  default_user_id: string;
 }
 
 const DEFAULT_CONFIG: AgendaConfig = {
@@ -49,6 +51,7 @@ const DEFAULT_CONFIG: AgendaConfig = {
   meeting_type: "both",
   send_meeting_link: true,
   event_title_template: "Reunião — {cliente}",
+  default_user_id: "",
 };
 
 export default function AgendaTab() {
@@ -56,6 +59,7 @@ export default function AgendaTab() {
   const [configId, setConfigId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [loaded, setLoaded] = useState(false);
+  const { data: bitrixUsers, isLoading: loadingUsers } = useBitrixUsers();
 
   useEffect(() => {
     supabase
@@ -222,6 +226,45 @@ export default function AgendaTab() {
                 ))}
               <span className="text-xs text-muted-foreground">…</span>
             </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Responsável padrão */}
+      <Card>
+        <CardHeader className="pb-3">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-emerald-100 dark:bg-emerald-900/30">
+              <User className="h-5 w-5 text-emerald-600" />
+            </div>
+            <div>
+              <CardTitle className="text-base">Responsável Padrão</CardTitle>
+              <CardDescription>Utilizador pré-selecionado ao abrir o calendário de agendamento</CardDescription>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-1">
+            <Label className="text-xs">Utilizador Bitrix24</Label>
+            <Select
+              value={config.default_user_id || "__none__"}
+              onValueChange={(v) => setConfig((p) => ({ ...p, default_user_id: v === "__none__" ? "" : v }))}
+            >
+              <SelectTrigger className="h-9">
+                <SelectValue placeholder={loadingUsers ? "A carregar…" : "Selecione…"} />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__none__">Nenhum (escolher ao agendar)</SelectItem>
+                {(bitrixUsers || []).map((u) => (
+                  <SelectItem key={u.id} value={u.id}>
+                    {u.name}{u.position ? ` — ${u.position}` : ""}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-[10px] text-muted-foreground">
+              Este utilizador será automaticamente selecionado quando o calendário abrir no Bitrix24
+            </p>
           </div>
         </CardContent>
       </Card>

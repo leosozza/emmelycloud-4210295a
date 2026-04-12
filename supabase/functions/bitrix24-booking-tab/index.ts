@@ -148,7 +148,8 @@ Deno.serve(async (req) => {
         .select("config")
         .eq("gateway", "booking")
         .maybeSingle();
-      return new Response(JSON.stringify({ config: cfg?.config || null }), { headers: jsonHeaders });
+      const cfgData = cfg?.config as any;
+      return new Response(JSON.stringify({ config: cfgData || null, default_user_id: cfgData?.default_user_id || "" }), { headers: jsonHeaders });
     }
 
     if (action === "get_users") {
@@ -499,7 +500,23 @@ currentYear = now.getFullYear();
 currentMonth = now.getMonth() + 1;
 
 // Init
-loadUsers();
+loadUsersAndConfig();
+
+async function loadUsersAndConfig() {
+  await loadUsers();
+  // Pre-select default user from config
+  try {
+    const cfgData = await apiCall('get_config');
+    const defaultUserId = cfgData?.default_user_id || (cfgData?.config?.default_user_id) || '';
+    if (defaultUserId) {
+      const sel = document.getElementById('userSelect');
+      if (sel && sel.querySelector('option[value="' + defaultUserId + '"]')) {
+        sel.value = defaultUserId;
+        onUserChange();
+      }
+    }
+  } catch(e) { console.warn('Config load error', e); }
+}
 
 async function apiCall(action, params = {}) {
   const qp = new URLSearchParams({ action, member_id: MEMBER_ID, ...params });
