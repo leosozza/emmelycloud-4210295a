@@ -184,7 +184,36 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ skipped: "no_active_agent" }), { headers: jsonHeaders });
     }
 
-    // 4b. Multi-agent routing — if agent has sub_agent_ids, classify intent and delegate
+    // 4b. Budget enforcement — check monthly spend vs budget
+    if (agent.monthly_budget_usd && agent.monthly_budget_usd > 0) {
+      try {
+        const monthStart = new Date();
+        monthStart.setDate(1);
+        monthStart.setHours(0, 0, 0, 0);
+        const { data: costData } = await supabase.rpc("get_monthly_cost_by_agent", {
+          p_agent_id: agent.id,
+          p_month: monthStart.toISOString().slice(0, 10),
+        });
+        const currentCost = costData?.cost_usd || 0;
+        if (currentCost >= agent.monthly_budget_usd) {
+          console.log(`[AI-PROCESS] Budget exceeded for agent ${agent.name}: $${currentCost}/$${agent.monthly_budget_usd}`);
+          const budgetMsg = agent.fallback_message || "Desculpe, o agente atingiu o limite de utilização. Tente novamente mais tarde.";
+          if (!skip_send && conversation) await sendReply(supabase, supabaseUrl, serviceKey, conversation, agent, budgetMsg);
+          return new Response(JSON.stringify({ reply: budgetMsg, budget_exceeded: true }), { headers: jsonHeaders });
+        }
+      } catch (e) {
+        console.log("[AI-PROCESS] Budget check failed (non-blocking):", e);
+      }
+    }
+
+    // 4c. Load agent skills and inject as tools
+    const { data: agentSkills } = await supabase
+      .from("agent_skills")
+      .select("skill_type, skill_config")
+      .eq("agent_id", agent.id)
+      .eq("is_enabled", true);
+
+    // 4d. Multi-agent routing — if agent has sub_agent_ids, classify intent and delegate
     if (agent.sub_agent_ids && agent.sub_agent_ids.length > 0 && conversation) {
       const routedAgent = await routeToSubAgent(supabase, agent, conversation, message_text, auxTokens);
       if (routedAgent) {

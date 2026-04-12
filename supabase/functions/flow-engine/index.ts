@@ -939,6 +939,34 @@ async function executeFlow(
         break;
       }
 
+      // ── COMPOSIÇÃO — CALL FLOW ──────────────────────────────────────────
+      case "call_flow": {
+        const subFlowId = replaceVariables(nodeData.callFlowId || "", variables);
+        const passVars = nodeData.callFlowPassVariables !== false;
+
+        if (subFlowId) {
+          try {
+            const { data: subFlow } = await supabase.from("flows").select("*").eq("id", subFlowId).eq("is_active", true).single();
+            if (subFlow) {
+              console.log(`[FLOW-ENGINE] call_flow: executing sub-flow "${subFlow.name}"`);
+              const subVars = passVars ? { ...variables } : {};
+              const subResult = await executeFlow(supabase, supabaseUrl, serviceKey, conversation, subFlow, {}, messageText, instanceId);
+              // Merge returned variables back if passVars
+              if (passVars && subResult?.variables) {
+                Object.assign(variables, subResult.variables);
+              }
+              console.log(`[FLOW-ENGINE] call_flow: sub-flow completed`, subResult?.completed ? "✓" : "paused");
+            } else {
+              console.warn(`[FLOW-ENGINE] call_flow: sub-flow not found or inactive: ${subFlowId}`);
+            }
+          } catch (e) {
+            console.error("[FLOW-ENGINE] call_flow error:", e);
+          }
+        }
+        currentNodeId = getNextNode(node.id, edges);
+        break;
+      }
+
       default:
         console.warn("[FLOW-ENGINE] Unknown node type:", nodeType, "— skipping");
         currentNodeId = getNextNode(node.id, edges);
@@ -950,8 +978,24 @@ async function executeFlow(
     console.error("[FLOW-ENGINE] Max iterations reached — possible loop in flow:", flow.name);
   }
 
+  // ── Flow Execution Logging ──────────────────────────────────────────────
+  try {
+    await supabase.from("flow_execution_logs").insert({
+      flow_id: flow.id,
+      conversation_id: conversation.id,
+      trigger_type: botState.trigger_type || "runtime",
+      completed_at: new Date().toISOString(),
+      status: iterations >= MAX_ITERATIONS ? "failed" : "completed",
+      node_results: executedNodes.map(nid => ({ node_id: nid })),
+      variables,
+      error: iterations >= MAX_ITERATIONS ? "max_iterations_exceeded" : null,
+    });
+  } catch (logErr) {
+    console.error("[FLOW-ENGINE] Failed to log execution:", logErr);
+  }
+
   await clearBotState(supabase, conversation.id);
-  return { completed: true, executed_nodes: executedNodes };
+  return { completed: true, executed_nodes: executedNodes, variables };
 }
 
 // ─── HANDLERS DE RESPOSTA DO USUÁRIO ─────────────────────────────────────────

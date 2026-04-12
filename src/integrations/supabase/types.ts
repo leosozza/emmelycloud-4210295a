@@ -14,6 +14,53 @@ export type Database = {
   }
   public: {
     Tables: {
+      agent_heartbeats: {
+        Row: {
+          action_config: Json | null
+          action_type: string
+          agent_id: string
+          created_at: string | null
+          cron_expression: string
+          id: string
+          is_active: boolean | null
+          last_run_at: string | null
+          name: string
+          next_run_at: string | null
+        }
+        Insert: {
+          action_config?: Json | null
+          action_type: string
+          agent_id: string
+          created_at?: string | null
+          cron_expression?: string
+          id?: string
+          is_active?: boolean | null
+          last_run_at?: string | null
+          name: string
+          next_run_at?: string | null
+        }
+        Update: {
+          action_config?: Json | null
+          action_type?: string
+          agent_id?: string
+          created_at?: string | null
+          cron_expression?: string
+          id?: string
+          is_active?: boolean | null
+          last_run_at?: string | null
+          name?: string
+          next_run_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "agent_heartbeats_agent_id_fkey"
+            columns: ["agent_id"]
+            isOneToOne: false
+            referencedRelation: "ai_agents"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       agent_knowledge_documents: {
         Row: {
           agent_id: string
@@ -46,6 +93,41 @@ export type Database = {
             columns: ["document_id"]
             isOneToOne: false
             referencedRelation: "knowledge_documents"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      agent_skills: {
+        Row: {
+          agent_id: string
+          created_at: string | null
+          id: string
+          is_enabled: boolean | null
+          skill_config: Json | null
+          skill_type: string
+        }
+        Insert: {
+          agent_id: string
+          created_at?: string | null
+          id?: string
+          is_enabled?: boolean | null
+          skill_config?: Json | null
+          skill_type: string
+        }
+        Update: {
+          agent_id?: string
+          created_at?: string | null
+          id?: string
+          is_enabled?: boolean | null
+          skill_config?: Json | null
+          skill_type?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "agent_skills_agent_id_fkey"
+            columns: ["agent_id"]
+            isOneToOne: false
+            referencedRelation: "ai_agents"
             referencedColumns: ["id"]
           },
         ]
@@ -144,6 +226,7 @@ export type Database = {
           description: string | null
           enable_self_eval: boolean | null
           fallback_message: string | null
+          governance_mode: string
           id: string
           is_active: boolean
           is_default: boolean
@@ -176,6 +259,7 @@ export type Database = {
           description?: string | null
           enable_self_eval?: boolean | null
           fallback_message?: string | null
+          governance_mode?: string
           id?: string
           is_active?: boolean
           is_default?: boolean
@@ -208,6 +292,7 @@ export type Database = {
           description?: string | null
           enable_self_eval?: boolean | null
           fallback_message?: string | null
+          governance_mode?: string
           id?: string
           is_active?: boolean
           is_default?: boolean
@@ -1605,6 +1690,53 @@ export type Database = {
             columns: ["proposal_id"]
             isOneToOne: false
             referencedRelation: "proposals"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      flow_execution_logs: {
+        Row: {
+          completed_at: string | null
+          conversation_id: string | null
+          error: string | null
+          flow_id: string | null
+          id: string
+          node_results: Json | null
+          started_at: string | null
+          status: string | null
+          trigger_type: string | null
+          variables: Json | null
+        }
+        Insert: {
+          completed_at?: string | null
+          conversation_id?: string | null
+          error?: string | null
+          flow_id?: string | null
+          id?: string
+          node_results?: Json | null
+          started_at?: string | null
+          status?: string | null
+          trigger_type?: string | null
+          variables?: Json | null
+        }
+        Update: {
+          completed_at?: string | null
+          conversation_id?: string | null
+          error?: string | null
+          flow_id?: string | null
+          id?: string
+          node_results?: Json | null
+          started_at?: string | null
+          status?: string | null
+          trigger_type?: string | null
+          variables?: Json | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "flow_execution_logs_flow_id_fkey"
+            columns: ["flow_id"]
+            isOneToOne: false
+            referencedRelation: "flows"
             referencedColumns: ["id"]
           },
         ]

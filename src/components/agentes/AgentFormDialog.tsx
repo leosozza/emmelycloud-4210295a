@@ -12,8 +12,18 @@ import {
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
-import { Loader2, GitBranch, BookOpen, Users, Volume2 } from "lucide-react";
+import { Loader2, GitBranch, BookOpen, Users, Volume2, Shield, Wrench } from "lucide-react";
 import type { AIAgent, AIProvider, FlowOption, DocOption, CollectionOption } from "@/pages/Agentes";
+
+const SKILL_TYPES = [
+  { type: "bitrix_crm", label: "Consultar CRM (Bitrix24)", description: "Buscar leads, deals e contactos" },
+  { type: "generate_proposal", label: "Gerar Proposta", description: "Criar propostas automaticamente" },
+  { type: "generate_contract", label: "Gerar Contrato", description: "Criar contratos a partir de propostas" },
+  { type: "create_payment", label: "Criar Cobrança", description: "Criar pagamentos e cobranças" },
+  { type: "search_knowledge", label: "Pesquisar Knowledge Base", description: "Buscar na base de conhecimento" },
+  { type: "run_flow", label: "Chamar Flow", description: "Executar um flow como acção" },
+  { type: "webhook", label: "Webhook Externo", description: "Chamar APIs externas" },
+];
 
 interface AgentFormDialogProps {
   open: boolean;
@@ -27,11 +37,14 @@ interface AgentFormDialogProps {
   agents: AIAgent[];
   saving: boolean;
   onSave: () => void;
+  skills?: { skill_type: string; is_enabled: boolean }[];
+  onSkillToggle?: (skillType: string, enabled: boolean) => void;
 }
 
 export function AgentFormDialog({
   open, onOpenChange, editingAgent, setEditingAgent,
   providers, flows, docs, collections, agents, saving, onSave,
+  skills = [], onSkillToggle,
 }: AgentFormDialogProps) {
   const textProviders = providers.filter(p => p.provider_type === 'text' || p.provider_type === 'multimodal');
   const voiceProviders = providers.filter(p => p.provider_type === 'voice' || p.provider_type === 'multimodal');
@@ -228,12 +241,56 @@ export function AgentFormDialog({
             <Input value={editingAgent.strategic_objective || ""} onChange={(e) => setEditingAgent(prev => ({ ...prev, strategic_objective: e.target.value }))} placeholder="Ex: Converter leads em clientes, Resolver tickets rapidamente" />
           </div>
 
-          {/* Budget */}
-          <div>
-            <Label>Budget Mensal (USD)</Label>
-            <Input type="number" step="0.01" min="0" value={editingAgent.monthly_budget_usd ?? ""} onChange={(e) => setEditingAgent(prev => ({ ...prev, monthly_budget_usd: e.target.value ? parseFloat(e.target.value) : null }))} placeholder="Ex: 50.00 (deixe vazio para ilimitado)" />
-            <p className="text-[10px] text-muted-foreground mt-1">Limite de custo mensal para este agente. Alertas aparecem na Observabilidade.</p>
+          {/* Governance */}
+          <Separator />
+          <h4 className="text-sm font-semibold flex items-center gap-2"><Shield className="h-4 w-4" /> Governança</h4>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <Label>Modo de Governança</Label>
+              <Select value={(editingAgent as any).governance_mode || "autonomous"} onValueChange={(v) => setEditingAgent(prev => ({ ...prev, governance_mode: v } as any))}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="autonomous">Autónomo — executa tudo</SelectItem>
+                  <SelectItem value="supervised">Supervisionado — pede aprovação</SelectItem>
+                  <SelectItem value="restricted">Restrito — só responde</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>Budget Mensal (USD)</Label>
+              <Input type="number" step="0.01" min="0" value={editingAgent.monthly_budget_usd ?? ""} onChange={(e) => setEditingAgent(prev => ({ ...prev, monthly_budget_usd: e.target.value ? parseFloat(e.target.value) : null }))} placeholder="Ex: 50.00 (vazio = ilimitado)" />
+            </div>
           </div>
+          <p className="text-[10px] text-muted-foreground">
+            Autónomo: executa acções sem aprovação. Supervisionado: pede confirmação em acções críticas. Restrito: apenas responde, sem executar acções.
+          </p>
+
+          {/* Skills */}
+          {editingAgent.id && (
+            <>
+              <Separator />
+              <h4 className="text-sm font-semibold flex items-center gap-2"><Wrench className="h-4 w-4" /> Skills (Ferramentas)</h4>
+              <div className="space-y-2">
+                {SKILL_TYPES.map(skill => {
+                  const existing = skills.find(s => s.skill_type === skill.type);
+                  const isEnabled = existing?.is_enabled ?? false;
+                  return (
+                    <div key={skill.type} className="flex items-center justify-between p-2 rounded border bg-muted/20">
+                      <div>
+                        <p className="text-xs font-medium">{skill.label}</p>
+                        <p className="text-[10px] text-muted-foreground">{skill.description}</p>
+                      </div>
+                      <Switch
+                        checked={isEnabled}
+                        onCheckedChange={(v) => onSkillToggle?.(skill.type, v)}
+                      />
+                    </div>
+                  );
+                })}
+              </div>
+            </>
+          )}
+
           {/* Base Prompt (Persona) */}
           <Separator />
           <div>

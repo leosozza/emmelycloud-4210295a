@@ -1284,6 +1284,33 @@ export default function NodeConfigPanel({ data, onChange, onDelete, onClose }: N
           })()}
 
           {/* ══════════════════════════════════════════════════════════════
+              COMPOSIÇÃO — CALL FLOW
+          ══════════════════════════════════════════════════════════════ */}
+          {data.nodeType === "call_flow" && (
+            <>
+              <div className="space-y-1">
+                <Label className="text-[11px]">ID do Flow a chamar</Label>
+                <Input
+                  className="h-8 text-xs"
+                  value={data.callFlowId || ""}
+                  onChange={(e) => update({ callFlowId: e.target.value })}
+                  placeholder="UUID do flow ou {{variavel}}"
+                />
+                <p className="text-[9px] text-muted-foreground">
+                  Cole o ID do flow que deseja executar como sub-rotina. Encontre-o na lista de flows.
+                </p>
+              </div>
+              <div className="flex items-center gap-2 mt-2">
+                <Switch
+                  checked={data.callFlowPassVariables ?? true}
+                  onCheckedChange={(v) => update({ callFlowPassVariables: v })}
+                />
+                <Label className="text-[11px]">Passar variáveis ao sub-flow</Label>
+              </div>
+            </>
+          )}
+
+          {/* ══════════════════════════════════════════════════════════════
               VARIÁVEIS DE SISTEMA (expansível)
           ══════════════════════════════════════════════════════════════ */}
           <Separator />

@@ -16,6 +16,7 @@ import {
   Building2, Handshake, Boxes, Pencil, Search, Award,
   BrainCircuit, Cog, GitFork, MessageCircleMore, UserSearch,
   CalendarClock, FileText, Tag, StickyNote, ArrowRightLeft,
+  Workflow,
   type LucideIcon,
 } from "lucide-react";
 
@@ -73,7 +74,9 @@ export type FlowNodeType =
   | "bitrix_add_activity"  // crm.activity.todo.add
   | "bitrix_assign_user"   // Alterar responsável (ASSIGNED_BY_ID)
   // ── Bitrix24 — Badge ───────────────────────────────────────────────────────
-  | "bitrix_create_badge";
+  | "bitrix_create_badge"
+  // ── Composição ──────────────────────────────────────────────────────────────
+  | "call_flow";          // Chamar outro flow como sub-rotina
 
 // ─── Categorias da paleta ────────────────────────────────────────────────────
 
@@ -95,7 +98,7 @@ export const NODE_CATEGORIES: FlowNodeCategory[] = [
     id: "logic",
     label: "Lógica",
     color: "#f59e0b",
-    types: ["condition", "switch", "wait_reply", "delay", "input_capture", "loop"],
+    types: ["condition", "switch", "wait_reply", "delay", "input_capture", "loop", "call_flow"],
   },
   {
     id: "integrations",
@@ -199,6 +202,8 @@ export const NODE_TYPE_META: Record<FlowNodeType, NodeTypeMeta> = {
   bitrix_add_activity:  { label: "Criar Atividade",      icon: CalendarClock,    color: "#ea580c", description: "crm.activity.todo.add — Criar tarefa/atividade no CRM" },
   bitrix_assign_user:   { label: "Atribuir Responsável", icon: UserCog,          color: "#c2410c", description: "Alterar responsável (ASSIGNED_BY_ID) do elemento" },
   bitrix_create_badge:  { label: "Criar Badge",          icon: Award,            color: "#f59e0b", description: "Criar badge visual na timeline do CRM" },
+  // Composição
+  call_flow:            { label: "Chamar Flow",          icon: Workflow,         color: "#6366f1", description: "Executar outro flow como sub-rotina" },
 };
 
 // ─── Interfaces de dados dos nós ──────────────────────────────────────────────
@@ -408,6 +413,9 @@ export interface FlowNodeData {
   prompt?: string;
   department?: string;
   transferMessage?: string;
+  // Composição
+  callFlowId?: string;
+  callFlowPassVariables?: boolean;
   // Extra
   config?: Record<string, unknown>;
   // Validação
@@ -722,6 +730,12 @@ export function getDefaultData(nodeType: FlowNodeType): FlowNodeData {
         entityId: "{{deal_id}}",
         badgeType: "success",
       };
+      break;
+
+    // ── Composição ───────────────────────────────────────────────────────
+    case "call_flow":
+      base.callFlowId = "";
+      base.callFlowPassVariables = true;
       break;
   }
 
