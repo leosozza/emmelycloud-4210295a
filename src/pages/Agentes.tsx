@@ -112,23 +112,25 @@ export default function AgentesPage() {
   const [editingAgent, setEditingAgent] = useState<Partial<AIAgent>>(defaultAgent);
   const [saving, setSaving] = useState(false);
   const [builderOpen, setBuilderOpen] = useState(false);
+  const [bitrixIntegration, setBitrixIntegration] = useState<{ id: string; bitrix_agent_id: string | null } | null>(null);
 
   useEffect(() => { loadData(); }, []);
 
   const loadData = async () => {
     setLoading(true);
-    const [agentsRes, providersRes, flowsRes, docsRes] = await Promise.all([
+    const [agentsRes, providersRes, flowsRes, docsRes, bitrixRes] = await Promise.all([
       supabase.from("ai_agents").select("*").order("created_at", { ascending: false }),
       supabase.from("ai_providers").select("*").order("name"),
       supabase.from("flows").select("id, name").order("name"),
       supabase.from("knowledge_documents").select("id, title, collection_id, collection_name").order("title"),
+      supabase.from("bitrix24_integrations").select("id, bitrix_agent_id").order("created_at", { ascending: false }).limit(1).maybeSingle(),
     ]);
     if (agentsRes.data) setAgents(agentsRes.data as unknown as AIAgent[]);
     if (providersRes.data) setProviders(providersRes.data as unknown as AIProvider[]);
     if (flowsRes.data) setFlows(flowsRes.data as FlowOption[]);
+    if (bitrixRes.data) setBitrixIntegration(bitrixRes.data as any);
     if (docsRes.data) {
       setDocs(docsRes.data as DocOption[]);
-      // Group by collection_id for the selector
       const collMap = new Map<string, CollectionOption>();
       for (const doc of docsRes.data) {
         const cid = (doc as any).collection_id;
@@ -208,6 +210,23 @@ export default function AgentesPage() {
     const { error } = await supabase.from("ai_agents").insert(clone as any);
     if (error) toast.error(error.message);
     else { toast.success("Agente duplicado"); loadData(); }
+  };
+
+  const toggleBitrixAgent = async (agentId: string) => {
+    if (!bitrixIntegration) {
+      toast.error("Nenhuma integração Bitrix24 encontrada");
+      return;
+    }
+    const { error } = await supabase
+      .from("bitrix24_integrations")
+      .update({ bitrix_agent_id: agentId || null } as any)
+      .eq("id", bitrixIntegration.id);
+    if (error) {
+      toast.error("Erro ao atualizar agente Bitrix24");
+      return;
+    }
+    setBitrixIntegration(prev => prev ? { ...prev, bitrix_agent_id: agentId || null } : null);
+    toast.success(agentId ? "Agente ativado como chatbot no Bitrix24" : "Agente desativado do Bitrix24");
   };
 
   const openEdit = async (agent: AIAgent) => {
@@ -299,6 +318,8 @@ export default function AgentesPage() {
               onDelete={(id) => setDeleteId(id)}
               onToggleDefault={toggleDefault}
               onDuplicate={duplicateAgent}
+              bitrixAgentId={bitrixIntegration?.bitrix_agent_id}
+              onToggleBitrix={bitrixIntegration ? toggleBitrixAgent : undefined}
             />
           ))}
         </div>
