@@ -8235,4 +8235,254 @@ function IntegracoesViewBitrix() {
   );
 }
 
+// ==================== AUTOMAÇÕES VIEW (BITRIX24) ====================
+function AutomacoesViewBitrix() {
+  const [settings, setSettings] = useState<any[]>([]);
+  const [runs, setRuns] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const { toast } = useToast();
+
+  const modules = [
+    { type: "auto_summary", label: "Resumo Automático", desc: "Gera resumos de conversas longas", icon: FileText, color: "text-blue-500" },
+    { type: "auto_classify", label: "Classificação de Leads", desc: "Classifica novos leads automaticamente", icon: Zap, color: "text-amber-500" },
+    { type: "follow_up", label: "Follow-up Inatividade", desc: "Alerta para leads inativos", icon: Clock, color: "text-orange-500" },
+    { type: "sentiment", label: "Análise de Sentimento", desc: "Detecta frustração em mensagens", icon: Activity, color: "text-rose-500" },
+  ];
+
+  useEffect(() => {
+    loadData();
+  }, []);
+
+  async function loadData() {
+    setLoading(true);
+    const [settingsRes, runsRes] = await Promise.all([
+      supabase.from("automation_settings").select("*"),
+      supabase.from("automation_runs").select("*").order("created_at", { ascending: false }).limit(20),
+    ]);
+    setSettings(settingsRes.data || []);
+    setRuns(runsRes.data || []);
+    setLoading(false);
+  }
+
+  const toggleModule = async (type: string, enabled: boolean) => {
+    const existing = settings.find((s) => s.automation_type === type);
+    if (existing) {
+      await supabase.from("automation_settings").update({ is_enabled: enabled }).eq("id", existing.id);
+    } else {
+      await supabase.from("automation_settings").insert({ automation_type: type, is_enabled: enabled });
+    }
+    loadData();
+    toast({ title: enabled ? "Ativado" : "Desativado", description: `Módulo ${type} ${enabled ? "ativado" : "desativado"}` });
+  };
+
+  const runNow = async (type: string) => {
+    toast({ title: "A executar...", description: `Módulo ${type}` });
+    try {
+      await fetch(`${SUPABASE_URL}/functions/v1/ai-internal-automations`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` },
+        body: JSON.stringify({ module: type }),
+      });
+      toast({ title: "Concluído", description: `Módulo ${type} executado` });
+      loadData();
+    } catch {
+      toast({ title: "Erro", description: "Falha ao executar", variant: "destructive" });
+    }
+  };
+
+  if (loading) return <div className="flex items-center justify-center p-12"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>;
+
+  return (
+    <div className="p-6 space-y-6">
+      <div className="b24-view-header">
+        <h1 className="text-xl font-bold text-white">Automações IA</h1>
+        <p className="text-white/60 text-sm mt-0.5">Módulos de automação inteligente</p>
+      </div>
+
+      <div className="grid gap-4 sm:grid-cols-2">
+        {modules.map((mod) => {
+          const setting = settings.find((s) => s.automation_type === mod.type);
+          const isEnabled = setting?.is_enabled ?? false;
+          const Icon = mod.icon;
+          return (
+            <Card key={mod.type} className="b24-card">
+              <CardContent className="pt-6">
+                <div className="flex items-start justify-between">
+                  <div className="flex items-start gap-3">
+                    <Icon className={cn("h-5 w-5 mt-0.5", mod.color)} />
+                    <div>
+                      <p className="font-semibold text-sm text-foreground">{mod.label}</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">{mod.desc}</p>
+                    </div>
+                  </div>
+                  <Switch checked={isEnabled} onCheckedChange={(v) => toggleModule(mod.type, v)} />
+                </div>
+                <div className="mt-3 flex gap-2">
+                  <Button size="sm" variant="outline" onClick={() => runNow(mod.type)} className="text-xs h-7">
+                    <Zap className="h-3 w-3 mr-1" /> Executar
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          );
+        })}
+      </div>
+
+      {runs.length > 0 && (
+        <Card className="b24-card">
+          <CardHeader>
+            <CardTitle className="text-sm font-semibold text-foreground">Execuções Recentes</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="text-xs">Tipo</TableHead>
+                  <TableHead className="text-xs">Status</TableHead>
+                  <TableHead className="text-xs">Data</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {runs.slice(0, 10).map((run) => (
+                  <TableRow key={run.id}>
+                    <TableCell className="text-xs font-medium">{run.automation_type}</TableCell>
+                    <TableCell>
+                      <Badge variant={run.status === "success" ? "default" : "destructive"} className="text-[10px]">
+                        {run.status}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-xs text-muted-foreground">
+                      {new Date(run.created_at).toLocaleString("pt-PT", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+      )}
+    </div>
+  );
+}
+
+// ==================== OBSERVABILIDADE VIEW (BITRIX24) ====================
+function ObservabilidadeViewBitrix() {
+  const [metrics, setMetrics] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    loadMetrics();
+  }, []);
+
+  async function loadMetrics() {
+    setLoading(true);
+    const since = new Date();
+    since.setDate(since.getDate() - 30);
+
+    const [logsRes, agentsRes] = await Promise.all([
+      supabase.from("ai_usage_logs").select("*").gte("created_at", since.toISOString()).order("created_at", { ascending: true }),
+      supabase.from("ai_agents").select("id, name"),
+    ]);
+
+    const logs = logsRes.data || [];
+    const agentMap = new Map((agentsRes.data || []).map((a: any) => [a.id, a.name]));
+
+    let totalTokens = 0, totalCost = 0, totalLatency = 0, errors = 0, fallbacks = 0;
+    const modelAgg: Record<string, { requests: number; tokens: number; cost: number }> = {};
+
+    for (const log of logs) {
+      totalTokens += log.total_tokens || 0;
+      totalCost += Number(log.cost_estimate) || 0;
+      totalLatency += log.latency_ms || 0;
+      if (log.error) errors++;
+      if (log.was_fallback) fallbacks++;
+
+      const model = log.model || "unknown";
+      if (!modelAgg[model]) modelAgg[model] = { requests: 0, tokens: 0, cost: 0 };
+      modelAgg[model].requests++;
+      modelAgg[model].tokens += log.total_tokens || 0;
+      modelAgg[model].cost += Number(log.cost_estimate) || 0;
+    }
+
+    setMetrics({
+      totalRequests: logs.length,
+      totalTokens,
+      totalCost,
+      avgLatency: logs.length > 0 ? Math.round(totalLatency / logs.length) : 0,
+      errorRate: logs.length > 0 ? ((errors / logs.length) * 100).toFixed(1) : "0",
+      fallbackRate: logs.length > 0 ? ((fallbacks / logs.length) * 100).toFixed(1) : "0",
+      byModel: Object.entries(modelAgg).map(([model, a]) => ({ model, ...a })).sort((a, b) => b.tokens - a.tokens),
+    });
+    setLoading(false);
+  }
+
+  if (loading) return <div className="flex items-center justify-center p-12"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>;
+  if (!metrics) return null;
+
+  const kpis = [
+    { label: "Chamadas IA", value: metrics.totalRequests.toLocaleString(), icon: Zap, color: "text-blue-500" },
+    { label: "Tokens Totais", value: metrics.totalTokens.toLocaleString(), icon: Activity, color: "text-emerald-500" },
+    { label: "Custo (USD)", value: `$${metrics.totalCost.toFixed(4)}`, icon: DollarSign, color: "text-amber-500" },
+    { label: "Latência Média", value: `${metrics.avgLatency}ms`, icon: Clock, color: "text-purple-500" },
+    { label: "Taxa de Erro", value: `${metrics.errorRate}%`, icon: AlertTriangle, color: "text-rose-500" },
+    { label: "Fallbacks", value: `${metrics.fallbackRate}%`, icon: RefreshCw, color: "text-orange-500" },
+  ];
+
+  return (
+    <div className="p-6 space-y-6">
+      <div className="b24-view-header">
+        <h1 className="text-xl font-bold text-white">Observabilidade IA</h1>
+        <p className="text-white/60 text-sm mt-0.5">Métricas de uso e desempenho dos agentes — últimos 30 dias</p>
+      </div>
+
+      <div className="grid gap-3 grid-cols-2 sm:grid-cols-3">
+        {kpis.map((kpi) => {
+          const Icon = kpi.icon;
+          return (
+            <Card key={kpi.label} className="b24-card">
+              <CardContent className="pt-4 pb-3">
+                <div className="flex items-center gap-2 mb-1">
+                  <Icon className={cn("h-4 w-4", kpi.color)} />
+                  <span className="text-[11px] text-muted-foreground">{kpi.label}</span>
+                </div>
+                <p className="text-lg font-bold text-foreground">{kpi.value}</p>
+              </CardContent>
+            </Card>
+          );
+        })}
+      </div>
+
+      {metrics.byModel.length > 0 && (
+        <Card className="b24-card">
+          <CardHeader>
+            <CardTitle className="text-sm font-semibold text-foreground">Uso por Modelo</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="text-xs">Modelo</TableHead>
+                  <TableHead className="text-xs text-right">Chamadas</TableHead>
+                  <TableHead className="text-xs text-right">Tokens</TableHead>
+                  <TableHead className="text-xs text-right">Custo</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {metrics.byModel.map((m: any) => (
+                  <TableRow key={m.model}>
+                    <TableCell className="text-xs font-medium">{m.model}</TableCell>
+                    <TableCell className="text-xs text-right">{m.requests}</TableCell>
+                    <TableCell className="text-xs text-right">{m.tokens.toLocaleString()}</TableCell>
+                    <TableCell className="text-xs text-right">${m.cost.toFixed(4)}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+      )}
+    </div>
+  );
+}
+
 export default Bitrix24App;
