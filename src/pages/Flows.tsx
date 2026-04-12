@@ -191,6 +191,9 @@ export default function FlowsPage() {
       if (data.nodeType === "input_capture" && !data.inputCapture?.variableName) {
         errors.push("Nome da variável ausente");
       }
+      if (data.nodeType === "crew_task" && !data.crewTask?.crewId) {
+        errors.push("Nenhuma equipe selecionada");
+      }
 
       // Check for disconnected outputs (except for "end" nodes)
       if (data.nodeType !== "end") {

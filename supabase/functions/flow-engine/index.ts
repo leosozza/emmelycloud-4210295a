@@ -664,6 +664,39 @@ async function executeFlow(
         break;
       }
 
+      case "crew_task": {
+        const crewData = nodeData.crewTask || {};
+        const resultVar = crewData.resultVar || "crew_result";
+        try {
+          const res = await fetch(`${supabaseUrl}/functions/v1/ai-crew-executor`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "Authorization": `Bearer ${serviceKey}` },
+            body: JSON.stringify({
+              crew_id: crewData.crewId,
+              conversation_id: conversation.id,
+              input_data: { ...variables, ...(crewData.inputData || {}) },
+            }),
+          });
+          const data = await res.json();
+          variables[resultVar] = data.final_output || JSON.stringify(data);
+          // Map results to variables if structured
+          if (data.results && Array.isArray(data.results)) {
+            data.results.forEach((r: any) => {
+              if (r.task) variables[`task_${r.task}_result`] = r.result;
+            });
+          }
+        } catch (e) {
+          console.error("[FLOW-ENGINE] Crew Task error:", e);
+          variables[resultVar] = "error";
+          if (!crewData.onErrorContinue) {
+            await clearBotState(supabase, conversation.id);
+            return { error: "crew_task_failed", node_id: node.id };
+          }
+        }
+        currentNodeId = getNextNode(node.id, edges);
+        break;
+      }
+
       case "ai_router": {
         const router = nodeData.aiRouter || {};
         const routes = (router.routes || []) as any[];

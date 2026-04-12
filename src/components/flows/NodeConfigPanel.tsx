@@ -6,7 +6,8 @@
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -91,7 +92,20 @@ const OPERATOR_LABELS: Record<FlowCondition["operator"], string> = {
 
 export default function NodeConfigPanel({ data, onChange, onDelete, onClose }: NodeConfigPanelProps) {
   const [showVars, setShowVars] = useState(false);
+  const [crews, setCrews] = useState<any[]>([]);
   const meta = NODE_TYPE_META[data.nodeType as FlowNodeType];
+
+  useEffect(() => {
+    const loadCrews = async () => {
+      const { data: crewsData } = await supabase
+        .from("ai_crews")
+        .select("id, name")
+        .eq("is_active", true);
+      if (crewsData) setCrews(crewsData);
+    };
+    loadCrews();
+  }, []);
+
   if (!meta) return null;
 
   const Icon = meta.icon;
@@ -905,6 +919,45 @@ export default function NodeConfigPanel({ data, onChange, onDelete, onClose }: N
               <Button variant="outline" size="sm" className="w-full h-7 text-xs" onClick={addRoute}>
                 <Plus className="h-3 w-3 mr-1" /> Adicionar Rota
               </Button>
+            </>
+          )}
+
+          {/* crew_task */}
+          {data.nodeType === "crew_task" && (
+            <>
+              <div className="space-y-1">
+                <Label className="text-[11px]">Equipe (Crew)</Label>
+                <Select
+                  value={data.crewTask?.crewId || ""}
+                  onValueChange={(v) => update({ crewTask: { ...data.crewTask!, crewId: v } })}
+                >
+                  <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Selecione uma equipe..." /></SelectTrigger>
+                  <SelectContent>
+                    {crews.length > 0 ? (
+                      crews.map((c) => (
+                        <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                      ))
+                    ) : (
+                      <SelectItem value="none" disabled>Nenhuma equipe ativa encontrada</SelectItem>
+                    )}
+                  </SelectContent>
+                </Select>
+                <p className="text-[9px] text-muted-foreground">Escolha a equipe de agentes para realizar a tarefa.</p>
+              </div>
+              <div className="space-y-1">
+                <Label className="text-[11px]">Variável de resultado</Label>
+                <Input className="h-8 text-xs" value={data.crewTask?.resultVar || "crew_result"}
+                  onChange={(e) => update({ crewTask: { ...data.crewTask!, resultVar: e.target.value } })}
+                  placeholder="crew_result" />
+                <VarHint />
+              </div>
+              <div className="flex items-center gap-2">
+                <Switch
+                  checked={data.crewTask?.onErrorContinue ?? true}
+                  onCheckedChange={(v) => update({ crewTask: { ...data.crewTask!, onErrorContinue: v } })}
+                />
+                <Label className="text-[11px]">Continuar fluxo em caso de erro</Label>
+              </div>
             </>
           )}
 

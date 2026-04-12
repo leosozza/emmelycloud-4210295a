@@ -205,6 +205,19 @@ function CustomFlowNode({ data, selected }: NodeProps) {
           </div>
         )}
 
+        {/* Crew Task */}
+        {nd.nodeType === "crew_task" && nd.crewTask && (
+          <div className="space-y-0.5 p-1.5 rounded bg-purple-500/5 border border-purple-200/50">
+            <p className="text-[10px] text-purple-700 font-bold">👥 Executar Equipe</p>
+            {nd.crewTask.crewId ? (
+              <p className="text-[9px] text-purple-600 truncate italic">ID da Crew: {nd.crewTask.crewId.slice(0, 8)}...</p>
+            ) : (
+              <p className="text-[9px] text-destructive">Nenhuma equipe selecionada</p>
+            )}
+            <p className="text-[9px] text-purple-600">→ {`{{${nd.crewTask.resultVar}}}`}</p>
+          </div>
+        )}
+
         {/* IA Router */}
         {isRouter && (
           <div className="space-y-0.5">

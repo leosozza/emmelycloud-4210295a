@@ -16,7 +16,7 @@ import {
   Building2, Handshake, Boxes, Pencil, Search, Award,
   BrainCircuit, Cog, GitFork, MessageCircleMore, UserSearch,
   CalendarClock, FileText, Tag, StickyNote, ArrowRightLeft,
-  Workflow,
+  Workflow, Users,
   type LucideIcon,
 } from "lucide-react";
 
@@ -47,6 +47,7 @@ export type FlowNodeType =
   | "ai_action"         // IA executa ação (CRM, agenda, consulta)
   | "ai_router"         // IA decide qual rota seguir
   | "switch_persona"    // Alternar persona/agente ativo
+  | "crew_task"         // Executar tarefa estruturada com equipe (CrewAI)
   // ── Controle de Atendimento ────────────────────────────────────────────────
   | "transfer_to_human" // Transferir para atendente humano
   | "transfer_to_ai"    // Retornar atendimento para a IA
@@ -110,7 +111,7 @@ export const NODE_CATEGORIES: FlowNodeCategory[] = [
     id: "ai_smart",
     label: "IA Inteligente",
     color: "#8b5cf6",
-    types: ["ai_response", "ai_intention", "ai_action", "ai_router", "switch_persona"],
+    types: ["ai_response", "ai_intention", "ai_action", "ai_router", "switch_persona", "crew_task"],
   },
   {
     id: "control",
@@ -175,6 +176,7 @@ export const NODE_TYPE_META: Record<FlowNodeType, NodeTypeMeta> = {
   ai_action:            { label: "IA — Executar Ação",   icon: Cog,              color: "#f97316", description: "IA executa ação (CRM, agenda, consulta)" },
   ai_router:            { label: "IA — Roteador",        icon: GitFork,          color: "#14b8a6", description: "IA decide qual caminho seguir" },
   switch_persona:       { label: "Alternar Persona",     icon: UserCog,          color: "#7c3aed", description: "Mudar persona/agente ativo no atendimento" },
+  crew_task:            { label: "Equipe / Crew",        icon: Users,            color: "#6d28d9", description: "Executar tarefa estruturada com equipe (CrewAI)" },
   // Controle
   transfer_to_human:    { label: "Transferir p/ Humano", icon: Phone,            color: "#10b981", description: "Transferir conversa para atendente humano" },
   transfer_to_ai:       { label: "Retornar p/ IA",       icon: ArrowLeftToLine,  color: "#059669", description: "Devolver atendimento para a IA" },
@@ -370,6 +372,13 @@ export interface FlowAIRouter {
   defaultHandleId?: string;
 }
 
+export interface FlowCrewTask {
+  crewId: string;
+  resultVar: string;
+  inputData: Record<string, string>;
+  onErrorContinue?: boolean;
+}
+
 // ── Dados consolidados do nó ──────────────────────────────────────────────────
 
 export interface FlowNodeData {
@@ -408,6 +417,7 @@ export interface FlowNodeData {
   aiIntention?: FlowAIIntention;
   aiAction?: FlowAIAction;
   aiRouter?: FlowAIRouter;
+  crewTask?: FlowCrewTask;
   // Controle
   personaId?: string;
   prompt?: string;
@@ -556,6 +566,15 @@ export function getDefaultData(nodeType: FlowNodeType): FlowNodeData {
 
     case "switch_persona":
       base.personaId = "";
+      break;
+
+    case "crew_task":
+      base.crewTask = {
+        crewId: "",
+        resultVar: "crew_result",
+        inputData: {},
+        onErrorContinue: true,
+      };
       break;
 
     case "transfer_to_human":
