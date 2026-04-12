@@ -1,67 +1,72 @@
 
 
-# Wizard Passo-a-Passo para Criacao de Agentes IA
+# Criar Agente com IA — Chat Modal + Botao Duplo
 
-## Problema
+## Resumo
 
-O formulario actual e um dialog unico com 15+ campos, separadores, termos tecnicos (governance, HITL, temperature, provider), e seccoes condicionais. Um utilizador que nunca criou um agente IA fica perdido.
+Adicionar um botao "Criar com IA" ao lado do "Novo Agente" existente. Ao clicar, abre um modal de chat onde o utilizador descreve o agente desejado em linguagem natural. A IA faz perguntas clarificadoras e no final propoe o agente completo para confirmacao.
 
-## Solucao
+## Implementacao
 
-Substituir o dialog por um **wizard de 5 passos** com progresso visual, explicacoes contextuais em cada passo, e valores inteligentes pre-preenchidos. O utilizador so ve o que precisa em cada momento.
+### 1. Edge Function `agent-builder` (novo)
 
-## Os 5 Passos
+- Recebe `{ messages: [...], context: { available_skills, flows, collections, existing_agents } }`
+- System prompt instrui a IA a:
+  1. Analisar o pedido do utilizador
+  2. Fazer 2-3 perguntas clarificadoras (tom, skills, confirmacoes)
+  3. Quando tiver info suficiente, responder com um bloco JSON marcado `:::agent-config` contendo todos os campos do agente
+- Usa Lovable AI Gateway (`google/gemini-3-flash-preview`) via `LOVABLE_API_KEY`
+- Streaming SSE para respostas em tempo real
 
-### Passo 1 — Identidade (Quem e o seu agente?)
-- Nome, descricao, tipo (texto/voz/hibrido)
-- Estilo de personalidade + tom (com preview de como o agente falaria)
-- Objectivo estrategico
-- **Dica contextual:** "Dê um nome ao seu agente e escolha como ele se comunica. Ex: 'Sofia' — profissional e empática."
+### 2. Componente `AgentBuilderChat.tsx` (novo)
 
-### Passo 2 — Inteligencia (Como ele pensa?)
-- Provider + modelo (com recomendacao: "Recomendado para iniciantes" no modelo nativo)
-- Temperatura com explicacao visual ("Mais criativo ↔ Mais preciso")
-- Opcao de voz (so aparece se tipo = voz/hibrido)
-- **Dica:** "O modelo define a 'inteligencia' do agente. Para a maioria dos casos, o modelo recomendado e suficiente."
+- Dialog `max-w-2xl` com interface de chat simples
+- Input de texto + lista de mensagens com markdown
+- Streaming SSE das respostas
+- Quando detecta o bloco `:::agent-config` na resposta:
+  - Renderiza um card de resumo do agente proposto (nome, skills, modelo, prompt)
+  - Botoes "Criar Agente" e "Ajustar"
+  - Ao confirmar, chama `onSave(agentConfig)` que insere no DB via a logica existente do `Agentes.tsx`
 
-### Passo 3 — Conhecimento (O que ele sabe?)
-- System prompt com template pre-preenchido editavel
-- Colecoes de knowledge base (com explicacao: "Adicione documentos para o agente consultar")
-- Fluxo padrao
-- **Dica:** "Ensine ao agente sobre o seu negocio. Pode escrever instrucoes ou vincular documentos."
+### 3. Pagina `Agentes.tsx` (alteracao)
 
-### Passo 4 — Habilidades (O que ele pode fazer?)
-- Skills com switches + explicacao inline de cada uma
-- Sub-agentes (com explicacao: "O agente pode delegar tarefas a outros agentes")
-- **Dica:** "Active as ferramentas que o agente pode usar. Comece com poucas e adicione conforme necessario."
+- Adicionar estado `builderOpen` e botao "Criar com IA" com icone `Sparkles`
+- Callback `handleBuilderSave` que recebe o JSON do agente, insere no `ai_agents` + `agent_skills`, e recarrega a lista
 
-### Passo 5 — Revisao e Publicacao
-- Resumo visual tipo card com tudo configurado
-- Mensagem de boas-vindas e fallback editaveis
-- Toggle activo/inactivo + definir como padrao
-- Botao "Criar Agente" ou "Guardar"
-- **Dica:** "Revise as configuracoes. Pode alterar tudo depois."
-
-## UI do Wizard
-
-- Barra de progresso no topo com 5 circulos numerados e labels
-- Botoes "Voltar" e "Proximo" no footer
-- Cada passo tem um titulo grande, subtitulo explicativo, e uma dica lateral
-- Animacao suave de transicao entre passos
-- O dialog ocupa `max-w-3xl` para dar espaco as explicacoes
-
-## Detalhes Tecnicos
-
-### Ficheiros a alterar
+### Ficheiros
 
 | Ficheiro | Accao |
 |---|---|
-| `src/components/agentes/AgentFormDialog.tsx` | Reescrever como wizard multi-step |
-| `src/pages/Agentes.tsx` | Sem alteracoes significativas (a interface ja passa os props correctos) |
+| `supabase/functions/agent-builder/index.ts` | **Novo** — Edge function com streaming |
+| `src/components/agentes/AgentBuilderChat.tsx` | **Novo** — Modal de chat |
+| `src/pages/Agentes.tsx` | Adicionar botao + estado para o builder |
 
-### Notas
-- A logica de save (`onSave`) nao muda — so e chamada no ultimo passo
-- Os skills continuam a so aparecer em modo edicao (agente ja criado), com nota explicativa no passo 4 para novos agentes
-- Governanca (autonomo/supervisionado/restrito) fica no passo 4 junto com skills, com linguagem simplificada: "O agente pode agir sozinho?" em vez de "Modo de Governanca"
-- Budget fica no passo 2 junto com o modelo, como "Limite de custo mensal (opcional)"
+### Fluxo de Interaccao
+
+```text
+User: "Quero um agente de agendamento que consulta agenda no Bitrix24"
+  ↓
+IA: "Perfeito! Algumas perguntas:
+     1. Qual o nome do agente?
+     2. Tom formal ou informal?
+     3. Deve confirmar antes de agendar?"
+  ↓
+User: "Sofia, formal, sim"
+  ↓
+IA: "Aqui está o agente proposto:
+     [Card: Sofia | Skills: CRM, Webhook | Modelo: Gemini Flash]
+     Posso criar?"
+  ↓
+User confirma → Agente criado com skills + prompt especializado
+```
+
+### Context Injection
+
+A edge function recebe automaticamente:
+- `SKILL_TYPES` completos com descricoes
+- Lista de flows existentes (id + nome)
+- Colecoes de knowledge base existentes
+- Agentes existentes (para sub-agentes)
+
+Isto garante que a IA sabe exactamente quais skills activar com base na descricao do utilizador.
 
