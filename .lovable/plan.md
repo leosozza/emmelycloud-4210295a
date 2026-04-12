@@ -1,86 +1,75 @@
 
 
-# Pretext para Melhorar a Pagina de Conversas WhatsApp
+# Pretext Canvas Layout — Expansao para Toda a Aplicacao
 
-## O que e o Pretext
+## Contexto
 
-Pretext (42.9k stars) e uma biblioteca JavaScript/TypeScript de **medicao e layout de texto** que calcula alturas e larguras de paragrafos **sem tocar no DOM**. Usa o canvas do browser para medir segmentos de texto e depois faz layout puramente aritmetico.
+O `src/lib/messageLayout.ts` ja implementa medicao de texto via Canvas 2D (sem DOM reflows) para o chat WhatsApp. O objectivo e expandir esta tecnica para **todas as areas da aplicacao** que fazem scroll de listas longas, auto-resize de textareas, ou renderizacao de texto em tabelas/cards.
 
-## Conceitos Aplicaveis ao Atendimento
+## Areas Identificadas para Optimizacao
 
-### 1. Virtualizacao de Mensagens com Altura Pre-calculada (ALTO IMPACTO)
+### 1. ChatIA + PlaygroundIA — Virtualizacao de Chat (ALTO IMPACTO)
+Ambas as paginas (`ChatIA.tsx`, `PlaygroundIA.tsx`) renderizam todas as mensagens no DOM e usam `scrollHeight` para auto-scroll. Com sessoes longas, sofrem os mesmos problemas do chat WhatsApp.
 
-**Problema actual:** O `ChatPanel.tsx` renderiza TODAS as mensagens no DOM (`allMessages.map`). Com conversas longas (500+ mensagens), isto causa:
-- Scroll lento e janky
-- Consumo de memoria elevado
-- O infinite scroll carrega paginas mas renderiza tudo no DOM
+**Alteracoes:**
+- Criar `src/lib/chatLayout.ts` — versao simplificada do `messageLayout.ts` para mensagens `{role, content}` (sem media, sem source labels)
+- Virtualizar ambas as listas com `@tanstack/react-virtual` + alturas pre-calculadas
+- Eliminar `scrollRef.current.scrollHeight` — usar `scrollToIndex(last)` do virtualizer
 
-**Solucao com Pretext:** Usar `prepare()` + `layout()` para pre-calcular a altura de cada bolha de mensagem sem DOM. Depois, usar uma lista virtualizada (ex: `react-window` ou `@tanstack/virtual`) que so renderiza as ~20 mensagens visiveis, usando as alturas exactas do Pretext.
+### 2. ConversationList — Virtualizacao da Lista de Conversas (ALTO IMPACTO)
+A lista de conversas (259 linhas) renderiza todas as conversas no DOM via `ScrollArea`. Com 500+ conversas activas, isto e lento.
 
-```text
-Fluxo:
-Mensagem.content → prepare(text, '13.5px Inter') → layout(prepared, bubbleMaxWidth, lineHeight)
-  → height conhecida SEM renderizar
-  → virtualizer usa essa altura para posicionar
-  → so renderiza mensagens no viewport
-```
+**Alteracoes:**
+- Virtualizar a lista com `useVirtualizer`, cada item tem altura fixa (~70px)
+- Manter filtros e search como estao (filtram antes de virtualizar)
 
-### 2. Shrink-wrap de Bolhas (MEDIO IMPACTO)
+### 3. Tabelas Longas — LeadListView, Clientes, Casos, Financeiro (MEDIO IMPACTO)
+Multiplas paginas usam `<Table>` com `.map()` sem paginacao nem virtualizacao. Com centenas de registos, o DOM fica pesado.
 
-**Problema actual:** As bolhas usam `max-w-[80%]` mas mensagens curtas ("ok", "sim") ficam com largura desproporcionada ao texto.
+**Alteracoes:**
+- Criar componente `src/components/ui/VirtualTable.tsx` reutilizavel que usa `useVirtualizer` para renderizar so as linhas visiveis
+- Aplicar em `LeadListView.tsx`, `Clientes.tsx`, `Casos.tsx`
 
-**Solucao com Pretext:** Usar `walkLineRanges()` para calcular a largura minima que acomoda o texto sem overflow. A bolha fica "justa" ao conteudo, exactamente como o WhatsApp real faz.
+### 4. Simulation Chat — Multi-party Chat View (MEDIO IMPACTO)
+`Simulation.tsx` renderiza mensagens de simulacao sem virtualizacao.
 
-### 3. Auto-resize do Textarea sem Layout Reflow (MEDIO IMPACTO)
+**Alteracoes:**
+- Reutilizar o mesmo pattern de virtualizacao do ChatIA
 
-**Problema actual:** O `ChatInput.tsx` (linha 42-44) faz auto-resize manipulando `el.style.height` e lendo `el.scrollHeight` — isto forca layout reflow a cada tecla.
+### 5. Kanban Board — Layout Pre-calculado (BAIXO IMPACTO)
+O `LeadKanbanBoard.tsx` renderiza todos os cards em todas as colunas. Com muitos leads por coluna, pode beneficiar de virtualizacao vertical por coluna.
 
-**Solucao com Pretext:** Usar `prepare()` com `whiteSpace: 'pre-wrap'` + `layout()` para calcular a altura do textarea puramente em JS, sem reflow.
+**Alteracoes:**
+- Virtualizar cada coluna do kanban independentemente
 
-### 4. Preview de Ultima Mensagem na Lista (BAIXO IMPACTO)
+### 6. Textareas Globais — Reflow-free Resize (BAIXO IMPACTO)
+O `calcTextareaHeight` ja existe mas so e usado no `ChatInput.tsx`. Outros textareas na app (PropostaForm, CasoForm, etc.) usam resize nativo ou nao fazem auto-resize.
 
-**Problema actual:** `ConversationList.tsx` trunca o preview com CSS `truncate`. Se a mensagem tiver emojis, RTL ou caracteres especiais, o truncamento pode ser visualmente errado.
-
-**Solucao com Pretext:** Usar `measureLineStats()` para garantir que o preview ocupa exactamente 1 linha e truncar com precisao.
+**Alteracoes:**
+- Criar hook `useCanvasAutoResize(ref, text, width)` que aplica `calcTextareaHeight` genericamente
+- Opcionalmente integrar nos formularios principais
 
 ---
 
-## Plano de Implementacao (2 fases)
-
-### Fase 1: Virtualizacao de Mensagens (PRIORIDADE)
-
-**Alteracoes:**
-- Instalar `@chenglou/pretext` e `@tanstack/react-virtual`
-- Criar `src/lib/messageLayout.ts`: funcao que recebe uma `Message` e retorna a altura calculada via Pretext, considerando:
-  - Largura maxima da bolha (65% do container em desktop, 80% em mobile)
-  - Texto: `prepare(content, '13.5px Inter')` + `layout()`
-  - Adicionar padding, source label height, timestamp row, media heights (fixas)
-- Refactor `ChatPanel.tsx`:
-  - Substituir o `div` com scroll manual por um virtualizer (`useVirtualizer` do @tanstack/virtual)
-  - Cada item virtualizado renderiza `<MessageBubble>` so quando visivel
-  - Manter auto-scroll para baixo (stick-to-bottom)
-  - Manter separadores de data (como items virtuais de altura fixa)
-- Refactor `Atendimento.tsx`:
-  - O infinite scroll (carregar mais mensagens antigas) dispara quando o virtualizer detecta que o utilizador chegou ao topo
-
-### Fase 2: Shrink-wrap de Bolhas + Textarea
-
-**Alteracoes:**
-- `MessageBubble.tsx`: Usar `walkLineRanges()` para calcular a largura ideal da bolha e aplicar como `style.width`
-- `ChatInput.tsx`: Substituir o reflow-based auto-resize por calculo via Pretext
-
-### Ficheiros a Alterar/Criar
+## Ficheiros a Alterar/Criar
 
 | Ficheiro | Accao |
 |---|---|
-| `package.json` | Adicionar `@chenglou/pretext` e `@tanstack/react-virtual` |
-| `src/lib/messageLayout.ts` | **Novo** — calculo de altura/largura de mensagens via Pretext |
-| `src/components/atendimento/ChatPanel.tsx` | Virtualizar lista de mensagens |
-| `src/components/atendimento/MessageBubble.tsx` | Shrink-wrap opcional |
-| `src/components/atendimento/ChatInput.tsx` | Auto-resize sem reflow |
-| `src/pages/Atendimento.tsx` | Ajustar infinite scroll para virtualizer |
+| `src/lib/chatLayout.ts` | **Novo** — layout pre-calculado para chats simples (role/content) |
+| `src/components/ui/VirtualTable.tsx` | **Novo** — tabela virtualizada reutilizavel |
+| `src/hooks/useCanvasAutoResize.ts` | **Novo** — hook generico para textarea auto-resize sem reflow |
+| `src/pages/ChatIA.tsx` | Virtualizar lista de mensagens |
+| `src/pages/PlaygroundIA.tsx` | Virtualizar lista de mensagens |
+| `src/components/atendimento/ConversationList.tsx` | Virtualizar lista de conversas |
+| `src/components/leads/LeadListView.tsx` | Usar VirtualTable |
+| `src/pages/Clientes.tsx` | Usar VirtualTable |
+| `src/pages/Casos.tsx` | Usar VirtualTable |
+| `src/pages/Simulation.tsx` | Virtualizar chat de simulacao |
+| `src/components/leads/LeadKanbanBoard.tsx` | Virtualizar colunas |
 
 ### Prioridade
-1. **Fase 1 (Virtualizacao)** — impacto directo na performance com conversas longas
-2. **Fase 2 (Shrink-wrap + Textarea)** — refinamento visual e de micro-performance
+1. **ChatIA + PlaygroundIA** — impacto imediato, pattern ja provado no WhatsApp
+2. **ConversationList** — lista mais usada da app
+3. **VirtualTable + tabelas** — componente reutilizavel que beneficia multiplas paginas
+4. **Simulation + Kanban + Textareas** — refinamentos incrementais
 
