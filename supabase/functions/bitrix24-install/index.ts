@@ -1818,6 +1818,38 @@ Deno.serve(async (req) => {
         console.error("[INSTALL] Contact Payment tab placement error:", payContactErr);
       }
 
+      // --- Register Emmely Agenda tab on CRM_DEAL/LEAD/CONTACT_DETAIL_TAB ---
+      const bookingTabUrl = `${supabaseUrl}/functions/v1/bitrix24-booking-tab`;
+      const agendaPlacements = ["CRM_DEAL_DETAIL_TAB", "CRM_LEAD_DETAIL_TAB", "CRM_CONTACT_DETAIL_TAB"];
+      for (const placement of agendaPlacements) {
+        try {
+          await callBitrix(clientEndpoint, accessToken, "placement.unbind", {
+            PLACEMENT: placement,
+            HANDLER: bookingTabUrl,
+          });
+          const agendaResult = await callBitrix(clientEndpoint, accessToken, "placement.bind", {
+            PLACEMENT: placement,
+            HANDLER: bookingTabUrl,
+            TITLE: "Emmely Agenda",
+            DESCRIPTION: "Agendamento de reuniões",
+            LANG_ALL: {
+              pt: { TITLE: "Emmely Agenda", DESCRIPTION: "Agendamento de reuniões" },
+              en: { TITLE: "Emmely Agenda", DESCRIPTION: "Meeting scheduling" },
+              es: { TITLE: "Emmely Agenda", DESCRIPTION: "Agendamiento de reuniones" },
+            },
+          });
+          const agendaErr = agendaResult.error || "";
+          if (agendaErr && !String(agendaErr).toLowerCase().includes("already")) {
+            console.error(`[INSTALL] placement.bind ${placement} (agenda) error:`, agendaErr);
+          } else {
+            console.log(`[INSTALL] placement.bind ${placement} (Emmely Agenda): OK`);
+            installSummary.placements_registered.push(`${placement}_AGENDA`);
+          }
+        } catch (agendaErr) {
+          console.error(`[INSTALL] Agenda tab placement ${placement} error:`, agendaErr);
+        }
+      }
+
       installSummary.installed_modules.push("crm_tabs");
       await debugLog(supabase, integrationId, "crm_tab_placements_bind", "outbound", {
         placements: crmPlacements,
