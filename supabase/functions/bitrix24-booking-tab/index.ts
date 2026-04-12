@@ -123,10 +123,6 @@ Deno.serve(async (req) => {
           .eq("integration_id", integration.id)
           .eq("module", "emmely_agenda");
         if (perms && perms.length > 0) {
-          const hasAccess = perms.some((p: any) =>
-            p.bitrix_user_id === bitrixUserId
-          );
-          // Re-check with correct column
           const { data: userPerm } = await supabase
             .from("bitrix24_user_permissions")
             .select("id")
@@ -141,15 +137,28 @@ Deno.serve(async (req) => {
       }
     }
 
-    // --- JSON Actions ---
-    if (action === "get_config") {
-      const { data: cfg } = await supabase
+    // Helper to load booking config
+    async function getBookingConfig() {
+      const { data: cfgRow } = await supabase
         .from("payment_gateway_config")
         .select("config")
         .eq("gateway", "booking")
         .maybeSingle();
-      const cfgData = cfg?.config as any;
-      return new Response(JSON.stringify({ config: cfgData || null, default_user_id: cfgData?.default_user_id || "" }), { headers: jsonHeaders });
+      return (cfgRow?.config as any) || {
+        work_start: "09:00", work_end: "18:00", weekdays: [1, 2, 3, 4, 5],
+        duration_minutes: 30, buffer_minutes: 15, booking_mode: "calendar",
+      };
+    }
+
+    // --- JSON Actions ---
+    if (action === "get_config") {
+      const cfg = await getBookingConfig();
+      return new Response(JSON.stringify({
+        config: cfg,
+        default_user_id: cfg?.default_user_id || "",
+        booking_mode: cfg?.booking_mode || "calendar",
+        booking_resource_id: cfg?.booking_resource_id || "",
+      }), { headers: jsonHeaders });
     }
 
     if (action === "get_users") {
@@ -163,30 +172,123 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ users }), { headers: jsonHeaders });
     }
 
+    // --- Booking API: get_resources ---
+    if (action === "get_resources") {
+      const result = await callBitrix(ep, accessToken, "booking.v1.resource.list", {});
+      const resources = (result.result?.resources || []).map((r: any) => ({
+        id: r.id,
+        name: r.name,
+        type: r.type?.name || "",
+        isMain: r.isMain || false,
+      }));
+      return new Response(JSON.stringify({ resources }), { headers: jsonHeaders });
+    }
+
+    // --- Booking API: create_resource ---
+    if (action === "create_resource") {
+      const resourceName = body.name || "Emmely Agenda";
+      const result = await callBitrix(ep, accessToken, "booking.v1.resource.add", {
+        resource: {
+          name: resourceName,
+          typeId: body.typeId || null,
+        },
+      });
+      if (result.error) {
+        console.error("[BOOKING] booking.v1.resource.add error:", result.error, result.error_description);
+        return new Response(JSON.stringify({ error: result.error_description || result.error }), { status: 400, headers: jsonHeaders });
+      }
+      return new Response(JSON.stringify({
+        success: true,
+        resource: result.result?.resource || result.result,
+      }), { headers: jsonHeaders });
+    }
+
+    // --- Booking API: get_resource_slots ---
+    if (action === "get_resource_slots") {
+      const resourceId = url.searchParams.get("resource_id") || body.resource_id;
+      const dateFrom = url.searchParams.get("date_from") || body.date_from;
+      const dateTo = url.searchParams.get("date_to") || body.date_to;
+      if (!resourceId || !dateFrom || !dateTo) {
+        return new Response(JSON.stringify({ error: "resource_id, date_from and date_to required" }), { status: 400, headers: jsonHeaders });
+      }
+      const result = await callBitrix(ep, accessToken, "booking.v1.resource.slots.list", {
+        resourceId: Number(resourceId),
+        dateFrom,
+        dateTo,
+      });
+      if (result.error) {
+        return new Response(JSON.stringify({ error: result.error_description || result.error }), { status: 400, headers: jsonHeaders });
+      }
+      return new Response(JSON.stringify({
+        slots: result.result?.slots || result.result || [],
+      }), { headers: jsonHeaders });
+    }
+
     if (action === "get_availability") {
+      const cfg = await getBookingConfig();
+      const bookingMode = cfg.booking_mode || "calendar";
+
+      // --- Booking mode: use booking.v1.resource.slots.list ---
+      if (bookingMode === "booking") {
+        const resourceId = url.searchParams.get("resource_id") || body.resource_id || cfg.booking_resource_id;
+        const monthStr = url.searchParams.get("month") || body.month;
+        if (!resourceId || !monthStr) {
+          return new Response(JSON.stringify({ error: "resource_id and month required for booking mode" }), { status: 400, headers: jsonHeaders });
+        }
+        const [year, month] = monthStr.split("-").map(Number);
+        const dateFrom = `${monthStr}-01`;
+        const lastDay = new Date(year, month, 0).getDate();
+        const dateTo = `${monthStr}-${lastDay}`;
+
+        const result = await callBitrix(ep, accessToken, "booking.v1.resource.slots.list", {
+          resourceId: Number(resourceId),
+          dateFrom,
+          dateTo,
+        });
+
+        // Parse Bitrix slots into our days format
+        const rawSlots = result.result?.slots || result.result || [];
+        const days: Record<string, string[]> = {};
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+
+        for (const slot of rawSlots) {
+          // Bitrix slots have dateFrom/dateTo as Unix timestamps or ISO strings
+          const slotDate = new Date(typeof slot.dateFrom === "number" ? slot.dateFrom * 1000 : slot.dateFrom);
+          if (slotDate < today) continue;
+          
+          const dateStr = `${slotDate.getFullYear()}-${String(slotDate.getMonth() + 1).padStart(2, "0")}-${String(slotDate.getDate()).padStart(2, "0")}`;
+          const timeStr = `${String(slotDate.getHours()).padStart(2, "0")}:${String(slotDate.getMinutes()).padStart(2, "0")}`;
+          
+          if (!days[dateStr]) days[dateStr] = [];
+          days[dateStr].push(timeStr);
+        }
+
+        return new Response(JSON.stringify({
+          days,
+          booking_mode: "booking",
+          resource_id: resourceId,
+          config: {
+            duration_minutes: cfg.duration_minutes || 30,
+            meeting_type: cfg.meeting_type || "both",
+            event_title_template: cfg.event_title_template || "Reunião — {cliente}",
+            send_meeting_link: cfg.send_meeting_link ?? true,
+          },
+        }), { headers: jsonHeaders });
+      }
+
+      // --- Calendar mode (default) ---
       const userId = url.searchParams.get("user_id") || body.user_id;
-      const monthStr = url.searchParams.get("month") || body.month; // YYYY-MM
+      const monthStr = url.searchParams.get("month") || body.month;
       if (!userId || !monthStr) {
         return new Response(JSON.stringify({ error: "user_id and month required" }), { status: 400, headers: jsonHeaders });
       }
-
-      // Get config
-      const { data: cfgRow } = await supabase
-        .from("payment_gateway_config")
-        .select("config")
-        .eq("gateway", "booking")
-        .maybeSingle();
-      const cfg = (cfgRow?.config as any) || {
-        work_start: "09:00", work_end: "18:00", weekdays: [1, 2, 3, 4, 5],
-        duration_minutes: 30, buffer_minutes: 15,
-      };
 
       const [year, month] = monthStr.split("-").map(Number);
       const from = `${monthStr}-01`;
       const lastDay = new Date(year, month, 0).getDate();
       const to = `${monthStr}-${lastDay}`;
 
-      // Get accessibility (busy blocks)
       const accessibilityResult = await callBitrix(ep, accessToken, "calendar.accessibility.get", {
         users: [userId],
         from,
@@ -195,7 +297,6 @@ Deno.serve(async (req) => {
 
       const busyBlocks = accessibilityResult?.result?.[userId] || [];
 
-      // Calculate free slots per day
       const days: Record<string, string[]> = {};
       const [sh, sm] = cfg.work_start.split(":").map(Number);
       const [eh, em] = cfg.work_end.split(":").map(Number);
@@ -219,13 +320,11 @@ Deno.serve(async (req) => {
           const slotStart = new Date(year, month - 1, d, Math.floor(current / 60), current % 60);
           const slotEnd = new Date(slotStart.getTime() + cfg.duration_minutes * 60000);
 
-          // Check if slot is in the past
           if (slotStart.getTime() < Date.now()) {
             current += step;
             continue;
           }
 
-          // Check collision with busy blocks
           const isBusy = busyBlocks.some((block: any) => {
             const bStart = new Date(block.from || block.DATE_FROM).getTime();
             const bEnd = new Date(block.to || block.DATE_TO).getTime();
@@ -247,6 +346,7 @@ Deno.serve(async (req) => {
 
       return new Response(JSON.stringify({
         days,
+        booking_mode: "calendar",
         config: {
           duration_minutes: cfg.duration_minutes,
           meeting_type: cfg.meeting_type || "both",
@@ -258,20 +358,100 @@ Deno.serve(async (req) => {
 
     if (action === "create_event") {
       const data = body;
+      const cfg = await getBookingConfig();
+      const bookingMode = cfg.booking_mode || "calendar";
+
+      // --- Booking mode: use booking.v1.booking.add ---
+      if (bookingMode === "booking") {
+        const resourceId = data.resource_id || cfg.booking_resource_id;
+        const { date, time, title, description, meeting_type, entity_type, entity_id } = data;
+        if (!resourceId || !date || !time) {
+          return new Response(JSON.stringify({ error: "resource_id, date and time required" }), { status: 400, headers: jsonHeaders });
+        }
+
+        const duration = cfg.duration_minutes || 30;
+        const [th, tm] = time.split(":").map(Number);
+        
+        // Build Unix timestamps
+        const startDate = new Date(`${date}T${time}:00`);
+        const endDate = new Date(startDate.getTime() + duration * 60000);
+
+        const bookingResult = await callBitrix(ep, accessToken, "booking.v1.booking.add", {
+          booking: {
+            name: title || "Reunião",
+            description: description || "Agendado via Emmely Agenda",
+            resourceIds: [Number(resourceId)],
+            datePeriod: {
+              from: {
+                timestamp: Math.floor(startDate.getTime() / 1000),
+                timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "America/Sao_Paulo",
+              },
+              to: {
+                timestamp: Math.floor(endDate.getTime() / 1000),
+                timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "America/Sao_Paulo",
+              },
+            },
+          },
+        });
+
+        if (bookingResult.error) {
+          console.error("[BOOKING] booking.v1.booking.add error:", bookingResult.error, bookingResult.error_description);
+          return new Response(JSON.stringify({ error: bookingResult.error_description || bookingResult.error }), { status: 400, headers: jsonHeaders });
+        }
+
+        const bookingId = bookingResult.result?.booking?.id || bookingResult.result?.id || bookingResult.result;
+
+        // Link CRM client if entity is a contact
+        if (entity_type === "contact" && entity_id && bookingId) {
+          try {
+            await callBitrix(ep, accessToken, "booking.v1.booking.client.set", {
+              bookingId: Number(bookingId),
+              clients: [{
+                type: { module: "crm", code: "CONTACT" },
+                id: Number(entity_id),
+              }],
+            });
+          } catch (e) {
+            console.warn("[BOOKING] Failed to link CRM client:", e);
+          }
+        }
+
+        // Also link leads/deals as CRM contact via entity graph
+        if (entity_type === "lead" && entity_id && bookingId) {
+          try {
+            await callBitrix(ep, accessToken, "booking.v1.booking.client.set", {
+              bookingId: Number(bookingId),
+              clients: [{
+                type: { module: "crm", code: "LEAD" },
+                id: Number(entity_id),
+              }],
+            });
+          } catch (e) {
+            console.warn("[BOOKING] Failed to link CRM lead:", e);
+          }
+        }
+
+        const fromDt = `${date} ${time}:00`;
+        const toH = Math.floor((th * 60 + tm + duration) / 60);
+        const toM = (th * 60 + tm + duration) % 60;
+        const toDt = `${date} ${String(toH).padStart(2, "0")}:${String(toM).padStart(2, "0")}:00`;
+
+        return new Response(JSON.stringify({
+          success: true,
+          booking_id: bookingId,
+          from: fromDt,
+          to: toDt,
+          mode: "booking",
+        }), { headers: jsonHeaders });
+      }
+
+      // --- Calendar mode (default) ---
       const { user_id, date, time, title, description, meeting_type, entity_type, entity_id } = data;
       if (!user_id || !date || !time) {
         return new Response(JSON.stringify({ error: "user_id, date and time required" }), { status: 400, headers: jsonHeaders });
       }
 
-      // Get config for duration
-      const { data: cfgRow } = await supabase
-        .from("payment_gateway_config")
-        .select("config")
-        .eq("gateway", "booking")
-        .maybeSingle();
-      const cfg = (cfgRow?.config as any) || { duration_minutes: 30, send_meeting_link: true };
       const duration = cfg.duration_minutes || 30;
-
       const fromDt = `${date} ${time}:00`;
       const [th, tm] = time.split(":").map(Number);
       const endMinutes = th * 60 + tm + duration;
@@ -279,7 +459,6 @@ Deno.serve(async (req) => {
       const toM = endMinutes % 60;
       const toDt = `${date} ${String(toH).padStart(2, "0")}:${String(toM).padStart(2, "0")}:00`;
 
-      // Build CRM fields link
       const crmFields: string[] = [];
       if (entity_type && entity_id) {
         const prefix = entity_type === "deal" ? "D" : entity_type === "lead" ? "L" : entity_type === "contact" ? "C" : "";
@@ -303,7 +482,6 @@ Deno.serve(async (req) => {
         eventParams.crm_fields = crmFields;
       }
 
-      // Online meeting
       const isOnline = meeting_type === "online";
       if (isOnline && cfg.send_meeting_link) {
         eventParams.meeting = {
@@ -332,6 +510,7 @@ Deno.serve(async (req) => {
         meeting_link: meetingLink,
         from: fromDt,
         to: toDt,
+        mode: "calendar",
       }), { headers: jsonHeaders });
     }
 
@@ -382,11 +561,13 @@ body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif
 .header h1 { font-size:18px; font-weight:700; }
 .header .badge { background:var(--primary-light); color:var(--primary); padding:2px 8px; border-radius:12px; font-size:11px; font-weight:600; }
 
-/* User selector */
 .user-select { margin-bottom:16px; }
 .user-select select { width:100%; padding:8px 12px; border:1px solid var(--border); border-radius:8px; background:var(--card); color:var(--fg); font-size:14px; }
 
-/* Calendar */
+.resource-info { margin-bottom:16px; padding:10px 14px; border:1px solid var(--border); border-radius:8px; background:var(--primary-light); display:none; }
+.resource-info .resource-name { font-weight:600; font-size:14px; color:var(--primary); }
+.resource-info .resource-label { font-size:11px; color:var(--muted); }
+
 .cal-nav { display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; }
 .cal-nav button { background:none; border:1px solid var(--border); border-radius:6px; padding:6px 12px; cursor:pointer; color:var(--fg); font-size:13px; }
 .cal-nav button:hover { background:var(--card-hover); }
@@ -402,7 +583,6 @@ body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif
 .cal-day.past { color:var(--muted); opacity:0.4; }
 .cal-day .dot { position:absolute; bottom:2px; left:50%; transform:translateX(-50%); width:4px; height:4px; border-radius:50%; background:var(--success); }
 
-/* Slots */
 .slots-panel { border:1px solid var(--border); border-radius:12px; padding:16px; background:var(--card); margin-bottom:16px; }
 .slots-panel h3 { font-size:14px; font-weight:600; margin-bottom:12px; }
 .slots-grid { display:flex; flex-wrap:wrap; gap:8px; }
@@ -410,7 +590,6 @@ body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif
 .slot-btn:hover { border-color:var(--primary); background:var(--primary-light); }
 .slot-btn.active { background:var(--primary); color:var(--primary-fg); border-color:var(--primary); }
 
-/* Form */
 .booking-form { border:1px solid var(--border); border-radius:12px; padding:16px; background:var(--card); }
 .booking-form h3 { font-size:14px; font-weight:600; margin-bottom:12px; }
 .form-row { margin-bottom:12px; }
@@ -422,7 +601,6 @@ body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif
 .btn-primary:hover { opacity:0.9; }
 .btn-primary:disabled { opacity:0.5; cursor:not-allowed; }
 
-/* Success */
 .success-card { border:1px solid var(--success); border-radius:12px; padding:20px; background:var(--success-light); text-align:center; }
 .success-card h3 { color:var(--success); font-size:16px; margin-bottom:8px; }
 .success-card p { font-size:13px; color:var(--fg); margin-bottom:4px; }
@@ -435,10 +613,15 @@ body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif
 <body>
 <div class="header">
   <h1>📅 Emmely Agenda</h1>
-  <span class="badge">Agendamento</span>
+  <span class="badge" id="modeBadge">Agendamento</span>
 </div>
 
-<div class="user-select">
+<div class="resource-info" id="resourceInfo">
+  <div class="resource-label">Recurso de Booking</div>
+  <div class="resource-name" id="resourceName"></div>
+</div>
+
+<div class="user-select" id="userSelectWrapper">
   <select id="userSelect" onchange="onUserChange()">
     <option value="">Selecione o responsável...</option>
   </select>
@@ -464,7 +647,7 @@ body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif
     <label>Título</label>
     <input type="text" id="eventTitle" />
   </div>
-  <div class="form-row">
+  <div class="form-row" id="meetingTypeRow">
     <label>Tipo de reunião</label>
     <select id="meetingType">
       <option value="presencial">Presencial</option>
@@ -494,28 +677,47 @@ let availability = {};
 let bookingConfig = {};
 let selectedDate = null;
 let selectedTime = null;
+let bookingMode = 'calendar';
+let bookingResourceId = '';
+let bookingResourceName = '';
 
 const now = new Date();
 currentYear = now.getFullYear();
 currentMonth = now.getMonth() + 1;
 
-// Init
 loadUsersAndConfig();
 
 async function loadUsersAndConfig() {
-  await loadUsers();
-  // Pre-select default user from config
   try {
     const cfgData = await apiCall('get_config');
-    const defaultUserId = cfgData?.default_user_id || (cfgData?.config?.default_user_id) || '';
-    if (defaultUserId) {
-      const sel = document.getElementById('userSelect');
-      if (sel && sel.querySelector('option[value="' + defaultUserId + '"]')) {
-        sel.value = defaultUserId;
-        onUserChange();
+    bookingMode = cfgData?.booking_mode || 'calendar';
+    bookingResourceId = cfgData?.booking_resource_id || '';
+
+    document.getElementById('modeBadge').textContent = bookingMode === 'booking' ? 'Booking (Recurso)' : 'Calendário';
+
+    if (bookingMode === 'booking') {
+      // Hide user selector, show resource info
+      document.getElementById('userSelectWrapper').style.display = 'none';
+      
+      if (bookingResourceId) {
+        document.getElementById('resourceInfo').style.display = 'block';
+        document.getElementById('resourceName').textContent = 'Recurso #' + bookingResourceId;
+        // Show calendar immediately
+        document.getElementById('calendarSection').style.display = 'block';
+        loadAvailability();
+      }
+    } else {
+      await loadUsers();
+      const defaultUserId = cfgData?.default_user_id || (cfgData?.config?.default_user_id) || '';
+      if (defaultUserId) {
+        const sel = document.getElementById('userSelect');
+        if (sel && sel.querySelector('option[value="' + defaultUserId + '"]')) {
+          sel.value = defaultUserId;
+          onUserChange();
+        }
       }
     }
-  } catch(e) { console.warn('Config load error', e); }
+  } catch(e) { console.warn('Config load error', e); await loadUsers(); }
 }
 
 async function apiCall(action, params = {}) {
@@ -559,14 +761,19 @@ function onUserChange() {
 }
 
 async function loadAvailability() {
-  const userId = document.getElementById('userSelect').value;
-  if (!userId) return;
-  
   document.getElementById('loadingIndicator').style.display = 'block';
   const monthStr = currentYear + '-' + String(currentMonth).padStart(2, '0');
-  const data = await apiCall('get_availability', { user_id: userId, month: monthStr });
-  document.getElementById('loadingIndicator').style.display = 'none';
   
+  let data;
+  if (bookingMode === 'booking') {
+    data = await apiCall('get_availability', { resource_id: bookingResourceId, month: monthStr });
+  } else {
+    const userId = document.getElementById('userSelect').value;
+    if (!userId) { document.getElementById('loadingIndicator').style.display = 'none'; return; }
+    data = await apiCall('get_availability', { user_id: userId, month: monthStr });
+  }
+  
+  document.getElementById('loadingIndicator').style.display = 'none';
   availability = data.days || {};
   bookingConfig = data.config || {};
   renderCalendar();
@@ -579,7 +786,6 @@ function renderCalendar() {
   const grid = document.getElementById('calGrid');
   grid.innerHTML = '';
 
-  // Headers
   ['Seg','Ter','Qua','Qui','Sex','Sáb','Dom'].forEach(d => {
     const el = document.createElement('div');
     el.className = 'cal-header';
@@ -589,12 +795,11 @@ function renderCalendar() {
 
   const firstDay = new Date(currentYear, currentMonth - 1, 1);
   let startDow = firstDay.getDay();
-  if (startDow === 0) startDow = 7; // Monday-based
+  if (startDow === 0) startDow = 7;
   const daysInMonth = new Date(currentYear, currentMonth, 0).getDate();
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
-  // Empty cells
   for (let i = 1; i < startDow; i++) {
     const el = document.createElement('div');
     el.className = 'cal-day empty';
@@ -652,28 +857,30 @@ function selectDate(dateStr) {
 function selectSlot(time) {
   selectedTime = time;
   
-  // Highlight active slot
   document.querySelectorAll('.slot-btn').forEach(b => b.classList.remove('active'));
   document.querySelectorAll('.slot-btn').forEach(b => {
     if (b.textContent === time) b.classList.add('active');
   });
 
-  // Show booking form
   const form = document.getElementById('bookingForm');
   form.style.display = 'block';
 
-  // Set default title
   const template = bookingConfig.event_title_template || 'Reunião — {cliente}';
   document.getElementById('eventTitle').value = template.replace('{cliente}', CONTACT_NAME || 'Cliente');
 
-  // Set meeting type options based on config
-  const mtSel = document.getElementById('meetingType');
-  if (bookingConfig.meeting_type === 'presencial') {
-    mtSel.innerHTML = '<option value="presencial">Presencial</option>';
-  } else if (bookingConfig.meeting_type === 'online') {
-    mtSel.innerHTML = '<option value="online">Online</option>';
+  // In booking mode, hide meeting type (resource-based, no video link)
+  if (bookingMode === 'booking') {
+    document.getElementById('meetingTypeRow').style.display = 'none';
   } else {
-    mtSel.innerHTML = '<option value="presencial">Presencial</option><option value="online">Online</option>';
+    document.getElementById('meetingTypeRow').style.display = 'block';
+    const mtSel = document.getElementById('meetingType');
+    if (bookingConfig.meeting_type === 'presencial') {
+      mtSel.innerHTML = '<option value="presencial">Presencial</option>';
+    } else if (bookingConfig.meeting_type === 'online') {
+      mtSel.innerHTML = '<option value="online">Online</option>';
+    } else {
+      mtSel.innerHTML = '<option value="presencial">Presencial</option><option value="online">Online</option>';
+    }
   }
 
   document.getElementById('bookError').style.display = 'none';
@@ -686,23 +893,29 @@ async function createBooking() {
   document.getElementById('bookError').style.display = 'none';
 
   try {
-    const result = await apiPost('create_event', {
-      user_id: document.getElementById('userSelect').value,
+    const payload = {
       date: selectedDate,
       time: selectedTime,
       title: document.getElementById('eventTitle').value,
       description: document.getElementById('eventDesc').value,
-      meeting_type: document.getElementById('meetingType').value,
       entity_type: ENTITY_TYPE,
       entity_id: ENTITY_ID,
       member_id: MEMBER_ID,
-    });
+    };
+
+    if (bookingMode === 'booking') {
+      payload.resource_id = bookingResourceId;
+    } else {
+      payload.user_id = document.getElementById('userSelect').value;
+      payload.meeting_type = document.getElementById('meetingType').value;
+    }
+
+    const result = await apiPost('create_event', payload);
 
     if (result.error) {
       throw new Error(result.error);
     }
 
-    // Success
     document.getElementById('slotsPanel').style.display = 'none';
     document.getElementById('bookingForm').style.display = 'none';
 
@@ -714,10 +927,12 @@ async function createBooking() {
     if (result.meeting_link) {
       html += '<p>🔗 <a href="' + result.meeting_link + '" target="_blank">Abrir reunião online</a></p>';
     }
+    if (result.mode === 'booking') {
+      html += '<p>📋 Reserva criada via Booking API</p>';
+    }
     card.innerHTML = html;
     card.style.display = 'block';
 
-    // Remove slot from availability
     if (availability[selectedDate]) {
       availability[selectedDate] = availability[selectedDate].filter(s => s !== selectedTime);
       renderCalendar();
