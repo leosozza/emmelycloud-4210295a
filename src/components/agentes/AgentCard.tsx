@@ -92,22 +92,6 @@ export function AgentCard({ agent, providers, onEdit, onDelete, onToggleDefault,
           {agent.sub_agent_ids?.length > 0 && <Badge variant="outline" className="text-[10px]"><Users className="h-2 w-2 mr-1" />{agent.sub_agent_ids.length} sub</Badge>}
         </div>
 
-        {/* Cost metrics */}
-        {monthlyCost !== null && (
-          <div className="mb-3 p-2 rounded bg-muted/30 border">
-            <div className="flex items-center justify-between text-[10px]">
-              <span className="flex items-center gap-1 text-muted-foreground"><DollarSign className="h-3 w-3" /> Custo mensal</span>
-              <span className="font-medium">${monthlyCost.toFixed(4)}{agent.monthly_budget_usd ? ` / $${agent.monthly_budget_usd}` : ''}</span>
-            </div>
-            {budgetPct !== null && (
-              <div className="mt-1 h-1.5 bg-muted rounded-full overflow-hidden">
-                <div
-                  className={`h-full rounded-full transition-all ${budgetPct >= 90 ? 'bg-destructive' : budgetPct >= 70 ? 'bg-yellow-500' : 'bg-primary'}`}
-                  style={{ width: `${budgetPct}%` }}
-                />
-              </div>
-            )}
-          </div>
         )}
 
         <div className="flex items-center justify-between">
