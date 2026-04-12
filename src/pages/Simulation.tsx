@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { PageHeader } from "@/components/PageHeader";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -7,13 +7,13 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Slider } from "@/components/ui/slider";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { Play, Plus, Clock, CheckCircle, AlertCircle, Users, MessageSquare } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
+import { useVirtualizer } from "@tanstack/react-virtual";
 
 interface Simulation {
   id: string;
@@ -225,31 +225,7 @@ export default function SimulationPage() {
                 )}
               </CardHeader>
               <CardContent>
-                <ScrollArea className="h-[500px] pr-4">
-                  <div className="space-y-4">
-                    {messages.map((msg, i) => {
-                      const pIdx = selected.persona_ids?.indexOf(msg.persona_id) ?? 0;
-                      return (
-                        <div key={msg.id} className="flex gap-3">
-                          <Avatar className={`h-8 w-8 ${personaColor(pIdx)}`}>
-                            <AvatarFallback className="text-white text-xs">{msg.role?.slice(0, 2).toUpperCase()}</AvatarFallback>
-                          </Avatar>
-                          <div className="flex-1">
-                            <div className="flex items-center gap-2 mb-1">
-                              <span className="text-sm font-semibold">{msg.role}</span>
-                              <Badge variant="outline" className="text-[10px]">R{msg.round}</Badge>
-                              {msg.metadata?.latency_ms && <span className="text-[10px] text-muted-foreground">{msg.metadata.latency_ms}ms</span>}
-                            </div>
-                            <p className="text-sm text-foreground/90 whitespace-pre-wrap">{msg.content}</p>
-                          </div>
-                        </div>
-                      );
-                    })}
-                    {!messages.length && selected.status === "draft" && (
-                      <p className="text-center text-muted-foreground py-12">Clique "Executar" para iniciar a simulação.</p>
-                    )}
-                  </div>
-                </ScrollArea>
+                <SimulationMessages messages={messages} selected={selected} personaMap={personaMap} />
 
                 {selected.results && (
                   <div className="mt-6 border-t pt-4">
