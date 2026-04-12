@@ -125,6 +125,8 @@ const defaultPhases: RoadmapPhase[] = [
       { name: "Cobranças Automáticas", description: "Envio automático de links de pagamento via WhatsApp com CRON diário e botão manual", progress: 100, status: "concluido" },
       { name: "Processamento PDF/DOCX", description: "Extração de texto de ficheiros PDF/DOCX para base de conhecimento via parse-document", progress: 100, status: "concluido" },
       { name: "Notificações em Tempo Real", description: "Alertas in-app com realtime, triggers para leads, mensagens, pagamentos e SLA", progress: 100, status: "concluido" },
+      { name: "Emmely Pay Stripe (Validado)", description: "Pagamentos Stripe validados e integrados com automações de status e webhooks", progress: 100, status: "concluido" },
+      { name: "Agendamentos Bitrix24", description: "Placement interativo no CRM (Deal/Lead/Contact) com calendário, slots disponíveis e criação de eventos com link de reunião online", progress: 100, status: "concluido" },
     ],
   },
   {
