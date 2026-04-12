@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { cn } from "@/lib/utils";
 import {
   Bot,
@@ -15,6 +15,7 @@ import {
 import { AudioMessageBubble } from "@/components/atendimento/AudioMessageBubble";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+import { shrinkWrapWidth } from "@/lib/messageLayout";
 import type { Message } from "@/types/conversation";
 
 // Source label helper
@@ -46,12 +47,25 @@ interface MessageBubbleProps {
   msg: Message;
   conversationId?: string;
   workspaceId?: string;
+  containerWidth?: number;
 }
 
-export function MessageBubble({ msg, conversationId, workspaceId }: MessageBubbleProps) {
+export function MessageBubble({ msg, conversationId, workspaceId, containerWidth }: MessageBubbleProps) {
   const isOutgoing = msg.direction === "outgoing" || msg.direction === "outbound";
   const sourceLabel = getSourceLabel(msg);
   const [feedbackGiven, setFeedbackGiven] = useState<"up" | "down" | null>(null);
+
+  // Shrink-wrap: compute tight bubble width if we have text and container info
+  const bubbleStyle = useMemo(() => {
+    if (!msg.content || !containerWidth || containerWidth < 100) return {};
+    const isMobile = containerWidth < 640;
+    const maxW = Math.floor(containerWidth * (isMobile ? 0.8 : 0.65));
+    const tight = shrinkWrapWidth(msg.content, maxW - 28); // 28 = px-3.5 * 2
+    if (tight < maxW) {
+      return { maxWidth: `${Math.min(tight, maxW)}px` };
+    }
+    return {};
+  }, [msg.content, containerWidth]);
 
   const bubbleClass = !isOutgoing
     ? "msg-bubble-client"
@@ -84,6 +98,7 @@ export function MessageBubble({ msg, conversationId, workspaceId }: MessageBubbl
           "relative max-w-[80%] md:max-w-[65%] px-3.5 py-2 overflow-hidden break-words",
           bubbleClass
         )}
+        style={bubbleStyle}
       >
         {/* Source label */}
         {sourceLabel && (

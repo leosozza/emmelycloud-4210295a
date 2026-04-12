@@ -235,6 +235,9 @@ export default function AtendimentoPage() {
           }}
           onCloseConversation={() => closeConversation.mutate()}
           onAttendanceModeChange={handleAttendanceModeChange}
+          onScrollToTop={() => {
+            if (hasNextPage) fetchNextPage();
+          }}
         />
       </div>
 

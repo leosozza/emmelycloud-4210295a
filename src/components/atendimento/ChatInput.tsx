@@ -1,8 +1,9 @@
-import React, { useRef, useState } from "react";
+import React, { useRef, useState, useCallback } from "react";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Send, Loader2, Mic, MicOff, Paperclip, X } from "lucide-react";
 import { toast } from "sonner";
+import { calcTextareaHeight } from "@/lib/messageLayout";
 
 export interface MediaPayload {
   type: "audio" | "image" | "video" | "document";
@@ -40,8 +41,15 @@ export function ChatInput({
   const handleInput = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     onChange(e.target.value);
     const el = e.target;
-    el.style.height = "44px";
-    el.style.height = Math.min(el.scrollHeight, 120) + "px";
+    // Use canvas-based height calc to avoid DOM reflow
+    const w = el.offsetWidth;
+    if (w > 0) {
+      const h = calcTextareaHeight(e.target.value, w);
+      el.style.height = h + "px";
+    } else {
+      el.style.height = "44px";
+      el.style.height = Math.min(el.scrollHeight, 120) + "px";
+    }
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {

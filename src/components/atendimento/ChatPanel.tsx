@@ -1,6 +1,5 @@
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
 import {
   DropdownMenu,
@@ -22,12 +21,14 @@ import {
   MessageCircle,
   RefreshCw,
 } from "lucide-react";
-import { useState, useRef, useEffect, useCallback } from "react";
-import { format, isSameDay } from "date-fns";
+import { useState, useRef, useEffect, useCallback, useMemo } from "react";
+import { format } from "date-fns";
 import { pt } from "date-fns/locale";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { useSendMessage } from "@/hooks/useSendMessage";
+import { useVirtualizer } from "@tanstack/react-virtual";
+import { buildVirtualItems, type VirtualItem } from "@/lib/messageLayout";
 import type { Conversation, Message, QuickReply } from "@/types/conversation";
 
 interface ChatPanelProps {
@@ -38,6 +39,7 @@ interface ChatPanelProps {
   onSendMedia?: (media: MediaPayload) => void;
   onCloseConversation: () => void;
   onAttendanceModeChange?: (mode: "ai" | "human") => void;
+  onScrollToTop?: () => void;
 }
 
 const statusLabels: Record<string, string> = {
@@ -62,20 +64,31 @@ export function ChatPanel({
   onSendMedia,
   onCloseConversation,
   onAttendanceModeChange,
+  onScrollToTop,
 }: ChatPanelProps) {
   const [input, setInput] = useState("");
   const [localMessages, setLocalMessages] = useState<Message[]>([]);
-  const scrollRef = useRef<HTMLDivElement>(null);
+  const parentRef = useRef<HTMLDivElement>(null);
   const prevConvId = useRef<string | null>(null);
+  const [containerWidth, setContainerWidth] = useState(600);
+  const stickToBottom = useRef(true);
 
   // Merge external messages with optimistic local messages
-  const allMessages = [
-    ...externalMessages,
-    ...localMessages.filter(
-      (lm) => !externalMessages.some((em) => em.id === lm.id)
-    ),
-  ].sort(
-    (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+  const allMessages = useMemo(() => {
+    return [
+      ...externalMessages,
+      ...localMessages.filter(
+        (lm) => !externalMessages.some((em) => em.id === lm.id)
+      ),
+    ].sort(
+      (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+    );
+  }, [externalMessages, localMessages]);
+
+  // Build virtual items with pre-calculated heights
+  const virtualItems = useMemo(
+    () => buildVirtualItems(allMessages, containerWidth),
+    [allMessages, containerWidth]
   );
 
   // Clear local messages when conversation changes
@@ -83,19 +96,60 @@ export function ChatPanel({
     if (conversation?.id !== prevConvId.current) {
       setLocalMessages([]);
       prevConvId.current = conversation?.id ?? null;
+      stickToBottom.current = true;
     }
   }, [conversation?.id]);
 
-  // Auto-scroll to bottom on new messages
+  // Measure container width for layout calculations
   useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    if (!parentRef.current) return;
+    const ro = new ResizeObserver((entries) => {
+      const w = entries[0]?.contentRect?.width;
+      if (w && w > 0) setContainerWidth(w);
+    });
+    ro.observe(parentRef.current);
+    return () => ro.disconnect();
+  }, []);
+
+  // Virtualizer
+  const virtualizer = useVirtualizer({
+    count: virtualItems.length,
+    getScrollElement: () => parentRef.current,
+    estimateSize: (i) => virtualItems[i]?.height ?? 60,
+    overscan: 10,
+    getItemKey: (i) => virtualItems[i]?.key ?? i,
+  });
+
+  // Stick-to-bottom: scroll to end when new messages arrive
+  useEffect(() => {
+    if (stickToBottom.current && virtualItems.length > 0) {
+      requestAnimationFrame(() => {
+        virtualizer.scrollToIndex(virtualItems.length - 1, { align: "end" });
+      });
     }
-  }, [allMessages.length]);
+  }, [virtualItems.length, virtualizer]);
+
+  // Track if user scrolled away from bottom
+  useEffect(() => {
+    const el = parentRef.current;
+    if (!el) return;
+    const handleScroll = () => {
+      const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+      stickToBottom.current = atBottom;
+
+      // Infinite scroll: load older messages when near top
+      if (el.scrollTop < 100 && onScrollToTop) {
+        onScrollToTop();
+      }
+    };
+    el.addEventListener("scroll", handleScroll, { passive: true });
+    return () => el.removeEventListener("scroll", handleScroll);
+  }, [onScrollToTop]);
 
   const optimisticCallbacks = {
     onOptimisticAdd: useCallback((msg: Message) => {
       setLocalMessages((prev) => [...prev, msg]);
+      stickToBottom.current = true;
     }, []),
     onOptimisticRemove: useCallback((id: string) => {
       setLocalMessages((prev) => prev.filter((m) => m.id !== id));
@@ -115,7 +169,7 @@ export function ChatPanel({
     if (!trimmed) return;
     setInput("");
     await sendMessage(trimmed);
-    onSendMessage(trimmed); // notify parent for query invalidation
+    onSendMessage(trimmed);
   }, [input, sendMessage, onSendMessage]);
 
   const handleSendMedia = useCallback(
@@ -128,8 +182,7 @@ export function ChatPanel({
 
   const handleToggleAttendanceMode = async () => {
     if (!conversation) return;
-    const newMode =
-      conversation.attendance_mode === "ai" ? "human" : "ai";
+    const newMode = conversation.attendance_mode === "ai" ? "human" : "ai";
     try {
       await supabase
         .from("conversations")
@@ -170,17 +223,6 @@ export function ChatPanel({
 
   const isAiMode = conversation.attendance_mode === "ai";
 
-  // Group messages by day
-  const groupedMessages: { date: string; messages: Message[] }[] = [];
-  allMessages.forEach((msg) => {
-    const last = groupedMessages[groupedMessages.length - 1];
-    if (last && isSameDay(new Date(last.date), new Date(msg.created_at))) {
-      last.messages.push(msg);
-    } else {
-      groupedMessages.push({ date: msg.created_at, messages: [msg] });
-    }
-  });
-
   return (
     <div className="flex-1 flex flex-col bg-background">
       {/* Header */}
@@ -203,7 +245,6 @@ export function ChatPanel({
                 {conversation.contact_name}
               </span>
               <ChannelIcon channel={conversation.channel} />
-              {/* Attendance mode badge */}
               <Badge
                 variant="outline"
                 className={`text-[10px] h-5 flex items-center gap-1 ${
@@ -231,9 +272,7 @@ export function ChatPanel({
           </div>
         </div>
 
-        {/* Actions */}
         <div className="flex items-center gap-1">
-          {/* Toggle AI/Human */}
           <Button
             variant="outline"
             size="sm"
@@ -252,7 +291,6 @@ export function ChatPanel({
             )}
           </Button>
 
-          {/* More options */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="ghost" size="icon" className="h-8 w-8">
@@ -303,24 +341,57 @@ export function ChatPanel({
         </div>
       )}
 
-      {/* Messages */}
-      <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-0.5">
-        {groupedMessages.map((group) => (
-          <div key={group.date}>
-            <div className="flex items-center justify-center my-4">
-              <span className="text-[11px] text-muted-foreground bg-muted px-3 py-1 rounded-full">
-                {format(new Date(group.date), "dd 'de' MMMM", { locale: pt })}
-              </span>
-            </div>
-            {group.messages.map((msg) => (
-              <MessageBubble
-                key={msg.id}
-                msg={msg}
-                conversationId={conversation.id}
-              />
-            ))}
-          </div>
-        ))}
+      {/* Virtualized Messages */}
+      <div
+        ref={parentRef}
+        className="flex-1 overflow-y-auto"
+        style={{ contain: "strict" }}
+      >
+        <div
+          style={{
+            height: `${virtualizer.getTotalSize()}px`,
+            width: "100%",
+            position: "relative",
+          }}
+        >
+          {virtualizer.getVirtualItems().map((vRow) => {
+            const item = virtualItems[vRow.index];
+            if (!item) return null;
+
+            return (
+              <div
+                key={vRow.key}
+                data-index={vRow.index}
+                ref={virtualizer.measureElement}
+                style={{
+                  position: "absolute",
+                  top: 0,
+                  left: 0,
+                  width: "100%",
+                  transform: `translateY(${vRow.start}px)`,
+                }}
+              >
+                {item.type === "date-separator" ? (
+                  <div className="flex items-center justify-center my-4 px-4">
+                    <span className="text-[11px] text-muted-foreground bg-muted px-3 py-1 rounded-full">
+                      {format(new Date(item.dateLabel!), "dd 'de' MMMM", {
+                        locale: pt,
+                      })}
+                    </span>
+                  </div>
+                ) : (
+                  <div className="px-4">
+                    <MessageBubble
+                      msg={item.msg!}
+                      conversationId={conversation.id}
+                      containerWidth={containerWidth}
+                    />
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
         {allMessages.length === 0 && (
           <div className="flex items-center justify-center h-full">
             <p className="text-sm text-muted-foreground">
