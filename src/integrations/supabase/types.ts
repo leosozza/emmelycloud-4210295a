@@ -357,6 +357,45 @@ export type Database = {
         }
         Relationships: []
       }
+      ai_crews: {
+        Row: {
+          agent_ids: string[]
+          created_at: string
+          description: string | null
+          execution_mode: string
+          id: string
+          is_active: boolean
+          metadata: Json | null
+          mission: string | null
+          name: string
+          updated_at: string
+        }
+        Insert: {
+          agent_ids?: string[]
+          created_at?: string
+          description?: string | null
+          execution_mode?: string
+          id?: string
+          is_active?: boolean
+          metadata?: Json | null
+          mission?: string | null
+          name: string
+          updated_at?: string
+        }
+        Update: {
+          agent_ids?: string[]
+          created_at?: string
+          description?: string | null
+          execution_mode?: string
+          id?: string
+          is_active?: boolean
+          metadata?: Json | null
+          mission?: string | null
+          name?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       ai_providers: {
         Row: {
           auth_header: string | null
@@ -464,6 +503,130 @@ export type Database = {
             columns: ["conversation_id"]
             isOneToOne: false
             referencedRelation: "conversations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      ai_task_executions: {
+        Row: {
+          agent_id: string | null
+          completed_at: string | null
+          created_at: string
+          crew_id: string
+          error: string | null
+          id: string
+          input_data: Json | null
+          metadata: Json | null
+          output_data: Json | null
+          started_at: string | null
+          status: string
+          task_id: string
+        }
+        Insert: {
+          agent_id?: string | null
+          completed_at?: string | null
+          created_at?: string
+          crew_id: string
+          error?: string | null
+          id?: string
+          input_data?: Json | null
+          metadata?: Json | null
+          output_data?: Json | null
+          started_at?: string | null
+          status?: string
+          task_id: string
+        }
+        Update: {
+          agent_id?: string | null
+          completed_at?: string | null
+          created_at?: string
+          crew_id?: string
+          error?: string | null
+          id?: string
+          input_data?: Json | null
+          metadata?: Json | null
+          output_data?: Json | null
+          started_at?: string | null
+          status?: string
+          task_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ai_task_executions_agent_id_fkey"
+            columns: ["agent_id"]
+            isOneToOne: false
+            referencedRelation: "ai_agents"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ai_task_executions_crew_id_fkey"
+            columns: ["crew_id"]
+            isOneToOne: false
+            referencedRelation: "ai_crews"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ai_task_executions_task_id_fkey"
+            columns: ["task_id"]
+            isOneToOne: false
+            referencedRelation: "ai_tasks"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      ai_tasks: {
+        Row: {
+          agent_id: string | null
+          created_at: string
+          crew_id: string
+          description: string | null
+          expected_input: string | null
+          expected_output: string | null
+          id: string
+          is_active: boolean
+          name: string
+          task_order: number
+          updated_at: string
+        }
+        Insert: {
+          agent_id?: string | null
+          created_at?: string
+          crew_id: string
+          description?: string | null
+          expected_input?: string | null
+          expected_output?: string | null
+          id?: string
+          is_active?: boolean
+          name: string
+          task_order?: number
+          updated_at?: string
+        }
+        Update: {
+          agent_id?: string | null
+          created_at?: string
+          crew_id?: string
+          description?: string | null
+          expected_input?: string | null
+          expected_output?: string | null
+          id?: string
+          is_active?: boolean
+          name?: string
+          task_order?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ai_tasks_agent_id_fkey"
+            columns: ["agent_id"]
+            isOneToOne: false
+            referencedRelation: "ai_agents"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ai_tasks_crew_id_fkey"
+            columns: ["crew_id"]
+            isOneToOne: false
+            referencedRelation: "ai_crews"
             referencedColumns: ["id"]
           },
         ]
@@ -3085,7 +3248,9 @@ export type Database = {
         Row: {
           completed_at: string | null
           created_at: string
+          current_round: number | null
           id: string
+          intervention_prompt: string | null
           name: string
           persona_ids: string[]
           results: Json | null
@@ -3096,7 +3261,9 @@ export type Database = {
         Insert: {
           completed_at?: string | null
           created_at?: string
+          current_round?: number | null
           id?: string
+          intervention_prompt?: string | null
           name: string
           persona_ids?: string[]
           results?: Json | null
@@ -3107,7 +3274,9 @@ export type Database = {
         Update: {
           completed_at?: string | null
           created_at?: string
+          current_round?: number | null
           id?: string
+          intervention_prompt?: string | null
           name?: string
           persona_ids?: string[]
           results?: Json | null
