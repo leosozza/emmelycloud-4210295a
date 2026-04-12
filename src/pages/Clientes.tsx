@@ -13,14 +13,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+import { VirtualTable } from "@/components/ui/VirtualTable";
 import { Plus, Search, Pencil, Trash2, UserPlus, X } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
@@ -253,67 +246,40 @@ export default function ClientesPage() {
         />
       </div>
 
-      <div className="rounded-md border">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Nome</TableHead>
-              <TableHead>Documento</TableHead>
-              <TableHead>ID Access</TableHead>
-              <TableHead>ID Bitrix</TableHead>
-              <TableHead>Nacionalidade</TableHead>
-              <TableHead>Contrato</TableHead>
-              <TableHead className="w-24">Ações</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {isLoading ? (
-              <TableRow>
-                <TableCell colSpan={7} className="text-center text-muted-foreground">
-                  A carregar...
-                </TableCell>
-              </TableRow>
-            ) : filtered.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={7} className="text-center text-muted-foreground">
-                  Nenhum cliente encontrado
-                </TableCell>
-              </TableRow>
-            ) : (
-              filtered.map((c: any) => (
-                <TableRow key={c.id}>
-                  <TableCell className="font-medium">{c.name}</TableCell>
-                  <TableCell>{c.document_number || "—"}</TableCell>
-                  <TableCell>{c.id_access || "—"}</TableCell>
-                  <TableCell>{c.bitrix24_id || "—"}</TableCell>
-                  <TableCell>{c.nationality || "—"}</TableCell>
-                  <TableCell>
-                    {c.has_active_contract ? (
-                      <Badge>Ativo</Badge>
-                    ) : (
-                      <Badge variant="secondary">Inativo</Badge>
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex gap-1">
-                      <Button variant="ghost" size="icon" onClick={() => openEdit(c)}>
-                        <Pencil className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => deleteMutation.mutate(c.id)}
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))
-            )}
-          </TableBody>
-        </Table>
-      </div>
+      <VirtualTable
+        data={filtered}
+        getRowKey={(c: any) => c.id}
+        isLoading={isLoading}
+        emptyMessage="Nenhum cliente encontrado"
+        loadingMessage="A carregar..."
+        columns={[
+          { header: "Nome", render: (c: any) => <span className="font-medium">{c.name}</span> },
+          { header: "Documento", render: (c: any) => <>{c.document_number || "—"}</> },
+          { header: "ID Access", render: (c: any) => <>{c.id_access || "—"}</> },
+          { header: "ID Bitrix", render: (c: any) => <>{c.bitrix24_id || "—"}</> },
+          { header: "Nacionalidade", render: (c: any) => <>{c.nationality || "—"}</> },
+          {
+            header: "Contrato",
+            render: (c: any) => c.has_active_contract
+              ? <Badge>Ativo</Badge>
+              : <Badge variant="secondary">Inativo</Badge>,
+          },
+          {
+            header: "Ações",
+            className: "w-24",
+            render: (c: any) => (
+              <div className="flex gap-1">
+                <Button variant="ghost" size="icon" onClick={(e) => { e.stopPropagation(); openEdit(c); }}>
+                  <Pencil className="h-4 w-4" />
+                </Button>
+                <Button variant="ghost" size="icon" onClick={(e) => { e.stopPropagation(); deleteMutation.mutate(c.id); }}>
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              </div>
+            ),
+          },
+        ]}
+      />
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto">

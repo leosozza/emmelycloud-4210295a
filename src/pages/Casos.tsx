@@ -4,9 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import {
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
-} from "@/components/ui/table";
+import { VirtualTable } from "@/components/ui/VirtualTable";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
@@ -137,55 +135,45 @@ const CasosPage = () => {
         </Select>
       </div>
 
-      <div className="rounded-md border">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Título</TableHead>
-              <TableHead>Área</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead>Lead</TableHead>
-              <TableHead>Advogado</TableHead>
-              <TableHead>Data</TableHead>
-              <TableHead className="w-24">Ações</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {isLoading ? (
-              <TableRow><TableCell colSpan={7} className="text-center text-muted-foreground">A carregar...</TableCell></TableRow>
-            ) : filtered.length === 0 ? (
-              <TableRow><TableCell colSpan={7} className="text-center text-muted-foreground">Nenhum caso encontrado</TableCell></TableRow>
-            ) : filtered.map((c) => (
-              <TableRow key={c.id}>
-                <TableCell className="font-medium">{c.title}</TableCell>
-                <TableCell className="text-sm">{legalAreaLabels[c.legal_area]}</TableCell>
-                <TableCell>
-                  <Badge className={`text-xs ${statusColors[c.status]}`}>{statusLabels[c.status]}</Badge>
-                </TableCell>
-                <TableCell className="text-sm">
-                  {c.lead_id ? (
-                    <Button variant="link" size="sm" className="p-0 h-auto text-sm" onClick={() => navigate("/leads")}>
-                      {leadsMap[c.lead_id] || "—"}
-                    </Button>
-                  ) : "—"}
-                </TableCell>
-                <TableCell className="text-sm">{c.assigned_attorney_id ? (profilesMap[c.assigned_attorney_id] || "—") : "—"}</TableCell>
-                <TableCell className="text-xs text-muted-foreground">{format(parseISO(c.created_at), "dd/MM/yyyy")}</TableCell>
-                <TableCell>
-                  <div className="flex gap-1">
-                    <Button variant="ghost" size="icon" onClick={() => { setEditingCaso(c); setFormOpen(true); }}>
-                      <Pencil className="h-4 w-4" />
-                    </Button>
-                    <Button variant="ghost" size="icon" onClick={() => deleteMutation.mutate(c.id)}>
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </div>
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </div>
+      <VirtualTable<Case>
+        data={filtered}
+        getRowKey={(c) => c.id}
+        isLoading={isLoading}
+        emptyMessage="Nenhum caso encontrado"
+        loadingMessage="A carregar..."
+        columns={[
+          { header: "Título", render: (c) => <span className="font-medium">{c.title}</span> },
+          { header: "Área", render: (c) => <span className="text-sm">{legalAreaLabels[c.legal_area]}</span> },
+          {
+            header: "Status",
+            render: (c) => <Badge className={`text-xs ${statusColors[c.status]}`}>{statusLabels[c.status]}</Badge>,
+          },
+          {
+            header: "Lead",
+            render: (c) => c.lead_id ? (
+              <Button variant="link" size="sm" className="p-0 h-auto text-sm" onClick={(e) => { e.stopPropagation(); navigate("/leads"); }}>
+                {leadsMap[c.lead_id] || "—"}
+              </Button>
+            ) : <>—</>,
+          },
+          { header: "Advogado", render: (c) => <span className="text-sm">{c.assigned_attorney_id ? (profilesMap[c.assigned_attorney_id] || "—") : "—"}</span> },
+          { header: "Data", render: (c) => <span className="text-xs text-muted-foreground">{format(parseISO(c.created_at), "dd/MM/yyyy")}</span> },
+          {
+            header: "Ações",
+            className: "w-24",
+            render: (c) => (
+              <div className="flex gap-1">
+                <Button variant="ghost" size="icon" onClick={(e) => { e.stopPropagation(); setEditingCaso(c); setFormOpen(true); }}>
+                  <Pencil className="h-4 w-4" />
+                </Button>
+                <Button variant="ghost" size="icon" onClick={(e) => { e.stopPropagation(); deleteMutation.mutate(c.id); }}>
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              </div>
+            ),
+          },
+        ]}
+      />
 
       <CasoForm
         open={formOpen}

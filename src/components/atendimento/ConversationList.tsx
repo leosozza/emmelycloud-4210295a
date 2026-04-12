@@ -1,5 +1,4 @@
 import { Input } from "@/components/ui/input";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -8,7 +7,8 @@ import { Search, Bot, User, BellDot } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { format, isToday, isYesterday } from "date-fns";
 import { useLocale } from "@/contexts/LocaleContext";
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef } from "react";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import type { Conversation, ConversationChannel, ConversationStatus } from "@/types/conversation";
 
 type QuickFilter = "all" | "unread" | "ai" | "human";
@@ -34,6 +34,8 @@ const channelLabels: Record<ConversationChannel, string> = {
   webchat: "Webchat",
 };
 
+const ITEM_HEIGHT = 70;
+
 export function ConversationList({
   conversations,
   selectedId,
@@ -43,8 +45,8 @@ export function ConversationList({
   const [channelFilter, setChannelFilter] = useState<ConversationChannel | "all">("all");
   const [statusFilter, setStatusFilter] = useState<ConversationStatus | "all">("aberta");
   const [quickFilter, setQuickFilter] = useState<QuickFilter>("all");
+  const listRef = useRef<HTMLDivElement>(null);
 
-  // Computed counters for quick filters
   const counters = useMemo(() => {
     const base = conversations.filter(
       (c) =>
@@ -76,11 +78,17 @@ export function ConversationList({
     });
   }, [conversations, search, channelFilter, statusFilter, quickFilter]);
 
+  const virtualizer = useVirtualizer({
+    count: filtered.length,
+    getScrollElement: () => listRef.current,
+    estimateSize: () => ITEM_HEIGHT,
+    overscan: 10,
+  });
+
   return (
     <div className="flex flex-col h-full bg-card">
       {/* Header */}
       <div className="p-3 border-b space-y-2 shrink-0">
-        {/* Search */}
         <div className="relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
@@ -91,7 +99,6 @@ export function ConversationList({
           />
         </div>
 
-        {/* Quick filters */}
         <div className="flex gap-1">
           {(
             [
@@ -126,7 +133,6 @@ export function ConversationList({
           ))}
         </div>
 
-        {/* Channel filter */}
         <div className="flex gap-1 flex-wrap">
           {(["all", "whatsapp", "instagram", "email"] as const).map((ch) => (
             <Button
@@ -141,7 +147,6 @@ export function ConversationList({
           ))}
         </div>
 
-        {/* Status filter */}
         <div className="flex gap-1 flex-wrap">
           {(
             [
@@ -165,95 +170,106 @@ export function ConversationList({
         </div>
       </div>
 
-      {/* Conversation items */}
-      <ScrollArea className="flex-1">
-        <div className="divide-y">
-          {filtered.map((conv) => (
-            <button
-              key={conv.id}
-              className={cn(
-                "w-full text-left px-3 py-[10px] border-b border-border/30 hover:bg-accent/50 transition-colors",
-                selectedId === conv.id && "bg-accent",
-                conv.unread_count > 0 && "bg-primary/5"
-              )}
-              onClick={() => onSelect(conv.id)}
-            >
-              <div className="flex items-center gap-3 w-full min-w-0">
-                <div className="relative shrink-0">
-                  <Avatar className="h-[49px] w-[49px]">
-                    <AvatarImage src={conv.contact_avatar_url ?? undefined} />
-                    <AvatarFallback className="text-[15px] font-semibold bg-primary/10 text-primary">
-                      {conv.contact_name
-                        .split(" ")
-                        .map((n) => n[0])
-                        .join("")
-                        .slice(0, 2)
-                        .toUpperCase()}
-                    </AvatarFallback>
-                  </Avatar>
-                  <div className="absolute -bottom-0.5 -right-0.5">
-                    <ChannelIcon channel={conv.channel} />
-                  </div>
-                </div>
-
-                <div className="flex-1 min-w-0 overflow-hidden">
-                  <div className="flex items-center justify-between gap-1">
-                    <div className="flex items-center gap-1 min-w-0">
-                      <span
-                        className={cn(
-                          "text-[15px] truncate",
-                          conv.unread_count > 0 ? "font-bold" : "font-normal"
-                        )}
-                      >
-                        {conv.contact_name}
-                      </span>
-                      {/* AI/Human mode indicator */}
-                      {conv.attendance_mode === "ai" && (
-                        <Bot className="h-3 w-3 text-violet-500 shrink-0" />
-                      )}
+      {/* Virtualized conversation items */}
+      <div ref={listRef} className="flex-1 overflow-y-auto">
+        {filtered.length === 0 ? (
+          <p className="text-sm text-muted-foreground p-6 text-center">
+            Nenhuma conversa encontrada
+          </p>
+        ) : (
+          <div style={{ height: `${virtualizer.getTotalSize()}px`, position: "relative" }}>
+            {virtualizer.getVirtualItems().map((vRow) => {
+              const conv = filtered[vRow.index];
+              return (
+                <button
+                  key={conv.id}
+                  style={{
+                    position: "absolute",
+                    top: 0,
+                    left: 0,
+                    width: "100%",
+                    height: `${vRow.size}px`,
+                    transform: `translateY(${vRow.start}px)`,
+                  }}
+                  className={cn(
+                    "w-full text-left px-3 py-[10px] border-b border-border/30 hover:bg-accent/50 transition-colors",
+                    selectedId === conv.id && "bg-accent",
+                    conv.unread_count > 0 && "bg-primary/5"
+                  )}
+                  onClick={() => onSelect(conv.id)}
+                >
+                  <div className="flex items-center gap-3 w-full min-w-0">
+                    <div className="relative shrink-0">
+                      <Avatar className="h-[49px] w-[49px]">
+                        <AvatarImage src={conv.contact_avatar_url ?? undefined} />
+                        <AvatarFallback className="text-[15px] font-semibold bg-primary/10 text-primary">
+                          {conv.contact_name
+                            .split(" ")
+                            .map((n) => n[0])
+                            .join("")
+                            .slice(0, 2)
+                            .toUpperCase()}
+                        </AvatarFallback>
+                      </Avatar>
+                      <div className="absolute -bottom-0.5 -right-0.5">
+                        <ChannelIcon channel={conv.channel} />
+                      </div>
                     </div>
-                    {conv.last_message_at && (
-                      <span
-                        className={cn(
-                          "text-[12px] whitespace-nowrap shrink-0",
-                          conv.unread_count > 0
-                            ? "text-primary font-semibold"
-                            : "text-muted-foreground"
-                        )}
-                      >
-                        <FormatTimeWrapper dateStr={conv.last_message_at} />
-                      </span>
-                    )}
-                  </div>
 
-                  <div className="flex items-center justify-between mt-[2px] gap-1">
-                    <p
-                      className={cn(
-                        "text-[13px] truncate flex-1 min-w-0",
-                        conv.unread_count > 0
-                          ? "text-foreground/70 font-medium"
-                          : "text-muted-foreground"
-                      )}
-                    >
-                      {conv.last_message_preview || "Sem mensagens"}
-                    </p>
-                    {conv.unread_count > 0 && (
-                      <Badge className="h-5 min-w-5 rounded-full px-1.5 py-0 flex items-center justify-center text-[11px] font-bold shrink-0 bg-primary text-primary-foreground">
-                        {conv.unread_count}
-                      </Badge>
-                    )}
+                    <div className="flex-1 min-w-0 overflow-hidden">
+                      <div className="flex items-center justify-between gap-1">
+                        <div className="flex items-center gap-1 min-w-0">
+                          <span
+                            className={cn(
+                              "text-[15px] truncate",
+                              conv.unread_count > 0 ? "font-bold" : "font-normal"
+                            )}
+                          >
+                            {conv.contact_name}
+                          </span>
+                          {conv.attendance_mode === "ai" && (
+                            <Bot className="h-3 w-3 text-violet-500 shrink-0" />
+                          )}
+                        </div>
+                        {conv.last_message_at && (
+                          <span
+                            className={cn(
+                              "text-[12px] whitespace-nowrap shrink-0",
+                              conv.unread_count > 0
+                                ? "text-primary font-semibold"
+                                : "text-muted-foreground"
+                            )}
+                          >
+                            <FormatTimeWrapper dateStr={conv.last_message_at} />
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="flex items-center justify-between mt-[2px] gap-1">
+                        <p
+                          className={cn(
+                            "text-[13px] truncate flex-1 min-w-0",
+                            conv.unread_count > 0
+                              ? "text-foreground/70 font-medium"
+                              : "text-muted-foreground"
+                          )}
+                        >
+                          {conv.last_message_preview || "Sem mensagens"}
+                        </p>
+                        {conv.unread_count > 0 && (
+                          <Badge className="h-5 min-w-5 rounded-full px-1.5 py-0 flex items-center justify-center text-[11px] font-bold shrink-0 bg-primary text-primary-foreground">
+                            {conv.unread_count}
+                          </Badge>
+                        )}
+                      </div>
+                    </div>
                   </div>
-                </div>
-              </div>
-            </button>
-          ))}
-          {filtered.length === 0 && (
-            <p className="text-sm text-muted-foreground p-6 text-center">
-              Nenhuma conversa encontrada
-            </p>
-          )}
-        </div>
-      </ScrollArea>
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

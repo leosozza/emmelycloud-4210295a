@@ -9,6 +9,9 @@ import { Send, Loader2, Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { AudioRecordButton } from "@/components/chat/AudioRecordButton";
+import { useVirtualizer } from "@tanstack/react-virtual";
+import { buildChatVirtualItems } from "@/lib/chatLayout";
+import { useCanvasAutoResize } from "@/hooks/useCanvasAutoResize";
 
 interface Message {
   role: "user" | "assistant";
@@ -42,8 +45,26 @@ export default function ChatIAPage() {
   const [isLoading, setIsLoading] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  const activeSession = sessions.find((s) => s.id === activeSessionId);
   const selectedAgent = agents.find((a) => a.id === selectedAgentId);
+
+  // Virtualizer
+  const virtualItems = buildChatVirtualItems(messages, scrollRef.current?.clientWidth || 600, isLoading);
+  const virtualizer = useVirtualizer({
+    count: virtualItems.length,
+    getScrollElement: () => scrollRef.current,
+    estimateSize: (i) => virtualItems[i]?.height || 60,
+    overscan: 5,
+  });
+
+  // Auto-scroll to bottom
+  useEffect(() => {
+    if (virtualItems.length > 0) {
+      virtualizer.scrollToIndex(virtualItems.length - 1, { align: "end" });
+    }
+  }, [messages.length, isLoading]);
+
+  // Canvas auto-resize for textarea
+  const handleTextareaInput = useCanvasAutoResize(setInput, 44, 128);
 
   // Load agents
   useEffect(() => {
@@ -73,13 +94,6 @@ export default function ChatIAPage() {
   }, [userId]);
 
   useEffect(() => { loadSessions(); }, [loadSessions]);
-
-  // Scroll to bottom
-  useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-    }
-  }, [messages, isLoading]);
 
   const selectSession = (id: string) => {
     const s = sessions.find((x) => x.id === id);
@@ -168,12 +182,10 @@ export default function ChatIAPage() {
       const allMessages = [...updatedMessages, assistantMsg];
       setMessages(allMessages);
 
-      // Auto-title from first user message
       const isNew = !activeSessionId;
       const title = isNew ? trimmed.substring(0, 60) : undefined;
-      const sid = await persistSession(activeSessionId, allMessages, title);
-      if (isNew && sid) loadSessions();
-      else loadSessions();
+      await persistSession(activeSessionId, allMessages, title);
+      loadSessions();
     } catch (e: any) {
       console.error("Chat error:", e);
       toast.error("Erro ao processar mensagem");
@@ -209,7 +221,7 @@ export default function ChatIAPage() {
       <div className="flex-1 flex flex-col">
         {/* Messages */}
         <div ref={scrollRef} className="flex-1 overflow-y-auto">
-          {messages.length === 0 ? (
+          {messages.length === 0 && !isLoading ? (
             <div className="flex items-center justify-center h-full">
               <div className="text-center max-w-md">
                 <Sparkles className="h-12 w-12 mx-auto mb-4 text-primary/30" />
@@ -219,51 +231,76 @@ export default function ChatIAPage() {
                   </div>
                 ) : (
                   <>
-                    <h2 className="text-lg font-semibold text-foreground mb-1">
-                      Chat IA
-                    </h2>
+                    <h2 className="text-lg font-semibold text-foreground mb-1">Chat IA</h2>
                     <p className="text-sm text-muted-foreground">
-                      {selectedAgent
-                        ? `Converse com "${selectedAgent.name}"`
-                        : "Selecione um agente para começar"}
+                      {selectedAgent ? `Converse com "${selectedAgent.name}"` : "Selecione um agente para começar"}
                     </p>
                   </>
                 )}
               </div>
             </div>
           ) : (
-            <div className="max-w-3xl mx-auto py-6 px-4 space-y-6">
-              {messages.map((msg, i) => (
-                <div key={i} className={cn("flex gap-3", msg.role === "user" ? "justify-end" : "")}>
-                  {msg.role === "assistant" && (
-                    <div className="w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center shrink-0 mt-1">
-                      <Sparkles className="h-3.5 w-3.5 text-primary" />
+            <div
+              className="max-w-3xl mx-auto py-6 px-4"
+              style={{ height: `${virtualizer.getTotalSize()}px`, position: "relative" }}
+            >
+              {virtualizer.getVirtualItems().map((vRow) => {
+                const item = virtualItems[vRow.index];
+                if (item.type === "loading") {
+                  return (
+                    <div
+                      key="loading"
+                      style={{
+                        position: "absolute",
+                        top: 0,
+                        left: 0,
+                        width: "100%",
+                        transform: `translateY(${vRow.start}px)`,
+                      }}
+                      className="flex gap-3"
+                    >
+                      <div className="w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
+                        <Sparkles className="h-3.5 w-3.5 text-primary" />
+                      </div>
+                      <Loader2 className="h-5 w-5 animate-spin text-muted-foreground mt-1" />
                     </div>
-                  )}
+                  );
+                }
+                const msg = messages[item.index];
+                return (
                   <div
-                    className={cn(
-                      "max-w-[80%]",
-                      msg.role === "user"
-                        ? "bg-primary text-primary-foreground rounded-2xl rounded-br-md px-4 py-2.5 text-sm"
-                        : "text-foreground text-sm"
-                    )}
+                    key={vRow.index}
+                    style={{
+                      position: "absolute",
+                      top: 0,
+                      left: 0,
+                      width: "100%",
+                      transform: `translateY(${vRow.start}px)`,
+                    }}
+                    className={cn("flex gap-3", msg.role === "user" ? "justify-end" : "")}
                   >
-                    {msg.role === "assistant" ? (
-                      <MarkdownMessage content={msg.content} />
-                    ) : (
-                      <p className="whitespace-pre-wrap">{msg.content}</p>
+                    {msg.role === "assistant" && (
+                      <div className="w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center shrink-0 mt-1">
+                        <Sparkles className="h-3.5 w-3.5 text-primary" />
+                      </div>
                     )}
+                    <div
+                      className={cn(
+                        "max-w-[80%]",
+                        msg.role === "user"
+                          ? "bg-primary text-primary-foreground rounded-2xl rounded-br-md px-4 py-2.5 text-sm"
+                          : "text-foreground text-sm"
+                      )}
+                    >
+                      {msg.role === "assistant" ? (
+                        <MarkdownMessage content={msg.content} />
+                      ) : (
+                        <p className="whitespace-pre-wrap">{msg.content}</p>
+                      )}
+                    </div>
                   </div>
-                </div>
-              ))}
-              {isLoading && (
-                <div className="flex gap-3">
-                  <div className="w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
-                    <Sparkles className="h-3.5 w-3.5 text-primary" />
-                  </div>
-                  <Loader2 className="h-5 w-5 animate-spin text-muted-foreground mt-1" />
-                </div>
-              )}
+                );
+              })}
             </div>
           )}
         </div>
@@ -273,7 +310,7 @@ export default function ChatIAPage() {
           <div className="max-w-3xl mx-auto flex gap-2">
             <Textarea
               value={input}
-              onChange={(e) => setInput(e.target.value)}
+              onChange={handleTextareaInput}
               onKeyDown={handleKeyDown}
               placeholder={selectedAgent ? "Escreva uma mensagem..." : "Selecione um agente"}
               disabled={!selectedAgentId || isLoading}
