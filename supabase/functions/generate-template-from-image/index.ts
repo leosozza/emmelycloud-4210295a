@@ -9,26 +9,45 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {
-    const { image_url, file_type } = await req.json();
+    const { image_url, file_type, document_type } = await req.json();
     if (!image_url) throw new Error("image_url is required");
 
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
     if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY not configured");
 
-    const systemPrompt = `You are a document layout analyzer. Given an image of a proposal/budget/quote document, extract the visual structure and return a JSON object with:
+    const isContract = document_type === "contrato";
+
+    const systemPrompt = `You are a document layout analyzer specialized in legal documents (proposals, budgets, quotes, and contracts). Given an image of a document, extract the visual structure and return a JSON object with:
 - layout_blocks: array of block objects with { id, type, visible, content, styles }
-  - type can be: "header", "client_info", "description", "services_table", "payment", "conditions", "text", "footer"
-  - content depends on the type (e.g., header has companyName, tagline, logoUrl; text has title and text)
+  - For proposals/quotes, type can be: "header", "client_info", "description", "services_table", "payment", "conditions", "text", "footer"
+  - For contracts, additional types are available: "clauses", "signature", "witnesses"
+    - "clauses" content: { items: [{ number: 1, title: "Objeto", text: "..." }, ...] }
+    - "signature" content: { location: "Lisboa", showDate: true, partyA: "CONTRATANTE", partyB: "CONTRATADO" }
+    - "witnesses" content: { count: 2 }
+  - content depends on the type (e.g., header has companyName, tagline; text has title and text; payment has value details)
   - styles can include fontSize, textAlign etc
 - header_color: hex color of the header/top section background
 - accent_color: hex color used for accents/highlights
 - company_name: company name found in the document
 - company_tagline: tagline/slogan if found
+- template_type: "proposta" or "contrato" based on the document content
 
-Generate block IDs using the pattern "type-timestamp" (e.g., "header-1").
+IMPORTANT for contracts:
+- Extract each clause as a separate item with number, title, and full text
+- Use placeholders where appropriate: {cliente.nome}, {cliente.documento}, {cliente.morada}, {cliente.nacionalidade}, {valor}, {tipo_pagamento}, {parcelas}, {data}, {nome_contratante}, {nome_contratado}, {cliente.tratamento}
+- Identify signature blocks and witness sections
+- Preserve the legal language exactly as written
+
+Generate block IDs using the pattern "type-N" (e.g., "header-1", "clauses-1").
 Only return valid JSON, no markdown.`;
 
-    const userPrompt = `Analyze this document image and extract its layout structure as a template. The image URL is: ${image_url}
+    const docTypeHint = isContract
+      ? "This is a CONTRACT document. Extract all clauses, signature blocks, and witness sections."
+      : "This is a PROPOSAL/QUOTE document. Extract the layout structure for recreating it as a template.";
+
+    const userPrompt = `Analyze this document image and extract its layout structure as a template. ${docTypeHint}
+
+The image URL is: ${image_url}
 
 Return the JSON structure for recreating this document layout as a template editor configuration.`;
 
