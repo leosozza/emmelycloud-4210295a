@@ -23,7 +23,7 @@ import {
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import {
-  ReactFlow, Controls, Background, MiniMap,
+  ReactFlow, Controls, Background, MiniMap, BackgroundVariant,
   useNodesState, useEdgesState, addEdge,
   type Connection, type Node, type Edge, MarkerType, Panel,
 } from "@xyflow/react";
