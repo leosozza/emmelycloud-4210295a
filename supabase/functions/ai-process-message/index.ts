@@ -486,23 +486,25 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Knowledge Graph navigation
-    allTools.push({
-      type: "function",
-      function: {
-        name: "navigate_graph",
-        description: "Navegar o grafo de entidades para encontrar relações entre leads, propostas, contratos e pagamentos. Ex: dado um lead, encontrar todos os contratos e pagamentos associados.",
-        parameters: {
-          type: "object",
-          properties: {
-            entity_type: { type: "string", enum: ["lead", "proposal", "contract", "case", "financial", "conversation"], description: "Tipo da entidade de partida" },
-            entity_id: { type: "string", description: "ID da entidade" },
-            depth: { type: "number", description: "Profundidade de navegação (1-3)", default: 2 },
+    // Knowledge Graph navigation — gated behind crm/graph skill
+    if (skillTypes.has("crm") || skillTypes.has("leads") || skillTypes.has("graph")) {
+      allTools.push({
+        type: "function",
+        function: {
+          name: "navigate_graph",
+          description: "Navegar o grafo de entidades para encontrar relações entre leads, propostas, contratos e pagamentos. Ex: dado um lead, encontrar todos os contratos e pagamentos associados.",
+          parameters: {
+            type: "object",
+            properties: {
+              entity_type: { type: "string", enum: ["lead", "proposal", "contract", "case", "financial", "conversation"], description: "Tipo da entidade de partida" },
+              entity_id: { type: "string", description: "ID da entidade" },
+              depth: { type: "number", description: "Profundidade de navegação (1-3)", default: 2 },
+            },
+            required: ["entity_type", "entity_id"],
           },
-          required: ["entity_type", "entity_id"],
         },
-      },
-    });
+      });
+    }
 
     // Payment tools
     if (skillTypes.has("payments") || skillTypes.has("financial")) {
