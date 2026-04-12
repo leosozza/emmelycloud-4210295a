@@ -69,7 +69,7 @@ const SignContract = () => {
             if (tpl) {
               setTemplate(tpl);
               if (tpl.layout_blocks && Array.isArray(tpl.layout_blocks) && tpl.layout_blocks.length > 0) {
-                setLayoutBlocks(tpl.layout_blocks as LayoutBlock[]);
+                setLayoutBlocks(tpl.layout_blocks as unknown as LayoutBlock[]);
               }
             }
           }
