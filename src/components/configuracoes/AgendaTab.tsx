@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Save, RefreshCw, Calendar, Clock, Video, User } from "lucide-react";
+import { Save, RefreshCw, Calendar, Clock, Video, User, Box, Plus, Loader2 } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -40,6 +40,8 @@ interface AgendaConfig {
   send_meeting_link: boolean;
   event_title_template: string;
   default_user_id: string;
+  booking_mode: "calendar" | "booking";
+  booking_resource_id: string;
 }
 
 const DEFAULT_CONFIG: AgendaConfig = {
@@ -52,7 +54,16 @@ const DEFAULT_CONFIG: AgendaConfig = {
   send_meeting_link: true,
   event_title_template: "Reunião — {cliente}",
   default_user_id: "",
+  booking_mode: "calendar",
+  booking_resource_id: "",
 };
+
+interface BookingResource {
+  id: string;
+  name: string;
+  type: string;
+  isMain: boolean;
+}
 
 export default function AgendaTab() {
   const [config, setConfig] = useState<AgendaConfig>(DEFAULT_CONFIG);
@@ -60,6 +71,11 @@ export default function AgendaTab() {
   const [saving, setSaving] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const { data: bitrixUsers, isLoading: loadingUsers } = useBitrixUsers();
+
+  // Booking resources state
+  const [resources, setResources] = useState<BookingResource[]>([]);
+  const [loadingResources, setLoadingResources] = useState(false);
+  const [creatingResource, setCreatingResource] = useState(false);
 
   useEffect(() => {
     supabase
@@ -76,6 +92,50 @@ export default function AgendaTab() {
         setLoaded(true);
       });
   }, []);
+
+  // Load resources when booking mode is selected
+  useEffect(() => {
+    if (config.booking_mode === "booking") {
+      loadResources();
+    }
+  }, [config.booking_mode]);
+
+  const loadResources = async () => {
+    setLoadingResources(true);
+    try {
+      const projectId = import.meta.env.VITE_SUPABASE_PROJECT_ID;
+      const res = await fetch(
+        `https://${projectId}.supabase.co/functions/v1/bitrix24-booking-tab?action=get_resources`,
+      );
+      const data = await res.json();
+      setResources(data.resources || []);
+    } catch {
+      console.warn("Failed to load booking resources");
+    }
+    setLoadingResources(false);
+  };
+
+  const handleCreateResource = async () => {
+    setCreatingResource(true);
+    try {
+      const projectId = import.meta.env.VITE_SUPABASE_PROJECT_ID;
+      const res = await fetch(
+        `https://${projectId}.supabase.co/functions/v1/bitrix24-booking-tab?action=create_resource`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name: "Emmely Agenda" }),
+        },
+      );
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+      toast.success("Recurso criado no Bitrix24");
+      await loadResources();
+    } catch (e: any) {
+      toast.error(e.message || "Erro ao criar recurso");
+    }
+    setCreatingResource(false);
+  };
 
   const handleSave = async () => {
     setSaving(true);
@@ -110,6 +170,104 @@ export default function AgendaTab() {
 
   return (
     <div className="space-y-6">
+      {/* Modo de Agendamento */}
+      <Card>
+        <CardHeader className="pb-3">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-orange-100 dark:bg-orange-900/30">
+              <Box className="h-5 w-5 text-orange-600" />
+            </div>
+            <div>
+              <CardTitle className="text-base">Modo de Agendamento</CardTitle>
+              <CardDescription>Escolha entre Calendar (eventos) ou Booking (recursos nativos)</CardDescription>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex items-center justify-between rounded-lg border p-3">
+            <div className="space-y-0.5">
+              <p className="text-sm font-medium">
+                {config.booking_mode === "booking" ? "Booking (Recursos)" : "Calendar (Eventos)"}
+              </p>
+              <p className="text-xs text-muted-foreground">
+                {config.booking_mode === "booking"
+                  ? "Usa a API booking.v1 com slots de recursos nativos do Bitrix24"
+                  : "Usa a API Calendar para criar eventos no calendário de um utilizador"}
+              </p>
+            </div>
+            <Switch
+              checked={config.booking_mode === "booking"}
+              onCheckedChange={(v) =>
+                setConfig((p) => ({ ...p, booking_mode: v ? "booking" : "calendar" }))
+              }
+            />
+          </div>
+
+          {config.booking_mode === "booking" && (
+            <div className="space-y-3 rounded-lg border bg-muted/30 p-3">
+              <div className="space-y-1">
+                <Label className="text-xs">Recurso Bitrix24</Label>
+                {loadingResources ? (
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground py-2">
+                    <Loader2 className="h-3 w-3 animate-spin" /> A carregar recursos…
+                  </div>
+                ) : resources.length > 0 ? (
+                  <Select
+                    value={config.booking_resource_id || "__none__"}
+                    onValueChange={(v) =>
+                      setConfig((p) => ({ ...p, booking_resource_id: v === "__none__" ? "" : v }))
+                    }
+                  >
+                    <SelectTrigger className="h-9">
+                      <SelectValue placeholder="Selecione um recurso…" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__none__">Nenhum</SelectItem>
+                      {resources.map((r) => (
+                        <SelectItem key={r.id} value={String(r.id)}>
+                          {r.name}{r.type ? ` (${r.type})` : ""}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                ) : (
+                  <p className="text-xs text-muted-foreground py-1">
+                    Nenhum recurso encontrado no Bitrix24.
+                  </p>
+                )}
+              </div>
+
+              <div className="flex gap-2">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={loadResources}
+                  disabled={loadingResources}
+                  className="text-xs"
+                >
+                  <RefreshCw className={`h-3 w-3 mr-1 ${loadingResources ? "animate-spin" : ""}`} />
+                  Atualizar
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={handleCreateResource}
+                  disabled={creatingResource}
+                  className="text-xs"
+                >
+                  {creatingResource ? (
+                    <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                  ) : (
+                    <Plus className="h-3 w-3 mr-1" />
+                  )}
+                  Criar Recurso
+                </Button>
+              </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
       {/* Horário de trabalho */}
       <Card>
         <CardHeader className="pb-3">
@@ -213,7 +371,6 @@ export default function AgendaTab() {
             </div>
           </div>
 
-          {/* Preview dos slots */}
           <div className="rounded-lg border bg-muted/30 p-3">
             <p className="text-xs font-medium text-muted-foreground mb-2">Exemplo de slots gerados:</p>
             <div className="flex flex-wrap gap-1.5">
@@ -230,103 +387,107 @@ export default function AgendaTab() {
         </CardContent>
       </Card>
 
-      {/* Responsável padrão */}
-      <Card>
-        <CardHeader className="pb-3">
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-emerald-100 dark:bg-emerald-900/30">
-              <User className="h-5 w-5 text-emerald-600" />
+      {/* Responsável padrão — only in calendar mode */}
+      {config.booking_mode === "calendar" && (
+        <Card>
+          <CardHeader className="pb-3">
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-emerald-100 dark:bg-emerald-900/30">
+                <User className="h-5 w-5 text-emerald-600" />
+              </div>
+              <div>
+                <CardTitle className="text-base">Responsável Padrão</CardTitle>
+                <CardDescription>Utilizador pré-selecionado ao abrir o calendário de agendamento</CardDescription>
+              </div>
             </div>
-            <div>
-              <CardTitle className="text-base">Responsável Padrão</CardTitle>
-              <CardDescription>Utilizador pré-selecionado ao abrir o calendário de agendamento</CardDescription>
-            </div>
-          </div>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-1">
-            <Label className="text-xs">Utilizador Bitrix24</Label>
-            <Select
-              value={config.default_user_id || "__none__"}
-              onValueChange={(v) => setConfig((p) => ({ ...p, default_user_id: v === "__none__" ? "" : v }))}
-            >
-              <SelectTrigger className="h-9">
-                <SelectValue placeholder={loadingUsers ? "A carregar…" : "Selecione…"} />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="__none__">Nenhum (escolher ao agendar)</SelectItem>
-                {(bitrixUsers || []).map((u) => (
-                  <SelectItem key={u.id} value={u.id}>
-                    {u.name}{u.position ? ` — ${u.position}` : ""}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <p className="text-[10px] text-muted-foreground">
-              Este utilizador será automaticamente selecionado quando o calendário abrir no Bitrix24
-            </p>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Tipo de reunião */}
-      <Card>
-        <CardHeader className="pb-3">
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-violet-100 dark:bg-violet-900/30">
-              <Video className="h-5 w-5 text-violet-600" />
-            </div>
-            <div>
-              <CardTitle className="text-base">Reunião Online</CardTitle>
-              <CardDescription>Configurações de videoconferência</CardDescription>
-            </div>
-          </div>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="space-y-1">
-            <Label className="text-xs">Tipo de reunião padrão</Label>
-            <Select
-              value={config.meeting_type}
-              onValueChange={(v) => setConfig((p) => ({ ...p, meeting_type: v as any }))}
-            >
-              <SelectTrigger className="h-9">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="presencial">Presencial</SelectItem>
-                <SelectItem value="online">Online</SelectItem>
-                <SelectItem value="both">Ambos (escolher ao agendar)</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="flex items-center justify-between rounded-lg border p-3">
-            <div className="space-y-0.5">
-              <p className="text-sm font-medium">Enviar link de reunião</p>
-              <p className="text-xs text-muted-foreground">
-                Gera automaticamente o link de videoconferência do Bitrix24 ao agendar reunião online
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-1">
+              <Label className="text-xs">Utilizador Bitrix24</Label>
+              <Select
+                value={config.default_user_id || "__none__"}
+                onValueChange={(v) => setConfig((p) => ({ ...p, default_user_id: v === "__none__" ? "" : v }))}
+              >
+                <SelectTrigger className="h-9">
+                  <SelectValue placeholder={loadingUsers ? "A carregar…" : "Selecione…"} />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none__">Nenhum (escolher ao agendar)</SelectItem>
+                  {(bitrixUsers || []).map((u) => (
+                    <SelectItem key={u.id} value={u.id}>
+                      {u.name}{u.position ? ` — ${u.position}` : ""}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-[10px] text-muted-foreground">
+                Este utilizador será automaticamente selecionado quando o calendário abrir no Bitrix24
               </p>
             </div>
-            <Switch
-              checked={config.send_meeting_link}
-              onCheckedChange={(v) => setConfig((p) => ({ ...p, send_meeting_link: v }))}
-            />
-          </div>
+          </CardContent>
+        </Card>
+      )}
 
-          <div className="space-y-1">
-            <Label className="text-xs">Título padrão do evento</Label>
-            <Input
-              value={config.event_title_template}
-              onChange={(e) => setConfig((p) => ({ ...p, event_title_template: e.target.value }))}
-              className="h-9"
-              placeholder="Reunião — {cliente}"
-            />
-            <p className="text-[10px] text-muted-foreground">
-              Use <code className="bg-muted px-1 rounded">{"{cliente}"}</code> para o nome do contacto
-            </p>
-          </div>
-        </CardContent>
-      </Card>
+      {/* Tipo de reunião — only in calendar mode */}
+      {config.booking_mode === "calendar" && (
+        <Card>
+          <CardHeader className="pb-3">
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-violet-100 dark:bg-violet-900/30">
+                <Video className="h-5 w-5 text-violet-600" />
+              </div>
+              <div>
+                <CardTitle className="text-base">Reunião Online</CardTitle>
+                <CardDescription>Configurações de videoconferência</CardDescription>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="space-y-1">
+              <Label className="text-xs">Tipo de reunião padrão</Label>
+              <Select
+                value={config.meeting_type}
+                onValueChange={(v) => setConfig((p) => ({ ...p, meeting_type: v as any }))}
+              >
+                <SelectTrigger className="h-9">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="presencial">Presencial</SelectItem>
+                  <SelectItem value="online">Online</SelectItem>
+                  <SelectItem value="both">Ambos (escolher ao agendar)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="flex items-center justify-between rounded-lg border p-3">
+              <div className="space-y-0.5">
+                <p className="text-sm font-medium">Enviar link de reunião</p>
+                <p className="text-xs text-muted-foreground">
+                  Gera automaticamente o link de videoconferência do Bitrix24 ao agendar reunião online
+                </p>
+              </div>
+              <Switch
+                checked={config.send_meeting_link}
+                onCheckedChange={(v) => setConfig((p) => ({ ...p, send_meeting_link: v }))}
+              />
+            </div>
+
+            <div className="space-y-1">
+              <Label className="text-xs">Título padrão do evento</Label>
+              <Input
+                value={config.event_title_template}
+                onChange={(e) => setConfig((p) => ({ ...p, event_title_template: e.target.value }))}
+                className="h-9"
+                placeholder="Reunião — {cliente}"
+              />
+              <p className="text-[10px] text-muted-foreground">
+                Use <code className="bg-muted px-1 rounded">{"{cliente}"}</code> para o nome do contacto
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Save button */}
       <Button className="w-full" onClick={handleSave} disabled={saving || !loaded}>
