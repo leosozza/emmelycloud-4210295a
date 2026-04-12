@@ -112,6 +112,7 @@ export default function AgentesPage() {
   const [editingAgent, setEditingAgent] = useState<Partial<AIAgent>>(defaultAgent);
   const [saving, setSaving] = useState(false);
   const [builderOpen, setBuilderOpen] = useState(false);
+  const [bitrixIntegration, setBitrixIntegration] = useState<{ id: string; bitrix_agent_id: string | null } | null>(null);
 
   useEffect(() => { loadData(); }, []);
 
