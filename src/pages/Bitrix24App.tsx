@@ -62,6 +62,12 @@ import {
   SidebarHeader, SidebarFooter, SidebarTrigger, useSidebar,
 } from "@/components/ui/sidebar";
 import { AgentFormDialog } from "@/components/agentes/AgentFormDialog";
+import { AgentCard } from "@/components/agentes/AgentCard";
+import { AgentBuilderChat } from "@/components/agentes/AgentBuilderChat";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Switch } from "@/components/ui/switch";
 import { Slider } from "@/components/ui/slider";
 import { Separator } from "@/components/ui/separator";
@@ -1212,11 +1218,15 @@ function AgentesView({ botId, integrationId }: { botId: string | null; integrati
   const [flows, setFlows] = useState<FlowOption[]>([]);
   const [docs, setDocs] = useState<DocOption[]>([]);
   const [collections, setCollections] = useState<CollectionOption[]>([]);
+  const [skills, setSkills] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [deleteId, setDeleteId] = useState<string | null>(null);
   const [editingAgent, setEditingAgent] = useState<Partial<AIAgent>>({ ...defaultAgent });
   const [saving, setSaving] = useState(false);
-  const [republishing, setRepublishing] = useState<string | null>(null);
+  const [builderOpen, setBuilderOpen] = useState(false);
+  const [syncingBots, setSyncingBots] = useState(false);
+  const { toast: toastFn } = useToast();
 
   const loadData = async () => {
     setLoading(true);
@@ -1257,69 +1267,177 @@ function AgentesView({ botId, integrationId }: { botId: string | null; integrati
 
   useEffect(() => { loadData(); }, []);
 
+  const syncKnowledgeDocuments = async (agentId: string, collectionIds: string[]) => {
+    await fetch(`${SUPABASE_URL}/rest/v1/agent_knowledge_documents?agent_id=eq.${agentId}`, {
+      method: "DELETE",
+      headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` },
+    });
+    if (collectionIds.length === 0) return;
+    const colRes = await fetch(`${SUPABASE_URL}/rest/v1/knowledge_documents?select=id&collection_id=in.(${collectionIds.join(",")})`, {
+      headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` },
+    });
+    if (colRes.ok) {
+      const colDocs: any[] = await colRes.json();
+      if (colDocs.length > 0) {
+        await fetch(`${SUPABASE_URL}/rest/v1/agent_knowledge_documents`, {
+          method: "POST",
+          headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}`, "Content-Type": "application/json", Prefer: "return=minimal" },
+          body: JSON.stringify(colDocs.map((d: any) => ({ agent_id: agentId, document_id: d.id }))),
+        });
+      }
+    }
+  };
+
   const handleSave = async () => {
     if (!editingAgent.name?.trim()) return;
     setSaving(true);
     try {
-      const url = editingAgent.id
-        ? `${SUPABASE_URL}/rest/v1/ai_agents?id=eq.${editingAgent.id}`
+      let agentId = editingAgent.id;
+      const url = agentId
+        ? `${SUPABASE_URL}/rest/v1/ai_agents?id=eq.${agentId}`
         : `${SUPABASE_URL}/rest/v1/ai_agents`;
-      await fetch(url, {
-        method: editingAgent.id ? "PATCH" : "POST",
-        headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}`, "Content-Type": "application/json", Prefer: "return=minimal" },
+      const res = await fetch(url, {
+        method: agentId ? "PATCH" : "POST",
+        headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}`, "Content-Type": "application/json", Prefer: agentId ? "return=minimal" : "return=representation" },
         body: JSON.stringify(editingAgent),
       });
+      if (!agentId && res.ok) {
+        const created = await res.json();
+        agentId = Array.isArray(created) ? created[0]?.id : created?.id;
+      }
+      if (agentId) {
+        await syncKnowledgeDocuments(agentId, editingAgent.training_collection_ids || []);
+      }
       setDialogOpen(false);
       loadData();
     } catch (e) { console.error(e); }
     setSaving(false);
   };
 
-  const handleSetDefault = async (id: string) => {
-    await fetch(`${SUPABASE_URL}/rest/v1/ai_agents?is_default=eq.true`, {
-      method: "PATCH",
-      headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}`, "Content-Type": "application/json", Prefer: "return=minimal" },
-      body: JSON.stringify({ is_default: false }),
-    });
-    await fetch(`${SUPABASE_URL}/rest/v1/ai_agents?id=eq.${id}`, {
-      method: "PATCH",
-      headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}`, "Content-Type": "application/json", Prefer: "return=minimal" },
-      body: JSON.stringify({ is_default: true }),
-    });
-    loadData();
-  };
-
-  const handleToggleActive = async (id: string, current: boolean) => {
-    await fetch(`${SUPABASE_URL}/rest/v1/ai_agents?id=eq.${id}`, {
-      method: "PATCH",
-      headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}`, "Content-Type": "application/json", Prefer: "return=minimal" },
-      body: JSON.stringify({ is_active: !current }),
-    });
-    loadData();
-  };
-
-  const handleDeleteAgent = async (id: string) => {
-    if (!confirm("Remover este agente?")) return;
-    await fetch(`${SUPABASE_URL}/rest/v1/ai_agents?id=eq.${id}`, {
+  const handleDelete = async () => {
+    if (!deleteId) return;
+    await fetch(`${SUPABASE_URL}/rest/v1/ai_agents?id=eq.${deleteId}`, {
       method: "DELETE",
       headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` },
     });
+    setDeleteId(null);
     loadData();
   };
 
-  const handleRepublishBot = async (agent: AIAgent) => {
+  const toggleDefault = async (agent: AIAgent) => {
+    if (!agent.is_default) {
+      await fetch(`${SUPABASE_URL}/rest/v1/ai_agents?is_default=eq.true`, {
+        method: "PATCH",
+        headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}`, "Content-Type": "application/json", Prefer: "return=minimal" },
+        body: JSON.stringify({ is_default: false }),
+      });
+    }
+    await fetch(`${SUPABASE_URL}/rest/v1/ai_agents?id=eq.${agent.id}`, {
+      method: "PATCH",
+      headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}`, "Content-Type": "application/json", Prefer: "return=minimal" },
+      body: JSON.stringify({ is_default: !agent.is_default }),
+    });
+    loadData();
+  };
+
+  const duplicateAgent = async (agent: AIAgent) => {
+    const { id, created_at, ...rest } = agent;
+    const clone = { ...rest, name: `${agent.name} (cópia)`, is_default: false };
+    await fetch(`${SUPABASE_URL}/rest/v1/ai_agents`, {
+      method: "POST",
+      headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}`, "Content-Type": "application/json", Prefer: "return=minimal" },
+      body: JSON.stringify(clone),
+    });
+    loadData();
+  };
+
+  const syncBitrixBots = async () => {
     if (!integrationId) return;
-    setRepublishing(agent.id);
+    setSyncingBots(true);
     try {
       const res = await fetch(`${SUPABASE_URL}/functions/v1/bitrix24-reregister-bot`, {
         method: "POST",
         headers: { "Content-Type": "application/json", apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` },
-        body: JSON.stringify({ integration_id: integrationId, agent_id: agent.id }),
+        body: JSON.stringify({ integration_id: integrationId }),
       });
       const data = await res.json();
-      if (!data.success) console.error("Republish failed:", data.error);
-    } catch (e) { console.error(e); }
-    setRepublishing(null);
+      if (data.success) {
+        toastFn({ title: `${data.registered?.length || 0} bots sincronizados no Bitrix24` });
+        loadData();
+      } else {
+        toastFn({ title: "Erro", description: data.error || "Erro ao sincronizar bots", variant: "destructive" });
+      }
+    } catch (e: any) {
+      toastFn({ title: "Erro", description: e.message, variant: "destructive" });
+    }
+    setSyncingBots(false);
+  };
+
+  const openEdit = async (agent: AIAgent) => {
+    setEditingAgent({ ...agent });
+    try {
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/agent_skills?select=skill_type,is_enabled,requires_confirmation&agent_id=eq.${agent.id}`, {
+        headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` },
+      });
+      if (res.ok) setSkills(await res.json());
+      else setSkills([]);
+    } catch { setSkills([]); }
+    setDialogOpen(true);
+  };
+
+  const openCreate = () => { setEditingAgent({ ...defaultAgent }); setSkills([]); setDialogOpen(true); };
+
+  const handleBuilderSave = async (config: any) => {
+    const { skills: skillKeys, ...agentFields } = config;
+    const agentData = { ...agentFields, is_active: true, is_default: false, training_collection_ids: [], sub_agent_ids: [], routing_rules: {} };
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/ai_agents`, {
+      method: "POST",
+      headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}`, "Content-Type": "application/json", Prefer: "return=representation" },
+      body: JSON.stringify(agentData),
+    });
+    if (res.ok) {
+      const created = await res.json();
+      const newId = Array.isArray(created) ? created[0]?.id : created?.id;
+      if (skillKeys?.length > 0 && newId) {
+        await fetch(`${SUPABASE_URL}/rest/v1/agent_skills`, {
+          method: "POST",
+          headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}`, "Content-Type": "application/json", Prefer: "return=minimal" },
+          body: JSON.stringify(skillKeys.map((sk: string) => ({ agent_id: newId, skill_type: sk, is_enabled: true }))),
+        });
+      }
+    }
+    loadData();
+  };
+
+  const handleSkillToggle = async (skillKey: string, enabled: boolean) => {
+    if (!editingAgent.id) return;
+    const isConfirmToggle = skillKey.endsWith(":confirm");
+    const skillType = isConfirmToggle ? skillKey.replace(":confirm", "") : skillKey;
+    if (isConfirmToggle) {
+      await fetch(`${SUPABASE_URL}/rest/v1/agent_skills?agent_id=eq.${editingAgent.id}&skill_type=eq.${skillType}`, {
+        method: "PATCH",
+        headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}`, "Content-Type": "application/json", Prefer: "return=minimal" },
+        body: JSON.stringify({ requires_confirmation: enabled }),
+      });
+      setSkills(prev => prev.map(s => s.skill_type === skillType ? { ...s, requires_confirmation: enabled } : s));
+    } else {
+      const existing = skills.find(s => s.skill_type === skillType);
+      if (existing) {
+        await fetch(`${SUPABASE_URL}/rest/v1/agent_skills?agent_id=eq.${editingAgent.id}&skill_type=eq.${skillType}`, {
+          method: "PATCH",
+          headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}`, "Content-Type": "application/json", Prefer: "return=minimal" },
+          body: JSON.stringify({ is_enabled: enabled }),
+        });
+        setSkills(prev => prev.map(s => s.skill_type === skillType ? { ...s, is_enabled: enabled } : s));
+      } else {
+        await fetch(`${SUPABASE_URL}/rest/v1/agent_skills`, {
+          method: "POST",
+          headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}`, "Content-Type": "application/json", Prefer: "return=minimal" },
+          body: JSON.stringify({ agent_id: editingAgent.id, skill_type: skillType, is_enabled: enabled }),
+        });
+        setSkills(prev => [...prev, { skill_type: skillType, is_enabled: enabled, requires_confirmation: false }]);
+      }
+    }
   };
 
   return (
@@ -1329,12 +1447,32 @@ function AgentesView({ botId, integrationId }: { botId: string | null; integrati
           <h1 className="text-xl font-bold text-white">Agentes IA</h1>
           <p className="text-white/60 text-sm mt-0.5">Configure e gerencie os seus agentes de IA</p>
         </div>
-        <Button
-          onClick={() => { setEditingAgent({ ...defaultAgent }); setDialogOpen(true); }}
-          className="rounded-md bg-white/15 hover:bg-white/25 text-white border-0"
-        >
-          <Plus className="h-4 w-4 mr-2" /> Novo Agente
-        </Button>
+        <div className="flex gap-2">
+          {integrationId && (
+            <Button
+              variant="outline"
+              onClick={syncBitrixBots}
+              disabled={syncingBots}
+              className="rounded-md bg-white/10 hover:bg-white/20 text-white border-white/20"
+            >
+              {syncingBots ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Bot className="h-4 w-4 mr-2" />}
+              Sincronizar Bots Bitrix24
+            </Button>
+          )}
+          <Button
+            variant="outline"
+            onClick={() => setBuilderOpen(true)}
+            className="rounded-md bg-white/10 hover:bg-white/20 text-white border-white/20"
+          >
+            <Sparkles className="h-4 w-4 mr-2" /> Criar com IA
+          </Button>
+          <Button
+            onClick={openCreate}
+            className="rounded-md bg-white/15 hover:bg-white/25 text-white border-0"
+          >
+            <Plus className="h-4 w-4 mr-2" /> Novo Agente
+          </Button>
+        </div>
       </div>
 
       {loading ? (
@@ -1344,59 +1482,23 @@ function AgentesView({ botId, integrationId }: { botId: string | null; integrati
           <CardContent className="py-12 text-center">
             <Bot className="h-12 w-12 mx-auto mb-3 text-muted-foreground opacity-30" />
             <p className="text-muted-foreground">Nenhum agente configurado</p>
-            <Button onClick={() => { setEditingAgent({ ...defaultAgent }); setDialogOpen(true); }} className="mt-4">
+            <Button onClick={openCreate} className="mt-4">
               <Plus className="h-4 w-4 mr-2" /> Criar Primeiro Agente
             </Button>
           </CardContent>
         </Card>
       ) : (
-        <div className="grid gap-4">
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           {agents.map((agent) => (
-            <Card key={agent.id} className="b24-card">
-              <CardContent className="pt-5 pb-4">
-                <div className="flex items-start gap-4">
-                  <div className="w-12 h-12 rounded-xl bg-bitrix-gradient flex items-center justify-center text-white font-bold text-lg shrink-0">
-                    {agent.name.charAt(0)}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-1">
-                      <h3 className="font-semibold text-foreground">{agent.name}</h3>
-                      {agent.is_default && <Badge variant="secondary" className="text-[10px]">Padrão</Badge>}
-                      <Badge variant={agent.is_active ? "default" : "outline"} className="text-[10px]">
-                        {agent.is_active ? "Ativo" : "Inativo"}
-                      </Badge>
-                    </div>
-                    <p className="text-xs text-muted-foreground line-clamp-2">{agent.description || "Sem descrição"}</p>
-                    <div className="flex items-center gap-1 mt-2 text-[10px] text-muted-foreground">
-                      <span>{agent.ai_provider}/{agent.ai_model}</span>
-                      <span>•</span>
-                      <span>Temp: {agent.temperature}</span>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-1 shrink-0">
-                    {!agent.is_default && (
-                      <Button variant="ghost" size="sm" className="h-8 text-xs" onClick={() => handleSetDefault(agent.id)}>
-                        <Star className="h-3.5 w-3.5 mr-1" /> Padrão
-                      </Button>
-                    )}
-                    <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => { setEditingAgent(agent); setDialogOpen(true); }}>
-                      <Edit className="h-3.5 w-3.5" />
-                    </Button>
-                    <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handleToggleActive(agent.id, agent.is_active)}>
-                      <Power className={cn("h-3.5 w-3.5", agent.is_active ? "text-success" : "text-muted-foreground")} />
-                    </Button>
-                    {integrationId && (
-                      <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handleRepublishBot(agent)} disabled={republishing === agent.id}>
-                        {republishing === agent.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ExternalLink className="h-3.5 w-3.5" />}
-                      </Button>
-                    )}
-                    <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:text-destructive" onClick={() => handleDeleteAgent(agent.id)}>
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </Button>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
+            <AgentCard
+              key={agent.id}
+              agent={agent}
+              providers={providers}
+              onEdit={openEdit}
+              onDelete={(id) => setDeleteId(id)}
+              onToggleDefault={toggleDefault}
+              onDuplicate={duplicateAgent}
+            />
           ))}
         </div>
       )}
@@ -1413,6 +1515,30 @@ function AgentesView({ botId, integrationId }: { botId: string | null; integrati
         agents={agents}
         saving={saving}
         onSave={handleSave}
+        skills={skills}
+        onSkillToggle={handleSkillToggle}
+      />
+
+      <AlertDialog open={!!deleteId} onOpenChange={() => setDeleteId(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Eliminar agente?</AlertDialogTitle>
+            <AlertDialogDescription>Esta ação não pode ser revertida. O agente e todo o seu histórico serão eliminados.</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={handleDelete} className="bg-destructive text-destructive-foreground">Eliminar</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AgentBuilderChat
+        open={builderOpen}
+        onOpenChange={setBuilderOpen}
+        onSave={handleBuilderSave}
+        flows={flows}
+        collections={collections}
+        agents={agents}
       />
     </div>
   );
