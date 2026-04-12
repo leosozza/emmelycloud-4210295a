@@ -25,7 +25,6 @@ function compressOldHistory(messages: { role: string; content: string }[]): stri
   return `\n\nCONTEXTO_ANTERIOR[${messages.length}]{idx,role,msg}:\n${rows.join("\n")}\n`;
 }
 
-// Fix #11: SHA-256 hash to prevent collisions
 async function computeHash(str: string): Promise<string> {
   const data = new TextEncoder().encode(str);
   const hashBuffer = await crypto.subtle.digest("SHA-256", data);
@@ -39,6 +38,7 @@ const HISTORY_LIMIT = 30;
 const MAX_CHUNKS = 20;
 const RETRY_DELAY_MS = 2000;
 const RETRYABLE_STATUSES = [429, 502, 503];
+const MAX_REACT_ITERATIONS = 5;
 
 // ─── Cost estimation per model (per 1M tokens, approximate USD) ───
 const MODEL_PRICING: Record<string, { input: number; output: number }> = {
@@ -59,7 +59,6 @@ function estimateCost(model: string, promptTokens: number, completionTokens: num
   return (promptTokens * pricing.input + completionTokens * pricing.output) / 1_000_000;
 }
 
-// Fix #12: Accumulator for auxiliary LLM call tokens
 interface TokenAccumulator {
   prompt_tokens: number;
   completion_tokens: number;
@@ -78,6 +77,16 @@ function accumulateUsage(acc: TokenAccumulator, usage: any) {
   acc.aux_calls++;
 }
 
+// ─── ReACT Step Tracking ───
+interface ReACTStep {
+  type: "thought" | "tool_call" | "tool_result" | "reflection";
+  content: string;
+  tool?: string;
+  params?: any;
+  duration_ms?: number;
+  timestamp: string;
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
@@ -85,8 +94,8 @@ Deno.serve(async (req) => {
   const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
   const supabase = createClient(supabaseUrl, serviceKey);
 
-  // Fix #12: track all auxiliary LLM calls
   const auxTokens = newTokenAccumulator();
+  const reactSteps: ReACTStep[] = [];
 
   try {
     const body = await req.json();
@@ -95,7 +104,6 @@ Deno.serve(async (req) => {
       message_text,
       agent_id,
       skip_send,
-      // ─── intention_mode: coleta estruturada de campos via IA ───
       intention_mode,
       intention_fields,
       intention_collected,
@@ -106,20 +114,14 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ error: "message_text required" }), { status: 400, headers: jsonHeaders });
     }
 
-    // ─── INTENTION MODE: extrai campos estruturados com tool calling ───────────
+    // ─── INTENTION MODE ───
     if (intention_mode && intention_fields && Array.isArray(intention_fields)) {
       const result = await processIntentionMode(
-        supabase,
-        conversation_id,
-        message_text,
-        intention_fields,
-        intention_collected || {},
-        intention_turn || 1,
-        auxTokens
+        supabase, conversation_id, message_text, intention_fields,
+        intention_collected || {}, intention_turn || 1, auxTokens
       );
       return new Response(JSON.stringify(result), { headers: jsonHeaders });
     }
-    // ────────────────────────────────────────────────────────────────────────────
 
     const noConversationMode = !conversation_id && skip_send;
     const startTime = Date.now();
@@ -144,7 +146,6 @@ Deno.serve(async (req) => {
         return new Response(JSON.stringify({ skipped: "human_mode" }), { headers: jsonHeaders });
       }
 
-      // Fix #9: Single query for channel settings (was 2 separate queries)
       const { data: channelSetting } = await supabase
         .from("chatbot_channel_settings")
         .select("enabled, agent_id")
@@ -157,17 +158,15 @@ Deno.serve(async (req) => {
       }
 
       conversation = conv;
-      // Store channelSetting for reuse below
       (conversation as any)._channelSetting = channelSetting;
     }
 
-    // 4. Find agent (with multi-agent routing support)
+    // 4. Find agent
     let agent: any = null;
     if (agent_id) {
       const { data } = await supabase.from("ai_agents").select("*").eq("id", agent_id).eq("is_active", true).single();
       agent = data;
     }
-    // Fix #9: Reuse channelSetting from above instead of querying again
     if (!agent && conversation) {
       const cs = (conversation as any)._channelSetting;
       if (cs?.agent_id) {
@@ -184,7 +183,7 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ skipped: "no_active_agent" }), { headers: jsonHeaders });
     }
 
-    // 4b. Budget enforcement — check monthly spend vs budget
+    // 4b. Budget enforcement
     if (agent.monthly_budget_usd && agent.monthly_budget_usd > 0) {
       try {
         const monthStart = new Date();
@@ -206,14 +205,14 @@ Deno.serve(async (req) => {
       }
     }
 
-    // 4c. Load agent skills and inject as tools
+    // 4c. Load agent skills to determine available ReACT tools
     const { data: agentSkills } = await supabase
       .from("agent_skills")
       .select("skill_type, skill_config")
       .eq("agent_id", agent.id)
       .eq("is_enabled", true);
 
-    // 4d. Multi-agent routing — if agent has sub_agent_ids, classify intent and delegate
+    // 4d. Multi-agent routing
     if (agent.sub_agent_ids && agent.sub_agent_ids.length > 0 && conversation) {
       const routedAgent = await routeToSubAgent(supabase, agent, conversation, message_text, auxTokens);
       if (routedAgent) {
@@ -222,7 +221,7 @@ Deno.serve(async (req) => {
       }
     }
 
-    // 5. Get conversation history (expanded to 30 messages)
+    // 5. Get conversation history
     const historyResult = conversation_id ? await supabase
       .from("messages")
       .select("direction, content, created_at")
@@ -242,7 +241,7 @@ Deno.serve(async (req) => {
     }));
     const compressedHistory = compressOldHistory(olderMessages);
 
-    // 6. Get knowledge base context — try FTS, then fallback to sequential
+    // 6. Get knowledge base context
     let knowledgeContext = "";
     const { data: linkedDocs } = await supabase
       .from("agent_knowledge_documents")
@@ -252,11 +251,7 @@ Deno.serve(async (req) => {
     if (linkedDocs && linkedDocs.length > 0) {
       const docIds = linkedDocs.map((d: any) => d.document_id);
       let chunks: any[] = [];
-
-      // Fix #1 + #8: Use native PostgreSQL FTS instead of fake LLM embeddings
       chunks = await ftsSearch(supabase, message_text, docIds);
-
-      // Final fallback to sequential
       if (chunks.length === 0) {
         const { data: seqChunks } = await supabase
           .from("knowledge_chunks")
@@ -266,16 +261,13 @@ Deno.serve(async (req) => {
           .limit(MAX_CHUNKS);
         chunks = seqChunks || [];
       }
-
       if (chunks.length > 0) {
         const kbToon = chunksToToon(chunks);
         knowledgeContext = `\n\n--- BASE DE CONHECIMENTO ---\n${kbToon}\n--- FIM ---\n`;
       }
     }
 
-    // 6a-CLAW. Inject compact history summary (inspired by compact_messages_if_needed from Claw Code)
-    // When a conversation has >30 messages, the history compactor generates a structured summary
-    // of older messages and injects it into the system prompt, keeping the context window lean.
+    // 6a. Compact history summary
     let compactSummaryContext = "";
     if (conversation_id) {
       try {
@@ -288,9 +280,7 @@ Deno.serve(async (req) => {
           const compactData = await compactRes.json();
           if (compactData.has_summary && compactData.context_prompt) {
             compactSummaryContext = `\n\n${compactData.context_prompt}\n`;
-            console.log(`[AI-PROCESS] Compact context injected (${compactData.summary?.messages_summarized || 0} msgs summarized)`);
           }
-          // Trigger async compaction if needed (fire-and-forget)
           fetch(`${supabaseUrl}/functions/v1/ai-history-compactor`, {
             method: "POST",
             headers: { "Content-Type": "application/json", "Authorization": `Bearer ${serviceKey}` },
@@ -298,7 +288,7 @@ Deno.serve(async (req) => {
           }).catch(() => {});
         }
       } catch (e) {
-        console.log("[AI-PROCESS] History compactor unavailable, using inline compression");
+        console.log("[AI-PROCESS] History compactor unavailable");
       }
     }
 
@@ -313,7 +303,6 @@ Deno.serve(async (req) => {
           .select("key, value")
           .eq(phoneCol, contactId)
           .limit(20);
-
         if (memories && memories.length > 0) {
           memoryContext = "\n\nMEMÓRIA DO CONTACTO:\n" +
             memories.map((m: any) => `- ${m.key}: ${m.value}`).join("\n") + "\n";
@@ -321,7 +310,7 @@ Deno.serve(async (req) => {
       }
     }
 
-    // 6c. Sentiment analysis on incoming message
+    // 6c. Sentiment analysis
     let sentimentFlag = "";
     if (conversation) {
       const sentiment = await analyzeSentiment(message_text, recentMessages, auxTokens);
@@ -372,7 +361,6 @@ Deno.serve(async (req) => {
 
     const autoLangPrompt = `\n\nIDIOMA: Deteta automaticamente o idioma da primeira mensagem do cliente e responde SEMPRE nesse mesmo idioma durante toda a conversa. Não perguntes o idioma — adapta-te silenciosamente. Suportas: Português, English, Español, Français, Deutsch, Italiano, 中文, 日本語, العربية, e outros.\n`;
 
-    // ─── Personality Engine injection ───
     let personalityPrompt = "";
     if (agent.personality_style || agent.communication_tone || agent.strategic_objective) {
       const styleMap: Record<string, string> = {
@@ -397,14 +385,15 @@ Deno.serve(async (req) => {
       if (agent.strategic_objective) personalityPrompt += `- OBJECTIVO ESTRATÉGICO: ${agent.strategic_objective}\n`;
     }
 
-    // Use compact summary if available, otherwise fall back to inline compressed history
     const historySection = compactSummaryContext || compressedHistory;
     const systemPrompt = (agent.system_prompt || "") + personalityPrompt + knowledgeContext + memoryContext + historySection + contactContext + antiRepetitionPrompt + sentimentFlag + autoLangPrompt;
 
     console.log(`[AI-PROCESS] Context: recent=${recentMessages.length}, older=${olderMessages.length}, kb=${linkedDocs?.length || 0}, memory=${memoryContext ? "yes" : "no"}`);
 
-    // 9. Build tools from agent_tools table (dynamic registry)
-    let tools: any[] | undefined;
+    // 9. Build tools — combine agent_tools + built-in ReACT tools based on skills
+    const allTools: any[] = [];
+
+    // 9a. Load dynamic tools from agent_tools table
     const { data: agentTools } = await supabase
       .from("agent_tools")
       .select("tool_name, tool_description, tool_parameters")
@@ -412,132 +401,257 @@ Deno.serve(async (req) => {
       .eq("is_active", true);
 
     if (agentTools && agentTools.length > 0) {
-      tools = agentTools.map((t: any) => ({
-        type: "function",
-        function: {
-          name: t.tool_name,
-          description: t.tool_description || t.tool_name,
-          parameters: t.tool_parameters || { type: "object", properties: {} },
-        },
-      }));
+      for (const t of agentTools) {
+        allTools.push({
+          type: "function",
+          function: {
+            name: t.tool_name,
+            description: t.tool_description || t.tool_name,
+            parameters: t.tool_parameters || { type: "object", properties: {} },
+          },
+        });
+      }
     }
 
-    // 10. Call AI API
+    // 9b. Add built-in ReACT tools based on agent skills
+    const skillTypes = new Set((agentSkills || []).map((s: any) => s.skill_type));
+
+    // Always available: search_knowledge (if agent has KB docs)
+    if (linkedDocs && linkedDocs.length > 0) {
+      allTools.push({
+        type: "function",
+        function: {
+          name: "search_knowledge",
+          description: "Pesquisar na base de conhecimento do agente por informações relevantes",
+          parameters: {
+            type: "object",
+            properties: {
+              query: { type: "string", description: "Termos de pesquisa" },
+            },
+            required: ["query"],
+          },
+        },
+      });
+    }
+
+    // CRM tools (if skill crm is enabled)
+    if (skillTypes.has("crm") || skillTypes.has("leads")) {
+      allTools.push({
+        type: "function",
+        function: {
+          name: "query_crm",
+          description: "Pesquisar leads, propostas e contratos no CRM. Pode buscar por nome, telefone, email ou área jurídica.",
+          parameters: {
+            type: "object",
+            properties: {
+              entity: { type: "string", enum: ["lead", "proposal", "contract", "case"], description: "Tipo de entidade" },
+              search_term: { type: "string", description: "Nome, telefone, email ou outro termo" },
+            },
+            required: ["entity"],
+          },
+        },
+      });
+    }
+
+    // Knowledge Graph navigation
+    allTools.push({
+      type: "function",
+      function: {
+        name: "navigate_graph",
+        description: "Navegar o grafo de entidades para encontrar relações entre leads, propostas, contratos e pagamentos. Ex: dado um lead, encontrar todos os contratos e pagamentos associados.",
+        parameters: {
+          type: "object",
+          properties: {
+            entity_type: { type: "string", enum: ["lead", "proposal", "contract", "case", "financial", "conversation"], description: "Tipo da entidade de partida" },
+            entity_id: { type: "string", description: "ID da entidade" },
+            depth: { type: "number", description: "Profundidade de navegação (1-3)", default: 2 },
+          },
+          required: ["entity_type", "entity_id"],
+        },
+      },
+    });
+
+    // Payment tools
+    if (skillTypes.has("payments") || skillTypes.has("financial")) {
+      allTools.push({
+        type: "function",
+        function: {
+          name: "check_payments",
+          description: "Verificar pagamentos e parcelas de um contrato ou cliente",
+          parameters: {
+            type: "object",
+            properties: {
+              contract_id: { type: "string", description: "ID do contrato (opcional)" },
+              status: { type: "string", enum: ["pendente", "paga", "atrasada", "cancelada"], description: "Filtrar por status" },
+            },
+          },
+        },
+      });
+    }
+
+    // Services listing
+    if (skillTypes.has("services") || skillTypes.has("proposals")) {
+      allTools.push({
+        type: "function",
+        function: {
+          name: "list_services",
+          description: "Listar serviços jurídicos disponíveis com preços",
+          parameters: { type: "object", properties: {} },
+        },
+      });
+    }
+
+    // Always available: transfer to human
+    allTools.push({
+      type: "function",
+      function: {
+        name: "transfer_to_human",
+        description: "Transferir a conversa para atendimento humano quando o cliente solicita ou quando não consegue resolver",
+        parameters: {
+          type: "object",
+          properties: {
+            reason: { type: "string", description: "Motivo da transferência" },
+          },
+        },
+      },
+    });
+
+    // Check governance mode — restricted agents get no tools
+    const isRestricted = agent.governance_mode === "restricted";
+    const tools = isRestricted ? undefined : (allTools.length > 0 ? allTools : undefined);
+
+    // 10. ReACT Loop — iterative reasoning with tool calling
     const { apiUrl, fetchHeaders } = await resolveProvider(supabase, agent);
 
     if (!apiUrl) {
       const fallbackReply = agent.fallback_message || "Desculpe, não consigo responder agora.";
       if (!skip_send) await sendReply(supabase, supabaseUrl, serviceKey, conversation, agent, fallbackReply);
-      await logUsage(supabase, conversation_id, agent.id, agent.ai_model, agent.ai_provider, 0, 0, 0, Date.now() - startTime, true, "no_api_url", auxTokens);
+      await logUsage(supabase, conversation_id, agent.id, agent.ai_model, agent.ai_provider, 0, 0, 0, Date.now() - startTime, true, "no_api_url", auxTokens, reactSteps);
       return new Response(JSON.stringify({ reply: fallbackReply, fallback: true }), { headers: jsonHeaders });
     }
 
-    const aiBody: any = {
-      model: agent.ai_model,
-      messages: [
-        { role: "system", content: systemPrompt },
-        ...recentMessages,
-      ],
-      temperature: Math.min(1, Math.max(0, agent.temperature || 0.7)),
-    };
-    if (tools) aiBody.tools = tools;
+    // ReACT system prompt injection
+    const reactSystemAddendum = tools ? `\n\nREACT MODE: Podes usar ferramentas para buscar informação antes de responder. Se precisares de dados, chama a ferramenta apropriada. Quando tiveres informação suficiente, responde diretamente ao cliente sem chamar mais ferramentas. Nunca exponhas detalhes internos das ferramentas ao cliente.\n` : "";
 
-    // ─── AI API call with retry for 429/502/503 ───
-    let aiResponse: Response | null = null;
-    for (let attempt = 0; attempt < 2; attempt++) {
-      aiResponse = await fetch(apiUrl, {
-        method: "POST",
-        headers: fetchHeaders,
-        body: JSON.stringify(aiBody),
-      });
+    const messages: any[] = [
+      { role: "system", content: systemPrompt + reactSystemAddendum },
+      ...recentMessages,
+    ];
 
-      if (aiResponse.ok || !RETRYABLE_STATUSES.includes(aiResponse.status)) break;
+    let replyText = "";
+    let totalUsage = { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 };
 
-      console.log(`[AI-PROCESS] Retryable error ${aiResponse.status}, attempt ${attempt + 1}/2, waiting ${RETRY_DELAY_MS}ms`);
-      await new Promise(r => setTimeout(r, RETRY_DELAY_MS));
-    }
+    for (let iteration = 0; iteration < MAX_REACT_ITERATIONS; iteration++) {
+      const iterStart = Date.now();
 
-    if (!aiResponse || !aiResponse.ok) {
-      const errText = aiResponse ? await aiResponse.text() : "no response";
-      console.error("[AI-PROCESS] AI API error:", aiResponse?.status, errText);
-      const fallbackReply = agent.fallback_message || "Desculpe, não consigo responder agora.";
-      if (!skip_send) await sendReply(supabase, supabaseUrl, serviceKey, conversation, agent, fallbackReply);
-      await logUsage(supabase, conversation_id, agent.id, agent.ai_model, agent.ai_provider, 0, 0, 0, Date.now() - startTime, true, `API ${aiResponse?.status}`, auxTokens);
-      return new Response(JSON.stringify({ reply: fallbackReply, fallback: true }), { headers: jsonHeaders });
-    }
-
-    const result = await aiResponse.json();
-
-    // Handle tool calls (dynamic registry)
-    const toolCalls = result.choices?.[0]?.message?.tool_calls;
-    let replyText = result.choices?.[0]?.message?.content || "";
-
-    if (toolCalls && toolCalls.length > 0) {
-      console.log("[AI-PROCESS] Tool calls detected:", toolCalls.map((t: any) => t.function.name));
-
-      const toolResults: any[] = [];
-      for (const tc of toolCalls) {
-        const toolResult = await executeToolCall(supabase, supabaseUrl, serviceKey, conversation, tc);
-        toolResults.push({
-          role: "tool",
-          tool_call_id: tc.id,
-          content: JSON.stringify(toolResult),
-        });
-      }
-
-      // Fix #5: Tool follow-up with retry (same pattern as main call)
-      const followUpBody: any = {
+      const aiBody: any = {
         model: agent.ai_model,
-        messages: [
-          { role: "system", content: systemPrompt },
-          ...recentMessages,
-          result.choices[0].message,
-          ...toolResults,
-        ],
+        messages,
         temperature: Math.min(1, Math.max(0, agent.temperature || 0.7)),
       };
+      if (tools && iteration < MAX_REACT_ITERATIONS - 1) aiBody.tools = tools;
 
-      let followUp: Response | null = null;
+      // AI API call with retry
+      let aiResponse: Response | null = null;
       for (let attempt = 0; attempt < 2; attempt++) {
-        followUp = await fetch(apiUrl, {
+        aiResponse = await fetch(apiUrl, {
           method: "POST",
           headers: fetchHeaders,
-          body: JSON.stringify(followUpBody),
+          body: JSON.stringify(aiBody),
         });
-        if (followUp.ok || !RETRYABLE_STATUSES.includes(followUp.status)) break;
-        console.log(`[AI-PROCESS] Tool follow-up retry ${attempt + 1}/2, waiting ${RETRY_DELAY_MS}ms`);
+        if (aiResponse.ok || !RETRYABLE_STATUSES.includes(aiResponse.status)) break;
+        console.log(`[AI-PROCESS] Retryable error ${aiResponse.status}, attempt ${attempt + 1}/2`);
         await new Promise(r => setTimeout(r, RETRY_DELAY_MS));
       }
 
-      if (followUp && followUp.ok) {
-        const followUpResult = await followUp.json();
-        replyText = followUpResult.choices?.[0]?.message?.content || replyText;
+      if (!aiResponse || !aiResponse.ok) {
+        const errText = aiResponse ? await aiResponse.text() : "no response";
+        console.error("[AI-PROCESS] AI API error:", aiResponse?.status, errText);
+        reactSteps.push({ type: "reflection", content: `API error: ${aiResponse?.status}`, timestamp: new Date().toISOString() });
+        break;
+      }
 
-        // Merge usage
-        const fu = followUpResult.usage || {};
-        const ou = result.usage || {};
-        result.usage = {
-          prompt_tokens: (ou.prompt_tokens || 0) + (fu.prompt_tokens || 0),
-          completion_tokens: (ou.completion_tokens || 0) + (fu.completion_tokens || 0),
-          total_tokens: (ou.total_tokens || 0) + (fu.total_tokens || 0),
-        };
+      const result = await aiResponse.json();
+      const usage = result.usage || {};
+      totalUsage.prompt_tokens += usage.prompt_tokens || 0;
+      totalUsage.completion_tokens += usage.completion_tokens || 0;
+      totalUsage.total_tokens += usage.total_tokens || 0;
+
+      const choice = result.choices?.[0]?.message;
+      const toolCalls = choice?.tool_calls;
+      const content = choice?.content || "";
+
+      if (!toolCalls || toolCalls.length === 0) {
+        // No tool calls — this is the final response
+        replyText = content;
+        if (content) {
+          reactSteps.push({
+            type: "thought",
+            content: `Final response (iteration ${iteration + 1})`,
+            duration_ms: Date.now() - iterStart,
+            timestamp: new Date().toISOString(),
+          });
+        }
+        break;
+      }
+
+      // Process tool calls
+      console.log(`[AI-PROCESS] ReACT iteration ${iteration + 1}: ${toolCalls.length} tool calls`);
+
+      // Add assistant message with tool calls to conversation
+      messages.push(choice);
+
+      for (const tc of toolCalls) {
+        const toolStart = Date.now();
+        const fnName = tc.function.name;
+        let args: any = {};
+        try { args = JSON.parse(tc.function.arguments || "{}"); } catch {}
+
+        reactSteps.push({
+          type: "tool_call",
+          tool: fnName,
+          params: args,
+          content: `Calling ${fnName}`,
+          timestamp: new Date().toISOString(),
+        });
+
+        const toolResult = await executeReACTTool(supabase, supabaseUrl, serviceKey, conversation, agent, fnName, args, linkedDocs);
+
+        const resultStr = JSON.stringify(toolResult);
+        reactSteps.push({
+          type: "tool_result",
+          tool: fnName,
+          content: resultStr.substring(0, 500),
+          duration_ms: Date.now() - toolStart,
+          timestamp: new Date().toISOString(),
+        });
+
+        messages.push({
+          role: "tool",
+          tool_call_id: tc.id,
+          content: resultStr,
+        });
+      }
+
+      // If this was the last allowed iteration, force a response on next loop
+      if (iteration === MAX_REACT_ITERATIONS - 2) {
+        console.log("[AI-PROCESS] ReACT: approaching max iterations, next call without tools");
       }
     }
 
     if (!replyText) {
       replyText = agent.fallback_message || "";
     }
-
     if (!replyText) {
       return new Response(JSON.stringify({ skipped: "empty_response" }), { headers: jsonHeaders });
     }
 
-    // Fix #2: Self-evaluation opt-in per agent
+    // Self-evaluation (opt-in)
     if (agent.enable_self_eval) {
       replyText = await selfEvaluate(replyText, message_text, systemPrompt, apiUrl, fetchHeaders, agent, auxTokens);
     }
 
-    // Fix #11: SHA-256 duplicate detection
+    // Duplicate detection
     const replyHash = await computeHash(replyText);
     const lastSent = recentBotMessages[0];
     if (lastSent && (await computeHash(lastSent)) === replyHash) {
@@ -545,361 +659,134 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ skipped: "duplicate_response" }), { headers: jsonHeaders });
     }
 
-    // 12. Log usage (observability) — Fix #12: includes auxiliary tokens
-    const usage = result.usage || {};
+    // Log usage with step_details
     const latencyMs = Date.now() - startTime;
-    console.log(`[AI-PROCESS] Usage: prompt=${usage.prompt_tokens}, completion=${usage.completion_tokens}, total=${usage.total_tokens}, aux_calls=${auxTokens.aux_calls}, aux_tokens=${auxTokens.total_tokens}, latency=${latencyMs}ms`);
+    console.log(`[AI-PROCESS] ReACT complete: ${reactSteps.length} steps, ${totalUsage.total_tokens} tokens, ${latencyMs}ms`);
 
     await logUsage(supabase, conversation_id, agent.id, agent.ai_model, agent.ai_provider,
-      usage.prompt_tokens || 0, usage.completion_tokens || 0, usage.total_tokens || 0, latencyMs, false, null, auxTokens);
+      totalUsage.prompt_tokens, totalUsage.completion_tokens, totalUsage.total_tokens, latencyMs, false, null, auxTokens, reactSteps);
 
-    // 13. Send the reply (Fix #10: pass supabase client)
+    // Send the reply
     if (!skip_send) {
       await sendReply(supabase, supabaseUrl, serviceKey, conversation, agent, replyText);
     }
 
-    return new Response(JSON.stringify({ reply: replyText, agent_id: agent.id, usage, content: replyText }), { headers: jsonHeaders });
+    return new Response(JSON.stringify({ reply: replyText, agent_id: agent.id, usage: totalUsage, content: replyText, react_steps: reactSteps.length }), { headers: jsonHeaders });
   } catch (err) {
     console.error("[AI-PROCESS] Error:", err);
     return new Response(JSON.stringify({ error: "Internal error" }), { status: 500, headers: jsonHeaders });
   }
 });
 
-// ─── Fix #1 + #8: Native PostgreSQL Full-Text Search via RPC ───
-async function ftsSearch(supabase: any, queryText: string, docIds: string[]): Promise<any[]> {
-  try {
-    // Simple tokenization — no LLM call needed
-    const searchTerms = queryText
-      .replace(/[^\w\sáàâãéèêíìîóòôõúùûçñ]/gi, " ")
-      .split(/\s+/)
-      .filter(t => t.length > 2)
-      .slice(0, 10)
-      .join(" ");
-
-    if (!searchTerms) return [];
-
-    const { data: results, error } = await supabase.rpc("search_chunks_fts", {
-      search_query: searchTerms,
-      doc_ids: docIds,
-      max_results: MAX_CHUNKS,
-    });
-
-    if (error) {
-      console.log("[AI-PROCESS] FTS search error:", error.message);
-      return [];
-    }
-
-    if (results && results.length > 0) {
-      console.log(`[AI-PROCESS] FTS search: ${results.length} chunks found`);
-      return results;
-    }
-  } catch (e) {
-    console.log("[AI-PROCESS] FTS search failed:", e);
-  }
-  return [];
-}
-
-// ─── Multi-agent router (optimized for legal domain) ───
-async function routeToSubAgent(supabase: any, parentAgent: any, conversation: any, messageText: string, auxTokens: TokenAccumulator): Promise<any | null> {
-  const apiKey = Deno.env.get("LOVABLE_API_KEY");
-  if (!apiKey) return null;
-
-  const botState = conversation.bot_state || {};
-
-  const { data: subAgents } = await supabase
-    .from("ai_agents")
-    .select("id, name, description")
-    .in("id", parentAgent.sub_agent_ids)
-    .eq("is_active", true);
-
-  if (!subAgents || subAgents.length === 0) return null;
-
-  if (botState.active_sub_agent_id) {
-    const cached = subAgents.find((a: any) => a.id === botState.active_sub_agent_id);
-    if (cached) {
-      const shouldReroute = await detectTopicChange(apiKey, messageText, cached, subAgents);
-      if (!shouldReroute) {
-        const { data: fullAgent } = await supabase.from("ai_agents").select("*").eq("id", cached.id).single();
-        return fullAgent;
-      }
-      console.log("[AI-PROCESS] Topic change detected, re-routing...");
-    }
-  }
-
-  const agentList = subAgents.map((a: any) => `- "${a.name}": ${a.description || "sem descrição"}`).join("\n");
-
-  try {
-    const res = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model: "google/gemini-2.5-flash-lite",
-        messages: [
-          {
-            role: "system",
-            content: `És um router de intenções para um escritório de advocacia em Portugal e Brasil, especializado em imigração, cidadania e previdência.
-
-Analisa a mensagem do cliente e escolhe o agente mais adequado.
-
-Agentes disponíveis:
-${agentList}
-
-REGRAS DE ROUTING:
-- Vistos, residência, AIMA, Golden Visa, cidadania, nacionalidade, passaporte → Vistos & Cidadania
-- Aposentadoria, INSS, reforma, pensão, benefício social, segurança social, contribuição → Previdência & Segurança Social
-- Pagamento, honorário, fatura, contrato, parcela, valor, preço, recibo → Financeiro & Contratos
-- Agendamento, horário, dúvida geral, primeiro contacto, "quero saber mais", saudação → Suporte Geral & Atendimento
-- Se ambíguo ou saudação simples → Suporte Geral & Atendimento`,
-          },
-          { role: "user", content: messageText },
-        ],
-        tools: [{
-          type: "function",
-          function: {
-            name: "route_to_agent",
-            description: "Route the client message to the most appropriate specialist agent",
-            parameters: {
-              type: "object",
-              properties: {
-                agent_name: {
-                  type: "string",
-                  description: "The exact name of the chosen agent",
-                  enum: subAgents.map((a: any) => a.name),
-                },
-                confidence: { type: "number", description: "Confidence score from 0 to 1" },
-                detected_topic: { type: "string", description: "Brief topic detected in the message" },
-              },
-              required: ["agent_name", "confidence", "detected_topic"],
-              additionalProperties: false,
-            },
-          },
-        }],
-        tool_choice: { type: "function", function: { name: "route_to_agent" } },
-        temperature: 0,
-      }),
-    });
-
-    if (!res.ok) return null;
-    const result = await res.json();
-    // Fix #12: Track router usage
-    accumulateUsage(auxTokens, result.usage);
-
-    const toolCall = result.choices?.[0]?.message?.tool_calls?.[0];
-    if (!toolCall) {
-      const content = (result.choices?.[0]?.message?.content || "").trim();
-      const chosen = subAgents.find((a: any) => content.toLowerCase().includes(a.name.toLowerCase()));
-      if (chosen) return await activateSubAgent(supabase, chosen, botState, conversation, null);
-      return null;
-    }
-
-    let args: any = {};
-    try { args = JSON.parse(toolCall.function.arguments || "{}"); } catch {}
-
-    const chosen = subAgents.find((a: any) => a.name === args.agent_name);
-    if (chosen) {
-      console.log(`[AI-PROCESS] Router: "${args.detected_topic}" → ${chosen.name} (confidence: ${args.confidence})`);
-      return await activateSubAgent(supabase, chosen, botState, conversation, args.detected_topic);
-    }
-  } catch (e) {
-    console.log("[AI-PROCESS] Router failed:", e);
-  }
-  return null;
-}
-
-async function activateSubAgent(supabase: any, chosen: any, botState: any, conversation: any, topic: string | null): Promise<any> {
-  const { data: fullAgent } = await supabase.from("ai_agents").select("*").eq("id", chosen.id).single();
-  await supabase.from("conversations").update({
-    bot_state: {
-      ...botState,
-      active_sub_agent_id: chosen.id,
-      routed_topic: topic,
-      routed_at: new Date().toISOString(),
-    },
-  }).eq("id", conversation.id);
-  return fullAgent;
-}
-
-async function detectTopicChange(apiKey: string, messageText: string, currentAgent: any, allAgents: any[]): Promise<boolean> {
-  if (messageText.length < 10) return false;
-  const greetings = ["olá", "oi", "bom dia", "boa tarde", "boa noite", "hello", "hi", "obrigado", "obrigada", "ok", "sim", "não"];
-  if (greetings.some(g => messageText.toLowerCase().trim() === g)) return false;
-
-  const topicKeywords: Record<string, string[]> = {
-    "Vistos & Cidadania": ["visto", "cidadania", "residência", "aima", "golden visa", "passaporte", "nacionalidade", "imigração"],
-    "Previdência & Segurança Social": ["aposentadoria", "inss", "reforma", "pensão", "benefício", "previdência", "contribuição"],
-    "Financeiro & Contratos": ["pagamento", "honorário", "fatura", "parcela", "valor", "contrato", "pagar", "recibo"],
-    "Suporte Geral & Atendimento": ["agendar", "consulta", "horário", "endereço"],
-  };
-
-  const lower = messageText.toLowerCase();
-  const currentTopicKey = Object.keys(topicKeywords).find(k => currentAgent.name.includes(k.split(" ")[0]));
-  const otherTopics = Object.entries(topicKeywords).filter(([k]) => k !== currentTopicKey);
-
-  for (const [, keywords] of otherTopics) {
-    if (keywords.some(kw => lower.includes(kw))) return true;
-  }
-
-  return false;
-}
-
-// ─── Sentiment analysis ─── Fix #12: tracks tokens
-async function analyzeSentiment(messageText: string, recentMessages: any[], auxTokens: TokenAccumulator): Promise<string> {
-  const frustratedWords = ["absurdo", "ridículo", "vergonha", "péssimo", "horrível", "lixo", "pior", "nunca mais", "inaceitável", "furioso", "raiva"];
-  const lower = messageText.toLowerCase();
-  const hasFrustratedWords = frustratedWords.some(w => lower.includes(w));
-
-  if (!hasFrustratedWords && messageText.length < 200) return "neutral";
-
-  const apiKey = Deno.env.get("LOVABLE_API_KEY");
-  if (!apiKey) return hasFrustratedWords ? "frustrated" : "neutral";
-
-  try {
-    const context = recentMessages.slice(-3).map(m => `[${m.role}]: ${m.content}`).join("\n");
-    const res = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model: "google/gemini-2.5-flash-lite",
-        messages: [
-          { role: "system", content: "Classify the customer sentiment in ONE word: positive, neutral, negative, frustrated. Only return the word." },
-          { role: "user", content: `Recent context:\n${context}\n\nCurrent message: ${messageText}` },
-        ],
-        temperature: 0,
-      }),
-    });
-    if (!res.ok) return hasFrustratedWords ? "frustrated" : "neutral";
-    const result = await res.json();
-    accumulateUsage(auxTokens, result.usage);
-    return (result.choices?.[0]?.message?.content || "neutral").trim().toLowerCase();
-  } catch {
-    return hasFrustratedWords ? "frustrated" : "neutral";
-  }
-}
-
-// ─── Self-evaluation / reflection ─── Fix #2: opt-in only + Fix #12: tracks tokens
-async function selfEvaluate(reply: string, userMessage: string, systemPrompt: string, apiUrl: string, fetchHeaders: Record<string, string>, agent: any, auxTokens: TokenAccumulator): Promise<string> {
-  if (reply.length < 50) return reply;
-
-  const apiKey = Deno.env.get("LOVABLE_API_KEY");
-  if (!apiKey) return reply;
-
-  try {
-    const evalRes = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model: "google/gemini-2.5-flash-lite",
-        messages: [
-          { role: "system", content: "You are a quality evaluator. Rate the AI response on a scale of 1-10 for: accuracy, completeness, tone appropriateness. Return ONLY a JSON object: {score: number, issue: string|null}. If score >= 7, issue should be null." },
-          { role: "user", content: `User question: ${userMessage}\n\nAI response: ${reply}` },
-        ],
-        temperature: 0,
-      }),
-    });
-
-    if (!evalRes.ok) return reply;
-    const evalResult = await evalRes.json();
-    accumulateUsage(auxTokens, evalResult.usage);
-    const evalContent = evalResult.choices?.[0]?.message?.content || "";
-
-    const jsonMatch = evalContent.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) return reply;
-
-    const evaluation = JSON.parse(jsonMatch[0]);
-    if (evaluation.score >= 7) {
-      console.log(`[AI-PROCESS] Self-eval score: ${evaluation.score}/10 — passed`);
-      return reply;
-    }
-
-    console.log(`[AI-PROCESS] Self-eval score: ${evaluation.score}/10 — regenerating. Issue: ${evaluation.issue}`);
-
-    const regenRes = await fetch(apiUrl, {
-      method: "POST",
-      headers: fetchHeaders,
-      body: JSON.stringify({
-        model: agent.ai_model,
-        messages: [
-          { role: "system", content: systemPrompt + `\n\n⚠️ CORRECÇÃO NECESSÁRIA: A resposta anterior teve problema: "${evaluation.issue}". Melhora a qualidade.` },
-          { role: "user", content: userMessage },
-        ],
-        temperature: Math.min(1, Math.max(0, (agent.temperature || 0.7) * 0.8)),
-      }),
-    });
-
-    if (regenRes.ok) {
-      const regenResult = await regenRes.json();
-      accumulateUsage(auxTokens, regenResult.usage);
-      const improved = regenResult.choices?.[0]?.message?.content;
-      if (improved && improved.length > 10) {
-        console.log("[AI-PROCESS] Using improved response after self-eval");
-        return improved;
-      }
-    }
-  } catch (e) {
-    console.log("[AI-PROCESS] Self-eval error:", e);
-  }
-  return reply;
-}
-
-// ─── Resolve AI provider ───
-async function resolveProvider(supabase: any, agent: any): Promise<{ apiUrl: string; fetchHeaders: Record<string, string> }> {
-  let apiUrl = "";
-  let apiKey = "";
-  let authHeader = "Authorization";
-  let authPrefix = "Bearer";
-
-  if (agent.ai_provider === "lovable") {
-    apiUrl = "https://ai.gateway.lovable.dev/v1/chat/completions";
-    apiKey = Deno.env.get("LOVABLE_API_KEY") || "";
-  } else {
-    const { data: provider } = await supabase.from("ai_providers").select("*").eq("slug", agent.ai_provider).single();
-    apiUrl = agent.ai_base_url || provider?.base_url || "";
-    authHeader = provider?.auth_header || "";
-    authPrefix = provider?.auth_prefix || "";
-
-    if (provider?.credential_key === "base_url" || !authHeader) {
-      const { data: urlOverride } = await supabase
-        .from("integration_credentials")
-        .select("credential_value")
-        .eq("provider", agent.ai_provider)
-        .eq("credential_key", "OLLAMA_BASE_URL")
-        .single();
-      if (urlOverride?.credential_value) {
-        let baseUrl = urlOverride.credential_value.replace(/\/+$/, "");
-        if (!baseUrl.endsWith("/v1/chat/completions")) baseUrl += "/v1/chat/completions";
-        apiUrl = baseUrl;
-      }
-    }
-
-    const credKey = agent.ai_api_key_credential || (provider?.credential_key !== "base_url" ? provider?.credential_key : null);
-    if (credKey) {
-      const { data: cred } = await supabase
-        .from("integration_credentials")
-        .select("credential_value")
-        .eq("provider", agent.ai_provider)
-        .eq("credential_key", credKey)
-        .single();
-      apiKey = cred?.credential_value || "";
-    }
-  }
-
-  const fetchHeaders: Record<string, string> = { "Content-Type": "application/json" };
-  if (authHeader && apiKey) {
-    fetchHeaders[authHeader] = `${authPrefix || ""} ${apiKey}`.trim();
-  }
-  return { apiUrl, fetchHeaders };
-}
-
-// ─── Tool execution (dynamic registry) ───
-async function executeToolCall(supabase: any, supabaseUrl: string, serviceKey: string, conversation: any, toolCall: any): Promise<any> {
-  const fnName = toolCall.function.name;
-  let args: any = {};
-  try { args = JSON.parse(toolCall.function.arguments || "{}"); } catch {}
-
-  console.log(`[AI-PROCESS] Executing tool: ${fnName}`, args);
+// ─── ReACT Tool Execution ───
+async function executeReACTTool(
+  supabase: any, supabaseUrl: string, serviceKey: string,
+  conversation: any, agent: any, fnName: string, args: any, linkedDocs: any[]
+): Promise<any> {
+  console.log(`[AI-PROCESS] Executing ReACT tool: ${fnName}`, args);
 
   try {
     switch (fnName) {
+      case "search_knowledge": {
+        if (!linkedDocs || linkedDocs.length === 0) return { results: [] };
+        const docIds = linkedDocs.map((d: any) => d.document_id);
+        const results = await ftsSearch(supabase, args.query || "", docIds);
+        return { results: results.slice(0, 5).map((r: any) => ({ content: r.content, rank: r.rank })) };
+      }
+
+      case "query_crm": {
+        const entity = args.entity || "lead";
+        const search = args.search_term || "";
+        
+        if (entity === "lead") {
+          const query = supabase.from("leads").select("id, name, phone, email, funnel_stage, legal_area, ai_score, created_at").limit(5);
+          if (search) query.or(`name.ilike.%${search}%,phone.ilike.%${search}%,email.ilike.%${search}%`);
+          const { data } = await query;
+          return { leads: data || [] };
+        }
+        if (entity === "proposal") {
+          const query = supabase.from("proposals").select("id, title, status, value, client_name, created_at").limit(5);
+          if (search) query.or(`title.ilike.%${search}%,client_name.ilike.%${search}%`);
+          const { data } = await query;
+          return { proposals: data || [] };
+        }
+        if (entity === "contract") {
+          const query = supabase.from("contracts").select("id, status, signer_name, signed_at, created_at").limit(5);
+          if (search) query.ilike("signer_name", `%${search}%`);
+          const { data } = await query;
+          return { contracts: data || [] };
+        }
+        if (entity === "case") {
+          const query = supabase.from("cases").select("id, title, status, legal_area, viability, updated_at").limit(5);
+          if (search) query.ilike("title", `%${search}%`);
+          const { data } = await query;
+          return { cases: data || [] };
+        }
+        return { error: "Unknown entity type" };
+      }
+
+      case "navigate_graph": {
+        const depth = Math.min(args.depth || 2, 3);
+        const visited = new Set<string>();
+        const results: any[] = [];
+
+        async function traverse(type: string, id: string, currentDepth: number) {
+          const key = `${type}:${id}`;
+          if (visited.has(key) || currentDepth > depth) return;
+          visited.add(key);
+
+          const { data: edges } = await supabase
+            .from("entity_graph")
+            .select("*")
+            .or(`and(source_type.eq.${type},source_id.eq.${id}),and(target_type.eq.${type},target_id.eq.${id})`)
+            .limit(20);
+
+          if (!edges) return;
+
+          for (const edge of edges) {
+            results.push({
+              from: `${edge.source_type}:${edge.source_id}`,
+              to: `${edge.target_type}:${edge.target_id}`,
+              relation: edge.relation,
+              metadata: edge.metadata,
+            });
+
+            const nextType = edge.source_type === type && edge.source_id === id ? edge.target_type : edge.source_type;
+            const nextId = edge.source_type === type && edge.source_id === id ? edge.target_id : edge.source_id;
+            await traverse(nextType, nextId, currentDepth + 1);
+          }
+        }
+
+        await traverse(args.entity_type, args.entity_id, 1);
+        return { graph: results, nodes_visited: visited.size };
+      }
+
+      case "check_payments": {
+        const query = supabase.from("financial_records")
+          .select("id, total_value, status, due_date, paid_at, installment_number, total_installments")
+          .order("due_date", { ascending: true })
+          .limit(10);
+        if (args.contract_id) query.eq("contract_id", args.contract_id);
+        if (args.status) query.eq("status", args.status);
+        const { data } = await query;
+        return { payments: data || [] };
+      }
+
+      case "list_services": {
+        const { data } = await supabase.from("proposal_templates")
+          .select("id, name, description, template_type")
+          .eq("is_active", true)
+          .limit(20);
+        return { services: data || [] };
+      }
+
+      case "transfer_to_human": {
+        if (conversation) {
+          await supabase.from("conversations").update({ attendance_mode: "human" }).eq("id", conversation.id);
+        }
+        return { success: true, message: "Conversa transferida para atendimento humano." };
+      }
+
       case "create_lead": {
         const { data, error } = await supabase.from("leads").insert({
           name: args.name || "Sem nome",
@@ -931,25 +818,6 @@ async function executeToolCall(supabase: any, supabaseUrl: string, serviceKey: s
         return { transactions: data || [] };
       }
 
-      case "transfer_to_human": {
-        if (conversation) {
-          await supabase.from("conversations").update({ attendance_mode: "human" }).eq("id", conversation.id);
-        }
-        return { success: true, message: "Conversa transferida para atendimento humano." };
-      }
-
-      case "schedule_callback": {
-        return { success: true, message: `Callback agendado para ${args.datetime || "a definir"} — ${args.reason || "contacto de retorno"}` };
-      }
-
-      case "search_knowledge": {
-        const { data: allDocs } = await supabase.from("agent_knowledge_documents").select("document_id").eq("agent_id", args.agent_id || "");
-        if (!allDocs || allDocs.length === 0) return { results: [] };
-        const docIds = allDocs.map((d: any) => d.document_id);
-        const results = await ftsSearch(supabase, args.query || "", docIds);
-        return { results: results.slice(0, 5).map((r: any) => ({ content: r.content, rank: r.rank })) };
-      }
-
       case "get_case_status": {
         const query = supabase.from("cases").select("id, title, status, legal_area, viability, updated_at").limit(5);
         if (args.title) query.ilike("title", `%${args.title}%`);
@@ -970,14 +838,18 @@ async function executeToolCall(supabase: any, supabaseUrl: string, serviceKey: s
               client_email: args.client_email || conversation?.contact_email,
             }),
           });
-          const result = await res.json();
-          return result;
+          return await res.json();
         } catch (e: any) {
           return { error: e.message || "Payment creation failed" };
         }
       }
 
+      case "schedule_callback": {
+        return { success: true, message: `Callback agendado para ${args.datetime || "a definir"} — ${args.reason || "contacto de retorno"}` };
+      }
+
       default: {
+        // Try webhook-based tools from agent_tools
         const { data: toolConfig } = await supabase.from("agent_tools")
           .select("tool_parameters")
           .eq("tool_name", fnName)
@@ -1005,24 +877,263 @@ async function executeToolCall(supabase: any, supabaseUrl: string, serviceKey: s
   }
 }
 
-// ─── Observability: log AI usage with cost estimation ─── Fix #12: includes auxiliary tokens
+// ─── FTS Search ───
+async function ftsSearch(supabase: any, queryText: string, docIds: string[]): Promise<any[]> {
+  try {
+    const searchTerms = queryText
+      .replace(/[^\w\sáàâãéèêíìîóòôõúùûçñ]/gi, " ")
+      .split(/\s+/)
+      .filter(t => t.length > 2)
+      .slice(0, 10)
+      .join(" ");
+    if (!searchTerms) return [];
+    const { data: results, error } = await supabase.rpc("search_chunks_fts", {
+      search_query: searchTerms,
+      doc_ids: docIds,
+      max_results: MAX_CHUNKS,
+    });
+    if (error) { console.log("[AI-PROCESS] FTS error:", error.message); return []; }
+    if (results && results.length > 0) {
+      console.log(`[AI-PROCESS] FTS: ${results.length} chunks found`);
+      return results;
+    }
+  } catch (e) { console.log("[AI-PROCESS] FTS failed:", e); }
+  return [];
+}
+
+// ─── Multi-agent router ───
+async function routeToSubAgent(supabase: any, parentAgent: any, conversation: any, messageText: string, auxTokens: TokenAccumulator): Promise<any | null> {
+  const apiKey = Deno.env.get("LOVABLE_API_KEY");
+  if (!apiKey) return null;
+  const botState = conversation.bot_state || {};
+  const { data: subAgents } = await supabase
+    .from("ai_agents").select("id, name, description")
+    .in("id", parentAgent.sub_agent_ids).eq("is_active", true);
+  if (!subAgents || subAgents.length === 0) return null;
+
+  if (botState.active_sub_agent_id) {
+    const cached = subAgents.find((a: any) => a.id === botState.active_sub_agent_id);
+    if (cached) {
+      const shouldReroute = await detectTopicChange(apiKey, messageText, cached, subAgents);
+      if (!shouldReroute) {
+        const { data: fullAgent } = await supabase.from("ai_agents").select("*").eq("id", cached.id).single();
+        return fullAgent;
+      }
+    }
+  }
+
+  const agentList = subAgents.map((a: any) => `- "${a.name}": ${a.description || "sem descrição"}`).join("\n");
+  try {
+    const res = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model: "google/gemini-2.5-flash-lite",
+        messages: [
+          { role: "system", content: `És um router de intenções para um escritório de advocacia em Portugal e Brasil, especializado em imigração, cidadania e previdência.\n\nAgentes disponíveis:\n${agentList}\n\nREGRAS DE ROUTING:\n- Vistos, residência, AIMA, Golden Visa, cidadania, nacionalidade, passaporte → Vistos & Cidadania\n- Aposentadoria, INSS, reforma, pensão, benefício social, segurança social → Previdência\n- Pagamento, honorário, fatura, contrato, parcela, valor, preço → Financeiro\n- Agendamento, dúvida geral, saudação → Suporte Geral` },
+          { role: "user", content: messageText },
+        ],
+        tools: [{
+          type: "function",
+          function: {
+            name: "route_to_agent",
+            description: "Route to specialist",
+            parameters: {
+              type: "object",
+              properties: {
+                agent_name: { type: "string", enum: subAgents.map((a: any) => a.name) },
+                confidence: { type: "number" },
+                detected_topic: { type: "string" },
+              },
+              required: ["agent_name", "confidence", "detected_topic"],
+            },
+          },
+        }],
+        tool_choice: { type: "function", function: { name: "route_to_agent" } },
+        temperature: 0,
+      }),
+    });
+    if (!res.ok) return null;
+    const result = await res.json();
+    accumulateUsage(auxTokens, result.usage);
+    const toolCall = result.choices?.[0]?.message?.tool_calls?.[0];
+    if (!toolCall) {
+      const content = (result.choices?.[0]?.message?.content || "").trim();
+      const chosen = subAgents.find((a: any) => content.toLowerCase().includes(a.name.toLowerCase()));
+      if (chosen) return await activateSubAgent(supabase, chosen, botState, conversation, null);
+      return null;
+    }
+    let tArgs: any = {};
+    try { tArgs = JSON.parse(toolCall.function.arguments || "{}"); } catch {}
+    const chosen = subAgents.find((a: any) => a.name === tArgs.agent_name);
+    if (chosen) {
+      console.log(`[AI-PROCESS] Router: "${tArgs.detected_topic}" → ${chosen.name} (confidence: ${tArgs.confidence})`);
+      return await activateSubAgent(supabase, chosen, botState, conversation, tArgs.detected_topic);
+    }
+  } catch (e) { console.log("[AI-PROCESS] Router failed:", e); }
+  return null;
+}
+
+async function activateSubAgent(supabase: any, chosen: any, botState: any, conversation: any, topic: string | null): Promise<any> {
+  const { data: fullAgent } = await supabase.from("ai_agents").select("*").eq("id", chosen.id).single();
+  await supabase.from("conversations").update({
+    bot_state: { ...botState, active_sub_agent_id: chosen.id, routed_topic: topic, routed_at: new Date().toISOString() },
+  }).eq("id", conversation.id);
+  return fullAgent;
+}
+
+async function detectTopicChange(apiKey: string, messageText: string, currentAgent: any, _allAgents: any[]): Promise<boolean> {
+  if (messageText.length < 10) return false;
+  const greetings = ["olá", "oi", "bom dia", "boa tarde", "boa noite", "hello", "hi", "obrigado", "obrigada", "ok", "sim", "não"];
+  if (greetings.some(g => messageText.toLowerCase().trim() === g)) return false;
+  const topicKeywords: Record<string, string[]> = {
+    "Vistos & Cidadania": ["visto", "cidadania", "residência", "aima", "golden visa", "passaporte", "nacionalidade"],
+    "Previdência & Segurança Social": ["aposentadoria", "inss", "reforma", "pensão", "benefício", "previdência"],
+    "Financeiro & Contratos": ["pagamento", "honorário", "fatura", "parcela", "valor", "contrato", "pagar"],
+    "Suporte Geral & Atendimento": ["agendar", "consulta", "horário", "endereço"],
+  };
+  const lower = messageText.toLowerCase();
+  const currentTopicKey = Object.keys(topicKeywords).find(k => currentAgent.name.includes(k.split(" ")[0]));
+  const otherTopics = Object.entries(topicKeywords).filter(([k]) => k !== currentTopicKey);
+  for (const [, keywords] of otherTopics) {
+    if (keywords.some(kw => lower.includes(kw))) return true;
+  }
+  return false;
+}
+
+// ─── Sentiment analysis ───
+async function analyzeSentiment(messageText: string, recentMessages: any[], auxTokens: TokenAccumulator): Promise<string> {
+  const frustratedWords = ["absurdo", "ridículo", "vergonha", "péssimo", "horrível", "lixo", "pior", "nunca mais", "inaceitável", "furioso", "raiva"];
+  const lower = messageText.toLowerCase();
+  const hasFrustratedWords = frustratedWords.some(w => lower.includes(w));
+  if (!hasFrustratedWords && messageText.length < 200) return "neutral";
+  const apiKey = Deno.env.get("LOVABLE_API_KEY");
+  if (!apiKey) return hasFrustratedWords ? "frustrated" : "neutral";
+  try {
+    const context = recentMessages.slice(-3).map(m => `[${m.role}]: ${m.content}`).join("\n");
+    const res = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model: "google/gemini-2.5-flash-lite",
+        messages: [
+          { role: "system", content: "Classify the customer sentiment in ONE word: positive, neutral, negative, frustrated. Only return the word." },
+          { role: "user", content: `Recent context:\n${context}\n\nCurrent message: ${messageText}` },
+        ],
+        temperature: 0,
+      }),
+    });
+    if (!res.ok) return hasFrustratedWords ? "frustrated" : "neutral";
+    const result = await res.json();
+    accumulateUsage(auxTokens, result.usage);
+    return (result.choices?.[0]?.message?.content || "neutral").trim().toLowerCase();
+  } catch { return hasFrustratedWords ? "frustrated" : "neutral"; }
+}
+
+// ─── Self-evaluation ───
+async function selfEvaluate(reply: string, userMessage: string, systemPrompt: string, apiUrl: string, fetchHeaders: Record<string, string>, agent: any, auxTokens: TokenAccumulator): Promise<string> {
+  if (reply.length < 50) return reply;
+  const apiKey = Deno.env.get("LOVABLE_API_KEY");
+  if (!apiKey) return reply;
+  try {
+    const evalRes = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model: "google/gemini-2.5-flash-lite",
+        messages: [
+          { role: "system", content: "You are a quality evaluator. Rate the AI response 1-10 for: accuracy, completeness, tone. Return ONLY JSON: {score: number, issue: string|null}." },
+          { role: "user", content: `User question: ${userMessage}\n\nAI response: ${reply}` },
+        ],
+        temperature: 0,
+      }),
+    });
+    if (!evalRes.ok) return reply;
+    const evalResult = await evalRes.json();
+    accumulateUsage(auxTokens, evalResult.usage);
+    const evalContent = evalResult.choices?.[0]?.message?.content || "";
+    const jsonMatch = evalContent.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) return reply;
+    const evaluation = JSON.parse(jsonMatch[0]);
+    if (evaluation.score >= 7) return reply;
+    console.log(`[AI-PROCESS] Self-eval: ${evaluation.score}/10 — regenerating. Issue: ${evaluation.issue}`);
+    const regenRes = await fetch(apiUrl, {
+      method: "POST",
+      headers: fetchHeaders,
+      body: JSON.stringify({
+        model: agent.ai_model,
+        messages: [
+          { role: "system", content: systemPrompt + `\n\n⚠️ CORRECÇÃO: "${evaluation.issue}". Melhora a qualidade.` },
+          { role: "user", content: userMessage },
+        ],
+        temperature: Math.min(1, Math.max(0, (agent.temperature || 0.7) * 0.8)),
+      }),
+    });
+    if (regenRes.ok) {
+      const regenResult = await regenRes.json();
+      accumulateUsage(auxTokens, regenResult.usage);
+      const improved = regenResult.choices?.[0]?.message?.content;
+      if (improved && improved.length > 10) return improved;
+    }
+  } catch (e) { console.log("[AI-PROCESS] Self-eval error:", e); }
+  return reply;
+}
+
+// ─── Resolve AI provider ───
+async function resolveProvider(supabase: any, agent: any): Promise<{ apiUrl: string; fetchHeaders: Record<string, string> }> {
+  let apiUrl = "";
+  let apiKey = "";
+  let authHeader = "Authorization";
+  let authPrefix = "Bearer";
+
+  if (agent.ai_provider === "lovable") {
+    apiUrl = "https://ai.gateway.lovable.dev/v1/chat/completions";
+    apiKey = Deno.env.get("LOVABLE_API_KEY") || "";
+  } else {
+    const { data: provider } = await supabase.from("ai_providers").select("*").eq("slug", agent.ai_provider).single();
+    apiUrl = agent.ai_base_url || provider?.base_url || "";
+    authHeader = provider?.auth_header || "";
+    authPrefix = provider?.auth_prefix || "";
+    if (provider?.credential_key === "base_url" || !authHeader) {
+      const { data: urlOverride } = await supabase
+        .from("integration_credentials").select("credential_value")
+        .eq("provider", agent.ai_provider).eq("credential_key", "OLLAMA_BASE_URL").single();
+      if (urlOverride?.credential_value) {
+        let baseUrl = urlOverride.credential_value.replace(/\/+$/, "");
+        if (!baseUrl.endsWith("/v1/chat/completions")) baseUrl += "/v1/chat/completions";
+        apiUrl = baseUrl;
+      }
+    }
+    const credKey = agent.ai_api_key_credential || (provider?.credential_key !== "base_url" ? provider?.credential_key : null);
+    if (credKey) {
+      const { data: cred } = await supabase
+        .from("integration_credentials").select("credential_value")
+        .eq("provider", agent.ai_provider).eq("credential_key", credKey).single();
+      apiKey = cred?.credential_value || "";
+    }
+  }
+
+  const fetchHeaders: Record<string, string> = { "Content-Type": "application/json" };
+  if (authHeader && apiKey) fetchHeaders[authHeader] = `${authPrefix || ""} ${apiKey}`.trim();
+  return { apiUrl, fetchHeaders };
+}
+
+// ─── Log usage with step_details ───
 async function logUsage(
   supabase: any, conversationId: string | null, agentId: string, model: string, provider: string,
   promptTokens: number, completionTokens: number, totalTokens: number, latencyMs: number,
-  wasFallback: boolean, error: string | null, auxTokens?: TokenAccumulator
+  wasFallback: boolean, error: string | null, auxTokens?: TokenAccumulator, steps?: ReACTStep[]
 ) {
   try {
-    // Include auxiliary call tokens in the total
     const totalPrompt = promptTokens + (auxTokens?.prompt_tokens || 0);
     const totalCompletion = completionTokens + (auxTokens?.completion_tokens || 0);
     const totalAll = totalTokens + (auxTokens?.total_tokens || 0);
     const costEstimate = estimateCost(model, totalPrompt, totalCompletion);
 
-    await supabase.from("ai_usage_logs").insert({
+    const logEntry: any = {
       conversation_id: conversationId || null,
       agent_id: agentId,
-      model,
-      provider,
+      model, provider,
       prompt_tokens: totalPrompt,
       completion_tokens: totalCompletion,
       total_tokens: totalAll,
@@ -1030,16 +1141,20 @@ async function logUsage(
       cost_estimate: costEstimate,
       was_fallback: wasFallback,
       error,
-    });
+    };
+
+    if (steps && steps.length > 0) {
+      logEntry.step_details = steps;
+    }
+
+    await supabase.from("ai_usage_logs").insert(logEntry);
   } catch (e) {
     console.error("[AI-PROCESS] Failed to log usage:", e);
   }
 }
 
-// ─── Send reply via message-send + save to DB + forward to Bitrix24 ───
-// Fix #10: Accepts supabase client as parameter instead of creating new one
+// ─── Send reply ───
 async function sendReply(supabase: any, supabaseUrl: string, serviceKey: string, conversation: any, agent: any, replyText: string) {
-  // Save message and update conversation in parallel
   const [msgResult] = await Promise.allSettled([
     supabase.from("messages").insert({
       conversation_id: conversation.id,
@@ -1053,12 +1168,8 @@ async function sendReply(supabase: any, supabaseUrl: string, serviceKey: string,
       last_message_preview: replyText.slice(0, 100),
     }).eq("id", conversation.id),
   ]);
+  if (msgResult.status === "rejected") console.error("[AI-PROCESS] Failed to save message:", msgResult.reason);
 
-  if (msgResult.status === "rejected") {
-    console.error("[AI-PROCESS] Failed to save message:", msgResult.reason);
-  }
-
-  // Send to external channel with error logging
   if (conversation.channel === "instagram" || conversation.channel === "whatsapp") {
     try {
       const res = await fetch(`${supabaseUrl}/functions/v1/message-send`, {
@@ -1067,12 +1178,9 @@ async function sendReply(supabase: any, supabaseUrl: string, serviceKey: string,
         body: JSON.stringify({ conversation_id: conversation.id, content: replyText, skip_db_save: true }),
       });
       if (!res.ok) console.error(`[AI-PROCESS] message-send failed: ${res.status}`);
-    } catch (e) {
-      console.error("[AI-PROCESS] message-send error:", e);
-    }
+    } catch (e) { console.error("[AI-PROCESS] message-send error:", e); }
   }
 
-  // Forward to Bitrix24 with error logging
   try {
     const botMessage = `[b]${agent.name || "EmmelyAI"}[/b] - ${replyText}`;
     const res = await fetch(`${supabaseUrl}/functions/v1/bitrix24-send`, {
@@ -1087,190 +1195,92 @@ async function sendReply(supabase: any, supabaseUrl: string, serviceKey: string,
       }),
     });
     if (!res.ok) console.error(`[AI-PROCESS] bitrix24-send failed: ${res.status}`);
-  } catch (e) {
-    console.error("[AI-PROCESS] Bitrix24 forward error:", e);
-  }
+  } catch (e) { console.error("[AI-PROCESS] Bitrix24 forward error:", e); }
 
-  // Fix #3: Extract user memory with proper error logging (no silent catch)
   extractUserMemory(supabase, supabaseUrl, serviceKey, conversation, replyText)
     .catch(e => {
       console.error("[AI-PROCESS] Memory extraction error:", e);
-      // Log to ai_usage_logs for observability
       supabase.from("ai_usage_logs").insert({
-        conversation_id: conversation.id,
-        agent_id: null,
-        model: "memory_extraction",
-        provider: "system",
-        error: `Memory extraction failed: ${e?.message || String(e)}`,
-        latency_ms: 0,
+        conversation_id: conversation.id, agent_id: null, model: "memory_extraction",
+        provider: "system", error: `Memory extraction failed: ${e?.message || String(e)}`, latency_ms: 0,
       }).catch(() => {});
     });
 }
 
-// ─── Extract user memory from conversation ───
-// Fix #3: Proper error logging instead of silent catch
+// ─── Extract user memory ───
 async function extractUserMemory(supabase: any, supabaseUrl: string, serviceKey: string, conversation: any, _lastReply: string) {
   const contactId = conversation.contact_phone || conversation.contact_instagram || conversation.contact_email;
   if (!contactId) return;
-
-  const { count } = await supabase
-    .from("messages")
-    .select("id", { count: "exact", head: true })
-    .eq("conversation_id", conversation.id);
-
+  const { count } = await supabase.from("messages").select("id", { count: "exact", head: true }).eq("conversation_id", conversation.id);
   const isTransfer = conversation.attendance_mode === "human";
   const shouldExtract = isTransfer || (count && count >= 5 && count % 15 === 0);
   if (!shouldExtract) return;
-
-  const { data: messages } = await supabase
-    .from("messages")
-    .select("content, direction")
-    .eq("conversation_id", conversation.id)
-    .order("created_at", { ascending: false })
-    .limit(10);
-
+  const { data: messages } = await supabase.from("messages").select("content, direction")
+    .eq("conversation_id", conversation.id).order("created_at", { ascending: false }).limit(10);
   if (!messages || messages.length < 3) return;
-
   const apiKey = Deno.env.get("LOVABLE_API_KEY");
   if (!apiKey) return;
-
-  const formatted = messages.reverse().map((m: any) =>
-    `[${m.direction === "inbound" ? "Cliente" : "Bot"}]: ${m.content}`
-  ).join("\n");
-
+  const formatted = messages.reverse().map((m: any) => `[${m.direction === "inbound" ? "Cliente" : "Bot"}]: ${m.content}`).join("\n");
   const res = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
     method: "POST",
     headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
     body: JSON.stringify({
       model: "google/gemini-2.5-flash-lite",
       messages: [
-        { role: "system", content: "Extract key facts about the client from this conversation. Return ONLY a JSON array of {key, value} objects. Keys should be: name, company, product_interest, location, language, preference. Only include facts explicitly mentioned. Max 5 items." },
+        { role: "system", content: "Extract key facts about the client. Return ONLY a JSON array of {key, value}. Keys: name, company, product_interest, location, language, preference. Max 5 items." },
         { role: "user", content: formatted },
       ],
       temperature: 0.1,
     }),
   });
-
-  if (!res.ok) {
-    throw new Error(`Memory extraction API error: ${res.status}`);
-  }
-
+  if (!res.ok) throw new Error(`Memory extraction API error: ${res.status}`);
   const result = await res.json();
   const content = result.choices?.[0]?.message?.content || "";
-
   const jsonMatch = content.match(/\[[\s\S]*\]/);
-  if (!jsonMatch) {
-    console.log("[AI-PROCESS] Memory extraction: no JSON array found in response");
-    return;
-  }
-
+  if (!jsonMatch) return;
   const facts = JSON.parse(jsonMatch[0]);
   const channel = conversation.channel || "whatsapp";
-
   for (const fact of facts) {
     if (!fact.key || !fact.value) continue;
-    // Bug #3 fix: usa RPC upsert_user_memory com índices parciais por canal
-    // em vez de ON CONFLICT genérico que falha para Instagram/Email
     const { error: upsertErr } = await supabase.rpc("upsert_user_memory", {
       p_contact_phone: conversation.contact_phone || null,
       p_contact_instagram: conversation.contact_instagram || null,
       p_contact_email: conversation.contact_email || null,
-      p_channel: channel,
-      p_key: fact.key,
-      p_value: String(fact.value),
-      p_source: "auto",
+      p_channel: channel, p_key: fact.key, p_value: String(fact.value), p_source: "auto",
     });
-
-    if (upsertErr) {
-      console.error(`[AI-PROCESS] Memory upsert error for key "${fact.key}":`, upsertErr.message);
-    }
+    if (upsertErr) console.error(`[AI-PROCESS] Memory upsert error for "${fact.key}":`, upsertErr.message);
   }
-
   console.log(`[AI-PROCESS] Extracted ${facts.length} memory facts for ${contactId}`);
 }
 
-// ─── INTENTION MODE: extrai campos estruturados via tool calling ─────────────
-// Chamado pelo flow-engine quando um nó ai_intention está ativo.
-// Usa o agente padrão para fazer uma chamada com tool calling forçado,
-// extraindo os campos configurados no nó de forma conversacional.
+// ─── INTENTION MODE ───
 async function processIntentionMode(
-  supabase: any,
-  conversationId: string,
-  userMessage: string,
+  supabase: any, conversationId: string, userMessage: string,
   fields: Array<{ name: string; label: string; type?: string; required?: boolean }>,
-  alreadyCollected: Record<string, string>,
-  turn: number,
-  auxTokens: TokenAccumulator
-): Promise<{
-  intention_completed: boolean;
-  intention_collected: Record<string, string>;
-  next_question?: string;
-}> {
-  // 1. Carregar o agente padrão para usar o provedor configurado
-  const { data: agent } = await supabase
-    .from("ai_agents")
-    .select("*")
-    .eq("is_default", true)
-    .eq("is_active", true)
-    .maybeSingle();
-
+  alreadyCollected: Record<string, string>, turn: number, auxTokens: TokenAccumulator
+): Promise<{ intention_completed: boolean; intention_collected: Record<string, string>; next_question?: string }> {
+  const { data: agent } = await supabase.from("ai_agents").select("*").eq("is_default", true).eq("is_active", true).maybeSingle();
   const apiKey = Deno.env.get("LOVABLE_API_KEY") || "";
   const apiUrl = "https://ai.gateway.lovable.dev/v1/chat/completions";
   const model = agent?.ai_model || "google/gemini-2.5-flash";
-
-  // 2. Identificar campos ainda não coletados
   const pendingFields = fields.filter(f => !alreadyCollected[f.name]);
+  if (pendingFields.length === 0) return { intention_completed: true, intention_collected: alreadyCollected };
 
-  if (pendingFields.length === 0) {
-    return { intention_completed: true, intention_collected: alreadyCollected };
-  }
-
-  // 3. Construir o schema de tool calling dinamicamente com base nos campos pendentes
   const toolProperties: Record<string, any> = {};
-  const toolRequired: string[] = [];
-
   for (const field of pendingFields) {
-    toolProperties[field.name] = {
-      type: field.type === "number" ? "number" : "string",
-      description: field.label,
-    };
-    // Não marcar como required para permitir extração parcial
+    toolProperties[field.name] = { type: field.type === "number" ? "number" : "string", description: field.label };
   }
 
-  // 4. Construir o contexto do histórico recente
   let historyContext = "";
   if (conversationId) {
-    const { data: recentMsgs } = await supabase
-      .from("messages")
-      .select("direction, content")
-      .eq("conversation_id", conversationId)
-      .order("created_at", { ascending: false })
-      .limit(10);
-
+    const { data: recentMsgs } = await supabase.from("messages").select("direction, content")
+      .eq("conversation_id", conversationId).order("created_at", { ascending: false }).limit(10);
     if (recentMsgs && recentMsgs.length > 0) {
-      const msgs = recentMsgs.reverse().map((m: any) =>
-        `${m.direction === "inbound" ? "Cliente" : "Assistente"}: ${m.content}`
-      ).join("\n");
-      historyContext = `\n\nHISTÓRICO RECENTE:\n${msgs}\n`;
+      historyContext = `\n\nHISTÓRICO:\n${recentMsgs.reverse().map((m: any) => `${m.direction === "inbound" ? "Cliente" : "Assistente"}: ${m.content}`).join("\n")}\n`;
     }
   }
 
-  // 5. Campos já coletados para contexto
-  const collectedContext = Object.keys(alreadyCollected).length > 0
-    ? `\n\nJÁ COLETADO: ${JSON.stringify(alreadyCollected)}\n`
-    : "";
-
-  const systemPrompt = `Você é um assistente de coleta de informações.
-Analise a mensagem do cliente e extraia os dados solicitados de forma natural.
-Se o cliente forneceu algum dos campos pedidos, extraia-os.
-Se não forneceu, gere uma pergunta natural e amigável para solicitar o próximo campo pendente.
-${collectedContext}${historyContext}`;
-
-  const userPrompt = `Mensagem do cliente: "${userMessage}"
-
-Campos a coletar (ainda não preenchidos): ${pendingFields.map(f => `${f.name} (${f.label})`).join(", ")}
-
-Extraia o que estiver presente na mensagem. Se não houver dados suficientes, gere a próxima pergunta.`;
+  const collectedContext = Object.keys(alreadyCollected).length > 0 ? `\n\nJÁ COLETADO: ${JSON.stringify(alreadyCollected)}\n` : "";
 
   try {
     const res = await fetch(apiUrl, {
@@ -1279,103 +1289,54 @@ Extraia o que estiver presente na mensagem. Se não houver dados suficientes, ge
       body: JSON.stringify({
         model,
         messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: userPrompt },
+          { role: "system", content: `Você é um assistente de coleta de informações. Extraia dados da mensagem do cliente.${collectedContext}${historyContext}` },
+          { role: "user", content: `Mensagem: "${userMessage}"\nCampos pendentes: ${pendingFields.map(f => `${f.name} (${f.label})`).join(", ")}` },
         ],
         temperature: 0.2,
-        tools: [
-          {
-            type: "function",
-            function: {
-              name: "extract_fields",
-              description: "Extrai os campos coletados da mensagem do cliente",
-              parameters: {
-                type: "object",
-                properties: {
-                  extracted: {
-                    type: "object",
-                    description: "Campos extraídos da mensagem",
-                    properties: toolProperties,
-                    additionalProperties: false,
-                  },
-                  next_question: {
-                    type: "string",
-                    description: "Próxima pergunta a fazer ao cliente (se ainda há campos pendentes após esta extração)",
-                  },
-                  all_collected: {
-                    type: "boolean",
-                    description: "true se todos os campos obrigatórios foram coletados",
-                  },
-                },
-                required: ["extracted", "all_collected"],
-                additionalProperties: false,
+        tools: [{
+          type: "function",
+          function: {
+            name: "extract_fields",
+            description: "Extrai campos da mensagem",
+            parameters: {
+              type: "object",
+              properties: {
+                extracted: { type: "object", properties: toolProperties },
+                next_question: { type: "string" },
+                all_collected: { type: "boolean" },
               },
+              required: ["extracted", "all_collected"],
             },
           },
-        ],
+        }],
         tool_choice: { type: "function", function: { name: "extract_fields" } },
       }),
     });
 
     if (!res.ok) {
-      console.error("[AI-PROCESS] Intention mode API error:", res.status);
-      return {
-        intention_completed: false,
-        intention_collected: alreadyCollected,
-        next_question: pendingFields[0]?.label
-          ? `Pode informar o seu ${pendingFields[0].label}?`
-          : undefined,
-      };
+      return { intention_completed: false, intention_collected: alreadyCollected, next_question: `Pode informar o seu ${pendingFields[0]?.label}?` };
     }
 
     const result = await res.json();
     accumulateUsage(auxTokens, result.usage);
-
     const toolCall = result.choices?.[0]?.message?.tool_calls?.[0];
     if (!toolCall?.function?.arguments) {
-      return {
-        intention_completed: false,
-        intention_collected: alreadyCollected,
-        next_question: pendingFields[0]?.label
-          ? `Pode informar o seu ${pendingFields[0].label}?`
-          : undefined,
-      };
+      return { intention_completed: false, intention_collected: alreadyCollected, next_question: `Pode informar o seu ${pendingFields[0]?.label}?` };
     }
 
-    let args: any = {};
-    try { args = JSON.parse(toolCall.function.arguments); } catch {}
-
-    // Mesclar campos extraídos com os já coletados
+    let tArgs: any = {};
+    try { tArgs = JSON.parse(toolCall.function.arguments); } catch {}
     const newCollected = { ...alreadyCollected };
-    const extracted = args.extracted || {};
+    const extracted = tArgs.extracted || {};
     for (const [key, value] of Object.entries(extracted)) {
-      if (value !== null && value !== undefined && String(value).trim() !== "") {
-        newCollected[key] = String(value).trim();
-      }
+      if (value !== null && value !== undefined && String(value).trim() !== "") newCollected[key] = String(value).trim();
     }
-
-    // Verificar se todos os campos obrigatórios foram coletados
     const requiredFields = fields.filter(f => f.required !== false);
     const allRequiredCollected = requiredFields.every(f => newCollected[f.name]);
-    const allOptionalCollected = fields.every(f => newCollected[f.name]);
-    const isCompleted = args.all_collected === true || allRequiredCollected;
-
-    console.log(`[AI-PROCESS] Intention turn ${turn}: extracted=${JSON.stringify(extracted)}, completed=${isCompleted}`);
-
-    return {
-      intention_completed: isCompleted,
-      intention_collected: newCollected,
-      next_question: isCompleted ? undefined : (args.next_question || undefined),
-    };
+    const isCompleted = tArgs.all_collected === true || allRequiredCollected;
+    return { intention_completed: isCompleted, intention_collected: newCollected, next_question: isCompleted ? undefined : tArgs.next_question };
   } catch (e) {
     console.error("[AI-PROCESS] Intention mode error:", e);
-    return {
-      intention_completed: false,
-      intention_collected: alreadyCollected,
-      next_question: pendingFields[0]?.label
-        ? `Pode informar o seu ${pendingFields[0].label}?`
-        : undefined,
-    };
+    return { intention_completed: false, intention_collected: alreadyCollected, next_question: `Pode informar o seu ${pendingFields[0]?.label}?` };
   }
 }
-// ─────────────────────────────────────────────────────────────────────────────
