@@ -1,90 +1,47 @@
 
 
-# Sistema de Agendamento Bitrix24 — Placement + Configuracoes
+# Atualizar Roadmap com Novas Prioridades do Cliente
 
 ## Resumo
 
-Criar um sistema completo de agendamento com 3 componentes:
-1. **Aba de Configuracoes** na pagina `/configuracoes` para definir horarios disponiveis, intervalos e preferencias
-2. **Edge Function `bitrix24-booking-tab`** que serve um placement interativo no CRM (Deal/Lead/Contact) com calendario e slots
-3. **Registo do placement** no install e rebind
+Atualizar a pagina `/roadmap` com os 9 blocos de tarefas enviados pelo cliente, organizados por fase e prioridade. Alguns itens ja existem parcialmente no roadmap actual e serao atualizados; outros sao novos.
 
----
+## Mapeamento dos Itens
 
-## 1. Nova Aba "Agenda" em Configuracoes
+### Mover para "Concluido" (ja implementados)
+- **Cobranças Automáticas** (2.4) — ja existe e esta concluido
+- **Emmely Pay Stripe** (2.5) — ja existe e esta concluido
+- **Agendamentos Bitrix24** (7.1) — acabamos de implementar o placement booking-tab
 
-Adicionar uma nova tab `agenda` na pagina `Configuracoes.tsx` com os seguintes campos (guardados em `payment_gateway_config` com `gateway = 'booking'`):
+### Atualizar "Em Progresso"
+- **Agentes IA para Atendimento** (4.1/4.2) — atualizar descricao para incluir resumos e analise de conversas, manter 40%
+- **Bitrix24 Sync Bidirecional** (1.1/1.2/3.1/3.2) — atualizar descricao para incluir eliminacao de leads, transformacao pipelines→SPA, fluxos automaticos entre estruturas
 
-- **Horario de trabalho**: Hora inicio (ex: 09:00), Hora fim (ex: 18:00)
-- **Dias da semana**: Checkboxes para Seg-Dom (quais dias estao disponiveis)
-- **Duracao padrao**: Dropdown 15min / 30min / 45min / 1h / 1h30 / 2h
-- **Intervalo entre atendimentos**: Input em minutos (ex: 15min entre reunioes)
-- **Tipo de reuniao padrao**: Presencial / Online / Ambos
-- **Enviar link de reuniao online**: Toggle — quando activo, ao criar evento online no Bitrix24, cria automaticamente uma videoconferencia e envia o link
-- **Titulo padrao do evento**: Template (ex: "Reuniao — {cliente}")
-- **Responsavel padrao**: Selector de utilizador Bitrix24
+### Adicionar Novos Modulos em "Em Progresso"
+- **Reestruturacao Leads → Negocios** (1.1) — Eliminar etapa Lead no Bitrix, migrar para Negocios sem perda de dados — prioridade critica
+- **Transformacao Pipelines → SPA** (1.2) — Nacionalidade, AR, Visto, Acao Judicial, etc. para Smart Process — prioridade critica
+- **Envio Automatizado de Orcamento** (2.1) — Robot + fluxo para envio padronizado — prioridade alta
+- **Comprovativo de Pagamento** (2.2) — Enviar confirmacao + controle ao cliente apos pagamento — prioridade alta
+- **Relatorio Clientes em Atraso** (2.3) — Dashboard de facil visualizacao — prioridade alta
+- **Fluxos Automaticos entre Pipelines/SPA** (3.1/3.2) — Parar movimentacao manual, validacoes de avanço — prioridade critica
+- **Regras Operacionais Automaticas** (3.3) — Verificacao cada 60 dias, follow-ups automaticos — prioridade alta
+- **Correcao Follow-ups** (9.1) — Revisar todas as mensagens automaticas de etapas — prioridade alta
 
-| Ficheiro | Accao |
-|---|---|
-| `src/pages/Configuracoes.tsx` | Nova tab "Agenda" com `AgendaTab` |
-| `src/components/configuracoes/AgendaTab.tsx` | **Novo** — Formulario de configuracao da agenda |
+### Adicionar em "Proximas Etapas"
+- **Higienizacao da Base de Contactos** (5.1/5.2) — Limpeza gradual com criterios de seguranca — prioridade media
+- **Controlo de Ativos em SPA** (6.1) — SPA dedicado para controlo de ativos — prioridade media
+- **Controlo de Caixa Interno** (6.2) — Caixa Brasil (Erica), acesso restrito, lancamentos e saldo — prioridade alta
+- **Dashboard BI Operacional** (8.1) — Leads recebidos, clientes respondidos, mensagens, ranking equipa — prioridade alta
 
----
-
-## 2. Edge Function `bitrix24-booking-tab`
-
-Segue o padrao do `bitrix24-payment-tab` (HTML inline no iframe):
-
-### Actions JSON (via query param `action`):
-- `get_users` — lista utilizadores do Bitrix24 via `user.get`
-- `get_config` — le config da tabela `payment_gateway_config` (gateway = 'booking')
-- `get_availability` — chama `calendar.accessibility.get` para um utilizador num periodo de 30 dias e calcula slots livres com base na config (horario, intervalo, duracao)
-- `create_event` — chama `calendar.event.add` com:
-  - `crm_fields` vinculando ao Deal/Lead/Contact actual
-  - `is_meeting: "Y"` e `attendees`
-  - Se tipo = online, usa `meeting: { HOST_NAME, NOTIFY: true, MEETING_CREATOR: userId }` e adiciona link de videoconferencia via `im.videocall.create` ou `meeting.create` do Bitrix24
-
-### UI do Calendario (HTML inline):
-- Selector de responsavel (advogado/utilizador)
-- Calendario mensal com navegacao
-- Dias com disponibilidade marcados em verde, ocupados em cinza
-- Ao clicar num dia, mostra slots disponiveis em cards clicaveis
-- Formulario: titulo, tipo (presencial/online), descricao opcional
-- Botao "Agendar" → cria evento → mostra confirmacao com link da reuniao (se online)
-- Estilo consistente com os outros placements (dark mode support)
+## Ficheiros a Alterar
 
 | Ficheiro | Accao |
 |---|---|
-| `supabase/functions/bitrix24-booking-tab/index.ts` | **Novo** — Edge function completa |
+| `src/pages/Roadmap.tsx` | Atualizar array `defaultPhases` com os novos modulos, prioridades e descricoes |
 
----
-
-## 3. Registo do Placement
-
-Registar "Emmely Agenda" em `CRM_DEAL_DETAIL_TAB`, `CRM_LEAD_DETAIL_TAB` e `CRM_CONTACT_DETAIL_TAB`:
-
-| Ficheiro | Accao |
-|---|---|
-| `supabase/functions/bitrix24-install/index.ts` | Adicionar `placement.bind` para os 3 placements com handler `bitrix24-booking-tab` |
-| `supabase/functions/bitrix24-rebind-events/index.ts` | Adicionar os mesmos 3 placements no loop de rebind |
-
----
-
-## Logica de Disponibilidade
-
-```text
-1. Le config: horario 09:00-18:00, duracao 30min, intervalo 15min
-2. Chama calendar.accessibility.get para o mes seleccionado
-3. Para cada dia util (segundo config de dias da semana):
-   - Gera slots: [09:00, 09:45, 10:30, 11:15, ...] (duracao + intervalo)
-   - Remove slots que colidem com blocos ocupados
-4. Apresenta slots livres ao utilizador
-```
-
-## Logica de Reuniao Online
-
-Ao criar evento com tipo "online":
-1. Cria evento via `calendar.event.add` com `meeting.NOTIFY: true`
-2. Adiciona descricao com link de videoconferencia do Bitrix24 (formato: `https://{domain}/online/{eventId}`)
-3. O Bitrix24 envia automaticamente notificacao aos participantes com o link
+## Notas
+- Itens que ja existem serao atualizados (descricao, progresso, prioridade)
+- Novos itens terao `details` e `prompt` preenchidos para contexto
+- A ordem dentro de cada fase respeita a prioridade (critica primeiro)
+- Modulos ja concluidos (cobrancas, Stripe, agendamento) ficam na fase "Concluido"
 
