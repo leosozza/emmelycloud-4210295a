@@ -39,6 +39,8 @@ import SignContract from "./pages/SignContract";
 import NotFound from "./pages/NotFound";
 import Configuracoes from "./pages/Configuracoes";
 import TemplateEditor from "./pages/TemplateEditor";
+import SimulationPage from "./pages/Simulation";
+import SwarmReportsPage from "./pages/SwarmReports";
 
 const queryClient = new QueryClient();
 
