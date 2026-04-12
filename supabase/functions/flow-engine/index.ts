@@ -95,6 +95,9 @@ Deno.serve(async (req) => {
         result = await handleInputResponse(supabase, supabaseUrl, serviceKey, conversation, botState, message_text, instance_id);
       } else if (botState.waiting_for_ai_intention) {
         result = await handleAIIntentionResponse(supabase, supabaseUrl, serviceKey, conversation, botState, message_text, instance_id);
+      } else if (botState.waiting_for_reply) {
+        // BUG FIX: Resume flow from next node after wait_reply
+        result = await handleWaitReplyResponse(supabase, supabaseUrl, serviceKey, conversation, botState, message_text, instance_id);
       } else if (botState.force_flow_id) {
         const { data: flow } = await supabase.from("flows").select("*").eq("id", botState.force_flow_id).eq("is_active", true).single();
         if (flow) {
@@ -225,11 +228,12 @@ async function matchFlow(supabase: any, conversation: any, messageText: string):
   }
 
   // 3. Default flow via agent
+  // BUG FIX: removed .eq("integration_id", ...) — column doesn't exist on ai_agents
   const { data: defaultAgent } = await supabase
     .from("ai_agents")
     .select("default_flow_id")
     .eq("is_default", true)
-    .eq("integration_id", conversation.integration_id)
+    .eq("is_active", true)
     .maybeSingle();
 
   if (defaultAgent?.default_flow_id) {
