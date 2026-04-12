@@ -9,8 +9,11 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { SignatureCanvas } from "@/components/contratos/SignatureCanvas";
 import { SelfieCapture } from "@/components/contratos/SelfieCapture";
-import { FileSignature, Pen, Camera, Shield, CheckCircle2, Loader2, ExternalLink, Download } from "lucide-react";
+import { FileSignature, Pen, Camera, Shield, CheckCircle2, Loader2, ExternalLink, Download, FileText, ChevronDown, ChevronUp } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { supabase } from "@/integrations/supabase/client";
+import { BlockRenderer, ProposalData } from "@/lib/templates/BlockRenderer";
+import { LayoutBlock } from "@/components/propostas/TemplateBlockPalette";
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 
@@ -18,8 +21,9 @@ interface ContractData {
   contract: {
     id: string; status: string; starts_at: string | null; expires_at: string | null;
     signer_name: string | null; signer_email: string | null; signer_phone: string | null; file_url: string | null;
+    proposal_id: string;
   };
-  proposal: { title: string; value: number; description: string | null } | null;
+  proposal: { id: string; title: string; value: number; description: string | null; template_id?: string | null; [key: string]: any } | null;
   signature: { id: string; signature_method: string; signed_at: string; evidence_hash: string } | null;
 }
 
@@ -39,16 +43,36 @@ const SignContract = () => {
   const [signing, setSigning] = useState(false);
   const [result, setResult] = useState<{ evidence_hash: string; signed_at: string; ip_address: string } | null>(null);
 
+  // Contract document preview state
+  const [template, setTemplate] = useState<any>(null);
+  const [layoutBlocks, setLayoutBlocks] = useState<LayoutBlock[] | null>(null);
+  const [showDocument, setShowDocument] = useState(true);
+
   useEffect(() => {
     if (!token) return;
     fetch(`${SUPABASE_URL}/functions/v1/sign-contract?token=${token}`)
       .then(r => r.json())
-      .then(d => {
+      .then(async (d) => {
         if (d.error) { setError(d.error); } else {
           setData(d);
           setSignerName(d.contract.signer_name || "");
           setSignerEmail(d.contract.signer_email || "");
           setSignerPhone(d.contract.signer_phone || "");
+
+          // Load template for contract preview
+          if (d.proposal?.template_id) {
+            const { data: tpl } = await supabase
+              .from("proposal_templates")
+              .select("*")
+              .eq("id", d.proposal.template_id)
+              .single();
+            if (tpl) {
+              setTemplate(tpl);
+              if (tpl.layout_blocks && Array.isArray(tpl.layout_blocks) && tpl.layout_blocks.length > 0) {
+                setLayoutBlocks(tpl.layout_blocks as LayoutBlock[]);
+              }
+            }
+          }
         }
       })
       .catch(() => setError("Erro ao carregar contrato"))
@@ -110,7 +134,7 @@ const SignContract = () => {
       <div className="min-h-screen bg-background p-4 flex items-center justify-center">
         <Card className="max-w-lg w-full">
           <CardHeader className="text-center">
-            <CheckCircle2 className="h-16 w-16 text-success mx-auto mb-2" />
+            <CheckCircle2 className="h-16 w-16 text-green-600 mx-auto mb-2" />
             <CardTitle className="text-xl">Contrato Assinado</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4 text-center">
@@ -152,25 +176,66 @@ const SignContract = () => {
           {data.proposal && <p className="text-muted-foreground">{data.proposal.title}</p>}
         </div>
 
-        {/* Contract info */}
-        <Card>
-          <CardHeader><CardTitle className="text-base">Detalhes do Contrato</CardTitle></CardHeader>
-          <CardContent className="space-y-2 text-sm">
-            {data.proposal && (
-              <>
-                <div className="flex justify-between"><span className="text-muted-foreground">Proposta:</span><span className="font-medium">{data.proposal.title}</span></div>
-                <div className="flex justify-between"><span className="text-muted-foreground">Valor:</span><span className="font-medium">€{data.proposal.value?.toLocaleString("pt")}</span></div>
-              </>
+        {/* Contract document preview */}
+        {layoutBlocks && template && data.proposal ? (
+          <Card className="overflow-hidden">
+            <CardHeader
+              className="cursor-pointer hover:bg-muted/50 transition-colors"
+              onClick={() => setShowDocument(!showDocument)}
+            >
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-base flex items-center gap-2">
+                  <FileText className="h-4 w-4" />
+                  Documento do Contrato
+                </CardTitle>
+                {showDocument
+                  ? <ChevronUp className="h-4 w-4 text-muted-foreground" />
+                  : <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                }
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Leia o documento completo antes de assinar
+              </p>
+            </CardHeader>
+            {showDocument && (
+              <CardContent className="p-0">
+                <div className="border-t">
+                  <BlockRenderer
+                    blocks={layoutBlocks}
+                    proposal={data.proposal as ProposalData}
+                    template={template}
+                  />
+                </div>
+              </CardContent>
             )}
-            {data.contract.starts_at && <div className="flex justify-between"><span className="text-muted-foreground">Início:</span><span>{new Date(data.contract.starts_at).toLocaleDateString("pt")}</span></div>}
-            {data.contract.expires_at && <div className="flex justify-between"><span className="text-muted-foreground">Expiração:</span><span>{new Date(data.contract.expires_at).toLocaleDateString("pt")}</span></div>}
-            {data.contract.file_url && (
-              <a href={data.contract.file_url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-primary text-sm hover:underline">
-                <ExternalLink className="h-3 w-3" /> Ver documento do contrato
-              </a>
-            )}
-          </CardContent>
-        </Card>
+          </Card>
+        ) : (
+          /* Fallback: basic contract info */
+          <Card>
+            <CardHeader><CardTitle className="text-base">Detalhes do Contrato</CardTitle></CardHeader>
+            <CardContent className="space-y-2 text-sm">
+              {data.proposal && (
+                <>
+                  <div className="flex justify-between"><span className="text-muted-foreground">Proposta:</span><span className="font-medium">{data.proposal.title}</span></div>
+                  <div className="flex justify-between"><span className="text-muted-foreground">Valor:</span><span className="font-medium">€{data.proposal.value?.toLocaleString("pt")}</span></div>
+                  {data.proposal.description && (
+                    <div className="mt-3 pt-3 border-t">
+                      <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">Descrição</p>
+                      <p className="text-sm whitespace-pre-wrap text-foreground/80">{data.proposal.description}</p>
+                    </div>
+                  )}
+                </>
+              )}
+              {data.contract.starts_at && <div className="flex justify-between"><span className="text-muted-foreground">Início:</span><span>{new Date(data.contract.starts_at).toLocaleDateString("pt")}</span></div>}
+              {data.contract.expires_at && <div className="flex justify-between"><span className="text-muted-foreground">Expiração:</span><span>{new Date(data.contract.expires_at).toLocaleDateString("pt")}</span></div>}
+              {data.contract.file_url && (
+                <a href={data.contract.file_url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-primary text-sm hover:underline">
+                  <ExternalLink className="h-3 w-3" /> Ver documento do contrato
+                </a>
+              )}
+            </CardContent>
+          </Card>
+        )}
 
         {/* Signer info */}
         <Card>
