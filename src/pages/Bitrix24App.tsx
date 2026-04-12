@@ -80,7 +80,7 @@ const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
 
 const customNodeTypes = { custom: CustomFlowNode };
 
-type AppView = "loading" | "dashboard" | "agentes" | "training" | "flows" | "playground" | "chatia" | "pagamentos" | "relatorios" | "baixa" | "carteira" | "configuracoes" | "propostas" | "integracoes";
+type AppView = "loading" | "dashboard" | "agentes" | "training" | "flows" | "playground" | "chatia" | "pagamentos" | "relatorios" | "baixa" | "carteira" | "configuracoes" | "propostas" | "integracoes" | "automacoes" | "observabilidade";
 
 // ==================== MAIN COMPONENT ====================
 const Bitrix24App = () => {
@@ -95,7 +95,7 @@ const Bitrix24App = () => {
     if (initialLoading) return "loading";
     const sub = location.pathname.replace(/^\/bitrix24\/?/, "").split("/")[0];
     if (!sub || sub === "") return "dashboard";
-    const validViews: AppView[] = ["dashboard", "agentes", "training", "flows", "playground", "chatia", "pagamentos", "relatorios", "baixa", "carteira", "configuracoes", "propostas", "integracoes"];
+    const validViews: AppView[] = ["dashboard", "agentes", "training", "flows", "playground", "chatia", "pagamentos", "relatorios", "baixa", "carteira", "configuracoes", "propostas", "integracoes", "automacoes", "observabilidade"];
     return validViews.includes(sub as AppView) ? (sub as AppView) : "dashboard";
   }, [location.pathname, initialLoading]);
 
@@ -204,9 +204,10 @@ const Bitrix24App = () => {
       label: "Emmely IO",
       items: [
         { id: "chatia", label: "Chat IA", icon: Sparkles },
-        { id: "agentes", label: "Persona", icon: Bot },
+        { id: "agentes", label: "Agentes IA", icon: Bot },
         { id: "training", label: "Treinamento", icon: BookOpen },
         { id: "playground", label: "Playground", icon: MessageSquare },
+        { id: "automacoes", label: "Automações IA", icon: Zap },
       ],
     },
     {
@@ -231,6 +232,7 @@ const Bitrix24App = () => {
       items: [
         { id: "integracoes", label: "Integrações", icon: Plug },
         { id: "configuracoes", label: "Configurações", icon: Settings },
+        { id: "observabilidade", label: "Observabilidade", icon: Activity },
       ],
     },
   ];
@@ -337,6 +339,8 @@ const Bitrix24App = () => {
             {view === "carteira" && <CarteiraAccessView integration={integration} memberId={memberId} cachedPortfolio={cachedPortfolio} />}
             {view === "propostas" && <PropostasViewBitrix />}
             {view === "integracoes" && <IntegracoesViewBitrix />}
+            {view === "automacoes" && <AutomacoesViewBitrix />}
+            {view === "observabilidade" && <ObservabilidadeViewBitrix />}
             {view === "configuracoes" && (
               <ConfiguracoesWrapper
                 integration={integration}
@@ -1012,7 +1016,7 @@ function ConfigView({ integration, botId, domain, loading, onResync, onRefresh }
             {[
               { done: !!integration, label: "Instalar o App", desc: `App instalado no Bitrix24${integration ? "" : " — pendente"}` },
               { done: !!botId, label: "Registar Bot IA", desc: botId ? `Bot Emmely AI registado (ID: ${botId})` : "Bot Emmely AI não encontrado" },
-              { done: false, label: "Configurar Persona", desc: "Acesse a aba Personas e selecione um agente IA" },
+              { done: false, label: "Configurar Agente IA", desc: "Acesse Agentes IA e selecione um agente para o canal" },
               { done: false, label: "Vinculação ao Contact Center", desc: "No Bitrix24 → Contact Center → Emmely Messages" },
             ].map((step, i) => (
               <div key={i} className="b24-step">
@@ -1322,8 +1326,8 @@ function AgentesView({ botId, integrationId }: { botId: string | null; integrati
     <div className="p-6 space-y-6">
       <div className="b24-view-header flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-bold text-white">Personas / Agentes IA</h1>
-          <p className="text-white/60 text-sm mt-0.5">Configure o comportamento do bot</p>
+          <h1 className="text-xl font-bold text-white">Agentes IA</h1>
+          <p className="text-white/60 text-sm mt-0.5">Configure e gerencie os seus agentes de IA</p>
         </div>
         <Button
           onClick={() => { setEditingAgent({ ...defaultAgent }); setDialogOpen(true); }}
