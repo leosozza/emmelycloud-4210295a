@@ -1,140 +1,89 @@
 
 
-# Aprimorar Sistema de Agentes IA, Flows e Melhorias Gerais
-**Inspirado em conceitos do Paperclip (orquestração, governança, skills, heartbeats)**
+# Análise da Implementação vs. Plano de Melhorias
+
+## Estado Actual — O que JÁ está implementado
+
+### Fase 1: Modelo de Dados ✅ COMPLETO
+A tabela `proposals` já possui todos os campos de qualificação estruturada:
+- `client_gender`, `client_nationality` — qualificação pessoal
+- `client_document_type`, `client_document_number`, `client_document_validity`, `client_document_issuer` — identificação estruturada
+- `upfront_value`, `installment_value` — detalhamento de pagamento
+- Confirmado em `types.ts` (linhas 2609-2651)
+
+### Fase 2: Motor de Templates — PARCIALMENTE implementado
+
+**✅ Feito:**
+- `BlockRenderer.tsx` existe e renderiza blocos com placeholders reais
+- `PropostaPublica.tsx` já consome `layout_blocks` do template (linha 278-309)
+- Suporta blocos de contrato: `clauses`, `signature`, `witnesses`
+- `proposal-pdf` renderiza blocos do template (linha 157-173)
+
+**❌ Gaps restantes:**
+
+1. **Placeholders incompletos no `BlockRenderer.tsx`** — `buildPlaceholders()` (linha 56-76) NÃO inclui os novos campos:
+   - Faltam: `{cliente.nacionalidade}`, `{cliente.tipo_documento}`, `{cliente.numero_documento}`, `{cliente.validade_documento}`, `{cliente.orgao_emissor}`, `{cliente.tratamento}`, `{valor_entrada}`, `{valor_parcela}`
+
+2. **`ClientInfoBlock` no `BlockRenderer.tsx`** (linha 124-163) — Mostra apenas nome/email/telefone/documento/morada. Não mostra os campos estruturados (nacionalidade, tipo doc, validade, emissor, tratamento).
+
+3. **`proposal-pdf` client_info block** (linha 49-66) — Mesmo problema: só renderiza os 5 campos antigos. Não usa os novos campos estruturados.
+
+4. **`proposal-pdf` não renderiza blocos de contrato** — Faltam cases para `clauses`, `signature`, `witnesses` (linha 119: `default: return ""`)
+
+5. **`PaymentBlock` no `BlockRenderer.tsx`** (linha 225-256) — Não usa `upfront_value` / `installment_value`. Calcula parcela como `value/installments`, ignorando a entrada separada.
+
+6. **Build error**: `replaceAll` em `BlockRenderer.tsx:82` — `tsconfig.app.json` tem `lib: ES2020` mas `replaceAll` precisa de `ES2021`.
+
+### Fase 3: Biblioteca de Templates — NÃO implementado
+- Não há templates pré-criados na BD (os 25 modelos do Bitrix24 não foram migrados)
+- Sem modelo de contrato mestre com cláusulas padrão
+- Este ponto é de conteúdo/dados, não de código
+
+### Fase 4: UX/UI — MAIORITARIAMENTE implementado
+
+**✅ Feito:**
+- `PropostaForm.tsx` já tem campos de género, nacionalidade, tipo/número/validade/emissor de documento
+- `PropostaPublica.tsx` já tem fluxo de aceite → assinatura com redirect
+- Template loader e service loader funcionais
+
+**❌ Gaps:**
+- O fluxo de assinatura não mostra o contrato completo renderizado antes de assinar (o `SignContract.tsx` mostra campos de assinatura mas não o documento)
 
 ---
 
-## Contexto
+## Plano de Correção (o que falta fazer)
 
-O Paperclip é um sistema de orquestração de empresas autónomas com agentes IA. Os conceitos mais relevantes para o nosso sistema são:
-- **Heartbeats** — agentes executam tarefas agendadas automaticamente
-- **Skills** — ferramentas que o agente pode usar em runtime (ex: consultar CRM, gerar proposta)
-- **Governança** — aprovações, pausas, limites de budget com enforcement real
-- **Goal Alignment** — cada acção do agente conecta-se ao objectivo estratégico
-- **Audit Trail** — rastreio completo de cada decisão do agente
-- **Sub-flows** — flows que chamam outros flows (composição)
+### 1. Fix build error — `replaceAll` (CRÍTICO)
+Alterar `tsconfig.app.json` lib de `ES2020` para `ES2021` (ou usar `.replace()` com regex global em `BlockRenderer.tsx`).
 
----
-
-## Plano de Implementação (6 blocos)
-
-### 1. Agent Skills System (Ferramentas do Agente)
-Criar tabela `agent_skills` que define ferramentas que cada agente pode usar em runtime.
-
-**DB Migration:**
-```sql
-CREATE TABLE agent_skills (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  agent_id UUID REFERENCES ai_agents(id) ON DELETE CASCADE,
-  skill_type TEXT NOT NULL, -- 'bitrix_crm', 'generate_proposal', 'generate_contract', 'create_payment', 'search_knowledge', 'webhook', 'run_flow'
-  skill_config JSONB DEFAULT '{}',
-  is_enabled BOOLEAN DEFAULT true,
-  created_at TIMESTAMPTZ DEFAULT now()
-);
-ALTER TABLE agent_skills ENABLE ROW LEVEL SECURITY;
+### 2. Expandir placeholders no `BlockRenderer.tsx`
+Adicionar ao `buildPlaceholders()`:
+```
+{cliente.tratamento}, {cliente.nacionalidade}, {cliente.tipo_documento},
+{cliente.numero_documento}, {cliente.validade_documento}, {cliente.orgao_emissor},
+{valor_entrada}, {valor_parcela}, {valor_total}
 ```
 
-**Frontend:** Adicionar secção "Skills" no `AgentFormDialog.tsx` com toggles para cada skill disponível (Consultar CRM, Gerar Proposta, Criar Cobrança, Pesquisar Knowledge Base, Chamar Flow, Webhook).
+### 3. Atualizar `ClientInfoBlock` no `BlockRenderer.tsx`
+Mostrar todos os campos estruturados quando disponíveis (nacionalidade, tipo doc, número, validade, emissor, tratamento).
 
-**Backend:** `ai-process-message` passa as skills activas como `tools` na chamada à IA, permitindo que o agente decida autonomamente quando usar cada ferramenta.
+### 4. Atualizar `PaymentBlock` no `BlockRenderer.tsx`
+Usar `upfront_value` e `installment_value` quando disponíveis, em vez de calcular `value/installments`.
 
-### 2. Agent Heartbeats (Tarefas Agendadas)
-Permitir que agentes executem acções periódicas (ex: verificar leads sem resposta, enviar follow-ups).
+### 5. Adicionar blocos de contrato ao `proposal-pdf`
+Implementar cases `clauses`, `signature`, `witnesses` na função `renderBlockToHtml()`.
 
-**DB Migration:**
-```sql
-CREATE TABLE agent_heartbeats (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  agent_id UUID REFERENCES ai_agents(id) ON DELETE CASCADE,
-  name TEXT NOT NULL,
-  cron_expression TEXT NOT NULL DEFAULT '0 9 * * 1-5', -- seg-sex 9h
-  action_type TEXT NOT NULL, -- 'run_flow', 'check_leads', 'send_followup', 'generate_report'
-  action_config JSONB DEFAULT '{}',
-  is_active BOOLEAN DEFAULT true,
-  last_run_at TIMESTAMPTZ,
-  next_run_at TIMESTAMPTZ,
-  created_at TIMESTAMPTZ DEFAULT now()
-);
-ALTER TABLE agent_heartbeats ENABLE ROW LEVEL SECURITY;
-```
+### 6. Atualizar `client_info` no `proposal-pdf`
+Renderizar os campos estruturados de identificação no PDF.
 
-**Edge Function:** `agent-heartbeat-runner` — chamada por cron (pg_cron ou webhook externo) que verifica heartbeats pendentes e executa as acções.
+### 7. Atualizar `payment` no `proposal-pdf`
+Usar `upfront_value` e `installment_value`.
 
-**Frontend:** Tab "Heartbeats" na página de Agentes para configurar tarefas agendadas.
+### Ficheiros a alterar
+1. `tsconfig.app.json` — lib `ES2021`
+2. `src/lib/templates/BlockRenderer.tsx` — placeholders + ClientInfoBlock + PaymentBlock
+3. `supabase/functions/proposal-pdf/index.ts` — client_info + payment + clauses/signature/witnesses
 
-### 3. Governança e Budget Enforcement Real
-Actualmente o budget é apenas visual. Implementar enforcement real que pausa o agente ao exceder.
-
-**Alterações:**
-- `ai-process-message`: antes de chamar a IA, verificar custo acumulado do mês vs `monthly_budget_usd`. Se excedido, retornar `fallback_message` e registar alerta.
-- Adicionar campo `governance_mode` ao agente: `autonomous` (executa tudo), `supervised` (pede aprovação em acções críticas), `restricted` (só responde, sem acções).
-- **Frontend:** Selector de modo de governança no formulário do agente.
-
-### 4. Sub-Flow Node (Flow chama Flow)
-Novo tipo de nó no flow builder: `call_flow` — executa outro flow como sub-rotina.
-
-**Alterações:**
-- `FlowNodeTypes.ts`: Adicionar tipo `"call_flow"` com config `{ flow_id, pass_variables: boolean }`
-- `flow-engine/index.ts`: Implementar case `"call_flow"` que carrega e executa o flow referenciado, passando variáveis
-- `NodeConfigPanel`: Selector de flow para o nó `call_flow`
-- Adicionar à categoria "Lógica" na paleta
-
-### 5. Flow Execution Logs (Audit Trail)
-Registar cada execução de flow com resultado de cada nó.
-
-**DB Migration:**
-```sql
-CREATE TABLE flow_execution_logs (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  flow_id UUID REFERENCES flows(id) ON DELETE SET NULL,
-  conversation_id UUID,
-  trigger_type TEXT,
-  started_at TIMESTAMPTZ DEFAULT now(),
-  completed_at TIMESTAMPTZ,
-  status TEXT DEFAULT 'running', -- running, completed, failed, paused
-  node_results JSONB DEFAULT '[]', -- [{node_id, type, result, duration_ms}]
-  variables JSONB DEFAULT '{}',
-  error TEXT
-);
-ALTER TABLE flow_execution_logs ENABLE ROW LEVEL SECURITY;
-```
-
-**Backend:** `flow-engine` regista cada execução e o resultado de cada nó.
-
-**Frontend:** Tab "Execuções" na página /flows mostrando histórico com status, duração e detalhes de cada nó executado.
-
-### 6. Melhorias Gerais no UI dos Agentes
-- **Card do Agente melhorado:** Mostrar métricas em tempo real (requisições hoje, custo do mês, status do budget)
-- **Duplicar Agente:** Botão para clonar agente existente com todas as configurações
-- **Testar Agente inline:** Mini-chat de teste directamente no card (já existe training, expandir para teste rápido)
-- **Ordenação drag-and-drop** dos agentes para definir prioridade de routing
-
----
-
-## Ficheiros a Criar/Alterar
-
-| Ficheiro | Acção |
-|---|---|
-| Migration SQL | Criar `agent_skills`, `agent_heartbeats`, `flow_execution_logs` + novos campos em `ai_agents` |
-| `src/components/agentes/AgentFormDialog.tsx` | Skills, Heartbeats, Governança |
-| `src/components/agentes/AgentCard.tsx` | Métricas inline, botão duplicar |
-| `src/pages/Agentes.tsx` | Lógica de duplicar, carregar skills |
-| `src/components/flows/FlowNodeTypes.ts` | Tipo `call_flow` |
-| `src/components/flows/NodeConfigPanel.tsx` | Config do `call_flow` |
-| `src/pages/Flows.tsx` | Tab "Execuções" |
-| `supabase/functions/flow-engine/index.ts` | Sub-flow execution + logging |
-| `supabase/functions/ai-process-message/index.ts` | Budget enforcement + skills as tools |
-| `supabase/functions/agent-heartbeat-runner/index.ts` | **Nova** — executor de heartbeats |
-
----
-
-## Prioridade de Implementação
-
-1. **Sub-Flow Node** — impacto imediato na composição de automações
-2. **Flow Execution Logs** — visibilidade e debugging
-3. **Budget Enforcement** — segurança de custos
-4. **Agent Skills** — autonomia do agente
-5. **Melhorias UI** — qualidade de vida
-6. **Heartbeats** — automação avançada
+### Resumo
+O modelo de dados está **100% completo**. O frontend do formulário está **completo**. A renderização pública e PDF estão **~60% completas** — faltam os novos campos e os blocos de contrato no PDF. A biblioteca de templates (conteúdo) está **0%** mas é um passo de dados, não de código.
 
