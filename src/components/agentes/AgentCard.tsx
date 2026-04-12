@@ -1,9 +1,9 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Bot, Edit, Trash2, Star, GitBranch, BookOpen, Users, Volume2, Sparkles, Copy, DollarSign } from "lucide-react";
+import { Bot, Edit, Trash2, Star, GitBranch, BookOpen, Users, Volume2, Sparkles, Copy } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { AgentTrainingChat } from "@/components/agentes/AgentTrainingChat";
 import { supabase } from "@/integrations/supabase/client";
@@ -22,24 +22,8 @@ export function AgentCard({ agent, providers, onEdit, onDelete, onToggleDefault,
   const textProvider = providers.find(p => p.slug === agent.ai_provider);
   const voiceProvider = agent.voice_provider ? providers.find(p => p.slug === agent.voice_provider) : null;
   const [trainingOpen, setTrainingOpen] = useState(false);
-  const [monthlyCost, setMonthlyCost] = useState<number | null>(null);
 
-  useEffect(() => {
-    const monthStart = new Date();
-    monthStart.setDate(1);
-    monthStart.setHours(0, 0, 0, 0);
-    supabase.rpc("get_monthly_cost_by_agent", {
-      p_agent_id: agent.id,
-      p_month: monthStart.toISOString().slice(0, 10),
-    }).then(({ data }) => {
-      const d = data as any;
-      if (d?.cost_usd !== undefined) setMonthlyCost(Number(d.cost_usd));
-    });
-  }, [agent.id]);
 
-  const budgetPct = agent.monthly_budget_usd && monthlyCost !== null
-    ? Math.min(100, Math.round((monthlyCost / agent.monthly_budget_usd) * 100))
-    : null;
 
   return (
     <Card className={`relative ${!agent.is_active ? 'opacity-60' : ''}`}>
@@ -92,23 +76,7 @@ export function AgentCard({ agent, providers, onEdit, onDelete, onToggleDefault,
           {agent.sub_agent_ids?.length > 0 && <Badge variant="outline" className="text-[10px]"><Users className="h-2 w-2 mr-1" />{agent.sub_agent_ids.length} sub</Badge>}
         </div>
 
-        {/* Cost metrics */}
-        {monthlyCost !== null && (
-          <div className="mb-3 p-2 rounded bg-muted/30 border">
-            <div className="flex items-center justify-between text-[10px]">
-              <span className="flex items-center gap-1 text-muted-foreground"><DollarSign className="h-3 w-3" /> Custo mensal</span>
-              <span className="font-medium">${monthlyCost.toFixed(4)}{agent.monthly_budget_usd ? ` / $${agent.monthly_budget_usd}` : ''}</span>
-            </div>
-            {budgetPct !== null && (
-              <div className="mt-1 h-1.5 bg-muted rounded-full overflow-hidden">
-                <div
-                  className={`h-full rounded-full transition-all ${budgetPct >= 90 ? 'bg-destructive' : budgetPct >= 70 ? 'bg-yellow-500' : 'bg-primary'}`}
-                  style={{ width: `${budgetPct}%` }}
-                />
-              </div>
-            )}
-          </div>
-        )}
+
 
         <div className="flex items-center justify-between">
           <span className="text-xs text-muted-foreground">{agent.is_active ? "Ativo" : "Inativo"}</span>
