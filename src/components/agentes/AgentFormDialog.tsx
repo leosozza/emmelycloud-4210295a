@@ -244,7 +244,7 @@ export function AgentFormDialog({
           {/* Governance */}
           <Separator />
           <h4 className="text-sm font-semibold flex items-center gap-2"><Shield className="h-4 w-4" /> Governança</h4>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-3 gap-4">
             <div>
               <Label>Modo de Governança</Label>
               <Select value={(editingAgent as any).governance_mode || "autonomous"} onValueChange={(v) => setEditingAgent(prev => ({ ...prev, governance_mode: v } as any))}>
@@ -257,12 +257,23 @@ export function AgentFormDialog({
               </Select>
             </div>
             <div>
+              <Label>Modo de Routing</Label>
+              <Select value={(editingAgent as any).routing_mode || "direct"} onValueChange={(v) => setEditingAgent(prev => ({ ...prev, routing_mode: v } as any))}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="direct">Directo — responde ele próprio</SelectItem>
+                  <SelectItem value="hierarchical">Hierárquico — delega a sub-agentes</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
               <Label>Budget Mensal (USD)</Label>
               <Input type="number" step="0.01" min="0" value={editingAgent.monthly_budget_usd ?? ""} onChange={(e) => setEditingAgent(prev => ({ ...prev, monthly_budget_usd: e.target.value ? parseFloat(e.target.value) : null }))} placeholder="Ex: 50.00 (vazio = ilimitado)" />
             </div>
           </div>
           <p className="text-[10px] text-muted-foreground">
             Autónomo: executa acções sem aprovação. Supervisionado: pede confirmação em acções críticas. Restrito: apenas responde, sem executar acções.
+            {(editingAgent as any).routing_mode === "hierarchical" && " | Hierárquico: este agente actua como manager e delega tarefas aos sub-agentes."}
           </p>
 
           {/* Skills */}
@@ -274,16 +285,29 @@ export function AgentFormDialog({
                 {SKILL_TYPES.map(skill => {
                   const existing = skills.find(s => s.skill_type === skill.type);
                   const isEnabled = existing?.is_enabled ?? false;
+                  const requiresConfirm = (existing as any)?.requires_confirmation ?? false;
                   return (
                     <div key={skill.type} className="flex items-center justify-between p-2 rounded border bg-muted/20">
-                      <div>
+                      <div className="flex-1">
                         <p className="text-xs font-medium">{skill.label}</p>
                         <p className="text-[10px] text-muted-foreground">{skill.description}</p>
                       </div>
-                      <Switch
-                        checked={isEnabled}
-                        onCheckedChange={(v) => onSkillToggle?.(skill.type, v)}
-                      />
+                      <div className="flex items-center gap-3">
+                        {isEnabled && (editingAgent as any).governance_mode !== "autonomous" && (
+                          <div className="flex items-center gap-1">
+                            <Switch
+                              checked={requiresConfirm}
+                              onCheckedChange={(v) => onSkillToggle?.(`${skill.type}:confirm`, v)}
+                              className="scale-75"
+                            />
+                            <span className="text-[9px] text-muted-foreground whitespace-nowrap">HITL</span>
+                          </div>
+                        )}
+                        <Switch
+                          checked={isEnabled}
+                          onCheckedChange={(v) => onSkillToggle?.(skill.type, v)}
+                        />
+                      </div>
                     </div>
                   );
                 })}
