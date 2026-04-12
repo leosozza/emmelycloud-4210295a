@@ -173,6 +173,14 @@ Deno.serve(async (req) => {
             body: JSON.stringify({
               conversation_id: conversationId,
               message: `[SISTEMA] Proposta "${proposal.title}" aceite pelo cliente.`,
+              variables: {
+                bitrix24_deal_id: proposal.bitrix24_deal_id || "",
+                proposal_id: proposal.id,
+                proposal_title: proposal.title || "",
+                proposal_value: String(proposal.value || "0"),
+                client_name: proposal.client_name || "",
+                sign_url: signUrl,
+              },
             }),
           });
           console.log(`[PROPOSAL-ACCEPT] Flow ${proposal.accept_flow_id} triggered for conversation ${conversationId}`);
