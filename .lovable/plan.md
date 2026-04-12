@@ -1,63 +1,56 @@
 
 
-# Auditoria de Integração Bitrix24 via MCP — Resultados e Plano de Correção
+# Implementar Bitrix24 Booking API (booking.v1.*)
 
-## Metodologia
-Consultei o servidor MCP oficial do Bitrix24 (`https://mcp-dev.bitrix24.com/mcp`) para validar todos os 52+ métodos REST API utilizados nas nossas Edge Functions contra a documentação oficial.
+## Contexto
 
-## Resultados da Auditoria
+O sistema de agendamento atual (`bitrix24-booking-tab`) usa a **Calendar API** (`calendar.event.add`, `calendar.accessibility.get`) para criar eventos no calendário de um utilizador Bitrix24. A API nativa de **Booking** (`booking.v1.*`) é um módulo diferente — focado em reserva de **recursos** (salas, equipamentos, especialistas) com slots configuráveis, lista de espera e ligação a clientes CRM.
 
-### Métodos Validados (OK) — 48 métodos
-Todos os métodos principais estão corretos e documentados:
-- `crm.item.add/update/list/fields` — Universal CRM (Smart Invoices)
-- `crm.item.productrow.set` — Product rows universais
-- `crm.lead.add/get/list/update/fields` — Leads
-- `crm.deal.add/get/list/update/fields/delete` — Deals
-- `crm.contact.add/get/list/update` — Contactos
-- `placement.bind`, `event.bind/unbind`, `imbot.register` — App framework
-- `crm.activity.configurable.add`, `crm.activity.badge.add/set` — Timeline
-- `crm.timeline.comment.add`, `crm.status.list`, `crm.type.list` — Auxiliares
-- `im.notify.system.add`, `im.user.get` — Mensageiro
-- `user.current`, `user.get`, `app.info` — Sistema
+A implementação vai adicionar suporte ao módulo Booking como **modo alternativo** ao Calendar, permitindo ao utilizador escolher nas configurações se quer agendar via Calendar (atual) ou via Booking (recursos nativos do Bitrix24).
 
-### Problemas Encontrados — 3 Issues
+## Alterações
 
-#### Issue 1: `crm.invoice.add` — DEPRECADO
-**Ficheiro**: `supabase/functions/bitrix24-robot-handler/index.ts` (linha 423)
-**Problema**: O MCP confirma que `crm.invoice.add` está **deprecado**. A documentação recomenda usar os métodos universais (`crm.item.add` com `entityTypeId: 31`).
-**Impacto**: Pode deixar de funcionar em atualizações futuras do Bitrix24.
-**Fix**: Substituir por `crm.item.add` com `entityTypeId: 31` (Smart Invoice), alinhando com o que já fazemos na `bitrix24-sync` para Smart Invoices.
+### 1. Migração — Configuração do modo de agendamento
 
-#### Issue 2: `crm.deal.productrows.set` — NÃO ENCONTRADO no MCP
-**Ficheiro**: `supabase/functions/import-access-data/index.ts` (linha 1272)
-**Problema**: O MCP não reconhece este método. A pesquisa sugere usar `crm.item.productrow.set` (universal) ou os métodos por tipo (`crm.lead.productrows.set`, `crm.quote.productrows.set`).
-**Nota**: Este método pode funcionar na prática (APIs legadas não-documentadas), mas não está na documentação oficial. Como é usado apenas na importação de dados Access, o risco é baixo.
-**Fix**: Migrar para `crm.item.productrow.set` com o `entityTypeId: 2` (Deal).
+Adicionar campo `booking_mode` à config da agenda (`payment_gateway_config` gateway=booking):
+- `"calendar"` (padrão, comportamento actual)
+- `"booking"` (novo, usa `booking.v1.*`)
+- Adicionar `booking_resource_id` para guardar o recurso Bitrix24 selecionado
 
-#### Issue 3: `calendar.event.add` / `calendar.accessibility.get` — NÃO NO MCP
-**Ficheiro**: `supabase/functions/bitrix24-booking-tab/index.ts` (linhas 316, 264)
-**Problema**: O MCP do Bitrix24 não indexou os métodos de calendário. Isto **não significa** que estejam errados — o MCP é focado em CRM/REST e pode não cobrir o módulo Calendar completo.
-**Impacto**: Nenhum. Estes métodos existem e funcionam (documentados fora do scope do MCP).
-**Fix**: Nenhum necessário. Métodos corretos conforme a documentação REST do Calendar.
+### 2. `src/components/configuracoes/AgendaTab.tsx` — Novo card "Modo de Agendamento"
 
-## Plano de Correção
+Adicionar card com:
+- **Toggle** entre modo "Calendar" e modo "Booking (Recursos)"
+- Quando modo = "booking": mostrar selector de recursos Bitrix24 (carregados via `booking.v1.resource.list`)
+- Botão "Criar Recurso" para criar um recurso no Bitrix24 caso não exista nenhum
 
-### Ficheiros a alterar
+### 3. `supabase/functions/bitrix24-booking-tab/index.ts` — Suporte dual Calendar/Booking
 
-| Ficheiro | Alteração |
+Novas actions JSON:
+- `get_resources` — chama `booking.v1.resource.list` e retorna lista de recursos
+- `create_resource` — chama `booking.v1.resource.add` para criar recurso "Emmely Agenda"
+- `get_resource_slots` — chama `booking.v1.resource.slots.list` para obter disponibilidade nativa
+
+Modificar action `create_event`:
+- Se `booking_mode === "booking"`:
+  - Usar `booking.v1.booking.add` com `resourceIds`, `datePeriod` (timestamps Unix + timezone)
+  - Após criar, associar cliente CRM via `booking.v1.booking.client.set` com `type: {module: "crm", code: "CONTACT"}`
+- Se `booking_mode === "calendar"` (ou não definido): manter comportamento actual com `calendar.event.add`
+
+Modificar action `get_availability`:
+- Se modo = "booking": usar `booking.v1.resource.slots.list` para obter slots disponíveis do recurso
+- Se modo = "calendar": manter lógica actual com `calendar.accessibility.get`
+
+### 4. HTML do calendário — Adaptar UI
+
+- Carregar config para saber o modo
+- Se modo "booking": esconder selector de utilizador (usa recurso), mostrar nome do recurso
+- Adaptar `createBooking()` para enviar `resource_id` em vez de `user_id` quando em modo booking
+
+## Ficheiros a alterar
+
+| Ficheiro | Acção |
 |---|---|
-| `supabase/functions/bitrix24-robot-handler/index.ts` | Migrar `crm.invoice.add` → `crm.item.add` com `entityTypeId: 31` |
-| `supabase/functions/import-access-data/index.ts` | Migrar `crm.deal.productrows.set` → `crm.item.productrow.set` com `ownerTypeId: 2` |
-
-### Detalhe das Correções
-
-**1. Robot Handler — Smart Invoice via Universal API**
-Substituir a chamada `crm.invoice.add` (legado) por `crm.item.add` com `entityTypeId: 31`, alinhando os campos ao formato universal (`title`, `begindate`, `closedate`, `parentId2`, etc.) — o mesmo padrão já usado na `bitrix24-sync`.
-
-**2. Import Access Data — Product Rows Universal**
-Substituir `crm.deal.productrows.set` por `crm.item.productrow.set` passando `ownerTypeId: 2` (Deal) e `ownerId: dealId`, mantendo o mesmo array de `rows`.
-
-### Sem Alteração Necessária
-- Métodos de Calendar (`calendar.event.add`, `calendar.accessibility.get`) — corretos, apenas não indexados no MCP
-- Todos os 48+ outros métodos CRM/IM/REST — validados e corretos
+| `src/components/configuracoes/AgendaTab.tsx` | Adicionar card "Modo de Agendamento" com toggle e selector de recursos |
+| `supabase/functions/bitrix24-booking-tab/index.ts` | Adicionar actions `get_resources`, `create_resource`; modificar `get_availability` e `create_event` para suportar `booking.v1.*` |
 
