@@ -39,12 +39,18 @@ export function TemplatePreview({
       case "client_info":
         return (
           <div key={block.id} className={`p-6 cursor-pointer ${selectClass}`} onClick={() => onSelectBlock?.(block.id)}>
-            <h3 className="text-xs uppercase tracking-widest text-muted-foreground font-semibold border-b pb-1 mb-3">Dados do Cliente</h3>
+            <h3 className="text-xs uppercase tracking-widest text-muted-foreground font-semibold border-b pb-1 mb-3">Dados do Contratante</h3>
             <div className="grid grid-cols-2 gap-2 text-sm">
+              <div><span className="text-muted-foreground">Tratamento:</span> <span className="italic text-muted-foreground/60">{"{cliente.tratamento}"}</span></div>
               <div><span className="text-muted-foreground">Nome:</span> <span className="italic text-muted-foreground/60">{"{cliente.nome}"}</span></div>
+              <div><span className="text-muted-foreground">Nacionalidade:</span> <span className="italic text-muted-foreground/60">{"{cliente.nacionalidade}"}</span></div>
               <div><span className="text-muted-foreground">Email:</span> <span className="italic text-muted-foreground/60">{"{cliente.email}"}</span></div>
               <div><span className="text-muted-foreground">Telefone:</span> <span className="italic text-muted-foreground/60">{"{cliente.telefone}"}</span></div>
-              <div><span className="text-muted-foreground">Documento:</span> <span className="italic text-muted-foreground/60">{"{cliente.documento}"}</span></div>
+              <div><span className="text-muted-foreground">Tipo Doc.:</span> <span className="italic text-muted-foreground/60">{"{cliente.tipo_documento}"}</span></div>
+              <div><span className="text-muted-foreground">Nº Documento:</span> <span className="italic text-muted-foreground/60">{"{cliente.numero_documento}"}</span></div>
+              <div><span className="text-muted-foreground">Validade Doc.:</span> <span className="italic text-muted-foreground/60">{"{cliente.validade_documento}"}</span></div>
+              <div><span className="text-muted-foreground">Emissor:</span> <span className="italic text-muted-foreground/60">{"{cliente.orgao_emissor}"}</span></div>
+              <div className="col-span-2"><span className="text-muted-foreground">Morada:</span> <span className="italic text-muted-foreground/60">{"{cliente.morada}"}</span></div>
             </div>
           </div>
         );
@@ -73,10 +79,20 @@ export function TemplatePreview({
       case "payment":
         return (
           <div key={block.id} className={`p-6 cursor-pointer ${selectClass}`} onClick={() => onSelectBlock?.(block.id)}>
-            <h3 className="text-xs uppercase tracking-widest text-muted-foreground font-semibold border-b pb-1 mb-3">Orçamento</h3>
+            <h3 className="text-xs uppercase tracking-widest text-muted-foreground font-semibold border-b pb-1 mb-3">Honorários e Pagamento</h3>
             <div className="rounded-xl p-6 text-center" style={{ backgroundColor: `${accentColor}10` }}>
-              <div className="text-3xl font-bold" style={{ color: accentColor }}>€ {"{valor}"}</div>
+              <div className="text-3xl font-bold" style={{ color: accentColor }}>€ {"{valor_total}"}</div>
               <div className="text-sm text-muted-foreground mt-1">{"{tipo_pagamento}"} — {"{parcelas}"}x</div>
+            </div>
+            <div className="grid grid-cols-2 gap-3 mt-4 text-sm">
+              <div className="rounded-lg border p-3">
+                <p className="text-xs text-muted-foreground mb-1">Entrada (na assinatura)</p>
+                <p className="font-semibold" style={{ color: accentColor }}>€ {"{valor_entrada}"}</p>
+              </div>
+              <div className="rounded-lg border p-3">
+                <p className="text-xs text-muted-foreground mb-1">Parcelas mensais</p>
+                <p className="font-semibold" style={{ color: accentColor }}>€ {"{valor_parcela}"} / mês</p>
+              </div>
             </div>
           </div>
         );
