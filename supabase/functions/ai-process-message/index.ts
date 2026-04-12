@@ -241,10 +241,12 @@ Deno.serve(async (req) => {
       .eq("is_enabled", true);
 
     // 4d. Hierarchical routing — manager agent dispatches to sub-agents
-    if (agent.routing_mode === "hierarchical" && agent.sub_agent_ids?.length > 0 && delegation_depth === 0) {
+    // BUG FIX: Check governance before routing — restricted agents should not delegate
+    const isAgentRestricted = agent.governance_mode === "restricted";
+    if (!isAgentRestricted && agent.routing_mode === "hierarchical" && agent.sub_agent_ids?.length > 0 && delegation_depth === 0) {
       console.log(`[AI-PROCESS] Hierarchical mode: manager ${agent.name} will delegate`);
       // In hierarchical mode, the manager prompt is augmented to delegate
-    } else if (agent.sub_agent_ids && agent.sub_agent_ids.length > 0 && conversation && agent.routing_mode !== "hierarchical") {
+    } else if (!isAgentRestricted && agent.sub_agent_ids && agent.sub_agent_ids.length > 0 && conversation && agent.routing_mode !== "hierarchical") {
       const routedAgent = await routeToSubAgent(supabase, agent, conversation, message_text, auxTokens);
       if (routedAgent) {
         console.log(`[AI-PROCESS] Routed to sub-agent: ${routedAgent.name}`);
@@ -417,7 +419,9 @@ Deno.serve(async (req) => {
     }
 
     const historySection = compactSummaryContext || compressedHistory;
-    const systemPrompt = (agent.system_prompt || "") + personalityPrompt + knowledgeContext + memoryContext + historySection + contactContext + antiRepetitionPrompt + sentimentFlag + autoLangPrompt;
+    // BUG FIX: Inject base_prompt (Persona Trainer) before system_prompt (Manual)
+    const combinedPrompt = [(agent.base_prompt || "").trim(), (agent.system_prompt || "").trim()].filter(Boolean).join("\n\n");
+    const systemPrompt = combinedPrompt + personalityPrompt + knowledgeContext + memoryContext + historySection + contactContext + antiRepetitionPrompt + sentimentFlag + autoLangPrompt;
 
     console.log(`[AI-PROCESS] Context: recent=${recentMessages.length}, older=${olderMessages.length}, kb=${linkedDocs?.length || 0}, memory=${memoryContext ? "yes" : "no"}`);
 
@@ -484,23 +488,25 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Knowledge Graph navigation
-    allTools.push({
-      type: "function",
-      function: {
-        name: "navigate_graph",
-        description: "Navegar o grafo de entidades para encontrar relações entre leads, propostas, contratos e pagamentos. Ex: dado um lead, encontrar todos os contratos e pagamentos associados.",
-        parameters: {
-          type: "object",
-          properties: {
-            entity_type: { type: "string", enum: ["lead", "proposal", "contract", "case", "financial", "conversation"], description: "Tipo da entidade de partida" },
-            entity_id: { type: "string", description: "ID da entidade" },
-            depth: { type: "number", description: "Profundidade de navegação (1-3)", default: 2 },
+    // Knowledge Graph navigation — gated behind crm/graph skill
+    if (skillTypes.has("crm") || skillTypes.has("leads") || skillTypes.has("graph")) {
+      allTools.push({
+        type: "function",
+        function: {
+          name: "navigate_graph",
+          description: "Navegar o grafo de entidades para encontrar relações entre leads, propostas, contratos e pagamentos. Ex: dado um lead, encontrar todos os contratos e pagamentos associados.",
+          parameters: {
+            type: "object",
+            properties: {
+              entity_type: { type: "string", enum: ["lead", "proposal", "contract", "case", "financial", "conversation"], description: "Tipo da entidade de partida" },
+              entity_id: { type: "string", description: "ID da entidade" },
+              depth: { type: "number", description: "Profundidade de navegação (1-3)", default: 2 },
+            },
+            required: ["entity_type", "entity_id"],
           },
-          required: ["entity_type", "entity_id"],
         },
-      },
-    });
+      });
+    }
 
     // Payment tools
     if (skillTypes.has("payments") || skillTypes.has("financial")) {
@@ -663,7 +669,16 @@ Deno.serve(async (req) => {
       // Add assistant message with tool calls to conversation
       messages.push(choice);
 
-      // Build skill lookup for HITL checks
+      // Build skill lookup for HITL checks — map tool names to skill types
+      const TOOL_TO_SKILL: Record<string, string> = {
+        query_crm: "crm",
+        navigate_graph: "crm",
+        check_payments: "payments",
+        list_services: "services",
+        search_knowledge: "search_knowledge",
+        transfer_to_human: "transfer",
+        delegate_to_agent: "delegation",
+      };
       const skillMap = new Map((agentSkills || []).map((s: any) => [s.skill_type, s]));
 
       for (const tc of toolCalls) {
@@ -680,8 +695,9 @@ Deno.serve(async (req) => {
           timestamp: new Date().toISOString(),
         });
 
-        // Phase 4: HITL — check if skill requires confirmation
-        const matchingSkill = skillMap.get(fnName);
+        // Phase 4: HITL — check if skill requires confirmation (using tool-to-skill mapping)
+        const skillType = TOOL_TO_SKILL[fnName] || fnName;
+        const matchingSkill = skillMap.get(skillType);
         if (matchingSkill?.requires_confirmation && conversation && agent.governance_mode !== "autonomous") {
           console.log(`[AI-PROCESS] HITL: tool ${fnName} requires confirmation`);
           // Save pending action in bot_state
