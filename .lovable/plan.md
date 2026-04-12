@@ -1,52 +1,63 @@
 
 
-# Corrigir Erros de Build — 5 Correções
+# Auditoria de Integração Bitrix24 via MCP — Resultados e Plano de Correção
 
-## Problema
-Existem 5 erros de TypeScript que impedem o build.
+## Metodologia
+Consultei o servidor MCP oficial do Bitrix24 (`https://mcp-dev.bitrix24.com/mcp`) para validar todos os 52+ métodos REST API utilizados nas nossas Edge Functions contra a documentação oficial.
 
-## Correções
+## Resultados da Auditoria
 
-### 1. `supabase/functions/ai-process-message/index.ts` (linha 753)
-`linkedDocs` tem tipo `{document_id: any}[] | null` mas a função espera `any[]`.
-**Fix**: Adicionar `|| []` — `linkedDocs || []`
+### Métodos Validados (OK) — 48 métodos
+Todos os métodos principais estão corretos e documentados:
+- `crm.item.add/update/list/fields` — Universal CRM (Smart Invoices)
+- `crm.item.productrow.set` — Product rows universais
+- `crm.lead.add/get/list/update/fields` — Leads
+- `crm.deal.add/get/list/update/fields/delete` — Deals
+- `crm.contact.add/get/list/update` — Contactos
+- `placement.bind`, `event.bind/unbind`, `imbot.register` — App framework
+- `crm.activity.configurable.add`, `crm.activity.badge.add/set` — Timeline
+- `crm.timeline.comment.add`, `crm.status.list`, `crm.type.list` — Auxiliares
+- `im.notify.system.add`, `im.user.get` — Mensageiro
+- `user.current`, `user.get`, `app.info` — Sistema
 
-### 2. `supabase/functions/report-agent/index.ts` (linha 125)
-`err` é do tipo `unknown`.
-**Fix**: `(err as any).message`
+### Problemas Encontrados — 3 Issues
 
-### 3. `supabase/functions/simulation-engine/index.ts` (linha 127)
-`e` é do tipo `unknown`.
-**Fix**: `(e as any).message`
+#### Issue 1: `crm.invoice.add` — DEPRECADO
+**Ficheiro**: `supabase/functions/bitrix24-robot-handler/index.ts` (linha 423)
+**Problema**: O MCP confirma que `crm.invoice.add` está **deprecado**. A documentação recomenda usar os métodos universais (`crm.item.add` com `entityTypeId: 31`).
+**Impacto**: Pode deixar de funcionar em atualizações futuras do Bitrix24.
+**Fix**: Substituir por `crm.item.add` com `entityTypeId: 31` (Smart Invoice), alinhando com o que já fazemos na `bitrix24-sync` para Smart Invoices.
 
-### 4. `src/pages/Simulation.tsx` (linha 98)
-Propriedade `title` não existe no tipo de ícone Lucide.
-**Fix**: Remover `title` e usar um wrapper `<span title="...">` ou simplesmente removê-lo.
+#### Issue 2: `crm.deal.productrows.set` — NÃO ENCONTRADO no MCP
+**Ficheiro**: `supabase/functions/import-access-data/index.ts` (linha 1272)
+**Problema**: O MCP não reconhece este método. A pesquisa sugere usar `crm.item.productrow.set` (universal) ou os métodos por tipo (`crm.lead.productrows.set`, `crm.quote.productrows.set`).
+**Nota**: Este método pode funcionar na prática (APIs legadas não-documentadas), mas não está na documentação oficial. Como é usado apenas na importação de dados Access, o risco é baixo.
+**Fix**: Migrar para `crm.item.productrow.set` com o `entityTypeId: 2` (Deal).
 
-### 5. `src/pages/Simulation.tsx` (linha 210)
-`intervention_prompt` não existe no tipo `simulations.Update`.
-**Fix**: Cast para `as any` no update, ou adicionar migração para adicionar a coluna.
+#### Issue 3: `calendar.event.add` / `calendar.accessibility.get` — NÃO NO MCP
+**Ficheiro**: `supabase/functions/bitrix24-booking-tab/index.ts` (linhas 316, 264)
+**Problema**: O MCP do Bitrix24 não indexou os métodos de calendário. Isto **não significa** que estejam errados — o MCP é focado em CRM/REST e pode não cobrir o módulo Calendar completo.
+**Impacto**: Nenhum. Estes métodos existem e funcionam (documentados fora do scope do MCP).
+**Fix**: Nenhum necessário. Métodos corretos conforme a documentação REST do Calendar.
 
-### 6. `src/components/flows/NodeConfigPanel.tsx` (linhas 100-101)
-`ai_crews` não existe como tabela no schema.
-**Fix**: Adicionar migração para criar a tabela `ai_crews` (que já é referenciada pelo `ai-crew-executor` edge function), OU comentar/remover o query temporariamente e usar dados mock.
+## Plano de Correção
 
-## Abordagem Recomendada
+### Ficheiros a alterar
 
-Dado que o plano do utilizador já prevê a criação das tabelas `ai_crews` e `ai_tasks`, a abordagem mais limpa é:
-
-1. **Criar migração** para adicionar `current_round` e `intervention_prompt` à tabela `simulations`
-2. **Criar migração** para as tabelas `ai_crews`, `ai_tasks`, `ai_task_executions` (necessárias pelo edge function `ai-crew-executor` e pelo `NodeConfigPanel`)
-3. **Corrigir os 3 erros de tipo** nos edge functions (casts simples)
-4. **Corrigir o ícone Lucide** em `Simulation.tsx`
-
-## Ficheiros a alterar
-
-| Ficheiro | Acção |
+| Ficheiro | Alteração |
 |---|---|
-| `supabase/functions/ai-process-message/index.ts` | `linkedDocs || []` na linha 753 |
-| `supabase/functions/report-agent/index.ts` | `(err as any).message` na linha 125 |
-| `supabase/functions/simulation-engine/index.ts` | `(e as any).message` na linha 127 |
-| `src/pages/Simulation.tsx` | Remover `title` do Zap icon; cast `as any` no update |
-| Migração SQL | Adicionar `current_round int`, `intervention_prompt text` a `simulations`; criar `ai_crews`, `ai_tasks`, `ai_task_executions` |
+| `supabase/functions/bitrix24-robot-handler/index.ts` | Migrar `crm.invoice.add` → `crm.item.add` com `entityTypeId: 31` |
+| `supabase/functions/import-access-data/index.ts` | Migrar `crm.deal.productrows.set` → `crm.item.productrow.set` com `ownerTypeId: 2` |
+
+### Detalhe das Correções
+
+**1. Robot Handler — Smart Invoice via Universal API**
+Substituir a chamada `crm.invoice.add` (legado) por `crm.item.add` com `entityTypeId: 31`, alinhando os campos ao formato universal (`title`, `begindate`, `closedate`, `parentId2`, etc.) — o mesmo padrão já usado na `bitrix24-sync`.
+
+**2. Import Access Data — Product Rows Universal**
+Substituir `crm.deal.productrows.set` por `crm.item.productrow.set` passando `ownerTypeId: 2` (Deal) e `ownerId: dealId`, mantendo o mesmo array de `rows`.
+
+### Sem Alteração Necessária
+- Métodos de Calendar (`calendar.event.add`, `calendar.accessibility.get`) — corretos, apenas não indexados no MCP
+- Todos os 48+ outros métodos CRM/IM/REST — validados e corretos
 
