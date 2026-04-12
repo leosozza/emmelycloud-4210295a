@@ -1,42 +1,30 @@
 
 
-# Atualizar Bitrix24App — Remover "Persona" e Adicionar Módulos em Falta
+# Adicionar Selector de Responsável Padrão na Aba Agenda
 
-## Problema
+## Resumo
+Adicionar um campo de seleção de utilizador Bitrix24 como "responsável padrão" na configuração da agenda. Este valor será usado como pré-seleção no calendário do placement.
 
-A página `/bitrix24` ainda usa terminologia "Persona" em vez de "Agentes IA", e não inclui os módulos recentemente implementados (Automações IA, Observabilidade IA).
+## Alterações
 
-## Alterações no ficheiro `src/pages/Bitrix24App.tsx`
+### `src/components/configuracoes/AgendaTab.tsx`
+1. Importar `useBitrixUsers` de `@/hooks/useBitrixUsers`
+2. Importar ícone `User` de lucide-react
+3. Adicionar campo `default_user_id` ao interface `AgendaConfig` e ao `DEFAULT_CONFIG` (valor: `""`)
+4. Adicionar novo Card "Responsável Padrão" antes do card de Reunião Online:
+   - Select dropdown com lista de utilizadores Bitrix24 (nome + cargo)
+   - Opção "Nenhum (escolher ao agendar)" como default
+   - Descrição: "Utilizador pré-selecionado ao abrir o calendário de agendamento"
+   - Estado de loading enquanto carrega utilizadores
 
-### 1. Renomear "Persona" para "Agentes IA"
-- **Linha 207**: `label: "Persona"` → `label: "Agentes IA"`
-- **Linha 1015**: `"Configurar Persona"` → `"Configurar Agente IA"`, desc: `"Acesse Agentes IA e selecione..."` 
-- **Linha 1325**: `"Personas / Agentes IA"` → `"Agentes IA"`
-- **Linha 1326**: desc → `"Configure e gerencie os seus agentes de IA"`
-
-### 2. Adicionar novos módulos ao menu de navegação
-Adicionar na categoria "Emmely IO":
-- `{ id: "automacoes", label: "Automações IA", icon: Zap }`
-
-Adicionar na categoria "Sistema":
-- `{ id: "observabilidade", label: "Observabilidade", icon: Activity }`
-
-### 3. Atualizar AppView type e validViews
-- Adicionar `"automacoes"` e `"observabilidade"` ao type `AppView` (linha 83)
-- Adicionar ambos ao array `validViews` (linha 98)
-
-### 4. Adicionar renders dos novos módulos
-Na secção `<main>` (linhas 317-352), adicionar:
-- `{view === "automacoes" && <AutomacoesViewBitrix />}`
-- `{view === "observabilidade" && <ObservabilidadeViewBitrix />}`
-
-### 5. Criar componentes inline simplificados
-- **AutomacoesViewBitrix**: Embed da página Automações existente via iframe ou componente minimalista que mostra os toggles das 4 automações (resumo, classificação, follow-up, sentimento) com os mesmos endpoints da edge function `ai-internal-automations`
-- **ObservabilidadeViewBitrix**: Componente que mostra métricas de uso IA (chamadas, tokens, custos, erros) via query à tabela `ai_usage_logs`
+### `supabase/functions/bitrix24-booking-tab/index.ts`
+5. Na action `get_config`, incluir o `default_user_id` na resposta
+6. No HTML do calendário, pré-selecionar o utilizador padrão se configurado e disparar `onUserChange()` automaticamente
 
 ## Ficheiros a alterar
 
 | Ficheiro | Acção |
 |---|---|
-| `src/pages/Bitrix24App.tsx` | Renomear Persona→Agentes IA, adicionar nav items, views e componentes inline |
+| `src/components/configuracoes/AgendaTab.tsx` | Adicionar campo default_user_id com selector de utilizadores Bitrix24 |
+| `supabase/functions/bitrix24-booking-tab/index.ts` | Pré-selecionar utilizador padrão no HTML do calendário |
 
