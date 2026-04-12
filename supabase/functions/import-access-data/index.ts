@@ -1269,7 +1269,7 @@ serve(async (req) => {
               if (productId) row.PRODUCT_ID = productId;
               return row;
             });
-            await bitrixCall("crm.deal.productrows.set", { id: dealId, rows: productRows });
+            await bitrixCall("crm.item.productrow.set", { ownerTypeId: 2, ownerId: dealId, productRows });
             const linked = productRows.filter((r: any) => r.PRODUCT_ID).length;
             results.push(`${linked}/${productRows.length} produtos vinculados ao Deal`);
           } catch (e) {

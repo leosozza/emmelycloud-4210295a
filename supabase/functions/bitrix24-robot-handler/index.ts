@@ -414,32 +414,29 @@ async function handleCreateCharge(
       if (!firstChargeId && tx.id) firstChargeId = tx.id;
       if (!firstGateway && tx.gateway) firstGateway = tx.gateway;
 
-      // 2. Create Invoice (old API) in Bitrix24
+      // 2. Create Smart Invoice (Universal API, entityTypeId: 31) in Bitrix24
       if (integration?.client_endpoint && integration?.access_token && dealId) {
         try {
           const invoiceResult = await callBitrix(
             integration.client_endpoint,
             integration.access_token,
-            "crm.invoice.add",
+            "crm.item.add",
             {
+              entityTypeId: 31,
               fields: {
-                ORDER_TOPIC: `${label} - ${description}`,
-                STATUS_ID: "N",
-                DATE_BILL: today,
-                DATE_PAY_BEFORE: parcel.due_date,
-                UF_DEAL_ID: parseInt(dealId) || 0,
-                UF_CONTACT_ID: parseInt(contactId) || 0,
-                RESPONSIBLE_ID: 1,
-                PERSON_TYPE_ID: 1,
-                PRODUCT_ROWS: [{
-                  PRODUCT_NAME: label,
-                  QUANTITY: 1,
-                  PRICE: parcel.amount,
-                }],
+                title: `${label} - ${description}`,
+                stageId: "DT31_3:N",
+                begindate: today,
+                closedate: parcel.due_date,
+                opportunity: parcel.amount,
+                currencyId: "EUR",
+                parentId2: parseInt(dealId) || 0,
+                contactId: parseInt(contactId) || 0,
+                responsibleId: 1,
               },
             }
           );
-          const invoiceId = invoiceResult.result;
+          const invoiceId = invoiceResult.result?.item?.id || invoiceResult.result;
           if (invoiceId) {
             invoicesCreated++;
             console.log(`[ROBOT-HANDLER] Invoice created: ${invoiceId} for ${label}`);
