@@ -605,7 +605,7 @@ export default function FlowsPage() {
                 nodeColor={(n) => (n.data as any)?.error ? "#ef4444" : "#e2e8f0"}
                 maskColor="rgba(0,0,0,0.05)"
               />
-              <Background variant={"dots"} gap={20} size={1} color="#cbd5e1" />
+              <Background variant={BackgroundVariant.Dots} gap={20} size={1} color="#cbd5e1" />
               {selectedNodeId && (
                 <Panel position="top-right">
                   <div className="flex gap-1 bg-card border rounded-md p-1 shadow-sm">
