@@ -46,12 +46,25 @@ interface MessageBubbleProps {
   msg: Message;
   conversationId?: string;
   workspaceId?: string;
+  containerWidth?: number;
 }
 
-export function MessageBubble({ msg, conversationId, workspaceId }: MessageBubbleProps) {
+export function MessageBubble({ msg, conversationId, workspaceId, containerWidth }: MessageBubbleProps) {
   const isOutgoing = msg.direction === "outgoing" || msg.direction === "outbound";
   const sourceLabel = getSourceLabel(msg);
   const [feedbackGiven, setFeedbackGiven] = useState<"up" | "down" | null>(null);
+
+  // Shrink-wrap: compute tight bubble width if we have text and container info
+  const bubbleStyle = useMemo(() => {
+    if (!msg.content || !containerWidth || containerWidth < 100) return {};
+    const isMobile = containerWidth < 640;
+    const maxW = Math.floor(containerWidth * (isMobile ? 0.8 : 0.65));
+    const tight = shrinkWrapWidth(msg.content, maxW - 28); // 28 = px-3.5 * 2
+    if (tight < maxW) {
+      return { maxWidth: `${Math.min(tight, maxW)}px` };
+    }
+    return {};
+  }, [msg.content, containerWidth]);
 
   const bubbleClass = !isOutgoing
     ? "msg-bubble-client"
