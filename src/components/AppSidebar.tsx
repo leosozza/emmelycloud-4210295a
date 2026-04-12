@@ -24,6 +24,8 @@ import {
   Activity,
   Settings,
   Plug,
+  FlaskConical,
+  FileBarChart,
 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import {

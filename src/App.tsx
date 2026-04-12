@@ -87,6 +87,8 @@ const App = () => (
             <Route path="/chat" element={<ChatIAPage />} />
             <Route path="/observabilidade-ia" element={<ObservabilidadeIAPage />} />
             <Route path="/configuracoes" element={<Configuracoes />} />
+            <Route path="/simulation" element={<SimulationPage />} />
+            <Route path="/swarm-reports" element={<SwarmReportsPage />} />
           </Route>
           <Route path="*" element={<NotFound />} />
         </Routes>
