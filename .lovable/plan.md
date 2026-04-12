@@ -1,82 +1,101 @@
 
 
-# Analise MiroFish vs EmmelyCloud — Conceitos Aplicaveis
+# Analise CrewAI vs EmmelyCloud — Conceitos Aplicaveis
 
-## O que e o MiroFish
+## O que e o CrewAI
 
-MiroFish e um motor de **inteligencia de enxame** (swarm intelligence) que simula cenarios futuros criando agentes IA com personalidades distintas, colocando-os a interagir numa rede social simulada, e depois analisando os resultados. Os conceitos-chave sao:
+CrewAI (48.6k stars) e um framework de orquestracao multi-agente com dois pilares:
 
-1. **Knowledge Graph com Zep** — constroi grafos de entidades/relacoes a partir de texto (documentos, noticias), que servem de "memoria colectiva"
-2. **Memoria Temporal Dinamica** — cada agente tem memoria que se atualiza round a round (via `zep_graph_memory_updater`)
-3. **ReACT Report Agent** — agente que gera relatorios usando um ciclo Think → Tool Call → Observe → Write, com ferramentas como `InsightForge` (pesquisa profunda), `PanoramaSearch` (visao ampla), e `Interview` (entrevistar agentes)
-4. **Simulation IPC** — comunicacao inter-processos para entrevistar agentes apos a simulacao
-5. **Ontologia** — extrai automaticamente tipos de entidades e relacoes do texto de entrada antes de construir o grafo
+1. **Crews** — equipas de agentes autónomos com papéis, goals e backstories, que colaboram via delegação de tarefas
+2. **Flows** — workflows event-driven com decorators (`@start`, `@listen`, `@router`) e state management tipado, que orquestram Crews e lógica determinística
+3. **Tasks** — unidades de trabalho com `expected_output`, `context` (tasks anteriores cujo output alimenta esta), e `output_file`
+4. **Memory** — short-term, long-term, entity memory e user memory para contexto persistente entre interações
+5. **Knowledge** — RAG integrado com knowledge sources (PDF, texto, JSON)
+6. **Process Types** — `sequential` (um a um), `hierarchical` (manager delega automaticamente)
+7. **Hooks** — lifecycle hooks (`@before_kickoff`, `@after_kickoff`) para pré/pós processamento
+8. **Checkpoints** — save/restore de estado do flow para recuperação de falhas
+9. **A2A (Agent-to-Agent)** — protocolo para agentes se comunicarem entre si
+10. **Human-in-the-Loop (HITL)** — suporte nativo para pedir input humano durante execução
 
 ## O que e Aplicavel ao EmmelyCloud
 
-O MiroFish e um sistema de simulacao social, nao um CRM. **Nao faz sentido** copiar a simulacao. Mas ha **3 padroes arquitecturais** que podem melhorar significativamente o EmmelyCloud:
+CrewAI e um framework Python de orquestração. O EmmelyCloud e um CRM com agentes IA em Edge Functions. Não faz sentido portar o framework, mas há **5 padrões arquitecturais** de alto valor:
 
-### Conceito 1: Knowledge Graph para Agentes (ALTO IMPACTO)
-Actualmente, o `ai-process-message` usa embeddings vectoriais simples (chunks de texto). O MiroFish mostra que **grafos de entidades** (cliente X → tem contrato Y → deve parcela Z) permitem respostas muito mais contextuais. Em vez do agente procurar "chunks similares", ele navega relacoes.
+### Conceito 1: Task Delegation entre Agentes (ALTO IMPACTO)
+O EmmelyCloud já tem `sub_agent_ids` mas não há lógica de delegação. No CrewAI, um agente pode delegar parte do trabalho a outro agente especializado. O agente "manager" avalia se precisa de ajuda e invoca o sub-agente automaticamente.
 
-**Aplicacao pratica:** Quando um cliente pergunta "qual o estado do meu contrato?", o agente navega: Cliente → Contrato → Parcelas → Status, em vez de procurar chunks de texto.
+**Aplicação prática:** O agente principal recebe "preciso de ajuda com o meu contrato e com um pagamento". Delega a parte de contrato ao agente jurídico e a parte de pagamento ao agente financeiro, depois consolida as respostas.
 
-### Conceito 2: ReACT Agent Loop (ALTO IMPACTO)
-O `ai-process-message` actual e single-shot: recebe mensagem → chama LLM → responde. O MiroFish usa um ciclo **ReACT** (Reason → Act → Observe) onde o agente pode:
-- Pensar sobre o que precisa
-- Chamar uma ferramenta (consultar CRM, buscar dados)
-- Observar o resultado
-- Decidir se precisa de mais informacao ou se pode responder
+### Conceito 2: Structured Task Output (ALTO IMPACTO)
+No CrewAI, cada Task tem `expected_output` e pode ter `output_json`/`output_pydantic` para estruturar a resposta. Actualmente o `ai-process-message` gera texto livre. Com output estruturado, o agente pode retornar JSON tipado quando executa skills (ex: dados de um lead, proposta draft).
 
-**Aplicacao pratica:** O agente recebe "quero uma proposta para o servico X". Em vez de responder com texto generico, ele: (1) consulta servicos disponiveis, (2) busca dados do cliente no CRM, (3) gera a proposta automaticamente via skill.
+**Aplicação prática:** Quando o agente executa `query_crm`, em vez de receber texto livre do LLM, recebe `{ lead_id: "123", name: "João", status: "active" }` validado.
 
-### Conceito 3: Audit Trail Detalhado por Step (MEDIO IMPACTO)
-O `ReportLogger` do MiroFish regista **cada passo** do agente em JSONL (thought, tool_call, tool_result, reflection). Actualmente o EmmelyCloud so regista o resultado final. Com logging por step, podemos debugar e optimizar o comportamento dos agentes.
+### Conceito 3: Hierarchical Process / Manager Agent (MEDIO IMPACTO)
+No CrewAI, o `Process.hierarchical` cria automaticamente um "manager" que planeia, delega e valida. O EmmelyCloud pode implementar isto como um modo de routing onde o agente default funciona como router/manager que despacha para agentes especializados.
 
-**Aplicacao pratica:** Na Observabilidade IA, ver nao so "o agente respondeu em 3s" mas "pensou 0.5s → chamou CRM 1.2s → chamou KB 0.8s → respondeu 0.5s".
+**Aplicação prática:** O cliente envia uma mensagem ambígua. O manager analisa a intenção, escolhe o agente mais adequado (jurídico, financeiro, atendimento), delega, e valida a resposta antes de enviar.
+
+### Conceito 4: Flow State Management Tipado (MEDIO IMPACTO)
+O flow-engine do EmmelyCloud usa `variables` como `Record<string, any>`. O CrewAI usa Pydantic models (BaseModel) para state tipado com validação. Podemos adicionar schema validation às variáveis de flow para prevenir erros silenciosos.
+
+**Aplicação prática:** Um flow que coleta dados do cliente valida que `{{cpf}}` tem 11 dígitos, `{{email}}` tem formato válido, antes de prosseguir para o nó seguinte.
+
+### Conceito 5: Human-in-the-Loop no ReACT Loop (MEDIO IMPACTO)
+O CrewAI permite que um agente pause e peça confirmação humana antes de executar uma acção crítica. No EmmelyCloud, o ReACT loop executa tools automaticamente. Para acções sensíveis (criar proposta, mover deal), o agente deveria poder pedir confirmação.
+
+**Aplicação prática:** O agente quer criar uma proposta de €5000. Em vez de criar directamente, envia ao operador: "Pretendo criar proposta de €5000 para João Silva. Confirma?" O operador aprova ou rejeita.
 
 ---
 
-## Plano de Implementacao (3 fases)
+## Plano de Implementação (4 fases)
 
-### Fase 1: ReACT Agent Loop no `ai-process-message`
-Transformar o `ai-process-message` de single-shot para um ciclo ReACT com ate 5 iteracoes.
+### Fase 1: Task Delegation no ReACT Loop
+Permitir que o agente delegue sub-tarefas a outros agentes (usando `sub_agent_ids`).
 
-**Alteracoes:**
-- `ai-process-message/index.ts`: Implementar loop ReACT que define tools como funcoes JSON Schema, envia ao LLM, parseia `tool_calls` da resposta, executa a ferramenta, e re-envia o resultado ao LLM
-- Ferramentas iniciais: `search_knowledge` (KB existente), `query_crm` (buscar lead/deal no Bitrix), `list_services` (listar servicos), `create_proposal_draft` (invocar proposal creation)
-- Usar as `agent_skills` ja criadas para determinar quais ferramentas cada agente tem acesso
-- Limite de 5 iteracoes para evitar loops infinitos
+**Alterações:**
+- `ai-process-message/index.ts`: Adicionar tool `delegate_to_agent` ao ReACT loop. Quando invocada, chama recursivamente o ai-process-message com o sub-agente, passando a sub-tarefa como mensagem e `skip_send: true`. Retorna a resposta como tool_result.
+- Limitar delegação a 1 nível de profundidade (sem recursão infinita).
+- Respeitar budget do sub-agente e acumular custos no log principal.
 
-### Fase 2: Step-Level Audit Trail
-Registar cada passo do agente (thought, tool_call, tool_result) na tabela `ai_conversation_logs`.
+### Fase 2: Structured Output para Skills
+Forçar output JSON estruturado quando o agente executa tools que retornam dados.
 
-**Alteracoes:**
-- Adicionar campo `step_details JSONB` a `ai_conversation_logs` (migration)
-- No loop ReACT, acumular array de steps `[{type: "thought", content}, {type: "tool_call", tool, params}, {type: "tool_result", result}]`
-- Gravar no log apos conclusao
-- Na pagina de Observabilidade IA, adicionar expansao de cada log para ver os steps individuais
+**Alterações:**
+- `ai-process-message/index.ts`: Após executar tools como `query_crm`, `check_payments`, `navigate_graph`, parsear o resultado e retornar JSON estruturado (não texto livre) ao LLM.
+- Adicionar campo `output_schema` opcional ao `agent_skills` para definir o formato esperado de cada skill.
+- Migration SQL: adicionar `output_schema JSONB` a `agent_skills`.
 
-### Fase 3: Knowledge Graph Simplificado
-Implementar um grafo de entidades simples usando a propria BD (sem Zep externo).
+### Fase 3: Manager/Router Agent Mode
+Modo "hierarchical" onde o agente default funciona como dispatcher.
 
-**Alteracoes:**
-- Criar tabela `entity_graph` com colunas: `id`, `source_type` (lead/proposal/contract/service), `source_id`, `target_type`, `target_id`, `relation` (has_contract, owes_payment, interested_in), `metadata JSONB`
-- Criar triggers que populam o grafo automaticamente quando leads, propostas, contratos sao criados/actualizados
-- Adicionar ferramenta `navigate_graph` ao ReACT loop: dado um cliente, navegar relacoes para obter contexto completo
-- Edge function `generate-embeddings` actualizada para tambem popular o grafo
+**Alterações:**
+- Adicionar campo `routing_mode` ao `ai_agents` (values: `direct` | `hierarchical`). Default: `direct`.
+- Quando `hierarchical`: o agente recebe a mensagem, decide qual sub-agente deve responder, delega via `delegate_to_agent`, e opcionalmente revisa a resposta antes de enviar.
+- `AgentFormDialog.tsx`: Adicionar selector de modo de routing quando o agente tem sub-agentes configurados.
+- Migration SQL: `routing_mode TEXT DEFAULT 'direct'` em `ai_agents`.
+
+### Fase 4: Human-in-the-Loop para Acções Críticas
+Permitir que o agente peça confirmação antes de executar skills marcadas como "sensíveis".
+
+**Alterações:**
+- Migration SQL: adicionar `requires_confirmation BOOLEAN DEFAULT false` a `agent_skills`.
+- `ai-process-message/index.ts`: Quando o ReACT loop quer executar uma skill com `requires_confirmation = true`, em vez de executar, retorna uma mensagem de confirmação e salva o estado pendente em `bot_state`.
+- `flow-engine/index.ts`: Tratar resposta de confirmação ("sim"/"não") para executar ou cancelar a acção pendente.
+- `AgentFormDialog.tsx`: Toggle "Requer confirmação" por skill.
 
 ### Ficheiros a Alterar/Criar
 
-| Ficheiro | Accao |
+| Ficheiro | Acção |
 |---|---|
-| `supabase/functions/ai-process-message/index.ts` | ReACT loop + tool execution |
-| Migration SQL | `step_details` em `ai_conversation_logs` + tabela `entity_graph` |
-| `src/pages/ObservabilidadeIA.tsx` | Expansao de steps no log |
-| `src/hooks/useAiObservability.ts` | Carregar step_details |
+| `supabase/functions/ai-process-message/index.ts` | Delegation + structured output + HITL |
+| Migration SQL | `output_schema` em `agent_skills`, `routing_mode` em `ai_agents`, `requires_confirmation` em `agent_skills` |
+| `src/components/agentes/AgentFormDialog.tsx` | UI routing mode + confirmation toggle |
+| `src/pages/Agentes.tsx` | Suporte aos novos campos |
 
 ### Prioridade
-1. **Fase 1 (ReACT)** — impacto imediato na qualidade das respostas dos agentes
-2. **Fase 2 (Audit Trail)** — visibilidade para debugging
-3. **Fase 3 (Knowledge Graph)** — contexto mais rico, implementacao mais complexa
+1. **Fase 1 (Delegation)** — desbloqueia colaboração multi-agente real
+2. **Fase 2 (Structured Output)** — qualidade e fiabilidade das respostas
+3. **Fase 3 (Manager Mode)** — routing inteligente automático
+4. **Fase 4 (HITL)** — segurança para acções críticas
 
