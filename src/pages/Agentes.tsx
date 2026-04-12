@@ -212,6 +212,23 @@ export default function AgentesPage() {
     else { toast.success("Agente duplicado"); loadData(); }
   };
 
+  const toggleBitrixAgent = async (agentId: string) => {
+    if (!bitrixIntegration) {
+      toast.error("Nenhuma integração Bitrix24 encontrada");
+      return;
+    }
+    const { error } = await supabase
+      .from("bitrix24_integrations")
+      .update({ bitrix_agent_id: agentId || null } as any)
+      .eq("id", bitrixIntegration.id);
+    if (error) {
+      toast.error("Erro ao atualizar agente Bitrix24");
+      return;
+    }
+    setBitrixIntegration(prev => prev ? { ...prev, bitrix_agent_id: agentId || null } : null);
+    toast.success(agentId ? "Agente ativado como chatbot no Bitrix24" : "Agente desativado do Bitrix24");
+  };
+
   const openEdit = async (agent: AIAgent) => {
     setEditingAgent({ ...agent });
     // Load skills for this agent
