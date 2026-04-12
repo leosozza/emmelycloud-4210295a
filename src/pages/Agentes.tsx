@@ -271,7 +271,10 @@ export default function AgentesPage() {
     <div>
       <PageHeader title="Agentes IA" description="Configure agentes inteligentes com diferentes personalidades e modelos de IA" />
 
-      <div className="flex justify-end mb-4">
+      <div className="flex justify-end gap-2 mb-4">
+        <Button variant="outline" onClick={() => setBuilderOpen(true)}>
+          <Sparkles className="h-4 w-4 mr-2" /> Criar com IA
+        </Button>
         <Button onClick={openCreate}><Plus className="h-4 w-4 mr-2" /> Novo Agente</Button>
       </div>
 
