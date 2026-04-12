@@ -1,6 +1,27 @@
 import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 
+interface StepDetail {
+  type: "thought" | "tool_call" | "tool_result" | "reflection";
+  content: string;
+  tool?: string;
+  params?: any;
+  duration_ms?: number;
+  timestamp: string;
+}
+
+interface ReactLog {
+  id: string;
+  agent_id: string | null;
+  agent_name: string;
+  step_count: number;
+  tool_calls: number;
+  steps: StepDetail[];
+  latency_ms: number | null;
+  cost_estimate: number | null;
+  created_at: string;
+}
+
 interface AiMetrics {
   totalTokens: number;
   totalCost: number;
@@ -59,6 +80,7 @@ interface AiMetrics {
     messages_summarized: number;
     created_at: string;
   }[];
+  reactLogs: ReactLog[];
 }
 
 export function useAiObservability(periodDays = 30) {
@@ -113,14 +135,11 @@ export function useAiObservability(periodDays = 30) {
     const agentMap = new Map(agents.map((a: any) => [a.id, a.name]));
     const budgetMap = new Map(agents.map((a: any) => [a.id, a.monthly_budget_usd]));
 
-    // Get current month cost per agent via RPC
     const monthlyCostMap = new Map<string, number>();
     const currentMonth = new Date();
     currentMonth.setDate(1);
     currentMonth.setHours(0, 0, 0, 0);
-    const monthStr = currentMonth.toISOString().slice(0, 10);
 
-    // Calculate monthly cost from logs directly (faster than N RPC calls)
     for (const log of logs) {
       const logDate = new Date(log.created_at);
       if (logDate >= currentMonth && log.agent_id) {
@@ -128,11 +147,11 @@ export function useAiObservability(periodDays = 30) {
       }
     }
 
-    // Aggregate
     let totalTokens = 0, totalCost = 0, totalLatency = 0, fallbacks = 0, errors = 0;
     const agentAgg: Record<string, any> = {};
     const modelAgg: Record<string, any> = {};
     const dailyAgg: Record<string, any> = {};
+    const reactLogs: ReactLog[] = [];
 
     for (const log of logs) {
       totalTokens += log.total_tokens || 0;
@@ -162,13 +181,28 @@ export function useAiObservability(periodDays = 30) {
         dailyAgg[day].tokens += log.total_tokens || 0;
         dailyAgg[day].cost += Number(log.cost_estimate) || 0;
       }
+
+      // Collect ReACT logs (logs with step_details)
+      if (log.step_details && Array.isArray(log.step_details) && log.step_details.length > 0) {
+        const steps = log.step_details as StepDetail[];
+        reactLogs.push({
+          id: log.id,
+          agent_id: log.agent_id,
+          agent_name: agentMap.get(log.agent_id) || "Desconhecido",
+          step_count: steps.length,
+          tool_calls: steps.filter(s => s.type === "tool_call").length,
+          steps,
+          latency_ms: log.latency_ms,
+          cost_estimate: log.cost_estimate,
+          created_at: log.created_at,
+        });
+      }
     }
 
     const totalRequests = logs.length;
     const ratings = feedback.filter((f: any) => f.rating != null).map((f: any) => f.rating);
     const avgRating = ratings.length > 0 ? ratings.reduce((a: number, b: number) => a + b, 0) / ratings.length : 0;
 
-    // Sessions with agent names
     const sessions = (sessionsRes.data || []).map((s: any) => ({
       ...s,
       agent_name: agentMap.get(s.agent_id) || "Desconhecido",
@@ -209,6 +243,7 @@ export function useAiObservability(periodDays = 30) {
       sessions,
       auditLogs: (auditRes.data || []) as any[],
       summaries: (summariesRes.data || []) as any[],
+      reactLogs: reactLogs.sort((a, b) => b.created_at.localeCompare(a.created_at)).slice(0, 50),
     });
     setLoading(false);
   }

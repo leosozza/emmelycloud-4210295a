@@ -5,9 +5,62 @@ import { Progress } from "@/components/ui/progress";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
-import { Activity, Zap, Clock, AlertTriangle, ThumbsUp, DollarSign, Bot, Cpu, FileText, Shield, MessageSquare } from "lucide-react";
+import { Activity, Zap, Clock, AlertTriangle, ThumbsUp, DollarSign, Bot, Cpu, Shield, MessageSquare, ChevronDown, Wrench, Brain, Eye } from "lucide-react";
 import { useState } from "react";
+
+interface StepDetail {
+  type: "thought" | "tool_call" | "tool_result" | "reflection";
+  content: string;
+  tool?: string;
+  params?: any;
+  duration_ms?: number;
+  timestamp: string;
+}
+
+function StepBadge({ type }: { type: string }) {
+  const config: Record<string, { label: string; variant: "default" | "secondary" | "outline" | "destructive" }> = {
+    thought: { label: "Pensamento", variant: "secondary" },
+    tool_call: { label: "Ferramenta", variant: "default" },
+    tool_result: { label: "Resultado", variant: "outline" },
+    reflection: { label: "Reflexão", variant: "destructive" },
+  };
+  const c = config[type] || { label: type, variant: "outline" as const };
+  return <Badge variant={c.variant} className="text-[9px]">{c.label}</Badge>;
+}
+
+function StepIcon({ type }: { type: string }) {
+  switch (type) {
+    case "thought": return <Brain className="h-3 w-3 text-chart-3" />;
+    case "tool_call": return <Wrench className="h-3 w-3 text-primary" />;
+    case "tool_result": return <Eye className="h-3 w-3 text-chart-1" />;
+    case "reflection": return <AlertTriangle className="h-3 w-3 text-destructive" />;
+    default: return <Activity className="h-3 w-3" />;
+  }
+}
+
+function StepDetails({ steps }: { steps: StepDetail[] }) {
+  return (
+    <div className="space-y-1.5 pl-4 border-l-2 border-border">
+      {steps.map((step, i) => (
+        <div key={i} className="flex items-start gap-2 text-xs">
+          <StepIcon type={step.type} />
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-1.5 mb-0.5">
+              <StepBadge type={step.type} />
+              {step.tool && <span className="font-mono text-[10px] text-muted-foreground">{step.tool}</span>}
+              {step.duration_ms != null && (
+                <span className="text-[10px] text-muted-foreground">{step.duration_ms}ms</span>
+              )}
+            </div>
+            <p className="text-foreground/70 line-clamp-2 break-all">{step.content}</p>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
 
 export default function ObservabilidadeIAPage() {
   const [period, setPeriod] = useState(30);
@@ -42,9 +95,7 @@ export default function ObservabilidadeIAPage() {
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">Observabilidade IA</h1>
         <Select value={String(period)} onValueChange={(v) => setPeriod(Number(v))}>
-          <SelectTrigger className="w-[140px]">
-            <SelectValue />
-          </SelectTrigger>
+          <SelectTrigger className="w-[140px]"><SelectValue /></SelectTrigger>
           <SelectContent>
             <SelectItem value="7">7 dias</SelectItem>
             <SelectItem value="30">30 dias</SelectItem>
@@ -71,9 +122,7 @@ export default function ObservabilidadeIAPage() {
       {/* Daily Usage Chart */}
       {metrics.dailyUsage.length > 0 && (
         <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Uso Diário</CardTitle>
-          </CardHeader>
+          <CardHeader><CardTitle className="text-base">Uso Diário</CardTitle></CardHeader>
           <CardContent>
             <div className="h-[250px]">
               <ResponsiveContainer width="100%" height="100%">
@@ -95,9 +144,10 @@ export default function ObservabilidadeIAPage() {
 
       {/* Tabs */}
       <Tabs defaultValue="agents" className="space-y-4">
-        <TabsList>
+        <TabsList className="flex-wrap">
           <TabsTrigger value="agents" className="gap-1"><Bot className="h-3.5 w-3.5" /> Agentes</TabsTrigger>
           <TabsTrigger value="models" className="gap-1"><Cpu className="h-3.5 w-3.5" /> Modelos</TabsTrigger>
+          <TabsTrigger value="react" className="gap-1"><Brain className="h-3.5 w-3.5" /> ReACT Logs</TabsTrigger>
           <TabsTrigger value="sessions" className="gap-1"><Activity className="h-3.5 w-3.5" /> Sessões</TabsTrigger>
           <TabsTrigger value="audit" className="gap-1"><Shield className="h-3.5 w-3.5" /> Audit</TabsTrigger>
           <TabsTrigger value="summaries" className="gap-1"><MessageSquare className="h-3.5 w-3.5" /> Resumos</TabsTrigger>
@@ -195,6 +245,57 @@ export default function ObservabilidadeIAPage() {
           </Card>
         </TabsContent>
 
+        {/* ReACT Logs — NEW TAB */}
+        <TabsContent value="react">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base flex items-center gap-2"><Brain className="h-4 w-4" /> ReACT Agent Logs</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {metrics.reactLogs.length === 0 ? (
+                <p className="text-sm text-muted-foreground text-center py-8">Nenhum log ReACT registado neste período.</p>
+              ) : (
+                <div className="space-y-2">
+                  {metrics.reactLogs.map((log) => (
+                    <Collapsible key={log.id}>
+                      <CollapsibleTrigger className="w-full">
+                        <div className="flex items-center justify-between p-3 border rounded-lg hover:bg-muted/50 transition-colors">
+                          <div className="flex items-center gap-3">
+                            <Brain className="h-4 w-4 text-primary" />
+                            <span className="text-sm font-medium">{log.agent_name}</span>
+                            <Badge variant="outline" className="text-[10px]">
+                              {log.step_count} passos
+                            </Badge>
+                            {log.tool_calls > 0 && (
+                              <Badge variant="secondary" className="text-[10px]">
+                                <Wrench className="h-2.5 w-2.5 mr-0.5" />
+                                {log.tool_calls} ferramentas
+                              </Badge>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-[10px] text-muted-foreground">{log.latency_ms}ms</span>
+                            <span className="text-[10px] text-muted-foreground">${Number(log.cost_estimate).toFixed(4)}</span>
+                            <span className="text-[10px] text-muted-foreground">
+                              {new Date(log.created_at).toLocaleString("pt-PT")}
+                            </span>
+                            <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+                          </div>
+                        </div>
+                      </CollapsibleTrigger>
+                      <CollapsibleContent>
+                        <div className="p-3 border border-t-0 rounded-b-lg bg-muted/20">
+                          <StepDetails steps={log.steps} />
+                        </div>
+                      </CollapsibleContent>
+                    </Collapsible>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
         {/* Sessions */}
         <TabsContent value="sessions">
           <Card>
@@ -279,7 +380,7 @@ export default function ObservabilidadeIAPage() {
           </Card>
         </TabsContent>
 
-        {/* Conversation Summaries */}
+        {/* Summaries */}
         <TabsContent value="summaries">
           <Card>
             <CardHeader>
