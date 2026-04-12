@@ -92,7 +92,7 @@ export function AgentCard({ agent, providers, onEdit, onDelete, onToggleDefault,
           {agent.sub_agent_ids?.length > 0 && <Badge variant="outline" className="text-[10px]"><Users className="h-2 w-2 mr-1" />{agent.sub_agent_ids.length} sub</Badge>}
         </div>
 
-        )}
+
 
         <div className="flex items-center justify-between">
           <span className="text-xs text-muted-foreground">{agent.is_active ? "Ativo" : "Inativo"}</span>
