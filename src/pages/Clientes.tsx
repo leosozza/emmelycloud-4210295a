@@ -13,14 +13,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+import { VirtualTable } from "@/components/ui/VirtualTable";
 import { Plus, Search, Pencil, Trash2, UserPlus, X } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 

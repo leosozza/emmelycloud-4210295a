@@ -7,17 +7,17 @@
  * - Parity Audit integrado — status de saúde do sistema em tempo real
  * - Histórico de sessões anteriores
  * - Indicador de compactação de histórico
+ * - Virtualização de mensagens via canvas layout
  */
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import { PageHeader } from "@/components/PageHeader";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import {
@@ -31,6 +31,8 @@ import {
   ChevronDown, ChevronUp, Zap, MessageSquare, Archive,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useVirtualizer } from "@tanstack/react-virtual";
+import { buildChatVirtualItems } from "@/lib/chatLayout";
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
@@ -110,13 +112,22 @@ export default function PlaygroundIAPage() {
   const scrollRef = useRef<HTMLDivElement>(null);
   const latencyAccRef = useRef<number[]>([]);
 
-  useEffect(() => { loadAgents(); }, []);
+  // Virtualizer
+  const virtualItems = buildChatVirtualItems(messages, scrollRef.current?.clientWidth || 500, isLoading);
+  const virtualizer = useVirtualizer({
+    count: virtualItems.length,
+    getScrollElement: () => scrollRef.current,
+    estimateSize: (i) => virtualItems[i]?.height || 60,
+    overscan: 5,
+  });
 
   useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    if (virtualItems.length > 0) {
+      virtualizer.scrollToIndex(virtualItems.length - 1, { align: "end" });
     }
-  }, [messages]);
+  }, [messages.length, isLoading]);
+
+  useEffect(() => { loadAgents(); }, []);
 
   const loadAgents = async () => {
     const { data } = await supabase
@@ -146,13 +157,12 @@ export default function PlaygroundIAPage() {
         });
       }
     } catch {
-      // Audit is optional — don't block the playground
+      // Audit is optional
     } finally {
       setAuditLoading(false);
     }
   }, []);
 
-  // Run audit on load
   useEffect(() => { runAudit(); }, [runAudit]);
 
   const selectedAgent = agents.find(a => a.id === selectedAgentId);
@@ -202,7 +212,6 @@ export default function PlaygroundIAPage() {
 
       setMessages(prev => [...prev, assistantMsg]);
 
-      // Update session stats
       latencyAccRef.current.push(latencyMs);
       setSessionStats(prev => {
         const newTotal = prev.total_messages + 1;
@@ -212,7 +221,6 @@ export default function PlaygroundIAPage() {
         return { total_messages: newTotal, total_tokens: newTokens, total_cost_usd: newCost, avg_latency_ms: avgLatency };
       });
 
-      // Check if history was compacted
       if (data?.compact_context_used) setIsCompacted(true);
 
     } catch (e: any) {
@@ -263,7 +271,6 @@ export default function PlaygroundIAPage() {
           {/* ── Settings Panel ─────────────────────────────────────────────────── */}
           <Card className="lg:col-span-1 flex flex-col overflow-hidden">
             <CardContent className="p-4 space-y-4 flex-1 overflow-y-auto">
-
               {/* Agent selector */}
               <div>
                 <Label className="text-xs font-semibold">Agente</Label>
@@ -303,7 +310,7 @@ export default function PlaygroundIAPage() {
 
               <Separator />
 
-              {/* Session Stats — Claw CostTracker inspired */}
+              {/* Session Stats */}
               <div className="space-y-2">
                 <p className="text-[10px] uppercase font-semibold text-muted-foreground flex items-center gap-1">
                   <Zap className="h-3 w-3" /> Sessão Atual
@@ -342,7 +349,7 @@ export default function PlaygroundIAPage() {
                 <Label className="text-xs">Métricas por mensagem</Label>
               </div>
 
-              {/* Parity Audit — Claw ParityAudit inspired */}
+              {/* Parity Audit */}
               <div>
                 <button
                   className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground w-full"
@@ -384,8 +391,8 @@ export default function PlaygroundIAPage() {
 
           {/* ── Chat Panel ─────────────────────────────────────────────────────── */}
           <Card className="lg:col-span-3 flex flex-col overflow-hidden">
-            <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-3">
-              {messages.length === 0 && selectedAgent && (
+            <div ref={scrollRef} className="flex-1 overflow-y-auto p-4">
+              {messages.length === 0 && !isLoading && selectedAgent && (
                 <div className="flex items-center justify-center h-full">
                   <div className="text-center text-muted-foreground">
                     <Sparkles className="h-12 w-12 mx-auto mb-3 opacity-30" />
@@ -400,54 +407,78 @@ export default function PlaygroundIAPage() {
                 </div>
               )}
 
-              {messages.map((msg, i) => (
-                <div key={i} className={cn("flex flex-col", msg.role === "user" ? "items-end" : "items-start")}>
-                  <div className={cn(
-                    "max-w-[75%] rounded-2xl px-4 py-2.5 text-sm",
-                    msg.role === "user"
-                      ? "bg-primary text-primary-foreground rounded-br-md"
-                      : "bg-muted text-foreground rounded-bl-md"
-                  )}>
-                    <p className="whitespace-pre-wrap">{msg.content}</p>
-                    <p className="text-[10px] mt-1 opacity-50">
-                      {msg.timestamp.toLocaleTimeString("pt-PT", { hour: "2-digit", minute: "2-digit" })}
-                    </p>
-                  </div>
+              {(messages.length > 0 || isLoading) && (
+                <div style={{ height: `${virtualizer.getTotalSize()}px`, position: "relative" }}>
+                  {virtualizer.getVirtualItems().map((vRow) => {
+                    const item = virtualItems[vRow.index];
+                    if (item.type === "loading") {
+                      return (
+                        <div
+                          key="loading"
+                          style={{
+                            position: "absolute",
+                            top: 0, left: 0, width: "100%",
+                            transform: `translateY(${vRow.start}px)`,
+                          }}
+                          className="flex justify-start"
+                        >
+                          <div className="bg-muted rounded-2xl rounded-bl-md px-4 py-3">
+                            <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                          </div>
+                        </div>
+                      );
+                    }
+                    const msg = messages[item.index];
+                    return (
+                      <div
+                        key={vRow.index}
+                        style={{
+                          position: "absolute",
+                          top: 0, left: 0, width: "100%",
+                          transform: `translateY(${vRow.start}px)`,
+                        }}
+                        className={cn("flex flex-col", msg.role === "user" ? "items-end" : "items-start")}
+                      >
+                        <div className={cn(
+                          "max-w-[75%] rounded-2xl px-4 py-2.5 text-sm",
+                          msg.role === "user"
+                            ? "bg-primary text-primary-foreground rounded-br-md"
+                            : "bg-muted text-foreground rounded-bl-md"
+                        )}>
+                          <p className="whitespace-pre-wrap">{msg.content}</p>
+                          <p className="text-[10px] mt-1 opacity-50">
+                            {msg.timestamp.toLocaleTimeString("pt-PT", { hour: "2-digit", minute: "2-digit" })}
+                          </p>
+                        </div>
 
-                  {/* Per-message metrics (Claw CostTracker inspired) */}
-                  {showDebug && msg.metrics && (
-                    <div className="flex items-center gap-3 mt-1 px-1 text-[10px] text-muted-foreground">
-                      <Tooltip>
-                        <TooltipTrigger className="flex items-center gap-1">
-                          <Clock className="h-2.5 w-2.5" />
-                          {msg.metrics.latency_ms}ms
-                        </TooltipTrigger>
-                        <TooltipContent>Latência da resposta</TooltipContent>
-                      </Tooltip>
-                      <Tooltip>
-                        <TooltipTrigger className="flex items-center gap-1">
-                          <Hash className="h-2.5 w-2.5" />
-                          {msg.metrics.total_tokens} tkns
-                        </TooltipTrigger>
-                        <TooltipContent>{msg.metrics.prompt_tokens}↑ {msg.metrics.completion_tokens}↓</TooltipContent>
-                      </Tooltip>
-                      <Tooltip>
-                        <TooltipTrigger className="flex items-center gap-1">
-                          <DollarSign className="h-2.5 w-2.5" />
-                          ${msg.metrics.cost_usd.toFixed(5)}
-                        </TooltipTrigger>
-                        <TooltipContent>Custo estimado desta mensagem</TooltipContent>
-                      </Tooltip>
-                    </div>
-                  )}
-                </div>
-              ))}
-
-              {isLoading && (
-                <div className="flex justify-start">
-                  <div className="bg-muted rounded-2xl rounded-bl-md px-4 py-3">
-                    <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-                  </div>
+                        {showDebug && msg.metrics && (
+                          <div className="flex items-center gap-3 mt-1 px-1 text-[10px] text-muted-foreground">
+                            <Tooltip>
+                              <TooltipTrigger className="flex items-center gap-1">
+                                <Clock className="h-2.5 w-2.5" />
+                                {msg.metrics.latency_ms}ms
+                              </TooltipTrigger>
+                              <TooltipContent>Latência da resposta</TooltipContent>
+                            </Tooltip>
+                            <Tooltip>
+                              <TooltipTrigger className="flex items-center gap-1">
+                                <Hash className="h-2.5 w-2.5" />
+                                {msg.metrics.total_tokens} tkns
+                              </TooltipTrigger>
+                              <TooltipContent>{msg.metrics.prompt_tokens}↑ {msg.metrics.completion_tokens}↓</TooltipContent>
+                            </Tooltip>
+                            <Tooltip>
+                              <TooltipTrigger className="flex items-center gap-1">
+                                <DollarSign className="h-2.5 w-2.5" />
+                                ${msg.metrics.cost_usd.toFixed(5)}
+                              </TooltipTrigger>
+                              <TooltipContent>Custo estimado desta mensagem</TooltipContent>
+                            </Tooltip>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               )}
             </div>

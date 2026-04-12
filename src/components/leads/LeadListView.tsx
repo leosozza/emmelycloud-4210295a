@@ -1,9 +1,7 @@
 import { Badge } from "@/components/ui/badge";
-import {
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
-} from "@/components/ui/table";
 import { Tables } from "@/integrations/supabase/types";
 import { format, parseISO } from "date-fns";
+import { VirtualTable } from "@/components/ui/VirtualTable";
 
 type Lead = Tables<"leads"> & { clients?: { name: string } | null };
 
@@ -28,51 +26,50 @@ interface LeadListViewProps {
 
 export function LeadListView({ leads, onLeadClick }: LeadListViewProps) {
   return (
-    <div className="rounded-md border">
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead>Nome</TableHead>
-            <TableHead>Origem</TableHead>
-            <TableHead>Área Jurídica</TableHead>
-            <TableHead>Estágio</TableHead>
-            <TableHead>Urgência</TableHead>
-            <TableHead>Data</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {leads.length === 0 ? (
-            <TableRow>
-              <TableCell colSpan={6} className="text-center text-muted-foreground">
-                Nenhum lead encontrado
-              </TableCell>
-            </TableRow>
-          ) : (
-            leads.map((lead) => (
-              <TableRow key={lead.id} className="cursor-pointer" onClick={() => onLeadClick(lead)}>
-                <TableCell className="font-medium">{lead.clients?.name || lead.name}</TableCell>
-                <TableCell>{originLabels[lead.origin] || lead.origin}</TableCell>
-                <TableCell>{lead.legal_area ? (legalAreaLabels[lead.legal_area] || lead.legal_area) : "—"}</TableCell>
-                <TableCell>
-                  <Badge variant="outline" className="text-xs">{stageLabels[lead.funnel_stage]}</Badge>
-                </TableCell>
-                <TableCell>
-                  {lead.urgency === "critica" ? (
-                    <Badge variant="destructive" className="text-xs">Crítica</Badge>
-                  ) : lead.urgency === "alta" ? (
-                    <Badge className="text-xs bg-warning text-warning-foreground">Alta</Badge>
-                  ) : (
-                    <span className="text-xs text-muted-foreground">Normal</span>
-                  )}
-                </TableCell>
-                <TableCell className="text-xs text-muted-foreground">
-                  {format(parseISO(lead.created_at), "dd/MM/yyyy")}
-                </TableCell>
-              </TableRow>
-            ))
-          )}
-        </TableBody>
-      </Table>
-    </div>
+    <VirtualTable<Lead>
+      data={leads}
+      getRowKey={(lead) => lead.id}
+      onRowClick={onLeadClick}
+      emptyMessage="Nenhum lead encontrado"
+      columns={[
+        {
+          header: "Nome",
+          render: (lead) => <span className="font-medium">{lead.clients?.name || lead.name}</span>,
+        },
+        {
+          header: "Origem",
+          render: (lead) => <>{originLabels[lead.origin] || lead.origin}</>,
+        },
+        {
+          header: "Área Jurídica",
+          render: (lead) => <>{lead.legal_area ? (legalAreaLabels[lead.legal_area] || lead.legal_area) : "—"}</>,
+        },
+        {
+          header: "Estágio",
+          render: (lead) => (
+            <Badge variant="outline" className="text-xs">{stageLabels[lead.funnel_stage]}</Badge>
+          ),
+        },
+        {
+          header: "Urgência",
+          render: (lead) =>
+            lead.urgency === "critica" ? (
+              <Badge variant="destructive" className="text-xs">Crítica</Badge>
+            ) : lead.urgency === "alta" ? (
+              <Badge className="text-xs bg-warning text-warning-foreground">Alta</Badge>
+            ) : (
+              <span className="text-xs text-muted-foreground">Normal</span>
+            ),
+        },
+        {
+          header: "Data",
+          render: (lead) => (
+            <span className="text-xs text-muted-foreground">
+              {format(parseISO(lead.created_at), "dd/MM/yyyy")}
+            </span>
+          ),
+        },
+      ]}
+    />
   );
 }
