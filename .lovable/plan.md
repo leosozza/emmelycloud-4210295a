@@ -1,47 +1,42 @@
 
 
-# Atualizar Roadmap com Novas Prioridades do Cliente
+# Atualizar Bitrix24App — Remover "Persona" e Adicionar Módulos em Falta
 
-## Resumo
+## Problema
 
-Atualizar a pagina `/roadmap` com os 9 blocos de tarefas enviados pelo cliente, organizados por fase e prioridade. Alguns itens ja existem parcialmente no roadmap actual e serao atualizados; outros sao novos.
+A página `/bitrix24` ainda usa terminologia "Persona" em vez de "Agentes IA", e não inclui os módulos recentemente implementados (Automações IA, Observabilidade IA).
 
-## Mapeamento dos Itens
+## Alterações no ficheiro `src/pages/Bitrix24App.tsx`
 
-### Mover para "Concluido" (ja implementados)
-- **Cobranças Automáticas** (2.4) — ja existe e esta concluido
-- **Emmely Pay Stripe** (2.5) — ja existe e esta concluido
-- **Agendamentos Bitrix24** (7.1) — acabamos de implementar o placement booking-tab
+### 1. Renomear "Persona" para "Agentes IA"
+- **Linha 207**: `label: "Persona"` → `label: "Agentes IA"`
+- **Linha 1015**: `"Configurar Persona"` → `"Configurar Agente IA"`, desc: `"Acesse Agentes IA e selecione..."` 
+- **Linha 1325**: `"Personas / Agentes IA"` → `"Agentes IA"`
+- **Linha 1326**: desc → `"Configure e gerencie os seus agentes de IA"`
 
-### Atualizar "Em Progresso"
-- **Agentes IA para Atendimento** (4.1/4.2) — atualizar descricao para incluir resumos e analise de conversas, manter 40%
-- **Bitrix24 Sync Bidirecional** (1.1/1.2/3.1/3.2) — atualizar descricao para incluir eliminacao de leads, transformacao pipelines→SPA, fluxos automaticos entre estruturas
+### 2. Adicionar novos módulos ao menu de navegação
+Adicionar na categoria "Emmely IO":
+- `{ id: "automacoes", label: "Automações IA", icon: Zap }`
 
-### Adicionar Novos Modulos em "Em Progresso"
-- **Reestruturacao Leads → Negocios** (1.1) — Eliminar etapa Lead no Bitrix, migrar para Negocios sem perda de dados — prioridade critica
-- **Transformacao Pipelines → SPA** (1.2) — Nacionalidade, AR, Visto, Acao Judicial, etc. para Smart Process — prioridade critica
-- **Envio Automatizado de Orcamento** (2.1) — Robot + fluxo para envio padronizado — prioridade alta
-- **Comprovativo de Pagamento** (2.2) — Enviar confirmacao + controle ao cliente apos pagamento — prioridade alta
-- **Relatorio Clientes em Atraso** (2.3) — Dashboard de facil visualizacao — prioridade alta
-- **Fluxos Automaticos entre Pipelines/SPA** (3.1/3.2) — Parar movimentacao manual, validacoes de avanço — prioridade critica
-- **Regras Operacionais Automaticas** (3.3) — Verificacao cada 60 dias, follow-ups automaticos — prioridade alta
-- **Correcao Follow-ups** (9.1) — Revisar todas as mensagens automaticas de etapas — prioridade alta
+Adicionar na categoria "Sistema":
+- `{ id: "observabilidade", label: "Observabilidade", icon: Activity }`
 
-### Adicionar em "Proximas Etapas"
-- **Higienizacao da Base de Contactos** (5.1/5.2) — Limpeza gradual com criterios de seguranca — prioridade media
-- **Controlo de Ativos em SPA** (6.1) — SPA dedicado para controlo de ativos — prioridade media
-- **Controlo de Caixa Interno** (6.2) — Caixa Brasil (Erica), acesso restrito, lancamentos e saldo — prioridade alta
-- **Dashboard BI Operacional** (8.1) — Leads recebidos, clientes respondidos, mensagens, ranking equipa — prioridade alta
+### 3. Atualizar AppView type e validViews
+- Adicionar `"automacoes"` e `"observabilidade"` ao type `AppView` (linha 83)
+- Adicionar ambos ao array `validViews` (linha 98)
 
-## Ficheiros a Alterar
+### 4. Adicionar renders dos novos módulos
+Na secção `<main>` (linhas 317-352), adicionar:
+- `{view === "automacoes" && <AutomacoesViewBitrix />}`
+- `{view === "observabilidade" && <ObservabilidadeViewBitrix />}`
 
-| Ficheiro | Accao |
+### 5. Criar componentes inline simplificados
+- **AutomacoesViewBitrix**: Embed da página Automações existente via iframe ou componente minimalista que mostra os toggles das 4 automações (resumo, classificação, follow-up, sentimento) com os mesmos endpoints da edge function `ai-internal-automations`
+- **ObservabilidadeViewBitrix**: Componente que mostra métricas de uso IA (chamadas, tokens, custos, erros) via query à tabela `ai_usage_logs`
+
+## Ficheiros a alterar
+
+| Ficheiro | Acção |
 |---|---|
-| `src/pages/Roadmap.tsx` | Atualizar array `defaultPhases` com os novos modulos, prioridades e descricoes |
-
-## Notas
-- Itens que ja existem serao atualizados (descricao, progresso, prioridade)
-- Novos itens terao `details` e `prompt` preenchidos para contexto
-- A ordem dentro de cada fase respeita a prioridade (critica primeiro)
-- Modulos ja concluidos (cobrancas, Stripe, agendamento) ficam na fase "Concluido"
+| `src/pages/Bitrix24App.tsx` | Renomear Persona→Agentes IA, adicionar nav items, views e componentes inline |
 
