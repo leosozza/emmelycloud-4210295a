@@ -1,56 +1,42 @@
 
 
-# Implementar Bitrix24 Booking API (booking.v1.*)
+# Corrigir: Botão "Ativar no Bitrix24" não tem efeito no worker
 
-## Contexto
+## Problema
+O botão "Ativar no Bitrix24" no card do agente salva `bitrix_agent_id` na tabela `bitrix24_integrations`, mas o `bitrix24-worker` nunca lê este campo. As funções `handleBotMessage` e `handleWelcome` sempre buscam o agente por `is_default: true` ou qualquer agente ativo, ignorando a escolha do utilizador.
 
-O sistema de agendamento atual (`bitrix24-booking-tab`) usa a **Calendar API** (`calendar.event.add`, `calendar.accessibility.get`) para criar eventos no calendário de um utilizador Bitrix24. A API nativa de **Booking** (`booking.v1.*`) é um módulo diferente — focado em reserva de **recursos** (salas, equipamentos, especialistas) com slots configuráveis, lista de espera e ligação a clientes CRM.
+O bot "Emmely AI" é único (registado via `imbot.register`) — o que muda é **qual agente IA** responde por trás dele.
 
-A implementação vai adicionar suporte ao módulo Booking como **modo alternativo** ao Calendar, permitindo ao utilizador escolher nas configurações se quer agendar via Calendar (atual) ou via Booking (recursos nativos do Bitrix24).
+## Correção
 
-## Alterações
+### `supabase/functions/bitrix24-worker/index.ts`
 
-### 1. Migração — Configuração do modo de agendamento
+**`handleBotMessage` (~linha 440-455):**
+Alterar a lógica de seleção do agente:
+1. Se `integration.bitrix_agent_id` existe → buscar esse agente específico
+2. Fallback para `is_default: true`
+3. Fallback para qualquer agente ativo
 
-Adicionar campo `booking_mode` à config da agenda (`payment_gateway_config` gateway=booking):
-- `"calendar"` (padrão, comportamento actual)
-- `"booking"` (novo, usa `booking.v1.*`)
-- Adicionar `booking_resource_id` para guardar o recurso Bitrix24 selecionado
+```
+// Prioridade: bitrix_agent_id > is_default > qualquer ativo
+let agent = null;
+if (integration.bitrix_agent_id) {
+  const { data } = await supabase.from("ai_agents").select("id, welcome_message")
+    .eq("id", integration.bitrix_agent_id).eq("is_active", true).maybeSingle();
+  agent = data;
+}
+if (!agent) { /* fallback is_default */ }
+if (!agent) { /* fallback any active */ }
+```
 
-### 2. `src/components/configuracoes/AgendaTab.tsx` — Novo card "Modo de Agendamento"
+**`handleWelcome` (~linha 508-517):**
+Mesma lógica — usar `integration.bitrix_agent_id` para buscar a `welcome_message` do agente correto.
 
-Adicionar card com:
-- **Toggle** entre modo "Calendar" e modo "Booking (Recursos)"
-- Quando modo = "booking": mostrar selector de recursos Bitrix24 (carregados via `booking.v1.resource.list`)
-- Botão "Criar Recurso" para criar um recurso no Bitrix24 caso não exista nenhum
+### Ficheiros a alterar
 
-### 3. `supabase/functions/bitrix24-booking-tab/index.ts` — Suporte dual Calendar/Booking
-
-Novas actions JSON:
-- `get_resources` — chama `booking.v1.resource.list` e retorna lista de recursos
-- `create_resource` — chama `booking.v1.resource.add` para criar recurso "Emmely Agenda"
-- `get_resource_slots` — chama `booking.v1.resource.slots.list` para obter disponibilidade nativa
-
-Modificar action `create_event`:
-- Se `booking_mode === "booking"`:
-  - Usar `booking.v1.booking.add` com `resourceIds`, `datePeriod` (timestamps Unix + timezone)
-  - Após criar, associar cliente CRM via `booking.v1.booking.client.set` com `type: {module: "crm", code: "CONTACT"}`
-- Se `booking_mode === "calendar"` (ou não definido): manter comportamento actual com `calendar.event.add`
-
-Modificar action `get_availability`:
-- Se modo = "booking": usar `booking.v1.resource.slots.list` para obter slots disponíveis do recurso
-- Se modo = "calendar": manter lógica actual com `calendar.accessibility.get`
-
-### 4. HTML do calendário — Adaptar UI
-
-- Carregar config para saber o modo
-- Se modo "booking": esconder selector de utilizador (usa recurso), mostrar nome do recurso
-- Adaptar `createBooking()` para enviar `resource_id` em vez de `user_id` quando em modo booking
-
-## Ficheiros a alterar
-
-| Ficheiro | Acção |
+| Ficheiro | Alteração |
 |---|---|
-| `src/components/configuracoes/AgendaTab.tsx` | Adicionar card "Modo de Agendamento" com toggle e selector de recursos |
-| `supabase/functions/bitrix24-booking-tab/index.ts` | Adicionar actions `get_resources`, `create_resource`; modificar `get_availability` e `create_event` para suportar `booking.v1.*` |
+| `supabase/functions/bitrix24-worker/index.ts` | `handleBotMessage` e `handleWelcome`: priorizar `integration.bitrix_agent_id` na seleção do agente |
+
+Sem alterações na UI — o botão e a base de dados já funcionam correctamente. O problema é apenas no worker que não usa o valor guardado.
 
