@@ -192,6 +192,7 @@ Deno.serve(async (req) => {
     // ── Default: check status + QR ──
     // Check session status
     let sessionStatus = "unknown";
+    let sessionRawConnected = false;
     let connected = false;
     let loggedIn = false;
     let qrCode: string | null = null;
@@ -213,6 +214,7 @@ Deno.serve(async (req) => {
 
       loggedIn = isLoggedIn;
       connected = isLoggedIn;
+      sessionRawConnected = isSessionConnected;
 
       // Extract phone number from Jid (format: 5511999999999@s.whatsapp.net)
       const jid = statusData.Jid || statusData.jid || statusData.JID || "";
@@ -290,7 +292,7 @@ Deno.serve(async (req) => {
       status: sessionStatus,
       connected,
       logged_in: loggedIn,
-      session_connected: statusData?.Connected || statusData?.connected || false,
+      session_connected: sessionRawConnected,
       phone_number: loggedIn ? phoneNumber : null,
       qr_code: qrCode,
       webhook_configured: webhookConfigured,
