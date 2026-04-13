@@ -629,8 +629,17 @@ function WhatsAppQRCodeCard({ credProps }: { credProps: any }) {
     }
   };
 
-  const statusLabel = result?.connected ? "Conectado" : result?.status === "disconnected" ? "Desconectado" : result?.status === "error" ? "Erro" : "Pendente";
-  const statusType = result?.connected ? "active" : result?.status === "error" ? "inactive" : "pending";
+  const isAuthenticated = Boolean(result?.logged_in ?? result?.connected);
+  const statusLabel = isAuthenticated
+    ? "Conectado"
+    : result?.status === "pending"
+      ? "Aguardando QR Code"
+      : result?.status === "disconnected"
+        ? "Desconectado"
+        : result?.status === "error"
+          ? "Erro"
+          : "Pendente";
+  const statusType = isAuthenticated ? "active" : result?.status === "error" ? "inactive" : "pending";
 
   return (
     <Card>
@@ -666,7 +675,7 @@ function WhatsAppQRCodeCard({ credProps }: { credProps: any }) {
         </div>
 
         {/* QR Code Display */}
-        {result?.qr_code && (
+        {result?.qr_code && !isAuthenticated && (
           <div className="flex flex-col items-center gap-2 rounded-md border p-3">
             <p className="text-xs font-medium text-muted-foreground">Leia o QR Code com o WhatsApp</p>
             <img src={result.qr_code} alt="QR Code WhatsApp" className="w-48 h-48 object-contain" />
@@ -678,8 +687,8 @@ function WhatsAppQRCodeCard({ credProps }: { credProps: any }) {
 
         {/* Status Result */}
         {result && (
-          <div className={`flex items-center gap-2 rounded-md px-3 py-2 ${result.connected ? "bg-green-50 text-green-800" : result.ok === false ? "bg-red-50 text-red-800" : "bg-yellow-50 text-yellow-800"}`}>
-            {result.connected ? <CheckCircle2 className="h-4 w-4 shrink-0" /> : <AlertCircle className="h-4 w-4 shrink-0" />}
+          <div className={`flex items-center gap-2 rounded-md px-3 py-2 ${isAuthenticated ? "bg-green-50 text-green-800" : result.ok === false ? "bg-red-50 text-red-800" : "bg-yellow-50 text-yellow-800"}`}>
+            {isAuthenticated ? <CheckCircle2 className="h-4 w-4 shrink-0" /> : <AlertCircle className="h-4 w-4 shrink-0" />}
             <span className="text-xs">{result.message || result.error || statusLabel}</span>
           </div>
         )}
@@ -1757,7 +1766,7 @@ function InstancesTab() {
       setTestLog(log);
       setTestLogDialogOpen(true);
       if (data) setWuzapiStatus((prev) => ({ ...prev, _global: data }));
-      if (data?.connected) {
+      if (data?.logged_in ?? data?.connected) {
         toast.success("WhatsApp conectado!");
       } else {
         toast.info(data?.message || "Desconectado");
@@ -1778,7 +1787,7 @@ function InstancesTab() {
       const { data, error } = await supabase.functions.invoke("wuzapi-test-connection", { body: { action: "disconnect" } });
       if (data?.ok) {
         toast.success("WhatsApp desconectado com sucesso");
-        setWuzapiStatus((prev) => ({ ...prev, _global: { ...prev._global, connected: false, phone_number: null, status: "disconnected" } }));
+        setWuzapiStatus((prev) => ({ ...prev, _global: { ...prev._global, connected: false, logged_in: false, session_connected: false, phone_number: null, status: "disconnected", qr_code: null } }));
       } else {
         toast.error(data?.error || error?.message || "Erro ao desconectar");
       }
@@ -2136,7 +2145,7 @@ function InstancesTab() {
                 {/* Wuzapi connection status */}
                 {isWuzapi && (
                   <div className="flex items-center gap-2 py-1 flex-wrap">
-                    {wuzapiStatus._global?.connected ? (
+                    {Boolean(wuzapiStatus._global?.logged_in ?? wuzapiStatus._global?.connected) ? (
                       <>
                         <span className="inline-flex items-center gap-1.5 text-xs font-medium text-green-700 bg-green-50 px-2.5 py-1 rounded-full">
                           <CheckCircle2 className="h-3.5 w-3.5" /> Conectado
@@ -2147,6 +2156,10 @@ function InstancesTab() {
                           </span>
                         )}
                       </>
+                    ) : wuzapiStatus._global?.status === "pending" ? (
+                      <span className="inline-flex items-center gap-1.5 text-xs font-medium text-amber-700 bg-amber-50 px-2.5 py-1 rounded-full">
+                        <QrCode className="h-3.5 w-3.5" /> Aguardando leitura do QR
+                      </span>
                     ) : (
                       <span className="inline-flex items-center gap-1.5 text-xs font-medium text-amber-700 bg-amber-50 px-2.5 py-1 rounded-full">
                         <AlertCircle className="h-3.5 w-3.5" /> Desconectado
@@ -2159,7 +2172,7 @@ function InstancesTab() {
                 <div className="flex gap-2 pt-1">
                   {isWuzapi ? (
                     <>
-                      {!wuzapiStatus._global?.connected && (
+                      {!Boolean(wuzapiStatus._global?.logged_in ?? wuzapiStatus._global?.connected) && (
                         <Button size="sm" variant="outline" className="flex-1 gap-1.5" onClick={() => setQrDialogOpen(true)}>
                           <QrCode className="h-3.5 w-3.5" />
                           Ler QR Code

@@ -208,21 +208,25 @@ Deno.serve(async (req) => {
       // Handle nested {code, data: {...}} structure from WUZAPI
       const statusData = statusBody.data || statusBody;
 
-      const isConnected = statusData.Connected || statusData.connected || false;
-      const isLoggedIn = statusData.LoggedIn || statusData.loggedIn || false;
+      const isSessionConnected = Boolean(statusData.Connected || statusData.connected);
+      const isLoggedIn = Boolean(statusData.LoggedIn || statusData.loggedIn);
 
-      if (isConnected || isLoggedIn) {
-        connected = true;
-        loggedIn = isLoggedIn;
+      loggedIn = isLoggedIn;
+      connected = isLoggedIn;
+
+      // Extract phone number from Jid (format: 5511999999999@s.whatsapp.net)
+      const jid = statusData.Jid || statusData.jid || statusData.JID || "";
+      if (jid) {
+        phoneNumber = jid.split("@")[0].split(":")[0];
+      }
+
+      if (isLoggedIn) {
         sessionStatus = "connected";
-        // Extract phone number from Jid (format: 5511999999999@s.whatsapp.net)
-        const jid = statusData.Jid || statusData.jid || statusData.JID || "";
-        if (jid) {
-          phoneNumber = jid.split("@")[0].split(":")[0];
-        }
+      } else if (isSessionConnected) {
+        sessionStatus = "pending";
+        qrCode = statusData.QRCode || statusData.qrcode || statusData.qr_code || null;
       } else {
         sessionStatus = "disconnected";
-        // Extract QR code from status response if available
         qrCode = statusData.QRCode || statusData.qrcode || statusData.qr_code || null;
       }
     } catch (e) {
@@ -232,8 +236,8 @@ Deno.serve(async (req) => {
       });
     }
 
-    // If disconnected and no QR from status, try dedicated QR endpoint
-    if (!connected && !qrCode) {
+    // If not authenticated and no QR from status, try dedicated QR endpoint
+    if (!loggedIn && !qrCode) {
       try {
         const qrRes = await fetch(`${resolvedBaseUrl}/session/qr`, {
           method: "GET",
@@ -257,9 +261,9 @@ Deno.serve(async (req) => {
       }
     }
 
-    // ── Auto-configure webhook when connected ──
+    // ── Auto-configure webhook only when fully authenticated ──
     let webhookConfigured = false;
-    if (connected) {
+    if (loggedIn) {
       try {
         const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
         const autoWebhookUrl = `${supabaseUrl}/functions/v1/wuzapi-webhook`;
@@ -285,10 +289,14 @@ Deno.serve(async (req) => {
       ok: true,
       status: sessionStatus,
       connected,
-      phone_number: phoneNumber,
+      logged_in: loggedIn,
+      session_connected: statusData?.Connected || statusData?.connected || false,
+      phone_number: loggedIn ? phoneNumber : null,
       qr_code: qrCode,
       webhook_configured: webhookConfigured,
-      message: connected ? "WhatsApp conectado" + (phoneNumber ? ` (${phoneNumber})` : "") + (webhookConfigured ? " e webhook configurado" : "") : (qrCode ? "Leia o QR Code para conectar" : "Sessão desconectada"),
+      message: loggedIn
+        ? "WhatsApp conectado" + (phoneNumber ? ` (${phoneNumber})` : "") + (webhookConfigured ? " e webhook configurado" : "")
+        : (qrCode ? "Leia o QR Code para conectar" : "Sessão desconectada"),
     }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
