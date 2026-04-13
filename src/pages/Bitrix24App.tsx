@@ -1385,6 +1385,15 @@ function AgentesView({ botId, integrationId }: { botId: string | null; integrati
     setDialogOpen(true);
   };
 
+  const toggleActive = async (agent: AIAgent) => {
+    await fetch(`${SUPABASE_URL}/rest/v1/ai_agents?id=eq.${agent.id}`, {
+      method: "PATCH",
+      headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}`, "Content-Type": "application/json", Prefer: "return=minimal" },
+      body: JSON.stringify({ is_active: !agent.is_active }),
+    });
+    loadData();
+  };
+
   const openCreate = () => { setEditingAgent({ ...defaultAgent }); setSkills([]); setDialogOpen(true); };
 
   const handleBuilderSave = async (config: any) => {
