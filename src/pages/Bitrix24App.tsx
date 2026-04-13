@@ -1507,6 +1507,7 @@ function AgentesView({ botId, integrationId }: { botId: string | null; integrati
               onDelete={(id) => setDeleteId(id)}
               onToggleDefault={toggleDefault}
               onDuplicate={duplicateAgent}
+              onToggleActive={toggleActive}
             />
           ))}
         </div>
