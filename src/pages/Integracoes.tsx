@@ -629,8 +629,17 @@ function WhatsAppQRCodeCard({ credProps }: { credProps: any }) {
     }
   };
 
-  const statusLabel = result?.connected ? "Conectado" : result?.status === "disconnected" ? "Desconectado" : result?.status === "error" ? "Erro" : "Pendente";
-  const statusType = result?.connected ? "active" : result?.status === "error" ? "inactive" : "pending";
+  const isAuthenticated = Boolean(result?.logged_in ?? result?.connected);
+  const statusLabel = isAuthenticated
+    ? "Conectado"
+    : result?.status === "pending"
+      ? "Aguardando QR Code"
+      : result?.status === "disconnected"
+        ? "Desconectado"
+        : result?.status === "error"
+          ? "Erro"
+          : "Pendente";
+  const statusType = isAuthenticated ? "active" : result?.status === "error" ? "inactive" : "pending";
 
   return (
     <Card>
@@ -666,7 +675,7 @@ function WhatsAppQRCodeCard({ credProps }: { credProps: any }) {
         </div>
 
         {/* QR Code Display */}
-        {result?.qr_code && (
+        {result?.qr_code && !isAuthenticated && (
           <div className="flex flex-col items-center gap-2 rounded-md border p-3">
             <p className="text-xs font-medium text-muted-foreground">Leia o QR Code com o WhatsApp</p>
             <img src={result.qr_code} alt="QR Code WhatsApp" className="w-48 h-48 object-contain" />
@@ -678,8 +687,8 @@ function WhatsAppQRCodeCard({ credProps }: { credProps: any }) {
 
         {/* Status Result */}
         {result && (
-          <div className={`flex items-center gap-2 rounded-md px-3 py-2 ${result.connected ? "bg-green-50 text-green-800" : result.ok === false ? "bg-red-50 text-red-800" : "bg-yellow-50 text-yellow-800"}`}>
-            {result.connected ? <CheckCircle2 className="h-4 w-4 shrink-0" /> : <AlertCircle className="h-4 w-4 shrink-0" />}
+          <div className={`flex items-center gap-2 rounded-md px-3 py-2 ${isAuthenticated ? "bg-green-50 text-green-800" : result.ok === false ? "bg-red-50 text-red-800" : "bg-yellow-50 text-yellow-800"}`}>
+            {isAuthenticated ? <CheckCircle2 className="h-4 w-4 shrink-0" /> : <AlertCircle className="h-4 w-4 shrink-0" />}
             <span className="text-xs">{result.message || result.error || statusLabel}</span>
           </div>
         )}
