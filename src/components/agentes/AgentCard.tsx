@@ -18,7 +18,7 @@ interface AgentCardProps {
   onToggleActive?: (agent: AIAgent) => void;
 }
 
-export function AgentCard({ agent, providers, onEdit, onDelete, onToggleDefault, onDuplicate }: AgentCardProps) {
+export function AgentCard({ agent, providers, onEdit, onDelete, onToggleDefault, onDuplicate, onToggleActive }: AgentCardProps) {
   const textProvider = providers.find(p => p.slug === agent.ai_provider);
   const voiceProvider = agent.voice_provider ? providers.find(p => p.slug === agent.voice_provider) : null;
   const [trainingOpen, setTrainingOpen] = useState(false);
