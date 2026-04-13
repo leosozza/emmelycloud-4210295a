@@ -3,7 +3,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Bot, Edit, Trash2, Star, GitBranch, BookOpen, Users, Volume2, Sparkles, Copy } from "lucide-react";
+import { Bot, Edit, Trash2, Star, GitBranch, BookOpen, Users, Volume2, Sparkles, Copy, Power } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { AgentTrainingChat } from "@/components/agentes/AgentTrainingChat";
 import type { AIAgent, AIProvider } from "@/pages/Agentes";
@@ -15,6 +15,7 @@ interface AgentCardProps {
   onDelete: (id: string) => void;
   onToggleDefault: (agent: AIAgent) => void;
   onDuplicate?: (agent: AIAgent) => void;
+  onToggleActive?: (agent: AIAgent) => void;
 }
 
 export function AgentCard({ agent, providers, onEdit, onDelete, onToggleDefault, onDuplicate }: AgentCardProps) {
