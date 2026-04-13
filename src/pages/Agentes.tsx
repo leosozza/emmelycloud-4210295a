@@ -332,6 +332,7 @@ export default function AgentesPage() {
               onDelete={(id) => setDeleteId(id)}
               onToggleDefault={toggleDefault}
               onDuplicate={duplicateAgent}
+              onToggleActive={toggleActive}
             />
           ))}
         </div>
