@@ -3,7 +3,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Bot, Edit, Trash2, Star, GitBranch, BookOpen, Users, Volume2, Sparkles, Copy } from "lucide-react";
+import { Bot, Edit, Trash2, Star, GitBranch, BookOpen, Users, Volume2, Sparkles, Copy, Power } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { AgentTrainingChat } from "@/components/agentes/AgentTrainingChat";
 import type { AIAgent, AIProvider } from "@/pages/Agentes";
@@ -15,9 +15,10 @@ interface AgentCardProps {
   onDelete: (id: string) => void;
   onToggleDefault: (agent: AIAgent) => void;
   onDuplicate?: (agent: AIAgent) => void;
+  onToggleActive?: (agent: AIAgent) => void;
 }
 
-export function AgentCard({ agent, providers, onEdit, onDelete, onToggleDefault, onDuplicate }: AgentCardProps) {
+export function AgentCard({ agent, providers, onEdit, onDelete, onToggleDefault, onDuplicate, onToggleActive }: AgentCardProps) {
   const textProvider = providers.find(p => p.slug === agent.ai_provider);
   const voiceProvider = agent.voice_provider ? providers.find(p => p.slug === agent.voice_provider) : null;
   const [trainingOpen, setTrainingOpen] = useState(false);
@@ -44,6 +45,11 @@ export function AgentCard({ agent, providers, onEdit, onDelete, onToggleDefault,
             <Button variant="ghost" size="icon" className="h-7 w-7 text-primary" title="Treinar" onClick={() => setTrainingOpen(true)}><Sparkles className="h-3 w-3" /></Button>
             {onDuplicate && (
               <Button variant="ghost" size="icon" className="h-7 w-7" title="Duplicar" onClick={() => onDuplicate(agent)}><Copy className="h-3 w-3" /></Button>
+            )}
+            {onToggleActive && (
+              <Button variant="ghost" size="icon" className="h-7 w-7" title={agent.is_active ? "Desativar" : "Ativar"} onClick={() => onToggleActive(agent)}>
+                <Power className={`h-3 w-3 ${agent.is_active ? "text-green-500" : "text-muted-foreground"}`} />
+              </Button>
             )}
             <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => onEdit(agent)}><Edit className="h-3 w-3" /></Button>
             <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => onDelete(agent.id)}><Trash2 className="h-3 w-3" /></Button>

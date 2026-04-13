@@ -205,6 +205,11 @@ export default function AgentesPage() {
     loadData();
   };
 
+  const toggleActive = async (agent: AIAgent) => {
+    await supabase.from("ai_agents").update({ is_active: !agent.is_active } as any).eq("id", agent.id);
+    loadData();
+  };
+
   const duplicateAgent = async (agent: AIAgent) => {
     const { id, created_at, ...rest } = agent;
     const clone = { ...rest, name: `${agent.name} (cópia)`, is_default: false };
@@ -327,6 +332,7 @@ export default function AgentesPage() {
               onDelete={(id) => setDeleteId(id)}
               onToggleDefault={toggleDefault}
               onDuplicate={duplicateAgent}
+              onToggleActive={toggleActive}
             />
           ))}
         </div>
