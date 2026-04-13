@@ -46,6 +46,11 @@ export function AgentCard({ agent, providers, onEdit, onDelete, onToggleDefault,
             {onDuplicate && (
               <Button variant="ghost" size="icon" className="h-7 w-7" title="Duplicar" onClick={() => onDuplicate(agent)}><Copy className="h-3 w-3" /></Button>
             )}
+            {onToggleActive && (
+              <Button variant="ghost" size="icon" className="h-7 w-7" title={agent.is_active ? "Desativar" : "Ativar"} onClick={() => onToggleActive(agent)}>
+                <Power className={`h-3 w-3 ${agent.is_active ? "text-green-500" : "text-muted-foreground"}`} />
+              </Button>
+            )}
             <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => onEdit(agent)}><Edit className="h-3 w-3" /></Button>
             <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => onDelete(agent.id)}><Trash2 className="h-3 w-3" /></Button>
           </div>
