@@ -5,24 +5,8 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-async function callBitrix(endpoint: string, token: string, method: string, params: Record<string, any> = {}): Promise<any> {
-  const url = `${endpoint}${method}`;
-  console.log(`[BOT] Calling ${method}`, JSON.stringify(params).substring(0, 200));
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ ...params, auth: token }),
-  });
-  const data = await res.json();
-  console.log(`[BOT] ${method} response:`, JSON.stringify(data).substring(0, 500));
-  return data;
-}
-
-async function ensureValidToken(supabase: any, integration: any): Promise<string> {
-  const expiresAt = new Date(integration.expires_at);
-  if (expiresAt.getTime() - Date.now() > 5 * 60 * 1000) {
-    return integration.access_token;
-  }
+async function refreshToken(supabase: any, integration: any): Promise<string> {
+  console.log("[BOT] Forcing token refresh for domain:", integration.domain);
   const res = await fetch("https://oauth.bitrix.info/oauth/token/", {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -34,13 +18,57 @@ async function ensureValidToken(supabase: any, integration: any): Promise<string
     }),
   });
   const data = await res.json();
-  if (data.error) throw new Error(`Token refresh: ${data.error}`);
+  if (data.error) throw new Error(`Token refresh failed: ${data.error} - ${data.error_description || ""}`);
+  
+  const newExpiresAt = new Date(Date.now() + data.expires_in * 1000).toISOString();
   await supabase.from("bitrix24_integrations").update({
     access_token: data.access_token,
     refresh_token: data.refresh_token,
-    expires_at: new Date(Date.now() + data.expires_in * 1000).toISOString(),
+    expires_at: newExpiresAt,
   }).eq("id", integration.id);
+  
+  // Update the integration object in memory too
+  integration.access_token = data.access_token;
+  integration.refresh_token = data.refresh_token;
+  integration.expires_at = newExpiresAt;
+  
+  console.log("[BOT] Token refreshed successfully, expires at:", newExpiresAt);
   return data.access_token;
+}
+
+async function callBitrix(endpoint: string, token: string, method: string, params: Record<string, any> = {}): Promise<any> {
+  const url = `${endpoint}${method}?auth=${encodeURIComponent(token)}`;
+  console.log(`[BOT] Calling ${method}`, JSON.stringify(params).substring(0, 200));
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(params),
+  });
+  const data = await res.json();
+  console.log(`[BOT] ${method} response:`, JSON.stringify(data).substring(0, 500));
+  return data;
+}
+
+// Wrapper that retries on expired_token
+async function callBitrixWithRetry(
+  endpoint: string, 
+  token: string, 
+  method: string, 
+  params: Record<string, any>,
+  supabase: any,
+  integration: any
+): Promise<{ data: any; token: string }> {
+  let currentToken = token;
+  const result = await callBitrix(endpoint, currentToken, method, params);
+  
+  if (result.error === "expired_token") {
+    console.log(`[BOT] Token expired on ${method}, refreshing...`);
+    currentToken = await refreshToken(supabase, integration);
+    const retryResult = await callBitrix(endpoint, currentToken, method, params);
+    return { data: retryResult, token: currentToken };
+  }
+  
+  return { data: result, token: currentToken };
 }
 
 Deno.serve(async (req) => {
@@ -73,22 +101,25 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ error: "No integration found" }), { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
-    const accessToken = await ensureValidToken(supabase, integration);
+    // Always force a fresh token refresh before starting
+    let accessToken = await refreshToken(supabase, integration);
     const eventsUrl = `${supabaseUrl}/functions/v1/bitrix24-events`;
     const endpoint = integration.client_endpoint;
 
     console.log("[BOT] Starting multi-bot registration for domain:", integration.domain);
 
     // ── Step 1: List & unregister all existing emmely bots ──
-    const listResult = await callBitrix(endpoint, accessToken, "imbot.bot.list", {});
-    const botsRaw = listResult.result || {};
+    let res = await callBitrixWithRetry(endpoint, accessToken, "imbot.bot.list", {}, supabase, integration);
+    accessToken = res.token;
+    const botsRaw = res.data.result || {};
     const botsArray: any[] = Array.isArray(botsRaw) ? botsRaw : Object.values(botsRaw);
 
     console.log("[BOT] Found bots:", botsArray.length);
     for (const bot of botsArray) {
       if (bot.CODE?.startsWith("emmely") || (bot.NAME && bot.NAME.toLowerCase().includes("emmely"))) {
         console.log(`[BOT] Unregistering bot ID:${bot.ID} CODE:${bot.CODE} NAME:${bot.NAME}`);
-        await callBitrix(endpoint, accessToken, "imbot.unregister", { BOT_ID: bot.ID });
+        const unregRes = await callBitrixWithRetry(endpoint, accessToken, "imbot.unregister", { BOT_ID: bot.ID }, supabase, integration);
+        accessToken = unregRes.token;
       }
     }
 
@@ -131,23 +162,24 @@ Deno.serve(async (req) => {
       };
 
       console.log(`[BOT] Registering agent "${agent.name}" with CODE: ${code}`);
-      let regResult = await callBitrix(endpoint, accessToken, "imbot.register", registerParams);
+      let regRes = await callBitrixWithRetry(endpoint, accessToken, "imbot.register", registerParams, supabase, integration);
+      accessToken = regRes.token;
 
       let botId: string | null = null;
-      if (regResult.result) {
-        botId = String(regResult.result);
-      } else if (regResult.error) {
-        console.log(`[BOT] TYPE:B failed for "${agent.name}", trying TYPE:O`);
-        const regResult2 = await callBitrix(endpoint, accessToken, "imbot.register", { ...registerParams, TYPE: "O" });
-        if (regResult2.result) {
-          botId = String(regResult2.result);
+      if (regRes.data.result) {
+        botId = String(regRes.data.result);
+      } else if (regRes.data.error) {
+        console.log(`[BOT] TYPE:B failed for "${agent.name}" (${regRes.data.error}), trying TYPE:O`);
+        const regRes2 = await callBitrixWithRetry(endpoint, accessToken, "imbot.register", { ...registerParams, TYPE: "O" }, supabase, integration);
+        accessToken = regRes2.token;
+        if (regRes2.data.result) {
+          botId = String(regRes2.data.result);
         } else {
-          console.error(`[BOT] Failed to register "${agent.name}":`, regResult2.error);
+          console.error(`[BOT] Failed to register "${agent.name}":`, regRes2.data.error, regRes2.data.error_description);
         }
       }
 
       if (botId) {
-        // Save bitrix_bot_id on the agent
         await supabase.from("ai_agents").update({ bitrix_bot_id: botId }).eq("id", agent.id);
         console.log(`[BOT] ✅ "${agent.name}" → Bot ID: ${botId}`);
       }
@@ -156,8 +188,8 @@ Deno.serve(async (req) => {
     }
 
     // ── Step 4: Verify ──
-    const verifyList = await callBitrix(endpoint, accessToken, "imbot.bot.list", {});
-    const verifyRaw = verifyList.result || {};
+    const verifyRes = await callBitrixWithRetry(endpoint, accessToken, "imbot.bot.list", {}, supabase, integration);
+    const verifyRaw = verifyRes.data.result || {};
     const verifyArray: any[] = Array.isArray(verifyRaw) ? verifyRaw : Object.values(verifyRaw);
 
     console.log(`[BOT] Verification: ${verifyArray.length} bots total after registration`);
