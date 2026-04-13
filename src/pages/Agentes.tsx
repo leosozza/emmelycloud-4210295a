@@ -205,7 +205,11 @@ export default function AgentesPage() {
     loadData();
   };
 
-  const duplicateAgent = async (agent: AIAgent) => {
+  const toggleActive = async (agent: AIAgent) => {
+    await supabase.from("ai_agents").update({ is_active: !agent.is_active } as any).eq("id", agent.id);
+    loadData();
+  };
+
     const { id, created_at, ...rest } = agent;
     const clone = { ...rest, name: `${agent.name} (cópia)`, is_default: false };
     const { error } = await supabase.from("ai_agents").insert(clone as any);
