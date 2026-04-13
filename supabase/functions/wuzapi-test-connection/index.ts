@@ -159,7 +159,10 @@ Deno.serve(async (req) => {
         });
         const logoutBody = await logoutRes.text();
         console.log("[WUZAPI-TEST] Logout response:", logoutRes.status, logoutBody);
-        return new Response(JSON.stringify({ ok: logoutRes.ok, message: logoutRes.ok ? "Sessão desconectada com sucesso" : logoutBody }), {
+        // "no session" means already disconnected — treat as success
+        const isNoSession = logoutBody.includes("no session");
+        const success = logoutRes.ok || isNoSession;
+        return new Response(JSON.stringify({ ok: success, message: success ? "Sessão desconectada com sucesso" : logoutBody }), {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       } catch (e) {
