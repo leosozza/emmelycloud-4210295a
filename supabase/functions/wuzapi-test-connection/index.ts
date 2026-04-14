@@ -264,13 +264,14 @@ Deno.serve(async (req) => {
       }
     }
 
-    // ── Auto-configure webhook only when fully authenticated ──
+    // ── Auto-configure webhook + events only when fully authenticated ──
     let webhookConfigured = false;
+    let eventsSubscribed = false;
     if (loggedIn) {
       try {
         const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
         const autoWebhookUrl = `${supabaseUrl}/functions/v1/wuzapi-webhook`;
-        console.log("[WUZAPI-TEST] Auto-configuring webhook:", autoWebhookUrl);
+        console.log("[WUZAPI-TEST] Auto-configuring webhook + events:", autoWebhookUrl);
         const whRes = await fetch(`${resolvedBaseUrl}/webhook`, {
           method: "POST",
           headers: { "Content-Type": "application/json", "token": resolvedUserToken },
@@ -278,13 +279,31 @@ Deno.serve(async (req) => {
         });
         if (whRes.ok) {
           webhookConfigured = true;
-          console.log("[WUZAPI-TEST] Webhook auto-configured successfully");
+          eventsSubscribed = true;
+          console.log("[WUZAPI-TEST] Webhook + events auto-configured successfully");
         } else {
           const whErr = await whRes.text();
           console.error("[WUZAPI-TEST] Webhook auto-configure failed:", whErr);
         }
       } catch (e) {
         console.error("[WUZAPI-TEST] Webhook auto-configure error:", e);
+      }
+
+      // Fallback: if events still empty, try dedicated subscribe endpoint
+      if (!eventsSubscribed || !currentEvents) {
+        try {
+          console.log("[WUZAPI-TEST] Subscribing to Message events via /session/subscribe...");
+          const subRes = await fetch(`${resolvedBaseUrl}/session/subscribe`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "token": resolvedUserToken },
+            body: JSON.stringify({ Subscribe: ["Message"] }),
+          });
+          const subBody = await subRes.text();
+          console.log("[WUZAPI-TEST] Subscribe response:", subRes.status, subBody);
+          if (subRes.ok) eventsSubscribed = true;
+        } catch (e) {
+          console.log("[WUZAPI-TEST] Subscribe endpoint failed (may not exist):", e);
+        }
       }
     }
 
