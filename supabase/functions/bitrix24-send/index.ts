@@ -58,6 +58,30 @@ async function ensureValidToken(supabase: any, integration: any): Promise<string
   return data.access_token;
 }
 
+async function ensureConnectorActive(
+  clientEndpoint: string,
+  accessToken: string,
+  lineId: number
+): Promise<void> {
+  // Check connector status on this line
+  const status = await callBitrix(clientEndpoint, accessToken, "imconnector.status", {
+    CONNECTOR: CONNECTOR_ID,
+    LINE: lineId,
+  });
+  console.log("[SEND] imconnector.status for LINE", lineId, ":", JSON.stringify(status).substring(0, 500));
+
+  // If not active, try to activate
+  if (status.error || !status.result?.active_status) {
+    console.log("[SEND] Connector not active on LINE", lineId, "- activating...");
+    const activateResult = await callBitrix(clientEndpoint, accessToken, "imconnector.activate", {
+      CONNECTOR: CONNECTOR_ID,
+      LINE: lineId,
+      ACTIVE: 1,
+    });
+    console.log("[SEND] imconnector.activate result:", JSON.stringify(activateResult).substring(0, 500));
+  }
+}
+
 async function sendWithFallbacks(
   clientEndpoint: string,
   accessToken: string,
@@ -67,6 +91,13 @@ async function sendWithFallbacks(
   message: string,
   channel: string
 ): Promise<boolean> {
+  // 0. Ensure connector is active on this line
+  try {
+    await ensureConnectorActive(clientEndpoint, accessToken, lineId);
+  } catch (e) {
+    console.warn("[SEND] ensureConnectorActive failed:", e);
+  }
+
   // 1. Primary: imconnector.send.messages
   const primary = await callBitrix(clientEndpoint, accessToken, "imconnector.send.messages", {
     CONNECTOR: CONNECTOR_ID,
