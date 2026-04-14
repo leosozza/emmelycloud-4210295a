@@ -71,18 +71,29 @@ async function notifyBitrix24DealPayment(supabase: any, txMeta: any, paidAmount:
 
     // 2. Update OPPORTUNITY
     const newAmount = Math.max(0, currentAmount - paidAmount);
+    const dealUpdateFields: Record<string, any> = { OPPORTUNITY: newAmount };
+
+    // If balance is zero, move deal to paid/won stage
+    if (newAmount === 0) {
+      // Try custom paid stage field first, fallback to WON
+      const paidStageId = deal.UF_CRM_EMMELY_PAID_STAGE || "WON";
+      dealUpdateFields.STAGE_ID = paidStageId;
+      console.log(`[STRIPE-WEBHOOK] Deal ${dealId} fully paid, moving to stage ${paidStageId}`);
+    }
+
     await fetch(`${endpoint}crm.deal.update`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         ID: dealId,
-        fields: { OPPORTUNITY: newAmount },
+        fields: dealUpdateFields,
         auth: accessToken,
       }),
     });
 
     // 3. Timeline comment
     const fmt = (v: number) => new Intl.NumberFormat("pt-PT", { style: "currency", currency: currency || "EUR" }).format(v);
+    const stageNote = newAmount === 0 ? "\n🏆 Negócio totalmente pago — etapa atualizada." : "";
     await fetch(`${endpoint}crm.timeline.comment.add`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -90,7 +101,7 @@ async function notifyBitrix24DealPayment(supabase: any, txMeta: any, paidAmount:
         fields: {
           ENTITY_ID: dealId,
           ENTITY_TYPE: "deal",
-          COMMENT: `✅ Pagamento confirmado: ${fmt(paidAmount)}\nSaldo em aberto atualizado para ${fmt(newAmount)}`,
+          COMMENT: `✅ Pagamento confirmado: ${fmt(paidAmount)}\nSaldo em aberto atualizado para ${fmt(newAmount)}${stageNote}`,
         },
         auth: accessToken,
       }),
@@ -110,9 +121,10 @@ async function notifyBitrix24DealPayment(supabase: any, txMeta: any, paidAmount:
         const stages = stagesData.result || [];
         const paidStage = stages.find((s: any) =>
           s.STATUS_ID?.includes("WON") || s.STATUS_ID?.includes("FINAL_INVOICE") ||
+          s.STATUS_ID === "DT31_3:P" ||
           s.NAME?.toLowerCase().includes("pag") || s.NAME?.toLowerCase().includes("paid")
         );
-        const stageId = paidStage?.STATUS_ID || "DT31_6:WON";
+        const stageId = paidStage?.STATUS_ID || "DT31_3:P";
 
         await fetch(`${endpoint}crm.item.update`, {
           method: "POST",
