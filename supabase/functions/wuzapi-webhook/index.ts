@@ -55,9 +55,13 @@ Deno.serve(async (req) => {
     const info = messageData.Info || messageData.info || {};
     const message = messageData.Message || messageData.message || {};
 
-    // Get sender phone from JID (format: 5511999999999@s.whatsapp.net)
-    const remoteJid = info.RemoteJid || info.remoteJid || info.Sender || info.sender || "";
-    const phone = remoteJid.replace(/@.*$/, "");
+    // Get sender info from JID
+    // WUZAPI v2+ uses LID format: 196847578665004@lid
+    // Classic format: 5511999999999@s.whatsapp.net
+    const chatJid = info.Chat || info.RemoteJid || info.remoteJid || info.Sender || info.sender || "";
+    const phone = chatJid.replace(/@.*$/, "");
+    // Preserve the JID suffix to know if it's a LID or phone-based contact
+    const isLidContact = chatJid.includes("@lid");
 
     if (!phone) {
       console.log("[WUZAPI-WEBHOOK] No phone number found in payload");
@@ -65,6 +69,8 @@ Deno.serve(async (req) => {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
+
+    console.log(`[WUZAPI-WEBHOOK] Contact: ${phone}, isLID: ${isLidContact}, JID: ${chatJid}`);
 
     // Skip outgoing messages (from me)
     const fromMe = info.FromMe || info.fromMe || false;
