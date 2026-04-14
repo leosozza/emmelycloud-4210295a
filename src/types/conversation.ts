@@ -39,6 +39,7 @@ export interface Conversation {
   last_message_preview?: string | null;
   unread_count: number;
   attendance_mode?: string;
+  bot_state?: Record<string, any> | null;
   // ThothAI-compatible optional fields
   instance_id?: string;
   contact_id?: string;
