@@ -850,7 +850,11 @@ Deno.serve(async (req) => {
           conversation = await findConversationByEmail(supabase, allEmails);
         }
         if (!conversation) {
-          conversation = await findConversationByBotState(supabase, entityId);
+          conversation = await findConversationByBotState(supabase, entityId, entityTypeId);
+        }
+        // For Deals, also try the Deal ID in bot_state with type prefix
+        if (!conversation && entityTypeNum === 2) {
+          conversation = await findConversationByBotState(supabase, entityId, "2");
         }
         if (!conversation && contactName) {
           conversation = await findConversationByName(supabase, contactName);
