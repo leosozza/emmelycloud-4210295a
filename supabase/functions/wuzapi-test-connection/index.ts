@@ -211,6 +211,7 @@ Deno.serve(async (req) => {
 
       const isSessionConnected = Boolean(statusData.Connected || statusData.connected);
       const isLoggedIn = Boolean(statusData.LoggedIn || statusData.loggedIn);
+      const currentEvents = (statusData.events || statusData.Events || "").toString().trim();
 
       loggedIn = isLoggedIn;
       connected = isLoggedIn;
