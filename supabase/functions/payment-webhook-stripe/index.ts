@@ -246,6 +246,8 @@ Deno.serve(async (req) => {
       });
     }
 
+    console.log(`[STRIPE-WEBHOOK] Event: ${event.type}, objectId: ${eventObject.id}`);
+
     // For checkout.session.completed, resolve the payment_intent ID from the session
     let gatewayPaymentId = eventObject.id;
     if (event.type === "checkout.session.completed") {
@@ -290,9 +292,9 @@ Deno.serve(async (req) => {
       }
     }
 
-    // Fallback: if not found by gateway_payment_id, try checkout_session_id in metadata
+    // Legacy fallback: try checkout_session_id in metadata (kept for old transactions)
     if (!existingTx && event.type === "checkout.session.completed") {
-      const sessionId = eventObject.id; // cs_xxx
+      const sessionId = eventObject.id;
       const { data: allPending } = await supabase
         .from("payment_transactions")
         .select("id, financial_record_id, metadata, amount, currency, gateway, gateway_payment_id")
@@ -306,18 +308,18 @@ Deno.serve(async (req) => {
           return m?.checkout_session_id === sessionId;
         }) || null;
         if (existingTx) {
-          // Update gateway_payment_id to the resolved payment_intent for future lookups
           const resolvedPi = eventObject.payment_intent;
           if (resolvedPi) {
-            await supabase
-              .from("payment_transactions")
-              .update({ gateway_payment_id: resolvedPi })
-              .eq("id", existingTx.id);
+            await supabase.from("payment_transactions").update({ gateway_payment_id: resolvedPi }).eq("id", existingTx.id);
             gatewayPaymentId = resolvedPi;
           }
-          console.log(`[STRIPE-WEBHOOK] Fallback match via checkout_session_id: ${sessionId} -> tx ${existingTx.id}`);
+          console.log(`[STRIPE-WEBHOOK] Legacy fallback match: ${sessionId} -> tx ${existingTx.id}`);
         }
       }
+    }
+
+    if (!existingTx) {
+      console.log(`[STRIPE-WEBHOOK] No transaction found for ${gatewayPaymentId}`);
     }
 
     const mergedMeta = { ...(existingTx?.metadata as any || {}), stripe_event: event.type, updated_via: "webhook" };
