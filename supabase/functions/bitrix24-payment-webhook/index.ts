@@ -309,6 +309,13 @@ Deno.serve(async (req) => {
             begindate: new Date().toISOString().split("T")[0],
             closedate: parcel.due_date,
             comments: `Fatura gerada automaticamente pelo Emmely Pay. ${label}. Grupo: ${groupId}`,
+            UF_CRM_69B83DDB1F59D: "pending",
+            UF_CRM_69B83DDB2661E: groupId,
+            UF_CRM_69B83DDB2B85D: forceGateway || "stripe",
+            UF_CRM_69B83DDB38FF9: tx.payment_url || "",
+            UF_CRM_69B83DDB3EAFC: String(totalCount),
+            UF_CRM_69B83DDB4C552: parcel.amount,
+            UF_CRM_69B83DDB525C9: parcel.due_date,
           },
         });
 
