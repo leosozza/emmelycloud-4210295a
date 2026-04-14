@@ -265,6 +265,31 @@ Deno.serve(async (req) => {
       existingTx = data;
     }
 
+    // Fallback for checkout.session.completed: also try matching by the session ID directly
+    // (payment-create stores cs_xxx as gateway_payment_id, not the payment_intent)
+    if (!existingTx && event.type === "checkout.session.completed") {
+      const sessionId = eventObject.id; // cs_xxx
+      const { data } = await supabase
+        .from("payment_transactions")
+        .select("id, financial_record_id, metadata, amount, currency, gateway")
+        .eq("gateway_payment_id", sessionId)
+        .like("gateway", "stripe%")
+        .maybeSingle();
+      if (data) {
+        existingTx = data;
+        // Update gateway_payment_id to payment_intent for future event matching
+        const resolvedPi = eventObject.payment_intent;
+        if (resolvedPi) {
+          await supabase
+            .from("payment_transactions")
+            .update({ gateway_payment_id: resolvedPi })
+            .eq("id", data.id);
+          gatewayPaymentId = resolvedPi;
+        }
+        console.log(`[STRIPE-WEBHOOK] Matched by session ID: ${sessionId} -> tx ${data.id}`);
+      }
+    }
+
     // Fallback: if not found by gateway_payment_id, try checkout_session_id in metadata
     if (!existingTx && event.type === "checkout.session.completed") {
       const sessionId = eventObject.id; // cs_xxx
