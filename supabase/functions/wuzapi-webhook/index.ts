@@ -127,11 +127,14 @@ Deno.serve(async (req) => {
     const externalId = info.Id || info.id || info.MessageID || "";
 
     // Upsert conversation
+    // For LID contacts, store the full JID so message-send knows to use @lid
+    const contactPhoneValue = isLidContact ? `${phone}@lid` : phone;
+
     const { data: existingConv } = await supabase
       .from("conversations")
       .select("id, attendance_mode")
       .eq("channel", "whatsapp")
-      .eq("contact_phone", phone)
+      .eq("contact_phone", contactPhoneValue)
       .order("created_at", { ascending: false })
       .limit(1)
       .maybeSingle();
