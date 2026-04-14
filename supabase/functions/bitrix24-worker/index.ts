@@ -343,12 +343,14 @@ async function handleConnectorMessage(supabase: any, integration: any, payload: 
         continue;
       }
       // Register inbound message in dedup cache
-      await supabase.from("sync_dedup_cache").upsert({
-        entity_type: "message",
-        entity_id: "inbound",
-        external_id: String(messageId),
-        source: "bitrix24",
-      }, { onConflict: "entity_type,external_id,source" }).catch(() => {});
+      try {
+        await supabase.from("sync_dedup_cache").upsert({
+          entity_type: "message",
+          entity_id: "inbound",
+          external_id: String(messageId),
+          source: "bitrix24",
+        }, { onConflict: "entity_type,external_id,source" });
+      } catch (_e) { /* ignore dedup cache errors */ }
     }
 
     // Skip bot messages
