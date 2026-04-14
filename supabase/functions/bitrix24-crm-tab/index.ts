@@ -834,6 +834,7 @@ Deno.serve(async (req) => {
         allEmails = extractEmails(entity);
 
         // For Deal: also fetch linked Contact
+        let linkedContactName = "";
         if (entityTypeNum === 2 && entity?.CONTACT_ID) {
           try {
             const contactData = await callBitrix(endpoint, accessToken, "crm.contact.get", { ID: entity.CONTACT_ID });
@@ -841,8 +842,8 @@ Deno.serve(async (req) => {
             if (contact) {
               const contactPhones = extractPhones(contact);
               const contactEmails = extractEmails(contact);
-              const contactFullName = [contact.NAME, contact.LAST_NAME].filter(Boolean).join(" ");
-              if (!contactName && contactFullName) contactName = contactFullName;
+              linkedContactName = [contact.NAME, contact.LAST_NAME].filter(Boolean).join(" ");
+              if (!contactName && linkedContactName) contactName = linkedContactName;
               allPhones = [...new Set([...allPhones, ...contactPhones])];
               allEmails = [...new Set([...allEmails, ...contactEmails])];
             }
@@ -850,6 +851,12 @@ Deno.serve(async (req) => {
             console.warn("[CRM-TAB] Failed to fetch linked contact:", e);
           }
         }
+
+        console.log("[CRM-TAB] Lookup context:", {
+          entityId, entityTypeNum, contactName, linkedContactName,
+          phones: allPhones, emails: allEmails,
+          leadId: entity?.LEAD_ID || null, contactId: entity?.CONTACT_ID || null,
+        });
 
         // ── 1. Deterministic local lookup via leads table ──
         if (!conversation) {
@@ -864,7 +871,7 @@ Deno.serve(async (req) => {
             if (localLead.conversation_id) {
               const { data: conv } = await supabase
                 .from("conversations")
-                .select("id, contact_name, attendance_mode, channel, status, contact_phone")
+                .select("id, contact_name, attendance_mode, channel, status, contact_phone, bot_state")
                 .eq("id", localLead.conversation_id)
                 .maybeSingle();
               if (conv) {
@@ -875,7 +882,7 @@ Deno.serve(async (req) => {
             if (!conversation && localLead.client_id) {
               const { data: conv } = await supabase
                 .from("conversations")
-                .select("id, contact_name, attendance_mode, channel, status, contact_phone")
+                .select("id, contact_name, attendance_mode, channel, status, contact_phone, bot_state")
                 .eq("client_id", localLead.client_id)
                 .neq("status", "fechada")
                 .order("last_message_at", { ascending: false })
@@ -918,7 +925,32 @@ Deno.serve(async (req) => {
           if (conversation) console.log("[CRM-TAB] ✓ Matched via deal's LEAD_ID:", entity.LEAD_ID);
         }
 
-        // ── 4. For Deals without contact, try COMPANY_ID ──
+        // ── 4. Client lookup via CONTACT_ID → clients.bitrix24_id → conversations.client_id ──
+        if (!conversation && entityTypeNum === 2 && entity?.CONTACT_ID) {
+          try {
+            const { data: client } = await supabase
+              .from("clients")
+              .select("id")
+              .eq("bitrix24_id", String(entity.CONTACT_ID))
+              .maybeSingle();
+            if (client) {
+              const { data: conv } = await supabase
+                .from("conversations")
+                .select("id, contact_name, attendance_mode, channel, status, contact_phone, bot_state")
+                .eq("client_id", client.id)
+                .neq("status", "fechada")
+                .order("last_message_at", { ascending: false })
+                .limit(1)
+                .maybeSingle();
+              if (conv) {
+                conversation = conv;
+                console.log("[CRM-TAB] ✓ Matched via client.bitrix24_id (CONTACT_ID:", entity.CONTACT_ID, ")");
+              }
+            }
+          } catch (e) { console.warn("[CRM-TAB] Client bitrix24_id lookup failed:", e); }
+        }
+
+        // ── 5. For Deals without contact, try COMPANY_ID ──
         if (!conversation && entityTypeNum === 2 && entity?.COMPANY_ID) {
           try {
             const companyData = await callBitrix(endpoint, accessToken, "crm.company.get", { ID: entity.COMPANY_ID });
@@ -940,14 +972,33 @@ Deno.serve(async (req) => {
           } catch (e) { console.warn("[CRM-TAB] Company lookup failed:", e); }
         }
 
-        // ── 5. Name fallback ──
-        if (!conversation && contactName) {
-          conversation = await findConversationByName(supabase, contactName);
-          if (conversation) console.log("[CRM-TAB] ✓ Matched via name");
+        // ── 6. Name fallback — try linkedContactName first, then deal title ──
+        if (!conversation) {
+          const namesToTry = [linkedContactName, contactName].filter(Boolean);
+          console.log("[CRM-TAB] Name fallback candidates:", namesToTry);
+          for (const name of namesToTry) {
+            if (!name) continue;
+            conversation = await findConversationByName(supabase, name);
+            if (conversation) {
+              console.log("[CRM-TAB] ✓ Matched via name:", name);
+              break;
+            }
+          }
+        }
+
+        // ── 7. Persist bitrix_deal_id in bot_state for instant future lookups ──
+        if (conversation && entityTypeNum === 2) {
+          const bs = (conversation.bot_state as any) || {};
+          if (String(bs.bitrix_deal_id || "") !== String(entityId)) {
+            await supabase.from("conversations").update({
+              bot_state: { ...bs, bitrix_deal_id: String(entityId) },
+            }).eq("id", conversation.id);
+            console.log("[CRM-TAB] ✓ Persisted bitrix_deal_id:", entityId, "on conversation:", conversation.id);
+          }
         }
 
         if (!conversation) {
-          console.log("[CRM-TAB] ✗ No conversation found for entity", entityId, "phones:", allPhones, "emails:", allEmails);
+          console.log("[CRM-TAB] ✗ No conversation found for entity", entityId, "phones:", allPhones, "emails:", allEmails, "name:", contactName);
         }
         if (conversation && !contactName) contactName = conversation.contact_name;
 
