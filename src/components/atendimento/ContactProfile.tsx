@@ -3,9 +3,11 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { ChannelIcon } from "./ChannelIcon";
-import { Phone, Mail, Instagram, Link2, User, UserPlus, ChevronDown, Sparkles, Loader2, FileSearch } from "lucide-react";
+import { Phone, Mail, Instagram, Link2, User, UserPlus, ChevronDown, Sparkles, Loader2, FileSearch, ExternalLink } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { supabase } from "@/integrations/supabase/client";
 import { useSummarizeConversation, useExtractLeadData } from "@/hooks/useAiAutomation";
 
 type Channel = "whatsapp" | "instagram" | "email" | "webchat";
@@ -22,6 +24,7 @@ interface ContactProfileProps {
     department?: string | null;
     assigned_to?: string | null;
     client_id?: string | null;
+    bot_state?: Record<string, any> | null;
   } | null;
 }
 
@@ -45,6 +48,21 @@ export function ContactProfile({ conversation }: ContactProfileProps) {
   const summarize = useSummarizeConversation();
   const extractData = useExtractLeadData();
   const [summary, setSummary] = useState<string | null>(null);
+
+  // Check if a lead already exists for this conversation
+  const { data: existingLead } = useQuery({
+    queryKey: ["lead-by-conversation", conversation?.id],
+    enabled: !!conversation?.id,
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("leads")
+        .select("id, name, bitrix24_id, funnel_stage")
+        .eq("conversation_id", conversation!.id)
+        .maybeSingle();
+      return data;
+    },
+    staleTime: 60_000,
+  });
 
   if (!conversation) {
     return (
@@ -79,6 +97,30 @@ export function ContactProfile({ conversation }: ContactProfileProps) {
     .slice(0, 2)
     .toUpperCase();
 
+  // Extract Bitrix24 IDs from bot_state
+  const bs = conversation.bot_state || {};
+  const bitrixDealId = bs.bitrix_deal_id;
+  const bitrixLeadId = bs.bitrix_lead_id;
+  const bitrixEntityId = bs.bitrix_entity_id;
+
+  // Parse entity type from bitrix_entity_id (format "type:id")
+  let bitrixEntityLabel = "";
+  if (bitrixDealId) {
+    bitrixEntityLabel = `Deal #${bitrixDealId}`;
+  } else if (bitrixLeadId) {
+    bitrixEntityLabel = `Lead #${bitrixLeadId}`;
+  } else if (bitrixEntityId) {
+    const parts = String(bitrixEntityId).split(":");
+    if (parts.length === 2) {
+      const typeLabels: Record<string, string> = { "1": "Lead", "2": "Deal", "3": "Contacto" };
+      bitrixEntityLabel = `${typeLabels[parts[0]] || "Entidade"} #${parts[1]}`;
+    } else {
+      bitrixEntityLabel = `#${bitrixEntityId}`;
+    }
+  }
+
+  const hasExistingLead = !!existingLead;
+
   return (
     <div className="w-72 xl:w-80 border-l bg-card hidden lg:flex flex-col shrink-0">
       <div className="p-4 flex flex-col items-center text-center border-b">
@@ -90,6 +132,12 @@ export function ContactProfile({ conversation }: ContactProfileProps) {
         <div className="mt-1">
           <ChannelIcon channel={conversation.channel} showLabel />
         </div>
+        {bitrixEntityLabel && (
+          <Badge variant="outline" className="mt-1.5 text-[10px] gap-1">
+            <ExternalLink className="h-2.5 w-2.5" />
+            Bitrix24: {bitrixEntityLabel}
+          </Badge>
+        )}
       </div>
 
       <div className="flex-1 overflow-y-auto px-4 space-y-0">
@@ -145,14 +193,40 @@ export function ContactProfile({ conversation }: ContactProfileProps) {
         </CollapsibleSection>
 
         <CollapsibleSection title="Comercial">
-          <Button
-            variant="default"
-            size="sm"
-            className="w-full text-xs"
-            onClick={handleCreateLead}
-          >
-            <UserPlus className="h-3 w-3 mr-1" /> Criar Lead a partir desta conversa
-          </Button>
+          {hasExistingLead ? (
+            <div className="space-y-2">
+              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                <User className="h-3 w-3" />
+                <span>Lead: <strong className="text-foreground">{existingLead.name}</strong></span>
+              </div>
+              {existingLead.bitrix24_id && (
+                <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <ExternalLink className="h-3 w-3" />
+                  <span>Bitrix24 Lead #{existingLead.bitrix24_id}</span>
+                </div>
+              )}
+              <Badge variant="secondary" className="text-[10px]">
+                {existingLead.funnel_stage}
+              </Badge>
+              <Button
+                variant="outline"
+                size="sm"
+                className="w-full text-xs"
+                onClick={() => navigate(`/leads`)}
+              >
+                <ExternalLink className="h-3 w-3 mr-1" /> Ver Lead
+              </Button>
+            </div>
+          ) : (
+            <Button
+              variant="default"
+              size="sm"
+              className="w-full text-xs"
+              onClick={handleCreateLead}
+            >
+              <UserPlus className="h-3 w-3 mr-1" /> Criar Lead a partir desta conversa
+            </Button>
+          )}
         </CollapsibleSection>
 
         <CollapsibleSection title="IA">
