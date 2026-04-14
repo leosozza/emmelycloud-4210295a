@@ -135,7 +135,7 @@ Deno.serve(async (req) => {
       const whRes = await fetch(`${resolvedBaseUrl}/webhook`, {
         method: "POST",
         headers: { "Content-Type": "application/json", "token": resolvedUserToken },
-        body: JSON.stringify({ WebhookURL: webhook_url }),
+        body: JSON.stringify({ WebhookURL: webhook_url, Events: ["Message"] }),
       });
 
       const whBody = await whRes.text();
@@ -273,7 +273,7 @@ Deno.serve(async (req) => {
         const whRes = await fetch(`${resolvedBaseUrl}/webhook`, {
           method: "POST",
           headers: { "Content-Type": "application/json", "token": resolvedUserToken },
-          body: JSON.stringify({ WebhookURL: autoWebhookUrl }),
+          body: JSON.stringify({ WebhookURL: autoWebhookUrl, Events: ["Message"] }),
         });
         if (whRes.ok) {
           webhookConfigured = true;
