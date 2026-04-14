@@ -157,7 +157,7 @@ Deno.serve(async (req) => {
         .from("conversations")
         .insert({
           channel: "whatsapp",
-          contact_phone: phone,
+          contact_phone: contactPhoneValue,
           contact_name: senderName,
           status: "aberta",
           attendance_mode: "bot",
