@@ -458,6 +458,8 @@ function renderHtml(opts: {
   var INTEGRATION_ID = "${integrationId}";
   var CONTACT_NAME = "${(contactName || "Cliente").replace(/'/g, "\\'")}";
   var CHANNEL = "${channel || ""}";
+  var ENTITY_ID = "${opts.entityId || ""}";
+  var ENTITY_TYPE_ID = "${opts.entityType || ""}";
   var CONV_SUMMARY = ${JSON.stringify(convSummary)};
   var AGENTS = ${agentsJson};
     var selectedAgentId = AGENTS.length > 0 ? AGENTS[0].id : null;
@@ -654,7 +656,7 @@ function renderHtml(opts: {
       fetch(SUPABASE_URL + '/functions/v1/message-send', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_KEY },
-        body: JSON.stringify({ channel: channel, contact_phone: phone || undefined, message: message })
+        body: JSON.stringify({ channel: channel, contact_phone: phone || undefined, message: message, bitrix_entity_id: ENTITY_ID || undefined, bitrix_entity_type_id: ENTITY_TYPE_ID || undefined })
       })
       .then(function(r) { return r.json(); })
       .then(function(d) {
