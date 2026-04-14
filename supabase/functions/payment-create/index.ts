@@ -652,8 +652,8 @@ Deno.serve(async (req) => {
       ? "direto"
       : (normalizedGateway && validGws.includes(normalizedGateway) ? normalizedGateway : (stripeRegion ? `stripe_${stripeRegion}` : gateway));
 
-    // Save transaction
-    const { data: tx, error: txError } = await supabase.from("payment_transactions").insert({
+    // Save or update transaction
+    const txPayload = {
       contract_id: contract_id || null,
       client_id: client_id || null,
       financial_record_id: financial_record_id || null,
@@ -669,7 +669,28 @@ Deno.serve(async (req) => {
       pix_qr_code: result.pix_qr_code || null,
       pix_code: result.pix_code || null,
       metadata: { client_secret: result.client_secret || null, installment_number: installment_number ?? null, total_installments: total_installments ?? null, installment_group_id: installment_group_id ?? null, is_down_payment: is_down_payment ?? false, ...(extraMetadata || {}) },
-    }).select().single();
+    };
+
+    let tx: any;
+    let txError: any;
+
+    // If an existing transaction_id was provided, update it instead of creating a new one
+    if (existingTransactionId) {
+      const res = await supabase.from("payment_transactions").update(txPayload).eq("id", existingTransactionId).select().maybeSingle();
+      tx = res.data;
+      txError = res.error;
+      if (!tx && !txError) {
+        // Transaction not found — fall back to insert
+        const insertRes = await supabase.from("payment_transactions").insert(txPayload).select().single();
+        tx = insertRes.data;
+        txError = insertRes.error;
+      }
+      console.log(`[PAYMENT-CREATE] Updated existing transaction ${existingTransactionId}`);
+    } else {
+      const insertRes = await supabase.from("payment_transactions").insert(txPayload).select().single();
+      tx = insertRes.data;
+      txError = insertRes.error;
+    }
 
     if (txError) throw new Error(txError.message);
 
