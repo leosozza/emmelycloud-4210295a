@@ -49,4 +49,33 @@ Plano de implementação
 - O botão de re-sincronização passará a usar a lógica corrigida sem “quebrar” o estado já ativo.
 
 5. Validar ponta a ponta
-- Reexecutar o
+- Reexecutar o fluxo de sincronização do Bitrix com as funções corrigidas.
+- Confirmar que a integração termina com:
+  - `connector_registered = true`
+  - `connector_active = true`
+  - pelo menos um `bitrix24_channel_mappings.is_active = true`
+- Validar depois:
+  - o conector aparece corretamente no Bitrix;
+  - mensagem recebida entra no canal;
+  - resposta enviada no Bitrix volta ao WhatsApp.
+
+Detalhes técnicos
+
+- Arquivos principais:
+  - `supabase/functions/bitrix24-install/index.ts`
+  - `supabase/functions/bitrix24-connector-settings/index.ts`
+  - `supabase/functions/bitrix24-test-connection/index.ts`
+  - `src/pages/Bitrix24App.tsx`
+  - `src/pages/Integracoes.tsx`
+- Não vejo necessidade de migration; o problema é de lógica e reconciliação de estado.
+- Evidência atual:
+  - integração `c6e5d046-38f1-44e2-937c-9988bf8c5b73` está com `connector_active=true` e `connector_registered=false`;
+  - há canais ativos nas linhas 17 e 19;
+  - os logs mostram `connector_activated` com sucesso, mas o estado de registo ficou preso num install antigo.
+
+Resultado esperado
+
+- O conector deixa de ficar “meio configurado”.
+- O banco passa a refletir o estado real do Bitrix.
+- A tela deixa de acusar “não registado” quando o conector já está ativo.
+- O fluxo Bitrix ↔ canal aberto ↔ WhatsApp fica estável mesmo após re-sync ou token expirado.
