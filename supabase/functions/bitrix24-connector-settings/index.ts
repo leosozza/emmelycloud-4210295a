@@ -38,11 +38,11 @@ function parseBody(bodyText: string, contentType: string): Record<string, any> {
 }
 
 async function callBitrix(endpoint: string, token: string, method: string, params: Record<string, any> = {}): Promise<any> {
-  const url = `${endpoint}${method}`;
+  const url = `${endpoint}${method}?auth=${encodeURIComponent(token)}`;
   const res = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ ...params, auth: token }),
+    body: JSON.stringify(params),
   });
   return await res.json();
 }
