@@ -835,23 +835,6 @@ Deno.serve(async (req) => {
           return data || null;
         }
 
-        // ── CRM Request (flow-engine: bitrix_create_lead, bitrix_create_deal, etc.) ──
-        if (body._crmRequest) {
-
-          try {
-            // Log detalhado do payload recebido
-            const contentType = req.headers.get("content-type") || "";
-            let bodyText = "";
-            let body: any = {};
-            if (contentType.includes("application/json")) {
-              bodyText = await req.clone().text();
-              try { body = JSON.parse(bodyText); } catch {}
-              console.log("[WORKER] Payload recebido:", bodyText.substring(0, 1000));
-            }
-            // ...existing code...
-            .single();
-          integration = data;
-        }
 
         // Fallback: if member_id is null, try to find by domain from auth payload
         if (!integration) {
