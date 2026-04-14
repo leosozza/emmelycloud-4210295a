@@ -340,6 +340,22 @@ Deno.serve(async (req) => {
       }
     }
 
+    // Update Deal UF fields with payment URL and status
+    if (transactions.length > 0) {
+      try {
+        const firstPaymentUrl = transactions.find((t: any) => t.payment_url)?.payment_url || "";
+        await callBitrix(integration.client_endpoint, accessToken, "crm.deal.update", {
+          ID: dealId,
+          fields: {
+            UF_CRM_EMMELY_PAYMENT_URL: firstPaymentUrl,
+            UF_CRM_EMMELY_PAYMENT_STATUS: "pending",
+          },
+        });
+      } catch (e) {
+        console.error("[PAYMENT-WEBHOOK] Deal UF update error:", e);
+      }
+    }
+
     // Debug log
     try {
       await supabase.from("bitrix24_debug_logs").insert({
