@@ -123,7 +123,7 @@ async function findConversationByEmail(supabase: any, emails: string[]): Promise
   return null;
 }
 
-async function findConversationByBotState(supabase: any, entityId: string): Promise<any> {
+async function findConversationByBotState(supabase: any, entityId: string, entityTypeId?: string): Promise<any> {
   const { data: convs } = await supabase
     .from("conversations")
     .select("id, contact_name, attendance_mode, channel, status, contact_phone, bot_state")
@@ -134,11 +134,25 @@ async function findConversationByBotState(supabase: any, entityId: string): Prom
   if (!convs) return null;
   for (const c of convs) {
     const bs = (c.bot_state as any) || {};
+    // Direct match on lead/entity IDs
     if (
       bs.bitrix_lead_id === entityId ||
       bs.bitrix_lead_id === String(entityId) ||
       bs.bitrix_entity_id === entityId ||
       bs.bitrix_entity_id === String(entityId)
+    ) {
+      return c;
+    }
+    // Match with entity type prefix (e.g., "1:23691", "2:23691")
+    const bsEntity = String(bs.bitrix_entity_id || "");
+    if (bsEntity.includes(":")) {
+      const parts = bsEntity.split(":");
+      if (parts[1] === String(entityId)) return c;
+    }
+    // Also check deal_id in bot_state
+    if (
+      bs.bitrix_deal_id === entityId ||
+      bs.bitrix_deal_id === String(entityId)
     ) {
       return c;
     }
@@ -836,7 +850,11 @@ Deno.serve(async (req) => {
           conversation = await findConversationByEmail(supabase, allEmails);
         }
         if (!conversation) {
-          conversation = await findConversationByBotState(supabase, entityId);
+          conversation = await findConversationByBotState(supabase, entityId, entityTypeId);
+        }
+        // For Deals, also try the Deal ID in bot_state with type prefix
+        if (!conversation && entityTypeNum === 2) {
+          conversation = await findConversationByBotState(supabase, entityId, "2");
         }
         if (!conversation && contactName) {
           conversation = await findConversationByName(supabase, contactName);
