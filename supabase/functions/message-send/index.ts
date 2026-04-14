@@ -227,6 +227,17 @@ Deno.serve(async (req) => {
 
       // ── WUZAPI (WhatsApp QRCode) ──
       if (resolvedProvider === "wuzapi") {
+        // Detect LID-based contacts: if the "phone" doesn't look like a real
+        // phone number (real phones are typically 10-15 digits starting with a
+        // country code), it's likely a WhatsApp Linked ID (LID).
+        // For LIDs we must send the full JID with @lid suffix so WUZAPI
+        // doesn't append @s.whatsapp.net (which fails for LID contacts).
+        const isLid = phone.length > 15 || !/^[1-9]\d{9,14}$/.test(phone);
+        const wuzapiPhone = isLid ? `${phone}@lid` : phone;
+        if (isLid) {
+          console.log(`[MESSAGE-SEND] Detected LID contact, using JID: ${wuzapiPhone}`);
+        }
+
         let wuzapiBaseUrl = "";
         let wuzapiToken = "";
 
@@ -251,7 +262,7 @@ Deno.serve(async (req) => {
         wuzapiBaseUrl = wuzapiBaseUrl.replace(/\/+$/, "");
 
         let wuzapiEndpoint = "/chat/send/text";
-        let wuzapiPayload: any = { Phone: phone, Body: content };
+        let wuzapiPayload: any = { Phone: wuzapiPhone, Body: content };
 
         if (message_type === "interactive_buttons" && resolvedInteractiveData) {
           wuzapiEndpoint = "/chat/send/buttons";
