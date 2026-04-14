@@ -208,11 +208,30 @@ Deno.serve(async (req) => {
       sync_source: "bitrix24",
     });
 
+    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+    const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+
+    // Forward message to Bitrix24 Open Channel
+    try {
+      fetch(`${supabaseUrl}/functions/v1/bitrix24-send`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${serviceKey}`,
+        },
+        body: JSON.stringify({
+          message: content,
+          contactName: senderName,
+          contactId: phone,
+          channel: "whatsapp",
+          conversationId,
+        }),
+      }).catch((e) => console.error("[WUZAPI-WEBHOOK] bitrix24-send fire-and-forget error:", e));
+    } catch {}
+
     // Trigger flow-engine if bot is active (unified pipeline)
     if (attendanceMode === "bot") {
       try {
-        const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-        const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
         fetch(`${supabaseUrl}/functions/v1/flow-engine`, {
           method: "POST",
           headers: {
