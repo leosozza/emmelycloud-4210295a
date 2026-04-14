@@ -1,43 +1,43 @@
 
 
-# Fix: `payment_transactions_gateway_check` constraint violation
+# Fix: Multiple payment links generated + link not saved to Bitrix24 field
+
+## Problem
+When clicking "Link" on a payment installment in the Emmely Pay placement:
+1. Every click creates a **new** Stripe checkout session and a new `payment_transactions` row (no idempotency)
+2. The button doesn't disable during the request, so rapid clicks create duplicates
+3. The generated `payment_url` is never written back to the Bitrix24 deal field `UF_CRM_EMMELY_RECEIPT_URL`
 
 ## Root Cause
+The `generatePaymentLink()` JS function (line 1086) sends a bare POST to `payment-create` without `financial_record_id` or `transaction_id`. It also doesn't check if a transaction already exists for that installment.
 
-In `payment-create/index.ts` line 648, the `effectiveGateway` value stored in the database is computed as:
+## Changes
+
+### File: `supabase/functions/bitrix24-payment-tab/index.ts`
+
+**1. Fix `generatePaymentLink` (line ~1086)**
+- Pass `financial_record_id` and existing `transaction_id` from the installment data
+- If a `transaction_id` already exists and has a `payment_url`, skip creation and just show/copy the existing link
+- Disable the button during the request to prevent double-clicks
+- After successful link generation, update Bitrix24 field `UF_CRM_EMMELY_RECEIPT_URL` via `BX24.callMethod('crm.deal.update', ...)`
+
+**2. Add dedup logic**
 ```
-normalizedGateway || gateway
-```
-
-When the robot sends `force_gateway: "auto"` (or any value not in the `gwMap`), `normalizedGateway` keeps that original value (e.g. `"auto"`). The DB constraint only allows: `stripe`, `asaas`, `direto`, `stripe_pt`, `stripe_br`.
-
-Similarly, `payment_method` values like `"multibanco"`, `"mb_way"`, `"sepa_debit"` would violate the `payment_method` constraint (allowed: `card`, `pix`, `boleto`, `transfer`, `parcelado_direto`).
-
-## Plan
-
-### 1. Fix `payment-create/index.ts` — normalize `effectiveGateway`
-
-**Line ~535**: After the `gwMap` lookup, add `"auto"` to the map (→ `null`) so it doesn't persist as-is. Also, if the value after mapping is still not one of the 5 valid DB values, reset `normalizedGateway` to `null` so it falls through to `gateway`.
-
-**Line ~648**: Change `effectiveGateway` logic to always resolve to a valid DB value:
-```typescript
-const validGateways = ["stripe", "asaas", "direto", "stripe_pt", "stripe_br"];
-const effectiveGateway = (payment_method === "direto" || normalizedGateway === "direto") 
-  ? "direto" 
-  : (normalizedGateway && validGateways.includes(normalizedGateway) ? normalizedGateway : (stripeRegion ? `stripe_${stripeRegion}` : gateway));
+// Before calling payment-create:
+// If inst.transaction_id exists and inst.payment_url exists → just copy and show
+// If inst.transaction_id exists but no payment_url → call payment-create with transaction_id to generate link for existing tx
+// If no transaction_id → call ensureTxExists first, then generate link
 ```
 
-**Line ~661**: Normalize `payment_method` to valid DB values — map `multibanco`, `mb_way`, `sepa_debit` → `card` for the stored record.
+**3. Write payment URL back to Bitrix24**
+After getting the `payment_url` from the response, call:
+```javascript
+BX24.callMethod('crm.deal.update', {
+  id: ENTITY_ID,
+  fields: { UF_CRM_EMMELY_RECEIPT_URL: data.transaction.payment_url }
+});
+```
 
-### 2. Optionally expand DB constraint
-
-Add a migration to extend the `payment_transactions_gateway_check` to include `"multibanco"` etc., or keep normalizing to valid values (preferred — simpler).
-
-### 3. Redeploy `payment-create`
-
-### File changes
-
-| File | Change |
-|---|---|
-| `supabase/functions/payment-create/index.ts` | Fix `effectiveGateway` and `payment_method` normalization before DB insert |
+### Redeploy
+- Redeploy `bitrix24-payment-tab`
 
