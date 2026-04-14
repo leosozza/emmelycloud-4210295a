@@ -89,12 +89,14 @@ async function sendWithFallbacks(
     ],
   });
 
+  console.log("[SEND] imconnector.send.messages full response:", JSON.stringify(primary).substring(0, 1000));
+
   if (!primary.error) {
     console.log("[SEND] imconnector.send.messages success");
     return true;
   }
 
-  console.warn("[SEND] Primary failed:", primary.error, "- trying fallbacks");
+  console.warn("[SEND] Primary failed:", primary.error, primary.error_description || "", "- trying fallbacks");
 
   // 2. Fallback: notification
   try {
