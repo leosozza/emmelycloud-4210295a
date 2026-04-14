@@ -506,7 +506,7 @@ Deno.serve(async (req) => {
     );
 
     const body = await req.json();
-    const { contract_id, client_id, financial_record_id, amount, currency = "EUR", payment_method = "card", customer_data, description = "Pagamento Emmely Cloud", metadata: extraMetadata, due_date, installment_number, total_installments, installment_group_id, is_down_payment, force_gateway, company_id, credential_provider, credential_key } = body;
+    const { contract_id, client_id, financial_record_id, amount, currency = "EUR", payment_method = "card", customer_data, description = "Pagamento Emmely Cloud", metadata: extraMetadata, due_date, installment_number, total_installments, installment_group_id, is_down_payment, force_gateway, company_id, credential_provider, credential_key, transaction_id: existingTransactionId } = body;
 
     if (!amount || amount <= 0) {
       return new Response(JSON.stringify({ error: "amount is required and must be > 0" }), {
