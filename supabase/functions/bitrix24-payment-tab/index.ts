@@ -1085,6 +1085,19 @@ function renderPaymentTab(opts: {
   }
 
   async function generatePaymentLink(inst) {
+    // --- Dedup: if link already exists, just copy it ---
+    if (inst.payment_url) {
+      navigator.clipboard.writeText(inst.payment_url).catch(function(){});
+      setStatus('✅ Link já existente copiado! ' + inst.payment_url, 'var(--value-paid)');
+      // Also write back to Bitrix field
+      try { BX24.callMethod('crm.deal.update', { id: ENTITY_ID, fields: { UF_CRM_EMMELY_RECEIPT_URL: inst.payment_url } }); } catch(e){}
+      return;
+    }
+
+    // --- Disable button to prevent double-clicks ---
+    var btns = document.querySelectorAll('.b24-btn-action');
+    btns.forEach(function(b) { b.disabled = true; });
+
     setStatus('A gerar link de pagamento...', 'var(--text-secondary)');
     try {
       var res = await fetch(SUPABASE_URL + '/functions/v1/payment-create', {
@@ -1096,6 +1109,8 @@ function renderPaymentTab(opts: {
           payment_method: inst.payment_method || 'card',
           force_gateway: DEAL_RAW_GATEWAY || undefined,
           description: inst.description || 'Pagamento',
+          financial_record_id: inst.financial_record_id || undefined,
+          transaction_id: inst.transaction_id || undefined,
           metadata: { bitrix_deal_id: ENTITY_ID, source: 'bitrix24_payment_tab_link' }
         })
       });
@@ -1104,6 +1119,8 @@ function renderPaymentTab(opts: {
       if (data.transaction && data.transaction.payment_url) {
         navigator.clipboard.writeText(data.transaction.payment_url).catch(function(){});
         setStatus('✅ Link gerado e copiado! ' + data.transaction.payment_url, 'var(--value-paid)');
+        // Write payment URL back to Bitrix24 deal field
+        try { BX24.callMethod('crm.deal.update', { id: ENTITY_ID, fields: { UF_CRM_EMMELY_RECEIPT_URL: data.transaction.payment_url } }); } catch(e){}
         setTimeout(function() { location.reload(); }, 3000);
       } else {
         setStatus('⚠ Cobrança criada mas sem link (método direto?)', 'var(--text-secondary)');
@@ -1111,6 +1128,8 @@ function renderPaymentTab(opts: {
       }
     } catch(e) {
       setStatus('Erro: ' + e.message, 'var(--value-open)');
+    } finally {
+      btns.forEach(function(b) { b.disabled = false; });
     }
   }
 
