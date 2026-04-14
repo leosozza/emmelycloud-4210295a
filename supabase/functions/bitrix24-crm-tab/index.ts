@@ -909,6 +909,14 @@ Deno.serve(async (req) => {
           conversation = await findConversationByBotState(supabase, entityId, "2");
           if (conversation) console.log("[CRM-TAB] ✓ Matched via bot_state (deal prefix)");
         }
+        // For Deals, also try the linked LEAD_ID in bot_state
+        if (!conversation && entityTypeNum === 2 && entity?.LEAD_ID) {
+          conversation = await findConversationByBotState(supabase, String(entity.LEAD_ID), "1");
+          if (!conversation) {
+            conversation = await findConversationByBotState(supabase, String(entity.LEAD_ID));
+          }
+          if (conversation) console.log("[CRM-TAB] ✓ Matched via deal's LEAD_ID:", entity.LEAD_ID);
+        }
 
         // ── 4. For Deals without contact, try COMPANY_ID ──
         if (!conversation && entityTypeNum === 2 && entity?.COMPANY_ID) {
