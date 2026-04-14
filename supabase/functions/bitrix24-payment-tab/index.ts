@@ -246,6 +246,7 @@ function renderPaymentTab(opts: {
       late_interest: inst.late_interest || 0,
       late_days: inst.late_days || 0,
       late_total: inst.late_total || inst.value,
+      payment_url: inst.payment_url || null,
     }).replace(/"/g, "&quot;");
 
     // Dual currency display
