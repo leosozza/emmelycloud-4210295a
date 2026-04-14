@@ -99,13 +99,17 @@ async function ensureValidToken(supabase: any, integration: any): Promise<string
 }
 
 async function debugLog(supabase: any, integrationId: string | null, eventType: string, direction: string, payload: any, error?: string) {
-  await supabase.from("bitrix24_debug_logs").insert({
-    integration_id: integrationId,
-    event_type: eventType,
-    direction,
-    payload,
-    error: error || null,
-  }).catch(() => {});
+  try {
+    await supabase.from("bitrix24_debug_logs").insert({
+      integration_id: integrationId,
+      event_type: eventType,
+      direction,
+      payload,
+      error: error || null,
+    });
+  } catch {
+    // ignore debug log errors
+  }
 }
 
 // ─── Bitrix24 Configurable Activity Badge Helper ───
@@ -780,6 +784,25 @@ async function handleDealUpdate(supabase: any, integration: any, payload: any) {
   }
 }
 
+// ─── Helper: resolve integration from conversation_id (multi-tenant safe) ──
+async function resolveIntegrationFromConversation(supabase: any, conversationId: string): Promise<any> {
+  const { data: conv } = await supabase
+    .from("conversations")
+    .select("workspace_id")
+    .eq("id", conversationId)
+    .single();
+  if (!conv?.workspace_id) return null;
+  const { data } = await supabase
+    .from("bitrix24_integrations")
+    .select("*")
+    .eq("workspace_id", conv.workspace_id)
+    .eq("is_active", true)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .single();
+  return data || null;
+}
+
 // ─── Main Worker ───
 
 Deno.serve(async (req) => {
@@ -815,28 +838,51 @@ Deno.serve(async (req) => {
             headers: { ...corsHeaders, "Content-Type": "application/json" },
           });
         }
+      } catch (badgeErr) {
+        console.log("[WORKER] Not a badge request, continuing to queue processing");
+      }
+    }
 
-        // ── Helper: resolve integration from conversation_id (multi-tenant safe) ──
-        async function resolveIntegrationFromConversation(conversationId: string): Promise<any> {
-          const { data: conv } = await supabase
-            .from("conversations")
-            .select("workspace_id")
-            .eq("id", conversationId)
-            .single();
-          if (!conv?.workspace_id) return null;
+    // ─── Fetch pending events from queue ───
+    const { data: events, error: fetchError } = await supabase
+      .from("bitrix_event_queue")
+      .select("*")
+      .eq("status", "pending")
+      .order("created_at", { ascending: true })
+      .limit(10);
+
+    if (fetchError) {
+      throw new Error(`Failed to fetch events: ${fetchError.message}`);
+    }
+
+    if (!events || events.length === 0) {
+      return new Response(JSON.stringify({ processed: 0, total: 0, message: "No pending events" }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    let processed = 0;
+
+    for (const event of events) {
+      try {
+        // Mark as processing
+        await supabase.from("bitrix_event_queue").update({
+          status: "processing",
+          attempts: event.attempts + 1,
+        }).eq("id", event.id);
+
+        // Find integration by member_id
+        let integration: any = null;
+        if (event.member_id) {
           const { data } = await supabase
             .from("bitrix24_integrations")
             .select("*")
-            .eq("workspace_id", conv.workspace_id)
-            .eq("is_active", true)
-            .order("created_at", { ascending: false })
-            .limit(1)
+            .eq("member_id", event.member_id)
             .single();
-          return data || null;
+          integration = data;
         }
 
-
-        // Fallback: if member_id is null, try to find by domain from auth payload
+        // Fallback: try to find by domain from auth payload
         if (!integration) {
           const payloadAuth = (event.payload as any)?.auth || {};
           const payloadDomain = payloadAuth.domain || (event.payload as any)?.domain || null;
