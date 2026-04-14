@@ -1294,6 +1294,10 @@ Deno.serve(async (req) => {
       }
 
       // Part B: Addition
+      const entityApis = [
+        { name: "Deal", method: "crm.deal.userfield.add" },
+        { name: "Lead", method: "crm.lead.userfield.add" },
+      ];
       for (const entity of entityApis) {
         for (const field of emmelyUserFields) {
           ufBatchCmds[`add_${entity.name}_${field.FIELD_NAME}`] = { method: entity.method, params: { fields: field } };
