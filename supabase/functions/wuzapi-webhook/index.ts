@@ -19,8 +19,29 @@ Deno.serve(async (req) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
     );
 
-    // WUZAPI sends different event types
-    const eventType = body.event || body.type;
+    // WUZAPI sends different payload formats:
+    // Format A (expected):  { event: "Message", data: { Info: {...}, Message: {...} } }
+    // Format B (actual):    { event: { Info: {...}, Message: {...} } }  — event IS the data
+    // Format C (flat):      { Info: {...}, Message: {...} }
+    let eventType: string | undefined;
+    let messageData: any;
+
+    if (typeof body.event === "string") {
+      // Format A: event is a string like "Message"
+      eventType = body.event;
+      messageData = body.data || body;
+    } else if (body.event && typeof body.event === "object" && (body.event.Info || body.event.Message)) {
+      // Format B: event IS the message object
+      eventType = "Message";
+      messageData = body.event;
+    } else if (body.Info || body.Message) {
+      // Format C: flat payload
+      eventType = "Message";
+      messageData = body;
+    } else {
+      eventType = body.type;
+      messageData = body.data || body;
+    }
 
     // Only process incoming messages
     if (eventType !== "Message" && eventType !== "message") {
@@ -31,7 +52,6 @@ Deno.serve(async (req) => {
     }
 
     // Extract message data from WUZAPI payload
-    const messageData = body.data || body;
     const info = messageData.Info || messageData.info || {};
     const message = messageData.Message || messageData.message || {};
 
