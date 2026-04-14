@@ -1,0 +1,1 @@
+UPDATE public.conversations SET contact_phone = '196847578665004@lid' WHERE id = '89c299f8-e903-4d42-b498-759bdce639ed' AND contact_phone = '196847578665004';
