@@ -1,63 +1,50 @@
 
 
-## Plano: Preencher Campos UF nas Smart Invoices
+## Diagnóstico
 
-O utilizador forneceu os IDs dos campos personalizados nas Smart Invoices (entity type 31). Atualmente, ao criar faturas, estes campos não são preenchidos — apenas os campos nativos (`title`, `opportunity`, `parentId2`, etc.).
+O Deal 23693 ("Ailson França") não encontra a conversa porque:
 
-### Mapeamento dos campos
+1. **Sem telefone/email** — O Deal e o Contacto vinculado não têm telefone/email no Bitrix24 (logs: `phones: [] emails: []`)
+2. **bot_state desalinhado** — A conversa tem `bitrix_entity_id: "1:17805"` (Lead), mas o CRM Tab procura pelo Deal ID `23693`. A busca tenta `entity.LEAD_ID` mas provavelmente o Deal não tem esse campo
+3. **contact_phone inválido** — A conversa tem `10677389394164@lid` (formato LID do Bitrix), que não é um telefone real
+4. **Name fallback falha** — O nome "Ailson França - WhatsApp BR" deveria encontrar "Ailson França" na conversa, mas algo impede (possivelmente o Deal não retorna o TITLE esperado)
 
-| Campo | UF ID | Quando preencher |
-|---|---|---|
-| Status de Pagamento | `UF_CRM_69B83DDB1F59D` | Na criação: `pending`. No webhook: `paid` / `partial` |
-| Grupo de Parcelas | `UF_CRM_69B83DDB2661E` | Na criação: `groupId` |
-| Gateway de Pagamento | `UF_CRM_69B83DDB2B85D` | Na criação: gateway usado |
-| Total Pago | `UF_CRM_69B83DDB32521` | No webhook: valor acumulado pago |
-| Link de Pagamento | `UF_CRM_69B83DDB38FF9` | Na criação: `payment_url` |
-| Nº de Parcelas | `UF_CRM_69B83DDB3EAFC` | Na criação: total de parcelas |
-| Parcelas Pagas | `UF_CRM_69B83DDB462B7` | No webhook: incrementar |
-| Valor da Parcela | `UF_CRM_69B83DDB4C552` | Na criação: valor individual |
-| Próximo Vencimento | `UF_CRM_69B83DDB525C9` | Na criação e no webhook: próxima data |
+## Plano de Correção
 
-### Ficheiros a editar
+### 1. Adicionar lookup por `contact_phone` com formato LID
+**Ficheiro:** `supabase/functions/bitrix24-crm-tab/index.ts`
 
-**1. `supabase/functions/bitrix24-payment-tab/index.ts`**
+Antes do name fallback, adicionar uma busca pela `contact_phone` que contenha o formato `@lid` usado pelo Bitrix. Extrair o phone_number_id do Contacto vinculado e procurar conversas com `contact_phone` contendo esse ID.
 
-Nos dois locais onde se cria Smart Invoice (`crm.item.add`):
-- `submitInstallments` (linha 1053-1055)
-- `generatePaymentLink` (linha 1129-1139)
+### 2. Adicionar lookup direto por nome do Deal/Contacto no `contact_name`
+O name fallback atual usa `ilike` mas pode estar a falhar silenciosamente. Adicionar logs de debug e garantir que o nome do Contacto (não o título do Deal) é usado na busca.
 
-Adicionar aos `fields`:
+### 3. Gravar `bitrix_deal_id` no `bot_state` quando o Deal é identificado
+**Ficheiro:** `supabase/functions/bitrix24-crm-tab/index.ts`
+
+Quando a conversa é encontrada por qualquer método, atualizar o `bot_state` da conversa com `bitrix_deal_id: entityId` para que lookups futuros sejam instantâneos:
 ```javascript
-UF_CRM_69B83DDB1F59D: 'pending',        // Status
-UF_CRM_69B83DDB2661E: groupId,           // Grupo
-UF_CRM_69B83DDB2B85D: gateway,           // Gateway
-UF_CRM_69B83DDB38FF9: payment_url,       // Link
-UF_CRM_69B83DDB3EAFC: totalParcelas,     // Nº Parcelas
-UF_CRM_69B83DDB4C552: parcel.amount,     // Valor Parcela
-UF_CRM_69B83DDB525C9: parcel.due_date    // Próx. Vencimento
+if (conversation && entityTypeNum === 2) {
+  await supabase.from("conversations").update({
+    bot_state: { ...conversation.bot_state, bitrix_deal_id: String(entityId) }
+  }).eq("id", conversation.id);
+}
 ```
 
-Também corrigir o campo do Deal de `UF_CRM_EMMELY_RECEIPT_URL` para `UF_CRM_EMMELY_PAYMENT_URL` e adicionar `UF_CRM_EMMELY_PAYMENT_STATUS: 'pending'`.
-
-**2. `supabase/functions/payment-webhook-stripe/index.ts`**
-
-Quando marca a Smart Invoice como paga (`crm.item.update`, linha 129-137), adicionar:
-```javascript
-UF_CRM_69B83DDB1F59D: 'paid',            // Status
-UF_CRM_69B83DDB32521: paidAmount,        // Total Pago
-UF_CRM_69B83DDB462B7: parcelas_pagas     // Parcelas Pagas (incrementar)
+### 4. Adicionar lookup por Contact ID do Bitrix na tabela `clients`
+Para Deals com `CONTACT_ID`, procurar na tabela `clients` por `bitrix24_id` e depois usar o `client_id` para encontrar conversas:
+```sql
+clients.bitrix24_id = entity.CONTACT_ID → conversations.client_id = clients.id
 ```
 
-Também adicionar ao `crm.deal.update`:
-- `UF_CRM_EMMELY_TOTAL_PAID`: total acumulado pago
-- `UF_CRM_EMMELY_PAYMENT_STATUS`: `'paid'` ou `'partial'`
+### 5. Adicionar logs de debug em cada passo do lookup
+Registar o nome usado no name fallback e o LEAD_ID do Deal para diagnosticar falhas futuras.
 
-**3. `supabase/functions/bitrix24-payment-webhook/index.ts`**
+## Ficheiros a editar
+- `supabase/functions/bitrix24-crm-tab/index.ts` — todos os 5 pontos acima
 
-Na criação de Smart Invoices (linha 228-248), adicionar os mesmos campos UF da fatura.
-
-### Detalhes técnicos
-- O `payment_url` para `generatePaymentLink` vem de `data.transaction.payment_url`
-- Para `submitInstallments`, o `payment_url` pode não existir imediatamente (criação batch) — preencheremos com vazio e será atualizado depois
-- No webhook, para contar "Parcelas Pagas", consultaremos `payment_transactions` pelo `installment_group_id` com `status = 'paid'`
+## Detalhes técnicos
+- O `contact_phone` no formato `{number}@lid` é um identificador de linha do Bitrix Open Channel — não é um telefone real
+- O `bitrix_entity_id: "1:17805"` indica que a conversa foi originada num Lead Bitrix (type 1, ID 17805) que depois foi convertido no Deal 23693
+- A gravação do `bitrix_deal_id` no bot_state cria um vínculo permanente que elimina lookups complexos em acessos futuros
 
