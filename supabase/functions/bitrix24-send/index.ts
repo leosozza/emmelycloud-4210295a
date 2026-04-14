@@ -173,6 +173,7 @@ Deno.serve(async (req) => {
           .eq("integration_id", integration.id)
           .eq("channel", channel || "whatsapp")
           .eq("is_active", true)
+          .order("created_at", { ascending: false })
           .limit(1)
           .maybeSingle();
 
@@ -183,6 +184,7 @@ Deno.serve(async (req) => {
             .select("*")
             .eq("integration_id", integration.id)
             .eq("is_active", true)
+            .order("created_at", { ascending: false })
             .limit(1)
             .maybeSingle();
 

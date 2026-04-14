@@ -213,7 +213,7 @@ Deno.serve(async (req) => {
 
     // Forward message to Bitrix24 Open Channel
     try {
-      fetch(`${supabaseUrl}/functions/v1/bitrix24-send`, {
+      const bitrixResponse = await fetch(`${supabaseUrl}/functions/v1/bitrix24-send`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -226,8 +226,17 @@ Deno.serve(async (req) => {
           channel: "whatsapp",
           conversationId,
         }),
-      }).catch((e) => console.error("[WUZAPI-WEBHOOK] bitrix24-send fire-and-forget error:", e));
-    } catch {}
+      });
+
+      const bitrixResult = await bitrixResponse.json().catch(() => null);
+      console.log("[WUZAPI-WEBHOOK] bitrix24-send result:", JSON.stringify(bitrixResult));
+
+      if (!bitrixResponse.ok || bitrixResult?.error) {
+        throw new Error(bitrixResult?.error || `bitrix24-send failed with status ${bitrixResponse.status}`);
+      }
+    } catch (e) {
+      console.error("[WUZAPI-WEBHOOK] bitrix24-send error:", e);
+    }
 
     // Trigger flow-engine if bot is active (unified pipeline)
     if (attendanceMode === "bot") {
