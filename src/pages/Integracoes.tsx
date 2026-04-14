@@ -115,7 +115,7 @@ function CRMTab() {
   const [logs, setLogs] = useState<DebugLog[]>([]);
   const [loading, setLoading] = useState(true);
   const [testing, setTesting] = useState(false);
-  const [testResult, setTestResult] = useState<{ ok: boolean; message?: string; error?: string } | null>(null);
+  const [testResult, setTestResult] = useState<{ ok: boolean; message?: string; error?: string; details?: any } | null>(null);
 
   useEffect(() => {
     async function load() {
