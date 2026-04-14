@@ -150,6 +150,7 @@ function CRMTab() {
   };
 
   const bitrixStatus = integration ? (integration.connector_active ? "active" : integration.connector_registered ? "pending" : "inactive") : "inactive";
+  const effectiveStatus = testResult?.details ? (testResult.details.connector_active ? "active" : testResult.details.connector_registered ? "pending" : "inactive") : bitrixStatus;
   const activeChannels = channels.filter((c) => c.is_active);
   const errorLogs = logs.filter((l) => l.error);
 
@@ -167,13 +168,17 @@ function CRMTab() {
               <CardDescription>CRM Principal</CardDescription>
             </div>
           </div>
-          <StatusBadge status={bitrixStatus} />
+          <StatusBadge status={effectiveStatus} />
         </CardHeader>
         <CardContent className="space-y-3 text-sm">
           {integration ? (
             <>
               <div className="flex justify-between"><span className="text-muted-foreground">Domínio</span><span className="font-medium">{integration.domain || "—"}</span></div>
-              <div className="flex justify-between"><span className="text-muted-foreground">Conector registado</span><span>{integration.connector_registered ? "Sim" : "Não"}</span></div>
+              <div className="flex justify-between"><span className="text-muted-foreground">Conector registado</span><span>{(testResult?.details?.connector_registered ?? integration.connector_registered) ? "✅ Sim" : "❌ Não"}</span></div>
+              <div className="flex justify-between"><span className="text-muted-foreground">Conector ativo</span><span>{(testResult?.details?.connector_active ?? integration.connector_active) ? "✅ Sim" : "❌ Não"}</span></div>
+              {testResult?.details?.active_lines?.length > 0 && (
+                <div className="flex justify-between"><span className="text-muted-foreground">Linhas ativas</span><span className="font-medium">{testResult.details.active_lines.length}</span></div>
+              )}
               <div className="flex justify-between"><span className="text-muted-foreground">Última atualização</span><span>{new Date(integration.updated_at).toLocaleDateString("pt-PT")}</span></div>
               <Button size="sm" variant="outline" className="w-full mt-1" onClick={handleTestConnection} disabled={testing}>
                 {testing ? <RefreshCw className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <Activity className="h-3.5 w-3.5 mr-1.5" />}
