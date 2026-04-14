@@ -178,8 +178,52 @@ Deno.serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
-  // --- repair_fields action: delete and recreate all UF_CRM_EMMELY_* fields ---
   const reqUrl = new URL(req.url);
+
+  // --- Diagnostics endpoint ---
+  if (reqUrl.pathname.endsWith("/diagnostics")) {
+    const supabase = createClient(
+      Deno.env.get("SUPABASE_URL")!,
+      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
+    );
+    const { data: integration } = await supabase
+      .from("bitrix24_integrations")
+      .select("*")
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (!integration?.client_endpoint || !integration?.access_token) {
+      return new Response(JSON.stringify({ error: "No integration found" }), { status: 400, headers: jsonHeaders });
+    }
+    const clientEndpoint = integration.client_endpoint.endsWith("/") ? integration.client_endpoint : integration.client_endpoint + "/";
+    const accessToken = integration.access_token;
+    const eventGet = await fetch(`${clientEndpoint}event.get`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ auth: accessToken })
+    });
+    const eventData = await eventGet.json();
+    const leadFields = await fetch(`${clientEndpoint}crm.lead.userfield.list`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ auth: accessToken })
+    });
+    const dealFields = await fetch(`${clientEndpoint}crm.deal.userfield.list`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ auth: accessToken })
+    });
+    const robots = await fetch(`${clientEndpoint}bizproc.robot.list`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ auth: accessToken })
+    });
+    const robotsData = await robots.json();
+    return new Response(JSON.stringify({
+      events: eventData.result || [],
+      leadFields: (await leadFields.json()).result || [],
+      dealFields: (await dealFields.json()).result || [],
+      robots: robotsData.result || [],
+    }), { headers: jsonHeaders });
+  }
+
+  // --- repair_fields action: delete and recreate all UF_CRM_EMMELY_* fields ---
   if (reqUrl.searchParams.get("action") === "repair_fields") {
     const supabase = createClient(
       Deno.env.get("SUPABASE_URL")!,
