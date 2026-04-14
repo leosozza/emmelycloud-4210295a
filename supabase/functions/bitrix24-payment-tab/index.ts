@@ -1121,6 +1121,40 @@ function renderPaymentTab(opts: {
         setStatus('✅ Link gerado e copiado! ' + data.transaction.payment_url, 'var(--value-paid)');
         // Write payment URL back to Bitrix24 deal field
         try { BX24.callMethod('crm.deal.update', { id: ENTITY_ID, fields: { UF_CRM_EMMELY_RECEIPT_URL: data.transaction.payment_url } }); } catch(e){}
+        // Create Smart Invoice in Bitrix24 linked to this Deal
+        if (typeof BX24 !== 'undefined' && data.transaction.id) {
+          try {
+            var invoiceTitle = (inst.description || 'Pagamento') + ' - Negócio ' + ENTITY_ID;
+            await new Promise(function(resolve) {
+              BX24.callMethod('crm.item.add', {
+                entityTypeId: 31,
+                fields: {
+                  title: invoiceTitle,
+                  opportunity: inst.value || 0,
+                  currencyId: inst.currency || 'EUR',
+                  isManualOpportunity: 'Y',
+                  parentId2: parseInt(ENTITY_ID),
+                  begindate: new Date().toISOString().split('T')[0],
+                  closedate: inst.due_date || new Date().toISOString().split('T')[0],
+                  comments: 'Fatura gerada automaticamente pelo Emmely Pay via link de pagamento.'
+                }
+              }, function(result) {
+                if (result.error()) { console.error('Smart Invoice error:', result.error()); resolve(null); }
+                else {
+                  var invoiceId = result.data() && result.data().item ? result.data().item.id : null;
+                  if (invoiceId) {
+                    // Patch transaction metadata with bitrix_invoice_id
+                    fetch(SUPABASE_URL + '/functions/v1/payment-create', {
+                      method: 'PATCH',
+                      headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_KEY },
+                      body: JSON.stringify({ transaction_id: data.transaction.id, metadata_update: { bitrix_invoice_id: invoiceId } })
+                    }).then(function() { resolve(invoiceId); }).catch(function() { resolve(invoiceId); });
+                  } else { resolve(null); }
+                }
+              });
+            });
+          } catch (e) { console.error('Smart Invoice creation error:', e); }
+        }
         setTimeout(function() { location.reload(); }, 3000);
       } else {
         setStatus('⚠ Cobrança criada mas sem link (método direto?)', 'var(--text-secondary)');
