@@ -96,7 +96,7 @@ async function findConversationByPhone(supabase: any, phones: string[]): Promise
     for (const suffix of suffixes) {
       const { data: conv } = await supabase
         .from("conversations")
-        .select("id, contact_name, attendance_mode, channel, status, contact_phone")
+        .select("id, contact_name, attendance_mode, channel, status, contact_phone, bot_state")
         .ilike("contact_phone", `%${suffix}%`)
         .neq("status", "fechada")
         .order("last_message_at", { ascending: false })
@@ -112,7 +112,7 @@ async function findConversationByEmail(supabase: any, emails: string[]): Promise
   for (const email of emails) {
     const { data: conv } = await supabase
       .from("conversations")
-      .select("id, contact_name, attendance_mode, channel, status, contact_phone")
+      .select("id, contact_name, attendance_mode, channel, status, contact_phone, bot_state")
       .ilike("contact_email", `%${email}%`)
       .neq("status", "fechada")
       .order("last_message_at", { ascending: false })
@@ -166,7 +166,7 @@ async function findConversationByName(supabase: any, name: string): Promise<any>
   for (const word of words.slice(0, 3)) {
     const { data: conv } = await supabase
       .from("conversations")
-      .select("id, contact_name, attendance_mode, channel, status, contact_phone")
+      .select("id, contact_name, attendance_mode, channel, status, contact_phone, bot_state")
       .ilike("contact_name", `%${word}%`)
       .neq("status", "fechada")
       .order("last_message_at", { ascending: false })
