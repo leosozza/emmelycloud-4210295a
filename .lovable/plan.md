@@ -1,46 +1,40 @@
-<final-text>
+
+
 ## Diagnóstico
-- O screenshot confirma que o placement está a carregar; o problema é só na associação da conversa.
-- Os logs do `bitrix24-crm-tab` mostram `entityId: 23691` e `entityTypeId: 2`, por isso o Deal está a chegar corretamente ao backend.
-- Em `supabase/functions/bitrix24-crm-tab/index.ts`, o lookup atual depende de:
-  1. telefone/email do Deal
-  2. `CONTACT_ID` do Deal
-  3. `bot_state`
-  4. nome do registo
-- No Deal mostrado, o próprio Bitrix exibe “sem contacto”, então o placement não recebe dados suficientes para casar a conversa. Como o código não faz lookup direto pelo vínculo local `lead/deal -> conversation`, cai no estado vazio.
 
-## Plano de correção
-1. **Adicionar lookup local determinístico no placement**
-   - Em `bitrix24-crm-tab`, antes do fallback por nome, procurar um registo local ligado ao Deal:
-     - `leads.bitrix24_id = entityId`
-     - se existir, usar `lead.conversation_id`
-     - se `conversation_id` estiver vazio, usar `lead.client_id` para procurar a conversa aberta mais recente desse cliente
-   - Isto deixa de depender do `CONTACT_ID` do Bitrix para encontrar a conversa.
+O fluxo quebrou em dois pontos críticos:
 
-2. **Melhorar lookup CRM quando o Deal não tem contacto**
-   - Manter phone/email/contact lookup atual como apoio.
-   - Para Deals, tentar também `COMPANY_ID` quando existir, para aproveitar telefone/email da empresa antes de desistir.
+### Problema 1: Gerar Link não cria Smart Invoices
+A função `generatePaymentLink` (payment-tab, linha 1087-1133) cria a transação no backend mas **não cria a Smart Invoice no Bitrix24**. Comparando com `submitInstallments` (linha 1044-1068) que faz `BX24.callMethod('crm.item.add', { entityTypeId: 31, ... })`, o `generatePaymentLink` simplesmente salta esse passo. Resultado: a transação fica sem `bitrix_invoice_id` na metadata.
 
-3. **Vincular conversas iniciadas a partir do placement**
-   - Alterar o botão “Iniciar conversa” do placement para enviar `member_id`, `entity_id` e `entity_type_id`.
-   - Atualizar `message-send` para guardar esse contexto na conversa criada/reativada (ex.: `bot_state.bitrix_entity_id = "2:23691"` e, se houver lead local, atualizar `lead.conversation_id`).
-   - Assim, depois do primeiro envio, a conversa passa a reaparecer sempre no placement.
+### Problema 2: Webhook do Stripe não atualiza a Smart Invoice nem o Deal
+Quando o pagamento é confirmado pelo Stripe:
+- O webhook chama `notifyBitrix24DealPayment` que atualiza o `OPPORTUNITY` e adiciona comentário na timeline
+- Mas **só marca a Smart Invoice como paga se `bitrix_invoice_id` existir na metadata** (linha 102) — que não existe porque o Problema 1 impede a criação
+- O webhook **nunca move o Deal para uma etapa de "pagamento recebido"** — apenas reduz o valor do OPPORTUNITY
 
-4. **Adicionar logs úteis**
-   - Registar qual ramo encontrou a conversa (`lead.conversation_id`, `client_id`, `phone`, `email`, `bot_state`, `name`) para validar rapidamente futuros casos.
+## Plano de Correção
+
+### 1. Adicionar criação de Smart Invoice ao `generatePaymentLink`
+**Ficheiro:** `supabase/functions/bitrix24-payment-tab/index.ts`
+
+Após receber a resposta do `payment-create` com sucesso (linha 1119), adicionar a mesma lógica de `crm.item.add` que `submitInstallments` usa:
+- Criar Smart Invoice com `entityTypeId: 31`, vinculada ao Deal via `parentId2`
+- Atualizar a metadata da transação com o `bitrix_invoice_id` via PATCH ao `payment-create`
+
+### 2. Mover o Deal para etapa "Pagamento Recebido" quando todas as parcelas estiverem pagas
+**Ficheiro:** `supabase/functions/payment-webhook-stripe/index.ts`
+
+Na função `notifyBitrix24DealPayment`, após atualizar o OPPORTUNITY:
+- Verificar se o saldo em aberto é 0 (ou se todas as transações do grupo estão pagas)
+- Se sim, mover o Deal para a etapa configurada (ex: `UF_CRM_EMMELY_PAID_STAGE` ou uma etapa WON do pipeline)
+- Usar `crm.deal.update` com `STAGE_ID`
+
+### 3. Usar etapa correcta para Smart Invoices pagas
+O código actual (linha 115) faz fallback para `DT31_6:WON` que pode não existir. A memória do projeto indica que a etapa correcta é `DT31_3:P`. Corrigir o fallback.
 
 ## Ficheiros a editar
-- `supabase/functions/bitrix24-crm-tab/index.ts` — lookup local por lead/cliente e fallback por empresa
-- `supabase/functions/message-send/index.ts` — aceitar contexto do placement e persistir o vínculo da conversa ao Deal
 
-## Validação
-- Abrir novamente o Deal `23691` e confirmar que a conversa existente aparece em vez de “Nenhuma conversa ativa encontrada”.
-- Enviar mensagem pela aba do placement e confirmar que chega ao WhatsApp.
-- Iniciar uma conversa nova a partir do placement, recarregar a aba e confirmar que continua associada ao mesmo Deal.
-- Testar também um Lead e um Contact para garantir que os placements anteriores não regrediram.
+- `supabase/functions/bitrix24-payment-tab/index.ts` — adicionar criação de Smart Invoice ao `generatePaymentLink`
+- `supabase/functions/payment-webhook-stripe/index.ts` — mover Deal para etapa paga e corrigir stage ID da Smart Invoice
 
-## Detalhes técnicos
-- Não parece ser problema de registo do placement nem de inferência do tipo da entidade; isso já está correto.
-- O problema atual é a falta de um vínculo local confiável entre a entidade CRM e a conversa.
-- Não prevejo migração de base de dados para esta correção; a ligação pode ser feita com campos já existentes (`leads.bitrix24_id`, `leads.conversation_id`, `leads.client_id`, `conversations.bot_state`).
-</final-text>
