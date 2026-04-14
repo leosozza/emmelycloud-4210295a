@@ -137,6 +137,8 @@ async function createBitrixBadgeActivity(params: BadgeParams): Promise<void> {
       console.log("[BADGE] No active Bitrix24 integration found, skipping badge");
       return;
     }
+    // Padroniza client_endpoint com barra final
+    const clientEndpoint = integration.client_endpoint.endsWith("/") ? integration.client_endpoint : integration.client_endpoint + "/";
 
     const accessToken = await ensureValidToken(supabase, integration);
 
@@ -269,7 +271,7 @@ async function createBitrixBadgeActivity(params: BadgeParams): Promise<void> {
       };
     }
 
-    const activityResult = await callBitrix(integration.client_endpoint, accessToken, "crm.activity.configurable.add", {
+    const activityResult = await callBitrix(clientEndpoint, accessToken, "crm.activity.configurable.add", {
       ownerTypeId,
       ownerId,
       fields: {
@@ -308,6 +310,9 @@ async function handleConnectorMessage(supabase: any, integration: any, payload: 
 
   // Aceita mensagens de qualquer conector (emmely_connector ou outros configurados no Contact Center)
   console.log("[WORKER] Processing connector message from:", connector, "line:", line);
+
+  // Padroniza client_endpoint
+  const clientEndpoint = integration.client_endpoint.endsWith("/") ? integration.client_endpoint : integration.client_endpoint + "/";
 
   // Messages can be an object with numeric keys from PHP form data
   const msgArray = Array.isArray(messages) ? messages : Object.values(messages);
@@ -349,7 +354,7 @@ async function handleConnectorMessage(supabase: any, integration: any, payload: 
         const accessToken = await ensureValidToken(supabase, integration);
         const imData = msg.im || msg.IM || {};
         const chatData = msg.chat || msg.CHAT || {};
-        await callBitrix(integration.client_endpoint, accessToken, "imconnector.send.status.delivery", {
+        await callBitrix(clientEndpoint, accessToken, "imconnector.send.status.delivery", {
           CONNECTOR: connector || CONNECTOR_ID,
           LINE: line,
           MESSAGES: [{
@@ -422,7 +427,7 @@ async function handleConnectorMessage(supabase: any, integration: any, payload: 
         const accessToken = await ensureValidToken(supabase, integration);
         const imData = msg.im || msg.IM || {};
         const chatData = msg.chat || msg.CHAT || {};
-        await callBitrix(integration.client_endpoint, accessToken, "imconnector.send.status.delivery", {
+        await callBitrix(clientEndpoint, accessToken, "imconnector.send.status.delivery", {
           CONNECTOR: connector || CONNECTOR_ID,
           LINE: line,
           MESSAGES: [{
@@ -515,9 +520,9 @@ async function handleBotMessage(supabase: any, integration: any, payload: any) {
     const replyText = aiResult.content || aiResult.reply || "Desculpe, não consegui processar a sua mensagem.";
 
     const accessToken = await ensureValidToken(supabase, integration);
-
+    const clientEndpoint = integration.client_endpoint.endsWith("/") ? integration.client_endpoint : integration.client_endpoint + "/";
     // CORRECTO: imbot.message.add com BOT_ID obrigatório
-    const botReplyResult = await callBitrix(integration.client_endpoint, accessToken, "imbot.message.add", {
+    const botReplyResult = await callBitrix(clientEndpoint, accessToken, "imbot.message.add", {
       BOT_ID: botId,
       DIALOG_ID: dialogId,
       MESSAGE: replyText,
@@ -570,10 +575,10 @@ async function handleWelcome(supabase: any, integration: any, payload: any) {
 
   try {
     const accessToken = await ensureValidToken(supabase, integration);
-
+    const clientEndpoint = integration.client_endpoint.endsWith("/") ? integration.client_endpoint : integration.client_endpoint + "/";
     if (botId) {
       // CORRECTO: imbot.message.add com BOT_ID obrigatório
-      const result = await callBitrix(integration.client_endpoint, accessToken, "imbot.message.add", {
+      const result = await callBitrix(clientEndpoint, accessToken, "imbot.message.add", {
         BOT_ID: botId,
         DIALOG_ID: dialogId,
         MESSAGE: welcomeText,
@@ -634,9 +639,9 @@ async function handleLeadEvent(supabase: any, integration: any, payload: any) {
 
   try {
     const accessToken = await ensureValidToken(supabase, integration);
-
+    const clientEndpoint = integration.client_endpoint.endsWith("/") ? integration.client_endpoint : integration.client_endpoint + "/";
     // Fetch full lead data from Bitrix24
-    const leadResult = await callBitrix(integration.client_endpoint, accessToken, "crm.lead.get", { ID: bitrixLeadId });
+    const leadResult = await callBitrix(clientEndpoint, accessToken, "crm.lead.get", { ID: bitrixLeadId });
     const bxLead = leadResult.result;
 
     if (!bxLead) {
@@ -731,9 +736,9 @@ async function handleDealUpdate(supabase: any, integration: any, payload: any) {
 
   try {
     const accessToken = await ensureValidToken(supabase, integration);
-
+    const clientEndpoint = integration.client_endpoint.endsWith("/") ? integration.client_endpoint : integration.client_endpoint + "/";
     // Fetch full deal data
-    const dealResult = await callBitrix(integration.client_endpoint, accessToken, "crm.deal.get", { ID: dealId });
+    const dealResult = await callBitrix(clientEndpoint, accessToken, "crm.deal.get", { ID: dealId });
     const deal = dealResult.result;
 
     if (!deal) {
@@ -842,7 +847,7 @@ Deno.serve(async (req) => {
             });
           }
           const accessToken = await ensureValidToken(supabase, integration);
-          const endpoint = integration.client_endpoint;
+          const endpoint = integration.client_endpoint.endsWith("/") ? integration.client_endpoint : integration.client_endpoint + "/";
           const { operation, entity, entityId, spaEntityTypeId, fields, filters, targetPipelineId, targetStageId } = body;
           const entityMethodMap: Record<string, string> = {
             lead: "crm.lead", deal: "crm.deal", contact: "crm.contact", company: "crm.company",
@@ -900,7 +905,7 @@ Deno.serve(async (req) => {
           const accessToken = await ensureValidToken(supabase, integration);
           const entityTypeIdMap: Record<string, number> = { lead: 1, deal: 2, contact: 3, company: 4 };
           const ownerTypeId = entityTypeIdMap[body.entityType] || 2;
-          const result = await callBitrix(integration.client_endpoint, accessToken, "crm.timeline.comment.add", {
+          const result = await callBitrix(endpoint, accessToken, "crm.timeline.comment.add", {
             fields: {
               ENTITY_ID: body.entityId,
               ENTITY_TYPE_ID: ownerTypeId,
@@ -928,7 +933,7 @@ Deno.serve(async (req) => {
           const accessToken = await ensureValidToken(supabase, integration);
           const entityTypeIdMap: Record<string, number> = { lead: 1, deal: 2, contact: 3, company: 4 };
           const ownerTypeId = entityTypeIdMap[body.entityType] || 2;
-          const result = await callBitrix(integration.client_endpoint, accessToken, "crm.activity.add", {
+          const result = await callBitrix(endpoint, accessToken, "crm.activity.add", {
             fields: {
               OWNER_ID: body.entityId,
               OWNER_TYPE_ID: ownerTypeId,
@@ -962,7 +967,7 @@ Deno.serve(async (req) => {
           const accessToken = await ensureValidToken(supabase, integration);
           const entityMethodMap: Record<string, string> = { lead: "crm.lead", deal: "crm.deal", contact: "crm.contact" };
           const base = entityMethodMap[body.entityType] || "crm.deal";
-          const result = await callBitrix(integration.client_endpoint, accessToken, `${base}.update`, {
+          const result = await callBitrix(endpoint, accessToken, `${base}.update`, {
             id: body.entityId,
             fields: { ASSIGNED_BY_ID: body.userId },
           });
