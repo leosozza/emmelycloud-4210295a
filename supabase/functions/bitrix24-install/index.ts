@@ -889,8 +889,14 @@ Deno.serve(async (req) => {
       installSummary.connector_registered = connectorRegistered;
       if (connectorRegistered) installSummary.installed_modules.push("connector");
 
-      // 2. Do NOT auto-activate on lines — user must manually enable in Contact Center
-      const connectorActive = false;
+      // 2. Preserve existing connector_active state — do NOT reset to false on re-sync
+      // The user may have already activated the connector in Contact Center
+      const { data: currentIntState } = await supabase
+        .from("bitrix24_integrations")
+        .select("connector_active")
+        .eq("id", integrationId)
+        .single();
+      const connectorActive = currentIntState?.connector_active ?? false;
 
       // 3. Bind events (connector + bot + uninstall)
       const eventsUrl = `${supabaseUrl}/functions/v1/bitrix24-events`;

@@ -21,7 +21,6 @@ async function refreshAccessToken(
 
     if (data.error || !data.access_token) return null;
 
-    // Save new tokens
     await supabase
       .from("bitrix24_integrations")
       .update({
@@ -50,7 +49,7 @@ Deno.serve(async (req) => {
 
     const { data: integration, error: dbError } = await supabase
       .from("bitrix24_integrations")
-      .select("id, domain, client_endpoint, access_token, refresh_token, connector_registered, connector_active")
+      .select("id, domain, client_endpoint, access_token, refresh_token, connector_registered, connector_active, config, updated_at")
       .limit(1)
       .single();
 
@@ -96,15 +95,80 @@ Deno.serve(async (req) => {
       );
     }
 
+    // --- Gather effective status ---
+    // 1. Active channel mappings
+    const { data: channelMappings } = await supabase
+      .from("bitrix24_channel_mappings")
+      .select("id, line_id, line_name, is_active, channel")
+      .eq("integration_id", integration.id);
+
+    const activeLines = (channelMappings || []).filter((m: any) => m.is_active);
+
+    // 2. Recent connector activation logs (last 7 days)
+    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+    const { data: recentLogs } = await supabase
+      .from("bitrix24_debug_logs")
+      .select("event_type, error, created_at")
+      .eq("integration_id", integration.id)
+      .in("event_type", ["connector_activated", "connector_setup", "connector_setup_error"])
+      .gte("created_at", sevenDaysAgo)
+      .order("created_at", { ascending: false })
+      .limit(5);
+
+    // 3. Last error
+    const { data: lastErrorLog } = await supabase
+      .from("bitrix24_debug_logs")
+      .select("event_type, error, created_at")
+      .eq("integration_id", integration.id)
+      .not("error", "is", null)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    // 4. Compute effective status
+    const hasActiveLines = activeLines.length > 0;
+    const hadRecentActivation = (recentLogs || []).some((l: any) => l.event_type === "connector_activated" && !l.error);
+
+    // If there are active lines or recent successful activations, the connector IS effectively registered
+    const effectiveRegistered = integration.connector_registered || hasActiveLines || hadRecentActivation;
+    const effectiveActive = integration.connector_active || hasActiveLines;
+
+    // Auto-fix stale DB flags if effective status differs
+    if (effectiveRegistered !== integration.connector_registered || effectiveActive !== integration.connector_active) {
+      await supabase
+        .from("bitrix24_integrations")
+        .update({
+          connector_registered: effectiveRegistered,
+          connector_active: effectiveActive,
+        })
+        .eq("id", integration.id);
+    }
+
     return new Response(
       JSON.stringify({
         ok: true,
         message: "Conexão válida! Token ativo.",
         details: {
           domain: integration.domain,
-          connector_registered: integration.connector_registered,
-          connector_active: integration.connector_active,
+          connector_registered: effectiveRegistered,
+          connector_active: effectiveActive,
           app_status: bitrixData.result?.STATUS || "unknown",
+          active_lines: activeLines.map((l: any) => ({
+            line_id: l.line_id,
+            line_name: l.line_name,
+            channel: l.channel,
+          })),
+          recent_events: (recentLogs || []).map((l: any) => ({
+            event: l.event_type,
+            error: l.error,
+            at: l.created_at,
+          })),
+          last_error: lastErrorLog ? {
+            event: lastErrorLog.event_type,
+            error: lastErrorLog.error,
+            at: lastErrorLog.created_at,
+          } : null,
+          updated_at: integration.updated_at,
         },
       }),
       { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }

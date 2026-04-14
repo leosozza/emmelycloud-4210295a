@@ -177,7 +177,7 @@ Deno.serve(async (req) => {
       });
       console.log("[SETTINGS] imconnector.activate result:", JSON.stringify(activateResult));
 
-      // Step 2: Set connector data (handler URL for receiving messages)
+      // Step 2: Set connector data using official Bitrix API format (uppercase keys)
       const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
       const handlerUrl = `${supabaseUrl}/functions/v1/bitrix24-events`;
 
@@ -185,11 +185,10 @@ Deno.serve(async (req) => {
         CONNECTOR: connectorId,
         LINE: lineId,
         DATA: {
-          id: connectorId,
-          name: "Emmely Messages",
-          icon: { data_image: "" },
-          icon_disabled: { data_image: "" },
-          placement_handler: handlerUrl,
+          ID: connectorId,
+          NAME: "Emmely Messages",
+          URL: handlerUrl,
+          URL_IM: handlerUrl,
         },
       });
       console.log("[SETTINGS] imconnector.connector.data.set result:", JSON.stringify(dataSetResult));
@@ -235,9 +234,10 @@ Deno.serve(async (req) => {
         });
       }
 
-      // Step 5: Mark integration as active
+      // Step 5: Mark integration as active AND registered (connector is working)
       await supabase.from("bitrix24_integrations").update({
         connector_active: true,
+        connector_registered: true,
       }).eq("id", integration.id);
 
       // Log success
