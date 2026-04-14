@@ -712,7 +712,14 @@ Deno.serve(async (req) => {
       placementOptions.entity_id ||
       body.ENTITY_ID || "";
 
-    const entityTypeId = placementOptions.ENTITY_TYPE_ID || placementOptions.entity_type_id || body.ENTITY_TYPE_ID || "1";
+    // Infer entityTypeId from PLACEMENT value when not explicitly provided
+    const placement = body.PLACEMENT || "";
+    let inferredTypeId = "1"; // default Lead
+    if (placement.includes("DEAL")) inferredTypeId = "2";
+    else if (placement.includes("CONTACT")) inferredTypeId = "3";
+    else if (placement.includes("COMPANY")) inferredTypeId = "4";
+
+    const entityTypeId = placementOptions.ENTITY_TYPE_ID || placementOptions.entity_type_id || body.ENTITY_TYPE_ID || inferredTypeId;
 
     console.log("[CRM-TAB] entityId:", entityId, "entityTypeId:", entityTypeId, "memberId:", memberId);
 
