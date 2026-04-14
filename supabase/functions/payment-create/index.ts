@@ -532,7 +532,9 @@ Deno.serve(async (req) => {
         "asaas": "asaas",
         "direto": "direto", "direct": "direto",
       };
-      normalizedGateway = gwMap[normalizedGateway.toLowerCase()] || normalizedGateway;
+      const mapped = gwMap[normalizedGateway.toLowerCase()];
+      const validGateways = ["stripe", "asaas", "direto", "stripe_pt", "stripe_br"];
+      normalizedGateway = mapped && validGateways.includes(mapped) ? mapped : (validGateways.includes(normalizedGateway.toLowerCase()) ? normalizedGateway.toLowerCase() : null);
     }
 
     // Determine gateway: force_gateway overrides auto-detection
@@ -645,7 +647,10 @@ Deno.serve(async (req) => {
       result = await createAsaasPayment(asaasKey, amount, payment_method, customer_data, description, asaasEnv, due_date);
     }
 
-    const effectiveGateway = (payment_method === "direto" || normalizedGateway === "direto") ? "direto" : (normalizedGateway || gateway);
+    const validGws = ["stripe", "asaas", "direto", "stripe_pt", "stripe_br"];
+    const effectiveGateway = (payment_method === "direto" || normalizedGateway === "direto")
+      ? "direto"
+      : (normalizedGateway && validGws.includes(normalizedGateway) ? normalizedGateway : (stripeRegion ? `stripe_${stripeRegion}` : gateway));
 
     // Save transaction
     const { data: tx, error: txError } = await supabase.from("payment_transactions").insert({
@@ -658,7 +663,7 @@ Deno.serve(async (req) => {
       gateway_customer_id: result.gateway_customer_id || null,
       amount,
       currency,
-      payment_method: payment_method === "direto" ? "parcelado_direto" : payment_method,
+      payment_method: payment_method === "direto" ? "parcelado_direto" : (["card","pix","boleto","transferencia","parcelado_direto"].includes(payment_method) ? payment_method : "card"),
       status: result.status || "pending",
       payment_url: result.payment_url,
       pix_qr_code: result.pix_qr_code || null,
