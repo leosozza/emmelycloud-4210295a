@@ -223,10 +223,20 @@ Deno.serve(async (req) => {
           status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
-      const phone = conv.contact_phone.replace(/[^0-9]/g, "");
+      const rawPhone = conv.contact_phone;
+      // Detect LID contacts: stored as "196847578665004@lid" by webhook
+      const isLidContact = rawPhone.includes("@lid");
+      const phone = rawPhone.replace(/@.*$/, "").replace(/[^0-9]/g, "");
 
       // ── WUZAPI (WhatsApp QRCode) ──
       if (resolvedProvider === "wuzapi") {
+        // For LID contacts, pass the full JID with @lid suffix
+        // For regular phone contacts, pass just the digits
+        const wuzapiPhone = isLidContact ? `${phone}@lid` : phone;
+        if (isLidContact) {
+          console.log(`[MESSAGE-SEND] Detected LID contact, using JID: ${wuzapiPhone}`);
+        }
+
         let wuzapiBaseUrl = "";
         let wuzapiToken = "";
 
@@ -251,7 +261,7 @@ Deno.serve(async (req) => {
         wuzapiBaseUrl = wuzapiBaseUrl.replace(/\/+$/, "");
 
         let wuzapiEndpoint = "/chat/send/text";
-        let wuzapiPayload: any = { Phone: phone, Body: content };
+        let wuzapiPayload: any = { Phone: wuzapiPhone, Body: content };
 
         if (message_type === "interactive_buttons" && resolvedInteractiveData) {
           wuzapiEndpoint = "/chat/send/buttons";
@@ -260,7 +270,7 @@ Deno.serve(async (req) => {
             buttonText: { displayText: (btn.title || btn.label || `Opção ${i + 1}`).substring(0, 20) },
             type: 1,
           }));
-          wuzapiPayload = { Phone: phone, Body: content, Buttons: buttons };
+          wuzapiPayload = { Phone: wuzapiPhone, Body: content, Buttons: buttons };
         } else if (message_type === "interactive_list" && resolvedInteractiveData) {
           wuzapiEndpoint = "/chat/send/list";
           const rows = (resolvedInteractiveData as any[]).slice(0, 10).map((item: any, i: number) => ({
@@ -268,22 +278,22 @@ Deno.serve(async (req) => {
             Title: (item.title || `Item ${i + 1}`).substring(0, 24),
             Description: (item.description || "").substring(0, 72),
           }));
-          wuzapiPayload = { Phone: phone, Body: content, ButtonText: "Selecionar", Title: "Opções", Sections: [{ Title: "Opções", Rows: rows }] };
+          wuzapiPayload = { Phone: wuzapiPhone, Body: content, ButtonText: "Selecionar", Title: "Opções", Sections: [{ Title: "Opções", Rows: rows }] };
         } else if (message_type === "image" && resolvedInteractiveData) {
           wuzapiEndpoint = "/chat/send/image";
-          wuzapiPayload = { Phone: phone, Image: resolvedInteractiveData.url || resolvedInteractiveData, Caption: content };
+          wuzapiPayload = { Phone: wuzapiPhone, Image: resolvedInteractiveData.url || resolvedInteractiveData, Caption: content };
         } else if (message_type === "document" && resolvedInteractiveData) {
           wuzapiEndpoint = "/chat/send/document";
-          wuzapiPayload = { Phone: phone, Document: resolvedInteractiveData.url || resolvedInteractiveData, FileName: resolvedInteractiveData.filename || "documento", Caption: content };
+          wuzapiPayload = { Phone: wuzapiPhone, Document: resolvedInteractiveData.url || resolvedInteractiveData, FileName: resolvedInteractiveData.filename || "documento", Caption: content };
         } else if (message_type === "audio" && resolvedInteractiveData) {
           wuzapiEndpoint = "/chat/send/audio";
-          wuzapiPayload = { Phone: phone, Audio: resolvedInteractiveData.url || resolvedInteractiveData };
+          wuzapiPayload = { Phone: wuzapiPhone, Audio: resolvedInteractiveData.url || resolvedInteractiveData };
         } else if (message_type === "video" && resolvedInteractiveData) {
           wuzapiEndpoint = "/chat/send/video";
-          wuzapiPayload = { Phone: phone, Video: resolvedInteractiveData.url || resolvedInteractiveData, Caption: content };
+          wuzapiPayload = { Phone: wuzapiPhone, Video: resolvedInteractiveData.url || resolvedInteractiveData, Caption: content };
         } else if (message_type === "location" && resolvedInteractiveData) {
           wuzapiEndpoint = "/chat/send/location";
-          wuzapiPayload = { Phone: phone, Latitude: resolvedInteractiveData.latitude, Longitude: resolvedInteractiveData.longitude, Name: resolvedInteractiveData.name || "", Address: resolvedInteractiveData.address || "" };
+          wuzapiPayload = { Phone: wuzapiPhone, Latitude: resolvedInteractiveData.latitude, Longitude: resolvedInteractiveData.longitude, Name: resolvedInteractiveData.name || "", Address: resolvedInteractiveData.address || "" };
         }
 
         console.log(`[MESSAGE-SEND] Sending via WhatsApp QRCode: ${wuzapiEndpoint}`);
