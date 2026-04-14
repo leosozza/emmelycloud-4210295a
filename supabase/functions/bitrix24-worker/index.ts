@@ -343,12 +343,14 @@ async function handleConnectorMessage(supabase: any, integration: any, payload: 
         continue;
       }
       // Register inbound message in dedup cache
-      await supabase.from("sync_dedup_cache").upsert({
-        entity_type: "message",
-        entity_id: "inbound",
-        external_id: String(messageId),
-        source: "bitrix24",
-      }, { onConflict: "entity_type,external_id,source" }).catch(() => {});
+      try {
+        await supabase.from("sync_dedup_cache").upsert({
+          entity_type: "message",
+          entity_id: "inbound",
+          external_id: String(messageId),
+          source: "bitrix24",
+        }, { onConflict: "entity_type,external_id,source" });
+      } catch (_e) { /* ignore dedup cache errors */ }
     }
 
     // Skip bot messages
@@ -383,17 +385,21 @@ async function handleConnectorMessage(supabase: any, integration: any, payload: 
       .eq("is_active", true)
       .maybeSingle();
 
-    // Find conversation by user info from message
-    const chatUser = msg.chat || msg.CHAT || {};
-    const userList = msg.user || msg.USER || {};
-    // Try to find first non-bot user
-    let contactId = "";
-    if (typeof userList === "object") {
-      for (const u of Object.values(userList) as any[]) {
-        const name = u.name || u.NAME || "";
-        if (!isBotMessage(name)) {
-          contactId = u.id || u.ID || "";
-          break;
+    // Find conversation by chat ID (external contact identifier)
+    const chatData2 = msg.chat || msg.CHAT || {};
+    const chatId = chatData2.id || chatData2.ID || "";
+    let contactId = chatId;
+
+    // Fallback: try user list for non-bot user
+    if (!contactId) {
+      const userList = msg.user || msg.USER || {};
+      if (typeof userList === "object") {
+        for (const u of Object.values(userList) as any[]) {
+          const name = u.name || u.NAME || "";
+          if (!isBotMessage(name)) {
+            contactId = u.id || u.ID || "";
+            break;
+          }
         }
       }
     }
@@ -404,11 +410,13 @@ async function handleConnectorMessage(supabase: any, integration: any, payload: 
       continue;
     }
 
-    // Find conversation
+    console.log("[WORKER] Contact ID resolved:", contactId);
+
+    // Find conversation - try both raw ID and @lid suffix
     const { data: conversation } = await supabase
       .from("conversations")
       .select("id, contact_phone, contact_instagram, channel")
-      .or(`contact_phone.eq.${contactId},contact_instagram.eq.${contactId}`)
+      .or(`contact_phone.eq.${contactId},contact_phone.eq.${contactId}@lid,contact_instagram.eq.${contactId}`)
       .maybeSingle();
 
     if (conversation) {
