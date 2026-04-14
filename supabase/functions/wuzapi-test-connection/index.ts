@@ -197,6 +197,7 @@ Deno.serve(async (req) => {
     let loggedIn = false;
     let qrCode: string | null = null;
     let phoneNumber: string | null = null;
+    let currentEvents = "";
 
     try {
       const statusRes = await fetch(`${resolvedBaseUrl}/session/status`, {
