@@ -99,13 +99,17 @@ async function ensureValidToken(supabase: any, integration: any): Promise<string
 }
 
 async function debugLog(supabase: any, integrationId: string | null, eventType: string, direction: string, payload: any, error?: string) {
-  await supabase.from("bitrix24_debug_logs").insert({
-    integration_id: integrationId,
-    event_type: eventType,
-    direction,
-    payload,
-    error: error || null,
-  }).catch(() => {});
+  try {
+    await supabase.from("bitrix24_debug_logs").insert({
+      integration_id: integrationId,
+      event_type: eventType,
+      direction,
+      payload,
+      error: error || null,
+    });
+  } catch {
+    // ignore debug log errors
+  }
 }
 
 // ─── Bitrix24 Configurable Activity Badge Helper ───
