@@ -69,13 +69,18 @@ async function notifyBitrix24DealPayment(supabase: any, txMeta: any, paidAmount:
     const deal = dealData.result || {};
     const currentAmount = parseFloat(deal.OPPORTUNITY || "0");
 
-    // 2. Update OPPORTUNITY
+    // 2. Update OPPORTUNITY + UF fields
     const newAmount = Math.max(0, currentAmount - paidAmount);
-    const dealUpdateFields: Record<string, any> = { OPPORTUNITY: newAmount };
+    const totalPaid = paidAmount + parseFloat(deal.UF_CRM_EMMELY_TOTAL_PAID || "0");
+    const paymentStatus = newAmount === 0 ? "paid" : "partial";
+    const dealUpdateFields: Record<string, any> = {
+      OPPORTUNITY: newAmount,
+      UF_CRM_EMMELY_TOTAL_PAID: totalPaid,
+      UF_CRM_EMMELY_PAYMENT_STATUS: paymentStatus,
+    };
 
     // If balance is zero, move deal to paid/won stage
     if (newAmount === 0) {
-      // Try custom paid stage field first, fallback to WON
       const paidStageId = deal.UF_CRM_EMMELY_PAID_STAGE || "WON";
       dealUpdateFields.STAGE_ID = paidStageId;
       console.log(`[STRIPE-WEBHOOK] Deal ${dealId} fully paid, moving to stage ${paidStageId}`);
@@ -101,17 +106,29 @@ async function notifyBitrix24DealPayment(supabase: any, txMeta: any, paidAmount:
         fields: {
           ENTITY_ID: dealId,
           ENTITY_TYPE: "deal",
-          COMMENT: `✅ Pagamento confirmado: ${fmt(paidAmount)}\nSaldo em aberto atualizado para ${fmt(newAmount)}${stageNote}`,
+          COMMENT: `✅ Pagamento confirmado: ${fmt(paidAmount)}\nTotal pago: ${fmt(totalPaid)}\nSaldo em aberto: ${fmt(newAmount)}${stageNote}`,
         },
         auth: accessToken,
       }),
     });
 
-    console.log(`[STRIPE-WEBHOOK] Bitrix24 deal ${dealId} updated: ${currentAmount} -> ${newAmount}`);
+    console.log(`[STRIPE-WEBHOOK] Bitrix24 deal ${dealId} updated: ${currentAmount} -> ${newAmount}, totalPaid: ${totalPaid}`);
 
-    // 4. Mark Smart Invoice as paid if linked
+    // 4. Mark Smart Invoice as paid if linked + update UF fields
     if (txMeta?.bitrix_invoice_id) {
       try {
+        // Count paid installments in this group
+        let paidCount = 1;
+        const groupId = txMeta?.installment_group_id;
+        if (groupId) {
+          const { count } = await supabase
+            .from("payment_transactions")
+            .select("id", { count: "exact", head: true })
+            .eq("metadata->>installment_group_id", groupId)
+            .eq("status", "confirmed");
+          paidCount = count || 1;
+        }
+
         const stagesRes = await fetch(`${endpoint}crm.status.list`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -126,13 +143,37 @@ async function notifyBitrix24DealPayment(supabase: any, txMeta: any, paidAmount:
         );
         const stageId = paidStage?.STATUS_ID || "DT31_3:P";
 
+        // Find next unpaid due date in group
+        let nextDueDate: string | null = null;
+        if (groupId) {
+          const { data: nextTx } = await supabase
+            .from("payment_transactions")
+            .select("metadata")
+            .eq("metadata->>installment_group_id", groupId)
+            .eq("status", "pending")
+            .order("created_at", { ascending: true })
+            .limit(1)
+            .maybeSingle();
+          nextDueDate = (nextTx?.metadata as any)?.due_date || null;
+        }
+
+        const invoiceUpdateFields: Record<string, any> = {
+          stageId,
+          UF_CRM_69B83DDB1F59D: "paid",
+          UF_CRM_69B83DDB32521: paidAmount,
+          UF_CRM_69B83DDB462B7: paidCount,
+        };
+        if (nextDueDate) {
+          invoiceUpdateFields.UF_CRM_69B83DDB525C9 = nextDueDate;
+        }
+
         await fetch(`${endpoint}crm.item.update`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             entityTypeId: 31,
             id: txMeta.bitrix_invoice_id,
-            fields: { stageId },
+            fields: invoiceUpdateFields,
             auth: accessToken,
           }),
         });
@@ -144,13 +185,13 @@ async function notifyBitrix24DealPayment(supabase: any, txMeta: any, paidAmount:
             fields: {
               ENTITY_ID: txMeta.bitrix_invoice_id,
               ENTITY_TYPE: "dynamic_31",
-              COMMENT: `✅ Pagamento confirmado: ${fmt(paidAmount)}`,
+              COMMENT: `✅ Pagamento confirmado: ${fmt(paidAmount)}\nParcelas pagas: ${paidCount}`,
             },
             auth: accessToken,
           }),
         });
 
-        console.log(`[STRIPE-WEBHOOK] Smart Invoice ${txMeta.bitrix_invoice_id} marked as paid`);
+        console.log(`[STRIPE-WEBHOOK] Smart Invoice ${txMeta.bitrix_invoice_id} marked as paid, paidCount: ${paidCount}`);
       } catch (invErr) {
         console.error("[STRIPE-WEBHOOK] Smart Invoice update error:", invErr);
       }

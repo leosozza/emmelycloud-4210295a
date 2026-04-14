@@ -309,6 +309,13 @@ Deno.serve(async (req) => {
             begindate: new Date().toISOString().split("T")[0],
             closedate: parcel.due_date,
             comments: `Fatura gerada automaticamente pelo Emmely Pay. ${label}. Grupo: ${groupId}`,
+            UF_CRM_69B83DDB1F59D: "pending",
+            UF_CRM_69B83DDB2661E: groupId,
+            UF_CRM_69B83DDB2B85D: forceGateway || "stripe",
+            UF_CRM_69B83DDB38FF9: tx.payment_url || "",
+            UF_CRM_69B83DDB3EAFC: String(totalCount),
+            UF_CRM_69B83DDB4C552: parcel.amount,
+            UF_CRM_69B83DDB525C9: parcel.due_date,
           },
         });
 
@@ -330,6 +337,22 @@ Deno.serve(async (req) => {
         }
       } catch (e) {
         console.error("[PAYMENT-WEBHOOK] Smart Invoice error:", e);
+      }
+    }
+
+    // Update Deal UF fields with payment URL and status
+    if (transactions.length > 0) {
+      try {
+        const firstPaymentUrl = transactions.find((t: any) => t.payment_url)?.payment_url || "";
+        await callBitrix(integration.client_endpoint, accessToken, "crm.deal.update", {
+          ID: dealId,
+          fields: {
+            UF_CRM_EMMELY_PAYMENT_URL: firstPaymentUrl,
+            UF_CRM_EMMELY_PAYMENT_STATUS: "pending",
+          },
+        });
+      } catch (e) {
+        console.error("[PAYMENT-WEBHOOK] Deal UF update error:", e);
       }
     }
 
