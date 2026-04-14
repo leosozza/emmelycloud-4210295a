@@ -13,11 +13,11 @@ const jsonHeaders = {
 const CONNECTOR_ID = "emmely_connector";
 
 async function callBitrix(clientEndpoint: string, accessToken: string, method: string, params: Record<string, any> = {}): Promise<any> {
-  const url = `${clientEndpoint}${method}`;
+  const url = `${clientEndpoint}${method}?auth=${encodeURIComponent(accessToken)}`;
   const response = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ ...params, auth: accessToken }),
+    body: JSON.stringify(params),
   });
   return await response.json();
 }
