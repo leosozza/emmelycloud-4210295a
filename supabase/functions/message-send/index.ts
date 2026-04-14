@@ -89,7 +89,7 @@ Deno.serve(async (req) => {
 
   try {
     const body = await req.json();
-    const { conversation_id, content, message_type, resolvedInteractiveData: bodyInteractiveData, skip_db_save, instance_id } = body;
+    const { conversation_id, content, message_type, resolvedInteractiveData: bodyInteractiveData, skip_db_save, instance_id, bitrix_entity_id, bitrix_entity_type_id } = body;
     const media_base64: string | undefined = body.media_base64;
     const media_mime_type: string | undefined = body.media_mime_type;
     const file_name: string | undefined = body.file_name;
@@ -410,10 +410,37 @@ Deno.serve(async (req) => {
         }, { onConflict: "entity_type,external_id,source" }).then(() => {})
       }
 
-      await supabase.from("conversations").update({
+      const updatePayload: any = {
         last_message_at: new Date().toISOString(),
         last_message_preview: content.slice(0, 100),
-      }).eq("id", conversation_id);
+      };
+
+      // Persist CRM entity context in bot_state if provided
+      if (bitrix_entity_id) {
+        const entityPrefix = bitrix_entity_type_id ? `${bitrix_entity_type_id}:${bitrix_entity_id}` : bitrix_entity_id;
+        const { data: existingConv } = await supabase
+          .from("conversations")
+          .select("bot_state")
+          .eq("id", conversation_id)
+          .single();
+        const existingState = (existingConv?.bot_state as any) || {};
+        updatePayload.bot_state = {
+          ...existingState,
+          bitrix_entity_id: entityPrefix,
+          ...(bitrix_entity_type_id === "2" ? { bitrix_deal_id: String(bitrix_entity_id) } : {}),
+        };
+        console.log(`[MESSAGE-SEND] Persisted CRM context: ${entityPrefix}`);
+
+        // Also link lead.conversation_id if a matching lead exists
+        await supabase
+          .from("leads")
+          .update({ conversation_id })
+          .eq("bitrix24_id", String(bitrix_entity_id))
+          .is("conversation_id", null)
+          .then(() => {});
+      }
+
+      await supabase.from("conversations").update(updatePayload).eq("id", conversation_id);
     }
 
     // Create Bitrix24 badge activity for sent message (fire and forget)
