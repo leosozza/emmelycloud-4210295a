@@ -271,7 +271,7 @@ Deno.serve(async (req) => {
             buttonText: { displayText: (btn.title || btn.label || `Opção ${i + 1}`).substring(0, 20) },
             type: 1,
           }));
-          wuzapiPayload = { Phone: phone, Body: content, Buttons: buttons };
+          wuzapiPayload = { Phone: wuzapiPhone, Body: content, Buttons: buttons };
         } else if (message_type === "interactive_list" && resolvedInteractiveData) {
           wuzapiEndpoint = "/chat/send/list";
           const rows = (resolvedInteractiveData as any[]).slice(0, 10).map((item: any, i: number) => ({
@@ -279,22 +279,22 @@ Deno.serve(async (req) => {
             Title: (item.title || `Item ${i + 1}`).substring(0, 24),
             Description: (item.description || "").substring(0, 72),
           }));
-          wuzapiPayload = { Phone: phone, Body: content, ButtonText: "Selecionar", Title: "Opções", Sections: [{ Title: "Opções", Rows: rows }] };
+          wuzapiPayload = { Phone: wuzapiPhone, Body: content, ButtonText: "Selecionar", Title: "Opções", Sections: [{ Title: "Opções", Rows: rows }] };
         } else if (message_type === "image" && resolvedInteractiveData) {
           wuzapiEndpoint = "/chat/send/image";
-          wuzapiPayload = { Phone: phone, Image: resolvedInteractiveData.url || resolvedInteractiveData, Caption: content };
+          wuzapiPayload = { Phone: wuzapiPhone, Image: resolvedInteractiveData.url || resolvedInteractiveData, Caption: content };
         } else if (message_type === "document" && resolvedInteractiveData) {
           wuzapiEndpoint = "/chat/send/document";
-          wuzapiPayload = { Phone: phone, Document: resolvedInteractiveData.url || resolvedInteractiveData, FileName: resolvedInteractiveData.filename || "documento", Caption: content };
+          wuzapiPayload = { Phone: wuzapiPhone, Document: resolvedInteractiveData.url || resolvedInteractiveData, FileName: resolvedInteractiveData.filename || "documento", Caption: content };
         } else if (message_type === "audio" && resolvedInteractiveData) {
           wuzapiEndpoint = "/chat/send/audio";
-          wuzapiPayload = { Phone: phone, Audio: resolvedInteractiveData.url || resolvedInteractiveData };
+          wuzapiPayload = { Phone: wuzapiPhone, Audio: resolvedInteractiveData.url || resolvedInteractiveData };
         } else if (message_type === "video" && resolvedInteractiveData) {
           wuzapiEndpoint = "/chat/send/video";
-          wuzapiPayload = { Phone: phone, Video: resolvedInteractiveData.url || resolvedInteractiveData, Caption: content };
+          wuzapiPayload = { Phone: wuzapiPhone, Video: resolvedInteractiveData.url || resolvedInteractiveData, Caption: content };
         } else if (message_type === "location" && resolvedInteractiveData) {
           wuzapiEndpoint = "/chat/send/location";
-          wuzapiPayload = { Phone: phone, Latitude: resolvedInteractiveData.latitude, Longitude: resolvedInteractiveData.longitude, Name: resolvedInteractiveData.name || "", Address: resolvedInteractiveData.address || "" };
+          wuzapiPayload = { Phone: wuzapiPhone, Latitude: resolvedInteractiveData.latitude, Longitude: resolvedInteractiveData.longitude, Name: resolvedInteractiveData.name || "", Address: resolvedInteractiveData.address || "" };
         }
 
         console.log(`[MESSAGE-SEND] Sending via WhatsApp QRCode: ${wuzapiEndpoint}`);
