@@ -26,6 +26,53 @@ function parseBody(bodyText: string, contentType: string): Record<string, any> {
   return data;
 }
 
+function toQueryString(params: Record<string, any>, prefix?: string): string {
+  const query: string[] = [];
+  for (const [key, value] of Object.entries(params)) {
+    const k = prefix ? `${prefix}[${key}]` : key;
+    if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
+      query.push(toQueryString(value, k));
+    } else if (Array.isArray(value)) {
+      value.forEach((v, index) => {
+        if (typeof v === 'object') {
+          query.push(toQueryString(v, `${k}[${index}]`));
+        } else {
+          query.push(`${encodeURIComponent(`${k}[${index}]`)}=${encodeURIComponent(v)}`);
+        }
+      });
+    } else {
+      query.push(`${encodeURIComponent(k)}=${encodeURIComponent(value)}`);
+    }
+  }
+  return query.join("&");
+}
+
+async function callBitrixBatch(
+  clientEndpoint: string,
+  accessToken: string,
+  commands: Record<string, { method: string; params: Record<string, any> }>,
+  haltOnFailure = false
+): Promise<any> {
+  const url = `${clientEndpoint}batch`;
+  const cmdPayload: Record<string, string> = {};
+
+  for (const [key, cmd] of Object.entries(commands)) {
+    const qs = toQueryString(cmd.params);
+    cmdPayload[key] = `${cmd.method}${qs ? `?${qs}` : ""}`;
+  }
+
+  const response = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      halt: haltOnFailure ? 1 : 0,
+      cmd: cmdPayload,
+      auth: accessToken,
+    }),
+  });
+  return await response.json();
+}
+
 async function callBitrix(
   clientEndpoint: string,
   accessToken: string,
@@ -41,6 +88,7 @@ async function callBitrix(
   const data = await response.json();
   return data;
 }
+
 
 // callBitrix with auto-retry on expired token
 async function callBitrixWithRefresh(
@@ -364,10 +412,13 @@ async function handleCreateCharge(
     let firstGateway = "";
     let invoicesCreated = 0;
 
+    const invoiceBatchCmds: Record<string, any> = {};
+    const parcelToTxMap: Record<string, string> = {};
+
     for (const parcel of parcels) {
       const label = parcel.is_down ? "Entrada" : `Parcela ${parcel.number}/${numInstallments}`;
 
-      // 1. Create payment transaction
+      // 1. Create payment transaction (Supabase)
       const paymentBody: Record<string, any> = {
         amount: parcel.amount,
         currency,
@@ -413,15 +464,14 @@ async function handleCreateCharge(
 
       if (!firstChargeId && tx.id) firstChargeId = tx.id;
       if (!firstGateway && tx.gateway) firstGateway = tx.gateway;
-
-      // 2. Create Smart Invoice (Universal API, entityTypeId: 31) in Bitrix24
-      if (integration?.client_endpoint && integration?.access_token && dealId) {
-        try {
-          const invoiceResult = await callBitrix(
-            integration.client_endpoint,
-            integration.access_token,
-            "crm.item.add",
-            {
+      
+      if (tx.id) {
+        parcelToTxMap[`parcel_${parcel.number}`] = tx.id;
+        // Queue Bitrix24 invoice creation
+        if (integration?.client_endpoint && integration?.access_token && dealId) {
+          invoiceBatchCmds[`parcel_${parcel.number}`] = {
+            method: "crm.item.add",
+            params: {
               entityTypeId: 31,
               fields: {
                 title: `${label} - ${description}`,
@@ -435,30 +485,34 @@ async function handleCreateCharge(
                 responsibleId: 1,
               },
             }
-          );
-          const invoiceId = invoiceResult.result?.item?.id || invoiceResult.result;
-          if (invoiceId) {
-            invoicesCreated++;
-            console.log(`[ROBOT-HANDLER] Invoice created: ${invoiceId} for ${label}`);
-            // Update transaction metadata with old invoice ID
-            if (tx.id) {
-              await fetch(`${supabaseUrl}/functions/v1/payment-create`, {
-                method: "PATCH",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                  transaction_id: tx.id,
-                  metadata_update: { bitrix_old_invoice_id: invoiceId },
-                }),
-              });
-            }
-          } else {
-            console.error("[ROBOT-HANDLER] Invoice creation failed:", JSON.stringify(invoiceResult));
-          }
-        } catch (invErr) {
-          console.error("[ROBOT-HANDLER] Invoice error:", invErr);
+          };
         }
       }
     }
+
+    // 2. Execute Bitrix24 Smart Invoices in Batch
+    if (Object.keys(invoiceBatchCmds).length > 0) {
+      console.log(`[ROBOT-HANDLER] Creating ${Object.keys(invoiceBatchCmds).length} Smart Invoices in batch...`);
+      const batchResults = await callBitrixBatch(integration!.client_endpoint, integration!.access_token, invoiceBatchCmds);
+      
+      // Post-process: Update transactions with invoice IDs
+      for (const [key, txId] of Object.entries(parcelToTxMap)) {
+        const invRes = batchResults.result?.result?.[key];
+        const invoiceId = invRes?.item?.id || invRes;
+        if (invoiceId) {
+          invoicesCreated++;
+          await fetch(`${supabaseUrl}/functions/v1/payment-create`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              transaction_id: txId,
+              metadata_update: { bitrix_old_invoice_id: invoiceId },
+            }),
+          });
+        }
+      }
+    }
+
 
     return {
       charge_id: firstChargeId,

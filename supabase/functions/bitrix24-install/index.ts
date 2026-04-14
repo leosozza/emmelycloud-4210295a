@@ -82,6 +82,54 @@ function extractDomain(data: any, req: Request): string | null {
   return null;
 }
 
+function toQueryString(params: Record<string, any>, prefix?: string): string {
+  const query: string[] = [];
+  for (const [key, value] of Object.entries(params)) {
+    const k = prefix ? `${prefix}[${key}]` : key;
+    if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
+      query.push(toQueryString(value, k));
+    } else if (Array.isArray(value)) {
+      value.forEach((v, index) => {
+        if (typeof v === 'object') {
+          query.push(toQueryString(v, `${k}[${index}]`));
+        } else {
+          query.push(`${encodeURIComponent(`${k}[${index}]`)}=${encodeURIComponent(v)}`);
+        }
+      });
+    } else {
+      query.push(`${encodeURIComponent(k)}=${encodeURIComponent(value)}`);
+    }
+  }
+  return query.join("&");
+}
+
+async function callBitrixBatch(
+  clientEndpoint: string,
+  accessToken: string,
+  commands: Record<string, { method: string; params: Record<string, any> }>,
+  haltOnFailure = false
+): Promise<any> {
+  const url = `${clientEndpoint}batch`;
+  const cmdPayload: Record<string, string> = {};
+
+  for (const [key, cmd] of Object.entries(commands)) {
+    const qs = toQueryString(cmd.params);
+    cmdPayload[key] = `${cmd.method}${qs ? `?${qs}` : ""}`;
+  }
+
+  const response = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      halt: haltOnFailure ? 1 : 0,
+      cmd: cmdPayload,
+      auth: accessToken,
+    }),
+  });
+  return await response.json();
+}
+
+
 async function callBitrix(
   clientEndpoint: string,
   accessToken: string,
@@ -95,11 +143,12 @@ async function callBitrix(
     body: JSON.stringify({ ...params, auth: accessToken }),
   });
   const data = await response.json();
-  if (data.error && data.error !== "CONNECTOR_ALREADY_EXISTS") {
+  if (data.error && data.error !== "CONNECTOR_ALREADY_EXISTS" && data.error !== "ERROR_METHOD_NOT_FOUND") {
     console.error(`[BITRIX API] ${method} error:`, data.error, data.error_description);
   }
   return data;
 }
+
 
 async function debugLog(
   supabase: any,
@@ -154,29 +203,40 @@ Deno.serve(async (req) => {
       const token = integration.access_token;
       const report: any = { deleted_deal: [], deleted_lead: [], created_deal: [], created_lead: [], errors: [] };
 
-      // 1. List and delete existing EMMELY fields for Deal
+      // 1. Delete existing EMMELY fields (Batch)
       const dealFieldsList = await callBitrix(ep, token, "crm.deal.userfield.list", { filter: {} });
-      const dealFields = Array.isArray(dealFieldsList.result) ? dealFieldsList.result : [];
-      for (const f of dealFields) {
-        if (f.FIELD_NAME && f.FIELD_NAME.startsWith("UF_CRM_EMMELY_")) {
-          const delRes = await callBitrix(ep, token, "crm.deal.userfield.delete", { id: f.ID });
-          if (delRes.result) { report.deleted_deal.push(f.FIELD_NAME); }
-          else { report.errors.push(`delete deal ${f.FIELD_NAME}: ${delRes.error || 'unknown'}`); }
-        }
-      }
-
-      // 2. List and delete existing EMMELY fields for Lead
       const leadFieldsList = await callBitrix(ep, token, "crm.lead.userfield.list", { filter: {} });
-      const leadFields = Array.isArray(leadFieldsList.result) ? leadFieldsList.result : [];
-      for (const f of leadFields) {
-        if (f.FIELD_NAME && f.FIELD_NAME.startsWith("UF_CRM_EMMELY_")) {
-          const delRes = await callBitrix(ep, token, "crm.lead.userfield.delete", { id: f.ID });
-          if (delRes.result) { report.deleted_lead.push(f.FIELD_NAME); }
-          else { report.errors.push(`delete lead ${f.FIELD_NAME}: ${delRes.error || 'unknown'}`); }
+      
+      const delCommands: Record<string, any> = {};
+      const dealFields = Array.isArray(dealFieldsList.result) ? dealFieldsList.result : [];
+      dealFields.forEach((f: any) => {
+        if (f.FIELD_NAME?.startsWith("UF_CRM_EMMELY_")) {
+          delCommands[`del_deal_${f.ID}`] = { method: "crm.deal.userfield.delete", params: { id: f.ID } };
         }
+      });
+      
+      const leadFields = Array.isArray(leadFieldsList.result) ? leadFieldsList.result : [];
+      leadFields.forEach((f: any) => {
+        if (f.FIELD_NAME?.startsWith("UF_CRM_EMMELY_")) {
+          delCommands[`del_lead_${f.ID}`] = { method: "crm.lead.userfield.delete", params: { id: f.ID } };
+        }
+      });
+
+      if (Object.keys(delCommands).length > 0) {
+        console.log(`[SYNC] Deleting ${Object.keys(delCommands).length} fields in batch...`);
+        const delResults = await callBitrixBatch(ep, token, delCommands);
+        // Map results to report
+        Object.keys(delCommands).forEach(key => {
+          const fieldName = key.includes("deal") ? "deal" : "lead";
+          if (delResults.result?.result?.[key]) report[`deleted_${fieldName}`].push(key);
+          else report.errors.push(`delete ${key}: ${delResults.result?.result_error?.[key]?.error || 'unknown'}`);
+        });
       }
 
-      // 3. Recreate all fields
+      // 3. Recreate all fields (Batch)
+      // We'll split creation into Deal and Lead batches to avoid the 50 limit if needed, 
+      // though currently we have 17 * 2 = 34 fields.
+      const addCommands: Record<string, any> = {};
       const emmelyUserFields = [
         {
           FIELD_NAME: "UF_CRM_EMMELY_PAYMENT_STATUS",
@@ -353,22 +413,22 @@ Deno.serve(async (req) => {
         },
       ];
 
-      const entityApis = [
-        { name: "Deal", add: "crm.deal.userfield.add" },
-        { name: "Lead", add: "crm.lead.userfield.add" },
-      ];
+      emmelyUserFields.forEach(f => {
+        addCommands[`add_deal_${f.FIELD_NAME}`] = { method: "crm.deal.userfield.add", params: { fields: f } };
+        addCommands[`add_lead_${f.FIELD_NAME}`] = { method: "crm.lead.userfield.add", params: { fields: f } };
+      });
 
-      for (const entity of entityApis) {
-        for (const field of emmelyUserFields) {
-          const result = await callBitrix(ep, token, entity.add, { fields: field });
-          const errStr = String(result.error || "") + " " + String(result.error_description || "");
-          if (result.error && !errStr.includes("ALREADY") && !errStr.includes("DUPLICATE") && !errStr.includes("FIELD_NAME_DUPLICATED")) {
-            report.errors.push(`create ${entity.name} ${field.FIELD_NAME}: ${result.error}`);
-          } else {
-            (entity.name === "Deal" ? report.created_deal : report.created_lead).push(field.FIELD_NAME);
-          }
+      console.log(`[SYNC] Creating ${Object.keys(addCommands).length} fields in batch...`);
+      const addResults = await callBitrixBatch(ep, token, addCommands);
+      Object.keys(addCommands).forEach(key => {
+        const fieldName = key.includes("deal") ? "created_deal" : "created_lead";
+        if (addResults.result?.result?.[key]) report[fieldName].push(key);
+        else {
+          const err = addResults.result?.result_error?.[key]?.error || 'unknown';
+          if (!err.includes("ALREADY") && !err.includes("DUPLICATE")) report.errors.push(`create ${key}: ${err}`);
         }
-      }
+      });
+
 
       // --- Re-register robots with updated template options ---
       const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
@@ -601,24 +661,34 @@ Deno.serve(async (req) => {
         },
       ];
 
+      const robotBatchCmds: Record<string, any> = {};
       for (const robot of repairRobots) {
-        await callBitrix(ep, token, "bizproc.robot.delete", { CODE: robot.CODE });
-        const addResult = await callBitrix(ep, token, "bizproc.robot.add", {
-          CODE: robot.CODE,
-          HANDLER: robotHandlerUrl,
-          AUTH_USER_ID: 1,
-          NAME: robot.NAME,
-          USE_SUBSCRIPTION: "Y",
-          PROPERTIES: robot.PROPERTIES,
-          RETURN_PROPERTIES: robot.RETURN_PROPERTIES,
-        });
-        const errStr = String(addResult.error || "");
-        if (addResult.error && !errStr.includes("ALREADY")) {
-          report.errors.push(`robot ${robot.CODE}: ${addResult.error}`);
-        } else {
-          report.robots_registered.push(robot.CODE);
-        }
+        robotBatchCmds[`del_${robot.CODE}`] = { method: "bizproc.robot.delete", params: { CODE: robot.CODE } };
+        robotBatchCmds[`add_${robot.CODE}`] = {
+          method: "bizproc.robot.add",
+          params: {
+            CODE: robot.CODE,
+            HANDLER: robotHandlerUrl,
+            AUTH_USER_ID: 1,
+            NAME: robot.NAME,
+            USE_SUBSCRIPTION: "Y",
+            PROPERTIES: robot.PROPERTIES,
+            RETURN_PROPERTIES: robot.RETURN_PROPERTIES,
+          }
+        };
       }
+
+      console.log(`[SYNC] Registering ${repairRobots.length} robots in batch...`);
+      const robotBatchResults = await callBitrixBatch(ep, token, robotBatchCmds);
+      repairRobots.forEach(robot => {
+        const addRes = robotBatchResults.result?.result?.[`add_${robot.CODE}`];
+        if (addRes) report.robots_registered.push(robot.CODE);
+        else {
+          const err = robotBatchResults.result?.result_error?.[`add_${robot.CODE}`]?.error || 'unknown';
+          if (!err.includes("ALREADY")) report.errors.push(`robot ${robot.CODE}: ${err}`);
+        }
+      });
+
 
       await debugLog(supabase, integration.id, "repair_fields_and_robots", "outbound", report);
       return new Response(JSON.stringify({ ok: true, report }), { headers: jsonHeaders });
@@ -792,19 +862,24 @@ Deno.serve(async (req) => {
         "OnAppUninstall",          // limpeza de campos na desinstalação
       ];
 
+      const eventCommands: Record<string, any> = {};
       for (const event of events) {
-        const bindResult = await callBitrix(clientEndpoint, accessToken, "event.bind", {
-          event,
-          handler: eventsUrl,
-        });
-        // "Handler already binded" is NOT an error - check both error and error_description
-        const errStr = String(bindResult.error || "") + " " + String(bindResult.error_description || "");
-        if (bindResult.error && !errStr.toLowerCase().includes("already")) {
-          console.error(`[INSTALL] Bind ${event} failed:`, bindResult.error, bindResult.error_description);
-        } else {
-          console.log(`[INSTALL] Bind ${event}: OK (or already bound)`);
-        }
+        eventCommands[`bind_${event}`] = { method: "event.bind", params: { event, handler: eventsUrl } };
       }
+      
+      console.log(`[INSTALL] Binding ${events.length} events in batch...`);
+      const eventResults = await callBitrixBatch(clientEndpoint, accessToken, eventCommands);
+      Object.keys(eventCommands).forEach(key => {
+        const bindResult = eventResults.result?.result?.[key];
+        const bindError = eventResults.result?.result_error?.[key];
+        if (bindError) {
+          const errStr = String(bindError.error || "") + " " + String(bindError.error_description || "");
+          if (!errStr.toLowerCase().includes("already")) {
+            console.error(`[INSTALL] ${key} failed:`, bindError.error);
+          }
+        }
+      });
+
 
       // Update integration status
       await supabase
@@ -990,16 +1065,24 @@ Deno.serve(async (req) => {
         { code: "emmely_baixa_imported", title: "Baixa Importada", value: "Importado", type: "primary" },
       ];
 
+      const badgeCommands: Record<string, any> = {};
       for (const badge of badges) {
-        const badgeResult = await callBitrix(clientEndpoint, accessToken, "crm.activity.badge.add", badge);
-        const badgeErr = String(badgeResult.error || "");
-        if (badgeResult.error && !badgeErr.includes("ALREADY") && !badgeErr.includes("DUPLICATE")) {
-          console.error(`[INSTALL] Badge ${badge.code} registration failed:`, badgeResult.error, badgeResult.error_description);
-        } else {
-          console.log(`[INSTALL] Badge ${badge.code}: registered OK`);
-          installSummary.badges_registered.push(badge.code);
-        }
+        badgeCommands[`badge_${badge.code}`] = { method: "crm.activity.badge.add", params: badge };
       }
+      
+      console.log(`[INSTALL] Registering ${badges.length} badges in batch...`);
+      const badgeResults = await callBitrixBatch(clientEndpoint, accessToken, badgeCommands);
+      badges.forEach(badge => {
+        const key = `badge_${badge.code}`;
+        const res = badgeResults.result?.result?.[key];
+        const err = badgeResults.result?.result_error?.[key];
+        if (res || (err && String(err.error).includes("ALREADY"))) {
+          installSummary.badges_registered.push(badge.code);
+        } else if (err) {
+          console.error(`[INSTALL] Badge ${badge.code} failed:`, err.error);
+        }
+      });
+
 
       installSummary.installed_modules.push("badges");
 
@@ -1193,6 +1276,9 @@ Deno.serve(async (req) => {
         { name: "Lead", listMethod: "crm.lead.userfield.list", deleteMethod: "crm.lead.userfield.delete" },
       ];
 
+      const ufBatchCmds: Record<string, any> = {};
+      
+      // Part A: Cleanup (Delete existing)
       for (const api of deleteApis) {
         try {
           const existingFields = await callBitrix(clientEndpoint, accessToken, api.listMethod, {});
@@ -1200,34 +1286,34 @@ Deno.serve(async (req) => {
             (f: any) => f.FIELD_NAME && f.FIELD_NAME.startsWith("UF_CRM_EMMELY_")
           );
           for (const f of emmelyFields) {
-            await callBitrix(clientEndpoint, accessToken, api.deleteMethod, { id: f.ID });
-            console.log(`[INSTALL] Deleted ${api.name} field ${f.FIELD_NAME} (ID: ${f.ID})`);
-          }
-          if (emmelyFields.length > 0) {
-            console.log(`[INSTALL] Cleaned ${emmelyFields.length} existing ${api.name} EMMELY fields`);
+            ufBatchCmds[`del_${api.name}_${f.ID}`] = { method: api.deleteMethod, params: { id: f.ID } };
           }
         } catch (delErr) {
-          console.error(`[INSTALL] Error cleaning ${api.name} fields:`, delErr);
+          console.error(`[INSTALL] Error listing ${api.name} fields for clean:`, delErr);
         }
       }
 
-      // Step 2: Create fields for both Deal and Lead entities
-      const entityApis = [
-        { name: "Deal", method: "crm.deal.userfield.add" },
-        { name: "Lead", method: "crm.lead.userfield.add" },
-      ];
-
+      // Part B: Addition
       for (const entity of entityApis) {
         for (const field of emmelyUserFields) {
-          const result = await callBitrix(clientEndpoint, accessToken, entity.method, { fields: field });
-          if (result.error) {
-            console.error(`[INSTALL] ${entity.name} UserField ${field.FIELD_NAME} failed:`, result.error, result.error_description);
-          } else {
-            console.log(`[INSTALL] ${entity.name} UserField ${field.FIELD_NAME}: Created (ID: ${result.result})`);
-            installSummary.userfields_registered.push(`${entity.name}:${field.FIELD_NAME}`);
-          }
+          ufBatchCmds[`add_${entity.name}_${field.FIELD_NAME}`] = { method: entity.method, params: { fields: field } };
         }
       }
+
+      console.log(`[INSTALL] Executing ${Object.keys(ufBatchCmds).length} UserField operations in batch...`);
+      // Use halt: 0 to ensure one field failure (e.g. already exists) doesn't stop others
+      const ufResults = await callBitrixBatch(clientEndpoint, accessToken, ufBatchCmds);
+      
+      Object.keys(ufBatchCmds).forEach(key => {
+        if (key.startsWith("add_")) {
+          const res = ufResults.result?.result?.[key];
+          const err = ufResults.result?.result_error?.[key];
+          if (res || (err && (String(err.error).includes("ALREADY") || String(err.error).includes("DUPLICATE")))) {
+            installSummary.userfields_registered.push(key.replace("add_", ""));
+          }
+        }
+      });
+
 
       if (installSummary.userfields_registered.length > 0) {
         installSummary.installed_modules.push("userfields");

@@ -15,6 +15,31 @@ async function callBitrix(endpoint: string, token: string, method: string, param
   return await res.json();
 }
 
+async function callBitrixListAll(
+  endpoint: string,
+  token: string,
+  method: string,
+  params: Record<string, any> = {},
+  limit = 500
+): Promise<any[]> {
+  let allResults: any[] = [];
+  let start = 0;
+  let hasMore = true;
+
+  while (hasMore && allResults.length < limit) {
+    const res = await callBitrix(endpoint, token, method, { ...params, start });
+    const batch = Array.isArray(res.result) ? res.result : [];
+    allResults = allResults.concat(batch);
+    if (res.next && batch.length > 0) {
+      start = res.next;
+    } else {
+      hasMore = false;
+    }
+  }
+  return allResults;
+}
+
+
 async function ensureValidToken(supabase: any, integration: any): Promise<string> {
   const expiresAt = new Date(integration.expires_at);
   if (expiresAt.getTime() - Date.now() > 5 * 60 * 1000) {

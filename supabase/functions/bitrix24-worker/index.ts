@@ -37,6 +37,37 @@ async function callBitrix(endpoint: string, token: string, method: string, param
   return await res.json();
 }
 
+/**
+ * Fetches all results from a list method using pagination
+ * @param limit Optional hard limit to avoid infinite loops or memory issues
+ */
+async function callBitrixListAll(
+  endpoint: string,
+  token: string,
+  method: string,
+  params: Record<string, any> = {},
+  limit = 500
+): Promise<any[]> {
+  let allResults: any[] = [];
+  let start = 0;
+  let hasMore = true;
+
+  while (hasMore && allResults.length < limit) {
+    const res = await callBitrix(endpoint, token, method, { ...params, start });
+    const batch = Array.isArray(res.result) ? res.result : [];
+    allResults = allResults.concat(batch);
+    
+    if (res.next && batch.length > 0) {
+      start = res.next;
+    } else {
+      hasMore = false;
+    }
+  }
+
+  return allResults;
+}
+
+
 async function ensureValidToken(supabase: any, integration: any): Promise<string> {
   const expiresAt = new Date(integration.expires_at);
   if (expiresAt.getTime() - Date.now() > 5 * 60 * 1000) {
@@ -134,15 +165,18 @@ async function createBitrixBadgeActivity(params: BadgeParams): Promise<void> {
           }
         }
 
-        // 2. Search by phone in Bitrix24
+        // 2. Search by phone in Bitrix24 (Lead)
         if (!ownerId && conv.contact_phone) {
           const phone = conv.contact_phone.replace(/\D/g, "");
           if (phone.length >= 8) {
-            const leadSearch = await callBitrix(integration.client_endpoint, accessToken, "crm.lead.list", {
-              filter: { PHONE: phone },
-              select: ["ID"],
-            });
-            const leads = leadSearch.result || [];
+            // Use ListAll just in case there are multiple leads with same phone on page 2+
+            // Filter by phone (Bitrix24 usually ignores symbols in phone filter)
+            const leads = await callBitrixListAll(integration.client_endpoint, accessToken, "crm.lead.list", {
+              filter: { "%PHONE": phone }, // use partial match to be safe
+              select: ["ID", "DATE_CREATE"],
+              order: { "DATE_CREATE": "DESC" }, // Take most recent
+            }, 50); 
+            
             if (leads.length > 0) {
               ownerTypeId = 1;
               ownerId = parseInt(leads[0].ID);
@@ -158,11 +192,12 @@ async function createBitrixBadgeActivity(params: BadgeParams): Promise<void> {
         if (!ownerId && conv.contact_phone) {
           const phone = conv.contact_phone.replace(/\D/g, "");
           if (phone.length >= 8) {
-            const contactSearch = await callBitrix(integration.client_endpoint, accessToken, "crm.contact.list", {
-              filter: { PHONE: phone },
-              select: ["ID"],
-            });
-            const contacts = contactSearch.result || [];
+            const contacts = await callBitrixListAll(integration.client_endpoint, accessToken, "crm.contact.list", {
+              filter: { "%PHONE": phone },
+              select: ["ID", "DATE_CREATE"],
+              order: { "DATE_CREATE": "DESC" },
+            }, 50);
+            
             if (contacts.length > 0) {
               ownerTypeId = 3; // Contact
               ownerId = parseInt(contacts[0].ID);
@@ -172,6 +207,7 @@ async function createBitrixBadgeActivity(params: BadgeParams): Promise<void> {
             }
           }
         }
+
       }
     }
 
