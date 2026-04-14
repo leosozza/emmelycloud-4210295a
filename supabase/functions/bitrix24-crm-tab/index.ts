@@ -849,22 +849,95 @@ Deno.serve(async (req) => {
           }
         }
 
-        // Exhaustive sequential lookup
+        // ── 1. Deterministic local lookup via leads table ──
+        if (!conversation) {
+          const { data: localLead } = await supabase
+            .from("leads")
+            .select("id, conversation_id, client_id, name")
+            .eq("bitrix24_id", String(entityId))
+            .maybeSingle();
+
+          if (localLead) {
+            console.log("[CRM-TAB] Found local lead by bitrix24_id:", localLead.id, "conv:", localLead.conversation_id);
+            if (localLead.conversation_id) {
+              const { data: conv } = await supabase
+                .from("conversations")
+                .select("id, contact_name, attendance_mode, channel, status, contact_phone")
+                .eq("id", localLead.conversation_id)
+                .maybeSingle();
+              if (conv) {
+                conversation = conv;
+                console.log("[CRM-TAB] ✓ Matched via lead.conversation_id");
+              }
+            }
+            if (!conversation && localLead.client_id) {
+              const { data: conv } = await supabase
+                .from("conversations")
+                .select("id, contact_name, attendance_mode, channel, status, contact_phone")
+                .eq("client_id", localLead.client_id)
+                .neq("status", "fechada")
+                .order("last_message_at", { ascending: false })
+                .limit(1)
+                .maybeSingle();
+              if (conv) {
+                conversation = conv;
+                console.log("[CRM-TAB] ✓ Matched via lead.client_id");
+              }
+            }
+            if (!contactName && localLead.name) contactName = localLead.name;
+          }
+        }
+
+        // ── 2. Phone/email lookup ──
         if (!conversation && allPhones.length > 0) {
           conversation = await findConversationByPhone(supabase, allPhones);
+          if (conversation) console.log("[CRM-TAB] ✓ Matched via phone");
         }
         if (!conversation && allEmails.length > 0) {
           conversation = await findConversationByEmail(supabase, allEmails);
+          if (conversation) console.log("[CRM-TAB] ✓ Matched via email");
         }
+
+        // ── 3. Bot state lookup ──
         if (!conversation) {
           conversation = await findConversationByBotState(supabase, entityId, entityTypeId);
+          if (conversation) console.log("[CRM-TAB] ✓ Matched via bot_state");
         }
-        // For Deals, also try the Deal ID in bot_state with type prefix
         if (!conversation && entityTypeNum === 2) {
           conversation = await findConversationByBotState(supabase, entityId, "2");
+          if (conversation) console.log("[CRM-TAB] ✓ Matched via bot_state (deal prefix)");
         }
+
+        // ── 4. For Deals without contact, try COMPANY_ID ──
+        if (!conversation && entityTypeNum === 2 && entity?.COMPANY_ID) {
+          try {
+            const companyData = await callBitrix(endpoint, accessToken, "crm.company.get", { ID: entity.COMPANY_ID });
+            const company = companyData.result;
+            if (company) {
+              const compPhones = extractPhones(company);
+              const compEmails = extractEmails(company);
+              if (compPhones.length) {
+                allPhones = [...new Set([...allPhones, ...compPhones])];
+                conversation = await findConversationByPhone(supabase, compPhones);
+                if (conversation) console.log("[CRM-TAB] ✓ Matched via company phone");
+              }
+              if (!conversation && compEmails.length) {
+                allEmails = [...new Set([...allEmails, ...compEmails])];
+                conversation = await findConversationByEmail(supabase, compEmails);
+                if (conversation) console.log("[CRM-TAB] ✓ Matched via company email");
+              }
+            }
+          } catch (e) { console.warn("[CRM-TAB] Company lookup failed:", e); }
+        }
+
+        // ── 5. Name fallback ──
         if (!conversation && contactName) {
           conversation = await findConversationByName(supabase, contactName);
+          if (conversation) console.log("[CRM-TAB] ✓ Matched via name");
+        }
+
+        if (!conversation) {
+          console.log("[CRM-TAB] ✗ No conversation found for entity", entityId, "phones:", allPhones, "emails:", allEmails);
         }
         if (conversation && !contactName) contactName = conversation.contact_name;
 
