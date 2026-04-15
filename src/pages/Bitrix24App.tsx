@@ -875,6 +875,48 @@ function ConfigView({ integration, botId, domain, loading, onResync, onRefresh }
   const [returningToBot, setReturningToBot] = useState(false);
   const [returnToBotResult, setReturnToBotResult] = useState<string | null>(null);
   const [openConversations, setOpenConversations] = useState<any[]>([]);
+  const [channelMappings, setChannelMappings] = useState<any[]>([]);
+  const [availableConnectors, setAvailableConnectors] = useState<{id: string; name: string}[]>([]);
+  const [loadingConnectors, setLoadingConnectors] = useState(false);
+  const [savingConnectorMapping, setSavingConnectorMapping] = useState<string | null>(null);
+
+  const fetchChannelMappings = () => {
+    if (!integration?.id) return;
+    fetch(`${SUPABASE_URL}/rest/v1/bitrix24_channel_mappings?select=id,line_id,line_name,channel,connector_id,is_active&integration_id=eq.${integration.id}&order=created_at.desc`, {
+      headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` },
+    }).then(r => r.json()).then(setChannelMappings).catch(console.error);
+  };
+
+  const fetchConnectors = async () => {
+    if (!integration?.member_id) return;
+    setLoadingConnectors(true);
+    try {
+      const res = await fetch(`${SUPABASE_URL}/functions/v1/bitrix24-worker`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` },
+        body: JSON.stringify({ _listConnectors: true, member_id: integration.member_id }),
+      });
+      const data = await res.json();
+      if (data.connectors && Array.isArray(data.connectors)) {
+        const uniqueConnectors = Array.from(new Map(data.connectors.map((c: any) => [c.connectorId, { id: c.connectorId, name: c.connectorName }])).values()) as {id: string; name: string}[];
+        setAvailableConnectors([{ id: "emmely_connector", name: "Emmely Connector" }, ...uniqueConnectors.filter(c => c.id !== "emmely_connector")]);
+      }
+    } catch (e) { console.error("[CONFIG] Error fetching connectors:", e); }
+    setLoadingConnectors(false);
+  };
+
+  const handleSaveConnectorMapping = async (mappingId: string, connectorId: string) => {
+    setSavingConnectorMapping(mappingId);
+    try {
+      await fetch(`${SUPABASE_URL}/rest/v1/bitrix24_channel_mappings?id=eq.${mappingId}`, {
+        method: "PATCH",
+        headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}`, "Content-Type": "application/json", Prefer: "return=minimal" },
+        body: JSON.stringify({ connector_id: connectorId }),
+      });
+      fetchChannelMappings();
+    } catch (e) { console.error(e); }
+    setSavingConnectorMapping(null);
+  };
 
   useEffect(() => {
     fetch(`${SUPABASE_URL}/rest/v1/ai_agents?select=id,name,is_active,is_default&is_active=eq.true&order=name.asc`, {
@@ -886,6 +928,8 @@ function ConfigView({ integration, botId, domain, loading, onResync, onRefresh }
     fetch(`${SUPABASE_URL}/rest/v1/conversations?select=id,contact_name,contact_phone,channel,attendance_mode&status=in.(aberta,em_atendimento,aguardando)&order=last_message_at.desc&limit=20`, {
       headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` },
     }).then(r => r.json()).then(setOpenConversations).catch(console.error);
+    fetchChannelMappings();
+    fetchConnectors();
   }, []);
 
   useEffect(() => { setSelectedAgent(integration?.bitrix_agent_id || ""); }, [integration?.bitrix_agent_id]);
