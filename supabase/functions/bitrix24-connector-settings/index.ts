@@ -223,6 +223,7 @@ Deno.serve(async (req) => {
           is_active: true,
           line_name: lineName,
           channel: "whatsapp",
+          connector_id: connectorId,
         }).eq("id", existingMapping.id);
       } else {
         await supabase.from("bitrix24_channel_mappings").insert({
@@ -231,6 +232,7 @@ Deno.serve(async (req) => {
           line_name: lineName,
           channel: "whatsapp",
           is_active: true,
+          connector_id: connectorId,
         });
       }
 

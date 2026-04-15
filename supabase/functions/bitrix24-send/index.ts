@@ -247,6 +247,7 @@ Deno.serve(async (req) => {
           }
 
           const accessToken = await ensureValidToken(supabase, integration);
+          const mappingConnectorId = anyMapping.connector_id || effectiveConnectorId;
           const sent = await sendWithFallbacks(
             integration.client_endpoint,
             accessToken,
@@ -255,13 +256,14 @@ Deno.serve(async (req) => {
             contactName || "Cliente",
             message,
             channel || "whatsapp",
-            effectiveConnectorId
+            mappingConnectorId
           );
 
           if (sent) sentCount++;
-          await debugLog(supabase, integration.id, "message_sent_fallback_mapping", "outbound", { lineId: anyMapping.line_id, connectorId: effectiveConnectorId, contactId, sent });
+          await debugLog(supabase, integration.id, "message_sent_fallback_mapping", "outbound", { lineId: anyMapping.line_id, connectorId: mappingConnectorId, contactId, sent });
         } else {
           const accessToken = await ensureValidToken(supabase, integration);
+          const mappingConnectorId = mapping.connector_id || effectiveConnectorId;
           const sent = await sendWithFallbacks(
             integration.client_endpoint,
             accessToken,
@@ -270,11 +272,11 @@ Deno.serve(async (req) => {
             contactName || "Cliente",
             message,
             channel || "whatsapp",
-            effectiveConnectorId
+            mappingConnectorId
           );
 
           if (sent) sentCount++;
-          await debugLog(supabase, integration.id, "message_sent", "outbound", { lineId: mapping.line_id, connectorId: effectiveConnectorId, contactId, sent });
+          await debugLog(supabase, integration.id, "message_sent", "outbound", { lineId: mapping.line_id, connectorId: mappingConnectorId, contactId, sent });
         }
       } catch (intError) {
         console.error(`[SEND] Error for integration ${integration.id}:`, intError);

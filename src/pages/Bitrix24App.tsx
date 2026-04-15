@@ -875,6 +875,48 @@ function ConfigView({ integration, botId, domain, loading, onResync, onRefresh }
   const [returningToBot, setReturningToBot] = useState(false);
   const [returnToBotResult, setReturnToBotResult] = useState<string | null>(null);
   const [openConversations, setOpenConversations] = useState<any[]>([]);
+  const [channelMappings, setChannelMappings] = useState<any[]>([]);
+  const [availableConnectors, setAvailableConnectors] = useState<{id: string; name: string}[]>([]);
+  const [loadingConnectors, setLoadingConnectors] = useState(false);
+  const [savingConnectorMapping, setSavingConnectorMapping] = useState<string | null>(null);
+
+  const fetchChannelMappings = () => {
+    if (!integration?.id) return;
+    fetch(`${SUPABASE_URL}/rest/v1/bitrix24_channel_mappings?select=id,line_id,line_name,channel,connector_id,is_active&integration_id=eq.${integration.id}&order=created_at.desc`, {
+      headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` },
+    }).then(r => r.json()).then(setChannelMappings).catch(console.error);
+  };
+
+  const fetchConnectors = async () => {
+    if (!integration?.member_id) return;
+    setLoadingConnectors(true);
+    try {
+      const res = await fetch(`${SUPABASE_URL}/functions/v1/bitrix24-worker`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` },
+        body: JSON.stringify({ _listConnectors: true, member_id: integration.member_id }),
+      });
+      const data = await res.json();
+      if (data.connectors && Array.isArray(data.connectors)) {
+        const uniqueConnectors = Array.from(new Map(data.connectors.map((c: any) => [c.connectorId, { id: c.connectorId, name: c.connectorName }])).values()) as {id: string; name: string}[];
+        setAvailableConnectors([{ id: "emmely_connector", name: "Emmely Connector" }, ...uniqueConnectors.filter(c => c.id !== "emmely_connector")]);
+      }
+    } catch (e) { console.error("[CONFIG] Error fetching connectors:", e); }
+    setLoadingConnectors(false);
+  };
+
+  const handleSaveConnectorMapping = async (mappingId: string, connectorId: string) => {
+    setSavingConnectorMapping(mappingId);
+    try {
+      await fetch(`${SUPABASE_URL}/rest/v1/bitrix24_channel_mappings?id=eq.${mappingId}`, {
+        method: "PATCH",
+        headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}`, "Content-Type": "application/json", Prefer: "return=minimal" },
+        body: JSON.stringify({ connector_id: connectorId }),
+      });
+      fetchChannelMappings();
+    } catch (e) { console.error(e); }
+    setSavingConnectorMapping(null);
+  };
 
   useEffect(() => {
     fetch(`${SUPABASE_URL}/rest/v1/ai_agents?select=id,name,is_active,is_default&is_active=eq.true&order=name.asc`, {
@@ -886,6 +928,8 @@ function ConfigView({ integration, botId, domain, loading, onResync, onRefresh }
     fetch(`${SUPABASE_URL}/rest/v1/conversations?select=id,contact_name,contact_phone,channel,attendance_mode&status=in.(aberta,em_atendimento,aguardando)&order=last_message_at.desc&limit=20`, {
       headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` },
     }).then(r => r.json()).then(setOpenConversations).catch(console.error);
+    fetchChannelMappings();
+    fetchConnectors();
   }, []);
 
   useEffect(() => { setSelectedAgent(integration?.bitrix_agent_id || ""); }, [integration?.bitrix_agent_id]);
@@ -1062,6 +1106,49 @@ function ConfigView({ integration, botId, domain, loading, onResync, onRefresh }
           </Button>
         </CardContent>
       </Card>
+
+      {channelMappings.length > 0 && (
+        <Card className="b24-card">
+          <CardHeader>
+            <CardTitle className="text-sm font-semibold flex items-center gap-2 text-foreground">
+              <Plug className="h-4 w-4 text-primary" /> Conector por Canal
+            </CardTitle>
+            <CardDescription>Selecione qual conector (PowerZap, Emmely, etc.) usar em cada Open Line</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {loadingConnectors && <div className="flex items-center gap-2 text-xs text-muted-foreground"><Loader2 className="h-3 w-3 animate-spin" />Carregando conectores...</div>}
+            {channelMappings.map((m) => (
+              <div key={m.id} className="flex items-center gap-3 p-2 rounded-md bg-muted/30">
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-medium text-foreground truncate">{m.line_name || `Line ${m.line_id}`}</p>
+                  <p className="text-[10px] text-muted-foreground">Canal: {m.channel} • Line ID: {m.line_id}</p>
+                </div>
+                <Select
+                  value={m.connector_id || "emmely_connector"}
+                  onValueChange={(val) => handleSaveConnectorMapping(m.id, val)}
+                  disabled={savingConnectorMapping === m.id}
+                >
+                  <SelectTrigger className="w-[180px] h-8 text-xs rounded-md">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {availableConnectors.map((c) => (
+                      <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                    ))}
+                    {availableConnectors.length === 0 && (
+                      <SelectItem value="emmely_connector">Emmely Connector</SelectItem>
+                    )}
+                  </SelectContent>
+                </Select>
+                {savingConnectorMapping === m.id && <Loader2 className="h-3 w-3 animate-spin text-primary" />}
+              </div>
+            ))}
+            <Button onClick={fetchConnectors} disabled={loadingConnectors} variant="outline" size="sm" className="w-full rounded-md">
+              <RefreshCw className="h-3.5 w-3.5 mr-2" />Actualizar Conectores
+            </Button>
+          </CardContent>
+        </Card>
+      )}
 
       <div className="space-y-2">
         <Button
