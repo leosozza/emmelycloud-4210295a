@@ -1,57 +1,109 @@
+<final-text>## O que encontrei
 
+O placement atual não está alinhado com o projeto que funciona.
 
-## Plano: Corrigir Status de Pagamento (Enumeração Bitrix24)
+A diferença mais importante é esta:
 
-### Problema
-Os campos `UF_CRM_EMMELY_PAYMENT_STATUS` (Deal) e `UF_CRM_69B83DDB1F59D` (Fatura/Invoice) são do tipo **enumeração** no Bitrix24. O código atual envia strings como `"pending"`, `"paid"`, `"partial"` — mas o Bitrix24 exige os **IDs numéricos** das opções (ex: `9391` = Pendente, `9395` = Pago).
+- **No projeto atual**, quase todas as buscas da conversa usam `conversations` com filtro `status != "fechada"`.
+- **No projeto que funciona**, a conversa é resolvida de forma mais determinística e a última conversa é carregada **mesmo se não estiver ativa**.
 
-Da screenshot do utilizador (campo Invoice):
-| ID | Valor |
-|---|---|
-| 9391 | Pendente |
-| 9393 | Parcial |
-| 9395 | Pago |
-| 9397 | Cancelado |
+Isto explica muito bem o teu sintoma: o Bitrix abre o placement, mas ele mostra “Nenhuma conversa ativa encontrada” embora a conversa já exista.
 
-Os IDs do campo no Deal são diferentes (atribuídos dinamicamente na instalação). Não podemos hardcodar — precisamos resolver dinamicamente.
+Também vi mais 2 fragilidades no fluxo atual:
+- o lookup por `bot_state` só varre **300 conversas**
+- o vínculo do Deal depende muito de heurística (`phone`, `email`, `name`, `bot_state`) em vez de um vínculo persistido e reutilizável
 
-### Solução
+## Plano
 
-**Estratégia**: Antes de escrever no campo, chamar `crm.deal.fields` ou `crm.item.fields` para obter os IDs das opções da enumeração e mapear pelo VALUE (texto). Isto garante compatibilidade com qualquer instalação.
+### 1. Corrigir a regra principal do lookup
+**Ficheiro:** `supabase/functions/bitrix24-crm-tab/index.ts`
 
-### Ficheiros a editar
+Trocar o comportamento de:
+- “procurar apenas conversa aberta”
 
-**1. `supabase/functions/bitrix24-payment-tab/index.ts`**
-- Adicionar função helper JS (inline no HTML) que resolve o ID da enumeração chamando `BX24.callMethod('crm.deal.fields')` para o Deal e cachear os IDs de `UF_CRM_EMMELY_PAYMENT_STATUS`
-- Nos `crm.item.add` (linhas 1053-1055 e 1138-1145), o campo `UF_CRM_69B83DDB1F59D` deve usar os IDs conhecidos da Invoice: `9391` (Pendente), `9393` (Parcial), `9395` (Pago)
-- Nos `crm.deal.update` (linhas 1093, 1123), resolver o ID da enumeração do Deal antes de escrever
+para:
+- “procurar primeiro conversa ativa”
+- “se não existir, carregar a **última conversa relacionada**, mesmo fechada”
 
-**2. `supabase/functions/payment-webhook-stripe/index.ts`**
-- Na linha 75, onde calcula `paymentStatus = "paid" | "partial"`, resolver para o ID numérico
-- Antes de `crm.deal.update`, chamar `crm.deal.fields` para obter os IDs da enumeração `UF_CRM_EMMELY_PAYMENT_STATUS`
-- Na atualização da Invoice (linha 160-164), usar `9395` para "paid" em `UF_CRM_69B83DDB1F59D`
+Isto será aplicado a:
+- lookup por telefone
+- lookup por email
+- lookup por `client_id`
+- lookup por `bot_state`
+- lookup por nome
 
-**3. `supabase/functions/bitrix24-payment-webhook/index.ts`**
-- Na criação de Invoices (linha 312), usar `9391` para "pending"
-- Na atualização do Deal (linha 351), resolver ID da enumeração via `crm.deal.fields`
+### 2. Refatorar o lookup para ficar determinístico
+**Ficheiro:** `supabase/functions/bitrix24-crm-tab/index.ts`
 
-**4. `supabase/functions/sign-contract/index.ts`**
-- Linha 476: `UF_CRM_EMMELY_PAYMENT_STATUS: "Pendente"` — resolver para o ID numérico
+Padronizar a ordem de busca assim:
+1. `leads.conversation_id`
+2. `leads.client_id -> conversations.client_id`
+3. `clients.bitrix24_id -> conversations.client_id`
+4. `bot_state` por `bitrix_deal_id`, `bitrix_lead_id`, `bitrix_entity_id`
+5. telefone / email / `@lid`
+6. nome
 
-### Detalhes técnicos
+A ideia é parar de depender tanto de “tentativas soltas” e reaproveitar vínculos já existentes.
 
-Para as **Faturas (entity 31)**, os IDs são fixos conforme fornecidos pelo utilizador — podemos usar diretamente:
-```typescript
-const INVOICE_STATUS = { pending: 9391, partial: 9393, paid: 9395, cancelled: 9397 };
+### 3. Remover o gargalo do `bot_state`
+**Ficheiro:** `supabase/functions/bitrix24-crm-tab/index.ts`
+
+Hoje o `findConversationByBotState` lê só 300 conversas recentes e ignora fechadas.  
+Vou ajustar para:
+- priorizar match exato por IDs do Bitrix
+- não perder conversas antigas/fechadas
+- devolver a conversa mais recente entre as correspondentes
+
+### 4. Persistir melhor os vínculos para não voltar a falhar
+**Ficheiros:**
+- `supabase/functions/bitrix24-crm-tab/index.ts`
+- `supabase/functions/message-send/index.ts`
+
+Quando o placement encontrar a conversa, gravar/normalizar no `bot_state`:
+- `bitrix_deal_id`
+- `bitrix_lead_id` (quando existir)
+- `bitrix_entity_id`
+
+E, quando fizer sentido, reforçar o vínculo local com `conversation_id` para que as próximas aberturas do placement sejam imediatas.
+
+### 5. Melhorar logs de diagnóstico
+**Ficheiro:** `supabase/functions/bitrix24-crm-tab/index.ts`
+
+Adicionar logs claros para mostrar:
+- qual ramo encontrou a conversa
+- se a conversa encontrada estava `fechada` ou ativa
+- quais IDs Bitrix foram usados no match
+
+Isso facilita validar o caso do Deal **23693** sem ficar no escuro.
+
+## Detalhes técnicos
+
+A causa mais provável neste caso é:
+```text
+placement atual:
+  CRM entity -> heurísticas em conversations -> ignora status=fechada
+
+projeto que funciona:
+  CRM entity -> vínculo determinístico -> última conversa
 ```
 
-Para o **Deal**, os IDs variam por instalação. A função helper chamará:
-```typescript
-const fieldsRes = await callBitrix(endpoint, token, "crm.deal.fields", {});
-const statusField = fieldsRes.result?.UF_CRM_EMMELY_PAYMENT_STATUS;
-const items = statusField?.items || [];
-// items: [{ ID: "123", VALUE: "Pendente" }, { ID: "456", VALUE: "Pago" }, ...]
+A correção principal é mudar de:
+```text
+"buscar apenas conversa ativa"
 ```
 
-Mapeamento: buscar pelo `VALUE` ("Pendente", "Parcial", "Pago", "Cancelado") e usar o `ID` correspondente.
+para:
+```text
+"buscar conversa ativa primeiro; se não houver, mostrar a última conversa vinculada"
+```
 
+## Ficheiros a editar
+- `supabase/functions/bitrix24-crm-tab/index.ts`
+- `supabase/functions/message-send/index.ts`
+
+## Resultado esperado
+Depois desta correção, o placement deve:
+- abrir a conversa já existente do cliente/deal
+- não sumir só porque a conversa foi fechada
+- reaproveitar vínculos já gravados no sistema
+- ficar consistente com o comportamento do outro projeto</final-text>
