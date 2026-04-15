@@ -1107,7 +1107,49 @@ function ConfigView({ integration, botId, domain, loading, onResync, onRefresh }
         </CardContent>
       </Card>
 
-      <div className="space-y-2">
+      {channelMappings.length > 0 && (
+        <Card className="b24-card">
+          <CardHeader>
+            <CardTitle className="text-sm font-semibold flex items-center gap-2 text-foreground">
+              <Plug className="h-4 w-4 text-primary" /> Conector por Canal
+            </CardTitle>
+            <CardDescription>Selecione qual conector (PowerZap, Emmely, etc.) usar em cada Open Line</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {loadingConnectors && <div className="flex items-center gap-2 text-xs text-muted-foreground"><Loader2 className="h-3 w-3 animate-spin" />Carregando conectores...</div>}
+            {channelMappings.map((m) => (
+              <div key={m.id} className="flex items-center gap-3 p-2 rounded-md bg-muted/30">
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-medium text-foreground truncate">{m.line_name || `Line ${m.line_id}`}</p>
+                  <p className="text-[10px] text-muted-foreground">Canal: {m.channel} • Line ID: {m.line_id}</p>
+                </div>
+                <Select
+                  value={m.connector_id || "emmely_connector"}
+                  onValueChange={(val) => handleSaveConnectorMapping(m.id, val)}
+                  disabled={savingConnectorMapping === m.id}
+                >
+                  <SelectTrigger className="w-[180px] h-8 text-xs rounded-md">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {availableConnectors.map((c) => (
+                      <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                    ))}
+                    {availableConnectors.length === 0 && (
+                      <SelectItem value="emmely_connector">Emmely Connector</SelectItem>
+                    )}
+                  </SelectContent>
+                </Select>
+                {savingConnectorMapping === m.id && <Loader2 className="h-3 w-3 animate-spin text-primary" />}
+              </div>
+            ))}
+            <Button onClick={fetchConnectors} disabled={loadingConnectors} variant="outline" size="sm" className="w-full rounded-md">
+              <RefreshCw className="h-3.5 w-3.5 mr-2" />Actualizar Conectores
+            </Button>
+          </CardContent>
+        </Card>
+      )}
+
         <Button
           onClick={async () => {
             setReregisteringBot(true);
