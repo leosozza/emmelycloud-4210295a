@@ -1051,8 +1051,8 @@ function renderPaymentTab(opts: {
           var invoiceTitle = invoiceLabel + ' - ' + (desc || 'Negócio');
           await new Promise(function(resolve) {
             BX24.callMethod('crm.item.add', {
-              entityTypeId: 31,
-              fields: { title: invoiceTitle, opportunity: item.parcel.amount, currencyId: currency, isManualOpportunity: 'Y', parentId2: parseInt(ENTITY_ID), begindate: new Date().toISOString().split('T')[0], closedate: item.parcel.due_date, comments: 'Fatura gerada automaticamente pelo Emmely Pay. ' + invoiceLabel + '. Grupo: ' + groupId, UF_CRM_69B83DDB1F59D: 'pending', UF_CRM_69B83DDB2661E: groupId, UF_CRM_69B83DDB2B85D: DEAL_RAW_GATEWAY || 'stripe', UF_CRM_69B83DDB3EAFC: String(numInstallments), UF_CRM_69B83DDB4C552: item.parcel.amount, UF_CRM_69B83DDB525C9: item.parcel.due_date }
+               entityTypeId: 31,
+               fields: { title: invoiceTitle, opportunity: item.parcel.amount, currencyId: currency, isManualOpportunity: 'Y', parentId2: parseInt(ENTITY_ID), begindate: new Date().toISOString().split('T')[0], closedate: item.parcel.due_date, comments: 'Fatura gerada automaticamente pelo Emmely Pay. ' + invoiceLabel + '. Grupo: ' + groupId, UF_CRM_69B83DDB1F59D: 9391, UF_CRM_69B83DDB2661E: groupId, UF_CRM_69B83DDB2B85D: DEAL_RAW_GATEWAY || 'stripe', UF_CRM_69B83DDB3EAFC: String(numInstallments), UF_CRM_69B83DDB4C552: item.parcel.amount, UF_CRM_69B83DDB525C9: item.parcel.due_date }
             }, function(result) {
               if (result.error()) { console.error('Smart Invoice error:', result.error()); resolve(null); }
               else {
@@ -1090,7 +1090,7 @@ function renderPaymentTab(opts: {
       navigator.clipboard.writeText(inst.payment_url).catch(function(){});
       setStatus('✅ Link já existente copiado! ' + inst.payment_url, 'var(--value-paid)');
       // Also write back to Bitrix field
-      try { BX24.callMethod('crm.deal.update', { id: ENTITY_ID, fields: { UF_CRM_EMMELY_PAYMENT_URL: inst.payment_url, UF_CRM_EMMELY_PAYMENT_STATUS: 'pending' } }); } catch(e){}
+      try { resolveDealPaymentStatusId('Pendente', function(statusId) { BX24.callMethod('crm.deal.update', { id: ENTITY_ID, fields: { UF_CRM_EMMELY_PAYMENT_URL: inst.payment_url, UF_CRM_EMMELY_PAYMENT_STATUS: statusId } }); }); } catch(e){}
       return;
     }
 
@@ -1120,7 +1120,7 @@ function renderPaymentTab(opts: {
         navigator.clipboard.writeText(data.transaction.payment_url).catch(function(){});
         setStatus('✅ Link gerado e copiado! ' + data.transaction.payment_url, 'var(--value-paid)');
         // Write payment URL back to Bitrix24 deal field
-        try { BX24.callMethod('crm.deal.update', { id: ENTITY_ID, fields: { UF_CRM_EMMELY_PAYMENT_URL: data.transaction.payment_url, UF_CRM_EMMELY_PAYMENT_STATUS: 'pending' } }); } catch(e){}
+        try { resolveDealPaymentStatusId('Pendente', function(statusId) { BX24.callMethod('crm.deal.update', { id: ENTITY_ID, fields: { UF_CRM_EMMELY_PAYMENT_URL: data.transaction.payment_url, UF_CRM_EMMELY_PAYMENT_STATUS: statusId } }); }); } catch(e){}
         // Create Smart Invoice in Bitrix24 linked to this Deal
         if (typeof BX24 !== 'undefined' && data.transaction.id) {
           try {
@@ -1137,7 +1137,7 @@ function renderPaymentTab(opts: {
                   begindate: new Date().toISOString().split('T')[0],
                   closedate: inst.due_date || new Date().toISOString().split('T')[0],
                   comments: 'Fatura gerada automaticamente pelo Emmely Pay via link de pagamento.',
-                  UF_CRM_69B83DDB1F59D: 'pending',
+                  UF_CRM_69B83DDB1F59D: 9391,
                   UF_CRM_69B83DDB2B85D: DEAL_RAW_GATEWAY || 'stripe',
                   UF_CRM_69B83DDB38FF9: data.transaction.payment_url,
                   UF_CRM_69B83DDB3EAFC: '1',
