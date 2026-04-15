@@ -1150,6 +1150,7 @@ function ConfigView({ integration, botId, domain, loading, onResync, onRefresh }
         </Card>
       )}
 
+      <div className="space-y-2">
         <Button
           onClick={async () => {
             setReregisteringBot(true);
