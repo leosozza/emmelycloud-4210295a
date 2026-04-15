@@ -95,15 +95,24 @@ const Bitrix24App = () => {
   const location = useLocation();
   const [initialLoading, setInitialLoading] = useState(true);
   const [memberId, setMemberId] = useState<string | null>(null);
+  const [appRestricted, setAppRestricted] = useState(false);
+  const [hasAppAccess, setHasAppAccess] = useState(true);
 
   // Derive view from URL path
   const view: AppView = useMemo(() => {
     if (initialLoading) return "loading";
     const sub = location.pathname.replace(/^\/bitrix24\/?/, "").split("/")[0];
-    if (!sub || sub === "") return "dashboard";
+    if (!sub || sub === "") {
+      // If restricted and no access, force chatia
+      if (appRestricted && !hasAppAccess) return "chatia";
+      return "dashboard";
+    }
     const validViews: AppView[] = ["dashboard", "agentes", "training", "flows", "playground", "chatia", "pagamentos", "relatorios", "baixa", "carteira", "configuracoes", "propostas", "integracoes", "automacoes", "observabilidade"];
-    return validViews.includes(sub as AppView) ? (sub as AppView) : "dashboard";
-  }, [location.pathname, initialLoading]);
+    const matched = validViews.includes(sub as AppView) ? (sub as AppView) : "dashboard";
+    // If restricted and no access, only allow chatia
+    if (appRestricted && !hasAppAccess && matched !== "chatia") return "chatia";
+    return matched;
+  }, [location.pathname, initialLoading, appRestricted, hasAppAccess]);
 
   const setView = useCallback((v: AppView) => {
     if (v === "loading") return;
@@ -168,6 +177,46 @@ const Bitrix24App = () => {
         setIntegration(int);
         const cfg = int?.config || {};
         setBotId(cfg.bot_id ? String(cfg.bot_id) : null);
+
+        // Check emmely_app permission
+        if (int?.id) {
+          try {
+            const { data: permRows } = await supabase
+              .from("bitrix24_user_permissions")
+              .select("bitrix_user_id")
+              .eq("integration_id", int.id)
+              .eq("module", "emmely_app");
+
+            if (permRows && permRows.length > 0) {
+              setAppRestricted(true);
+              // Get current Bitrix user ID
+              let bitrixUserId = "";
+              try {
+                const bx24 = (window as any).BX24;
+                if (bx24) {
+                  bitrixUserId = await new Promise<string>((resolve) => {
+                    bx24.callMethod("user.current", {}, (result: any) => {
+                      resolve(String(result?.data?.()?.ID || ""));
+                    });
+                  });
+                }
+              } catch {}
+              if (bitrixUserId) {
+                const allowed = permRows.some(r => r.bitrix_user_id === bitrixUserId);
+                setHasAppAccess(allowed);
+              } else {
+                setHasAppAccess(false);
+              }
+            } else {
+              setAppRestricted(false);
+              setHasAppAccess(true);
+            }
+          } catch (e) {
+            console.error("[BITRIX24] Permission check error:", e);
+            setAppRestricted(false);
+            setHasAppAccess(true);
+          }
+        }
       }
     } catch (e) {
       console.error("[BITRIX24] Fetch error:", e);
@@ -205,7 +254,7 @@ const Bitrix24App = () => {
     }
   };
 
-  const navCategories = [
+  const allNavCategories = [
     {
       label: "Emmely IO",
       items: [
@@ -242,6 +291,10 @@ const Bitrix24App = () => {
       ],
     },
   ];
+
+  const navCategories = appRestricted && !hasAppAccess
+    ? [{ label: "Emmely IO", items: [{ id: "chatia", label: "Chat IA", icon: Sparkles }] }]
+    : allNavCategories;
 
   // No longer need expandable tabs logic
   if (view === "loading") {
