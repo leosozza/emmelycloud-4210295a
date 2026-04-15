@@ -10,7 +10,7 @@ const jsonHeaders = {
   "Content-Type": "application/json",
 };
 
-const CONNECTOR_ID = "emmely_connector";
+const DEFAULT_CONNECTOR_ID = "emmely_connector";
 
 async function callBitrix(clientEndpoint: string, accessToken: string, method: string, params: Record<string, any> = {}): Promise<any> {
   const url = `${clientEndpoint}${method}?auth=${encodeURIComponent(accessToken)}`;
@@ -99,8 +99,9 @@ async function sendWithFallbacks(
   }
 
   // 1. Primary: imconnector.send.messages
+  const effectiveConnectorId = arguments.length > 7 ? arguments[7] as string : DEFAULT_CONNECTOR_ID;
   const primary = await callBitrix(clientEndpoint, accessToken, "imconnector.send.messages", {
-    CONNECTOR: CONNECTOR_ID,
+    CONNECTOR: effectiveConnectorId,
     LINE: lineId,
     MESSAGES: [
       {
@@ -171,7 +172,7 @@ Deno.serve(async (req) => {
 
   try {
     const body = await req.json();
-    const { message, contactName, contactId, channel, conversationId } = body;
+    const { message, contactName, contactId, channel, conversationId, connectorId: reqConnectorId, lineId: reqLineId } = body;
 
     if (!message || !contactId) {
       return new Response(JSON.stringify({ error: "Missing message or contactId" }), {
