@@ -824,15 +824,18 @@ Deno.serve(async (req) => {
   );
 
   try {
-    // Check if this is a special request (badge or list connectors)
+    // Try to parse body for special requests (badge, list connectors)
+    let parsedBody: any = null;
     const contentType = req.headers.get("content-type") || "";
     if (contentType.includes("application/json")) {
       try {
-        const bodyText = await req.clone().text();
-        const body = JSON.parse(bodyText);
+        parsedBody = await req.json();
+      } catch { /* not JSON, continue */ }
+    }
 
-        // ─── List active connectors ───
-        if (body._listConnectors) {
+    if (parsedBody) {
+      // ─── List active connectors ───
+      if (parsedBody._listConnectors) {
           console.log("[WORKER] Processing _listConnectors request");
           const { data: integration } = await supabase
             .from("bitrix24_integrations")
