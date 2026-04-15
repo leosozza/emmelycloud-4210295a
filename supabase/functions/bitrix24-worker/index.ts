@@ -905,7 +905,7 @@ Deno.serve(async (req) => {
                   LINE: lineId,
                 });
                 console.log(`[WORKER] imconnector.status ${conn.id} LINE ${lineId}:`, JSON.stringify(statusRes).substring(0, 300));
-                const isActive = statusRes.result?.active_status === true || statusRes.result?.connection_status === true || statusRes.result?.register_status === true;
+                const isActive = statusRes.result?.STATUS === true || statusRes.result?.active_status === true || statusRes.result?.CONFIGURED === true;
                 // Always include custom connectors with their lines (user can activate later)
                 result.push({
                   connectorId: conn.id,
