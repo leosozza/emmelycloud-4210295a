@@ -255,9 +255,24 @@ Deno.serve(async (req) => {
       console.log("[SETTINGS] Connector activated successfully on LINE:", lineId);
     }
 
-    // If JSON format requested (frontend call), return integration data
+    // If JSON format requested (frontend call), return integration data + permissions
     if (isJsonRequest) {
-      return new Response(JSON.stringify({ integration }), {
+      // Fetch emmely_app permissions for access control
+      let appPermissions: string[] = [];
+      try {
+        const { data: permRows } = await supabase
+          .from("bitrix24_user_permissions")
+          .select("bitrix_user_id")
+          .eq("integration_id", integration.id)
+          .eq("module", "emmely_app");
+        if (permRows && permRows.length > 0) {
+          appPermissions = permRows.map((r: any) => r.bitrix_user_id);
+        }
+      } catch (e) {
+        console.log("[SETTINGS] Permission fetch error:", e);
+      }
+
+      return new Response(JSON.stringify({ integration, appPermissions }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
