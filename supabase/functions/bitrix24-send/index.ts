@@ -61,20 +61,19 @@ async function ensureValidToken(supabase: any, integration: any): Promise<string
 async function ensureConnectorActive(
   clientEndpoint: string,
   accessToken: string,
-  lineId: number
+  lineId: number,
+  connectorId: string = DEFAULT_CONNECTOR_ID
 ): Promise<void> {
-  // Check connector status on this line
   const status = await callBitrix(clientEndpoint, accessToken, "imconnector.status", {
-    CONNECTOR: CONNECTOR_ID,
+    CONNECTOR: connectorId,
     LINE: lineId,
   });
-  console.log("[SEND] imconnector.status for LINE", lineId, ":", JSON.stringify(status).substring(0, 500));
+  console.log("[SEND] imconnector.status for LINE", lineId, "connector", connectorId, ":", JSON.stringify(status).substring(0, 500));
 
-  // If not active, try to activate
   if (status.error || !status.result?.active_status) {
     console.log("[SEND] Connector not active on LINE", lineId, "- activating...");
     const activateResult = await callBitrix(clientEndpoint, accessToken, "imconnector.activate", {
-      CONNECTOR: CONNECTOR_ID,
+      CONNECTOR: connectorId,
       LINE: lineId,
       ACTIVE: 1,
     });
@@ -89,19 +88,19 @@ async function sendWithFallbacks(
   contactId: string,
   contactName: string,
   message: string,
-  channel: string
+  channel: string,
+  connectorId: string = DEFAULT_CONNECTOR_ID
 ): Promise<boolean> {
   // 0. Ensure connector is active on this line
   try {
-    await ensureConnectorActive(clientEndpoint, accessToken, lineId);
+    await ensureConnectorActive(clientEndpoint, accessToken, lineId, connectorId);
   } catch (e) {
     console.warn("[SEND] ensureConnectorActive failed:", e);
   }
 
   // 1. Primary: imconnector.send.messages
-  const effectiveConnectorId = arguments.length > 7 ? arguments[7] as string : DEFAULT_CONNECTOR_ID;
   const primary = await callBitrix(clientEndpoint, accessToken, "imconnector.send.messages", {
-    CONNECTOR: effectiveConnectorId,
+    CONNECTOR: connectorId,
     LINE: lineId,
     MESSAGES: [
       {
@@ -124,7 +123,7 @@ async function sendWithFallbacks(
   console.log("[SEND] imconnector.send.messages full response:", JSON.stringify(primary).substring(0, 1000));
 
   if (!primary.error) {
-    console.log("[SEND] imconnector.send.messages success");
+    console.log("[SEND] imconnector.send.messages success via connector:", connectorId);
     return true;
   }
 
