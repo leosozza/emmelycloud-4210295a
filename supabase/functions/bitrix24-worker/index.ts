@@ -853,13 +853,19 @@ Deno.serve(async (req) => {
           const clientEndpoint = integration.client_endpoint.endsWith("/") ? integration.client_endpoint : integration.client_endpoint + "/";
           const accessToken = await ensureValidToken(supabase, integration);
 
-          // 1. List registered connectors
-          const connectorsRes = await callBitrix(clientEndpoint, accessToken, "imconnector.list", {});
-          console.log("[WORKER] imconnector.list raw:", JSON.stringify(connectorsRes).substring(0, 800));
-          
+          // 1. List registered connectors + bizproc robots in parallel
+          const [connectorsRes, linesRes, robotsRes] = await Promise.all([
+            callBitrix(clientEndpoint, accessToken, "imconnector.list", {}),
+            callBitrix(clientEndpoint, accessToken, "imopenlines.config.list.get", {}),
+            callBitrix(clientEndpoint, accessToken, "bizproc.robot.list", {}),
+          ]);
+
+          console.log("[WORKER] imconnector.list raw:", JSON.stringify(connectorsRes));
+          console.log("[WORKER] bizproc.robot.list raw:", JSON.stringify(robotsRes).substring(0, 2000));
+
           // result is an object { connectorId: connectorName }
           const rawResult = connectorsRes.result;
-          
+
           // Built-in Bitrix connectors to exclude (user only wants custom ones)
           const BUILTIN_CONNECTORS = new Set([
             "livechat", "whatsappbytwilio", "viber", "telegrambot", "imessage",
@@ -867,7 +873,7 @@ Deno.serve(async (req) => {
             "notifications", "whatsappbyedna", "whatsapp", "avito",
             "vkgroup", "ok", "olx", "yandex",
           ]);
-          
+
           const connectorEntries: { id: string; name: string }[] = [];
           if (rawResult && typeof rawResult === "object" && !Array.isArray(rawResult)) {
             for (const [id, name] of Object.entries(rawResult)) {
@@ -884,14 +890,12 @@ Deno.serve(async (req) => {
           }
           console.log("[WORKER] Custom connectors found:", connectorEntries);
 
-          // 2. List Open Lines
-          const linesRes = await callBitrix(clientEndpoint, accessToken, "imopenlines.config.list.get", {});
+          // 2. Open Lines
           console.log("[WORKER] Open Lines raw:", JSON.stringify(linesRes).substring(0, 800));
           const rawLines = linesRes.result;
           const lines: any[] = Array.isArray(rawLines) ? rawLines : (rawLines && typeof rawLines === "object" ? Object.values(rawLines) : []);
 
           // 3. Build result: each custom connector paired with each active line
-          // For custom connectors, check status; if status check fails or no active_status, still include with a flag
           const result: { connectorId: string; connectorName: string; lineId: number; lineName: string; active: boolean }[] = [];
 
           for (const conn of connectorEntries) {
@@ -906,28 +910,49 @@ Deno.serve(async (req) => {
                 });
                 console.log(`[WORKER] imconnector.status ${conn.id} LINE ${lineId}:`, JSON.stringify(statusRes).substring(0, 300));
                 const isActive = statusRes.result?.STATUS === true || statusRes.result?.active_status === true || statusRes.result?.CONFIGURED === true;
-                // Always include custom connectors with their lines (user can activate later)
-                result.push({
-                  connectorId: conn.id,
-                  connectorName: conn.name,
-                  lineId,
-                  lineName,
-                  active: isActive,
-                });
+                result.push({ connectorId: conn.id, connectorName: conn.name, lineId, lineName, active: isActive });
               } catch (e) {
                 console.warn(`[WORKER] Status check failed for ${conn.id} LINE ${lineId}:`, e);
-                // Still include it
-                result.push({
-                  connectorId: conn.id,
-                  connectorName: conn.name,
-                  lineId,
-                  lineName,
-                  active: false,
-                });
+                result.push({ connectorId: conn.id, connectorName: conn.name, lineId, lineName, active: false });
               }
             }
           }
-          
+
+          // 4. Add bizproc robots as additional connectors (PowerZap, ZapCloud, etc.)
+          // PowerZap and similar apps register bizproc robots for sending messages.
+          // The robot CODE is also used as the connectorId in imconnector.send.messages.
+          const rawRobots = robotsRes.result;
+          const robotList: any[] = Array.isArray(rawRobots) ? rawRobots : (rawRobots && typeof rawRobots === "object" ? Object.values(rawRobots) : []);
+
+          const MESSAGING_KEYWORDS = ["whatsapp", "wapp", "zapcloud", "powerzap", "zap", "mensagem", "message", "sms", "telegram", "instagram", "enviar", "send"];
+          // Connector IDs already found via imconnector.list (avoid duplicates)
+          const existingConnectorIds = new Set(connectorEntries.map(c => c.id.toLowerCase()));
+
+          for (const robot of robotList) {
+            const code = String(robot.CODE || robot.code || "");
+            const name = String(robot.NAME || robot.name || code);
+            if (!code) continue;
+            // Skip if already listed as imconnector
+            if (existingConnectorIds.has(code.toLowerCase())) continue;
+            // Only include messaging-related robots
+            const nameLower = name.toLowerCase();
+            const codeLower = code.toLowerCase();
+            if (!MESSAGING_KEYWORDS.some(kw => nameLower.includes(kw) || codeLower.includes(kw))) continue;
+
+            // Pair the robot with each active line (robot targets specific lines too)
+            const activeLines = lines.filter((l: any) => l.ACTIVE === "Y");
+            if (activeLines.length === 0) {
+              // No lines: add without line pairing
+              result.push({ connectorId: code, connectorName: name, lineId: 0, lineName: "", active: true });
+            } else {
+              for (const line of activeLines) {
+                const lineId = parseInt(line.ID || line.id || "0");
+                const lineName = line.LINE_NAME || line.line_name || `Linha ${lineId}`;
+                result.push({ connectorId: code, connectorName: name, lineId, lineName, active: true });
+              }
+            }
+          }
+
           console.log("[WORKER] Final connectors result:", JSON.stringify(result));
 
           return new Response(JSON.stringify({ connectors: result }), {

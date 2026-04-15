@@ -272,7 +272,7 @@ export default function NodeConfigPanel({ data, onChange, onDelete, onClose }: N
                   <SelectItem value="default">📱 Padrão (WhatsApp/Instagram)</SelectItem>
                   {connectors.map((c, i) => (
                     <SelectItem key={`${c.connectorId}-${c.lineId}-${i}`} value={`${c.connectorId}::${c.lineId}`}>
-                      {c.active ? "🟢" : "🔴"} {c.connectorName} — {c.lineName}
+                      {c.active ? "🟢" : "🔴"} {c.connectorName}{c.lineName ? ` — ${c.lineName}` : ""}
                     </SelectItem>
                   ))}
                 </SelectContent>
