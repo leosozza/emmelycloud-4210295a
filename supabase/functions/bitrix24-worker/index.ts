@@ -824,12 +824,73 @@ Deno.serve(async (req) => {
   );
 
   try {
-    // Check if this is a badge creation request (from ai-process-message, message-send, etc.)
+    // Check if this is a special request (badge or list connectors)
     const contentType = req.headers.get("content-type") || "";
     if (contentType.includes("application/json")) {
       try {
         const bodyText = await req.clone().text();
         const body = JSON.parse(bodyText);
+
+        // ─── List active connectors ───
+        if (body._listConnectors) {
+          console.log("[WORKER] Processing _listConnectors request");
+          const { data: integration } = await supabase
+            .from("bitrix24_integrations")
+            .select("*")
+            .order("created_at", { ascending: false })
+            .limit(1)
+            .single();
+
+          if (!integration?.client_endpoint) {
+            return new Response(JSON.stringify({ connectors: [] }), {
+              headers: { ...corsHeaders, "Content-Type": "application/json" },
+            });
+          }
+
+          const clientEndpoint = integration.client_endpoint.endsWith("/") ? integration.client_endpoint : integration.client_endpoint + "/";
+          const accessToken = await ensureValidToken(supabase, integration);
+
+          // 1. List registered connectors
+          const connectorsRes = await callBitrix(clientEndpoint, accessToken, "imconnector.list", {});
+          const registeredConnectors: string[] = connectorsRes.result || [];
+          console.log("[WORKER] Registered connectors:", registeredConnectors);
+
+          // 2. List Open Lines
+          const linesRes = await callBitrix(clientEndpoint, accessToken, "imopenlines.config.list.get", {});
+          const lines: any[] = linesRes.result || [];
+
+          // 3. For each connector, check which lines have it active
+          const result: { connectorId: string; connectorName: string; lineId: number; lineName: string }[] = [];
+
+          for (const connId of registeredConnectors) {
+            for (const line of lines) {
+              const lineId = parseInt(line.ID || line.id || "0");
+              const lineName = line.LINE_NAME || line.line_name || `Linha ${lineId}`;
+              try {
+                const statusRes = await callBitrix(clientEndpoint, accessToken, "imconnector.status", {
+                  CONNECTOR: connId,
+                  LINE: lineId,
+                });
+                if (statusRes.result?.active_status) {
+                  result.push({
+                    connectorId: connId,
+                    connectorName: connId,
+                    lineId,
+                    lineName,
+                  });
+                }
+              } catch {
+                // skip
+              }
+            }
+          }
+
+          return new Response(JSON.stringify({ connectors: result }), {
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+
+        // ─── Badge request ───
         if (body._badgeRequest) {
           console.log("[WORKER] Processing badge request:", body.badgeCode);
           await createBitrixBadgeActivity({
@@ -846,8 +907,8 @@ Deno.serve(async (req) => {
             headers: { ...corsHeaders, "Content-Type": "application/json" },
           });
         }
-      } catch (badgeErr) {
-        console.log("[WORKER] Not a badge request, continuing to queue processing");
+      } catch (parseErr) {
+        console.log("[WORKER] Not a special request, continuing to queue processing");
       }
     }
 

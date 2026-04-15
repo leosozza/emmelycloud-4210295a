@@ -304,7 +304,13 @@ async function executeFlow(
 
       case "message": {
         const text = replaceVariables(nodeData.message || nodeData.content || "", variables);
-        if (text) await sendMessage(supabaseUrl, serviceKey, conversation.id, text, instanceId);
+        if (text) {
+          if (nodeData.connectorId) {
+            await sendViaBitrixConnector(supabaseUrl, serviceKey, conversation, text, nodeData.connectorId, nodeData.connectorLineId);
+          } else {
+            await sendMessage(supabaseUrl, serviceKey, conversation.id, text, instanceId);
+          }
+        }
         currentNodeId = getNextNode(node.id, edges);
         break;
       }
@@ -351,7 +357,12 @@ async function executeFlow(
         const caption = replaceVariables(nodeData.mediaCaption || nodeData.caption || "", variables);
         const mediaType = nodeData.mediaType || "image";
         if (mediaUrl) {
-          await sendMediaMessage(supabaseUrl, serviceKey, conversation.id, mediaType, mediaUrl, caption, instanceId);
+          if (nodeData.connectorId) {
+            const mediaText = caption ? `${caption}\n${mediaUrl}` : mediaUrl;
+            await sendViaBitrixConnector(supabaseUrl, serviceKey, conversation, mediaText, nodeData.connectorId, nodeData.connectorLineId);
+          } else {
+            await sendMediaMessage(supabaseUrl, serviceKey, conversation.id, mediaType, mediaUrl, caption, instanceId);
+          }
         }
         currentNodeId = getNextNode(node.id, edges);
         break;
