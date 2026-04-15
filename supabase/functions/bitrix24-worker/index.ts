@@ -855,12 +855,19 @@ Deno.serve(async (req) => {
 
           // 1. List registered connectors
           const connectorsRes = await callBitrix(clientEndpoint, accessToken, "imconnector.list", {});
-          const registeredConnectors: string[] = connectorsRes.result || [];
+          console.log("[WORKER] imconnector.list raw:", JSON.stringify(connectorsRes).substring(0, 500));
+          // result can be an array of strings or an object with connector IDs as keys
+          const rawResult = connectorsRes.result;
+          const registeredConnectors: string[] = Array.isArray(rawResult) 
+            ? rawResult 
+            : (rawResult && typeof rawResult === "object" ? Object.keys(rawResult) : []);
           console.log("[WORKER] Registered connectors:", registeredConnectors);
 
           // 2. List Open Lines
           const linesRes = await callBitrix(clientEndpoint, accessToken, "imopenlines.config.list.get", {});
-          const lines: any[] = linesRes.result || [];
+          console.log("[WORKER] imopenlines.config.list.get raw:", JSON.stringify(linesRes).substring(0, 500));
+          const rawLines = linesRes.result;
+          const lines: any[] = Array.isArray(rawLines) ? rawLines : (rawLines && typeof rawLines === "object" ? Object.values(rawLines) : []);
 
           // 3. For each connector, check which lines have it active
           const result: { connectorId: string; connectorName: string; lineId: number; lineName: string }[] = [];
