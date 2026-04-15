@@ -89,7 +89,7 @@ Deno.serve(async (req) => {
 
   try {
     const body = await req.json();
-    const { conversation_id, content, message_type, resolvedInteractiveData: bodyInteractiveData, skip_db_save, instance_id, bitrix_entity_id, bitrix_entity_type_id } = body;
+    const { conversation_id, content, message_type, resolvedInteractiveData: bodyInteractiveData, skip_db_save, instance_id, bitrix_entity_id, bitrix_entity_type_id, sender_name: bodySenderName } = body;
     const media_base64: string | undefined = body.media_base64;
     const media_mime_type: string | undefined = body.media_mime_type;
     const file_name: string | undefined = body.file_name;
@@ -393,7 +393,7 @@ Deno.serve(async (req) => {
         conversation_id,
         direction: "outbound",
         content,
-        sender_name: "Atendente",
+        sender_name: bodySenderName || "Atendente",
         external_id: externalMessageId,
         delivery_status: "sent",
         sync_source: "emmely",
