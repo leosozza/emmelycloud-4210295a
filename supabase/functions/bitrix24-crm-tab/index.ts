@@ -984,17 +984,7 @@ Deno.serve(async (req) => {
           }
         }
 
-        // ── 2. Phone/email lookup ──
-        if (!conversation && allPhones.length > 0) {
-          conversation = await findConversationByPhone(supabase, allPhones);
-          if (conversation) console.log("[CRM-TAB] ✓ Matched via phone");
-        }
-        if (!conversation && allEmails.length > 0) {
-          conversation = await findConversationByEmail(supabase, allEmails);
-          if (conversation) console.log("[CRM-TAB] ✓ Matched via email");
-        }
-
-        // ── 3. Bot state lookup ──
+        // ── 2. Bot state lookup (deterministic IDs — before phone/email heuristics) ──
         if (!conversation) {
           conversation = await findConversationByBotState(supabase, entityId, entityTypeId);
           if (conversation) console.log("[CRM-TAB] ✓ Matched via bot_state");
@@ -1010,6 +1000,16 @@ Deno.serve(async (req) => {
             conversation = await findConversationByBotState(supabase, String(entity.LEAD_ID));
           }
           if (conversation) console.log("[CRM-TAB] ✓ Matched via deal's LEAD_ID:", entity.LEAD_ID);
+        }
+
+        // ── 3. Phone/email lookup ──
+        if (!conversation && allPhones.length > 0) {
+          conversation = await findConversationByPhone(supabase, allPhones);
+          if (conversation) console.log("[CRM-TAB] ✓ Matched via phone");
+        }
+        if (!conversation && allEmails.length > 0) {
+          conversation = await findConversationByEmail(supabase, allEmails);
+          if (conversation) console.log("[CRM-TAB] ✓ Matched via email");
         }
 
         // ── 4. Client lookup via CONTACT_ID → clients.bitrix24_id → conversations.client_id ──
