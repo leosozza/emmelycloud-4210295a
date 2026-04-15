@@ -1078,6 +1078,25 @@ function renderPaymentTab(opts: {
     el.style.color = isError ? 'var(--value-open)' : 'var(--value-paid)';
   }
 
+  // === Resolve Deal payment status enum ID ===
+  var _dealStatusCache = null;
+  function resolveDealPaymentStatusId(label, callback) {
+    if (_dealStatusCache) {
+      var match = _dealStatusCache.find(function(i) { return i.VALUE === label; });
+      callback(match ? match.ID : label);
+      return;
+    }
+    if (typeof BX24 === 'undefined') { callback(label); return; }
+    BX24.callMethod('crm.deal.fields', {}, function(result) {
+      if (result.error()) { callback(label); return; }
+      var fields = result.data();
+      var items = (fields && fields.UF_CRM_EMMELY_PAYMENT_STATUS && fields.UF_CRM_EMMELY_PAYMENT_STATUS.items) || [];
+      _dealStatusCache = items;
+      var match = items.find(function(i) { return i.VALUE === label; });
+      callback(match ? match.ID : label);
+    });
+  }
+
   // === Toggle Flow Row ===
   function toggleFlowRow(instId) {
     var row = document.getElementById('flow-row-' + instId);
