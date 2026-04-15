@@ -878,7 +878,15 @@ function renderHtml(opts: {
     }
 
   try {
-    BX24.init(function() { BX24.fitWindow(); });
+    BX24.init(function() {
+      BX24.fitWindow();
+      // Fetch current user for operator name
+      try {
+        BX24.callMethod('user.current', {}, function(res) {
+          if (res.data()) window._bitrixCurrentUser = res.data();
+        });
+      } catch(e) {}
+    });
   } catch(e) {}
 </script>
 </body>
