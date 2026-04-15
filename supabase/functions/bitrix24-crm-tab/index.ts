@@ -899,12 +899,15 @@ function renderHtml(opts: {
   try {
     BX24.init(function() {
       BX24.fitWindow();
-      // Fetch current user for operator name
+      // Fetch current user for operator name — disable send until loaded
+      var sendBtn = document.getElementById('send-client-btn');
+      if (sendBtn) sendBtn.disabled = true;
       try {
         BX24.callMethod('user.current', {}, function(res) {
           if (res.data()) window._bitrixCurrentUser = res.data();
+          if (sendBtn) sendBtn.disabled = false;
         });
-      } catch(e) {}
+      } catch(e) { if (sendBtn) sendBtn.disabled = false; }
     });
   } catch(e) {}
 </script>

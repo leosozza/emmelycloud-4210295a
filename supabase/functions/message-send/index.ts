@@ -185,12 +185,14 @@ Deno.serve(async (req) => {
         });
       }
 
+      // Prefix content with sender name if provided
+      const igContent = bodySenderName ? `*${bodySenderName}:*\n${content}` : content;
       const igResponse = await fetch(`${IG_GRAPH_URL}/${creds.igAccountId}/messages`, {
         method: "POST",
         headers: { "Content-Type": "application/json", "Authorization": `Bearer ${creds.accessToken}` },
         body: JSON.stringify({
           recipient: { id: conv.contact_instagram },
-          message: { text: content },
+          message: { text: igContent },
         }),
       });
 
@@ -261,7 +263,9 @@ Deno.serve(async (req) => {
         wuzapiBaseUrl = wuzapiBaseUrl.replace(/\/+$/, "");
 
         let wuzapiEndpoint = "/chat/send/text";
-        let wuzapiPayload: any = { Phone: wuzapiPhone, Body: content };
+        // Prefix content with sender name if provided
+        const wuzapiContent = bodySenderName ? `*${bodySenderName}:*\n${content}` : content;
+        let wuzapiPayload: any = { Phone: wuzapiPhone, Body: wuzapiContent };
 
         if (message_type === "interactive_buttons" && resolvedInteractiveData) {
           wuzapiEndpoint = "/chat/send/buttons";
@@ -353,7 +357,9 @@ Deno.serve(async (req) => {
         } else if (message_type === "reaction" && resolvedInteractiveData) {
           waPayload = { messaging_product: "whatsapp", to: phone, type: "reaction", reaction: { message_id: resolvedInteractiveData.message_id, emoji: resolvedInteractiveData.emoji || "👍" } };
         } else {
-          waPayload = { messaging_product: "whatsapp", to: phone, type: "text", text: { body: content } };
+          // Prefix content with sender name if provided
+          const waContent = bodySenderName ? `*${bodySenderName}:*\n${content}` : content;
+          waPayload = { messaging_product: "whatsapp", to: phone, type: "text", text: { body: waContent } };
         }
 
         const waResponse = await fetch(`${WA_GRAPH_URL}/${creds.phoneNumberId}/messages`, {
