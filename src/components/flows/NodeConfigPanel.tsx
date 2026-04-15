@@ -93,7 +93,7 @@ const OPERATOR_LABELS: Record<FlowCondition["operator"], string> = {
 export default function NodeConfigPanel({ data, onChange, onDelete, onClose }: NodeConfigPanelProps) {
   const [showVars, setShowVars] = useState(false);
   const [crews, setCrews] = useState<any[]>([]);
-  const [connectors, setConnectors] = useState<{ connectorId: string; connectorName: string; lineId: number; lineName: string }[]>([]);
+  const [connectors, setConnectors] = useState<{ connectorId: string; connectorName: string; lineId: number; lineName: string; active?: boolean }[]>([]);
   const [loadingConnectors, setLoadingConnectors] = useState(false);
   const meta = NODE_TYPE_META[data.nodeType as FlowNodeType];
 
