@@ -93,7 +93,11 @@ const OPERATOR_LABELS: Record<FlowCondition["operator"], string> = {
 export default function NodeConfigPanel({ data, onChange, onDelete, onClose }: NodeConfigPanelProps) {
   const [showVars, setShowVars] = useState(false);
   const [crews, setCrews] = useState<any[]>([]);
+  const [connectors, setConnectors] = useState<{ connectorId: string; connectorName: string; lineId: number; lineName: string }[]>([]);
+  const [loadingConnectors, setLoadingConnectors] = useState(false);
   const meta = NODE_TYPE_META[data.nodeType as FlowNodeType];
+
+  const isMessageNode = ["message", "message_buttons", "message_list", "media"].includes(data.nodeType);
 
   useEffect(() => {
     const loadCrews = async () => {
@@ -105,6 +109,24 @@ export default function NodeConfigPanel({ data, onChange, onDelete, onClose }: N
     };
     loadCrews();
   }, []);
+
+  useEffect(() => {
+    if (!isMessageNode) return;
+    const loadConnectors = async () => {
+      setLoadingConnectors(true);
+      try {
+        const { data: result } = await supabase.functions.invoke("bitrix24-worker", {
+          body: { _listConnectors: true },
+        });
+        if (result?.connectors) setConnectors(result.connectors);
+      } catch (e) {
+        console.error("Failed to load connectors:", e);
+      } finally {
+        setLoadingConnectors(false);
+      }
+    };
+    loadConnectors();
+  }, [isMessageNode]);
 
   if (!meta) return null;
 
@@ -222,6 +244,41 @@ export default function NodeConfigPanel({ data, onChange, onDelete, onClose }: N
           </div>
 
           <Separator />
+
+          {/* ── Seletor de Conector (nós de mensagem) ──────────────────── */}
+          {isMessageNode && connectors.length > 0 && (
+            <div className="space-y-1">
+              <Label className="text-[11px]">
+                Enviar via
+                <FieldHint text="Escolha o conector Bitrix24 para enviar. 'Padrão' usa WhatsApp/Instagram direto." />
+              </Label>
+              <Select
+                value={data.connectorId ? `${data.connectorId}::${data.connectorLineId || 0}` : "default"}
+                onValueChange={(v) => {
+                  if (v === "default") {
+                    update({ connectorId: undefined, connectorLineId: undefined });
+                  } else {
+                    const [cId, lId] = v.split("::");
+                    update({ connectorId: cId, connectorLineId: parseInt(lId) || undefined });
+                  }
+                }}
+              >
+                <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="default">📱 Padrão (WhatsApp/Instagram)</SelectItem>
+                  {connectors.map((c, i) => (
+                    <SelectItem key={`${c.connectorId}-${c.lineId}-${i}`} value={`${c.connectorId}::${c.lineId}`}>
+                      🔗 {c.connectorName} — {c.lineName}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+
+          {isMessageNode && loadingConnectors && (
+            <p className="text-[9px] text-muted-foreground">Carregando conectores...</p>
+          )}
 
           {/* ══════════════════════════════════════════════════════════════
               MENSAGENS

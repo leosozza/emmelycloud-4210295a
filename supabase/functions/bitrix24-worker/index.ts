@@ -824,31 +824,99 @@ Deno.serve(async (req) => {
   );
 
   try {
-    // Check if this is a badge creation request (from ai-process-message, message-send, etc.)
+    // Try to parse body for special requests (badge, list connectors)
+    let parsedBody: any = null;
     const contentType = req.headers.get("content-type") || "";
     if (contentType.includes("application/json")) {
       try {
-        const bodyText = await req.clone().text();
-        const body = JSON.parse(bodyText);
-        if (body._badgeRequest) {
-          console.log("[WORKER] Processing badge request:", body.badgeCode);
+        parsedBody = await req.json();
+      } catch { /* not JSON, continue */ }
+    }
+
+    if (parsedBody) {
+      // ─── List active connectors ───
+      if (parsedBody._listConnectors) {
+          console.log("[WORKER] Processing _listConnectors request");
+          const { data: integration } = await supabase
+            .from("bitrix24_integrations")
+            .select("*")
+            .order("created_at", { ascending: false })
+            .limit(1)
+            .single();
+
+          if (!integration?.client_endpoint) {
+            return new Response(JSON.stringify({ connectors: [] }), {
+              headers: { ...corsHeaders, "Content-Type": "application/json" },
+            });
+          }
+
+          const clientEndpoint = integration.client_endpoint.endsWith("/") ? integration.client_endpoint : integration.client_endpoint + "/";
+          const accessToken = await ensureValidToken(supabase, integration);
+
+          // 1. List registered connectors
+          const connectorsRes = await callBitrix(clientEndpoint, accessToken, "imconnector.list", {});
+          console.log("[WORKER] imconnector.list raw:", JSON.stringify(connectorsRes).substring(0, 500));
+          // result can be an array of strings or an object with connector IDs as keys
+          const rawResult = connectorsRes.result;
+          const registeredConnectors: string[] = Array.isArray(rawResult) 
+            ? rawResult 
+            : (rawResult && typeof rawResult === "object" ? Object.keys(rawResult) : []);
+          console.log("[WORKER] Registered connectors:", registeredConnectors);
+
+          // 2. List Open Lines
+          const linesRes = await callBitrix(clientEndpoint, accessToken, "imopenlines.config.list.get", {});
+          console.log("[WORKER] imopenlines.config.list.get raw:", JSON.stringify(linesRes).substring(0, 500));
+          const rawLines = linesRes.result;
+          const lines: any[] = Array.isArray(rawLines) ? rawLines : (rawLines && typeof rawLines === "object" ? Object.values(rawLines) : []);
+
+          // 3. For each connector, check which lines have it active
+          const result: { connectorId: string; connectorName: string; lineId: number; lineName: string }[] = [];
+
+          for (const connId of registeredConnectors) {
+            for (const line of lines) {
+              const lineId = parseInt(line.ID || line.id || "0");
+              const lineName = line.LINE_NAME || line.line_name || `Linha ${lineId}`;
+              try {
+                const statusRes = await callBitrix(clientEndpoint, accessToken, "imconnector.status", {
+                  CONNECTOR: connId,
+                  LINE: lineId,
+                });
+                if (statusRes.result?.active_status) {
+                  result.push({
+                    connectorId: connId,
+                    connectorName: connId,
+                    lineId,
+                    lineName,
+                  });
+                }
+              } catch {
+                // skip
+              }
+            }
+          }
+
+          return new Response(JSON.stringify({ connectors: result }), {
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+
+        // ─── Badge request ───
+        if (parsedBody._badgeRequest) {
+          console.log("[WORKER] Processing badge request:", parsedBody.badgeCode);
           await createBitrixBadgeActivity({
             supabase,
-            conversationId: body.conversationId,
-            channel: body.channel,
-            badgeCode: body.badgeCode,
-            headerTitle: body.headerTitle,
-            messagePreview: body.messagePreview,
-            instanceName: body.instanceName,
-            extraBlocks: body.extraBlocks,
+            conversationId: parsedBody.conversationId,
+            channel: parsedBody.channel,
+            badgeCode: parsedBody.badgeCode,
+            headerTitle: parsedBody.headerTitle,
+            messagePreview: parsedBody.messagePreview,
+            instanceName: parsedBody.instanceName,
+            extraBlocks: parsedBody.extraBlocks,
           });
           return new Response(JSON.stringify({ ok: true, type: "badge" }), {
             headers: { ...corsHeaders, "Content-Type": "application/json" },
           });
         }
-      } catch (badgeErr) {
-        console.log("[WORKER] Not a badge request, continuing to queue processing");
-      }
     }
 
     // ─── Fetch pending events from queue ───

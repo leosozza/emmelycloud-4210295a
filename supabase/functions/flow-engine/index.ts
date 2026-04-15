@@ -304,7 +304,13 @@ async function executeFlow(
 
       case "message": {
         const text = replaceVariables(nodeData.message || nodeData.content || "", variables);
-        if (text) await sendMessage(supabaseUrl, serviceKey, conversation.id, text, instanceId);
+        if (text) {
+          if (nodeData.connectorId) {
+            await sendViaBitrixConnector(supabaseUrl, serviceKey, conversation, text, nodeData.connectorId, nodeData.connectorLineId);
+          } else {
+            await sendMessage(supabaseUrl, serviceKey, conversation.id, text, instanceId);
+          }
+        }
         currentNodeId = getNextNode(node.id, edges);
         break;
       }
@@ -315,7 +321,13 @@ async function executeFlow(
           id: b.id || b.label,
           label: replaceVariables(b.label || "", variables),
         }));
-        await sendInteractiveMessage(supabaseUrl, serviceKey, conversation, "buttons", text, buttons, instanceId);
+        if (nodeData.connectorId) {
+          // Connector: send as text with numbered options
+          const btnText = buttons.map((b: any, i: number) => `${i + 1}. ${b.label}`).join("\n");
+          await sendViaBitrixConnector(supabaseUrl, serviceKey, conversation, `${text}\n\n${btnText}`, nodeData.connectorId, nodeData.connectorLineId);
+        } else {
+          await sendInteractiveMessage(supabaseUrl, serviceKey, conversation, "buttons", text, buttons, instanceId);
+        }
         await updateBotState(supabase, conversation.id, {
           ...botState,
           flow_id: flow.id,
@@ -335,7 +347,12 @@ async function executeFlow(
           title: replaceVariables(item.title || "", variables),
           description: replaceVariables(item.description || "", variables),
         }));
-        await sendInteractiveMessage(supabaseUrl, serviceKey, conversation, "list", text, items, instanceId, listTitle);
+        if (nodeData.connectorId) {
+          const itemsText = items.map((it: any, i: number) => `${i + 1}. ${it.title}${it.description ? ` — ${it.description}` : ""}`).join("\n");
+          await sendViaBitrixConnector(supabaseUrl, serviceKey, conversation, `${text}\n\n${listTitle}:\n${itemsText}`, nodeData.connectorId, nodeData.connectorLineId);
+        } else {
+          await sendInteractiveMessage(supabaseUrl, serviceKey, conversation, "list", text, items, instanceId, listTitle);
+        }
         await updateBotState(supabase, conversation.id, {
           ...botState,
           flow_id: flow.id,
@@ -351,7 +368,12 @@ async function executeFlow(
         const caption = replaceVariables(nodeData.mediaCaption || nodeData.caption || "", variables);
         const mediaType = nodeData.mediaType || "image";
         if (mediaUrl) {
-          await sendMediaMessage(supabaseUrl, serviceKey, conversation.id, mediaType, mediaUrl, caption, instanceId);
+          if (nodeData.connectorId) {
+            const mediaText = caption ? `${caption}\n${mediaUrl}` : mediaUrl;
+            await sendViaBitrixConnector(supabaseUrl, serviceKey, conversation, mediaText, nodeData.connectorId, nodeData.connectorLineId);
+          } else {
+            await sendMediaMessage(supabaseUrl, serviceKey, conversation.id, mediaType, mediaUrl, caption, instanceId);
+          }
         }
         currentNodeId = getNextNode(node.id, edges);
         break;
@@ -1284,6 +1306,26 @@ async function updateBotState(supabase: any, conversationId: string, state: Reco
 
 async function clearBotState(supabase: any, conversationId: string) {
   await supabase.from("conversations").update({ bot_state: {} }).eq("id", conversationId);
+}
+
+async function sendViaBitrixConnector(
+  supabaseUrl: string, serviceKey: string, conversation: any,
+  content: string, connectorId: string, connectorLineId?: number
+) {
+  if (!content) return;
+  await fetch(`${supabaseUrl}/functions/v1/bitrix24-send`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "Authorization": `Bearer ${serviceKey}` },
+    body: JSON.stringify({
+      message: content,
+      contactId: conversation.contact_phone || conversation.contact_instagram || conversation.id,
+      contactName: conversation.contact_name || "Cliente",
+      channel: conversation.channel || "whatsapp",
+      conversationId: conversation.id,
+      connectorId,
+      lineId: connectorLineId || undefined,
+    }),
+  }).catch((e) => console.error("[FLOW-ENGINE] sendViaBitrixConnector error:", e));
 }
 
 async function sendMessage(supabaseUrl: string, serviceKey: string, conversationId: string, content: string, instanceId?: string | null) {

@@ -10,7 +10,7 @@ const jsonHeaders = {
   "Content-Type": "application/json",
 };
 
-const CONNECTOR_ID = "emmely_connector";
+const DEFAULT_CONNECTOR_ID = "emmely_connector";
 
 async function callBitrix(clientEndpoint: string, accessToken: string, method: string, params: Record<string, any> = {}): Promise<any> {
   const url = `${clientEndpoint}${method}?auth=${encodeURIComponent(accessToken)}`;
@@ -61,20 +61,19 @@ async function ensureValidToken(supabase: any, integration: any): Promise<string
 async function ensureConnectorActive(
   clientEndpoint: string,
   accessToken: string,
-  lineId: number
+  lineId: number,
+  connectorId: string = DEFAULT_CONNECTOR_ID
 ): Promise<void> {
-  // Check connector status on this line
   const status = await callBitrix(clientEndpoint, accessToken, "imconnector.status", {
-    CONNECTOR: CONNECTOR_ID,
+    CONNECTOR: connectorId,
     LINE: lineId,
   });
-  console.log("[SEND] imconnector.status for LINE", lineId, ":", JSON.stringify(status).substring(0, 500));
+  console.log("[SEND] imconnector.status for LINE", lineId, "connector", connectorId, ":", JSON.stringify(status).substring(0, 500));
 
-  // If not active, try to activate
   if (status.error || !status.result?.active_status) {
     console.log("[SEND] Connector not active on LINE", lineId, "- activating...");
     const activateResult = await callBitrix(clientEndpoint, accessToken, "imconnector.activate", {
-      CONNECTOR: CONNECTOR_ID,
+      CONNECTOR: connectorId,
       LINE: lineId,
       ACTIVE: 1,
     });
@@ -89,18 +88,19 @@ async function sendWithFallbacks(
   contactId: string,
   contactName: string,
   message: string,
-  channel: string
+  channel: string,
+  connectorId: string = DEFAULT_CONNECTOR_ID
 ): Promise<boolean> {
   // 0. Ensure connector is active on this line
   try {
-    await ensureConnectorActive(clientEndpoint, accessToken, lineId);
+    await ensureConnectorActive(clientEndpoint, accessToken, lineId, connectorId);
   } catch (e) {
     console.warn("[SEND] ensureConnectorActive failed:", e);
   }
 
   // 1. Primary: imconnector.send.messages
   const primary = await callBitrix(clientEndpoint, accessToken, "imconnector.send.messages", {
-    CONNECTOR: CONNECTOR_ID,
+    CONNECTOR: connectorId,
     LINE: lineId,
     MESSAGES: [
       {
@@ -123,7 +123,7 @@ async function sendWithFallbacks(
   console.log("[SEND] imconnector.send.messages full response:", JSON.stringify(primary).substring(0, 1000));
 
   if (!primary.error) {
-    console.log("[SEND] imconnector.send.messages success");
+    console.log("[SEND] imconnector.send.messages success via connector:", connectorId);
     return true;
   }
 
@@ -171,7 +171,7 @@ Deno.serve(async (req) => {
 
   try {
     const body = await req.json();
-    const { message, contactName, contactId, channel, conversationId } = body;
+    const { message, contactName, contactId, channel, conversationId, connectorId: reqConnectorId, lineId: reqLineId } = body;
 
     if (!message || !contactId) {
       return new Response(JSON.stringify({ error: "Missing message or contactId" }), {
@@ -180,7 +180,7 @@ Deno.serve(async (req) => {
       });
     }
 
-    console.log(`[SEND] Sending to Bitrix24: ${channel} / ${contactName} / ${message.substring(0, 50)}`);
+    console.log(`[SEND] Sending to Bitrix24: ${channel} / ${contactName} / ${message.substring(0, 50)} connector:${reqConnectorId || "default"}`);
 
     // Get all active integrations (could be multi-portal in future)
     const { data: integrations } = await supabase
@@ -196,9 +196,28 @@ Deno.serve(async (req) => {
     }
 
     let sentCount = 0;
+    const effectiveConnectorId = reqConnectorId || DEFAULT_CONNECTOR_ID;
 
     for (const integration of integrations) {
       try {
+        // If lineId was explicitly provided (from flow connector selector), use it directly
+        if (reqLineId) {
+          const accessToken = await ensureValidToken(supabase, integration);
+          const sent = await sendWithFallbacks(
+            integration.client_endpoint,
+            accessToken,
+            reqLineId,
+            contactId,
+            contactName || "Cliente",
+            message,
+            channel || "whatsapp",
+            effectiveConnectorId
+          );
+          if (sent) sentCount++;
+          await debugLog(supabase, integration.id, "message_sent_direct_line", "outbound", { lineId: reqLineId, connectorId: effectiveConnectorId, contactId, sent });
+          continue;
+        }
+
         // Find channel mapping
         const { data: mapping } = await supabase
           .from("bitrix24_channel_mappings")
@@ -227,7 +246,6 @@ Deno.serve(async (req) => {
             continue;
           }
 
-          // Use any available mapping
           const accessToken = await ensureValidToken(supabase, integration);
           const sent = await sendWithFallbacks(
             integration.client_endpoint,
@@ -236,11 +254,12 @@ Deno.serve(async (req) => {
             contactId,
             contactName || "Cliente",
             message,
-            channel || "whatsapp"
+            channel || "whatsapp",
+            effectiveConnectorId
           );
 
           if (sent) sentCount++;
-          await debugLog(supabase, integration.id, "message_sent_fallback_mapping", "outbound", { lineId: anyMapping.line_id, contactId, sent });
+          await debugLog(supabase, integration.id, "message_sent_fallback_mapping", "outbound", { lineId: anyMapping.line_id, connectorId: effectiveConnectorId, contactId, sent });
         } else {
           const accessToken = await ensureValidToken(supabase, integration);
           const sent = await sendWithFallbacks(
@@ -250,11 +269,12 @@ Deno.serve(async (req) => {
             contactId,
             contactName || "Cliente",
             message,
-            channel || "whatsapp"
+            channel || "whatsapp",
+            effectiveConnectorId
           );
 
           if (sent) sentCount++;
-          await debugLog(supabase, integration.id, "message_sent", "outbound", { lineId: mapping.line_id, contactId, sent });
+          await debugLog(supabase, integration.id, "message_sent", "outbound", { lineId: mapping.line_id, connectorId: effectiveConnectorId, contactId, sent });
         }
       } catch (intError) {
         console.error(`[SEND] Error for integration ${integration.id}:`, intError);

@@ -426,6 +426,9 @@ export interface FlowNodeData {
   // Composição
   callFlowId?: string;
   callFlowPassVariables?: boolean;
+  // Canal de envio (conector Bitrix24)
+  connectorId?: string;
+  connectorLineId?: number;
   // Extra
   config?: Record<string, unknown>;
   // Validação
