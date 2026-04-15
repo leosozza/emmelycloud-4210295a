@@ -732,12 +732,19 @@ function renderHtml(opts: {
       setStatus('A enviar...', '#888');
       
       function doSend(convId) {
+        var operatorName = '';
+        try {
+          if (window._bitrixCurrentUser) operatorName = window._bitrixCurrentUser.NAME + ' ' + (window._bitrixCurrentUser.LAST_NAME || '');
+        } catch(e) {}
+        operatorName = operatorName.trim() || 'Operador Bitrix24';
+
         fetch(SUPABASE_URL + '/functions/v1/message-send', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_KEY },
           body: JSON.stringify({
             conversation_id: convId,
-            content: message
+            content: message,
+            sender_name: operatorName
           })
         })
         .then(function(r) { return r.json(); })
