@@ -177,6 +177,46 @@ const Bitrix24App = () => {
         setIntegration(int);
         const cfg = int?.config || {};
         setBotId(cfg.bot_id ? String(cfg.bot_id) : null);
+
+        // Check emmely_app permission
+        if (int?.id) {
+          try {
+            const { data: permRows } = await supabase
+              .from("bitrix24_user_permissions")
+              .select("bitrix_user_id")
+              .eq("integration_id", int.id)
+              .eq("module", "emmely_app");
+
+            if (permRows && permRows.length > 0) {
+              setAppRestricted(true);
+              // Get current Bitrix user ID
+              let bitrixUserId = "";
+              try {
+                const bx24 = (window as any).BX24;
+                if (bx24) {
+                  bitrixUserId = await new Promise<string>((resolve) => {
+                    bx24.callMethod("user.current", {}, (result: any) => {
+                      resolve(String(result?.data?.()?.ID || ""));
+                    });
+                  });
+                }
+              } catch {}
+              if (bitrixUserId) {
+                const allowed = permRows.some(r => r.bitrix_user_id === bitrixUserId);
+                setHasAppAccess(allowed);
+              } else {
+                setHasAppAccess(false);
+              }
+            } else {
+              setAppRestricted(false);
+              setHasAppAccess(true);
+            }
+          } catch (e) {
+            console.error("[BITRIX24] Permission check error:", e);
+            setAppRestricted(false);
+            setHasAppAccess(true);
+          }
+        }
       }
     } catch (e) {
       console.error("[BITRIX24] Fetch error:", e);
