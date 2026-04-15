@@ -2,68 +2,59 @@
 
 ## Problema
 
-A tab "Permissões" em `/configuracoes` controla actualmente módulos `emmely_ai` e `emmely_pay`, e essa verificação é feita nos **CRM tabs** (placements). Mas o pedido é diferente:
+1. **Mensagens do placement não identificam o agente** — `message-send` grava sempre `sender_name: "Atendente"` e o `bitrix24-crm-tab` não passa o nome do operador/agente
+2. **Mensagens do placement não aparecem no bate-papo Bitrix24** — o placement envia via `message-send` (que vai directo ao WhatsApp/Instagram), mas não chama `bitrix24-send` para espelhar no Open Channel
+3. **Não há modo silencioso** — análises e instruções de IA enviadas ao Bitrix24 aparecem para o cliente, quando deviam ficar apenas registadas internamente
 
-- **Permissões controlam o acesso ao APP** (`/bitrix24/*`), **não** aos placements CRM
-- Quem **não tem permissão** → vê apenas `/bitrix24/chatia`
-- Quem **tem permissão** → acesso completo a `/bitrix24/*`
-- Os placements (CRM tabs) funcionam **sem restrição** para todos
-- Futuramente: acesso granular por secção (Emmely IO, Emmely CRM, Emmely Pay, Sistema)
+## API Bitrix24 a utilizar
 
-## Plano
+| Método | Finalidade |
+|---|---|
+| `imconnector.chat.name.set` | Definir o nome do chat com o nome do agente activo |
+| `imopenlines.session.mode.silent` | Activar modo silencioso para mensagens internas de IA |
+| `imopenlines.crm.message.add` | Enviar mensagem no chat do Open Channel vinculado ao CRM (alternativa ao `imconnector.send.messages` para mensagens do placement) |
+| `imopenlines.dialog.get` | Obter o `CHAT_ID` do diálogo para usar nos métodos acima |
 
-### 1. Adicionar módulo `emmely_app` à tabela de permissões
+## Plano de implementação
 
-Criar um novo módulo `emmely_app` na tabela `bitrix24_user_permissions`. Quando a restrição está activa e o utilizador **não** está na lista, ele só vê o Chat IA.
+### 1. Aceitar `sender_name` no `message-send`
 
-**Migração SQL:**
-```sql
--- A coluna module já é text livre, não precisa de ALTER
--- Apenas garantir que o valor 'emmely_app' é aceite (já é)
-```
+Na Edge Function `message-send`, aceitar um parâmetro opcional `sender_name` no body. Se fornecido, usar esse valor em vez do fixo `"Atendente"` ao gravar na tabela `messages`.
 
-Não é necessária migração — o campo `module` já é `text`.
+### 2. Passar o nome do operador no CRM tab (placement)
 
-### 2. Actualizar `PermissoesTab.tsx`
+No `bitrix24-crm-tab`, ao chamar `message-send`, incluir o nome do utilizador Bitrix24 actual (já disponível via `BX24.callMethod("user.current")`) como `sender_name`. O HTML já tem acesso ao utilizador — basta passar o campo.
 
-- Substituir as secções `emmely_ai` e `emmely_pay` por uma única secção `emmely_app` com label **"Acesso ao Aplicativo"** e descrição **"Quando activo, apenas os utilizadores seleccionados acedem ao aplicativo completo. Os restantes terão acesso apenas ao Chat IA. Os placements CRM não são afectados."**
-- Manter a mesma UX (Switch + lista de checkboxes de utilizadores Bitrix24)
+### 3. Espelhar mensagens do placement no Bitrix24 Open Channel
 
-### 3. Verificar permissão no `Bitrix24App.tsx` (frontend)
+Após o envio bem-sucedido via `message-send`, o `bitrix24-crm-tab` deve também chamar `bitrix24-send` (fire-and-forget) para que a mensagem apareça no bate-papo do Bitrix24. Incluir o nome do operador no corpo da mensagem (ex: `[b]Nome[/b] - texto`).
 
-Após `fetchData` obter a `integration`, chamar `BX24.callMethod("user.current")` para obter o `bitrixUserId`, depois consultar `bitrix24_user_permissions` com `module = 'emmely_app'`:
+### 4. Modo silencioso para mensagens de IA
 
-- Se **não existem** registos com `emmely_app` → todos têm acesso (sem restrição)
-- Se **existem** registos mas o utilizador **não está** na lista → forçar `view = "chatia"` e esconder o sidebar (ou mostrar só o item Chat IA)
-- Se o utilizador **está** na lista → acesso completo
+No `bitrix24-send`, aceitar um parâmetro `silent: true`. Quando activo:
+- Chamar `imopenlines.dialog.get` para obter o `CHAT_ID` do diálogo
+- Chamar `imopenlines.session.mode.silent` com `ACTIVATE: "Y"`
+- Enviar a mensagem via `imconnector.send.messages`
+- Desactivar o modo silencioso (`ACTIVATE: "N"`)
 
-Guardar o resultado num state `appRestricted: boolean` e `hasAppAccess: boolean`.
+No `ai-process-message`, ao enviar análises/instruções internas para o Bitrix24, passar `silent: true`.
 
-### 4. Filtrar sidebar e navegação
+### 5. Definir nome do chat com o agente activo
 
-No `navCategories`, quando `appRestricted && !hasAppAccess`:
-- Mostrar apenas `{ id: "chatia", label: "Chat IA", icon: Sparkles }`
-- Redirigir automaticamente para `/bitrix24/chatia` se tentar aceder a outra rota
-
-### 5. Remover verificação de permissão dos CRM tabs
-
-Nas Edge Functions `bitrix24-crm-tab`, `bitrix24-payment-tab` e `bitrix24-booking-tab`:
-- Remover o bloco de verificação `emmely_ai` / `emmely_pay` que retorna "Sem Permissão"
-- Os placements passam a ser acessíveis a todos os utilizadores
+No `bitrix24-send`, após envio bem-sucedido, se um `agentName` for fornecido no body, chamar `imconnector.chat.name.set` para actualizar o nome do chat com o nome do agente (ex: "Emmely AI - Dra. Ana").
 
 ### Ficheiros a alterar
 
 | Ficheiro | Alteração |
 |---|---|
-| `src/components/configuracoes/PermissoesTab.tsx` | Substituir `emmely_ai`/`emmely_pay` por `emmely_app` |
-| `src/pages/Bitrix24App.tsx` | Adicionar check de permissão após init, filtrar sidebar |
-| `supabase/functions/bitrix24-crm-tab/index.ts` | Remover bloco de permissão ~linhas 977-1007 |
-| `supabase/functions/bitrix24-payment-tab/index.ts` | Remover bloco de permissão |
-| `supabase/functions/bitrix24-booking-tab/index.ts` | Remover bloco de permissão |
+| `supabase/functions/message-send/index.ts` | Aceitar `sender_name` no body, usar em vez de `"Atendente"` |
+| `supabase/functions/bitrix24-crm-tab/index.ts` | Passar nome do operador + chamar `bitrix24-send` após envio |
+| `supabase/functions/bitrix24-send/index.ts` | Suporte a `silent`, `agentName`, `imconnector.chat.name.set` |
+| `supabase/functions/ai-process-message/index.ts` | Passar `silent: true` para instruções internas de IA |
 
 ### Resultado esperado
-- Toggle "Restringir Acesso ao Aplicativo" em `/configuracoes` → Permissões
-- Utilizadores restritos → abrem o app e vêem apenas o Chat IA
-- Placements CRM (Emmely Consulta, Emmely Pay, Booking) → funcionam para todos sem restrição
-- Base preparada para futuramente adicionar permissões granulares por secção
+- Mensagens do placement mostram o nome do operador na conversa
+- Mensagens do placement aparecem no bate-papo do Bitrix24
+- Análises e instruções de IA ficam registadas mas não são enviadas ao cliente
+- Nome do chat no Bitrix24 reflecte o agente activo
 
