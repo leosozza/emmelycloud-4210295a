@@ -3579,7 +3579,7 @@ const PLACEMENT_OPTIONS: { value: PlacementType; label: string; endpoint: string
 
 function PlacementPreviewView({ integration, memberId }: { integration: any; memberId: string | null }) {
   const [placementType, setPlacementType] = useState<PlacementType>("payment-tab");
-  const [dealId, setDealId] = useState("10581");
+  const [dealId, setDealId] = useState("");
   const [contactId, setContactId] = useState("1");
   const [leadId, setLeadId] = useState("1");
   const [dialogId, setDialogId] = useState("chat12345");
@@ -3788,8 +3788,10 @@ function PlacementPreviewView({ integration, memberId }: { integration: any; mem
             )}
             {placementType === "crm-tab" && (
               <>
-                <Label className="text-sm font-medium shrink-0">Lead ID:</Label>
-                <Input value={leadId} onChange={(e) => setLeadId(e.target.value)} placeholder="Ex: 1" className="max-w-[160px]" />
+                <Label className="text-sm font-medium shrink-0">Deal ID:</Label>
+                <Input value={dealId} onChange={(e) => { setDealId(e.target.value); if (e.target.value) setLeadId(""); }} placeholder="Ex: 23693" className="max-w-[160px]" />
+                <Label className="text-sm font-medium shrink-0">ou Lead ID:</Label>
+                <Input value={leadId} onChange={(e) => { setLeadId(e.target.value); if (e.target.value) setDealId(""); }} placeholder="Ex: 1" className="max-w-[160px]" />
               </>
             )}
             {(placementType === "im-sidebar" || placementType === "im-context-menu") && (
