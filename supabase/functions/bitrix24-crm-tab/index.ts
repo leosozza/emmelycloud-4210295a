@@ -94,7 +94,8 @@ async function findConversationByPhone(supabase: any, phones: string[]): Promise
     if (phone.length < 8) continue;
     const suffixes = [phone, phone.slice(-9), phone.slice(-8)].filter((s, i, arr) => arr.indexOf(s) === i);
     for (const suffix of suffixes) {
-      const { data: conv } = await supabase
+      // Try active first
+      const { data: active } = await supabase
         .from("conversations")
         .select("id, contact_name, attendance_mode, channel, status, contact_phone, bot_state")
         .ilike("contact_phone", `%${suffix}%`)
@@ -102,7 +103,19 @@ async function findConversationByPhone(supabase: any, phones: string[]): Promise
         .order("last_message_at", { ascending: false })
         .limit(1)
         .maybeSingle();
-      if (conv) return conv;
+      if (active) return active;
+      // Fallback: any status (including fechada)
+      const { data: anyConv } = await supabase
+        .from("conversations")
+        .select("id, contact_name, attendance_mode, channel, status, contact_phone, bot_state")
+        .ilike("contact_phone", `%${suffix}%`)
+        .order("last_message_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (anyConv) {
+        console.log("[CRM-TAB] Phone match found closed conversation:", anyConv.id, "status:", anyConv.status);
+        return anyConv;
+      }
     }
   }
   return null;
