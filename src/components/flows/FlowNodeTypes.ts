@@ -221,6 +221,14 @@ export const NODE_TYPE_META: Record<FlowNodeType, NodeTypeMeta> = {
   bitrix_add_activity:  { label: "Criar Atividade",      icon: CalendarClock,    color: "#ea580c", description: "crm.activity.todo.add — Criar tarefa/atividade no CRM" },
   bitrix_assign_user:   { label: "Atribuir Responsável", icon: UserCog,          color: "#c2410c", description: "Alterar responsável (ASSIGNED_BY_ID) do elemento" },
   bitrix_create_badge:  { label: "Criar Badge",          icon: Award,            color: "#f59e0b", description: "Criar badge visual na timeline do CRM" },
+  // WhatsApp
+  whatsapp_send:        { label: "Enviar WhatsApp",       icon: Send,             color: "#25D366", description: "Enviar mensagem de texto via WhatsApp" },
+  whatsapp_template:    { label: "Template HSM",          icon: LayoutTemplate,   color: "#128C7E", description: "Enviar template aprovado (HSM) via WhatsApp" },
+  whatsapp_media:       { label: "Mídia WhatsApp",        icon: FileUp,           color: "#25D366", description: "Enviar imagem, vídeo ou documento via WhatsApp" },
+  whatsapp_buttons:     { label: "Botões WhatsApp",       icon: ListOrdered,      color: "#075E54", description: "Mensagem interativa com até 3 botões" },
+  whatsapp_list:        { label: "Lista WhatsApp",        icon: MessageCircleMore,color: "#128C7E", description: "Menu interativo com lista de opções" },
+  whatsapp_audio:       { label: "Áudio WhatsApp",        icon: AudioLines,       color: "#25D366", description: "Enviar mensagem de áudio/voz" },
+  whatsapp_read:        { label: "Marcar como Lido",      icon: CheckCheck,       color: "#34B7F1", description: "Marcar mensagem como lida (✓✓)" },
   // Composição
   call_flow:            { label: "Chamar Flow",          icon: Workflow,         color: "#6366f1", description: "Executar outro flow como sub-rotina" },
 };
