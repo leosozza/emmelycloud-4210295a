@@ -1,73 +1,36 @@
 
+
 ## Diagnóstico
 
-Já não parece ser um problema de gravação. A permissão existe na base:
+Três problemas confirmados:
 
-- portal `crm.emmelyfernandesadv.pt`
-- integração `member_id = bea4c89b89c5c33f21450b1a633e6fb1`
-- 1 permissão `emmely_app` guardada
-- utilizador permitido gravado: `bitrix_user_id = "1"`
+1. **Edge function não foi deployed** — A resposta de `bitrix24-connector-settings` não inclui `appPermissions` nem `appRestrictionEnabled`. O código com essas alterações existe no repositório mas nunca foi publicado. Resultado: o frontend recebe `undefined` para ambos os campos e abre tudo.
 
-O problema provável está no carregamento do app dentro do Bitrix:
+2. **Permissão gravada para o utilizador errado** — A única permissão `emmely_app` está vinculada ao ID `1` (Ailson França, CEO). Leonardo de Souza é o ID `9909`. Quando Leonardo testou, não estava na lista de permitidos, mas como o backend não devolvia o campo `appRestrictionEnabled`, a restrição nunca foi aplicada.
 
-1. `src/pages/Bitrix24App.tsx` depende de `member_id` vindo do iframe
-2. se esse `member_id` vier vazio, a função `bitrix24-connector-settings` entra no auto-resolve
-3. nesse ramo, hoje ela devolve só `integration`, sem `appPermissions`
-4. o frontend interpreta isso como “sem restrição” e mostra o app completo
-
-Há ainda um segundo ponto a validar: o único utilizador permitido guardado é o ID `1`. Vou confirmar se esse ID é o Leonardo, porque se for, esse utilizador está efetivamente autorizado.
+3. **Loading infinito** — O `BX24.callMethod("user.current")` tem um timeout de 5s, mas o app ficava preso porque a edge function retornava dados incompletos, causando estado inconsistente.
 
 ## Plano de correção
 
-### 1. Corrigir a resolução da integração no backend
-Em `supabase/functions/bitrix24-connector-settings/index.ts`:
+### 1. Deploy da edge function `bitrix24-connector-settings`
+A versão no código já está correcta (inclui `getAppAccessData`, devolve `appPermissions` e `appRestrictionEnabled`). Basta fazer o deploy.
 
-- aceitar `domain` além de `member_id`
-- resolver a integração por:
-  1. `member_id`
-  2. `domain`
-  3. fallback final para a mais recente
-- devolver `appPermissions` em todos os ramos, inclusive no auto-resolve
-- devolver também um campo explícito como `appRestrictionEnabled`
+### 2. Corrigir a permissão na base de dados
+Actualizar o `bitrix_user_id` de `"1"` para `"9909"` (Leonardo) na tabela `bitrix24_user_permissions`, ou verificar com o utilizador quais IDs devem ter acesso.
 
-### 2. Fechar o app por defeito quando a permissão não puder ser confirmada
-Em `src/pages/Bitrix24App.tsx`:
+### 3. Adicionar logs de diagnóstico no frontend
+Manter o `console.log` existente no `Bitrix24App.tsx` que mostra o userId, as permissões e o estado da restrição para facilitar debug futuro.
 
-- enviar `member_id` e `domain` para `bitrix24-connector-settings`
-- trocar a lógica atual de “falha abre tudo” para “falha mostra só Chat IA”
-- só renderizar navegação completa quando houver confirmação positiva de acesso
-- manter `/bitrix24/chatia` como único destino permitido quando o utilizador não estiver autorizado
-
-### 3. Tornar a restrição independente do número de utilizadores marcados
-Hoje a restrição é inferida por `appPermissions.length > 0`, o que é frágil.
-
-Vou ajustar `src/components/configuracoes/PermissoesTab.tsx` para guardar um flag real no `config` da integração, por exemplo:
-
-- `restrict_app_access: true`
-
-Assim:
-- toggle “Restringir” fica persistido
-- lista de utilizadores permitidos fica separada da ativação da regra
-- o app não depende apenas da existência de linhas na tabela para saber se está restrito
-
-### 4. Validar se o ID permitido pertence mesmo ao utilizador testado
-Antes de concluir a correção, vou confirmar qual utilizador Bitrix corresponde ao ID `1`.
-
-Se o Leonardo for o ID `1`, então:
-- ele está mesmo autorizado hoje
-- o bug principal continua a existir para os restantes utilizadores
-- mas também precisaremos rever a seleção feita na tab de permissões para evitar confusão
+### 4. Melhorar a tab de Permissões
+O `PermissoesTab.tsx` já utiliza `useBitrixUsers` para mostrar os utilizadores com checkbox. O problema é que a selecção não reflectia o utilizador correcto. Nenhuma alteração de código necessária — a UI já está funcional, o problema era o ID errado gravado.
 
 ## Ficheiros a alterar
-
-- `supabase/functions/bitrix24-connector-settings/index.ts`
-- `src/pages/Bitrix24App.tsx`
-- `src/components/configuracoes/PermissoesTab.tsx`
+- **Deploy**: `supabase/functions/bitrix24-connector-settings/index.ts` (já correcto, falta deploy)
+- **Dados**: Actualizar `bitrix24_user_permissions` — trocar bitrix_user_id `"1"` pelo(s) ID(s) correcto(s)
 
 ## Resultado esperado
+- Backend devolve `appRestrictionEnabled: true` e `appPermissions: ["9909"]`
+- Leonardo (ID 9909) acede ao app completo
+- Outros utilizadores vêem apenas Chat IA
+- Loading resolve em menos de 5 segundos
 
-- utilizador sem permissão abre o app no Bitrix e vê apenas `Chat IA`
-- sidebar reduzida para apenas essa opção
-- utilizador autorizado continua com acesso completo a `/bitrix24/*`
-- placements CRM continuam sem bloqueio
-- mesmo que `member_id` não venha corretamente no iframe, o sistema deixa de liberar o app completo por engano
