@@ -953,7 +953,8 @@ Deno.serve(async (req) => {
               }
             }
             if (!conversation && localLead.client_id) {
-              const { data: conv } = await supabase
+              // Try active first
+              const { data: activeConv } = await supabase
                 .from("conversations")
                 .select("id, contact_name, attendance_mode, channel, status, contact_phone, bot_state")
                 .eq("client_id", localLead.client_id)
@@ -961,9 +962,22 @@ Deno.serve(async (req) => {
                 .order("last_message_at", { ascending: false })
                 .limit(1)
                 .maybeSingle();
-              if (conv) {
-                conversation = conv;
-                console.log("[CRM-TAB] ✓ Matched via lead.client_id");
+              if (activeConv) {
+                conversation = activeConv;
+                console.log("[CRM-TAB] ✓ Matched via lead.client_id (active)");
+              } else {
+                // Fallback: include closed
+                const { data: anyConv } = await supabase
+                  .from("conversations")
+                  .select("id, contact_name, attendance_mode, channel, status, contact_phone, bot_state")
+                  .eq("client_id", localLead.client_id)
+                  .order("last_message_at", { ascending: false })
+                  .limit(1)
+                  .maybeSingle();
+                if (anyConv) {
+                  conversation = anyConv;
+                  console.log("[CRM-TAB] ✓ Matched via lead.client_id (closed):", anyConv.status);
+                }
               }
             }
             if (!contactName && localLead.name) contactName = localLead.name;
@@ -1007,7 +1021,8 @@ Deno.serve(async (req) => {
               .eq("bitrix24_id", String(entity.CONTACT_ID))
               .maybeSingle();
             if (client) {
-              const { data: conv } = await supabase
+              // Try active first
+              const { data: activeConv } = await supabase
                 .from("conversations")
                 .select("id, contact_name, attendance_mode, channel, status, contact_phone, bot_state")
                 .eq("client_id", client.id)
@@ -1015,9 +1030,21 @@ Deno.serve(async (req) => {
                 .order("last_message_at", { ascending: false })
                 .limit(1)
                 .maybeSingle();
-              if (conv) {
-                conversation = conv;
+              if (activeConv) {
+                conversation = activeConv;
                 console.log("[CRM-TAB] ✓ Matched via client.bitrix24_id (CONTACT_ID:", entity.CONTACT_ID, ")");
+              } else {
+                const { data: anyConv } = await supabase
+                  .from("conversations")
+                  .select("id, contact_name, attendance_mode, channel, status, contact_phone, bot_state")
+                  .eq("client_id", client.id)
+                  .order("last_message_at", { ascending: false })
+                  .limit(1)
+                  .maybeSingle();
+                if (anyConv) {
+                  conversation = anyConv;
+                  console.log("[CRM-TAB] ✓ Matched via client.bitrix24_id closed (CONTACT_ID:", entity.CONTACT_ID, ")");
+                }
               }
             }
           } catch (e) { console.warn("[CRM-TAB] Client bitrix24_id lookup failed:", e); }
