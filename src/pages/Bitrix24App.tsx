@@ -194,11 +194,14 @@ const Bitrix24App = () => {
           try {
             const bx24 = (window as any).BX24;
             if (bx24) {
-              bitrixUserId = await new Promise<string>((resolve) => {
-                bx24.callMethod("user.current", {}, (result: any) => {
-                  resolve(String(result?.data?.()?.ID || ""));
-                });
-              });
+              bitrixUserId = await Promise.race([
+                new Promise<string>((resolve) => {
+                  bx24.callMethod("user.current", {}, (result: any) => {
+                    resolve(String(result?.data?.()?.ID || ""));
+                  });
+                }),
+                new Promise<string>((resolve) => setTimeout(() => resolve(""), 5000)),
+              ]);
             }
           } catch {}
           console.log("[BITRIX24] Permission check — userId:", bitrixUserId, "allowed:", appPermissions, "restrictionEnabled:", restrictionEnabled);
