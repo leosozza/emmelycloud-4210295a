@@ -94,7 +94,8 @@ async function findConversationByPhone(supabase: any, phones: string[]): Promise
     if (phone.length < 8) continue;
     const suffixes = [phone, phone.slice(-9), phone.slice(-8)].filter((s, i, arr) => arr.indexOf(s) === i);
     for (const suffix of suffixes) {
-      const { data: conv } = await supabase
+      // Try active first
+      const { data: active } = await supabase
         .from("conversations")
         .select("id, contact_name, attendance_mode, channel, status, contact_phone, bot_state")
         .ilike("contact_phone", `%${suffix}%`)
@@ -102,7 +103,19 @@ async function findConversationByPhone(supabase: any, phones: string[]): Promise
         .order("last_message_at", { ascending: false })
         .limit(1)
         .maybeSingle();
-      if (conv) return conv;
+      if (active) return active;
+      // Fallback: any status (including fechada)
+      const { data: anyConv } = await supabase
+        .from("conversations")
+        .select("id, contact_name, attendance_mode, channel, status, contact_phone, bot_state")
+        .ilike("contact_phone", `%${suffix}%`)
+        .order("last_message_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (anyConv) {
+        console.log("[CRM-TAB] Phone match found closed conversation:", anyConv.id, "status:", anyConv.status);
+        return anyConv;
+      }
     }
   }
   return null;
@@ -110,7 +123,7 @@ async function findConversationByPhone(supabase: any, phones: string[]): Promise
 
 async function findConversationByEmail(supabase: any, emails: string[]): Promise<any> {
   for (const email of emails) {
-    const { data: conv } = await supabase
+    const { data: active } = await supabase
       .from("conversations")
       .select("id, contact_name, attendance_mode, channel, status, contact_phone, bot_state")
       .ilike("contact_email", `%${email}%`)
@@ -118,45 +131,94 @@ async function findConversationByEmail(supabase: any, emails: string[]): Promise
       .order("last_message_at", { ascending: false })
       .limit(1)
       .maybeSingle();
-    if (conv) return conv;
+    if (active) return active;
+    const { data: anyConv } = await supabase
+      .from("conversations")
+      .select("id, contact_name, attendance_mode, channel, status, contact_phone, bot_state")
+      .ilike("contact_email", `%${email}%`)
+      .order("last_message_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (anyConv) {
+      console.log("[CRM-TAB] Email match found closed conversation:", anyConv.id, "status:", anyConv.status);
+      return anyConv;
+    }
   }
   return null;
 }
 
 async function findConversationByBotState(supabase: any, entityId: string, entityTypeId?: string): Promise<any> {
-  const { data: convs } = await supabase
-    .from("conversations")
-    .select("id, contact_name, attendance_mode, channel, status, contact_phone, bot_state")
-    .neq("status", "fechada")
-    .order("last_message_at", { ascending: false })
-    .limit(300);
+  const selectCols = "id, contact_name, attendance_mode, channel, status, contact_phone, bot_state";
+  const eid = String(entityId);
 
-  if (!convs) return null;
-  for (const c of convs) {
-    const bs = (c.bot_state as any) || {};
-    // Direct match on lead/entity IDs
-    if (
-      bs.bitrix_lead_id === entityId ||
-      bs.bitrix_lead_id === String(entityId) ||
-      bs.bitrix_entity_id === entityId ||
-      bs.bitrix_entity_id === String(entityId)
-    ) {
-      return c;
-    }
-    // Match with entity type prefix (e.g., "1:23691", "2:23691")
-    const bsEntity = String(bs.bitrix_entity_id || "");
-    if (bsEntity.includes(":")) {
-      const parts = bsEntity.split(":");
-      if (parts[1] === String(entityId)) return c;
-    }
-    // Also check deal_id in bot_state
-    if (
-      bs.bitrix_deal_id === entityId ||
-      bs.bitrix_deal_id === String(entityId)
-    ) {
-      return c;
+  // 1. Try exact bitrix_deal_id match
+  {
+    const { data: convs } = await supabase
+      .from("conversations")
+      .select(selectCols)
+      .or(`bot_state->>bitrix_deal_id.eq.${eid}`)
+      .order("last_message_at", { ascending: false })
+      .limit(5);
+    if (convs?.length) {
+      const active = convs.find((c: any) => c.status !== "fechada");
+      const best = active || convs[0];
+      console.log("[CRM-TAB] bot_state bitrix_deal_id match:", best.id, "status:", best.status);
+      return best;
     }
   }
+
+  // 2. Try exact bitrix_lead_id match
+  {
+    const { data: convs } = await supabase
+      .from("conversations")
+      .select(selectCols)
+      .or(`bot_state->>bitrix_lead_id.eq.${eid}`)
+      .order("last_message_at", { ascending: false })
+      .limit(5);
+    if (convs?.length) {
+      const active = convs.find((c: any) => c.status !== "fechada");
+      const best = active || convs[0];
+      console.log("[CRM-TAB] bot_state bitrix_lead_id match:", best.id, "status:", best.status);
+      return best;
+    }
+  }
+
+  // 3. Try bitrix_entity_id (exact or with prefix like "1:17805", "2:23693")
+  const prefixed = entityTypeId ? `${entityTypeId}:${eid}` : null;
+  {
+    const orClauses = [`bot_state->>bitrix_entity_id.eq.${eid}`];
+    if (prefixed) orClauses.push(`bot_state->>bitrix_entity_id.eq.${prefixed}`);
+    const { data: convs } = await supabase
+      .from("conversations")
+      .select(selectCols)
+      .or(orClauses.join(","))
+      .order("last_message_at", { ascending: false })
+      .limit(5);
+    if (convs?.length) {
+      const active = convs.find((c: any) => c.status !== "fechada");
+      const best = active || convs[0];
+      console.log("[CRM-TAB] bot_state bitrix_entity_id match:", best.id, "status:", best.status);
+      return best;
+    }
+  }
+
+  // 4. Try entity_id embedded in prefixed values (e.g. "1:17805" contains ":17805")
+  {
+    const { data: convs } = await supabase
+      .from("conversations")
+      .select(selectCols)
+      .not("bot_state", "is", null)
+      .or(`bot_state->>bitrix_entity_id.like.%:${eid}`)
+      .order("last_message_at", { ascending: false })
+      .limit(5);
+    if (convs?.length) {
+      const active = convs.find((c: any) => c.status !== "fechada");
+      const best = active || convs[0];
+      console.log("[CRM-TAB] bot_state entity_id suffix match:", best.id, "status:", best.status);
+      return best;
+    }
+  }
+
   return null;
 }
 
@@ -164,7 +226,7 @@ async function findConversationByName(supabase: any, name: string): Promise<any>
   if (!name || name.length < 5) return null;
   const words = name.split(/[\s:,]+/).filter(w => w.length > 4);
   for (const word of words.slice(0, 3)) {
-    const { data: conv } = await supabase
+    const { data: active } = await supabase
       .from("conversations")
       .select("id, contact_name, attendance_mode, channel, status, contact_phone, bot_state")
       .ilike("contact_name", `%${word}%`)
@@ -172,7 +234,18 @@ async function findConversationByName(supabase: any, name: string): Promise<any>
       .order("last_message_at", { ascending: false })
       .limit(1)
       .maybeSingle();
-    if (conv) return conv;
+    if (active) return active;
+    const { data: anyConv } = await supabase
+      .from("conversations")
+      .select("id, contact_name, attendance_mode, channel, status, contact_phone, bot_state")
+      .ilike("contact_name", `%${word}%`)
+      .order("last_message_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (anyConv) {
+      console.log("[CRM-TAB] Name match found closed conversation:", anyConv.id, "status:", anyConv.status);
+      return anyConv;
+    }
   }
   return null;
 }
@@ -880,7 +953,8 @@ Deno.serve(async (req) => {
               }
             }
             if (!conversation && localLead.client_id) {
-              const { data: conv } = await supabase
+              // Try active first
+              const { data: activeConv } = await supabase
                 .from("conversations")
                 .select("id, contact_name, attendance_mode, channel, status, contact_phone, bot_state")
                 .eq("client_id", localLead.client_id)
@@ -888,26 +962,29 @@ Deno.serve(async (req) => {
                 .order("last_message_at", { ascending: false })
                 .limit(1)
                 .maybeSingle();
-              if (conv) {
-                conversation = conv;
-                console.log("[CRM-TAB] ✓ Matched via lead.client_id");
+              if (activeConv) {
+                conversation = activeConv;
+                console.log("[CRM-TAB] ✓ Matched via lead.client_id (active)");
+              } else {
+                // Fallback: include closed
+                const { data: anyConv } = await supabase
+                  .from("conversations")
+                  .select("id, contact_name, attendance_mode, channel, status, contact_phone, bot_state")
+                  .eq("client_id", localLead.client_id)
+                  .order("last_message_at", { ascending: false })
+                  .limit(1)
+                  .maybeSingle();
+                if (anyConv) {
+                  conversation = anyConv;
+                  console.log("[CRM-TAB] ✓ Matched via lead.client_id (closed):", anyConv.status);
+                }
               }
             }
             if (!contactName && localLead.name) contactName = localLead.name;
           }
         }
 
-        // ── 2. Phone/email lookup ──
-        if (!conversation && allPhones.length > 0) {
-          conversation = await findConversationByPhone(supabase, allPhones);
-          if (conversation) console.log("[CRM-TAB] ✓ Matched via phone");
-        }
-        if (!conversation && allEmails.length > 0) {
-          conversation = await findConversationByEmail(supabase, allEmails);
-          if (conversation) console.log("[CRM-TAB] ✓ Matched via email");
-        }
-
-        // ── 3. Bot state lookup ──
+        // ── 2. Bot state lookup (deterministic IDs — before phone/email heuristics) ──
         if (!conversation) {
           conversation = await findConversationByBotState(supabase, entityId, entityTypeId);
           if (conversation) console.log("[CRM-TAB] ✓ Matched via bot_state");
@@ -925,6 +1002,16 @@ Deno.serve(async (req) => {
           if (conversation) console.log("[CRM-TAB] ✓ Matched via deal's LEAD_ID:", entity.LEAD_ID);
         }
 
+        // ── 3. Phone/email lookup ──
+        if (!conversation && allPhones.length > 0) {
+          conversation = await findConversationByPhone(supabase, allPhones);
+          if (conversation) console.log("[CRM-TAB] ✓ Matched via phone");
+        }
+        if (!conversation && allEmails.length > 0) {
+          conversation = await findConversationByEmail(supabase, allEmails);
+          if (conversation) console.log("[CRM-TAB] ✓ Matched via email");
+        }
+
         // ── 4. Client lookup via CONTACT_ID → clients.bitrix24_id → conversations.client_id ──
         if (!conversation && entityTypeNum === 2 && entity?.CONTACT_ID) {
           try {
@@ -934,7 +1021,8 @@ Deno.serve(async (req) => {
               .eq("bitrix24_id", String(entity.CONTACT_ID))
               .maybeSingle();
             if (client) {
-              const { data: conv } = await supabase
+              // Try active first
+              const { data: activeConv } = await supabase
                 .from("conversations")
                 .select("id, contact_name, attendance_mode, channel, status, contact_phone, bot_state")
                 .eq("client_id", client.id)
@@ -942,9 +1030,21 @@ Deno.serve(async (req) => {
                 .order("last_message_at", { ascending: false })
                 .limit(1)
                 .maybeSingle();
-              if (conv) {
-                conversation = conv;
+              if (activeConv) {
+                conversation = activeConv;
                 console.log("[CRM-TAB] ✓ Matched via client.bitrix24_id (CONTACT_ID:", entity.CONTACT_ID, ")");
+              } else {
+                const { data: anyConv } = await supabase
+                  .from("conversations")
+                  .select("id, contact_name, attendance_mode, channel, status, contact_phone, bot_state")
+                  .eq("client_id", client.id)
+                  .order("last_message_at", { ascending: false })
+                  .limit(1)
+                  .maybeSingle();
+                if (anyConv) {
+                  conversation = anyConv;
+                  console.log("[CRM-TAB] ✓ Matched via client.bitrix24_id closed (CONTACT_ID:", entity.CONTACT_ID, ")");
+                }
               }
             }
           } catch (e) { console.warn("[CRM-TAB] Client bitrix24_id lookup failed:", e); }
