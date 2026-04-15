@@ -178,44 +178,32 @@ const Bitrix24App = () => {
         const cfg = int?.config || {};
         setBotId(cfg.bot_id ? String(cfg.bot_id) : null);
 
-        // Check emmely_app permission
-        if (int?.id) {
+        // Check emmely_app permission from connector-settings response
+        const appPermissions: string[] = data.appPermissions || [];
+        if (appPermissions.length > 0) {
+          setAppRestricted(true);
+          // Get current Bitrix user ID
+          let bitrixUserId = "";
           try {
-            const { data: permRows } = await supabase
-              .from("bitrix24_user_permissions")
-              .select("bitrix_user_id")
-              .eq("integration_id", int.id)
-              .eq("module", "emmely_app");
-
-            if (permRows && permRows.length > 0) {
-              setAppRestricted(true);
-              // Get current Bitrix user ID
-              let bitrixUserId = "";
-              try {
-                const bx24 = (window as any).BX24;
-                if (bx24) {
-                  bitrixUserId = await new Promise<string>((resolve) => {
-                    bx24.callMethod("user.current", {}, (result: any) => {
-                      resolve(String(result?.data?.()?.ID || ""));
-                    });
-                  });
-                }
-              } catch {}
-              if (bitrixUserId) {
-                const allowed = permRows.some(r => r.bitrix_user_id === bitrixUserId);
-                setHasAppAccess(allowed);
-              } else {
-                setHasAppAccess(false);
-              }
-            } else {
-              setAppRestricted(false);
-              setHasAppAccess(true);
+            const bx24 = (window as any).BX24;
+            if (bx24) {
+              bitrixUserId = await new Promise<string>((resolve) => {
+                bx24.callMethod("user.current", {}, (result: any) => {
+                  resolve(String(result?.data?.()?.ID || ""));
+                });
+              });
             }
-          } catch (e) {
-            console.error("[BITRIX24] Permission check error:", e);
-            setAppRestricted(false);
-            setHasAppAccess(true);
+          } catch {}
+          console.log("[BITRIX24] Permission check — userId:", bitrixUserId, "allowed:", appPermissions);
+          if (bitrixUserId) {
+            const allowed = appPermissions.includes(bitrixUserId);
+            setHasAppAccess(allowed);
+          } else {
+            setHasAppAccess(false);
           }
+        } else {
+          setAppRestricted(false);
+          setHasAppAccess(true);
         }
       }
     } catch (e) {
