@@ -1,37 +1,69 @@
 
 
 ## Problema
-O PowerZap é um conector de WhatsApp de terceiros instalado no Contact Center do Bitrix24, mas o sistema Emmely usa sempre `emmely_connector` como ID fixo. Quando envia mensagens via `bitrix24-send`, usa `emmely_connector` — que pode não ser o conector activo no Open Line. O PowerZap não aparece como opção seleccionável.
 
-## Solução
+A tab "Permissões" em `/configuracoes` controla actualmente módulos `emmely_ai` e `emmely_pay`, e essa verificação é feita nos **CRM tabs** (placements). Mas o pedido é diferente:
 
-### 1. Detectar conectores instalados no portal (`bitrix24-worker`)
-Adicionar uma acção `listConnectors` ao worker que chama `imconnector.list` no Bitrix24 e retorna todos os conectores registados (filtrando os built-in como `livechat`, `facebook`, etc.), para que o frontend possa mostrar PowerZap e outros no selector.
+- **Permissões controlam o acesso ao APP** (`/bitrix24/*`), **não** aos placements CRM
+- Quem **não tem permissão** → vê apenas `/bitrix24/chatia`
+- Quem **tem permissão** → acesso completo a `/bitrix24/*`
+- Os placements (CRM tabs) funcionam **sem restrição** para todos
+- Futuramente: acesso granular por secção (Emmely IO, Emmely CRM, Emmely Pay, Sistema)
 
-### 2. Guardar o conector preferido na tabela `bitrix24_channel_mappings`
-A tabela já mapeia `line_id` → `channel`. Adicionar um campo `connector_id` (default `emmely_connector`) para guardar qual conector usar em cada Open Line.
+## Plano
+
+### 1. Adicionar módulo `emmely_app` à tabela de permissões
+
+Criar um novo módulo `emmely_app` na tabela `bitrix24_user_permissions`. Quando a restrição está activa e o utilizador **não** está na lista, ele só vê o Chat IA.
 
 **Migração SQL:**
 ```sql
-ALTER TABLE bitrix24_channel_mappings 
-ADD COLUMN IF NOT EXISTS connector_id text DEFAULT 'emmely_connector';
+-- A coluna module já é text livre, não precisa de ALTER
+-- Apenas garantir que o valor 'emmely_app' é aceite (já é)
 ```
 
-### 3. Usar o `connector_id` do mapping ao enviar (`bitrix24-send`)
-Na função `bitrix24-send`, ao buscar o `channel_mapping`, usar o `connector_id` guardado no mapping em vez do `DEFAULT_CONNECTOR_ID`. Isto faz com que se o PowerZap estiver configurado nessa linha, as mensagens saiam pelo PowerZap.
+Não é necessária migração — o campo `module` já é `text`.
 
-### 4. Permitir seleccionar o conector no frontend (Configuração Bitrix24)
-No simulador `/bitrix24` ou na página de configurações, adicionar um dropdown que lista os conectores detectados (via acção `listConnectors`) e permite associar um conector a cada Open Line.
+### 2. Actualizar `PermissoesTab.tsx`
+
+- Substituir as secções `emmely_ai` e `emmely_pay` por uma única secção `emmely_app` com label **"Acesso ao Aplicativo"** e descrição **"Quando activo, apenas os utilizadores seleccionados acedem ao aplicativo completo. Os restantes terão acesso apenas ao Chat IA. Os placements CRM não são afectados."**
+- Manter a mesma UX (Switch + lista de checkboxes de utilizadores Bitrix24)
+
+### 3. Verificar permissão no `Bitrix24App.tsx` (frontend)
+
+Após `fetchData` obter a `integration`, chamar `BX24.callMethod("user.current")` para obter o `bitrixUserId`, depois consultar `bitrix24_user_permissions` com `module = 'emmely_app'`:
+
+- Se **não existem** registos com `emmely_app` → todos têm acesso (sem restrição)
+- Se **existem** registos mas o utilizador **não está** na lista → forçar `view = "chatia"` e esconder o sidebar (ou mostrar só o item Chat IA)
+- Se o utilizador **está** na lista → acesso completo
+
+Guardar o resultado num state `appRestricted: boolean` e `hasAppAccess: boolean`.
+
+### 4. Filtrar sidebar e navegação
+
+No `navCategories`, quando `appRestricted && !hasAppAccess`:
+- Mostrar apenas `{ id: "chatia", label: "Chat IA", icon: Sparkles }`
+- Redirigir automaticamente para `/bitrix24/chatia` se tentar aceder a outra rota
+
+### 5. Remover verificação de permissão dos CRM tabs
+
+Nas Edge Functions `bitrix24-crm-tab`, `bitrix24-payment-tab` e `bitrix24-booking-tab`:
+- Remover o bloco de verificação `emmely_ai` / `emmely_pay` que retorna "Sem Permissão"
+- Os placements passam a ser acessíveis a todos os utilizadores
 
 ### Ficheiros a alterar
-- `supabase/functions/bitrix24-worker/index.ts` — nova acção `listConnectors`
-- `supabase/functions/bitrix24-send/index.ts` — usar `mapping.connector_id`
-- `supabase/functions/bitrix24-connector-settings/index.ts` — guardar `connector_id` no mapping
-- `src/pages/Bitrix24App.tsx` — dropdown de selecção de conector
-- **Migração SQL** — campo `connector_id` em `bitrix24_channel_mappings`
+
+| Ficheiro | Alteração |
+|---|---|
+| `src/components/configuracoes/PermissoesTab.tsx` | Substituir `emmely_ai`/`emmely_pay` por `emmely_app` |
+| `src/pages/Bitrix24App.tsx` | Adicionar check de permissão após init, filtrar sidebar |
+| `supabase/functions/bitrix24-crm-tab/index.ts` | Remover bloco de permissão ~linhas 977-1007 |
+| `supabase/functions/bitrix24-payment-tab/index.ts` | Remover bloco de permissão |
+| `supabase/functions/bitrix24-booking-tab/index.ts` | Remover bloco de permissão |
 
 ### Resultado esperado
-- O PowerZap aparece como opção seleccionável no dropdown de conectores
-- Mensagens enviadas usam o conector configurado para cada Open Line
-- O `emmely_connector` continua como fallback padrão
+- Toggle "Restringir Acesso ao Aplicativo" em `/configuracoes` → Permissões
+- Utilizadores restritos → abrem o app e vêem apenas o Chat IA
+- Placements CRM (Emmely Consulta, Emmely Pay, Booking) → funcionam para todos sem restrição
+- Base preparada para futuramente adicionar permissões granulares por secção
 
