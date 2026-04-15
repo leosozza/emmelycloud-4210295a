@@ -261,7 +261,7 @@ Deno.serve(async (req) => {
       });
     }
 
-    console.log(`[SEND] Sending to Bitrix24: ${channel} / ${contactName} / ${message.substring(0, 50)} connector:${reqConnectorId || "default"}`);
+    console.log(`[SEND] Sending to Bitrix24: ${channel} / ${contactName} / ${message.substring(0, 50)} connector:${reqConnectorId || "default"} silent:${!!silent} agent:${agentName || "none"}`);
 
     // Get all active integrations (could be multi-portal in future)
     const { data: integrations } = await supabase
@@ -278,6 +278,7 @@ Deno.serve(async (req) => {
 
     let sentCount = 0;
     const effectiveConnectorId = reqConnectorId || DEFAULT_CONNECTOR_ID;
+    const sendOptions = { silent: !!silent, agentName: agentName || undefined };
 
     for (const integration of integrations) {
       try {
@@ -292,7 +293,8 @@ Deno.serve(async (req) => {
             contactName || "Cliente",
             message,
             channel || "whatsapp",
-            effectiveConnectorId
+            effectiveConnectorId,
+            sendOptions
           );
           if (sent) sentCount++;
           await debugLog(supabase, integration.id, "message_sent_direct_line", "outbound", { lineId: reqLineId, connectorId: effectiveConnectorId, contactId, sent });
