@@ -533,6 +533,7 @@ function renderHtml(opts: {
   var CHANNEL = "${channel || ""}";
   var ENTITY_ID = "${opts.entityId || ""}";
   var ENTITY_TYPE_ID = "${opts.entityType || ""}";
+  var PHONES = ${JSON.stringify(phones)};
   var CONV_SUMMARY = ${JSON.stringify(convSummary)};
   var AGENTS = ${agentsJson};
     var selectedAgentId = AGENTS.length > 0 ? AGENTS[0].id : null;
@@ -604,15 +605,38 @@ function renderHtml(opts: {
     }
 
     function useResponse(text) {
+      // Switch to conversa tab first
+      switchTab('conversa');
+      
       var clientInput = document.getElementById('client-input');
       if (clientInput) {
         clientInput.value = text;
         autoResize(clientInput);
-        switchTab('conversa');
         clientInput.focus();
         setStatus('Resposta copiada para o campo de envio', '#2283d8');
-      } else {
-        setStatus('Sem campo de envio disponível (inicie uma conversa primeiro)', '#f59e0b');
+        return;
+      }
+      
+      // No conversation yet — create send bar dynamically
+      var messagesDiv = document.getElementById('messages');
+      if (!messagesDiv) return;
+      
+      // Check if we already injected a temporary send bar
+      var existingBar = document.getElementById('client-send-bar');
+      if (!existingBar) {
+        var bar = document.createElement('div');
+        bar.id = 'client-send-bar';
+        bar.innerHTML = '<textarea id="client-input" rows="1" placeholder="Escreva ao cliente..." oninput="autoResize(this)"></textarea>' +
+          '<button onclick="sendClientMessage()" id="send-client-btn">${B24_ICONS.send} Enviar</button>';
+        messagesDiv.parentElement.insertBefore(bar, messagesDiv.nextSibling);
+      }
+      
+      var newInput = document.getElementById('client-input');
+      if (newInput) {
+        newInput.value = text;
+        autoResize(newInput);
+        newInput.focus();
+        setStatus('Resposta copiada — envie para iniciar a conversa', '#2283d8');
       }
     }
 
@@ -696,6 +720,84 @@ function renderHtml(opts: {
         document.getElementById('ai-send-btn').disabled = false;
         input.focus();
       });
+    }
+
+    function sendClientMessage() {
+      var input = document.getElementById('client-input');
+      var message = (input ? input.value : '').trim();
+      if (!message) { setStatus('Escreva uma mensagem', '#f59e0b'); return; }
+      
+      var sendBtn = document.getElementById('send-client-btn');
+      if (sendBtn) sendBtn.disabled = true;
+      setStatus('A enviar...', '#888');
+      
+      if (CONVERSATION_ID) {
+        // Existing conversation — send via message-send
+        fetch(SUPABASE_URL + '/functions/v1/message-send', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_KEY },
+          body: JSON.stringify({
+            conversation_id: CONVERSATION_ID,
+            message: message,
+            direction: 'outbound',
+            sender_name: 'Operador'
+          })
+        })
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+          if (d.error) throw new Error(d.error);
+          // Append message to chat
+          var container = document.getElementById('messages');
+          if (container) {
+            var div = document.createElement('div');
+            div.style.cssText = 'display:flex;justify-content:flex-end;margin-bottom:6px';
+            div.innerHTML = '<div style="background:#2283d8;color:#fff;padding:8px 12px;border-radius:12px 12px 2px 12px;max-width:80%;font-size:13px;white-space:pre-wrap">' + message.replace(/</g,'&lt;') + '</div>';
+            container.appendChild(div);
+            container.scrollTop = container.scrollHeight;
+          }
+          input.value = '';
+          if (input) autoResize(input);
+          setStatus('✅ Mensagem enviada', '#22c55e');
+          if (sendBtn) sendBtn.disabled = false;
+        })
+        .catch(function(e) {
+          setStatus('❌ ' + e.message, '#ef4444');
+          if (sendBtn) sendBtn.disabled = false;
+        });
+      } else {
+        // No conversation yet — use startConversation logic
+        var phone = PHONES.length > 0 ? PHONES[0] : null;
+        var channel = CHANNEL || (phone ? 'whatsapp' : '');
+        fetch(SUPABASE_URL + '/functions/v1/message-send', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_KEY },
+          body: JSON.stringify({
+            channel: channel,
+            contact_phone: phone || undefined,
+            contact_name: CONTACT_NAME,
+            message: message,
+            bitrix_entity_id: ENTITY_ID || undefined,
+            bitrix_entity_type_id: ENTITY_TYPE_ID || undefined
+          })
+        })
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+          if (d.error) throw new Error(d.error);
+          setStatus('✅ Conversa iniciada! Recarregue a aba.', '#22c55e');
+          input.value = '';
+          if (sendBtn) sendBtn.disabled = false;
+        })
+        .catch(function(e) {
+          setStatus('❌ ' + e.message, '#ef4444');
+          if (sendBtn) sendBtn.disabled = false;
+        });
+      }
+    }
+
+    function autoResize(el) {
+      if (!el) return;
+      el.style.height = 'auto';
+      el.style.height = Math.min(el.scrollHeight, 120) + 'px';
     }
 
     function setStatus(msg, color) {
