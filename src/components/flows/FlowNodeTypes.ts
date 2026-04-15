@@ -779,6 +779,46 @@ export function getDefaultData(nodeType: FlowNodeType): FlowNodeData {
       };
       break;
 
+    // ── WhatsApp ───────────────────────────────────────────────────────
+    case "whatsapp_send":
+      base.message = "";
+      break;
+
+    case "whatsapp_template":
+      base.whatsappTemplate = { templateName: "", language: "pt_BR", parameters: [] };
+      break;
+
+    case "whatsapp_media":
+      base.mediaUrl = "";
+      base.mediaType = "image";
+      base.mediaCaption = "";
+      break;
+
+    case "whatsapp_buttons":
+      base.message = "";
+      base.buttons = [
+        { id: `btn_${Date.now()}_1`, label: "" },
+        { id: `btn_${Date.now()}_2`, label: "" },
+      ];
+      break;
+
+    case "whatsapp_list":
+      base.message = "";
+      base.listTitle = "Escolha uma opção";
+      base.listItems = [
+        { id: `item_${Date.now()}_1`, title: "", description: "" },
+        { id: `item_${Date.now()}_2`, title: "", description: "" },
+      ];
+      break;
+
+    case "whatsapp_audio":
+      base.mediaUrl = "";
+      base.mediaType = "audio";
+      break;
+
+    case "whatsapp_read":
+      break;
+
     // ── Composição ───────────────────────────────────────────────────────
     case "call_flow":
       base.callFlowId = "";
