@@ -468,12 +468,21 @@ Deno.serve(async (req) => {
 
               if (bxInt2?.client_endpoint && bxInt2?.access_token) {
                 const ep2 = bxInt2.client_endpoint.endsWith("/") ? bxInt2.client_endpoint : bxInt2.client_endpoint + "/";
+                // Resolve Deal enum ID for UF_CRM_EMMELY_PAYMENT_STATUS
+                let signDealStatusId: string | number = "Pendente";
+                try {
+                  const fRes = await fetch(`${ep2}crm.deal.fields`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ auth: bxInt2.access_token }) });
+                  const fData = await fRes.json();
+                  const sItems = fData.result?.UF_CRM_EMMELY_PAYMENT_STATUS?.items || [];
+                  const sMatch = sItems.find((i: any) => i.VALUE === "Pendente");
+                  if (sMatch) signDealStatusId = sMatch.ID;
+                } catch (e) { console.error("[SIGN-CONTRACT] Deal fields lookup error:", e); }
                 await fetch(`${ep2}crm.deal.update`, {
                   method: "POST",
                   headers: { "Content-Type": "application/json" },
                   body: JSON.stringify({
                     ID: bxDealId,
-                    fields: { UF_CRM_EMMELY_PAYMENT_URL: paymentUrl, UF_CRM_EMMELY_PAYMENT_STATUS: "Pendente" },
+                    fields: { UF_CRM_EMMELY_PAYMENT_URL: paymentUrl, UF_CRM_EMMELY_PAYMENT_STATUS: signDealStatusId },
                     auth: bxInt2.access_token,
                   }),
                 });

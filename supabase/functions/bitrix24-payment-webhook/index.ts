@@ -309,7 +309,7 @@ Deno.serve(async (req) => {
             begindate: new Date().toISOString().split("T")[0],
             closedate: parcel.due_date,
             comments: `Fatura gerada automaticamente pelo Emmely Pay. ${label}. Grupo: ${groupId}`,
-            UF_CRM_69B83DDB1F59D: "pending",
+            UF_CRM_69B83DDB1F59D: 9391,
             UF_CRM_69B83DDB2661E: groupId,
             UF_CRM_69B83DDB2B85D: forceGateway || "stripe",
             UF_CRM_69B83DDB38FF9: tx.payment_url || "",
@@ -344,11 +344,19 @@ Deno.serve(async (req) => {
     if (transactions.length > 0) {
       try {
         const firstPaymentUrl = transactions.find((t: any) => t.payment_url)?.payment_url || "";
+        // Resolve Deal enum ID for UF_CRM_EMMELY_PAYMENT_STATUS
+        let dealStatusId: string | number = "Pendente";
+        try {
+          const fieldsRes = await callBitrix(integration.client_endpoint, accessToken, "crm.deal.fields", {});
+          const statusItems = fieldsRes.result?.UF_CRM_EMMELY_PAYMENT_STATUS?.items || [];
+          const match = statusItems.find((i: any) => i.VALUE === "Pendente");
+          if (match) dealStatusId = match.ID;
+        } catch (e) { console.error("[PAYMENT-WEBHOOK] Deal fields lookup error:", e); }
         await callBitrix(integration.client_endpoint, accessToken, "crm.deal.update", {
           ID: dealId,
           fields: {
             UF_CRM_EMMELY_PAYMENT_URL: firstPaymentUrl,
-            UF_CRM_EMMELY_PAYMENT_STATUS: "pending",
+            UF_CRM_EMMELY_PAYMENT_STATUS: dealStatusId,
           },
         });
       } catch (e) {

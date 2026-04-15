@@ -72,11 +72,26 @@ async function notifyBitrix24DealPayment(supabase: any, txMeta: any, paidAmount:
     // 2. Update OPPORTUNITY + UF fields
     const newAmount = Math.max(0, currentAmount - paidAmount);
     const totalPaid = paidAmount + parseFloat(deal.UF_CRM_EMMELY_TOTAL_PAID || "0");
-    const paymentStatus = newAmount === 0 ? "paid" : "partial";
+    const paymentStatusLabel = newAmount === 0 ? "Pago" : "Parcial";
+
+    // Resolve Deal enum ID for UF_CRM_EMMELY_PAYMENT_STATUS
+    let dealPaymentStatusId: string | number = paymentStatusLabel;
+    try {
+      const fieldsRes = await fetch(`${endpoint}crm.deal.fields`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ auth: accessToken }),
+      });
+      const fieldsData = await fieldsRes.json();
+      const statusItems = fieldsData.result?.UF_CRM_EMMELY_PAYMENT_STATUS?.items || [];
+      const match = statusItems.find((i: any) => i.VALUE === paymentStatusLabel);
+      if (match) dealPaymentStatusId = match.ID;
+    } catch (e) { console.error("[STRIPE-WEBHOOK] Deal fields lookup error:", e); }
+
     const dealUpdateFields: Record<string, any> = {
       OPPORTUNITY: newAmount,
       UF_CRM_EMMELY_TOTAL_PAID: totalPaid,
-      UF_CRM_EMMELY_PAYMENT_STATUS: paymentStatus,
+      UF_CRM_EMMELY_PAYMENT_STATUS: dealPaymentStatusId,
     };
 
     // If balance is zero, move deal to paid/won stage
@@ -159,7 +174,7 @@ async function notifyBitrix24DealPayment(supabase: any, txMeta: any, paidAmount:
 
         const invoiceUpdateFields: Record<string, any> = {
           stageId,
-          UF_CRM_69B83DDB1F59D: "paid",
+          UF_CRM_69B83DDB1F59D: 9395,
           UF_CRM_69B83DDB32521: paidAmount,
           UF_CRM_69B83DDB462B7: paidCount,
         };
