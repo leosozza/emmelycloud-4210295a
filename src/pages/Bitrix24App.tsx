@@ -254,7 +254,7 @@ const Bitrix24App = () => {
     }
   };
 
-  const navCategories = [
+  const allNavCategories = [
     {
       label: "Emmely IO",
       items: [
@@ -291,6 +291,10 @@ const Bitrix24App = () => {
       ],
     },
   ];
+
+  const navCategories = appRestricted && !hasAppAccess
+    ? [{ label: "Emmely IO", items: [{ id: "chatia", label: "Chat IA", icon: Sparkles }] }]
+    : allNavCategories;
 
   // No longer need expandable tabs logic
   if (view === "loading") {
