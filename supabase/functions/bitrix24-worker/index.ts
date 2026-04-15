@@ -855,45 +855,80 @@ Deno.serve(async (req) => {
 
           // 1. List registered connectors
           const connectorsRes = await callBitrix(clientEndpoint, accessToken, "imconnector.list", {});
-          console.log("[WORKER] imconnector.list raw:", JSON.stringify(connectorsRes).substring(0, 500));
-          // result can be an array of strings or an object with connector IDs as keys
+          console.log("[WORKER] imconnector.list raw:", JSON.stringify(connectorsRes).substring(0, 800));
+          
+          // result is an object { connectorId: connectorName }
           const rawResult = connectorsRes.result;
-          const registeredConnectors: string[] = Array.isArray(rawResult) 
-            ? rawResult 
-            : (rawResult && typeof rawResult === "object" ? Object.keys(rawResult) : []);
-          console.log("[WORKER] Registered connectors:", registeredConnectors);
+          
+          // Built-in Bitrix connectors to exclude (user only wants custom ones)
+          const BUILTIN_CONNECTORS = new Set([
+            "livechat", "whatsappbytwilio", "viber", "telegrambot", "imessage",
+            "facebook", "facebookcomments", "fbinstagramdirect", "network",
+            "notifications", "whatsappbyedna", "whatsapp", "avito",
+            "vkgroup", "ok", "olx", "yandex",
+          ]);
+          
+          const connectorEntries: { id: string; name: string }[] = [];
+          if (rawResult && typeof rawResult === "object" && !Array.isArray(rawResult)) {
+            for (const [id, name] of Object.entries(rawResult)) {
+              if (!BUILTIN_CONNECTORS.has(id)) {
+                connectorEntries.push({ id, name: String(name) });
+              }
+            }
+          } else if (Array.isArray(rawResult)) {
+            for (const id of rawResult) {
+              if (!BUILTIN_CONNECTORS.has(id)) {
+                connectorEntries.push({ id, name: id });
+              }
+            }
+          }
+          console.log("[WORKER] Custom connectors found:", connectorEntries);
 
           // 2. List Open Lines
           const linesRes = await callBitrix(clientEndpoint, accessToken, "imopenlines.config.list.get", {});
-          console.log("[WORKER] imopenlines.config.list.get raw:", JSON.stringify(linesRes).substring(0, 500));
+          console.log("[WORKER] Open Lines raw:", JSON.stringify(linesRes).substring(0, 800));
           const rawLines = linesRes.result;
           const lines: any[] = Array.isArray(rawLines) ? rawLines : (rawLines && typeof rawLines === "object" ? Object.values(rawLines) : []);
 
-          // 3. For each connector, check which lines have it active
-          const result: { connectorId: string; connectorName: string; lineId: number; lineName: string }[] = [];
+          // 3. Build result: each custom connector paired with each active line
+          // For custom connectors, check status; if status check fails or no active_status, still include with a flag
+          const result: { connectorId: string; connectorName: string; lineId: number; lineName: string; active: boolean }[] = [];
 
-          for (const connId of registeredConnectors) {
+          for (const conn of connectorEntries) {
             for (const line of lines) {
+              if (line.ACTIVE !== "Y") continue;
               const lineId = parseInt(line.ID || line.id || "0");
               const lineName = line.LINE_NAME || line.line_name || `Linha ${lineId}`;
               try {
                 const statusRes = await callBitrix(clientEndpoint, accessToken, "imconnector.status", {
-                  CONNECTOR: connId,
+                  CONNECTOR: conn.id,
                   LINE: lineId,
                 });
-                if (statusRes.result?.active_status) {
-                  result.push({
-                    connectorId: connId,
-                    connectorName: connId,
-                    lineId,
-                    lineName,
-                  });
-                }
-              } catch {
-                // skip
+                console.log(`[WORKER] imconnector.status ${conn.id} LINE ${lineId}:`, JSON.stringify(statusRes).substring(0, 300));
+                const isActive = statusRes.result?.active_status === true || statusRes.result?.connection_status === true || statusRes.result?.register_status === true;
+                // Always include custom connectors with their lines (user can activate later)
+                result.push({
+                  connectorId: conn.id,
+                  connectorName: conn.name,
+                  lineId,
+                  lineName,
+                  active: isActive,
+                });
+              } catch (e) {
+                console.warn(`[WORKER] Status check failed for ${conn.id} LINE ${lineId}:`, e);
+                // Still include it
+                result.push({
+                  connectorId: conn.id,
+                  connectorName: conn.name,
+                  lineId,
+                  lineName,
+                  active: false,
+                });
               }
             }
           }
+          
+          console.log("[WORKER] Final connectors result:", JSON.stringify(result));
 
           return new Response(JSON.stringify({ connectors: result }), {
             headers: { ...corsHeaders, "Content-Type": "application/json" },
