@@ -93,7 +93,11 @@ const OPERATOR_LABELS: Record<FlowCondition["operator"], string> = {
 export default function NodeConfigPanel({ data, onChange, onDelete, onClose }: NodeConfigPanelProps) {
   const [showVars, setShowVars] = useState(false);
   const [crews, setCrews] = useState<any[]>([]);
+  const [connectors, setConnectors] = useState<{ connectorId: string; connectorName: string; lineId: number; lineName: string }[]>([]);
+  const [loadingConnectors, setLoadingConnectors] = useState(false);
   const meta = NODE_TYPE_META[data.nodeType as FlowNodeType];
+
+  const isMessageNode = ["message", "message_buttons", "message_list", "media"].includes(data.nodeType);
 
   useEffect(() => {
     const loadCrews = async () => {
@@ -105,6 +109,24 @@ export default function NodeConfigPanel({ data, onChange, onDelete, onClose }: N
     };
     loadCrews();
   }, []);
+
+  useEffect(() => {
+    if (!isMessageNode) return;
+    const loadConnectors = async () => {
+      setLoadingConnectors(true);
+      try {
+        const { data: result } = await supabase.functions.invoke("bitrix24-worker", {
+          body: { _listConnectors: true },
+        });
+        if (result?.connectors) setConnectors(result.connectors);
+      } catch (e) {
+        console.error("Failed to load connectors:", e);
+      } finally {
+        setLoadingConnectors(false);
+      }
+    };
+    loadConnectors();
+  }, [isMessageNode]);
 
   if (!meta) return null;
 
