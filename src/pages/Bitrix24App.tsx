@@ -3572,7 +3572,7 @@ type PlacementType = "payment-tab" | "payment-tab-contact" | "crm-tab" | "im-sid
 const PLACEMENT_OPTIONS: { value: PlacementType; label: string; endpoint: string; description: string }[] = [
   { value: "payment-tab", label: "Payment Tab (Deal)", endpoint: "bitrix24-payment-tab", description: "CRM_DEAL_DETAIL_TAB — Pagamentos" },
   { value: "payment-tab-contact", label: "Payment Tab (Contacto)", endpoint: "bitrix24-payment-tab", description: "CRM_CONTACT_DETAIL_TAB — Pagamentos do Contacto" },
-  { value: "crm-tab", label: "Emmely AI — CRM Tab", endpoint: "bitrix24-crm-tab", description: "CRM_LEAD_DETAIL_TAB — Conversa e histórico" },
+  { value: "crm-tab", label: "Emmely AI — CRM Tab", endpoint: "bitrix24-crm-tab", description: "CRM Tab — Conversa e histórico (Deal ou Lead)" },
   { value: "im-sidebar", label: "IM Sidebar", endpoint: "bitrix24-im-sidebar", description: "IM_SIDEBAR — Assistente IA no Messenger" },
   { value: "im-context-menu", label: "Context Menu", endpoint: "bitrix24-im-context-menu", description: "IM_CONTEXT_MENU — Analisar mensagem" },
 ];
@@ -3617,7 +3617,13 @@ function PlacementPreviewView({ integration, memberId }: { integration: any; mem
         formData.append("PLACEMENT_OPTIONS", JSON.stringify({ ID: contactId, ENTITY_TYPE_ID: "3" }));
         break;
       case "crm-tab":
-        formData.append("PLACEMENT_OPTIONS", JSON.stringify({ ID: leadId }));
+        if (dealId) {
+          formData.append("PLACEMENT", "CRM_DEAL_DETAIL_TAB");
+          formData.append("PLACEMENT_OPTIONS", JSON.stringify({ ID: dealId, ENTITY_TYPE_ID: "2" }));
+        } else {
+          formData.append("PLACEMENT", "CRM_LEAD_DETAIL_TAB");
+          formData.append("PLACEMENT_OPTIONS", JSON.stringify({ ID: leadId, ENTITY_TYPE_ID: "1" }));
+        }
         break;
       case "im-sidebar":
         formData.append("PLACEMENT", "IM_SIDEBAR");
@@ -3641,7 +3647,11 @@ function PlacementPreviewView({ integration, memberId }: { integration: any; mem
         placementOptions = JSON.stringify({ ID: contactId });
         break;
       case "crm-tab":
-        placementOptions = JSON.stringify({ ID: leadId });
+        if (dealId) {
+          placementOptions = JSON.stringify({ ID: dealId, ENTITY_TYPE_ID: "2" });
+        } else {
+          placementOptions = JSON.stringify({ ID: leadId, ENTITY_TYPE_ID: "1" });
+        }
         break;
       case "im-sidebar":
         placementOptions = JSON.stringify({ DIALOG_ID: dialogId });
@@ -3715,7 +3725,7 @@ function PlacementPreviewView({ integration, memberId }: { integration: any; mem
     switch (placementType) {
       case "payment-tab": return `CRM_DEAL_DETAIL_TAB — Deal #${dealId}`;
       case "payment-tab-contact": return `CRM_CONTACT_DETAIL_TAB — Contact #${contactId}`;
-      case "crm-tab": return `CRM_LEAD_DETAIL_TAB — Lead #${leadId}`;
+      case "crm-tab": return dealId ? `CRM_DEAL_DETAIL_TAB — Deal #${dealId}` : `CRM_LEAD_DETAIL_TAB — Lead #${leadId}`;
       case "im-sidebar": return `IM_SIDEBAR — Dialog ${dialogId}`;
       case "im-context-menu": return `IM_CONTEXT_MENU — Dialog ${dialogId} / Msg ${messageId}`;
     }
@@ -3725,7 +3735,7 @@ function PlacementPreviewView({ integration, memberId }: { integration: any; mem
     switch (placementType) {
       case "payment-tab": return !!dealId;
       case "payment-tab-contact": return !!contactId;
-      case "crm-tab": return !!leadId;
+      case "crm-tab": return !!(dealId || leadId);
       case "im-sidebar": return !!dialogId;
       case "im-context-menu": return !!dialogId && !!messageId;
     }
