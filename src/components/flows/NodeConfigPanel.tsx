@@ -245,6 +245,41 @@ export default function NodeConfigPanel({ data, onChange, onDelete, onClose }: N
 
           <Separator />
 
+          {/* ── Seletor de Conector (nós de mensagem) ──────────────────── */}
+          {isMessageNode && connectors.length > 0 && (
+            <div className="space-y-1">
+              <Label className="text-[11px]">
+                Enviar via
+                <FieldHint text="Escolha o conector Bitrix24 para enviar. 'Padrão' usa WhatsApp/Instagram direto." />
+              </Label>
+              <Select
+                value={data.connectorId ? `${data.connectorId}::${data.connectorLineId || 0}` : "default"}
+                onValueChange={(v) => {
+                  if (v === "default") {
+                    update({ connectorId: undefined, connectorLineId: undefined });
+                  } else {
+                    const [cId, lId] = v.split("::");
+                    update({ connectorId: cId, connectorLineId: parseInt(lId) || undefined });
+                  }
+                }}
+              >
+                <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="default">📱 Padrão (WhatsApp/Instagram)</SelectItem>
+                  {connectors.map((c, i) => (
+                    <SelectItem key={`${c.connectorId}-${c.lineId}-${i}`} value={`${c.connectorId}::${c.lineId}`}>
+                      🔗 {c.connectorName} — {c.lineName}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+
+          {isMessageNode && loadingConnectors && (
+            <p className="text-[9px] text-muted-foreground">Carregando conectores...</p>
+          )}
+
           {/* ══════════════════════════════════════════════════════════════
               MENSAGENS
           ══════════════════════════════════════════════════════════════ */}
