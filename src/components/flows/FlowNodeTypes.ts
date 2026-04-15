@@ -146,6 +146,15 @@ export const NODE_CATEGORIES: FlowNodeCategory[] = [
       "bitrix_add_comment", "bitrix_add_activity", "bitrix_assign_user", "bitrix_create_badge",
     ],
   },
+  {
+    id: "whatsapp",
+    label: "WhatsApp",
+    color: "#25D366",
+    types: [
+      "whatsapp_send", "whatsapp_template", "whatsapp_media",
+      "whatsapp_buttons", "whatsapp_list", "whatsapp_audio", "whatsapp_read",
+    ],
+  },
 ];
 
 // ─── Metadados visuais de cada tipo ──────────────────────────────────────────
