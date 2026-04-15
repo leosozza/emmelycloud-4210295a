@@ -321,7 +321,13 @@ async function executeFlow(
           id: b.id || b.label,
           label: replaceVariables(b.label || "", variables),
         }));
-        await sendInteractiveMessage(supabaseUrl, serviceKey, conversation, "buttons", text, buttons, instanceId);
+        if (nodeData.connectorId) {
+          // Connector: send as text with numbered options
+          const btnText = buttons.map((b: any, i: number) => `${i + 1}. ${b.label}`).join("\n");
+          await sendViaBitrixConnector(supabaseUrl, serviceKey, conversation, `${text}\n\n${btnText}`, nodeData.connectorId, nodeData.connectorLineId);
+        } else {
+          await sendInteractiveMessage(supabaseUrl, serviceKey, conversation, "buttons", text, buttons, instanceId);
+        }
         await updateBotState(supabase, conversation.id, {
           ...botState,
           flow_id: flow.id,
@@ -341,7 +347,12 @@ async function executeFlow(
           title: replaceVariables(item.title || "", variables),
           description: replaceVariables(item.description || "", variables),
         }));
-        await sendInteractiveMessage(supabaseUrl, serviceKey, conversation, "list", text, items, instanceId, listTitle);
+        if (nodeData.connectorId) {
+          const itemsText = items.map((it: any, i: number) => `${i + 1}. ${it.title}${it.description ? ` — ${it.description}` : ""}`).join("\n");
+          await sendViaBitrixConnector(supabaseUrl, serviceKey, conversation, `${text}\n\n${listTitle}:\n${itemsText}`, nodeData.connectorId, nodeData.connectorLineId);
+        } else {
+          await sendInteractiveMessage(supabaseUrl, serviceKey, conversation, "list", text, items, instanceId, listTitle);
+        }
         await updateBotState(supabase, conversation.id, {
           ...botState,
           flow_id: flow.id,
