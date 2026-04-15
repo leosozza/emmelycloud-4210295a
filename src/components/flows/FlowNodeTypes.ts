@@ -76,6 +76,14 @@ export type FlowNodeType =
   | "bitrix_assign_user"   // Alterar responsável (ASSIGNED_BY_ID)
   // ── Bitrix24 — Badge ───────────────────────────────────────────────────────
   | "bitrix_create_badge"
+  // ── WhatsApp ───────────────────────────────────────────────────────────────
+  | "whatsapp_send"        // Enviar mensagem de texto via WhatsApp
+  | "whatsapp_template"    // Enviar template HSM aprovado
+  | "whatsapp_media"       // Enviar imagem/vídeo/documento via WhatsApp
+  | "whatsapp_buttons"     // Enviar mensagem interativa com botões
+  | "whatsapp_list"        // Enviar lista interativa WhatsApp
+  | "whatsapp_audio"       // Enviar áudio/voz via WhatsApp
+  | "whatsapp_read"        // Marcar mensagem como lida
   // ── Composição ──────────────────────────────────────────────────────────────
   | "call_flow";          // Chamar outro flow como sub-rotina
 
