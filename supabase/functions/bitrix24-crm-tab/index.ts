@@ -533,6 +533,7 @@ function renderHtml(opts: {
   var CHANNEL = "${channel || ""}";
   var ENTITY_ID = "${opts.entityId || ""}";
   var ENTITY_TYPE_ID = "${opts.entityType || ""}";
+  var PHONES = ${JSON.stringify(phones)};
   var CONV_SUMMARY = ${JSON.stringify(convSummary)};
   var AGENTS = ${agentsJson};
     var selectedAgentId = AGENTS.length > 0 ? AGENTS[0].id : null;
