@@ -1335,6 +1335,7 @@ async function sendReply(supabase: any, supabaseUrl: string, serviceKey: string,
         channel: conversation.channel,
         conversationId: conversation.id,
         agentName: agentDisplayName,
+        silent: true,
       }),
     });
     if (!res.ok) console.error(`[AI-PROCESS] bitrix24-send failed: ${res.status}`);
