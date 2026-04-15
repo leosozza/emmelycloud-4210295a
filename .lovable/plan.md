@@ -1,56 +1,40 @@
 
 
 ## Problema
-Os nós de mensagem no /flows (`message`, `message_buttons`, `message_list`, `media`) enviam sempre via `message-send` (Meta/WUZAPI). Não há opção para escolher enviar via conectores Bitrix24 Open Channel (emmely_connector, powerzap, etc.).
+O botão "Enviar" no placement CRM não funciona por dois bugs no JavaScript inline:
+
+1. **Campo errado**: O CRM tab envia `{ message: "..." }` mas a edge function `message-send` espera `{ content: "..." }` — o campo `message` é ignorado e nada é enviado.
+
+2. **Sem conversation_id**: Quando não há conversa existente, o código tenta chamar `message-send` sem `conversation_id`, mas essa função retorna erro 400 (`conversation_id required`). Não há lógica para criar conversa nova.
 
 ## Solução
 
-### 1. Adicionar campos ao FlowNodeData
-**Ficheiro:** `src/components/flows/FlowNodeTypes.ts`
-- Adicionar `connectorId?: string` e `connectorLineId?: number` à interface `FlowNodeData`
+### Ficheiro: `supabase/functions/bitrix24-crm-tab/index.ts`
 
-### 2. Criar endpoint para listar conectores activos
-**Ficheiro:** `supabase/functions/bitrix24-worker/index.ts`
-- Adicionar handler para `_listConnectors: true`
-- Chama `imconnector.list` no Bitrix24 para listar todos os conectores registados (emmely_connector, powerzap, etc.)
-- Combina com `imopenlines.config.list.get` para obter as Open Lines e seus nomes
-- Retorna `[{ connectorId, connectorName, lineId, lineName }]`
-
-### 3. Adicionar seletor de conector no painel de configuração
-**Ficheiro:** `src/components/flows/NodeConfigPanel.tsx`
-- Para nós de tipo `message`, `message_buttons`, `message_list`, `media` — adicionar um `<Select>` com label "Enviar via"
-- Opções:
-  - "Padrão (WhatsApp/Instagram)" — valor vazio (comportamento actual via `message-send`)
-  - Conectores Bitrix24 activos — carregados do endpoint acima
-- Grava `connectorId` e `connectorLineId` no nodeData
-
-### 4. Tornar bitrix24-send flexível
-**Ficheiro:** `supabase/functions/bitrix24-send/index.ts`
-- Aceitar `connectorId` e `lineId` opcionais no body do request
-- Usar o `connectorId` passado em vez do hardcoded `CONNECTOR_ID = "emmely_connector"`
-- Se `lineId` fornecido, usar directamente (sem lookup de channel_mappings)
-
-### 5. Implementar envio via conector no flow-engine
-**Ficheiro:** `supabase/functions/flow-engine/index.ts`
-- Nos cases `message`, `message_buttons`, `message_list`, `media`: verificar se `nodeData.connectorId` existe
-- Se sim, chamar `bitrix24-send` com o `connectorId` e `connectorLineId` em vez de `message-send`
-- Se não, manter o comportamento actual
-
-## Detalhes técnicos
-
-A API `imconnector.list` retorna todos os conectores registados no portal. O envio usa `imconnector.send.messages` com o `CONNECTOR` dinâmico:
-```typescript
-await callBitrix(endpoint, token, "imconnector.send.messages", {
-  CONNECTOR: connectorId,  // "emmely_connector" ou "powerzap" etc.
-  LINE: lineId,
-  MESSAGES: [...]
-});
+**Fix 1 — Campo `content` (linha ~741)**
+Alterar de:
+```javascript
+body: JSON.stringify({
+  conversation_id: CONVERSATION_ID,
+  message: message,
+  direction: 'outbound',
+  sender_name: 'Operador'
+})
+```
+Para:
+```javascript
+body: JSON.stringify({
+  conversation_id: CONVERSATION_ID,
+  content: message
+})
 ```
 
-## Ficheiros a editar
-- `src/components/flows/FlowNodeTypes.ts`
-- `src/components/flows/NodeConfigPanel.tsx`
-- `supabase/functions/flow-engine/index.ts`
-- `supabase/functions/bitrix24-send/index.ts`
-- `supabase/functions/bitrix24-worker/index.ts`
+**Fix 2 — Criar conversa quando não existe (linhas ~767-794)**
+Quando `CONVERSATION_ID` é nulo mas temos `PHONES`, criar primeiro a conversa na tabela `conversations` via uma chamada directa ao Supabase REST API (`POST /rest/v1/conversations`), depois usar o `conversation_id` retornado para chamar `message-send` normalmente.
+
+Alternativamente, usar `bitrix24-send` (que já aceita envio sem conversa prévia via connector) como fallback quando não há `CONVERSATION_ID`.
+
+## Resultado esperado
+- Com conversa existente: mensagem é enviada correctamente via `content`
+- Sem conversa: cria a conversa no banco e depois envia a mensagem
 
