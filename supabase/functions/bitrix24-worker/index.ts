@@ -894,25 +894,22 @@ Deno.serve(async (req) => {
         }
 
         // ─── Badge request ───
-        if (body._badgeRequest) {
-          console.log("[WORKER] Processing badge request:", body.badgeCode);
+        if (parsedBody._badgeRequest) {
+          console.log("[WORKER] Processing badge request:", parsedBody.badgeCode);
           await createBitrixBadgeActivity({
             supabase,
-            conversationId: body.conversationId,
-            channel: body.channel,
-            badgeCode: body.badgeCode,
-            headerTitle: body.headerTitle,
-            messagePreview: body.messagePreview,
-            instanceName: body.instanceName,
-            extraBlocks: body.extraBlocks,
+            conversationId: parsedBody.conversationId,
+            channel: parsedBody.channel,
+            badgeCode: parsedBody.badgeCode,
+            headerTitle: parsedBody.headerTitle,
+            messagePreview: parsedBody.messagePreview,
+            instanceName: parsedBody.instanceName,
+            extraBlocks: parsedBody.extraBlocks,
           });
           return new Response(JSON.stringify({ ok: true, type: "badge" }), {
             headers: { ...corsHeaders, "Content-Type": "application/json" },
           });
         }
-      } catch (parseErr) {
-        console.log("[WORKER] Not a special request, continuing to queue processing");
-      }
     }
 
     // ─── Fetch pending events from queue ───
