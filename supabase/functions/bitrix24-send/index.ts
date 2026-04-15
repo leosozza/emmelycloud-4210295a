@@ -180,7 +180,7 @@ Deno.serve(async (req) => {
       });
     }
 
-    console.log(`[SEND] Sending to Bitrix24: ${channel} / ${contactName} / ${message.substring(0, 50)}`);
+    console.log(`[SEND] Sending to Bitrix24: ${channel} / ${contactName} / ${message.substring(0, 50)} connector:${reqConnectorId || "default"}`);
 
     // Get all active integrations (could be multi-portal in future)
     const { data: integrations } = await supabase
@@ -196,9 +196,28 @@ Deno.serve(async (req) => {
     }
 
     let sentCount = 0;
+    const effectiveConnectorId = reqConnectorId || DEFAULT_CONNECTOR_ID;
 
     for (const integration of integrations) {
       try {
+        // If lineId was explicitly provided (from flow connector selector), use it directly
+        if (reqLineId) {
+          const accessToken = await ensureValidToken(supabase, integration);
+          const sent = await sendWithFallbacks(
+            integration.client_endpoint,
+            accessToken,
+            reqLineId,
+            contactId,
+            contactName || "Cliente",
+            message,
+            channel || "whatsapp",
+            effectiveConnectorId
+          );
+          if (sent) sentCount++;
+          await debugLog(supabase, integration.id, "message_sent_direct_line", "outbound", { lineId: reqLineId, connectorId: effectiveConnectorId, contactId, sent });
+          continue;
+        }
+
         // Find channel mapping
         const { data: mapping } = await supabase
           .from("bitrix24_channel_mappings")
@@ -227,7 +246,6 @@ Deno.serve(async (req) => {
             continue;
           }
 
-          // Use any available mapping
           const accessToken = await ensureValidToken(supabase, integration);
           const sent = await sendWithFallbacks(
             integration.client_endpoint,
@@ -236,11 +254,12 @@ Deno.serve(async (req) => {
             contactId,
             contactName || "Cliente",
             message,
-            channel || "whatsapp"
+            channel || "whatsapp",
+            effectiveConnectorId
           );
 
           if (sent) sentCount++;
-          await debugLog(supabase, integration.id, "message_sent_fallback_mapping", "outbound", { lineId: anyMapping.line_id, contactId, sent });
+          await debugLog(supabase, integration.id, "message_sent_fallback_mapping", "outbound", { lineId: anyMapping.line_id, connectorId: effectiveConnectorId, contactId, sent });
         } else {
           const accessToken = await ensureValidToken(supabase, integration);
           const sent = await sendWithFallbacks(
@@ -250,11 +269,12 @@ Deno.serve(async (req) => {
             contactId,
             contactName || "Cliente",
             message,
-            channel || "whatsapp"
+            channel || "whatsapp",
+            effectiveConnectorId
           );
 
           if (sent) sentCount++;
-          await debugLog(supabase, integration.id, "message_sent", "outbound", { lineId: mapping.line_id, contactId, sent });
+          await debugLog(supabase, integration.id, "message_sent", "outbound", { lineId: mapping.line_id, connectorId: effectiveConnectorId, contactId, sent });
         }
       } catch (intError) {
         console.error(`[SEND] Error for integration ${integration.id}:`, intError);
