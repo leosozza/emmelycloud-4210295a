@@ -762,6 +762,25 @@ function renderHtml(opts: {
           if (input) autoResize(input);
           setStatus('✅ Mensagem enviada', '#22c55e');
           if (sendBtn) sendBtn.disabled = false;
+
+          // Mirror message to Bitrix24 Open Channel (fire-and-forget)
+          try {
+            var contactPhone = PHONES.length > 0 ? PHONES[0] : null;
+            var mirrorContactId = contactPhone || CONTACT_NAME || 'unknown';
+            var mirrorMsg = '[b]' + operatorName + '[/b] - ' + message;
+            fetch(SUPABASE_URL + '/functions/v1/bitrix24-send', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_KEY },
+              body: JSON.stringify({
+                message: mirrorMsg,
+                contactName: CONTACT_NAME || 'Cliente',
+                contactId: mirrorContactId,
+                channel: CHANNEL || 'whatsapp',
+                conversationId: convId,
+                agentName: operatorName
+              })
+            }).catch(function() {});
+          } catch(e) {}
         })
         .catch(function(e) {
           setStatus('❌ ' + e.message, '#ef4444');
