@@ -16,7 +16,7 @@ import {
   Building2, Handshake, Boxes, Pencil, Search, Award,
   BrainCircuit, Cog, GitFork, MessageCircleMore, UserSearch,
   CalendarClock, FileText, Tag, StickyNote, ArrowRightLeft,
-  Workflow, Users,
+  Workflow, Users, Send, LayoutTemplate, AudioLines, FileUp, CheckCheck,
   type LucideIcon,
 } from "lucide-react";
 
@@ -76,6 +76,14 @@ export type FlowNodeType =
   | "bitrix_assign_user"   // Alterar responsável (ASSIGNED_BY_ID)
   // ── Bitrix24 — Badge ───────────────────────────────────────────────────────
   | "bitrix_create_badge"
+  // ── WhatsApp ───────────────────────────────────────────────────────────────
+  | "whatsapp_send"        // Enviar mensagem de texto via WhatsApp
+  | "whatsapp_template"    // Enviar template HSM aprovado
+  | "whatsapp_media"       // Enviar imagem/vídeo/documento via WhatsApp
+  | "whatsapp_buttons"     // Enviar mensagem interativa com botões
+  | "whatsapp_list"        // Enviar lista interativa WhatsApp
+  | "whatsapp_audio"       // Enviar áudio/voz via WhatsApp
+  | "whatsapp_read"        // Marcar mensagem como lida
   // ── Composição ──────────────────────────────────────────────────────────────
   | "call_flow";          // Chamar outro flow como sub-rotina
 
@@ -136,6 +144,15 @@ export const NODE_CATEGORIES: FlowNodeCategory[] = [
     color: "#f97316",
     types: [
       "bitrix_add_comment", "bitrix_add_activity", "bitrix_assign_user", "bitrix_create_badge",
+    ],
+  },
+  {
+    id: "whatsapp",
+    label: "WhatsApp",
+    color: "#25D366",
+    types: [
+      "whatsapp_send", "whatsapp_template", "whatsapp_media",
+      "whatsapp_buttons", "whatsapp_list", "whatsapp_audio", "whatsapp_read",
     ],
   },
 ];
@@ -204,6 +221,14 @@ export const NODE_TYPE_META: Record<FlowNodeType, NodeTypeMeta> = {
   bitrix_add_activity:  { label: "Criar Atividade",      icon: CalendarClock,    color: "#ea580c", description: "crm.activity.todo.add — Criar tarefa/atividade no CRM" },
   bitrix_assign_user:   { label: "Atribuir Responsável", icon: UserCog,          color: "#c2410c", description: "Alterar responsável (ASSIGNED_BY_ID) do elemento" },
   bitrix_create_badge:  { label: "Criar Badge",          icon: Award,            color: "#f59e0b", description: "Criar badge visual na timeline do CRM" },
+  // WhatsApp
+  whatsapp_send:        { label: "Enviar WhatsApp",       icon: Send,             color: "#25D366", description: "Enviar mensagem de texto via WhatsApp" },
+  whatsapp_template:    { label: "Template HSM",          icon: LayoutTemplate,   color: "#128C7E", description: "Enviar template aprovado (HSM) via WhatsApp" },
+  whatsapp_media:       { label: "Mídia WhatsApp",        icon: FileUp,           color: "#25D366", description: "Enviar imagem, vídeo ou documento via WhatsApp" },
+  whatsapp_buttons:     { label: "Botões WhatsApp",       icon: ListOrdered,      color: "#075E54", description: "Mensagem interativa com até 3 botões" },
+  whatsapp_list:        { label: "Lista WhatsApp",        icon: MessageCircleMore,color: "#128C7E", description: "Menu interativo com lista de opções" },
+  whatsapp_audio:       { label: "Áudio WhatsApp",        icon: AudioLines,       color: "#25D366", description: "Enviar mensagem de áudio/voz" },
+  whatsapp_read:        { label: "Marcar como Lido",      icon: CheckCheck,       color: "#34B7F1", description: "Marcar mensagem como lida (✓✓)" },
   // Composição
   call_flow:            { label: "Chamar Flow",          icon: Workflow,         color: "#6366f1", description: "Executar outro flow como sub-rotina" },
 };
@@ -426,6 +451,8 @@ export interface FlowNodeData {
   // Composição
   callFlowId?: string;
   callFlowPassVariables?: boolean;
+  // WhatsApp
+  whatsappTemplate?: { templateName: string; language: string; parameters: string[] };
   // Canal de envio (conector Bitrix24)
   connectorId?: string;
   connectorLineId?: number;
@@ -752,6 +779,46 @@ export function getDefaultData(nodeType: FlowNodeType): FlowNodeData {
         entityId: "{{deal_id}}",
         badgeType: "success",
       };
+      break;
+
+    // ── WhatsApp ───────────────────────────────────────────────────────
+    case "whatsapp_send":
+      base.message = "";
+      break;
+
+    case "whatsapp_template":
+      base.whatsappTemplate = { templateName: "", language: "pt_BR", parameters: [] };
+      break;
+
+    case "whatsapp_media":
+      base.mediaUrl = "";
+      base.mediaType = "image";
+      base.mediaCaption = "";
+      break;
+
+    case "whatsapp_buttons":
+      base.message = "";
+      base.buttons = [
+        { id: `btn_${Date.now()}_1`, label: "" },
+        { id: `btn_${Date.now()}_2`, label: "" },
+      ];
+      break;
+
+    case "whatsapp_list":
+      base.message = "";
+      base.listTitle = "Escolha uma opção";
+      base.listItems = [
+        { id: `item_${Date.now()}_1`, title: "", description: "" },
+        { id: `item_${Date.now()}_2`, title: "", description: "" },
+      ];
+      break;
+
+    case "whatsapp_audio":
+      base.mediaUrl = "";
+      base.mediaType = "audio";
+      break;
+
+    case "whatsapp_read":
       break;
 
     // ── Composição ───────────────────────────────────────────────────────
