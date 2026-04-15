@@ -167,8 +167,13 @@ const Bitrix24App = () => {
   const fetchData = useCallback(async (mid: string) => {
     setLoadingData(true);
     try {
+      // Send both member_id and domain for better resolution
+      const params = new URLSearchParams({ format: "json" });
+      if (mid) params.set("member_id", mid);
+      if (domain) params.set("domain", domain);
+
       const res = await fetch(
-        `${SUPABASE_URL}/functions/v1/bitrix24-connector-settings?member_id=${encodeURIComponent(mid)}&format=json`,
+        `${SUPABASE_URL}/functions/v1/bitrix24-connector-settings?${params.toString()}`,
         { headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` } }
       );
       if (res.ok) {
@@ -178,9 +183,11 @@ const Bitrix24App = () => {
         const cfg = int?.config || {};
         setBotId(cfg.bot_id ? String(cfg.bot_id) : null);
 
-        // Check emmely_app permission from connector-settings response
+        // Use explicit appRestrictionEnabled flag from backend
+        const restrictionEnabled: boolean = data.appRestrictionEnabled === true;
         const appPermissions: string[] = data.appPermissions || [];
-        if (appPermissions.length > 0) {
+
+        if (restrictionEnabled) {
           setAppRestricted(true);
           // Get current Bitrix user ID
           let bitrixUserId = "";
@@ -194,25 +201,34 @@ const Bitrix24App = () => {
               });
             }
           } catch {}
-          console.log("[BITRIX24] Permission check — userId:", bitrixUserId, "allowed:", appPermissions);
+          console.log("[BITRIX24] Permission check — userId:", bitrixUserId, "allowed:", appPermissions, "restrictionEnabled:", restrictionEnabled);
           if (bitrixUserId) {
             const allowed = appPermissions.includes(bitrixUserId);
             setHasAppAccess(allowed);
           } else {
+            // Fail-closed: if we can't identify the user and restriction is on, deny access
             setHasAppAccess(false);
           }
         } else {
           setAppRestricted(false);
           setHasAppAccess(true);
         }
+      } else {
+        // Fail-closed on error: restrict to chatia only
+        console.error("[BITRIX24] Fetch error status:", res.status);
+        setAppRestricted(true);
+        setHasAppAccess(false);
       }
     } catch (e) {
       console.error("[BITRIX24] Fetch error:", e);
+      // Fail-closed: restrict to chatia only
+      setAppRestricted(true);
+      setHasAppAccess(false);
     } finally {
       setLoadingData(false);
       setInitialLoading(false);
     }
-  }, []);
+  }, [domain]);
 
   const handleResync = async () => {
     if (!memberId) return;

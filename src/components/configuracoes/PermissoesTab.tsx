@@ -25,13 +25,19 @@ export default function PermissoesTab() {
   async function loadPermissions() {
     const { data: integ } = await supabase
       .from("bitrix24_integrations")
-      .select("id")
+      .select("id, config")
       .order("updated_at", { ascending: false })
       .limit(1)
       .maybeSingle();
 
     if (!integ) { setLoaded(true); return; }
     setIntegrationId(integ.id);
+
+    // Read restriction flag from config
+    const cfg = (integ as any).config || {};
+    if (cfg.restrict_app_access === true) {
+      setAppEnabled(true);
+    }
 
     const { data: perms } = await supabase
       .from("bitrix24_user_permissions")
@@ -41,7 +47,6 @@ export default function PermissoesTab() {
 
     if (perms && perms.length > 0) {
       const ids = new Set<string>(perms.map(p => p.bitrix_user_id));
-      setAppEnabled(true);
       setAppUsers(ids);
     }
     setLoaded(true);
@@ -61,6 +66,22 @@ export default function PermissoesTab() {
     setSaving(true);
 
     try {
+      // Persist the restrict_app_access flag in integration config
+      const { data: currentInteg } = await supabase
+        .from("bitrix24_integrations")
+        .select("config")
+        .eq("id", integrationId)
+        .single();
+
+      const existingConfig = (currentInteg as any)?.config || {};
+      const updatedConfig = { ...existingConfig, restrict_app_access: appEnabled };
+
+      const { error: cfgError } = await supabase
+        .from("bitrix24_integrations")
+        .update({ config: updatedConfig })
+        .eq("id", integrationId);
+      if (cfgError) throw cfgError;
+
       // Delete existing emmely_app permissions
       const { error: delError } = await supabase
         .from("bitrix24_user_permissions")

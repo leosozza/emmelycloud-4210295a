@@ -98,21 +98,71 @@ Deno.serve(async (req) => {
 
     console.log("[SETTINGS] Received:", JSON.stringify(data).substring(0, 500));
 
-    // Extract member_id: from body (Bitrix24 POST) OR from URL query param (frontend GET)
+    // Extract member_id and domain from body or URL
     const memberId = data.auth?.member_id || data.member_id || url.searchParams.get("member_id");
+    const domainParam = data.domain || url.searchParams.get("domain");
+
+    // Helper to fetch permissions + restriction flag for an integration
+    async function getAppAccessData(integrationRow: any) {
+      let appPermissions: string[] = [];
+      let appRestrictionEnabled = false;
+      if (!integrationRow) return { appPermissions, appRestrictionEnabled };
+
+      // Check config flag
+      const cfg = integrationRow.config || {};
+      appRestrictionEnabled = cfg.restrict_app_access === true;
+
+      if (appRestrictionEnabled) {
+        try {
+          const { data: permRows } = await supabase
+            .from("bitrix24_user_permissions")
+            .select("bitrix_user_id")
+            .eq("integration_id", integrationRow.id)
+            .eq("module", "emmely_app");
+          if (permRows && permRows.length > 0) {
+            appPermissions = permRows.map((r: any) => r.bitrix_user_id);
+          }
+        } catch (e) {
+          console.log("[SETTINGS] Permission fetch error:", e);
+        }
+      }
+      return { appPermissions, appRestrictionEnabled };
+    }
+
     if (!memberId) {
-      console.log("[SETTINGS] No member_id found");
-      if (isJsonRequest) {
-        // Auto-resolve: fetch the most recent integration (single-portal mode)
-        const { data: latestIntegration } = await supabase
+      console.log("[SETTINGS] No member_id found, trying domain:", domainParam);
+
+      // Try resolving by domain first, then fallback to most recent
+      let resolvedIntegration: any = null;
+      if (domainParam) {
+        const { data: byDomain } = await supabase
+          .from("bitrix24_integrations")
+          .select("*")
+          .eq("domain", domainParam)
+          .order("updated_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        resolvedIntegration = byDomain;
+      }
+      if (!resolvedIntegration) {
+        const { data: latest } = await supabase
           .from("bitrix24_integrations")
           .select("*")
           .order("updated_at", { ascending: false })
           .limit(1)
           .maybeSingle();
+        resolvedIntegration = latest;
+      }
 
-        console.log("[SETTINGS] Auto-resolved integration:", latestIntegration?.id || "none");
-        return new Response(JSON.stringify({ integration: latestIntegration || null }), {
+      console.log("[SETTINGS] Auto-resolved integration:", resolvedIntegration?.id || "none");
+
+      if (isJsonRequest) {
+        const accessData = await getAppAccessData(resolvedIntegration);
+        return new Response(JSON.stringify({
+          integration: resolvedIntegration || null,
+          appPermissions: accessData.appPermissions,
+          appRestrictionEnabled: accessData.appRestrictionEnabled,
+        }), {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
@@ -257,22 +307,12 @@ Deno.serve(async (req) => {
 
     // If JSON format requested (frontend call), return integration data + permissions
     if (isJsonRequest) {
-      // Fetch emmely_app permissions for access control
-      let appPermissions: string[] = [];
-      try {
-        const { data: permRows } = await supabase
-          .from("bitrix24_user_permissions")
-          .select("bitrix_user_id")
-          .eq("integration_id", integration.id)
-          .eq("module", "emmely_app");
-        if (permRows && permRows.length > 0) {
-          appPermissions = permRows.map((r: any) => r.bitrix_user_id);
-        }
-      } catch (e) {
-        console.log("[SETTINGS] Permission fetch error:", e);
-      }
-
-      return new Response(JSON.stringify({ integration, appPermissions }), {
+      const accessData = await getAppAccessData(integration);
+      return new Response(JSON.stringify({
+        integration,
+        appPermissions: accessData.appPermissions,
+        appRestrictionEnabled: accessData.appRestrictionEnabled,
+      }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
