@@ -112,30 +112,7 @@ Deno.serve(async (req) => {
     const accessToken = await ensureValidToken(supabase, integration);
     const ep = integration.client_endpoint.endsWith("/") ? integration.client_endpoint : integration.client_endpoint + "/";
 
-    // --- Permission check ---
-    if (action !== "get_config") {
-      const currentUser = await callBitrix(ep, accessToken, "user.current", {});
-      const bitrixUserId = String(currentUser?.result?.ID || "");
-      if (bitrixUserId) {
-        const { data: perms } = await supabase
-          .from("bitrix24_user_permissions")
-          .select("id")
-          .eq("integration_id", integration.id)
-          .eq("module", "emmely_agenda");
-        if (perms && perms.length > 0) {
-          const { data: userPerm } = await supabase
-            .from("bitrix24_user_permissions")
-            .select("id")
-            .eq("integration_id", integration.id)
-            .eq("module", "emmely_agenda")
-            .eq("bitrix_user_id", bitrixUserId)
-            .maybeSingle();
-          if (!userPerm) {
-            return new Response(JSON.stringify({ error: "Sem acesso ao módulo Emmely Agenda" }), { status: 403, headers: jsonHeaders });
-          }
-        }
-      }
-    }
+    // Permission check removed — CRM placements are accessible to all users
 
     // Helper to load booking config
     async function getBookingConfig() {

@@ -1922,36 +1922,7 @@ Deno.serve(async (req) => {
     let accessToken = bodyAuthToken || await ensureValidToken(supabase, integration);
     const endpoint = integration.client_endpoint;
 
-    // --- Permission check for emmely_pay ---
-    try {
-      const currentUser = await callBitrix(endpoint, accessToken, "user.current", {});
-      const bitrixUserId = String(currentUser?.result?.ID || "");
-      if (bitrixUserId) {
-        const { data: permRows } = await supabase
-          .from("bitrix24_user_permissions")
-          .select("id")
-          .eq("integration_id", integration.id)
-          .eq("module", "emmely_pay");
-        if (permRows && permRows.length > 0) {
-          const { data: userPerm } = await supabase
-            .from("bitrix24_user_permissions")
-            .select("id")
-            .eq("integration_id", integration.id)
-            .eq("module", "emmely_pay")
-            .eq("bitrix_user_id", bitrixUserId)
-            .maybeSingle();
-          if (!userPerm) {
-            return new Response(`<!DOCTYPE html><html><head><meta charset="UTF-8"><style>
-              body{font-family:Arial,sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;background:#f8fafc}
-              .box{text-align:center;padding:40px;border-radius:12px;background:#fff;box-shadow:0 2px 8px rgba(0,0,0,.08)}
-              h2{color:#1e293b;margin:0 0 8px}p{color:#64748b;margin:0}
-            </style></head><body><div class="box"><h2>🔒 Sem Permissão</h2><p>Não tem acesso ao módulo Emmely Pay.<br>Contacte o administrador.</p></div></body></html>`, { headers: htmlHeaders });
-          }
-        }
-      }
-    } catch (e) {
-      console.error("[PAYMENT-TAB] Permission check error:", e);
-    }
+    // Permission check removed — CRM placements are accessible to all users
 
     // Gateway / method display name maps
     const gwNames: Record<string, string> = { stripe_pt: "Stripe PT", stripe_br: "Stripe BR", asaas: "Asaas", direto: "Direto", stripe: "Stripe" };
