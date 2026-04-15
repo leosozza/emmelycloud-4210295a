@@ -812,6 +812,7 @@ export type Database = {
       bitrix24_channel_mappings: {
         Row: {
           channel: string
+          connector_id: string | null
           created_at: string
           id: string
           integration_id: string
@@ -822,6 +823,7 @@ export type Database = {
         }
         Insert: {
           channel: string
+          connector_id?: string | null
           created_at?: string
           id?: string
           integration_id: string
@@ -832,6 +834,7 @@ export type Database = {
         }
         Update: {
           channel?: string
+          connector_id?: string | null
           created_at?: string
           id?: string
           integration_id?: string
