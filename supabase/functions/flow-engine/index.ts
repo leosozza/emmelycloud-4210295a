@@ -379,6 +379,133 @@ async function executeFlow(
         break;
       }
 
+      // ── WHATSAPP (nós específicos) ────────────────────────────────────────
+
+      case "whatsapp_send": {
+        const text = replaceVariables(nodeData.message || nodeData.content || "", variables);
+        if (text) {
+          if (nodeData.connectorId) {
+            await sendViaBitrixConnector(supabaseUrl, serviceKey, conversation, text, nodeData.connectorId, nodeData.connectorLineId);
+          } else {
+            await sendMessage(supabaseUrl, serviceKey, conversation.id, text, instanceId);
+          }
+        }
+        currentNodeId = getNextNode(node.id, edges);
+        break;
+      }
+
+      case "whatsapp_template": {
+        const tmpl = nodeData.whatsappTemplate || {};
+        const templateName = replaceVariables(tmpl.templateName || "", variables);
+        const language = tmpl.language || "pt_BR";
+        const params = (tmpl.parameters || []).map((p: string) => replaceVariables(p, variables));
+        if (templateName) {
+          if (nodeData.connectorId) {
+            // Via connector: send as descriptive text
+            const paramStr = params.length > 0 ? ` [${params.join(" | ")}]` : "";
+            await sendViaBitrixConnector(supabaseUrl, serviceKey, conversation, `[Template: ${templateName}]${paramStr}`, nodeData.connectorId, nodeData.connectorLineId);
+          } else {
+            // Direct send via message-send (template support)
+            await fetch(`${supabaseUrl}/functions/v1/message-send`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json", "Authorization": `Bearer ${serviceKey}` },
+              body: JSON.stringify({
+                conversation_id: conversation.id,
+                message_type: "template",
+                template_name: templateName,
+                template_language: language,
+                template_params: params,
+                instance_id: instanceId || undefined,
+              }),
+            }).catch((e) => console.error("[FLOW-ENGINE] whatsapp_template error:", e));
+          }
+        }
+        currentNodeId = getNextNode(node.id, edges);
+        break;
+      }
+
+      case "whatsapp_media": {
+        const mediaUrl = replaceVariables(nodeData.mediaUrl || "", variables);
+        const caption = replaceVariables(nodeData.mediaCaption || "", variables);
+        const mediaType = nodeData.mediaType || "image";
+        if (mediaUrl) {
+          if (nodeData.connectorId) {
+            const mediaText = caption ? `${caption}\n${mediaUrl}` : mediaUrl;
+            await sendViaBitrixConnector(supabaseUrl, serviceKey, conversation, mediaText, nodeData.connectorId, nodeData.connectorLineId);
+          } else {
+            await sendMediaMessage(supabaseUrl, serviceKey, conversation.id, mediaType, mediaUrl, caption, instanceId);
+          }
+        }
+        currentNodeId = getNextNode(node.id, edges);
+        break;
+      }
+
+      case "whatsapp_audio": {
+        const audioUrl = replaceVariables(nodeData.mediaUrl || "", variables);
+        if (audioUrl) {
+          if (nodeData.connectorId) {
+            await sendViaBitrixConnector(supabaseUrl, serviceKey, conversation, audioUrl, nodeData.connectorId, nodeData.connectorLineId);
+          } else {
+            await sendMediaMessage(supabaseUrl, serviceKey, conversation.id, "audio", audioUrl, "", instanceId);
+          }
+        }
+        currentNodeId = getNextNode(node.id, edges);
+        break;
+      }
+
+      case "whatsapp_buttons": {
+        const text = replaceVariables(nodeData.message || "", variables);
+        const buttons = (nodeData.buttons || []).slice(0, 3).map((b: any) => ({
+          id: b.id || b.label,
+          label: replaceVariables(b.label || "", variables),
+        }));
+        if (nodeData.connectorId) {
+          const btnText = buttons.map((b: any, i: number) => `${i + 1}. ${b.label}`).join("\n");
+          await sendViaBitrixConnector(supabaseUrl, serviceKey, conversation, `${text}\n\n${btnText}`, nodeData.connectorId, nodeData.connectorLineId);
+        } else {
+          await sendInteractiveMessage(supabaseUrl, serviceKey, conversation, "buttons", text, buttons, instanceId);
+        }
+        await updateBotState(supabase, conversation.id, {
+          ...botState,
+          flow_id: flow.id,
+          current_node_id: node.id,
+          waiting_for_button: true,
+          flow_variables: variables,
+          button_options: buttons,
+        });
+        return { paused: "waiting_for_button", node_id: node.id };
+      }
+
+      case "whatsapp_list": {
+        const text = replaceVariables(nodeData.message || "", variables);
+        const listTitle = replaceVariables(nodeData.listTitle || "Ver opções", variables);
+        const items = (nodeData.listItems || []).map((item: any) => ({
+          id: item.id || item.title,
+          title: replaceVariables(item.title || "", variables),
+          description: replaceVariables(item.description || "", variables),
+        }));
+        if (nodeData.connectorId) {
+          const itemsText = items.map((it: any, i: number) => `${i + 1}. ${it.title}${it.description ? ` — ${it.description}` : ""}`).join("\n");
+          await sendViaBitrixConnector(supabaseUrl, serviceKey, conversation, `${text}\n\n${listTitle}:\n${itemsText}`, nodeData.connectorId, nodeData.connectorLineId);
+        } else {
+          await sendInteractiveMessage(supabaseUrl, serviceKey, conversation, "list", text, items, instanceId, listTitle);
+        }
+        await updateBotState(supabase, conversation.id, {
+          ...botState,
+          flow_id: flow.id,
+          current_node_id: node.id,
+          waiting_for_button: true,
+          flow_variables: variables,
+        });
+        return { paused: "waiting_for_list", node_id: node.id };
+      }
+
+      case "whatsapp_read": {
+        // Mark as read — signal only, move to next node
+        currentNodeId = getNextNode(node.id, edges);
+        break;
+      }
+
       case "location": {
         const lat = replaceVariables(nodeData.locationLat || "", variables);
         const lng = replaceVariables(nodeData.locationLng || "", variables);

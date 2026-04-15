@@ -97,7 +97,11 @@ export default function NodeConfigPanel({ data, onChange, onDelete, onClose }: N
   const [loadingConnectors, setLoadingConnectors] = useState(false);
   const meta = NODE_TYPE_META[data.nodeType as FlowNodeType];
 
-  const isMessageNode = ["message", "message_buttons", "message_list", "media"].includes(data.nodeType);
+  const isMessageNode = [
+    "message", "message_buttons", "message_list", "media",
+    "whatsapp_send", "whatsapp_template", "whatsapp_media",
+    "whatsapp_audio", "whatsapp_buttons", "whatsapp_list",
+  ].includes(data.nodeType);
 
   useEffect(() => {
     const loadCrews = async () => {
@@ -464,6 +468,301 @@ export default function NodeConfigPanel({ data, onChange, onDelete, onClose }: N
                 />
               </div>
             </>
+          )}
+
+          {/* ══════════════════════════════════════════════════════════════
+              WHATSAPP
+          ══════════════════════════════════════════════════════════════ */}
+
+          {/* whatsapp_send */}
+          {data.nodeType === "whatsapp_send" && (
+            <div className="space-y-1">
+              <Label className="text-[11px]">Mensagem WhatsApp</Label>
+              <Textarea
+                className="text-xs min-h-[90px] resize-none"
+                value={data.message || ""}
+                onChange={(e) => update({ message: e.target.value })}
+                placeholder="Texto da mensagem..."
+              />
+              <VarHint />
+            </div>
+          )}
+
+          {/* whatsapp_template */}
+          {data.nodeType === "whatsapp_template" && (
+            <>
+              <div className="space-y-1">
+                <Label className="text-[11px]">Nome do Template (HSM)</Label>
+                <Input
+                  className="h-8 text-xs"
+                  value={data.whatsappTemplate?.templateName || ""}
+                  onChange={(e) =>
+                    update({ whatsappTemplate: { ...data.whatsappTemplate!, templateName: e.target.value } })
+                  }
+                  placeholder="Ex: boas_vindas, confirmacao_pedido"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-[11px]">Idioma</Label>
+                <Select
+                  value={data.whatsappTemplate?.language || "pt_BR"}
+                  onValueChange={(v) =>
+                    update({ whatsappTemplate: { ...data.whatsappTemplate!, language: v } })
+                  }
+                >
+                  <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="pt_BR">🇧🇷 Português (Brasil)</SelectItem>
+                    <SelectItem value="en_US">🇺🇸 English (US)</SelectItem>
+                    <SelectItem value="es">🇪🇸 Español</SelectItem>
+                    <SelectItem value="pt_PT">🇵🇹 Português (Portugal)</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <Label className="text-[11px]">Parâmetros {"{{"}{"{"}{"}"}{"}}"}</Label>
+                  <Button
+                    variant="outline" size="sm" className="h-6 text-[10px]"
+                    onClick={() => {
+                      const params = [...(data.whatsappTemplate?.parameters || []), ""];
+                      update({ whatsappTemplate: { ...data.whatsappTemplate!, parameters: params } });
+                    }}
+                  >
+                    <Plus className="h-3 w-3 mr-1" /> Adicionar
+                  </Button>
+                </div>
+                {(data.whatsappTemplate?.parameters || []).map((p, i) => (
+                  <div key={i} className="flex gap-1">
+                    <Input
+                      className="h-7 text-xs flex-1"
+                      value={p}
+                      onChange={(e) => {
+                        const params = [...(data.whatsappTemplate?.parameters || [])];
+                        params[i] = e.target.value;
+                        update({ whatsappTemplate: { ...data.whatsappTemplate!, parameters: params } });
+                      }}
+                      placeholder={`Param ${i + 1} — ex: {{nome_contato}}`}
+                    />
+                    <Button
+                      variant="ghost" size="icon" className="h-7 w-7 text-destructive shrink-0"
+                      onClick={() => {
+                        const params = [...(data.whatsappTemplate?.parameters || [])];
+                        params.splice(i, 1);
+                        update({ whatsappTemplate: { ...data.whatsappTemplate!, parameters: params } });
+                      }}
+                    >
+                      <Trash2 className="h-3 w-3" />
+                    </Button>
+                  </div>
+                ))}
+                <p className="text-[9px] text-muted-foreground">
+                  Ordem dos parâmetros conforme template aprovado na Meta.
+                </p>
+              </div>
+            </>
+          )}
+
+          {/* whatsapp_media */}
+          {data.nodeType === "whatsapp_media" && (
+            <>
+              <div className="space-y-1">
+                <Label className="text-[11px]">Tipo de mídia</Label>
+                <Select
+                  value={data.mediaType || "image"}
+                  onValueChange={(v) => update({ mediaType: v as any })}
+                >
+                  <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="image">🖼️ Imagem</SelectItem>
+                    <SelectItem value="video">🎥 Vídeo</SelectItem>
+                    <SelectItem value="document">📄 Documento</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1">
+                <Label className="text-[11px]">URL do arquivo</Label>
+                <Input
+                  className="h-8 text-xs"
+                  value={data.mediaUrl || ""}
+                  onChange={(e) => update({ mediaUrl: e.target.value })}
+                  placeholder="https://... ou {{url_variavel}}"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-[11px]">Legenda (opcional)</Label>
+                <Input
+                  className="h-8 text-xs"
+                  value={data.mediaCaption || ""}
+                  onChange={(e) => update({ mediaCaption: e.target.value })}
+                  placeholder="Texto abaixo da mídia"
+                />
+              </div>
+            </>
+          )}
+
+          {/* whatsapp_audio */}
+          {data.nodeType === "whatsapp_audio" && (
+            <div className="space-y-1">
+              <Label className="text-[11px]">URL do áudio</Label>
+              <Input
+                className="h-8 text-xs"
+                value={data.mediaUrl || ""}
+                onChange={(e) => update({ mediaUrl: e.target.value })}
+                placeholder="https://... (mp3, ogg, m4a) ou {{url_audio}}"
+              />
+              <p className="text-[9px] text-muted-foreground">
+                Formatos suportados: mp3, ogg, m4a, amr. Via conector Bitrix24, envia como link.
+              </p>
+            </div>
+          )}
+
+          {/* whatsapp_buttons */}
+          {data.nodeType === "whatsapp_buttons" && (
+            <>
+              <div className="space-y-1">
+                <Label className="text-[11px]">Mensagem</Label>
+                <Textarea
+                  className="text-xs min-h-[70px] resize-none"
+                  value={data.message || ""}
+                  onChange={(e) => update({ message: e.target.value })}
+                  placeholder="Texto acima dos botões..."
+                />
+                <VarHint />
+              </div>
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <Label className="text-[11px]">Botões (máx. 3)</Label>
+                  <Button
+                    variant="outline" size="sm" className="h-6 text-[10px]"
+                    onClick={() => {
+                      const btns = [...(data.buttons || [])];
+                      if (btns.length >= 3) return;
+                      btns.push({ id: `btn_${Date.now()}`, label: "" });
+                      update({ buttons: btns });
+                    }}
+                    disabled={(data.buttons || []).length >= 3}
+                  >
+                    <Plus className="h-3 w-3 mr-1" /> Adicionar
+                  </Button>
+                </div>
+                {(data.buttons || []).map((btn, i) => (
+                  <div key={btn.id} className="flex gap-1">
+                    <Input
+                      className="h-7 text-xs flex-1"
+                      value={btn.label}
+                      onChange={(e) => {
+                        const btns = [...(data.buttons || [])];
+                        btns[i] = { ...btns[i], label: e.target.value };
+                        update({ buttons: btns });
+                      }}
+                      placeholder={`Botão ${i + 1} (máx. 20 chars)`}
+                      maxLength={20}
+                    />
+                    <Button
+                      variant="ghost" size="icon" className="h-7 w-7 text-destructive shrink-0"
+                      onClick={() => {
+                        const btns = [...(data.buttons || [])];
+                        btns.splice(i, 1);
+                        update({ buttons: btns });
+                      }}
+                    >
+                      <Trash2 className="h-3 w-3" />
+                    </Button>
+                  </div>
+                ))}
+                <p className="text-[9px] text-muted-foreground">
+                  Cada botão cria uma saída independente. Via conector, envia como lista numerada.
+                </p>
+              </div>
+            </>
+          )}
+
+          {/* whatsapp_list */}
+          {data.nodeType === "whatsapp_list" && (
+            <>
+              <div className="space-y-1">
+                <Label className="text-[11px]">Mensagem / Título</Label>
+                <Textarea
+                  className="text-xs min-h-[60px] resize-none"
+                  value={data.message || ""}
+                  onChange={(e) => update({ message: e.target.value })}
+                  placeholder="Texto acima da lista..."
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-[11px]">Título do botão de lista</Label>
+                <Input
+                  className="h-8 text-xs"
+                  value={data.listTitle || ""}
+                  onChange={(e) => update({ listTitle: e.target.value })}
+                  placeholder="Ex: Ver opções"
+                  maxLength={20}
+                />
+              </div>
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <Label className="text-[11px]">Itens (máx. 10)</Label>
+                  <Button
+                    variant="outline" size="sm" className="h-6 text-[10px]"
+                    onClick={() => {
+                      const items = [...(data.listItems || [])];
+                      if (items.length >= 10) return;
+                      items.push({ id: `item_${Date.now()}`, title: "", description: "" });
+                      update({ listItems: items });
+                    }}
+                    disabled={(data.listItems || []).length >= 10}
+                  >
+                    <Plus className="h-3 w-3 mr-1" /> Adicionar
+                  </Button>
+                </div>
+                {(data.listItems || []).map((item, i) => (
+                  <div key={item.id} className="space-y-1 bg-muted/40 rounded p-2">
+                    <div className="flex gap-1">
+                      <Input
+                        className="h-7 text-xs flex-1"
+                        value={item.title}
+                        onChange={(e) => {
+                          const items = [...(data.listItems || [])];
+                          items[i] = { ...items[i], title: e.target.value };
+                          update({ listItems: items });
+                        }}
+                        placeholder={`Título ${i + 1}`}
+                        maxLength={24}
+                      />
+                      <Button
+                        variant="ghost" size="icon" className="h-7 w-7 text-destructive shrink-0"
+                        onClick={() => {
+                          const items = [...(data.listItems || [])];
+                          items.splice(i, 1);
+                          update({ listItems: items });
+                        }}
+                      >
+                        <Trash2 className="h-3 w-3" />
+                      </Button>
+                    </div>
+                    <Input
+                      className="h-7 text-xs"
+                      value={item.description || ""}
+                      onChange={(e) => {
+                        const items = [...(data.listItems || [])];
+                        items[i] = { ...items[i], description: e.target.value };
+                        update({ listItems: items });
+                      }}
+                      placeholder="Descrição (opcional)"
+                      maxLength={72}
+                    />
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+
+          {/* whatsapp_read — no config needed */}
+          {data.nodeType === "whatsapp_read" && (
+            <p className="text-[11px] text-muted-foreground">
+              Este nó marca a última mensagem recebida como lida (✓✓). Nenhuma configuração necessária.
+            </p>
           )}
 
           {/* location */}

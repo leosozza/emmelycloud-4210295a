@@ -156,7 +156,7 @@ async function findConversationByBotState(supabase: any, entityId: string, entit
     const { data: convs } = await supabase
       .from("conversations")
       .select(selectCols)
-      .or(`bot_state->>bitrix_deal_id.eq.${eid}`)
+      .filter("bot_state->>bitrix_deal_id", "eq", eid)
       .order("last_message_at", { ascending: false })
       .limit(5);
     if (convs?.length) {
@@ -172,7 +172,7 @@ async function findConversationByBotState(supabase: any, entityId: string, entit
     const { data: convs } = await supabase
       .from("conversations")
       .select(selectCols)
-      .or(`bot_state->>bitrix_lead_id.eq.${eid}`)
+      .filter("bot_state->>bitrix_lead_id", "eq", eid)
       .order("last_message_at", { ascending: false })
       .limit(5);
     if (convs?.length) {
@@ -1321,7 +1321,7 @@ Deno.serve(async (req) => {
           }
         }
 
-        // ── 7. Persist bitrix_deal_id in bot_state for instant future lookups ──
+        // ── 7. Persist entity ID in bot_state for instant future lookups ──
         if (conversation && entityTypeNum === 2) {
           const bs = (conversation.bot_state as any) || {};
           if (String(bs.bitrix_deal_id || "") !== String(entityId)) {
@@ -1329,6 +1329,15 @@ Deno.serve(async (req) => {
               bot_state: { ...bs, bitrix_deal_id: String(entityId) },
             }).eq("id", conversation.id);
             console.log("[CRM-TAB] ✓ Persisted bitrix_deal_id:", entityId, "on conversation:", conversation.id);
+          }
+        }
+        if (conversation && entityTypeNum === 1) {
+          const bs = (conversation.bot_state as any) || {};
+          if (String(bs.bitrix_lead_id || "") !== String(entityId)) {
+            await supabase.from("conversations").update({
+              bot_state: { ...bs, bitrix_lead_id: String(entityId) },
+            }).eq("id", conversation.id);
+            console.log("[CRM-TAB] ✓ Persisted bitrix_lead_id:", entityId, "on conversation:", conversation.id);
           }
         }
 
