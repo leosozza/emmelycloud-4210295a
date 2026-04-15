@@ -604,15 +604,38 @@ function renderHtml(opts: {
     }
 
     function useResponse(text) {
+      // Switch to conversa tab first
+      switchTab('conversa');
+      
       var clientInput = document.getElementById('client-input');
       if (clientInput) {
         clientInput.value = text;
         autoResize(clientInput);
-        switchTab('conversa');
         clientInput.focus();
         setStatus('Resposta copiada para o campo de envio', '#2283d8');
-      } else {
-        setStatus('Sem campo de envio disponível (inicie uma conversa primeiro)', '#f59e0b');
+        return;
+      }
+      
+      // No conversation yet — create send bar dynamically
+      var messagesDiv = document.getElementById('messages');
+      if (!messagesDiv) return;
+      
+      // Check if we already injected a temporary send bar
+      var existingBar = document.getElementById('client-send-bar');
+      if (!existingBar) {
+        var bar = document.createElement('div');
+        bar.id = 'client-send-bar';
+        bar.innerHTML = '<textarea id="client-input" rows="1" placeholder="Escreva ao cliente..." oninput="autoResize(this)"></textarea>' +
+          '<button onclick="sendClientMessage()" id="send-client-btn">${B24_ICONS.send} Enviar</button>';
+        messagesDiv.parentElement.insertBefore(bar, messagesDiv.nextSibling);
+      }
+      
+      var newInput = document.getElementById('client-input');
+      if (newInput) {
+        newInput.value = text;
+        autoResize(newInput);
+        newInput.focus();
+        setStatus('Resposta copiada — envie para iniciar a conversa', '#2283d8');
       }
     }
 
