@@ -1,39 +1,73 @@
 
+## Diagnóstico
 
-## Problema actual
+Já não parece ser um problema de gravação. A permissão existe na base:
 
-O plano anterior **foi aplicado** no código, mas há 3 problemas remanescentes:
+- portal `crm.emmelyfernandesadv.pt`
+- integração `member_id = bea4c89b89c5c33f21450b1a633e6fb1`
+- 1 permissão `emmely_app` guardada
+- utilizador permitido gravado: `bitrix_user_id = "1"`
 
-1. **Nome do operador no WhatsApp** — `message-send` grava `sender_name` no DB mas **não prefixa** o conteúdo da mensagem com o nome ao enviar via WhatsApp/Instagram. O cliente recebe "teste plancement" em vez de `*Operador:*\nteste plancement`.
+O problema provável está no carregamento do app dentro do Bitrix:
 
-2. **Nome genérico "Operador Bitrix24"** — A chamada `BX24.callMethod('user.current')` é assíncrona e pode não ter terminado quando `doSend` é executado. O fallback `'Operador Bitrix24'` é usado.
+1. `src/pages/Bitrix24App.tsx` depende de `member_id` vindo do iframe
+2. se esse `member_id` vier vazio, a função `bitrix24-connector-settings` entra no auto-resolve
+3. nesse ramo, hoje ela devolve só `integration`, sem `appPermissions`
+4. o frontend interpreta isso como “sem restrição” e mostra o app completo
 
-3. **AI não usa modo silencioso** — `ai-process-message` chama `bitrix24-send` sem `silent: true`, logo as análises de IA são visíveis ao cliente no Open Channel.
+Há ainda um segundo ponto a validar: o único utilizador permitido guardado é o ID `1`. Vou confirmar se esse ID é o Leonardo, porque se for, esse utilizador está efetivamente autorizado.
 
-## Plano de correcção
+## Plano de correção
 
-### 1. Prefixar mensagem com nome do remetente no `message-send`
+### 1. Corrigir a resolução da integração no backend
+Em `supabase/functions/bitrix24-connector-settings/index.ts`:
 
-No `message-send`, quando `bodySenderName` é fornecido e o conteúdo é texto simples, prefixar o conteúdo enviado ao WhatsApp/Instagram com `*{sender_name}:*\n{content}`. A mensagem gravada no DB mantém o conteúdo original.
+- aceitar `domain` além de `member_id`
+- resolver a integração por:
+  1. `member_id`
+  2. `domain`
+  3. fallback final para a mais recente
+- devolver `appPermissions` em todos os ramos, inclusive no auto-resolve
+- devolver também um campo explícito como `appRestrictionEnabled`
 
-### 2. Garantir carregamento do utilizador antes de permitir envio no CRM tab
+### 2. Fechar o app por defeito quando a permissão não puder ser confirmada
+Em `src/pages/Bitrix24App.tsx`:
 
-No `bitrix24-crm-tab`, mover a chamada `user.current` para o início da inicialização e guardar o resultado antes de habilitar o botão de envio. Aguardar com `await` (ou callback que desbloqueia o UI) para que `operatorName` nunca seja o fallback genérico.
+- enviar `member_id` e `domain` para `bitrix24-connector-settings`
+- trocar a lógica atual de “falha abre tudo” para “falha mostra só Chat IA”
+- só renderizar navegação completa quando houver confirmação positiva de acesso
+- manter `/bitrix24/chatia` como único destino permitido quando o utilizador não estiver autorizado
 
-### 3. Passar `silent: true` no `ai-process-message`
+### 3. Tornar a restrição independente do número de utilizadores marcados
+Hoje a restrição é inferida por `appPermissions.length > 0`, o que é frágil.
 
-No bloco que chama `bitrix24-send` dentro de `ai-process-message`, adicionar `silent: true` ao body JSON para que as respostas de IA fiquem registadas internamente no Bitrix24 sem chegar ao cliente.
+Vou ajustar `src/components/configuracoes/PermissoesTab.tsx` para guardar um flag real no `config` da integração, por exemplo:
 
-### Ficheiros a alterar
+- `restrict_app_access: true`
 
-| Ficheiro | Alteração |
-|---|---|
-| `supabase/functions/message-send/index.ts` | Prefixar conteúdo com `*sender_name:*\n` ao enviar para WhatsApp/Instagram |
-| `supabase/functions/bitrix24-crm-tab/index.ts` | Aguardar `user.current` antes de habilitar envio |
-| `supabase/functions/ai-process-message/index.ts` | Adicionar `silent: true` ao body do `bitrix24-send` |
+Assim:
+- toggle “Restringir” fica persistido
+- lista de utilizadores permitidos fica separada da ativação da regra
+- o app não depende apenas da existência de linhas na tabela para saber se está restrito
 
-### Resultado esperado
-- Mensagens do placement chegam ao WhatsApp com `*Leonardo de Souza:*\nteste plancement`
-- Nome correcto do operador sempre presente (nunca "Operador Bitrix24")
-- Respostas de IA ficam visíveis apenas internamente no chat do Bitrix24
+### 4. Validar se o ID permitido pertence mesmo ao utilizador testado
+Antes de concluir a correção, vou confirmar qual utilizador Bitrix corresponde ao ID `1`.
 
+Se o Leonardo for o ID `1`, então:
+- ele está mesmo autorizado hoje
+- o bug principal continua a existir para os restantes utilizadores
+- mas também precisaremos rever a seleção feita na tab de permissões para evitar confusão
+
+## Ficheiros a alterar
+
+- `supabase/functions/bitrix24-connector-settings/index.ts`
+- `src/pages/Bitrix24App.tsx`
+- `src/components/configuracoes/PermissoesTab.tsx`
+
+## Resultado esperado
+
+- utilizador sem permissão abre o app no Bitrix e vê apenas `Chat IA`
+- sidebar reduzida para apenas essa opção
+- utilizador autorizado continua com acesso completo a `/bitrix24/*`
+- placements CRM continuam sem bloqueio
+- mesmo que `member_id` não venha corretamente no iframe, o sistema deixa de liberar o app completo por engano
