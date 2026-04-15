@@ -1,0 +1,2 @@
+ALTER TABLE public.bitrix24_user_permissions DROP CONSTRAINT bitrix24_user_permissions_module_check;
+ALTER TABLE public.bitrix24_user_permissions ADD CONSTRAINT bitrix24_user_permissions_module_check CHECK (module = ANY (ARRAY['emmely_ai'::text, 'emmely_pay'::text, 'emmely_app'::text]));
