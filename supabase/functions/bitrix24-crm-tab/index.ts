@@ -148,39 +148,77 @@ async function findConversationByEmail(supabase: any, emails: string[]): Promise
 }
 
 async function findConversationByBotState(supabase: any, entityId: string, entityTypeId?: string): Promise<any> {
-  const { data: convs } = await supabase
-    .from("conversations")
-    .select("id, contact_name, attendance_mode, channel, status, contact_phone, bot_state")
-    .neq("status", "fechada")
-    .order("last_message_at", { ascending: false })
-    .limit(300);
+  const selectCols = "id, contact_name, attendance_mode, channel, status, contact_phone, bot_state";
+  const eid = String(entityId);
 
-  if (!convs) return null;
-  for (const c of convs) {
-    const bs = (c.bot_state as any) || {};
-    // Direct match on lead/entity IDs
-    if (
-      bs.bitrix_lead_id === entityId ||
-      bs.bitrix_lead_id === String(entityId) ||
-      bs.bitrix_entity_id === entityId ||
-      bs.bitrix_entity_id === String(entityId)
-    ) {
-      return c;
-    }
-    // Match with entity type prefix (e.g., "1:23691", "2:23691")
-    const bsEntity = String(bs.bitrix_entity_id || "");
-    if (bsEntity.includes(":")) {
-      const parts = bsEntity.split(":");
-      if (parts[1] === String(entityId)) return c;
-    }
-    // Also check deal_id in bot_state
-    if (
-      bs.bitrix_deal_id === entityId ||
-      bs.bitrix_deal_id === String(entityId)
-    ) {
-      return c;
+  // 1. Try exact bitrix_deal_id match
+  {
+    const { data: convs } = await supabase
+      .from("conversations")
+      .select(selectCols)
+      .or(`bot_state->>bitrix_deal_id.eq.${eid}`)
+      .order("last_message_at", { ascending: false })
+      .limit(5);
+    if (convs?.length) {
+      const active = convs.find((c: any) => c.status !== "fechada");
+      const best = active || convs[0];
+      console.log("[CRM-TAB] bot_state bitrix_deal_id match:", best.id, "status:", best.status);
+      return best;
     }
   }
+
+  // 2. Try exact bitrix_lead_id match
+  {
+    const { data: convs } = await supabase
+      .from("conversations")
+      .select(selectCols)
+      .or(`bot_state->>bitrix_lead_id.eq.${eid}`)
+      .order("last_message_at", { ascending: false })
+      .limit(5);
+    if (convs?.length) {
+      const active = convs.find((c: any) => c.status !== "fechada");
+      const best = active || convs[0];
+      console.log("[CRM-TAB] bot_state bitrix_lead_id match:", best.id, "status:", best.status);
+      return best;
+    }
+  }
+
+  // 3. Try bitrix_entity_id (exact or with prefix like "1:17805", "2:23693")
+  const prefixed = entityTypeId ? `${entityTypeId}:${eid}` : null;
+  {
+    const orClauses = [`bot_state->>bitrix_entity_id.eq.${eid}`];
+    if (prefixed) orClauses.push(`bot_state->>bitrix_entity_id.eq.${prefixed}`);
+    const { data: convs } = await supabase
+      .from("conversations")
+      .select(selectCols)
+      .or(orClauses.join(","))
+      .order("last_message_at", { ascending: false })
+      .limit(5);
+    if (convs?.length) {
+      const active = convs.find((c: any) => c.status !== "fechada");
+      const best = active || convs[0];
+      console.log("[CRM-TAB] bot_state bitrix_entity_id match:", best.id, "status:", best.status);
+      return best;
+    }
+  }
+
+  // 4. Try entity_id embedded in prefixed values (e.g. "1:17805" contains ":17805")
+  {
+    const { data: convs } = await supabase
+      .from("conversations")
+      .select(selectCols)
+      .not("bot_state", "is", null)
+      .or(`bot_state->>bitrix_entity_id.like.%:${eid}`)
+      .order("last_message_at", { ascending: false })
+      .limit(5);
+    if (convs?.length) {
+      const active = convs.find((c: any) => c.status !== "fechada");
+      const best = active || convs[0];
+      console.log("[CRM-TAB] bot_state entity_id suffix match:", best.id, "status:", best.status);
+      return best;
+    }
+  }
+
   return null;
 }
 
