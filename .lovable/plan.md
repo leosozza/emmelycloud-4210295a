@@ -1,50 +1,57 @@
 
 
-## Diagnóstico
+## Plano: Corrigir Status de Pagamento (Enumeração Bitrix24)
 
-O Deal 23693 ("Ailson França") não encontra a conversa porque:
+### Problema
+Os campos `UF_CRM_EMMELY_PAYMENT_STATUS` (Deal) e `UF_CRM_69B83DDB1F59D` (Fatura/Invoice) são do tipo **enumeração** no Bitrix24. O código atual envia strings como `"pending"`, `"paid"`, `"partial"` — mas o Bitrix24 exige os **IDs numéricos** das opções (ex: `9391` = Pendente, `9395` = Pago).
 
-1. **Sem telefone/email** — O Deal e o Contacto vinculado não têm telefone/email no Bitrix24 (logs: `phones: [] emails: []`)
-2. **bot_state desalinhado** — A conversa tem `bitrix_entity_id: "1:17805"` (Lead), mas o CRM Tab procura pelo Deal ID `23693`. A busca tenta `entity.LEAD_ID` mas provavelmente o Deal não tem esse campo
-3. **contact_phone inválido** — A conversa tem `10677389394164@lid` (formato LID do Bitrix), que não é um telefone real
-4. **Name fallback falha** — O nome "Ailson França - WhatsApp BR" deveria encontrar "Ailson França" na conversa, mas algo impede (possivelmente o Deal não retorna o TITLE esperado)
+Da screenshot do utilizador (campo Invoice):
+| ID | Valor |
+|---|---|
+| 9391 | Pendente |
+| 9393 | Parcial |
+| 9395 | Pago |
+| 9397 | Cancelado |
 
-## Plano de Correção
+Os IDs do campo no Deal são diferentes (atribuídos dinamicamente na instalação). Não podemos hardcodar — precisamos resolver dinamicamente.
 
-### 1. Adicionar lookup por `contact_phone` com formato LID
-**Ficheiro:** `supabase/functions/bitrix24-crm-tab/index.ts`
+### Solução
 
-Antes do name fallback, adicionar uma busca pela `contact_phone` que contenha o formato `@lid` usado pelo Bitrix. Extrair o phone_number_id do Contacto vinculado e procurar conversas com `contact_phone` contendo esse ID.
+**Estratégia**: Antes de escrever no campo, chamar `crm.deal.fields` ou `crm.item.fields` para obter os IDs das opções da enumeração e mapear pelo VALUE (texto). Isto garante compatibilidade com qualquer instalação.
 
-### 2. Adicionar lookup direto por nome do Deal/Contacto no `contact_name`
-O name fallback atual usa `ilike` mas pode estar a falhar silenciosamente. Adicionar logs de debug e garantir que o nome do Contacto (não o título do Deal) é usado na busca.
+### Ficheiros a editar
 
-### 3. Gravar `bitrix_deal_id` no `bot_state` quando o Deal é identificado
-**Ficheiro:** `supabase/functions/bitrix24-crm-tab/index.ts`
+**1. `supabase/functions/bitrix24-payment-tab/index.ts`**
+- Adicionar função helper JS (inline no HTML) que resolve o ID da enumeração chamando `BX24.callMethod('crm.deal.fields')` para o Deal e cachear os IDs de `UF_CRM_EMMELY_PAYMENT_STATUS`
+- Nos `crm.item.add` (linhas 1053-1055 e 1138-1145), o campo `UF_CRM_69B83DDB1F59D` deve usar os IDs conhecidos da Invoice: `9391` (Pendente), `9393` (Parcial), `9395` (Pago)
+- Nos `crm.deal.update` (linhas 1093, 1123), resolver o ID da enumeração do Deal antes de escrever
 
-Quando a conversa é encontrada por qualquer método, atualizar o `bot_state` da conversa com `bitrix_deal_id: entityId` para que lookups futuros sejam instantâneos:
-```javascript
-if (conversation && entityTypeNum === 2) {
-  await supabase.from("conversations").update({
-    bot_state: { ...conversation.bot_state, bitrix_deal_id: String(entityId) }
-  }).eq("id", conversation.id);
-}
+**2. `supabase/functions/payment-webhook-stripe/index.ts`**
+- Na linha 75, onde calcula `paymentStatus = "paid" | "partial"`, resolver para o ID numérico
+- Antes de `crm.deal.update`, chamar `crm.deal.fields` para obter os IDs da enumeração `UF_CRM_EMMELY_PAYMENT_STATUS`
+- Na atualização da Invoice (linha 160-164), usar `9395` para "paid" em `UF_CRM_69B83DDB1F59D`
+
+**3. `supabase/functions/bitrix24-payment-webhook/index.ts`**
+- Na criação de Invoices (linha 312), usar `9391` para "pending"
+- Na atualização do Deal (linha 351), resolver ID da enumeração via `crm.deal.fields`
+
+**4. `supabase/functions/sign-contract/index.ts`**
+- Linha 476: `UF_CRM_EMMELY_PAYMENT_STATUS: "Pendente"` — resolver para o ID numérico
+
+### Detalhes técnicos
+
+Para as **Faturas (entity 31)**, os IDs são fixos conforme fornecidos pelo utilizador — podemos usar diretamente:
+```typescript
+const INVOICE_STATUS = { pending: 9391, partial: 9393, paid: 9395, cancelled: 9397 };
 ```
 
-### 4. Adicionar lookup por Contact ID do Bitrix na tabela `clients`
-Para Deals com `CONTACT_ID`, procurar na tabela `clients` por `bitrix24_id` e depois usar o `client_id` para encontrar conversas:
-```sql
-clients.bitrix24_id = entity.CONTACT_ID → conversations.client_id = clients.id
+Para o **Deal**, os IDs variam por instalação. A função helper chamará:
+```typescript
+const fieldsRes = await callBitrix(endpoint, token, "crm.deal.fields", {});
+const statusField = fieldsRes.result?.UF_CRM_EMMELY_PAYMENT_STATUS;
+const items = statusField?.items || [];
+// items: [{ ID: "123", VALUE: "Pendente" }, { ID: "456", VALUE: "Pago" }, ...]
 ```
 
-### 5. Adicionar logs de debug em cada passo do lookup
-Registar o nome usado no name fallback e o LEAD_ID do Deal para diagnosticar falhas futuras.
-
-## Ficheiros a editar
-- `supabase/functions/bitrix24-crm-tab/index.ts` — todos os 5 pontos acima
-
-## Detalhes técnicos
-- O `contact_phone` no formato `{number}@lid` é um identificador de linha do Bitrix Open Channel — não é um telefone real
-- O `bitrix_entity_id: "1:17805"` indica que a conversa foi originada num Lead Bitrix (type 1, ID 17805) que depois foi convertido no Deal 23693
-- A gravação do `bitrix_deal_id` no bot_state cria um vínculo permanente que elimina lookups complexos em acessos futuros
+Mapeamento: buscar pelo `VALUE` ("Pendente", "Parcial", "Pago", "Cancelado") e usar o `ID` correspondente.
 
