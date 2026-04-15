@@ -834,15 +834,38 @@ function renderHtml(opts: {
       var message = msgInput ? msgInput.value.trim() : 'Olá! Em que posso ajudar?';
       if (!message) { setStatus('Escreva uma mensagem', '#f59e0b'); return; }
       setStatus('A iniciar conversa...', '#888');
-      fetch(SUPABASE_URL + '/functions/v1/message-send', {
+      var convPayload = {
+        channel: channel || 'whatsapp',
+        contact_name: CONTACT_NAME || 'Cliente Bitrix24',
+        contact_phone: phone || null,
+        status: 'open',
+        unread_count: 0
+      };
+      fetch(SUPABASE_URL + '/rest/v1/conversations', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_KEY },
-        body: JSON.stringify({ channel: channel, contact_phone: phone || undefined, message: message, bitrix_entity_id: ENTITY_ID || undefined, bitrix_entity_type_id: ENTITY_TYPE_ID || undefined })
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': SUPABASE_KEY,
+          'Authorization': 'Bearer ' + SUPABASE_KEY,
+          'Prefer': 'return=representation'
+        },
+        body: JSON.stringify(convPayload)
       })
       .then(function(r) { return r.json(); })
+      .then(function(rows) {
+        var newConv = Array.isArray(rows) ? rows[0] : rows;
+        if (!newConv || !newConv.id) throw new Error('Falha ao criar conversa');
+        CONVERSATION_ID = newConv.id;
+        // Now send the message
+        return fetch(SUPABASE_URL + '/functions/v1/message-send', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_KEY },
+          body: JSON.stringify({ conversation_id: newConv.id, content: message })
+        }).then(function(r) { return r.json(); });
+      })
       .then(function(d) {
-        if (d.error) throw new Error(d.error);
-        setStatus('✅ Conversa iniciada! Recarregue a aba.', '#22c55e');
+        if (d && d.error) throw new Error(d.error);
+        setStatus('✅ Conversa iniciada!', '#22c55e');
       })
       .catch(function(e) { setStatus('❌ ' + e.message, '#ef4444'); });
     }
