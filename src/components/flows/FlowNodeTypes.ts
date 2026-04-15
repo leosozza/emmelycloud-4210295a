@@ -451,6 +451,8 @@ export interface FlowNodeData {
   // Composição
   callFlowId?: string;
   callFlowPassVariables?: boolean;
+  // WhatsApp
+  whatsappTemplate?: { templateName: string; language: string; parameters: string[] };
   // Canal de envio (conector Bitrix24)
   connectorId?: string;
   connectorLineId?: number;
