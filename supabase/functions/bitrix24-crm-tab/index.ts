@@ -123,7 +123,7 @@ async function findConversationByPhone(supabase: any, phones: string[]): Promise
 
 async function findConversationByEmail(supabase: any, emails: string[]): Promise<any> {
   for (const email of emails) {
-    const { data: conv } = await supabase
+    const { data: active } = await supabase
       .from("conversations")
       .select("id, contact_name, attendance_mode, channel, status, contact_phone, bot_state")
       .ilike("contact_email", `%${email}%`)
@@ -131,7 +131,18 @@ async function findConversationByEmail(supabase: any, emails: string[]): Promise
       .order("last_message_at", { ascending: false })
       .limit(1)
       .maybeSingle();
-    if (conv) return conv;
+    if (active) return active;
+    const { data: anyConv } = await supabase
+      .from("conversations")
+      .select("id, contact_name, attendance_mode, channel, status, contact_phone, bot_state")
+      .ilike("contact_email", `%${email}%`)
+      .order("last_message_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (anyConv) {
+      console.log("[CRM-TAB] Email match found closed conversation:", anyConv.id, "status:", anyConv.status);
+      return anyConv;
+    }
   }
   return null;
 }
