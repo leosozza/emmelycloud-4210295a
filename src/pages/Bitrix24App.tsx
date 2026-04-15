@@ -95,6 +95,8 @@ const Bitrix24App = () => {
   const location = useLocation();
   const [initialLoading, setInitialLoading] = useState(true);
   const [memberId, setMemberId] = useState<string | null>(null);
+  const [appRestricted, setAppRestricted] = useState(false);
+  const [hasAppAccess, setHasAppAccess] = useState(true);
 
   // Derive view from URL path
   const view: AppView = useMemo(() => {
