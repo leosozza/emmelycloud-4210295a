@@ -41,7 +41,7 @@ export function useSendMessage(
 
       try {
         const { data, error } = await supabase.functions.invoke("message-send", {
-          body: { conversation_id: params.conversation.id, content },
+          body: { conversation_id: params.conversation.id, content, sender_name: "Atendente" },
         });
         if (error) throw error;
         if (data?.error) throw new Error(data.error);
