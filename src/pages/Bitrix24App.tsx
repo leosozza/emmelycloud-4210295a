@@ -102,10 +102,17 @@ const Bitrix24App = () => {
   const view: AppView = useMemo(() => {
     if (initialLoading) return "loading";
     const sub = location.pathname.replace(/^\/bitrix24\/?/, "").split("/")[0];
-    if (!sub || sub === "") return "dashboard";
+    if (!sub || sub === "") {
+      // If restricted and no access, force chatia
+      if (appRestricted && !hasAppAccess) return "chatia";
+      return "dashboard";
+    }
     const validViews: AppView[] = ["dashboard", "agentes", "training", "flows", "playground", "chatia", "pagamentos", "relatorios", "baixa", "carteira", "configuracoes", "propostas", "integracoes", "automacoes", "observabilidade"];
-    return validViews.includes(sub as AppView) ? (sub as AppView) : "dashboard";
-  }, [location.pathname, initialLoading]);
+    const matched = validViews.includes(sub as AppView) ? (sub as AppView) : "dashboard";
+    // If restricted and no access, only allow chatia
+    if (appRestricted && !hasAppAccess && matched !== "chatia") return "chatia";
+    return matched;
+  }, [location.pathname, initialLoading, appRestricted, hasAppAccess]);
 
   const setView = useCallback((v: AppView) => {
     if (v === "loading") return;
