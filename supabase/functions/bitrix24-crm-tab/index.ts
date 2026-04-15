@@ -1072,6 +1072,110 @@ Deno.serve(async (req) => {
           } catch (e) { console.warn("[CRM-TAB] Company lookup failed:", e); }
         }
 
+        // ── 5b. Telephony searchCrmEntities fallback ──
+        // When we have a conversation with a real phone but no bitrix link, or
+        // when we have no conversation but phones exist, use Bitrix24's telephony
+        // fuzzy phone matching to find/resolve CRM entities
+        if (!conversation && allPhones.length > 0) {
+          console.log("[CRM-TAB] Trying telephony.searchCrmEntities with phones:", allPhones);
+          for (const phone of allPhones) {
+            try {
+              const telRes = await callBitrix(endpoint, accessToken, "telephony.externalCall.searchCrmEntities", { PHONE_NUMBER: phone });
+              const entities = telRes?.result || [];
+              if (entities.length > 0) {
+                console.log("[CRM-TAB] telephony found entities:", JSON.stringify(entities));
+                // Try to find a conversation via the discovered contact/lead
+                for (const ent of entities) {
+                  const entType = String(ent.CRM_ENTITY_TYPE || "").toUpperCase();
+                  const entId = String(ent.CRM_ENTITY_ID || "");
+                  if (!entId) continue;
+
+                  // Map entity type to bot_state field
+                  if (entType === "CONTACT") {
+                    // Look up via clients.bitrix24_id
+                    const { data: client } = await supabase
+                      .from("clients")
+                      .select("id")
+                      .eq("bitrix24_id", entId)
+                      .maybeSingle();
+                    if (client) {
+                      const { data: conv } = await supabase
+                        .from("conversations")
+                        .select("id, contact_name, attendance_mode, channel, status, contact_phone, bot_state")
+                        .eq("client_id", client.id)
+                        .order("last_message_at", { ascending: false })
+                        .limit(1)
+                        .maybeSingle();
+                      if (conv) {
+                        conversation = conv;
+                        console.log("[CRM-TAB] ✓ Matched via telephony→client.bitrix24_id:", entId);
+                        break;
+                      }
+                    }
+                  } else if (entType === "LEAD") {
+                    // Look up via leads.bitrix24_id
+                    const { data: lead } = await supabase
+                      .from("leads")
+                      .select("id, conversation_id")
+                      .eq("bitrix24_id", entId)
+                      .maybeSingle();
+                    if (lead?.conversation_id) {
+                      const { data: conv } = await supabase
+                        .from("conversations")
+                        .select("id, contact_name, attendance_mode, channel, status, contact_phone, bot_state")
+                        .eq("id", lead.conversation_id)
+                        .maybeSingle();
+                      if (conv) {
+                        conversation = conv;
+                        console.log("[CRM-TAB] ✓ Matched via telephony→lead.bitrix24_id:", entId);
+                        break;
+                      }
+                    }
+                  }
+                }
+                if (conversation) break;
+
+                // If still no conversation, try the phone from telephony match in conversations directly
+                conversation = await findConversationByPhone(supabase, [phone]);
+                if (conversation) {
+                  console.log("[CRM-TAB] ✓ Matched via telephony phone re-lookup:", phone);
+                  break;
+                }
+              }
+            } catch (telErr) {
+              console.warn("[CRM-TAB] telephony.searchCrmEntities failed for", phone, ":", telErr);
+            }
+          }
+        }
+
+        // ── 5c. Reverse lookup: conversation has phone → find CRM entity via telephony ──
+        if (conversation && !((conversation.bot_state as any)?.bitrix_deal_id) && conversation.contact_phone) {
+          const convPhone = (conversation.contact_phone || "").replace(/\D/g, "");
+          if (convPhone.length >= 8 && !convPhone.startsWith("@")) {
+            try {
+              const telRes = await callBitrix(endpoint, accessToken, "telephony.externalCall.searchCrmEntities", { PHONE_NUMBER: convPhone });
+              const entities = telRes?.result || [];
+              for (const ent of entities) {
+                const entType = String(ent.CRM_ENTITY_TYPE || "").toUpperCase();
+                const entId = String(ent.CRM_ENTITY_ID || "");
+                if (entType === "CONTACT" && entId) {
+                  // Persist the discovered contact_id in bot_state
+                  const bs = (conversation.bot_state as any) || {};
+                  if (!bs.bitrix_contact_id) {
+                    await supabase.from("conversations").update({
+                      bot_state: { ...bs, bitrix_contact_id: entId },
+                    }).eq("id", conversation.id);
+                    console.log("[CRM-TAB] ✓ Persisted bitrix_contact_id via telephony:", entId);
+                  }
+                  break;
+                }
+              }
+            } catch (telErr) {
+              console.warn("[CRM-TAB] Reverse telephony lookup failed:", telErr);
+            }
+          }
+        }
+
         // ── 6. Name fallback — try linkedContactName first, then deal title ──
         if (!conversation) {
           const namesToTry = [linkedContactName, contactName].filter(Boolean);
