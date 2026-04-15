@@ -81,6 +81,53 @@ async function ensureConnectorActive(
   }
 }
 
+async function activateSilentMode(
+  clientEndpoint: string,
+  accessToken: string,
+  chatId: string,
+  activate: boolean
+): Promise<void> {
+  const result = await callBitrix(clientEndpoint, accessToken, "imopenlines.session.mode.silent", {
+    CHAT_ID: chatId,
+    ACTIVATE: activate ? "Y" : "N",
+  });
+  console.log(`[SEND] Silent mode ${activate ? "ON" : "OFF"} for chat ${chatId}:`, JSON.stringify(result).substring(0, 300));
+}
+
+async function getDialogChatId(
+  clientEndpoint: string,
+  accessToken: string,
+  contactId: string,
+  connectorId: string,
+  lineId: number
+): Promise<string | null> {
+  // Try imopenlines.dialog.get with USER_ID derived from contactId
+  const result = await callBitrix(clientEndpoint, accessToken, "imopenlines.dialog.get", {
+    CHAT_ID: contactId,
+    CONNECTOR: connectorId,
+    LINE: lineId,
+  });
+  console.log("[SEND] imopenlines.dialog.get:", JSON.stringify(result).substring(0, 500));
+  return result?.result?.CHAT_ID || result?.result?.chat_id || null;
+}
+
+async function setChatName(
+  clientEndpoint: string,
+  accessToken: string,
+  lineId: number,
+  contactId: string,
+  agentName: string,
+  connectorId: string = DEFAULT_CONNECTOR_ID
+): Promise<void> {
+  const result = await callBitrix(clientEndpoint, accessToken, "imconnector.chat.name.set", {
+    CONNECTOR: connectorId,
+    LINE: lineId,
+    CHAT_ID: contactId,
+    NAME: agentName,
+  });
+  console.log(`[SEND] imconnector.chat.name.set to "${agentName}":`, JSON.stringify(result).substring(0, 300));
+}
+
 async function sendWithFallbacks(
   clientEndpoint: string,
   accessToken: string,
@@ -89,13 +136,38 @@ async function sendWithFallbacks(
   contactName: string,
   message: string,
   channel: string,
-  connectorId: string = DEFAULT_CONNECTOR_ID
+  connectorId: string = DEFAULT_CONNECTOR_ID,
+  options: { silent?: boolean; agentName?: string } = {}
 ): Promise<boolean> {
   // 0. Ensure connector is active on this line
   try {
     await ensureConnectorActive(clientEndpoint, accessToken, lineId, connectorId);
   } catch (e) {
     console.warn("[SEND] ensureConnectorActive failed:", e);
+  }
+
+  // 0.5. Set chat name if agentName provided
+  if (options.agentName) {
+    try {
+      await setChatName(clientEndpoint, accessToken, lineId, contactId, options.agentName, connectorId);
+    } catch (e) {
+      console.warn("[SEND] setChatName failed:", e);
+    }
+  }
+
+  // 0.6. Activate silent mode if requested
+  let chatIdForSilent: string | null = null;
+  if (options.silent) {
+    try {
+      chatIdForSilent = await getDialogChatId(clientEndpoint, accessToken, contactId, connectorId, lineId);
+      if (chatIdForSilent) {
+        await activateSilentMode(clientEndpoint, accessToken, chatIdForSilent, true);
+      } else {
+        console.warn("[SEND] Could not get CHAT_ID for silent mode, sending normally");
+      }
+    } catch (e) {
+      console.warn("[SEND] Silent mode activation failed:", e);
+    }
   }
 
   // 1. Primary: imconnector.send.messages
@@ -121,6 +193,15 @@ async function sendWithFallbacks(
   });
 
   console.log("[SEND] imconnector.send.messages full response:", JSON.stringify(primary).substring(0, 1000));
+
+  // Deactivate silent mode after sending
+  if (options.silent && chatIdForSilent) {
+    try {
+      await activateSilentMode(clientEndpoint, accessToken, chatIdForSilent, false);
+    } catch (e) {
+      console.warn("[SEND] Silent mode deactivation failed:", e);
+    }
+  }
 
   if (!primary.error) {
     console.log("[SEND] imconnector.send.messages success via connector:", connectorId);
@@ -171,7 +252,7 @@ Deno.serve(async (req) => {
 
   try {
     const body = await req.json();
-    const { message, contactName, contactId, channel, conversationId, connectorId: reqConnectorId, lineId: reqLineId } = body;
+    const { message, contactName, contactId, channel, conversationId, connectorId: reqConnectorId, lineId: reqLineId, silent, agentName } = body;
 
     if (!message || !contactId) {
       return new Response(JSON.stringify({ error: "Missing message or contactId" }), {
@@ -180,7 +261,7 @@ Deno.serve(async (req) => {
       });
     }
 
-    console.log(`[SEND] Sending to Bitrix24: ${channel} / ${contactName} / ${message.substring(0, 50)} connector:${reqConnectorId || "default"}`);
+    console.log(`[SEND] Sending to Bitrix24: ${channel} / ${contactName} / ${message.substring(0, 50)} connector:${reqConnectorId || "default"} silent:${!!silent} agent:${agentName || "none"}`);
 
     // Get all active integrations (could be multi-portal in future)
     const { data: integrations } = await supabase
@@ -197,6 +278,7 @@ Deno.serve(async (req) => {
 
     let sentCount = 0;
     const effectiveConnectorId = reqConnectorId || DEFAULT_CONNECTOR_ID;
+    const sendOptions = { silent: !!silent, agentName: agentName || undefined };
 
     for (const integration of integrations) {
       try {
@@ -211,7 +293,8 @@ Deno.serve(async (req) => {
             contactName || "Cliente",
             message,
             channel || "whatsapp",
-            effectiveConnectorId
+            effectiveConnectorId,
+            sendOptions
           );
           if (sent) sentCount++;
           await debugLog(supabase, integration.id, "message_sent_direct_line", "outbound", { lineId: reqLineId, connectorId: effectiveConnectorId, contactId, sent });
@@ -256,7 +339,8 @@ Deno.serve(async (req) => {
             contactName || "Cliente",
             message,
             channel || "whatsapp",
-            mappingConnectorId
+            mappingConnectorId,
+            sendOptions
           );
 
           if (sent) sentCount++;
@@ -272,7 +356,8 @@ Deno.serve(async (req) => {
             contactName || "Cliente",
             message,
             channel || "whatsapp",
-            mappingConnectorId
+            mappingConnectorId,
+            sendOptions
           );
 
           if (sent) sentCount++;

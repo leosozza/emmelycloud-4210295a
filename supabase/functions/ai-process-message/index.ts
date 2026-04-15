@@ -1323,7 +1323,8 @@ async function sendReply(supabase: any, supabaseUrl: string, serviceKey: string,
   }
 
   try {
-    const botMessage = `[b]${agent.name || "EmmelyAI"}[/b] - ${replyText}`;
+    const agentDisplayName = agent.name || "EmmelyAI";
+    const botMessage = `[b]${agentDisplayName}[/b] - ${replyText}`;
     const res = await fetch(`${supabaseUrl}/functions/v1/bitrix24-send`, {
       method: "POST",
       headers: { "Content-Type": "application/json", "Authorization": `Bearer ${serviceKey}` },
@@ -1333,6 +1334,7 @@ async function sendReply(supabase: any, supabaseUrl: string, serviceKey: string,
         contactId: conversation.contact_phone || conversation.contact_instagram || conversation.contact_email,
         channel: conversation.channel,
         conversationId: conversation.id,
+        agentName: agentDisplayName,
       }),
     });
     if (!res.ok) console.error(`[AI-PROCESS] bitrix24-send failed: ${res.status}`);

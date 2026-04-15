@@ -732,12 +732,19 @@ function renderHtml(opts: {
       setStatus('A enviar...', '#888');
       
       function doSend(convId) {
+        var operatorName = '';
+        try {
+          if (window._bitrixCurrentUser) operatorName = window._bitrixCurrentUser.NAME + ' ' + (window._bitrixCurrentUser.LAST_NAME || '');
+        } catch(e) {}
+        operatorName = operatorName.trim() || 'Operador Bitrix24';
+
         fetch(SUPABASE_URL + '/functions/v1/message-send', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_KEY },
           body: JSON.stringify({
             conversation_id: convId,
-            content: message
+            content: message,
+            sender_name: operatorName
           })
         })
         .then(function(r) { return r.json(); })
@@ -755,6 +762,25 @@ function renderHtml(opts: {
           if (input) autoResize(input);
           setStatus('✅ Mensagem enviada', '#22c55e');
           if (sendBtn) sendBtn.disabled = false;
+
+          // Mirror message to Bitrix24 Open Channel (fire-and-forget)
+          try {
+            var contactPhone = PHONES.length > 0 ? PHONES[0] : null;
+            var mirrorContactId = contactPhone || CONTACT_NAME || 'unknown';
+            var mirrorMsg = '[b]' + operatorName + '[/b] - ' + message;
+            fetch(SUPABASE_URL + '/functions/v1/bitrix24-send', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_KEY },
+              body: JSON.stringify({
+                message: mirrorMsg,
+                contactName: CONTACT_NAME || 'Cliente',
+                contactId: mirrorContactId,
+                channel: CHANNEL || 'whatsapp',
+                conversationId: convId,
+                agentName: operatorName
+              })
+            }).catch(function() {});
+          } catch(e) {}
         })
         .catch(function(e) {
           setStatus('❌ ' + e.message, '#ef4444');
@@ -871,7 +897,15 @@ function renderHtml(opts: {
     }
 
   try {
-    BX24.init(function() { BX24.fitWindow(); });
+    BX24.init(function() {
+      BX24.fitWindow();
+      // Fetch current user for operator name
+      try {
+        BX24.callMethod('user.current', {}, function(res) {
+          if (res.data()) window._bitrixCurrentUser = res.data();
+        });
+      } catch(e) {}
+    });
   } catch(e) {}
 </script>
 </body>
