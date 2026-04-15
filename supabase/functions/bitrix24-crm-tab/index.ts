@@ -226,7 +226,7 @@ async function findConversationByName(supabase: any, name: string): Promise<any>
   if (!name || name.length < 5) return null;
   const words = name.split(/[\s:,]+/).filter(w => w.length > 4);
   for (const word of words.slice(0, 3)) {
-    const { data: conv } = await supabase
+    const { data: active } = await supabase
       .from("conversations")
       .select("id, contact_name, attendance_mode, channel, status, contact_phone, bot_state")
       .ilike("contact_name", `%${word}%`)
@@ -234,7 +234,18 @@ async function findConversationByName(supabase: any, name: string): Promise<any>
       .order("last_message_at", { ascending: false })
       .limit(1)
       .maybeSingle();
-    if (conv) return conv;
+    if (active) return active;
+    const { data: anyConv } = await supabase
+      .from("conversations")
+      .select("id, contact_name, attendance_mode, channel, status, contact_phone, bot_state")
+      .ilike("contact_name", `%${word}%`)
+      .order("last_message_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (anyConv) {
+      console.log("[CRM-TAB] Name match found closed conversation:", anyConv.id, "status:", anyConv.status);
+      return anyConv;
+    }
   }
   return null;
 }
