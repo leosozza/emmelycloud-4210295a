@@ -1308,6 +1308,26 @@ async function clearBotState(supabase: any, conversationId: string) {
   await supabase.from("conversations").update({ bot_state: {} }).eq("id", conversationId);
 }
 
+async function sendViaBitrixConnector(
+  supabaseUrl: string, serviceKey: string, conversation: any,
+  content: string, connectorId: string, connectorLineId?: number
+) {
+  if (!content) return;
+  await fetch(`${supabaseUrl}/functions/v1/bitrix24-send`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "Authorization": `Bearer ${serviceKey}` },
+    body: JSON.stringify({
+      message: content,
+      contactId: conversation.contact_phone || conversation.contact_instagram || conversation.id,
+      contactName: conversation.contact_name || "Cliente",
+      channel: conversation.channel || "whatsapp",
+      conversationId: conversation.id,
+      connectorId,
+      lineId: connectorLineId || undefined,
+    }),
+  }).catch((e) => console.error("[FLOW-ENGINE] sendViaBitrixConnector error:", e));
+}
+
 async function sendMessage(supabaseUrl: string, serviceKey: string, conversationId: string, content: string, instanceId?: string | null) {
   if (!content) return;
   await fetch(`${supabaseUrl}/functions/v1/message-send`, {
