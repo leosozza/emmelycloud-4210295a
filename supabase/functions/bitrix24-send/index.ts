@@ -339,7 +339,8 @@ Deno.serve(async (req) => {
             contactName || "Cliente",
             message,
             channel || "whatsapp",
-            mappingConnectorId
+            mappingConnectorId,
+            sendOptions
           );
 
           if (sent) sentCount++;
@@ -355,7 +356,8 @@ Deno.serve(async (req) => {
             contactName || "Cliente",
             message,
             channel || "whatsapp",
-            mappingConnectorId
+            mappingConnectorId,
+            sendOptions
           );
 
           if (sent) sentCount++;
