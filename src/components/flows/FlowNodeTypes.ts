@@ -16,7 +16,7 @@ import {
   Building2, Handshake, Boxes, Pencil, Search, Award,
   BrainCircuit, Cog, GitFork, MessageCircleMore, UserSearch,
   CalendarClock, FileText, Tag, StickyNote, ArrowRightLeft,
-  Workflow, Users,
+  Workflow, Users, Send, LayoutTemplate, AudioLines, FileUp, CheckCheck,
   type LucideIcon,
 } from "lucide-react";
 
