@@ -225,6 +225,9 @@ Deno.serve(async (req) => {
   <div class="content">
     <button class="btn-print" onclick="window.print()">📥 Baixar / Imprimir PDF</button>
 
+    ${paymentStatus === "success" ? `<div class="pay-notice" style="background:linear-gradient(135deg,#dcfce7,#bbf7d0);border-left-color:#16a34a;color:#14532d"><strong>✅ Pagamento recebido com sucesso!</strong> A confirmação pode levar alguns segundos para aparecer abaixo. Atualize a página em instantes.</div>` : ""}
+    ${paymentStatus === "cancelled" ? `<div class="pay-notice" style="background:linear-gradient(135deg,#fef3c7,#fde68a);border-left-color:#f59e0b;color:#78350f"><strong>⚠️ Pagamento cancelado.</strong> Pode tentar novamente clicando em "Pagar" abaixo.</div>` : ""}
+
     ${installments.some((r: any) => r.status !== "paga") ? `<div class="pay-notice">💳 <strong>Clique em "Pagar"</strong> em qualquer parcela em aberto para gerar o link de cobrança imediatamente (Multibanco, MB Way, Pix ou Cartão).</div>` : ""}
 
     <div class="info-grid">
