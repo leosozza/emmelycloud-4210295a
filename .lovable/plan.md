@@ -2,35 +2,42 @@
 
 ## Diagnóstico
 
-Três problemas confirmados:
+O problema está na lógica de `createStripePayment` e no `bitrix24-payment-handler`. Quando o utilizador escolhe "pix" ou "multibanco":
 
-1. **Edge function não foi deployed** — A resposta de `bitrix24-connector-settings` não inclui `appPermissions` nem `appRestrictionEnabled`. O código com essas alterações existe no repositório mas nunca foi publicado. Resultado: o frontend recebe `undefined` para ambos os campos e abre tudo.
+1. A função `getStripePaymentMethods` recebe o método pedido mas **inclui sempre TODOS os métodos regionais** (ex: `["card", "multibanco", "mb_way", "sepa_debit"]` para EUR)
+2. O método pedido é apenas "priorizado" (movido para o início da lista), mas os outros continuam lá
+3. Se algum desses métodos não estiver ativado no Stripe Dashboard, o Stripe rejeita a sessão inteira
+4. O fallback (linha 97-100) **cai silenciosamente para card-only**, ignorando completamente a escolha do utilizador
 
-2. **Permissão gravada para o utilizador errado** — A única permissão `emmely_app` está vinculada ao ID `1` (Ailson França, CEO). Leonardo de Souza é o ID `9909`. Quando Leonardo testou, não estava na lista de permitidos, mas como o backend não devolvia o campo `appRestrictionEnabled`, a restrição nunca foi aplicada.
+O resultado: o cliente recebe sempre um link de pagamento por cartão, independentemente da escolha.
 
-3. **Loading infinito** — O `BX24.callMethod("user.current")` tem um timeout de 5s, mas o app ficava preso porque a edge function retornava dados incompletos, causando estado inconsistente.
+## Correção
 
-## Plano de correção
+### 1. `payment-create/index.ts` — Respeitar o método escolhido
 
-### 1. Deploy da edge function `bitrix24-connector-settings`
-A versão no código já está correcta (inclui `getAppAccessData`, devolve `appPermissions` e `appRestrictionEnabled`). Basta fazer o deploy.
+Alterar `getStripePaymentMethods` para:
+- Se um método específico foi pedido (ex: `pix`, `multibanco`), devolver **apenas** `[requestedMethod, "card"]` (card como fallback)
+- Se nenhum método foi pedido ou é `card`, manter o comportamento actual (todos os regionais)
 
-### 2. Corrigir a permissão na base de dados
-Actualizar o `bitrix_user_id` de `"1"` para `"9909"` (Leonardo) na tabela `bitrix24_user_permissions`, ou verificar com o utilizador quais IDs devem ter acesso.
+Alterar o fallback para não cair em card-only silenciosamente — se o método pedido falhar, lançar erro claro dizendo que o método não está ativado no Stripe.
 
-### 3. Adicionar logs de diagnóstico no frontend
-Manter o `console.log` existente no `Bitrix24App.tsx` que mostra o userId, as permissões e o estado da restrição para facilitar debug futuro.
+### 2. `bitrix24-payment-handler/index.ts` — Mesma lógica
 
-### 4. Melhorar a tab de Permissões
-O `PermissoesTab.tsx` já utiliza `useBitrixUsers` para mostrar os utilizadores com checkbox. O problema é que a selecção não reflectia o utilizador correcto. Nenhuma alteração de código necessária — a UI já está funcional, o problema era o ID errado gravado.
+Aplicar a mesma correção: quando `payment_method` é específico (pix, multibanco, mb_way, boleto, sepa_debit), enviar apenas esse método + card, em vez de todos os regionais.
+
+Se o Stripe rejeitar, retornar erro explícito em vez de fallback silencioso.
 
 ## Ficheiros a alterar
-- **Deploy**: `supabase/functions/bitrix24-connector-settings/index.ts` (já correcto, falta deploy)
-- **Dados**: Actualizar `bitrix24_user_permissions` — trocar bitrix_user_id `"1"` pelo(s) ID(s) correcto(s)
+
+| Ficheiro | Alteração |
+|----------|-----------|
+| `supabase/functions/payment-create/index.ts` | `getStripePaymentMethods`: método pedido → `[pedido, "card"]`; fallback com erro em vez de card-only |
+| `supabase/functions/bitrix24-payment-handler/index.ts` | Mesma lógica de filtragem e erro explícito |
 
 ## Resultado esperado
-- Backend devolve `appRestrictionEnabled: true` e `appPermissions: ["9909"]`
-- Leonardo (ID 9909) acede ao app completo
-- Outros utilizadores vêem apenas Chat IA
-- Loading resolve em menos de 5 segundos
+
+- Utilizador escolhe "pix" → link Stripe abre com opção PIX (+ card)
+- Utilizador escolhe "multibanco" → link Stripe abre com Multibanco (+ card)
+- Se o método não estiver ativado no Stripe Dashboard → erro claro ("Ative Multibanco no painel Stripe")
+- Sem fallback silencioso para card-only
 
