@@ -157,3 +157,6 @@ verify_jwt = false
 
 [functions.payment-receipt]
 verify_jwt = false
+
+[functions.payment-create-link]
+verify_jwt = false
