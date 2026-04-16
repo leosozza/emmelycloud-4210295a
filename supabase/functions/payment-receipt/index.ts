@@ -138,6 +138,10 @@ Deno.serve(async (req) => {
 
     const paidAmount = isPaid ? formatCurrency(value, currency) : "—";
 
+    const payButton = !isPaid
+      ? `<button class="btn-pay" data-record-id="${rec.id}" onclick="payInstallment(this)">💳 Pagar</button>`
+      : "";
+
     return `<tr>
       <td style="padding:10px 12px;border:1px solid #e5e7eb;text-align:center;font-weight:600">${rec.installment_number || 1}/${rec.total_installments || 1}</td>
       <td style="padding:10px 12px;border:1px solid #e5e7eb;text-align:center">${formatDate(rec.due_date)}</td>
@@ -145,8 +149,9 @@ Deno.serve(async (req) => {
       <td style="padding:10px 12px;border:1px solid #e5e7eb;text-align:right;color:${lateFee.charges > 0 ? '#ef4444' : '#6b7280'}">${jurosCell}</td>
       <td style="padding:10px 12px;border:1px solid #e5e7eb;text-align:right;font-weight:600;color:${isPaid ? '#10b981' : '#6b7280'}">${paidAmount}</td>
       <td style="padding:10px 12px;border:1px solid #e5e7eb;text-align:center">${formatDate(rec.paid_at)}</td>
-      <td style="padding:10px 12px;border:1px solid #e5e7eb;text-align:center">
+      <td style="padding:10px 12px;border:1px solid #e5e7eb;text-align:center;white-space:nowrap">
         <span style="background:${statusBg};color:${statusColor};font-weight:700;font-size:11px;padding:3px 10px;border-radius:12px;display:inline-block">${statusLabel}</span>
+        ${payButton ? `<div style="margin-top:6px">${payButton}</div>` : ""}
       </td>
     </tr>`;
   }).join("");
