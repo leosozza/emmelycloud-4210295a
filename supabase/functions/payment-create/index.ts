@@ -81,11 +81,15 @@ async function createStripePayment(apiKey: string, amount: number, currency: str
   };
 
   let data = await callStripe(buildParams(methods));
-  
-  // If a payment method type is invalid (not enabled), retry with card-only
+
+  // If a specific method was requested and Stripe rejected it, return clear error
   if (data.error?.message?.includes("payment method type provided")) {
-    console.log("[STRIPE] Regional methods failed, retrying with card-only:", data.error.message);
-    data = await callStripe(buildParams(["card"]));
+    const requested = requestedMethod && requestedMethod !== "card" ? requestedMethod : "selecionado";
+    throw new Error(
+      `O método de pagamento "${requested}" não está ativado na sua conta Stripe. ` +
+      `Ative-o em https://dashboard.stripe.com/settings/payment_methods e tente novamente. ` +
+      `Detalhe Stripe: ${data.error.message}`
+    );
   }
   
   if (data.error) throw new Error(data.error.message);
