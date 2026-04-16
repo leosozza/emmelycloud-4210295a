@@ -195,10 +195,14 @@ Deno.serve(async (req) => {
     .footer { text-align: center; color: #94a3b8; font-size: 10px; padding: 24px 40px; border-top: 1px solid #e5e7eb; line-height: 1.8; }
     .btn-print { display: inline-flex; align-items: center; gap: 6px; background: #1e293b; color: white; border: none; padding: 10px 24px; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; margin-bottom: 24px; }
     .btn-print:hover { background: #334155; }
+    .btn-pay { background: linear-gradient(135deg, #10b981, #059669); color: white; border: none; padding: 6px 14px; border-radius: 6px; font-size: 11px; font-weight: 700; cursor: pointer; box-shadow: 0 2px 4px rgba(16,185,129,0.3); transition: all 0.2s; }
+    .btn-pay:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 4px 8px rgba(16,185,129,0.4); }
+    .btn-pay:disabled { opacity: 0.6; cursor: wait; }
+    .pay-notice { background: linear-gradient(135deg, #ecfdf5, #d1fae5); border-left: 4px solid #10b981; padding: 12px 16px; border-radius: 8px; margin-bottom: 20px; font-size: 13px; color: #065f46; }
     @media print {
       body { background: white; }
       .container { box-shadow: none; }
-      .btn-print { display: none !important; }
+      .btn-print, .btn-pay, .pay-notice { display: none !important; }
       .content { padding: 20px 30px; }
     }
     @media (max-width: 600px) {
