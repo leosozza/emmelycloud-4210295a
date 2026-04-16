@@ -641,6 +641,23 @@ Deno.serve(async (req) => {
           },
         },
         {
+          CODE: "emmely_send_payment_report",
+          NAME: "Emmely: Enviar Relatório de Pagamentos",
+          PROPERTIES: {
+            deal_id: { Name: "ID do Negócio", Type: "string", Required: "Y", Default: "{=Document:ID}" },
+            client_name: { Name: "Nome do Cliente", Type: "string" },
+            deal_title: { Name: "Título/Serviço", Type: "string" },
+            send_method: { Name: "Método de Envio", Type: "select", Options: { none: "Apenas gerar e gravar URL", link: "Enviar link via WhatsApp", whatsapp_with_button: "WhatsApp com botão" }, Default: "none" },
+            phone: { Name: "Telefone (opcional)", Type: "string" },
+            custom_message: { Name: "Mensagem Personalizada", Type: "text" },
+          },
+          RETURN_PROPERTIES: {
+            report_url: { Name: "URL do Relatório", Type: "string" },
+            send_status: { Name: "Status de Envio", Type: "string" },
+            error: { Name: "Erro", Type: "string" },
+          },
+        },
+        {
           CODE: "emmely_convert_currency",
           NAME: "Emmely: Converter Moeda",
           PROPERTIES: {
