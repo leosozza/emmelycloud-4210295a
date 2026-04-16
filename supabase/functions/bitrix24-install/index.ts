@@ -1680,6 +1680,11 @@ Deno.serve(async (req) => {
             error: { Name: "Erro", Type: "string" },
           },
         },
+        {
+          CODE: "emmely_convert_currency",
+          NAME: "Emmely: Converter Moeda",
+          PROPERTIES: {
+            source_value: { Name: "Valor Original", Type: "double", Required: "Y", Description: "Campo com o valor a converter" },
             source_currency: { Name: "Moeda Origem", Type: "select", Required: "Y", Options: { EUR: "EUR", BRL: "BRL", USD: "USD", GBP: "GBP", CHF: "CHF", CAD: "CAD" }, Default: "EUR" },
             target_currency: { Name: "Moeda Destino", Type: "select", Required: "Y", Options: { BRL: "BRL", EUR: "EUR", USD: "USD", GBP: "GBP", CHF: "CHF", CAD: "CAD" }, Default: "BRL" },
             spread_percent: { Name: "Spread (%)", Type: "double", Default: "0", Description: "Margem adicional sobre a cotação (ex: 2 = +2%)" },
