@@ -25,36 +25,25 @@ function getGateway(country: string | null, currency: string): "stripe" | "asaas
 
 function getStripePaymentMethods(region?: "pt" | "br" | null, requestedMethod?: string | null, currency?: string): string[] {
   const cur = (currency || "").toUpperCase();
-  
-  // Currency-compatible methods — only include methods enabled & valid for the currency
+
   const brlMethods = ["card", "boleto", "pix"];
   const eurMethods = ["card", "multibanco", "mb_way", "sepa_debit"];
-  const defaultMethods = ["card"];
-  
-  let methods: string[];
-  if (region === "br") {
-    methods = cur === "BRL" ? brlMethods : ["card"];
-  } else if (region === "pt") {
-    methods = (cur === "EUR" || !cur) ? eurMethods : ["card"];
-  } else {
-    // No region — pick by currency
-    if (cur === "BRL") methods = brlMethods;
-    else if (cur === "EUR") methods = eurMethods;
-    else methods = defaultMethods;
-  }
+  const validStripeMethods = ["card", "multibanco", "mb_way", "sepa_debit", "pix", "boleto", "link"];
 
-  // If a specific method was requested and it's valid, prioritize it
+  // If a specific method was requested (not card/direto), return ONLY that method.
+  // No fallback to other methods — respect the user's explicit choice.
   if (requestedMethod && requestedMethod !== "card" && requestedMethod !== "direto") {
-    const validStripeMethods = ["card", "multibanco", "mb_way", "sepa_debit", "pix", "boleto", "link"];
-    if (validStripeMethods.includes(requestedMethod) && !methods.includes(requestedMethod)) {
-      // Don't add currency-incompatible methods
-    } else if (methods.includes(requestedMethod)) {
-      methods = methods.filter(m => m !== requestedMethod);
-      methods.unshift(requestedMethod);
+    if (validStripeMethods.includes(requestedMethod)) {
+      return [requestedMethod];
     }
   }
 
-  return methods;
+  // No specific method requested — return all currency-compatible methods
+  if (region === "br") return cur === "BRL" ? brlMethods : ["card"];
+  if (region === "pt") return (cur === "EUR" || !cur) ? eurMethods : ["card"];
+  if (cur === "BRL") return brlMethods;
+  if (cur === "EUR") return eurMethods;
+  return ["card"];
 }
 
 async function createStripePayment(apiKey: string, amount: number, currency: string, customerEmail: string, description: string, returnUrl?: string, region?: "pt" | "br" | null, requestedMethod?: string | null) {
