@@ -224,6 +224,8 @@ Deno.serve(async (req) => {
   <div class="content">
     <button class="btn-print" onclick="window.print()">📥 Baixar / Imprimir PDF</button>
 
+    ${installments.some((r: any) => r.status !== "paga") ? `<div class="pay-notice">💳 <strong>Clique em "Pagar"</strong> em qualquer parcela em aberto para gerar o link de cobrança imediatamente (Multibanco, MB Way, Pix ou Cartão).</div>` : ""}
+
     <div class="info-grid">
       <div><span class="label">Cliente:</span> <span class="value">${(link.client_name || "—").replace(/</g, "&lt;")}</span></div>
       <div><span class="label">Serviço:</span> <span class="value">${(link.deal_title || "—").replace(/</g, "&lt;")}</span></div>
