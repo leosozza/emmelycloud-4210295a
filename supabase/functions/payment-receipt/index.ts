@@ -273,6 +273,36 @@ Deno.serve(async (req) => {
     Este comprovante é atualizado em tempo real.
   </div>
 </div>
+<script>
+  const RECEIPT_TOKEN = ${JSON.stringify(token)};
+  const PAYMENT_API = ${JSON.stringify(`${Deno.env.get("SUPABASE_URL")}/functions/v1/payment-create-link`)};
+
+  async function payInstallment(btn) {
+    const recordId = btn.getAttribute('data-record-id');
+    const original = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '⏳ Aguarde...';
+    try {
+      const res = await fetch(PAYMENT_API, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token: RECEIPT_TOKEN, financial_record_id: recordId }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.payment_url) {
+        alert('Erro ao gerar pagamento: ' + (data.error || 'desconhecido'));
+        btn.disabled = false;
+        btn.innerHTML = original;
+        return;
+      }
+      window.location.href = data.payment_url;
+    } catch (e) {
+      alert('Erro de rede: ' + e.message);
+      btn.disabled = false;
+      btn.innerHTML = original;
+    }
+  }
+</script>
 </body>
 </html>`;
 
