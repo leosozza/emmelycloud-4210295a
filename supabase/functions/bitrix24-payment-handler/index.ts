@@ -273,11 +273,17 @@ Deno.serve(async (req) => {
         });
       }
 
-      // Determine regional payment methods
+      // Determine payment methods — respect explicit user choice
+      const requestedMethod = (body.PAYMENT_METHOD || body.payment_method || "").toString().trim().toLowerCase();
       const stripeRegion = stripeProvider === "stripe_pt" ? "pt" : stripeProvider === "stripe_br" ? "br" : null;
       const cur = currency.toUpperCase();
+      const validStripeMethods = ["card", "multibanco", "mb_way", "sepa_debit", "pix", "boleto", "link"];
+
       let regionalMethods: string[];
-      if (stripeRegion === "br" && cur === "BRL") {
+      if (requestedMethod && requestedMethod !== "card" && requestedMethod !== "direto" && validStripeMethods.includes(requestedMethod)) {
+        // User explicitly chose a method — use ONLY that method, no fallbacks
+        regionalMethods = [requestedMethod];
+      } else if (stripeRegion === "br" && cur === "BRL") {
         regionalMethods = ["card", "boleto", "pix"];
       } else if (stripeRegion === "pt" && cur === "EUR") {
         regionalMethods = ["card", "multibanco", "mb_way", "sepa_debit"];
@@ -318,10 +324,16 @@ Deno.serve(async (req) => {
 
       let data = await callStripe(buildParams(regionalMethods));
 
-      // If a payment method type is invalid (not enabled in dashboard), retry with card-only
+      // If Stripe rejects the method, return explicit error (no silent fallback to card)
       if (data.error?.message?.includes("payment method type provided")) {
-        console.log("[BX24-PAYMENT] Regional methods failed, retrying card-only:", data.error.message);
-        data = await callStripe(buildParams(["card"]));
+        const reqLabel = requestedMethod && requestedMethod !== "card" ? requestedMethod : "selecionado";
+        return new Response(JSON.stringify({
+          PAYMENT_ERRORS: [
+            `O método "${reqLabel}" não está ativado na conta Stripe. Ative-o em https://dashboard.stripe.com/settings/payment_methods. Detalhe: ${data.error.message}`
+          ],
+        }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
       }
 
       if (data.error) {

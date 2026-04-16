@@ -25,36 +25,25 @@ function getGateway(country: string | null, currency: string): "stripe" | "asaas
 
 function getStripePaymentMethods(region?: "pt" | "br" | null, requestedMethod?: string | null, currency?: string): string[] {
   const cur = (currency || "").toUpperCase();
-  
-  // Currency-compatible methods — only include methods enabled & valid for the currency
+
   const brlMethods = ["card", "boleto", "pix"];
   const eurMethods = ["card", "multibanco", "mb_way", "sepa_debit"];
-  const defaultMethods = ["card"];
-  
-  let methods: string[];
-  if (region === "br") {
-    methods = cur === "BRL" ? brlMethods : ["card"];
-  } else if (region === "pt") {
-    methods = (cur === "EUR" || !cur) ? eurMethods : ["card"];
-  } else {
-    // No region — pick by currency
-    if (cur === "BRL") methods = brlMethods;
-    else if (cur === "EUR") methods = eurMethods;
-    else methods = defaultMethods;
-  }
+  const validStripeMethods = ["card", "multibanco", "mb_way", "sepa_debit", "pix", "boleto", "link"];
 
-  // If a specific method was requested and it's valid, prioritize it
+  // If a specific method was requested (not card/direto), return ONLY that method.
+  // No fallback to other methods — respect the user's explicit choice.
   if (requestedMethod && requestedMethod !== "card" && requestedMethod !== "direto") {
-    const validStripeMethods = ["card", "multibanco", "mb_way", "sepa_debit", "pix", "boleto", "link"];
-    if (validStripeMethods.includes(requestedMethod) && !methods.includes(requestedMethod)) {
-      // Don't add currency-incompatible methods
-    } else if (methods.includes(requestedMethod)) {
-      methods = methods.filter(m => m !== requestedMethod);
-      methods.unshift(requestedMethod);
+    if (validStripeMethods.includes(requestedMethod)) {
+      return [requestedMethod];
     }
   }
 
-  return methods;
+  // No specific method requested — return all currency-compatible methods
+  if (region === "br") return cur === "BRL" ? brlMethods : ["card"];
+  if (region === "pt") return (cur === "EUR" || !cur) ? eurMethods : ["card"];
+  if (cur === "BRL") return brlMethods;
+  if (cur === "EUR") return eurMethods;
+  return ["card"];
 }
 
 async function createStripePayment(apiKey: string, amount: number, currency: string, customerEmail: string, description: string, returnUrl?: string, region?: "pt" | "br" | null, requestedMethod?: string | null) {
@@ -92,11 +81,15 @@ async function createStripePayment(apiKey: string, amount: number, currency: str
   };
 
   let data = await callStripe(buildParams(methods));
-  
-  // If a payment method type is invalid (not enabled), retry with card-only
+
+  // If a specific method was requested and Stripe rejected it, return clear error
   if (data.error?.message?.includes("payment method type provided")) {
-    console.log("[STRIPE] Regional methods failed, retrying with card-only:", data.error.message);
-    data = await callStripe(buildParams(["card"]));
+    const requested = requestedMethod && requestedMethod !== "card" ? requestedMethod : "selecionado";
+    throw new Error(
+      `O método de pagamento "${requested}" não está ativado na sua conta Stripe. ` +
+      `Ative-o em https://dashboard.stripe.com/settings/payment_methods e tente novamente. ` +
+      `Detalhe Stripe: ${data.error.message}`
+    );
   }
   
   if (data.error) throw new Error(data.error.message);
