@@ -45,6 +45,7 @@ Deno.serve(async (req) => {
 
   const url = new URL(req.url);
   const token = url.searchParams.get("token");
+  const paymentStatus = url.searchParams.get("payment"); // "success" | "cancelled" | null
 
   if (!token) {
     return new Response("<h1>Token inválido</h1>", { status: 400, headers: { "Content-Type": "text/html; charset=utf-8" } });
