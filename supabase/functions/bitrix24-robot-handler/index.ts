@@ -1322,6 +1322,133 @@ async function handleSendProposal(
   }
 }
 
+async function handleSendPaymentReport(
+  properties: Record<string, any>,
+  memberId: string,
+  supabaseUrl: string,
+  serviceKey: string
+): Promise<Record<string, string>> {
+  const dealId = properties.deal_id || properties.DEAL_ID || "";
+  const clientName = properties.client_name || properties.CLIENT_NAME || "";
+  const dealTitle = properties.deal_title || properties.DEAL_TITLE || "";
+  const sendMethod = (properties.send_method || properties.SEND_METHOD || "none").toLowerCase();
+  const phoneOverride = properties.phone || properties.PHONE || "";
+  const customMessage = properties.custom_message || properties.CUSTOM_MESSAGE || "";
+
+  if (!dealId) {
+    return { report_url: "", send_status: "error", error: "deal_id is required" };
+  }
+
+  try {
+    const supabase = createClient(supabaseUrl, serviceKey);
+
+    // 1. Reuse or create receipt_link for this deal
+    let token: string | null = null;
+    const { data: existing } = await supabase
+      .from("receipt_links")
+      .select("token")
+      .eq("bitrix24_deal_id", String(dealId))
+      .limit(1)
+      .maybeSingle();
+
+    if (existing?.token) {
+      token = existing.token;
+      if (clientName || dealTitle) {
+        const updates: any = {};
+        if (clientName) updates.client_name = clientName;
+        if (dealTitle) updates.deal_title = dealTitle;
+        await supabase.from("receipt_links").update(updates).eq("token", token);
+      }
+    } else {
+      const { data: newLink, error: insErr } = await supabase
+        .from("receipt_links")
+        .insert({
+          bitrix24_deal_id: String(dealId),
+          client_name: clientName || null,
+          deal_title: dealTitle || null,
+        })
+        .select("token")
+        .maybeSingle();
+      if (insErr || !newLink) {
+        return { report_url: "", send_status: "error", error: `Failed to create receipt link: ${insErr?.message || "unknown"}` };
+      }
+      token = newLink.token;
+    }
+
+    const reportUrl = `${supabaseUrl}/functions/v1/payment-receipt?token=${token}`;
+
+    // 2. Get Bitrix24 integration
+    let integration: any = null;
+    if (memberId) {
+      const { data: intData } = await supabase
+        .from("bitrix24_integrations")
+        .select("*")
+        .eq("member_id", memberId)
+        .maybeSingle();
+      integration = intData;
+    }
+    if (!integration) {
+      const { data: anyInt } = await supabase
+        .from("bitrix24_integrations")
+        .select("*")
+        .limit(1)
+        .maybeSingle();
+      integration = anyInt;
+    }
+
+    if (!integration?.client_endpoint || !integration?.access_token) {
+      return { report_url: reportUrl, send_status: "error", error: "Bitrix24 integration not found" };
+    }
+
+    // 3. Save URL to deal field
+    try {
+      await callBitrix(integration.client_endpoint, integration.access_token, "crm.deal.update", {
+        id: parseInt(String(dealId)),
+        fields: { UF_CRM_EMMELY_RECEIPT_URL: reportUrl },
+      });
+    } catch (bxErr) {
+      console.error("[ROBOT] update deal error:", bxErr);
+    }
+
+    // 4. Send via WhatsApp if requested
+    let sendStatus = "saved_only";
+    if (sendMethod === "link" || sendMethod === "whatsapp_with_button") {
+      let targetPhone = phoneOverride;
+      if (!targetPhone) {
+        try {
+          const dealRes = await callBitrix(integration.client_endpoint, integration.access_token, "crm.deal.get", { id: parseInt(String(dealId)) });
+          const contactId = dealRes.result?.CONTACT_ID;
+          if (contactId) {
+            const ctRes = await callBitrix(integration.client_endpoint, integration.access_token, "crm.contact.get", { id: contactId });
+            const phones = ctRes.result?.PHONE || [];
+            targetPhone = phones[0]?.VALUE || "";
+          }
+        } catch (e) {
+          console.error("[ROBOT] phone lookup error:", e);
+        }
+      }
+
+      if (!targetPhone) {
+        return { report_url: reportUrl, send_status: "saved_no_phone", error: "Saved URL but no phone available" };
+      }
+
+      const prefix = customMessage ? `${customMessage}\n\n` : `📋 *Relatório de Pagamentos*\n\n`;
+      const msg = `${prefix}Consulte todas as suas parcelas e pague online aqui:\n${reportUrl}`;
+      try {
+        await handleSendWhatsApp({ phone: targetPhone, message: msg }, supabaseUrl, serviceKey);
+        sendStatus = "sent";
+      } catch (waErr) {
+        sendStatus = "send_error";
+        return { report_url: reportUrl, send_status: sendStatus, error: String(waErr) };
+      }
+    }
+
+    return { report_url: reportUrl, send_status: sendStatus, error: "" };
+  } catch (e) {
+    return { report_url: "", send_status: "error", error: String(e) };
+  }
+}
+
 async function handleExecuteFlow(properties: Record<string, any>, supabaseUrl: string, serviceKey: string): Promise<Record<string, string>> {
   const flowId = properties.flow_id || properties.FLOW_ID || "";
   const phone = properties.phone || properties.PHONE || "";
@@ -1576,6 +1703,9 @@ Deno.serve(async (req) => {
         break;
       case "emmely_send_proposal":
         returnValues = await handleSendProposal(properties, supabaseUrl, serviceKey);
+        break;
+      case "emmely_send_payment_report":
+        returnValues = await handleSendPaymentReport(properties, memberId, supabaseUrl, serviceKey);
         break;
       case "emmely_generate_contract":
         returnValues = await handleGenerateContract(properties, memberId, supabaseUrl, serviceKey);

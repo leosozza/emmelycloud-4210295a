@@ -138,6 +138,10 @@ Deno.serve(async (req) => {
 
     const paidAmount = isPaid ? formatCurrency(value, currency) : "—";
 
+    const payButton = !isPaid
+      ? `<button class="btn-pay" data-record-id="${rec.id}" onclick="payInstallment(this)">💳 Pagar</button>`
+      : "";
+
     return `<tr>
       <td style="padding:10px 12px;border:1px solid #e5e7eb;text-align:center;font-weight:600">${rec.installment_number || 1}/${rec.total_installments || 1}</td>
       <td style="padding:10px 12px;border:1px solid #e5e7eb;text-align:center">${formatDate(rec.due_date)}</td>
@@ -145,8 +149,9 @@ Deno.serve(async (req) => {
       <td style="padding:10px 12px;border:1px solid #e5e7eb;text-align:right;color:${lateFee.charges > 0 ? '#ef4444' : '#6b7280'}">${jurosCell}</td>
       <td style="padding:10px 12px;border:1px solid #e5e7eb;text-align:right;font-weight:600;color:${isPaid ? '#10b981' : '#6b7280'}">${paidAmount}</td>
       <td style="padding:10px 12px;border:1px solid #e5e7eb;text-align:center">${formatDate(rec.paid_at)}</td>
-      <td style="padding:10px 12px;border:1px solid #e5e7eb;text-align:center">
+      <td style="padding:10px 12px;border:1px solid #e5e7eb;text-align:center;white-space:nowrap">
         <span style="background:${statusBg};color:${statusColor};font-weight:700;font-size:11px;padding:3px 10px;border-radius:12px;display:inline-block">${statusLabel}</span>
+        ${payButton ? `<div style="margin-top:6px">${payButton}</div>` : ""}
       </td>
     </tr>`;
   }).join("");
@@ -190,10 +195,14 @@ Deno.serve(async (req) => {
     .footer { text-align: center; color: #94a3b8; font-size: 10px; padding: 24px 40px; border-top: 1px solid #e5e7eb; line-height: 1.8; }
     .btn-print { display: inline-flex; align-items: center; gap: 6px; background: #1e293b; color: white; border: none; padding: 10px 24px; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; margin-bottom: 24px; }
     .btn-print:hover { background: #334155; }
+    .btn-pay { background: linear-gradient(135deg, #10b981, #059669); color: white; border: none; padding: 6px 14px; border-radius: 6px; font-size: 11px; font-weight: 700; cursor: pointer; box-shadow: 0 2px 4px rgba(16,185,129,0.3); transition: all 0.2s; }
+    .btn-pay:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 4px 8px rgba(16,185,129,0.4); }
+    .btn-pay:disabled { opacity: 0.6; cursor: wait; }
+    .pay-notice { background: linear-gradient(135deg, #ecfdf5, #d1fae5); border-left: 4px solid #10b981; padding: 12px 16px; border-radius: 8px; margin-bottom: 20px; font-size: 13px; color: #065f46; }
     @media print {
       body { background: white; }
       .container { box-shadow: none; }
-      .btn-print { display: none !important; }
+      .btn-print, .btn-pay, .pay-notice { display: none !important; }
       .content { padding: 20px 30px; }
     }
     @media (max-width: 600px) {
@@ -214,6 +223,8 @@ Deno.serve(async (req) => {
   </div>
   <div class="content">
     <button class="btn-print" onclick="window.print()">📥 Baixar / Imprimir PDF</button>
+
+    ${installments.some((r: any) => r.status !== "paga") ? `<div class="pay-notice">💳 <strong>Clique em "Pagar"</strong> em qualquer parcela em aberto para gerar o link de cobrança imediatamente (Multibanco, MB Way, Pix ou Cartão).</div>` : ""}
 
     <div class="info-grid">
       <div><span class="label">Cliente:</span> <span class="value">${(link.client_name || "—").replace(/</g, "&lt;")}</span></div>
@@ -262,6 +273,36 @@ Deno.serve(async (req) => {
     Este comprovante é atualizado em tempo real.
   </div>
 </div>
+<script>
+  const RECEIPT_TOKEN = ${JSON.stringify(token)};
+  const PAYMENT_API = ${JSON.stringify(`${Deno.env.get("SUPABASE_URL")}/functions/v1/payment-create-link`)};
+
+  async function payInstallment(btn) {
+    const recordId = btn.getAttribute('data-record-id');
+    const original = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '⏳ Aguarde...';
+    try {
+      const res = await fetch(PAYMENT_API, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token: RECEIPT_TOKEN, financial_record_id: recordId }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.payment_url) {
+        alert('Erro ao gerar pagamento: ' + (data.error || 'desconhecido'));
+        btn.disabled = false;
+        btn.innerHTML = original;
+        return;
+      }
+      window.location.href = data.payment_url;
+    } catch (e) {
+      alert('Erro de rede: ' + e.message);
+      btn.disabled = false;
+      btn.innerHTML = original;
+    }
+  }
+</script>
 </body>
 </html>`;
 
