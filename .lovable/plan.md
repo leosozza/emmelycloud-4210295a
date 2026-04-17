@@ -1,48 +1,44 @@
 
 ## Diagnóstico
 
-**Problema 1 — "Stripe não configurado"**
-A credencial existe em `integration_credentials` como `provider='stripe'`, `credential_key='STRIPE_SECRET_KEY'` (maiúsculas), mas `payment-create-link` (linha 297-299) procura `stripe_secret_pt`, `stripe_secret_br`, `stripe_secret` (minúsculas). Nenhuma corresponde → erro.
+O erro `Método "undefined" não está activado` tem duas causas combinadas em `payment-create-link`:
 
-**Problema 2 — Só aparece 1 parcela em vez de 3**
-Após o último teste, ficou 1 registo materializado em `financial_records` (parcela 1/3, deal 23855). Em `payment-receipt` (linha 141), assim que existe **qualquer** registo real, devolve **só** os reais e **deixa de gerar as sintéticas restantes (2/3 e 3/3)**. Resultado: o cliente vê apenas a parcela 1.
+1. **Frontend não envia `payment_method`** — `PagamentoPublico.tsx` (linha 92) chama `payment-create-link` apenas com `{ token, financial_record_id }`. O backend recebe `payment_method = undefined`.
+2. **Mensagem de erro mal formatada** — quando o Stripe responde com erro do tipo "payment method type provided", o backend faz:
+   ```ts
+   `Método "${payment_method}" não está activado.`
+   ```
+   Como `payment_method` é `undefined`, o utilizador vê literalmente `"undefined"`.
+3. **Causa real do erro Stripe** — a conta Stripe (PT) tem `card` desativado (visto no teste anterior, onde só `multibanco` funcionou). Como o frontend não escolhe método, o backend usa `getStripePaymentMethods("EUR", undefined)` que devolve `["card","multibanco","mb_way","sepa_debit"]`. O Stripe rejeita logo no primeiro (`card`) que não está ativo.
 
 ## Plano
 
-### 1. Fix lookup de credenciais Stripe (`payment-create-link`)
-Tornar a busca case-insensitive e adicionar `STRIPE_SECRET_KEY` à lista de chaves tentadas:
+### 1. Filtrar métodos rejeitados em vez de mostrar "undefined" (`payment-create-link`)
+Quando o Stripe devolve erro do tipo "payment method type", **extrair o método real** da mensagem do Stripe (ex.: `The payment method type "card" is not activated...`) com regex e:
+- Se houver outros métodos na lista, reenviar o request **sem** o método rejeitado (até 1 retry).
+- Se não restar nenhum, devolver mensagem clara: `Nenhum método de pagamento ativo na conta Stripe para EUR. Active card / multibanco / mb_way no painel.`
+
+### 2. Skip silencioso de `card` quando a conta não o suporta
+Adicionar uma lista de métodos "conhecidos como inativos" cacheada em memória da função (por currency). Na primeira falha do Stripe extraída do retry acima, marcar esse método como inativo durante o lifetime do worker. Próximas chamadas já saem sem ele.
+
+### 3. Frontend: permitir escolha explícita de método (opcional mas útil)
+Em `PagamentoPublico.tsx`, mostrar 2-3 botões de método consoante a moeda (EUR → Multibanco / MB Way / SEPA; BRL → Cartão / Pix / Boleto) e enviar `payment_method` no body. Assim o utilizador escolhe e o backend só tenta esse método.
+
+### 4. Mensagem de erro robusta
+Mesmo no caminho atual, substituir a interpolação por:
 ```ts
-const candidates = ["stripe_secret_pt","stripe_secret_br","stripe_secret","STRIPE_SECRET_KEY"];
-for (const k of candidates) {
-  stripeKey = await getCredential(supabase, "stripe", k);
-  if (stripeKey) break;
-}
+const offending = msg.match(/payment method type "?([a-z_]+)"?/i)?.[1] ?? payment_method ?? "(desconhecido)";
 ```
-Se `getCredential` é case-sensitive, fazer um `ilike` direto à tabela como último fallback.
-
-Aplicar o mesmo fix nas funções `payment-create`, `payment-webhook-stripe` e `bitrix24-payment-webhook` para consistência.
-
-### 2. Fix merge de parcelas reais + sintéticas (`payment-receipt`)
-Em vez de "se há reais, ignora sintéticas", **completar** o conjunto:
-- Carregar `records` reais (1/3).
-- Carregar dados do Bitrix24 (`totalCount=3`).
-- Construir as 3 parcelas sintéticas, mas substituir cada slot pelo registo real quando `installment_number` corresponder.
-- Resultado: 3 parcelas no UI — 1 real (com botão Pagar funcional) + 2 sintéticas (que serão materializadas ao clicar).
-
-Pseudocódigo:
-```ts
-const realByNumber = new Map(records.map(r => [r.installment_number, r]));
-const merged = Array.from({length: totalCount}, (_, i) => {
-  const n = i + 1;
-  return realByNumber.get(n) ?? buildSynthetic(n, ...);
-});
-```
-
-### 3. Sem alterações no frontend
-O `PagamentoPublico.tsx` já trata ids `synthetic-*` e ids reais de forma idêntica (passa o id ao `payment-create-link`).
+Resultado: `Método "card" não está activado. Active-o no painel Stripe.`
 
 ## Resultado esperado
 
-- O relatório do token `ac511cda-…` mostra **3 parcelas** (1 real pendente + 2 sintéticas).
-- Ao clicar em "Pagar" em qualquer uma, o Stripe abre o checkout (credencial `STRIPE_SECRET_KEY` agora encontrada).
-- A medida que cada parcela for paga ou materializada, vai sendo substituída no slot correto sem perder as outras.
+- Sem mais "undefined" em mensagens de erro.
+- Pagamento abre automaticamente no primeiro método ativo da conta (ex.: `multibanco`) sem intervenção do utilizador.
+- Se o utilizador quiser, pode escolher explicitamente o método nos botões.
+- Mensagens de erro identificam o método real que falhou.
+
+## Ficheiros afetados
+
+- `supabase/functions/payment-create-link/index.ts` — retry com filtro de método + mensagem corrigida.
+- `src/pages/PagamentoPublico.tsx` — seletor de método de pagamento (opcional).
