@@ -1375,7 +1375,8 @@ async function handleSendPaymentReport(
       token = newLink.token;
     }
 
-    const reportUrl = `${supabaseUrl}/functions/v1/payment-receipt?token=${token}`;
+    const frontendBase = (Deno.env.get("FRONTEND_URL") || "https://emmelycloud.pages.dev").replace(/\/+$/, "");
+    const reportUrl = `${frontendBase}/pagamento/${token}`;
 
     // 2. Get Bitrix24 integration
     let integration: any = null;
@@ -1400,11 +1401,27 @@ async function handleSendPaymentReport(
       return { report_url: reportUrl, send_status: "error", error: "Bitrix24 integration not found" };
     }
 
-    // 3. Save URL to deal field
+    // 3. Ensure UF_CRM_EMMELY_RELATORIO_PAY exists (idempotent — for legacy installs)
+    try {
+      await callBitrix(integration.client_endpoint, integration.access_token, "crm.deal.userfield.add", {
+        fields: {
+          FIELD_NAME: "UF_CRM_EMMELY_RELATORIO_PAY",
+          USER_TYPE_ID: "url",
+          SORT: 0,
+          EDIT_FORM_LABEL: { br: "RELATÓRIO DE PAGAMENTOS", en: "PAYMENT REPORT", pt: "RELATÓRIO DE PAGAMENTOS" },
+          LIST_COLUMN_LABEL: { br: "RELATÓRIO PAGAMENTOS", en: "PAYMENT REPORT", pt: "RELATÓRIO PAGAMENTOS" },
+          LIST_FILTER_LABEL: { br: "RELATÓRIO PAGAMENTOS", en: "PAYMENT REPORT", pt: "RELATÓRIO PAGAMENTOS" },
+        },
+      });
+    } catch (_e) {
+      // Field already exists or no permission — ignore.
+    }
+
+    // 4. Save URL to dedicated payment-report field
     try {
       await callBitrix(integration.client_endpoint, integration.access_token, "crm.deal.update", {
         id: parseInt(String(dealId)),
-        fields: { UF_CRM_EMMELY_RECEIPT_URL: reportUrl },
+        fields: { UF_CRM_EMMELY_RELATORIO_PAY: reportUrl },
       });
     } catch (bxErr) {
       console.error("[ROBOT] update deal error:", bxErr);
