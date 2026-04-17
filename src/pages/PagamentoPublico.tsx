@@ -285,7 +285,7 @@ export default function PagamentoPublico() {
                         <div style={{ marginTop: 6 }}>
                           <button
                             disabled={paying === rec.id}
-                            onClick={() => pay(rec.id)}
+                            onClick={() => setMethodChooser({ recordId: rec.id })}
                             style={{ background: "linear-gradient(135deg,#10b981,#059669)", color: "#fff", border: "none", padding: "6px 14px", borderRadius: 6, fontSize: 11, fontWeight: 700, cursor: paying === rec.id ? "wait" : "pointer", opacity: paying === rec.id ? 0.6 : 1 }}
                           >
                             {paying === rec.id ? "⏳ Aguarde..." : "💳 Pagar"}
