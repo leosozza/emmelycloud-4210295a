@@ -384,6 +384,75 @@ Deno.serve(async (req) => {
       console.error("[PAYMENT-CREATE-LINK] financial_records update error:", e);
     }
 
+    // 7. Materialize Smart Invoice in Bitrix24 (one invoice per installment).
+    // Only when the record doesn't yet have one and we have a deal_id to link.
+    let bitrixInvoiceId: string | null = (record.bitrix24_invoice_id as any) || null;
+    let bitrixInvoiceWarning: string | null = null;
+
+    if (!bitrixInvoiceId && link.bitrix24_deal_id) {
+      try {
+        const { data: integration } = await supabase
+          .from("bitrix24_integrations")
+          .select("client_endpoint, access_token")
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        if (integration?.client_endpoint && integration?.access_token) {
+          const endpoint = integration.client_endpoint.endsWith("/")
+            ? integration.client_endpoint
+            : integration.client_endpoint + "/";
+          const dealIdNum = parseInt(String(link.bitrix24_deal_id), 10);
+
+          let contactId: number | undefined = undefined;
+          try {
+            const dealRes = await fetch(`${endpoint}crm.deal.get?auth=${integration.access_token}&id=${dealIdNum}`);
+            const dealJson = await dealRes.json();
+            const cid = dealJson?.result?.CONTACT_ID;
+            if (cid) contactId = parseInt(String(cid), 10);
+          } catch { /* ignore */ }
+
+          const invoiceTitle = `Parcela ${record.installment_number || 1}/${record.total_installments || 1} — ${link.deal_title || record.description || "Pagamento"}`;
+          const invFields: Record<string, any> = {
+            title: invoiceTitle,
+            opportunity: baseAmount,
+            currencyId: currency,
+            isManualOpportunity: "Y",
+            parentId2: dealIdNum,
+            begindate: new Date().toISOString().split("T")[0],
+            comments: `Fatura gerada automaticamente pelo Emmely Pay (parcela ${record.installment_number || 1}/${record.total_installments || 1}).`,
+          };
+          if (contactId) invFields.contactId = contactId;
+          if (record.due_date) invFields.closedate = record.due_date;
+
+          const invRes = await fetch(`${endpoint}crm.item.add`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ entityTypeId: 31, fields: invFields, auth: integration.access_token }),
+          });
+          const invJson = await invRes.json();
+          const newInvoiceId = invJson?.result?.item?.id;
+
+          if (newInvoiceId) {
+            bitrixInvoiceId = String(newInvoiceId);
+            await supabase
+              .from("financial_records")
+              .update({ bitrix24_invoice_id: bitrixInvoiceId })
+              .eq("id", actualRecordId);
+            console.log("[PAYMENT-CREATE-LINK] Smart Invoice created:", bitrixInvoiceId);
+          } else {
+            bitrixInvoiceWarning = invJson?.error_description || invJson?.error || "unknown";
+            console.error("[PAYMENT-CREATE-LINK] Smart Invoice create failed:", bitrixInvoiceWarning);
+          }
+        } else {
+          bitrixInvoiceWarning = "no_active_integration";
+        }
+      } catch (invErr) {
+        bitrixInvoiceWarning = invErr instanceof Error ? invErr.message : String(invErr);
+        console.error("[PAYMENT-CREATE-LINK] Smart Invoice error:", invErr);
+      }
+    }
+
     return new Response(JSON.stringify({
       payment_url: paymentUrl,
       gateway_payment_id: gatewayPaymentId,
@@ -391,6 +460,8 @@ Deno.serve(async (req) => {
       base_amount: baseAmount,
       late_charges: finalAmount - baseAmount,
       currency,
+      bitrix24_invoice_id: bitrixInvoiceId,
+      bitrix24_invoice_warning: bitrixInvoiceWarning,
     }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
