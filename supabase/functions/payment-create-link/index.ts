@@ -159,9 +159,9 @@ Deno.serve(async (req) => {
 
     // 5. Build Stripe checkout
     const description = `Parcela ${record.installment_number || 1}/${record.total_installments || 1} — ${link.deal_title || record.description || "Pagamento"}${lateChargesInfo}`;
-    const baseUrl = Deno.env.get("FRONTEND_URL") || "https://emmelycloud.pages.dev";
-    const successUrl = `${Deno.env.get("SUPABASE_URL")}/functions/v1/payment-receipt?token=${token}&payment=success`;
-    const cancelUrl = `${Deno.env.get("SUPABASE_URL")}/functions/v1/payment-receipt?token=${token}&payment=cancelled`;
+    const baseUrl = (Deno.env.get("FRONTEND_URL") || "https://emmelycloud.pages.dev").replace(/\/+$/, "");
+    const successUrl = `${baseUrl}/pagamento/${token}?payment=success`;
+    const cancelUrl = `${baseUrl}/pagamento/${token}?payment=cancelled`;
     const methods = getStripePaymentMethods(currency, payment_method);
 
     const params = new URLSearchParams();
