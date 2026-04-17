@@ -1,44 +1,45 @@
 
+
 ## Diagnóstico
 
-O erro `Método "undefined" não está activado` tem duas causas combinadas em `payment-create-link`:
-
-1. **Frontend não envia `payment_method`** — `PagamentoPublico.tsx` (linha 92) chama `payment-create-link` apenas com `{ token, financial_record_id }`. O backend recebe `payment_method = undefined`.
-2. **Mensagem de erro mal formatada** — quando o Stripe responde com erro do tipo "payment method type provided", o backend faz:
-   ```ts
-   `Método "${payment_method}" não está activado.`
-   ```
-   Como `payment_method` é `undefined`, o utilizador vê literalmente `"undefined"`.
-3. **Causa real do erro Stripe** — a conta Stripe (PT) tem `card` desativado (visto no teste anterior, onde só `multibanco` funcionou). Como o frontend não escolhe método, o backend usa `getStripePaymentMethods("EUR", undefined)` que devolve `["card","multibanco","mb_way","sepa_debit"]`. O Stripe rejeita logo no primeiro (`card`) que não está ativo.
+O regex `/payment method type "?([a-z_]+)"?/i` captura a palavra `provided` na frase `"The payment method type provided: sepa_debit is invalid"` em vez de `sepa_debit`. Resultado:
+- Mensagem ao utilizador mostra "provided" (não é um método real).
+- O método real (`sepa_debit`) não é adicionado à lista `INACTIVE_METHODS`, logo o retry tenta-o de novo → loop até esgotar tentativas.
 
 ## Plano
 
-### 1. Filtrar métodos rejeitados em vez de mostrar "undefined" (`payment-create-link`)
-Quando o Stripe devolve erro do tipo "payment method type", **extrair o método real** da mensagem do Stripe (ex.: `The payment method type "card" is not activated...`) com regex e:
-- Se houver outros métodos na lista, reenviar o request **sem** o método rejeitado (até 1 retry).
-- Se não restar nenhum, devolver mensagem clara: `Nenhum método de pagamento ativo na conta Stripe para EUR. Active card / multibanco / mb_way no painel.`
+### Fix em `payment-create-link/index.ts` — função `extractOffendingMethod`
 
-### 2. Skip silencioso de `card` quando a conta não o suporta
-Adicionar uma lista de métodos "conhecidos como inativos" cacheada em memória da função (por currency). Na primeira falha do Stripe extraída do retry acima, marcar esse método como inativo durante o lifetime do worker. Próximas chamadas já saem sem ele.
+Substituir o regex único por uma cascata que tenta primeiro padrões específicos do Stripe e só usa o genérico como último recurso:
 
-### 3. Frontend: permitir escolha explícita de método (opcional mas útil)
-Em `PagamentoPublico.tsx`, mostrar 2-3 botões de método consoante a moeda (EUR → Multibanco / MB Way / SEPA; BRL → Cartão / Pix / Boleto) e enviar `payment_method` no body. Assim o utilizador escolhe e o backend só tenta esse método.
-
-### 4. Mensagem de erro robusta
-Mesmo no caminho atual, substituir a interpolação por:
 ```ts
-const offending = msg.match(/payment method type "?([a-z_]+)"?/i)?.[1] ?? payment_method ?? "(desconhecido)";
+function extractOffendingMethod(msg: string): string | null {
+  // Padrão 1: "type provided: sepa_debit is invalid"
+  let m = msg.match(/type provided:\s*([a-z_]+)/i);
+  if (m) return m[1];
+  // Padrão 2: "payment method type "card" is not activated"
+  m = msg.match(/payment method type "([a-z_]+)"/i);
+  if (m) return m[1];
+  // Padrão 3: "payment_method_types[2]: sepa_debit"
+  m = msg.match(/payment_method_types\[\d+\]:\s*([a-z_]+)/i);
+  if (m) return m[1];
+  // Fallback: primeira palavra após "type" que pareça um método (ignora "provided")
+  m = msg.match(/type[^a-z_]+([a-z]+_[a-z_]+)/i);
+  if (m) return m[1];
+  return null;
+}
 ```
-Resultado: `Método "card" não está activado. Active-o no painel Stripe.`
 
-## Resultado esperado
+Com isto:
+- `sepa_debit` é corretamente identificado e marcado como inativo.
+- O retry remove-o e tenta o próximo método (`multibanco` ou `mb_way`).
+- Se todos falharem, mensagem final lista o método real, não "provided".
 
-- Sem mais "undefined" em mensagens de erro.
-- Pagamento abre automaticamente no primeiro método ativo da conta (ex.: `multibanco`) sem intervenção do utilizador.
-- Se o utilizador quiser, pode escolher explicitamente o método nos botões.
-- Mensagens de erro identificam o método real que falhou.
+### Verificação
 
-## Ficheiros afetados
+Re-testar token `ac511cda-…` clicando em **SEPA** — deve agora cair automaticamente para outro método sem erro, ou devolver mensagem clara identificando `sepa_debit` como inativo.
 
-- `supabase/functions/payment-create-link/index.ts` — retry com filtro de método + mensagem corrigida.
-- `src/pages/PagamentoPublico.tsx` — seletor de método de pagamento (opcional).
+## Ficheiro afetado
+
+- `supabase/functions/payment-create-link/index.ts` (apenas a função `extractOffendingMethod`).
+
