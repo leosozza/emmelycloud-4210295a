@@ -1,9 +1,5 @@
 
-## Diagnóstico
 
-No `payment-create-link/index.ts`, o `success_url` aponta para:
-```
-${SUPABASE_URL}/functions/v1/payment-receipt?token=${token}&payment=success
-```
+O utilizador pergunta qual campo do Bitrix24 está a ser preenchido com o link do relatório de pagamentos quando este é gerado.
 
-Vou verificar a função `payment-receipt` para confirmar como trata o parâmetro `payment=success` e por que está redirecionando para o dashboard de login.
+Vou verificar o código.
