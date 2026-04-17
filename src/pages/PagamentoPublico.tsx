@@ -337,6 +337,33 @@ export default function PagamentoPublico() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <Dialog open={!!methodChooser} onOpenChange={(o) => !o && setMethodChooser(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Escolha o método de pagamento</DialogTitle>
+            <DialogDescription>
+              Selecione como pretende pagar esta parcela. Será redirecionado para o checkout seguro do Stripe.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid grid-cols-2 gap-3 py-2">
+            {methodsForCurrency(currency).map((m) => (
+              <button
+                key={m}
+                disabled={!!paying}
+                onClick={() => methodChooser && pay(methodChooser.recordId, m)}
+                className="flex flex-col items-center gap-2 p-4 border rounded-lg hover:bg-accent hover:border-primary transition disabled:opacity-50"
+              >
+                <span className="text-3xl">{METHOD_LABELS[m].emoji}</span>
+                <span className="text-sm font-semibold">{METHOD_LABELS[m].label}</span>
+              </button>
+            ))}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setMethodChooser(null)}>Cancelar</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
