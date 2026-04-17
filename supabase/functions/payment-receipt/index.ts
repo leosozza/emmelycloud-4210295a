@@ -41,24 +41,93 @@ function publicReportUrl(token: string): string {
   return `${base}/pagamento/${token}`;
 }
 
-async function fetchBitrixDealAmount(supabase: any, dealId: string): Promise<{ amount: number; currency: string; title: string | null } | null> {
+interface BitrixDealInfo {
+  amount: number;
+  currency: string;
+  title: string | null;
+  totalInstallments: number | null;
+  installmentValue: number | null;
+  nextDueDate: string | null;
+  paidInstallments: number | null;
+  paymentMethod: string | null;
+  gateway: string | null;
+}
+
+async function resolveEnumValue(endpoint: string, token: string, fieldName: string, enumId: any): Promise<string | null> {
+  if (!enumId) return null;
+  try {
+    const res = await fetch(`${endpoint}crm.deal.userfield.list?auth=${token}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ filter: { FIELD_NAME: fieldName } }) });
+    const j = await res.json();
+    const field = (j?.result || [])[0];
+    const item = (field?.LIST || []).find((i: any) => String(i.ID) === String(enumId));
+    return item?.VALUE || null;
+  } catch { return null; }
+}
+
+async function fetchBitrixDealAmount(supabase: any, dealId: string): Promise<BitrixDealInfo | null> {
   try {
     const { data: integration } = await supabase
       .from("bitrix24_integrations")
       .select("client_endpoint, access_token")
       .limit(1).maybeSingle();
     if (!integration?.client_endpoint || !integration?.access_token) return null;
-    const url = `${integration.client_endpoint}crm.deal.get?auth=${integration.access_token}&id=${parseInt(dealId)}`;
+    const endpoint = integration.client_endpoint.endsWith("/") ? integration.client_endpoint : integration.client_endpoint + "/";
+    const url = `${endpoint}crm.deal.get?auth=${integration.access_token}&id=${parseInt(dealId)}`;
     const res = await fetch(url);
     const j = await res.json();
     const r = j?.result;
     if (!r) return null;
     const amount = parseFloat(r.OPPORTUNITY || "0");
-    return { amount: isFinite(amount) ? amount : 0, currency: r.CURRENCY_ID || "EUR", title: r.TITLE || null };
+
+    // Parse UF fields. TOTAL_INSTALLMENTS is enumeration → resolve to numeric label.
+    const totalInstEnum = r.UF_CRM_EMMELY_TOTAL_INSTALLMENTS;
+    let totalInstallments: number | null = null;
+    if (totalInstEnum) {
+      const label = await resolveEnumValue(endpoint, integration.access_token, "UF_CRM_EMMELY_TOTAL_INSTALLMENTS", totalInstEnum);
+      const n = parseInt(label || String(totalInstEnum), 10);
+      if (isFinite(n) && n > 0) totalInstallments = n;
+    }
+
+    const installmentValueRaw = parseFloat(r.UF_CRM_EMMELY_INSTALLMENT_VALUE || "0");
+    const installmentValue = isFinite(installmentValueRaw) && installmentValueRaw > 0 ? installmentValueRaw : null;
+
+    const nextDueDate = r.UF_CRM_EMMELY_NEXT_DUE_DATE || null;
+
+    const paidInstRaw = parseInt(r.UF_CRM_EMMELY_PAID_INSTALLMENTS || "0", 10);
+    const paidInstallments = isFinite(paidInstRaw) && paidInstRaw > 0 ? paidInstRaw : null;
+
+    const paymentMethod = r.UF_CRM_EMMELY_PAYMENT_METHOD
+      ? await resolveEnumValue(endpoint, integration.access_token, "UF_CRM_EMMELY_PAYMENT_METHOD", r.UF_CRM_EMMELY_PAYMENT_METHOD)
+      : null;
+    const gateway = r.UF_CRM_EMMELY_GATEWAY
+      ? await resolveEnumValue(endpoint, integration.access_token, "UF_CRM_EMMELY_GATEWAY", r.UF_CRM_EMMELY_GATEWAY)
+      : null;
+
+    return {
+      amount: isFinite(amount) ? amount : 0,
+      currency: r.CURRENCY_ID || "EUR",
+      title: r.TITLE || null,
+      totalInstallments,
+      installmentValue,
+      nextDueDate,
+      paidInstallments,
+      paymentMethod,
+      gateway,
+    };
   } catch (e) {
     console.error("[payment-receipt] bitrix lookup error:", e);
     return null;
   }
+}
+
+function addMonths(dateStr: string, months: number): string {
+  const d = new Date(dateStr);
+  if (isNaN(d.getTime())) return dateStr;
+  const day = d.getUTCDate();
+  d.setUTCMonth(d.getUTCMonth() + months);
+  // handle month overflow
+  if (d.getUTCDate() < day) d.setUTCDate(0);
+  return d.toISOString().slice(0, 10);
 }
 
 async function loadInstallments(supabase: any, link: any) {
@@ -75,25 +144,48 @@ async function loadInstallments(supabase: any, link: any) {
     return { installments: records, currency, total_value, deal_title: link.deal_title };
   }
 
-  // 2) Synthetic fallback from Bitrix24 deal
+  // 2) Synthetic fallback from Bitrix24 deal — expand using UF_CRM_EMMELY_* fields
   if (link.bitrix24_deal_id) {
     const deal = await fetchBitrixDealAmount(supabase, String(link.bitrix24_deal_id));
-    if (deal && deal.amount > 0) {
-      const synthetic = [{
-        id: `synthetic-${link.bitrix24_deal_id}`,
-        installment_number: 1,
-        total_installments: 1,
-        installment_value: deal.amount,
-        total_value: deal.amount,
-        due_date: null,
-        paid_at: null,
-        status: "pendente",
-        currency: deal.currency,
-        bitrix24_deal_id: link.bitrix24_deal_id,
-        contract_id: null,
-        is_synthetic: true,
-      }];
-      return { installments: synthetic, currency: deal.currency, total_value: deal.amount, deal_title: link.deal_title || deal.title };
+    if (deal && (deal.amount > 0 || (deal.installmentValue && deal.totalInstallments))) {
+      const totalCount = deal.totalInstallments && deal.totalInstallments > 0 ? deal.totalInstallments : 1;
+      const perValue = deal.installmentValue && deal.installmentValue > 0
+        ? deal.installmentValue
+        : Math.round((deal.amount / totalCount) * 100) / 100;
+      const totalValue = deal.installmentValue && deal.totalInstallments
+        ? Math.round(perValue * totalCount * 100) / 100
+        : deal.amount;
+      const paidCount = deal.paidInstallments || 0;
+      const baseDue = deal.nextDueDate;
+
+      const synthetic = Array.from({ length: totalCount }, (_, i) => {
+        const number = i + 1;
+        // Compute due date for each installment (monthly cadence anchored on nextDueDate)
+        let dueDate: string | null = null;
+        if (baseDue) {
+          // Treat nextDueDate as the next *unpaid* installment due date
+          const offset = number - (paidCount + 1);
+          dueDate = addMonths(baseDue, offset);
+        }
+        const isPaid = number <= paidCount;
+        return {
+          id: `synthetic-${link.bitrix24_deal_id}-${number}`,
+          installment_number: number,
+          total_installments: totalCount,
+          installment_value: perValue,
+          total_value: totalValue,
+          due_date: dueDate,
+          paid_at: isPaid ? new Date().toISOString() : null,
+          status: isPaid ? "paga" : "pendente",
+          currency: deal.currency,
+          bitrix24_deal_id: link.bitrix24_deal_id,
+          contract_id: null,
+          payment_method: deal.paymentMethod,
+          gateway: deal.gateway,
+          is_synthetic: true,
+        };
+      });
+      return { installments: synthetic, currency: deal.currency, total_value: totalValue, deal_title: link.deal_title || deal.title };
     }
   }
   return { installments: [], currency: "EUR", total_value: 0, deal_title: link.deal_title };
