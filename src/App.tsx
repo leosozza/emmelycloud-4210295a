@@ -41,6 +41,7 @@ import Configuracoes from "./pages/Configuracoes";
 import TemplateEditor from "./pages/TemplateEditor";
 import SimulationPage from "./pages/Simulation";
 import SwarmReportsPage from "./pages/SwarmReports";
+import PagamentoPublico from "./pages/PagamentoPublico";
 
 const queryClient = new QueryClient();
 
@@ -61,6 +62,7 @@ const App = () => (
           <Route path="/bitrix24/*" element={<Bitrix24App />} />
           <Route path="/proposta/:token" element={<PropostaPublica />} />
           <Route path="/sign/:token" element={<SignContract />} />
+          <Route path="/pagamento/:token" element={<PagamentoPublico />} />
           <Route path="/propostas/template-editor" element={<TemplateEditor />} />
           <Route path="/propostas/template-editor/:id" element={<TemplateEditor />} />
           <Route element={<AppLayout />}>
