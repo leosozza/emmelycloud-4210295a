@@ -82,26 +82,156 @@ Deno.serve(async (req) => {
       });
     }
 
-    // 2. Fetch installment and validate ownership
-    const { data: record } = await supabase
-      .from("financial_records")
-      .select("*")
-      .eq("id", financial_record_id)
-      .maybeSingle();
+    // 2. Fetch installment — supports synthetic IDs (parcelas geradas a partir do Bitrix24)
+    let record: any = null;
+    let actualRecordId = financial_record_id;
+    const isSynthetic = typeof financial_record_id === "string" && financial_record_id.startsWith("synthetic-");
 
-    if (!record) {
-      return new Response(JSON.stringify({ error: "Installment not found" }), {
-        status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
+    if (isSynthetic) {
+      // Format: synthetic-{dealId}-{installmentNumber}
+      const parts = financial_record_id.split("-");
+      const dealIdStr = parts[1];
+      const installmentNumber = parseInt(parts[2] || "1", 10);
+      const dealIdNum = parseInt(dealIdStr, 10);
 
-    // Security: record must belong to the same contract or deal as the receipt link
-    const matchesContract = link.contract_id && record.contract_id === link.contract_id;
-    const matchesDeal = link.bitrix24_deal_id && record.bitrix24_deal_id === link.bitrix24_deal_id;
-    if (!matchesContract && !matchesDeal) {
-      return new Response(JSON.stringify({ error: "Installment does not belong to this receipt" }), {
-        status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      if (!isFinite(dealIdNum) || !isFinite(installmentNumber)) {
+        return new Response(JSON.stringify({ error: "Synthetic ID inválido" }), {
+          status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      // Security: deal must match receipt link
+      if (!link.bitrix24_deal_id || Number(link.bitrix24_deal_id) !== dealIdNum) {
+        return new Response(JSON.stringify({ error: "Parcela não pertence a este comprovante" }), {
+          status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      // Try to find an existing record for this deal+installment first
+      const { data: existing } = await supabase
+        .from("financial_records")
+        .select("*")
+        .eq("bitrix24_deal_id", dealIdNum)
+        .eq("installment_number", installmentNumber)
+        .maybeSingle();
+
+      if (existing) {
+        record = existing;
+        actualRecordId = existing.id;
+      } else {
+        // Materialize synthetic installment from Bitrix24 deal data
+        const { data: integration } = await supabase
+          .from("bitrix24_integrations")
+          .select("client_endpoint, access_token")
+          .limit(1).maybeSingle();
+
+        if (!integration?.client_endpoint || !integration?.access_token) {
+          return new Response(JSON.stringify({ error: "Integração Bitrix24 não configurada" }), {
+            status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+
+        const endpoint = integration.client_endpoint.endsWith("/") ? integration.client_endpoint : integration.client_endpoint + "/";
+        const dealRes = await fetch(`${endpoint}crm.deal.get?auth=${integration.access_token}&id=${dealIdNum}`);
+        const dealJson = await dealRes.json();
+        const dealData = dealJson?.result;
+
+        if (!dealData) {
+          return new Response(JSON.stringify({ error: "Negócio Bitrix24 não encontrado" }), {
+            status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+
+        // Resolve enumeration for total installments
+        let totalInstallments = parseInt(parts[3] || "0", 10) || installmentNumber;
+        const totalEnum = dealData.UF_CRM_EMMELY_TOTAL_INSTALLMENTS;
+        if (totalEnum) {
+          try {
+            const ufRes = await fetch(`${endpoint}crm.deal.userfield.list?auth=${integration.access_token}`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ filter: { FIELD_NAME: "UF_CRM_EMMELY_TOTAL_INSTALLMENTS" } }),
+            });
+            const ufJson = await ufRes.json();
+            const field = (ufJson?.result || [])[0];
+            const item = (field?.LIST || []).find((i: any) => String(i.ID) === String(totalEnum));
+            const n = parseInt(item?.VALUE || String(totalEnum), 10);
+            if (isFinite(n) && n > 0) totalInstallments = n;
+          } catch {}
+        }
+
+        const dealAmount = parseFloat(dealData.OPPORTUNITY || "0") || 0;
+        const installmentValueRaw = parseFloat(dealData.UF_CRM_EMMELY_INSTALLMENT_VALUE || "0");
+        const perValue = installmentValueRaw > 0
+          ? installmentValueRaw
+          : Math.round((dealAmount / totalInstallments) * 100) / 100;
+
+        const dealCurrency = dealData.CURRENCY_ID || "EUR";
+        const baseDue = dealData.UF_CRM_EMMELY_NEXT_DUE_DATE || null;
+        const paidCount = parseInt(dealData.UF_CRM_EMMELY_PAID_INSTALLMENTS || "0", 10) || 0;
+
+        // Compute due date for this installment
+        let dueDate: string | null = null;
+        if (baseDue) {
+          const offset = installmentNumber - (paidCount + 1);
+          const d = new Date(baseDue);
+          if (!isNaN(d.getTime())) {
+            const day = d.getUTCDate();
+            d.setUTCMonth(d.getUTCMonth() + offset);
+            if (d.getUTCDate() < day) d.setUTCDate(0);
+            dueDate = d.toISOString().slice(0, 10);
+          }
+        }
+
+        const totalValue = perValue * totalInstallments;
+
+        const { data: inserted, error: insertErr } = await supabase
+          .from("financial_records")
+          .insert({
+            bitrix24_deal_id: dealIdNum,
+            installment_number: installmentNumber,
+            total_installments: totalInstallments,
+            installment_value: perValue,
+            total_value: totalValue,
+            due_date: dueDate,
+            status: "pendente",
+            currency: dealCurrency,
+            description: dealData.TITLE || link.deal_title || `Parcela ${installmentNumber}/${totalInstallments}`,
+          })
+          .select()
+          .single();
+
+        if (insertErr || !inserted) {
+          console.error("[PAYMENT-CREATE-LINK] materialize error:", insertErr);
+          return new Response(JSON.stringify({ error: "Não foi possível materializar a parcela: " + (insertErr?.message || "erro desconhecido") }), {
+            status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+        record = inserted;
+        actualRecordId = inserted.id;
+      }
+    } else {
+      const { data: existingRecord } = await supabase
+        .from("financial_records")
+        .select("*")
+        .eq("id", financial_record_id)
+        .maybeSingle();
+
+      if (!existingRecord) {
+        return new Response(JSON.stringify({ error: "Parcela não encontrada" }), {
+          status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      record = existingRecord;
+
+      // Security: record must belong to the same contract or deal as the receipt link
+      const matchesContract = link.contract_id && record.contract_id === link.contract_id;
+      const matchesDeal = link.bitrix24_deal_id && record.bitrix24_deal_id === link.bitrix24_deal_id;
+      if (!matchesContract && !matchesDeal) {
+        return new Response(JSON.stringify({ error: "Parcela não pertence a este comprovante" }), {
+          status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
     }
 
     if (record.status === "paga") {
@@ -173,7 +303,7 @@ Deno.serve(async (req) => {
     methods.forEach((m, i) => params.append(`payment_method_types[${i}]`, m));
     params.append("success_url", successUrl);
     params.append("cancel_url", cancelUrl);
-    params.append("metadata[financial_record_id]", financial_record_id);
+    params.append("metadata[financial_record_id]", actualRecordId);
     params.append("metadata[receipt_token]", token);
     if (link.bitrix24_deal_id) params.append("metadata[bitrix24_deal_id]", String(link.bitrix24_deal_id));
     if (record.contract_id) params.append("metadata[contract_id]", record.contract_id);
@@ -206,7 +336,7 @@ Deno.serve(async (req) => {
 
     try {
       await supabase.from("payment_transactions").insert({
-        financial_record_id,
+        financial_record_id: actualRecordId,
         contract_id: record.contract_id || null,
         amount: finalAmount,
         currency,
@@ -231,7 +361,7 @@ Deno.serve(async (req) => {
     try {
       await supabase.from("financial_records")
         .update({ stripe_payment_id: gatewayPaymentId })
-        .eq("id", financial_record_id);
+        .eq("id", actualRecordId);
     } catch (e) {
       console.error("[PAYMENT-CREATE-LINK] financial_records update error:", e);
     }
