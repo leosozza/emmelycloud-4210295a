@@ -33,12 +33,66 @@ function calculateLateFees(amount: number, daysLate: number, config: LateFeeConf
 function getStripePaymentMethods(currency: string, requestedMethod?: string | null): string[] {
   const cur = (currency || "").toUpperCase();
   const validStripeMethods = ["card", "multibanco", "mb_way", "sepa_debit", "pix", "boleto", "link"];
-  if (requestedMethod && requestedMethod !== "card" && requestedMethod !== "direto") {
+  if (requestedMethod && requestedMethod !== "direto") {
     if (validStripeMethods.includes(requestedMethod)) return [requestedMethod];
   }
   if (cur === "BRL") return ["card", "boleto", "pix"];
-  if (cur === "EUR") return ["card", "multibanco", "mb_way", "sepa_debit"];
+  if (cur === "EUR") return ["multibanco", "mb_way", "card", "sepa_debit"];
   return ["card"];
+}
+
+// In-memory cache of methods known to be inactive in the connected Stripe account (per currency).
+// Resets whenever the function worker is recycled.
+const INACTIVE_METHODS: Record<string, Set<string>> = {};
+function markInactive(currency: string, method: string) {
+  const k = currency.toUpperCase();
+  if (!INACTIVE_METHODS[k]) INACTIVE_METHODS[k] = new Set();
+  INACTIVE_METHODS[k].add(method);
+}
+function filterInactive(currency: string, methods: string[]): string[] {
+  const k = currency.toUpperCase();
+  const blocked = INACTIVE_METHODS[k];
+  if (!blocked || blocked.size === 0) return methods;
+  return methods.filter((m) => !blocked.has(m));
+}
+function extractOffendingMethod(msg: string): string | null {
+  return msg.match(/payment method type "?([a-z_]+)"?/i)?.[1] ?? null;
+}
+
+async function createStripeCheckout(
+  stripeKey: string,
+  baseParams: URLSearchParams,
+  methods: string[],
+  currency: string,
+): Promise<{ ok: true; data: any; usedMethods: string[] } | { ok: false; error: string; offending: string | null }> {
+  let attempt = methods.slice();
+  for (let i = 0; i < 4; i++) {
+    if (attempt.length === 0) {
+      return {
+        ok: false,
+        error: `Nenhum método de pagamento ativo na conta Stripe para ${currency}. Active card / multibanco / mb_way no painel Stripe.`,
+        offending: null,
+      };
+    }
+    const params = new URLSearchParams(baseParams.toString());
+    attempt.forEach((m, idx) => params.append(`payment_method_types[${idx}]`, m));
+    const res = await fetch("https://api.stripe.com/v1/checkout/sessions", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${stripeKey}`, "Content-Type": "application/x-www-form-urlencoded" },
+      body: params.toString(),
+    });
+    const data = await res.json();
+    if (!data.error) return { ok: true, data, usedMethods: attempt };
+    const msg: string = data.error.message || "Stripe error";
+    const offending = extractOffendingMethod(msg);
+    if (offending && attempt.includes(offending)) {
+      markInactive(currency, offending);
+      attempt = attempt.filter((m) => m !== offending);
+      continue;
+    }
+    return { ok: false, error: msg, offending };
+  }
+  return { ok: false, error: "Esgotadas as tentativas de métodos de pagamento.", offending: null };
 }
 
 async function getCredential(supabase: any, provider: string, key: string): Promise<string | null> {
