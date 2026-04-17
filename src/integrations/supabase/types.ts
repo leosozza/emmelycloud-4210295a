@@ -1886,7 +1886,7 @@ export type Database = {
         Row: {
           bitrix24_deal_id: string | null
           bitrix24_invoice_id: string | null
-          contract_id: string
+          contract_id: string | null
           created_at: string
           description: string
           due_date: string | null
@@ -1906,7 +1906,7 @@ export type Database = {
         Insert: {
           bitrix24_deal_id?: string | null
           bitrix24_invoice_id?: string | null
-          contract_id: string
+          contract_id?: string | null
           created_at?: string
           description?: string
           due_date?: string | null
@@ -1926,7 +1926,7 @@ export type Database = {
         Update: {
           bitrix24_deal_id?: string | null
           bitrix24_invoice_id?: string | null
-          contract_id?: string
+          contract_id?: string | null
           created_at?: string
           description?: string
           due_date?: string | null
