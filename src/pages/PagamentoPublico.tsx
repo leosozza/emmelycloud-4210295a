@@ -287,6 +287,37 @@ export default function PagamentoPublico() {
           Este comprovante é atualizado em tempo real.
         </div>
       </div>
+
+      <Dialog open={!!payError} onOpenChange={(o) => !o && setPayError(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{payError?.title}</DialogTitle>
+            <DialogDescription>{payError?.message}</DialogDescription>
+          </DialogHeader>
+          {payError?.missing && payError.missing.length > 0 && (
+            <ul className="list-disc pl-5 text-sm space-y-1 bg-muted/40 p-3 rounded-md">
+              {payError.missing.map((f) => (
+                <li key={f} className="font-mono text-xs">{f}</li>
+              ))}
+            </ul>
+          )}
+          {payError?.details && (
+            <p className="text-xs text-muted-foreground">{payError.details}</p>
+          )}
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={copyErrorDetails}>Copiar detalhes</Button>
+            <Button
+              onClick={() => {
+                const id = payError?.recordId;
+                setPayError(null);
+                if (id) pay(id);
+              }}
+            >
+              Tentar novamente
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
