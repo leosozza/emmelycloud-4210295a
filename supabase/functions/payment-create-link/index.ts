@@ -303,7 +303,7 @@ Deno.serve(async (req) => {
     methods.forEach((m, i) => params.append(`payment_method_types[${i}]`, m));
     params.append("success_url", successUrl);
     params.append("cancel_url", cancelUrl);
-    params.append("metadata[financial_record_id]", financial_record_id);
+    params.append("metadata[financial_record_id]", actualRecordId);
     params.append("metadata[receipt_token]", token);
     if (link.bitrix24_deal_id) params.append("metadata[bitrix24_deal_id]", String(link.bitrix24_deal_id));
     if (record.contract_id) params.append("metadata[contract_id]", record.contract_id);
@@ -336,7 +336,7 @@ Deno.serve(async (req) => {
 
     try {
       await supabase.from("payment_transactions").insert({
-        financial_record_id,
+        financial_record_id: actualRecordId,
         contract_id: record.contract_id || null,
         amount: finalAmount,
         currency,
@@ -361,7 +361,7 @@ Deno.serve(async (req) => {
     try {
       await supabase.from("financial_records")
         .update({ stripe_payment_id: gatewayPaymentId })
-        .eq("id", financial_record_id);
+        .eq("id", actualRecordId);
     } catch (e) {
       console.error("[PAYMENT-CREATE-LINK] financial_records update error:", e);
     }
