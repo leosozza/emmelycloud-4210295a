@@ -50,6 +50,23 @@ function calcLateFee(value: number, daysLate: number, cfg: ReportData["late_fee_
   return { charges, total: Math.round((value + charges) * 100) / 100 };
 }
 
+type PayMethod = "multibanco" | "mb_way" | "card" | "sepa_debit" | "pix" | "boleto";
+
+const METHOD_LABELS: Record<PayMethod, { label: string; emoji: string }> = {
+  multibanco: { label: "Multibanco", emoji: "🏧" },
+  mb_way: { label: "MB Way", emoji: "📱" },
+  card: { label: "Cartão", emoji: "💳" },
+  sepa_debit: { label: "SEPA", emoji: "🏦" },
+  pix: { label: "Pix", emoji: "⚡" },
+  boleto: { label: "Boleto", emoji: "🧾" },
+};
+
+function methodsForCurrency(c: string): PayMethod[] {
+  const cur = (c || "EUR").toUpperCase();
+  if (cur === "BRL") return ["pix", "card", "boleto"];
+  return ["multibanco", "mb_way", "card", "sepa_debit"];
+}
+
 export default function PagamentoPublico() {
   const { token } = useParams<{ token: string }>();
   const [searchParams] = useSearchParams();
@@ -59,6 +76,7 @@ export default function PagamentoPublico() {
   const [error, setError] = useState<string | null>(null);
   const [paying, setPaying] = useState<string | null>(null);
   const [payError, setPayError] = useState<{ title: string; message: string; missing?: string[]; details?: string; recordId?: string } | null>(null);
+  const [methodChooser, setMethodChooser] = useState<{ recordId: string } | null>(null);
 
   async function load() {
     if (!token) return;
@@ -81,15 +99,16 @@ export default function PagamentoPublico() {
 
   useEffect(() => { load(); }, [token]);
 
-  async function pay(recordId: string) {
+  async function pay(recordId: string, payment_method?: PayMethod) {
     if (!token) return;
     setPaying(recordId);
     setPayError(null);
+    setMethodChooser(null);
     try {
       const res = await fetch(`${SUPABASE_URL}/functions/v1/payment-create-link`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token, financial_record_id: recordId }),
+        body: JSON.stringify({ token, financial_record_id: recordId, payment_method }),
       });
       const j = await res.json();
       if (!res.ok || !j.payment_url) {
