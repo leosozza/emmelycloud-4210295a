@@ -131,64 +131,105 @@ function addMonths(dateStr: string, months: number): string {
 }
 
 async function loadInstallments(supabase: any, link: any) {
-  // 1) financial_records by contract_id or deal_id
-  let query = supabase.from("financial_records").select("*").order("installment_number", { ascending: true });
-  if (link.contract_id) query = query.eq("contract_id", link.contract_id);
-  else if (link.bitrix24_deal_id) query = query.eq("bitrix24_deal_id", link.bitrix24_deal_id);
-  else return { installments: [], currency: "EUR", total_value: 0, deal_title: link.deal_title };
+  // 1) Load real financial_records (by contract_id or deal_id) — may be empty, partial, or complete
+  let records: any[] = [];
+  if (link.contract_id) {
+    const { data } = await supabase.from("financial_records")
+      .select("*").eq("contract_id", link.contract_id)
+      .order("installment_number", { ascending: true });
+    records = data || [];
+  } else if (link.bitrix24_deal_id) {
+    const { data } = await supabase.from("financial_records")
+      .select("*").eq("bitrix24_deal_id", link.bitrix24_deal_id)
+      .order("installment_number", { ascending: true });
+    records = data || [];
+  }
 
-  const { data: records } = await query;
-  if (records && records.length > 0) {
-    const currency = records[0]?.currency || "EUR";
-    const total_value = records[0]?.total_value || records.reduce((s: number, r: any) => s + (Number(r.installment_value) || 0), 0);
+  // 2) Fetch Bitrix24 deal info (used to determine expected total installments + build synthetic slots)
+  let deal: BitrixDealInfo | null = null;
+  if (link.bitrix24_deal_id) {
+    deal = await fetchBitrixDealAmount(supabase, String(link.bitrix24_deal_id));
+  }
+
+  // Derive expected installment count:
+  //   - prefer deal.totalInstallments
+  //   - fallback to max installment_number across real records
+  //   - fallback to records[0].total_installments
+  //   - else 1
+  const maxRealNumber = records.reduce(
+    (m, r) => Math.max(m, Number(r.installment_number) || 0), 0,
+  );
+  const totalFromRecord = records[0]?.total_installments || 0;
+  const totalCount = Math.max(
+    deal?.totalInstallments || 0,
+    maxRealNumber,
+    Number(totalFromRecord) || 0,
+    1,
+  );
+
+  const currency = records[0]?.currency || deal?.currency || "EUR";
+
+  // 3) Contract-only flow (no deal, no synthetic expansion) — return whatever exists
+  if (!link.bitrix24_deal_id) {
+    const total_value = records[0]?.total_value
+      || records.reduce((s: number, r: any) => s + (Number(r.installment_value) || 0), 0);
     return { installments: records, currency, total_value, deal_title: link.deal_title };
   }
 
-  // 2) Synthetic fallback from Bitrix24 deal — expand using UF_CRM_EMMELY_* fields
-  if (link.bitrix24_deal_id) {
-    const deal = await fetchBitrixDealAmount(supabase, String(link.bitrix24_deal_id));
-    if (deal && (deal.amount > 0 || (deal.installmentValue && deal.totalInstallments))) {
-      const totalCount = deal.totalInstallments && deal.totalInstallments > 0 ? deal.totalInstallments : 1;
-      const perValue = deal.installmentValue && deal.installmentValue > 0
-        ? deal.installmentValue
-        : Math.round((deal.amount / totalCount) * 100) / 100;
-      const totalValue = deal.installmentValue && deal.totalInstallments
-        ? Math.round(perValue * totalCount * 100) / 100
-        : deal.amount;
-      const paidCount = deal.paidInstallments || 0;
-      const baseDue = deal.nextDueDate;
+  // 4) Deal-based flow — MERGE real records into full synthetic scaffold so we always show totalCount slots
+  // Compute synthetic defaults from deal
+  const perValue = deal?.installmentValue && deal.installmentValue > 0
+    ? deal.installmentValue
+    : (deal?.amount && totalCount ? Math.round((deal.amount / totalCount) * 100) / 100 : 0);
+  const totalValue = records[0]?.total_value
+    || (deal?.installmentValue && deal?.totalInstallments
+      ? Math.round(deal.installmentValue * deal.totalInstallments * 100) / 100
+      : (deal?.amount || perValue * totalCount));
+  const paidCount = deal?.paidInstallments || 0;
+  const baseDue = deal?.nextDueDate || null;
 
-      const synthetic = Array.from({ length: totalCount }, (_, i) => {
-        const number = i + 1;
-        // Compute due date for each installment (monthly cadence anchored on nextDueDate)
-        let dueDate: string | null = null;
-        if (baseDue) {
-          // Treat nextDueDate as the next *unpaid* installment due date
-          const offset = number - (paidCount + 1);
-          dueDate = addMonths(baseDue, offset);
-        }
-        const isPaid = number <= paidCount;
-        return {
-          id: `synthetic-${link.bitrix24_deal_id}-${number}`,
-          installment_number: number,
-          total_installments: totalCount,
-          installment_value: perValue,
-          total_value: totalValue,
-          due_date: dueDate,
-          paid_at: isPaid ? new Date().toISOString() : null,
-          status: isPaid ? "paga" : "pendente",
-          currency: deal.currency,
-          bitrix24_deal_id: link.bitrix24_deal_id,
-          contract_id: null,
-          payment_method: deal.paymentMethod,
-          gateway: deal.gateway,
-          is_synthetic: true,
-        };
-      });
-      return { installments: synthetic, currency: deal.currency, total_value: totalValue, deal_title: link.deal_title || deal.title };
-    }
+  const realByNumber = new Map<number, any>();
+  for (const r of records) {
+    const n = Number(r.installment_number);
+    if (isFinite(n) && n > 0) realByNumber.set(n, r);
   }
-  return { installments: [], currency: "EUR", total_value: 0, deal_title: link.deal_title };
+
+  const merged = Array.from({ length: totalCount }, (_, i) => {
+    const number = i + 1;
+    const real = realByNumber.get(number);
+    if (real) return { ...real, is_synthetic: false };
+
+    // Synthetic slot
+    let dueDate: string | null = null;
+    if (baseDue) {
+      const offset = number - (paidCount + 1);
+      dueDate = addMonths(baseDue, offset);
+    }
+    const isPaid = number <= paidCount;
+    return {
+      id: `synthetic-${link.bitrix24_deal_id}-${number}`,
+      installment_number: number,
+      total_installments: totalCount,
+      installment_value: perValue,
+      total_value: totalValue,
+      due_date: dueDate,
+      paid_at: isPaid ? new Date().toISOString() : null,
+      status: isPaid ? "paga" : "pendente",
+      currency: deal?.currency || currency,
+      bitrix24_deal_id: link.bitrix24_deal_id,
+      contract_id: null,
+      payment_method: deal?.paymentMethod,
+      gateway: deal?.gateway,
+      is_synthetic: true,
+    };
+  });
+
+  return {
+    installments: merged,
+    currency,
+    total_value: totalValue,
+    deal_title: link.deal_title || deal?.title,
+  };
 }
 
 async function loadLateFeeConfig(supabase: any): Promise<LateFeeConfig> {
