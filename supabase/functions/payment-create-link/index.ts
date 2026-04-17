@@ -56,7 +56,19 @@ function filterInactive(currency: string, methods: string[]): string[] {
   return methods.filter((m) => !blocked.has(m));
 }
 function extractOffendingMethod(msg: string): string | null {
-  return msg.match(/payment method type "?([a-z_]+)"?/i)?.[1] ?? null;
+  // Padrão 1: "The payment method type provided: sepa_debit is invalid"
+  let m = msg.match(/type provided:\s*([a-z_]+)/i);
+  if (m) return m[1];
+  // Padrão 2: 'payment method type "card" is not activated'
+  m = msg.match(/payment method type "([a-z_]+)"/i);
+  if (m) return m[1];
+  // Padrão 3: "payment_method_types[2]: sepa_debit"
+  m = msg.match(/payment_method_types\[\d+\]:\s*([a-z_]+)/i);
+  if (m) return m[1];
+  // Fallback: método com underscore após a palavra "type" (ignora "provided")
+  m = msg.match(/type[^a-z_]+([a-z]+_[a-z_]+)/i);
+  if (m) return m[1];
+  return null;
 }
 
 async function createStripeCheckout(
