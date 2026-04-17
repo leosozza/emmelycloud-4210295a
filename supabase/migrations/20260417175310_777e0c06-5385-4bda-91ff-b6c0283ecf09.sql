@@ -1,0 +1,1 @@
+ALTER TABLE public.financial_records ALTER COLUMN contract_id DROP NOT NULL;

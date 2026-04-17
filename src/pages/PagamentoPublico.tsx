@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useParams, useSearchParams } from "react-router-dom";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
 
 interface Installment {
   id: string;
@@ -56,6 +58,7 @@ export default function PagamentoPublico() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [paying, setPaying] = useState<string | null>(null);
+  const [payError, setPayError] = useState<{ title: string; message: string; missing?: string[]; details?: string; recordId?: string } | null>(null);
 
   async function load() {
     if (!token) return;
@@ -81,6 +84,7 @@ export default function PagamentoPublico() {
   async function pay(recordId: string) {
     if (!token) return;
     setPaying(recordId);
+    setPayError(null);
     try {
       const res = await fetch(`${SUPABASE_URL}/functions/v1/payment-create-link`, {
         method: "POST",
@@ -89,15 +93,46 @@ export default function PagamentoPublico() {
       });
       const j = await res.json();
       if (!res.ok || !j.payment_url) {
-        alert("Erro ao gerar pagamento: " + (j.error || "desconhecido"));
+        if (Array.isArray(j.missing_fields) && j.missing_fields.length > 0) {
+          setPayError({
+            title: "Faltam dados no Bitrix24",
+            message: "Para gerar o link de pagamento desta parcela, configure os seguintes campos no negócio do Bitrix24:",
+            missing: j.missing_fields,
+            details: j.deal_id ? `Negócio Bitrix24 ID: ${j.deal_id}` : undefined,
+            recordId,
+          });
+        } else {
+          setPayError({
+            title: "Não foi possível gerar o pagamento",
+            message: j.error || "Erro desconhecido ao contactar o gateway.",
+            details: j.details,
+            recordId,
+          });
+        }
         setPaying(null);
         return;
       }
       window.location.href = j.payment_url;
     } catch (e: any) {
-      alert("Erro de rede: " + e.message);
+      setPayError({
+        title: "Erro de rede",
+        message: e?.message || "Não foi possível contactar o servidor. Verifique a sua ligação.",
+        recordId,
+      });
       setPaying(null);
     }
+  }
+
+  function copyErrorDetails() {
+    if (!payError) return;
+    const text = [
+      payError.title,
+      payError.message,
+      payError.missing?.length ? `Campos em falta:\n- ${payError.missing.join("\n- ")}` : "",
+      payError.details || "",
+      `Token: ${token}`,
+    ].filter(Boolean).join("\n\n");
+    navigator.clipboard?.writeText(text).catch(() => {});
   }
 
   const computed = useMemo(() => {
@@ -252,6 +287,37 @@ export default function PagamentoPublico() {
           Este comprovante é atualizado em tempo real.
         </div>
       </div>
+
+      <Dialog open={!!payError} onOpenChange={(o) => !o && setPayError(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{payError?.title}</DialogTitle>
+            <DialogDescription>{payError?.message}</DialogDescription>
+          </DialogHeader>
+          {payError?.missing && payError.missing.length > 0 && (
+            <ul className="list-disc pl-5 text-sm space-y-1 bg-muted/40 p-3 rounded-md">
+              {payError.missing.map((f) => (
+                <li key={f} className="font-mono text-xs">{f}</li>
+              ))}
+            </ul>
+          )}
+          {payError?.details && (
+            <p className="text-xs text-muted-foreground">{payError.details}</p>
+          )}
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={copyErrorDetails}>Copiar detalhes</Button>
+            <Button
+              onClick={() => {
+                const id = payError?.recordId;
+                setPayError(null);
+                if (id) pay(id);
+              }}
+            >
+              Tentar novamente
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
