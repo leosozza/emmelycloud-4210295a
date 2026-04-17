@@ -183,19 +183,34 @@ Deno.serve(async (req) => {
           }
         }
 
+        // Validate required Bitrix24 fields BEFORE attempting insert
+        const missingFields: string[] = [];
+        if (!(perValue > 0)) missingFields.push("UF_CRM_EMMELY_INSTALLMENT_VALUE (ou OPPORTUNITY)");
+        if (!dealCurrency) missingFields.push("CURRENCY_ID");
+        if (missingFields.length > 0) {
+          return new Response(JSON.stringify({
+            error: "Faltam dados no Bitrix24 para gerar a cobrança",
+            missing_fields: missingFields,
+            deal_id: dealIdNum,
+          }), {
+            status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+
         const totalValue = perValue * totalInstallments;
 
+        // Note: 'currency' is intentionally NOT inserted — column doesn't exist on financial_records.
+        // Currency is tracked via Stripe checkout + payment_transactions.
         const { data: inserted, error: insertErr } = await supabase
           .from("financial_records")
           .insert({
-            bitrix24_deal_id: dealIdNum,
+            bitrix24_deal_id: String(dealIdNum),
             installment_number: installmentNumber,
             total_installments: totalInstallments,
             installment_value: perValue,
             total_value: totalValue,
             due_date: dueDate,
             status: "pendente",
-            currency: dealCurrency,
             description: dealData.TITLE || link.deal_title || `Parcela ${installmentNumber}/${totalInstallments}`,
           })
           .select()
@@ -203,11 +218,14 @@ Deno.serve(async (req) => {
 
         if (insertErr || !inserted) {
           console.error("[PAYMENT-CREATE-LINK] materialize error:", insertErr);
-          return new Response(JSON.stringify({ error: "Não foi possível materializar a parcela: " + (insertErr?.message || "erro desconhecido") }), {
+          return new Response(JSON.stringify({
+            error: "Não foi possível materializar a parcela",
+            details: insertErr?.message || "erro desconhecido",
+          }), {
             status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
           });
         }
-        record = inserted;
+        record = { ...inserted, currency: dealCurrency };
         actualRecordId = inserted.id;
       }
     } else {
