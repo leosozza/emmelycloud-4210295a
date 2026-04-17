@@ -85,6 +85,7 @@ Deno.serve(async (req) => {
       "OnImConnectorStatusDelete",
       "OnImbotMessageAdd",
       "OnImbotJoinChat",    // obrigatório para Open Lines chatbot selector
+      "OnCrmDynamicItemUpdate", // Smart Invoice stage changes (entityTypeId=31 filtered in worker)
       // NOTA: OnImbotWelcomeMessage e OnImbotJoinOpen NÃO existem como event.bind — são parâmetros do imbot.register
     ];
 

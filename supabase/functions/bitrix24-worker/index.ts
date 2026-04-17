@@ -1076,6 +1076,9 @@ Deno.serve(async (req) => {
           case "ONCRMLEADUPDATE":
             await handleLeadEvent(supabase, integration, event.payload);
             break;
+          case "ONCRMDYNAMICITEMUPDATE":
+            await handleDynamicItemUpdate(supabase, integration, event.payload);
+            break;
           default:
             console.log("[WORKER] Unknown event type:", eventType);
         }
