@@ -33,12 +33,66 @@ function calculateLateFees(amount: number, daysLate: number, config: LateFeeConf
 function getStripePaymentMethods(currency: string, requestedMethod?: string | null): string[] {
   const cur = (currency || "").toUpperCase();
   const validStripeMethods = ["card", "multibanco", "mb_way", "sepa_debit", "pix", "boleto", "link"];
-  if (requestedMethod && requestedMethod !== "card" && requestedMethod !== "direto") {
+  if (requestedMethod && requestedMethod !== "direto") {
     if (validStripeMethods.includes(requestedMethod)) return [requestedMethod];
   }
   if (cur === "BRL") return ["card", "boleto", "pix"];
-  if (cur === "EUR") return ["card", "multibanco", "mb_way", "sepa_debit"];
+  if (cur === "EUR") return ["multibanco", "mb_way", "card", "sepa_debit"];
   return ["card"];
+}
+
+// In-memory cache of methods known to be inactive in the connected Stripe account (per currency).
+// Resets whenever the function worker is recycled.
+const INACTIVE_METHODS: Record<string, Set<string>> = {};
+function markInactive(currency: string, method: string) {
+  const k = currency.toUpperCase();
+  if (!INACTIVE_METHODS[k]) INACTIVE_METHODS[k] = new Set();
+  INACTIVE_METHODS[k].add(method);
+}
+function filterInactive(currency: string, methods: string[]): string[] {
+  const k = currency.toUpperCase();
+  const blocked = INACTIVE_METHODS[k];
+  if (!blocked || blocked.size === 0) return methods;
+  return methods.filter((m) => !blocked.has(m));
+}
+function extractOffendingMethod(msg: string): string | null {
+  return msg.match(/payment method type "?([a-z_]+)"?/i)?.[1] ?? null;
+}
+
+async function createStripeCheckout(
+  stripeKey: string,
+  baseParams: URLSearchParams,
+  methods: string[],
+  currency: string,
+): Promise<{ ok: true; data: any; usedMethods: string[] } | { ok: false; error: string; offending: string | null }> {
+  let attempt = methods.slice();
+  for (let i = 0; i < 4; i++) {
+    if (attempt.length === 0) {
+      return {
+        ok: false,
+        error: `Nenhum método de pagamento ativo na conta Stripe para ${currency}. Active card / multibanco / mb_way no painel Stripe.`,
+        offending: null,
+      };
+    }
+    const params = new URLSearchParams(baseParams.toString());
+    attempt.forEach((m, idx) => params.append(`payment_method_types[${idx}]`, m));
+    const res = await fetch("https://api.stripe.com/v1/checkout/sessions", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${stripeKey}`, "Content-Type": "application/x-www-form-urlencoded" },
+      body: params.toString(),
+    });
+    const data = await res.json();
+    if (!data.error) return { ok: true, data, usedMethods: attempt };
+    const msg: string = data.error.message || "Stripe error";
+    const offending = extractOffendingMethod(msg);
+    if (offending && attempt.includes(offending)) {
+      markInactive(currency, offending);
+      attempt = attempt.filter((m) => m !== offending);
+      continue;
+    }
+    return { ok: false, error: msg, offending };
+  }
+  return { ok: false, error: "Esgotadas as tentativas de métodos de pagamento.", offending: null };
 }
 
 async function getCredential(supabase: any, provider: string, key: string): Promise<string | null> {
@@ -333,43 +387,37 @@ Deno.serve(async (req) => {
     const baseUrl = (Deno.env.get("FRONTEND_URL") || "https://emmelycloud.pages.dev").replace(/\/+$/, "");
     const successUrl = `${baseUrl}/pagamento/${token}?payment=success`;
     const cancelUrl = `${baseUrl}/pagamento/${token}?payment=cancelled`;
-    const methods = getStripePaymentMethods(currency, payment_method);
+    const requested = getStripePaymentMethods(currency, payment_method);
+    const methods = filterInactive(currency, requested).length > 0
+      ? filterInactive(currency, requested)
+      : requested;
 
-    const params = new URLSearchParams();
-    params.append("mode", "payment");
-    params.append("line_items[0][price_data][currency]", currency.toLowerCase());
-    params.append("line_items[0][price_data][unit_amount]", Math.round(finalAmount * 100).toString());
-    params.append("line_items[0][price_data][product_data][name]", description);
-    params.append("line_items[0][quantity]", "1");
-    methods.forEach((m, i) => params.append(`payment_method_types[${i}]`, m));
-    params.append("success_url", successUrl);
-    params.append("cancel_url", cancelUrl);
-    params.append("metadata[financial_record_id]", actualRecordId);
-    params.append("metadata[receipt_token]", token);
-    if (link.bitrix24_deal_id) params.append("metadata[bitrix24_deal_id]", String(link.bitrix24_deal_id));
-    if (record.contract_id) params.append("metadata[contract_id]", record.contract_id);
+    const baseParams = new URLSearchParams();
+    baseParams.append("mode", "payment");
+    baseParams.append("line_items[0][price_data][currency]", currency.toLowerCase());
+    baseParams.append("line_items[0][price_data][unit_amount]", Math.round(finalAmount * 100).toString());
+    baseParams.append("line_items[0][price_data][product_data][name]", description);
+    baseParams.append("line_items[0][quantity]", "1");
+    baseParams.append("success_url", successUrl);
+    baseParams.append("cancel_url", cancelUrl);
+    baseParams.append("metadata[financial_record_id]", actualRecordId);
+    baseParams.append("metadata[receipt_token]", token);
+    if (link.bitrix24_deal_id) baseParams.append("metadata[bitrix24_deal_id]", String(link.bitrix24_deal_id));
+    if (record.contract_id) baseParams.append("metadata[contract_id]", record.contract_id);
 
-    const stripeRes = await fetch("https://api.stripe.com/v1/checkout/sessions", {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${stripeKey}`,
-        "Content-Type": "application/x-www-form-urlencoded",
-      },
-      body: params.toString(),
-    });
-    const stripeData = await stripeRes.json();
+    const stripeResult = await createStripeCheckout(stripeKey, baseParams, methods, currency);
 
-    if (stripeData.error) {
-      const msg = stripeData.error.message || "Stripe error";
-      if (msg.includes("payment method type provided")) {
-        return new Response(JSON.stringify({
-          error: `Método "${payment_method}" não está activado. Active-o no painel Stripe.`,
-        }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
-      }
-      return new Response(JSON.stringify({ error: msg }), {
+    if (!stripeResult.ok) {
+      const offending = stripeResult.offending ?? payment_method ?? "(desconhecido)";
+      const userMsg = stripeResult.offending
+        ? `Método "${stripeResult.offending}" não está activado. Active-o no painel Stripe ou escolha outro método.`
+        : stripeResult.error;
+      return new Response(JSON.stringify({ error: userMsg, details: stripeResult.error, offending_method: offending }), {
         status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
+    const stripeData = stripeResult.data;
+    const usedMethods = stripeResult.usedMethods;
 
     // 6. Create payment_transactions row + save link
     const gatewayPaymentId = stripeData.payment_intent || stripeData.id;
@@ -383,7 +431,7 @@ Deno.serve(async (req) => {
         currency,
         gateway: "stripe",
         gateway_payment_id: gatewayPaymentId,
-        payment_method: payment_method || methods[0] || "card",
+        payment_method: payment_method || usedMethods[0] || "card",
         status: "pending",
         metadata: {
           source: "payment_create_link",
