@@ -431,7 +431,7 @@ Deno.serve(async (req) => {
         currency,
         gateway: "stripe",
         gateway_payment_id: gatewayPaymentId,
-        payment_method: payment_method || methods[0] || "card",
+        payment_method: payment_method || usedMethods[0] || "card",
         status: "pending",
         metadata: {
           source: "payment_create_link",
