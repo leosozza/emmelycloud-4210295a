@@ -292,11 +292,34 @@ Deno.serve(async (req) => {
       }
     }
 
-    // 4. Get Stripe key (region: EUR -> stripe_pt, BRL -> stripe_br/asaas; for Stripe assume PT default)
+    // 4. Get Stripe key — try multiple key-name conventions (case-insensitive as last resort)
     const region = currency === "BRL" ? "br" : "pt";
-    const credKey = region === "br" ? "stripe_secret_br" : "stripe_secret_pt";
-    let stripeKey = await getCredential(supabase, "stripe", credKey);
-    if (!stripeKey) stripeKey = await getCredential(supabase, "stripe", "stripe_secret");
+    const regionalKey = region === "br" ? "STRIPE_SECRET_KEY_BR" : "STRIPE_SECRET_KEY_PT";
+    const regionalProvider = region === "br" ? "stripe_br" : "stripe_pt";
+    const candidates: Array<{ provider: string; key: string }> = [
+      { provider: regionalProvider, key: regionalKey },
+      { provider: regionalProvider, key: "STRIPE_SECRET_KEY" },
+      { provider: "stripe", key: regionalKey },
+      { provider: "stripe", key: "STRIPE_SECRET_KEY" },
+      { provider: "stripe", key: region === "br" ? "stripe_secret_br" : "stripe_secret_pt" },
+      { provider: "stripe", key: "stripe_secret" },
+    ];
+    let stripeKey: string | null = null;
+    for (const c of candidates) {
+      stripeKey = await getCredential(supabase, c.provider, c.key);
+      if (stripeKey) break;
+    }
+    // Case-insensitive fallback: scan any stripe* provider for a key containing "stripe_secret"
+    if (!stripeKey) {
+      const { data: anyCred } = await supabase
+        .from("integration_credentials")
+        .select("credential_value, credential_key, provider")
+        .ilike("provider", "stripe%")
+        .ilike("credential_key", "%stripe_secret%")
+        .limit(1)
+        .maybeSingle();
+      if (anyCred?.credential_value) stripeKey = String(anyCred.credential_value).trim();
+    }
     if (!stripeKey) stripeKey = Deno.env.get("STRIPE_SECRET_KEY") || null;
 
     if (!stripeKey) {
