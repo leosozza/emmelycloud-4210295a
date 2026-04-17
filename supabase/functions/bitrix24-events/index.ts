@@ -79,6 +79,7 @@ const SUPPORTED_EVENTS = [
   "ONCRMDEALUPDATE",   // Deal update — auto-charge on close
   "ONCRMLEADADD",      // Lead created in Bitrix24
   "ONCRMLEADUPDATE",   // Lead updated in Bitrix24
+  "ONCRMDYNAMICITEMUPDATE", // Smart Invoice (entityTypeId=31) status changes
   "ONAPPUNINSTALL",    // App uninstalled — cleanup fields
 ];
 

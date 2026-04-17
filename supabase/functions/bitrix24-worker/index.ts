@@ -1076,6 +1076,9 @@ Deno.serve(async (req) => {
           case "ONCRMLEADUPDATE":
             await handleLeadEvent(supabase, integration, event.payload);
             break;
+          case "ONCRMDYNAMICITEMUPDATE":
+            await handleDynamicItemUpdate(supabase, integration, event.payload);
+            break;
           default:
             console.log("[WORKER] Unknown event type:", eventType);
         }
@@ -1107,6 +1110,95 @@ Deno.serve(async (req) => {
     console.error("[WORKER] Fatal error:", error);
     return new Response(JSON.stringify({ error: "Internal error" }), {
       status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
+});
+
+// ─────────────────────────────────────────────────────────────────────
+// Handler: OnCrmDynamicItemUpdate (Smart Invoice stage sync, inbound)
+// Bitrix24 → Emmely. Filters entityTypeId=31 (Smart Invoice) and updates
+// financial_records.status accordingly. Sets a session GUC so the outbound
+// trigger doesn't bounce the change back.
+// ─────────────────────────────────────────────────────────────────────
+async function handleDynamicItemUpdate(supabase: any, integration: any, payload: any) {
+  try {
+    const fields = payload?.data?.FIELDS || payload?.FIELDS || {};
+    const entityTypeId = parseInt(String(fields.ENTITY_TYPE_ID ?? fields.entityTypeId ?? "0"), 10);
+    const itemId = String(fields.ID ?? fields.id ?? "").trim();
+
+    if (entityTypeId !== 31) {
+      console.log("[WORKER] DynamicItemUpdate ignored — not Smart Invoice. entityTypeId:", entityTypeId);
+      return;
+    }
+    if (!itemId) {
+      console.log("[WORKER] DynamicItemUpdate skipped — no item id");
+      return;
+    }
+
+    const { data: record } = await supabase
+      .from("financial_records")
+      .select("id, status, bitrix24_invoice_id")
+      .eq("bitrix24_invoice_id", itemId)
+      .maybeSingle();
+
+    if (!record) {
+      console.log("[WORKER] DynamicItemUpdate — no financial_record for invoice:", itemId);
+      return;
+    }
+
+    const accessToken = integration.access_token;
+    const endpoint = integration.client_endpoint;
+    const itemRes = await fetch(`${endpoint}crm.item.get`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ entityTypeId: 31, id: parseInt(itemId, 10), auth: accessToken }),
     });
+    const itemJson = await itemRes.json();
+    const stageId = String(itemJson?.result?.item?.stageId || "");
+
+    let newStatus: string | null = null;
+    if (stageId.endsWith(":P")) newStatus = "paga";
+    else if (stageId.endsWith(":D")) newStatus = "cancelada";
+    else if (stageId.endsWith(":NEW")) newStatus = "pendente";
+
+    if (!newStatus || newStatus === record.status) {
+      console.log("[WORKER] DynamicItemUpdate — no status change needed. stage:", stageId);
+      return;
+    }
+
+    // Anti-loop: best-effort GUC (only works if exec_sql RPC exists; otherwise relies
+    // on stage-equality short-circuit in bitrix24-sync-invoice-status to avoid loops).
+    await supabase.rpc("exec_sql", { sql: "SELECT set_config('emmely.sync_origin','bitrix24',true)" }).catch(() => null);
+
+    const updatePayload: any = { status: newStatus };
+    if (newStatus === "paga") updatePayload.paid_at = new Date().toISOString();
+
+    const { error: updErr } = await supabase
+      .from("financial_records")
+      .update(updatePayload)
+      .eq("id", record.id);
+
+    if (updErr) {
+      console.error("[WORKER] DynamicItemUpdate — financial_records update error:", updErr);
+    } else {
+      console.log("[WORKER] DynamicItemUpdate — financial_record", record.id, "->", newStatus);
+    }
+
+    try {
+      await supabase.from("bitrix24_debug_logs").insert({
+        integration_id: integration.id,
+        event_type: "smart_invoice_status_sync_inbound",
+        direction: "inbound",
+        payload: {
+          financial_record_id: record.id,
+          bitrix24_invoice_id: itemId,
+          stage_id: stageId,
+          previous_status: record.status,
+          new_status: newStatus,
+        },
+      });
+    } catch (_) { /* ignore */ }
+  } catch (e) {
+    console.error("[WORKER] handleDynamicItemUpdate error:", e);
+  }
+}
   }
 });
