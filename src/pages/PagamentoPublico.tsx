@@ -175,6 +175,7 @@ export default function PagamentoPublico() {
     return {
       rows, totalCharges, paidTotal, openTotal: openBase + totalCharges,
       paidCount: data.installments.filter(r => r.status === "paga").length,
+      nextOpen: rows.find(r => !r.isPaid),
     };
   }, [data]);
 
@@ -200,113 +201,229 @@ export default function PagamentoPublico() {
   const today = fmtDate(new Date().toISOString());
   const currency = data.currency || "EUR";
   const hasOpen = data.installments.some(r => r.status !== "paga");
+  const productName = data.deal_title || "Serviço Jurídico";
 
   return (
-    <div style={{ background: "#f8fafc", minHeight: "100vh", fontFamily: "Segoe UI, Arial, sans-serif", color: "#333" }}>
-      <div style={{ maxWidth: 800, margin: "0 auto", background: "#fff", minHeight: "100vh" }}>
-        <div style={{ background: "linear-gradient(135deg, #1e293b, #0f172a)", color: "#fff", padding: "32px 40px" }}>
-          <h1 style={{ fontSize: 20, margin: 0, letterSpacing: 2, fontWeight: 800 }}>EMMELY FERNANDES</h1>
-          <p style={{ margin: "4px 0 0", fontSize: 11, letterSpacing: 4, color: "#94a3b8", textTransform: "uppercase" }}>Advocacia Internacional</p>
+    <div className="min-h-screen bg-slate-50 text-slate-800" style={{ fontFamily: "Segoe UI, Arial, sans-serif" }}>
+      <style>{`
+        @media print { .no-print { display: none !important; } }
+      `}</style>
+
+      <div className="max-w-3xl mx-auto bg-white min-h-screen md:shadow-xl">
+        {/* HEADER */}
+        <div className="bg-gradient-to-br from-slate-800 to-slate-900 text-white px-5 py-6 md:px-10 md:py-8">
+          <h1 className="text-base md:text-xl font-extrabold tracking-[0.15em] md:tracking-[0.2em] m-0">EMMELY FERNANDES</h1>
+          <p className="m-0 mt-1 text-[10px] md:text-[11px] tracking-[0.3em] md:tracking-[0.4em] text-slate-400 uppercase">Advocacia Internacional</p>
         </div>
 
-        <div style={{ padding: "32px 40px" }}>
-          <button onClick={() => window.print()} style={{ background: "#1e293b", color: "#fff", border: "none", padding: "10px 24px", borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: "pointer", marginBottom: 24 }}>
+        {/* CONTENT */}
+        <div className="px-4 py-5 md:px-10 md:py-8">
+
+          {/* PRODUCT/SERVICE HERO CARD */}
+          <div className="bg-gradient-to-br from-blue-50 to-indigo-50 border border-blue-100 rounded-xl p-4 md:p-5 mb-5">
+            <div className="text-[10px] uppercase tracking-widest text-blue-700 font-bold mb-1">Serviço Contratado</div>
+            <div className="text-lg md:text-2xl font-extrabold text-slate-900 leading-tight break-words">{productName}</div>
+            {data.client_name && (
+              <div className="text-xs md:text-sm text-slate-600 mt-2">
+                Cliente: <strong className="text-slate-800">{data.client_name}</strong>
+              </div>
+            )}
+          </div>
+
+          {/* PRINT BUTTON */}
+          <button onClick={() => window.print()} className="no-print bg-slate-800 text-white border-none py-2.5 px-5 rounded-lg text-xs font-semibold cursor-pointer mb-5 hover:bg-slate-700 transition">
             📥 Baixar / Imprimir PDF
           </button>
 
+          {/* STATUS BANNERS */}
           {paymentStatus === "success" && (
-            <div style={{ background: "linear-gradient(135deg,#dcfce7,#bbf7d0)", borderLeft: "4px solid #16a34a", color: "#14532d", padding: "12px 16px", borderRadius: 8, marginBottom: 20, fontSize: 13 }}>
-              <strong>✅ Pagamento recebido com sucesso!</strong> A confirmação pode levar alguns segundos para aparecer abaixo.
+            <div className="bg-gradient-to-br from-green-100 to-green-200 border-l-4 border-green-600 text-green-900 px-4 py-3 rounded-lg mb-4 text-xs md:text-sm">
+              <strong>✅ Pagamento recebido com sucesso!</strong> A confirmação pode levar alguns segundos.
             </div>
           )}
           {paymentStatus === "cancelled" && (
-            <div style={{ background: "linear-gradient(135deg,#fef3c7,#fde68a)", borderLeft: "4px solid #f59e0b", color: "#78350f", padding: "12px 16px", borderRadius: 8, marginBottom: 20, fontSize: 13 }}>
-              <strong>⚠️ Pagamento cancelado.</strong> Pode tentar novamente clicando em "Pagar" abaixo.
-            </div>
-          )}
-          {hasOpen && (
-            <div style={{ background: "linear-gradient(135deg, #ecfdf5, #d1fae5)", borderLeft: "4px solid #10b981", color: "#065f46", padding: "12px 16px", borderRadius: 8, marginBottom: 20, fontSize: 13 }}>
-              💳 <strong>Clique em "Pagar"</strong> em qualquer parcela em aberto para gerar o link de cobrança imediatamente (Multibanco, MB Way, Pix ou Cartão).
+            <div className="bg-gradient-to-br from-amber-100 to-amber-200 border-l-4 border-amber-500 text-amber-900 px-4 py-3 rounded-lg mb-4 text-xs md:text-sm">
+              <strong>⚠️ Pagamento cancelado.</strong> Pode tentar novamente abaixo.
             </div>
           )}
 
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 24, fontSize: 13 }}>
-            <div><span style={{ color: "#64748b" }}>Cliente:</span> <strong>{data.client_name || "—"}</strong></div>
-            <div><span style={{ color: "#64748b" }}>Serviço:</span> <strong>{data.deal_title || "—"}</strong></div>
-            <div><span style={{ color: "#64748b" }}>Data:</span> <strong>{today}</strong></div>
-            <div><span style={{ color: "#64748b" }}>Parcelas:</span> <strong>{computed.paidCount}/{data.installments.length} pagas</strong></div>
-          </div>
-
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 12, marginBottom: 24 }}>
-            <div style={{ padding: 16, borderRadius: 10, textAlign: "center", background: "#eff6ff" }}>
-              <div style={{ fontSize: 10, textTransform: "uppercase", letterSpacing: 1, color: "#64748b", fontWeight: 700, marginBottom: 4 }}>Total</div>
-              <div style={{ fontSize: 20, fontWeight: 800 }}>{fmtCurrency(data.total_value, currency)}</div>
-            </div>
-            <div style={{ padding: 16, borderRadius: 10, textAlign: "center", background: "#ecfdf5" }}>
-              <div style={{ fontSize: 10, textTransform: "uppercase", letterSpacing: 1, color: "#64748b", fontWeight: 700, marginBottom: 4 }}>Pago</div>
-              <div style={{ fontSize: 20, fontWeight: 800, color: "#059669" }}>{fmtCurrency(computed.paidTotal, currency)}</div>
-            </div>
-            <div style={{ padding: 16, borderRadius: 10, textAlign: "center", background: "#fef2f2" }}>
-              <div style={{ fontSize: 10, textTransform: "uppercase", letterSpacing: 1, color: "#64748b", fontWeight: 700, marginBottom: 4 }}>
-                Em Aberto{computed.totalCharges > 0 ? " (c/ juros)" : ""}
+          {/* BIG PAY CTA — Mobile-first */}
+          {hasOpen && computed.nextOpen && (
+            <div className="no-print mb-6 bg-gradient-to-br from-emerald-500 to-emerald-600 rounded-2xl p-5 md:p-6 shadow-lg shadow-emerald-200">
+              <div className="text-white/90 text-xs uppercase tracking-wider font-semibold mb-1">Próxima parcela em aberto</div>
+              <div className="flex items-baseline justify-between gap-3 mb-1 flex-wrap">
+                <div className="text-white text-3xl md:text-4xl font-extrabold">
+                  {fmtCurrency(computed.nextOpen.lateFee.total, currency)}
+                </div>
+                <div className="text-white/90 text-sm">
+                  Parcela {computed.nextOpen.rec.installment_number || 1}/{computed.nextOpen.rec.total_installments || 1}
+                </div>
               </div>
-              <div style={{ fontSize: 20, fontWeight: 800, color: "#dc2626" }}>{fmtCurrency(computed.openTotal, currency)}</div>
+              {computed.nextOpen.lateFee.charges > 0 && (
+                <div className="text-white/90 text-xs mb-3">
+                  Inclui {fmtCurrency(computed.nextOpen.lateFee.charges, currency)} de juros/multa
+                </div>
+              )}
+              <div className="text-white/80 text-xs mb-4">
+                Vencimento: {fmtDate(computed.nextOpen.rec.due_date)}
+              </div>
+              <button
+                disabled={paying === computed.nextOpen.rec.id}
+                onClick={() => setMethodChooser({ recordId: computed.nextOpen!.rec.id })}
+                className="w-full bg-white text-emerald-700 font-extrabold text-base md:text-lg py-4 rounded-xl shadow-md hover:shadow-xl active:scale-[0.98] transition disabled:opacity-60"
+              >
+                {paying === computed.nextOpen.rec.id ? "⏳ A processar..." : "💳 PAGAR AGORA"}
+              </button>
+              <div className="text-white/80 text-[11px] text-center mt-3">
+                🔒 Pagamento seguro · Multibanco · MB Way · Pix · Cartão
+              </div>
+            </div>
+          )}
+
+          {/* SUMMARY GRID */}
+          <div className="grid grid-cols-3 gap-2 md:gap-3 mb-5">
+            <div className="p-3 md:p-4 rounded-xl text-center bg-blue-50">
+              <div className="text-[9px] md:text-[10px] uppercase tracking-wider text-slate-500 font-bold mb-1">Total</div>
+              <div className="text-sm md:text-xl font-extrabold text-slate-900">{fmtCurrency(data.total_value, currency)}</div>
+            </div>
+            <div className="p-3 md:p-4 rounded-xl text-center bg-emerald-50">
+              <div className="text-[9px] md:text-[10px] uppercase tracking-wider text-slate-500 font-bold mb-1">Pago</div>
+              <div className="text-sm md:text-xl font-extrabold text-emerald-600">{fmtCurrency(computed.paidTotal, currency)}</div>
+            </div>
+            <div className="p-3 md:p-4 rounded-xl text-center bg-red-50">
+              <div className="text-[9px] md:text-[10px] uppercase tracking-wider text-slate-500 font-bold mb-1">
+                Em Aberto{computed.totalCharges > 0 ? "*" : ""}
+              </div>
+              <div className="text-sm md:text-xl font-extrabold text-red-600">{fmtCurrency(computed.openTotal, currency)}</div>
             </div>
           </div>
 
-          <div style={{ height: 8, background: "#e5e7eb", borderRadius: 4, overflow: "hidden", marginBottom: 24 }}>
-            <div style={{ height: "100%", background: "linear-gradient(90deg,#3b82f6,#06b6d4)", width: `${data.total_value > 0 ? Math.round((computed.paidTotal / data.total_value) * 100) : 0}%` }} />
+          {/* PROGRESS BAR */}
+          <div className="text-xs text-slate-600 mb-1.5 flex justify-between">
+            <span>Progresso de pagamento</span>
+            <span className="font-semibold">{computed.paidCount}/{data.installments.length} parcelas</span>
+          </div>
+          <div className="h-2 bg-slate-200 rounded-full overflow-hidden mb-6">
+            <div className="h-full bg-gradient-to-r from-blue-500 to-cyan-500 transition-all" style={{ width: `${data.total_value > 0 ? Math.round((computed.paidTotal / data.total_value) * 100) : 0}%` }} />
           </div>
 
-          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
-            <thead>
-              <tr>
-                {["Parcela", "Vencimento", "Valor", "Juros/Multa", "Pago", "Data Pgto", "Status"].map(h => (
-                  <th key={h} style={{ background: "#f1f5f9", padding: "10px 12px", border: "1px solid #e5e7eb", fontSize: 10, textTransform: "uppercase", color: "#475569", fontWeight: 700 }}>{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {computed.rows.map(({ rec, value, isPaid, isOverdue, lateFee }) => {
-                const statusLabel = isPaid ? "PAGO" : isOverdue ? "ATRASADO" : "PENDENTE";
-                const statusColor = isPaid ? "#10b981" : isOverdue ? "#ef4444" : "#f59e0b";
-                const statusBg = isPaid ? "#ecfdf5" : isOverdue ? "#fef2f2" : "#fffbeb";
-                return (
-                  <tr key={rec.id}>
-                    <td style={{ padding: "10px 12px", border: "1px solid #e5e7eb", textAlign: "center", fontWeight: 600 }}>{rec.installment_number || 1}/{rec.total_installments || 1}</td>
-                    <td style={{ padding: "10px 12px", border: "1px solid #e5e7eb", textAlign: "center" }}>{fmtDate(rec.due_date)}</td>
-                    <td style={{ padding: "10px 12px", border: "1px solid #e5e7eb", textAlign: "right" }}>{fmtCurrency(value, currency)}</td>
-                    <td style={{ padding: "10px 12px", border: "1px solid #e5e7eb", textAlign: "right", color: lateFee.charges > 0 ? "#ef4444" : "#6b7280" }}>{lateFee.charges > 0 ? fmtCurrency(lateFee.charges, currency) : "—"}</td>
-                    <td style={{ padding: "10px 12px", border: "1px solid #e5e7eb", textAlign: "right", fontWeight: 600, color: isPaid ? "#10b981" : "#6b7280" }}>{isPaid ? fmtCurrency(value, currency) : "—"}</td>
-                    <td style={{ padding: "10px 12px", border: "1px solid #e5e7eb", textAlign: "center" }}>{fmtDate(rec.paid_at)}</td>
-                    <td style={{ padding: "10px 12px", border: "1px solid #e5e7eb", textAlign: "center", whiteSpace: "nowrap" }}>
-                      <span style={{ background: statusBg, color: statusColor, fontWeight: 700, fontSize: 11, padding: "3px 10px", borderRadius: 12 }}>{statusLabel}</span>
-                      {!isPaid && (
-                        <div style={{ marginTop: 6 }}>
-                          <button
-                            disabled={paying === rec.id}
-                            onClick={() => setMethodChooser({ recordId: rec.id })}
-                            style={{ background: "linear-gradient(135deg,#10b981,#059669)", color: "#fff", border: "none", padding: "6px 14px", borderRadius: 6, fontSize: 11, fontWeight: 700, cursor: paying === rec.id ? "wait" : "pointer", opacity: paying === rec.id ? 0.6 : 1 }}
-                          >
-                            {paying === rec.id ? "⏳ Aguarde..." : "💳 Pagar"}
-                          </button>
+          {/* INSTALLMENTS — DESKTOP TABLE */}
+          <div className="hidden md:block">
+            <table className="w-full border-collapse text-xs">
+              <thead>
+                <tr>
+                  {["Parcela", "Vencimento", "Valor", "Juros/Multa", "Pago", "Data Pgto", "Status"].map(h => (
+                    <th key={h} className="bg-slate-100 px-3 py-2.5 border border-slate-200 text-[10px] uppercase text-slate-600 font-bold">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {computed.rows.map(({ rec, value, isPaid, isOverdue, lateFee }) => {
+                  const statusLabel = isPaid ? "PAGO" : isOverdue ? "ATRASADO" : "PENDENTE";
+                  const statusColor = isPaid ? "text-emerald-600 bg-emerald-50" : isOverdue ? "text-red-600 bg-red-50" : "text-amber-600 bg-amber-50";
+                  return (
+                    <tr key={rec.id}>
+                      <td className="px-3 py-2.5 border border-slate-200 text-center font-semibold">{rec.installment_number || 1}/{rec.total_installments || 1}</td>
+                      <td className="px-3 py-2.5 border border-slate-200 text-center">{fmtDate(rec.due_date)}</td>
+                      <td className="px-3 py-2.5 border border-slate-200 text-right">{fmtCurrency(value, currency)}</td>
+                      <td className={`px-3 py-2.5 border border-slate-200 text-right ${lateFee.charges > 0 ? "text-red-600" : "text-slate-500"}`}>{lateFee.charges > 0 ? fmtCurrency(lateFee.charges, currency) : "—"}</td>
+                      <td className={`px-3 py-2.5 border border-slate-200 text-right font-semibold ${isPaid ? "text-emerald-600" : "text-slate-500"}`}>{isPaid ? fmtCurrency(value, currency) : "—"}</td>
+                      <td className="px-3 py-2.5 border border-slate-200 text-center">{fmtDate(rec.paid_at)}</td>
+                      <td className="px-3 py-2.5 border border-slate-200 text-center whitespace-nowrap">
+                        <span className={`${statusColor} font-bold text-[11px] px-2.5 py-1 rounded-full`}>{statusLabel}</span>
+                        {!isPaid && (
+                          <div className="mt-1.5 no-print">
+                            <button
+                              disabled={paying === rec.id}
+                              onClick={() => setMethodChooser({ recordId: rec.id })}
+                              className="bg-gradient-to-br from-emerald-500 to-emerald-600 text-white border-none py-1.5 px-3.5 rounded-md text-[11px] font-bold cursor-pointer disabled:opacity-60 hover:shadow-md transition"
+                            >
+                              {paying === rec.id ? "⏳" : "💳 Pagar"}
+                            </button>
+                          </div>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          {/* INSTALLMENTS — MOBILE CARDS */}
+          <div className="md:hidden space-y-3">
+            <div className="text-xs uppercase tracking-wider text-slate-500 font-bold mb-2">Todas as parcelas</div>
+            {computed.rows.map(({ rec, value, isPaid, isOverdue, lateFee }) => {
+              const statusLabel = isPaid ? "PAGO" : isOverdue ? "ATRASADO" : "PENDENTE";
+              const statusColor = isPaid ? "text-emerald-700 bg-emerald-100" : isOverdue ? "text-red-700 bg-red-100" : "text-amber-700 bg-amber-100";
+              const borderColor = isPaid ? "border-emerald-200" : isOverdue ? "border-red-200" : "border-slate-200";
+              return (
+                <div key={rec.id} className={`border ${borderColor} rounded-xl p-4 bg-white shadow-sm`}>
+                  <div className="flex justify-between items-start mb-2">
+                    <div>
+                      <div className="text-[10px] uppercase tracking-wider text-slate-500 font-bold">Parcela</div>
+                      <div className="text-base font-bold text-slate-900">{rec.installment_number || 1}/{rec.total_installments || 1}</div>
+                    </div>
+                    <span className={`${statusColor} font-bold text-[10px] px-2.5 py-1 rounded-full`}>{statusLabel}</span>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2 text-xs mb-3">
+                    <div>
+                      <div className="text-slate-500">Vencimento</div>
+                      <div className="font-semibold text-slate-800">{fmtDate(rec.due_date)}</div>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-slate-500">Valor</div>
+                      <div className="font-bold text-slate-900">{fmtCurrency(value, currency)}</div>
+                    </div>
+                    {lateFee.charges > 0 && (
+                      <>
+                        <div>
+                          <div className="text-slate-500">Juros/Multa</div>
+                          <div className="font-semibold text-red-600">{fmtCurrency(lateFee.charges, currency)}</div>
                         </div>
-                      )}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+                        <div className="text-right">
+                          <div className="text-slate-500">Total c/ juros</div>
+                          <div className="font-bold text-red-700">{fmtCurrency(lateFee.total, currency)}</div>
+                        </div>
+                      </>
+                    )}
+                    {isPaid && rec.paid_at && (
+                      <div className="col-span-2">
+                        <div className="text-slate-500">Pago em</div>
+                        <div className="font-semibold text-emerald-600">{fmtDate(rec.paid_at)}</div>
+                      </div>
+                    )}
+                  </div>
+
+                  {!isPaid && (
+                    <button
+                      disabled={paying === rec.id}
+                      onClick={() => setMethodChooser({ recordId: rec.id })}
+                      className="no-print w-full bg-gradient-to-br from-emerald-500 to-emerald-600 text-white font-bold text-sm py-3 rounded-lg shadow-sm active:scale-[0.98] transition disabled:opacity-60"
+                    >
+                      {paying === rec.id ? "⏳ A processar..." : "💳 Pagar esta parcela"}
+                    </button>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+
+          {computed.totalCharges > 0 && (
+            <p className="text-[11px] text-slate-500 mt-4">* Inclui juros e multa por atraso</p>
+          )}
         </div>
 
-        <div style={{ textAlign: "center", color: "#94a3b8", fontSize: 10, padding: "24px 40px", borderTop: "1px solid #e5e7eb", lineHeight: 1.8 }}>
+        {/* FOOTER */}
+        <div className="text-center text-slate-400 text-[10px] px-4 md:px-10 py-6 border-t border-slate-200 leading-relaxed">
           Emmely Fernandes Advocacia Internacional<br />
           Documento gerado automaticamente em {today}<br />
           Este comprovante é atualizado em tempo real.
         </div>
       </div>
 
+      {/* ERROR DIALOG */}
       <Dialog open={!!payError} onOpenChange={(o) => !o && setPayError(null)}>
         <DialogContent>
           <DialogHeader>
@@ -338,12 +455,13 @@ export default function PagamentoPublico() {
         </DialogContent>
       </Dialog>
 
+      {/* METHOD CHOOSER */}
       <Dialog open={!!methodChooser} onOpenChange={(o) => !o && setMethodChooser(null)}>
-        <DialogContent>
+        <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>Escolha o método de pagamento</DialogTitle>
             <DialogDescription>
-              Selecione como pretende pagar esta parcela. Será redirecionado para o checkout seguro do Stripe.
+              Selecione como pretende pagar. Será redirecionado para o checkout seguro.
             </DialogDescription>
           </DialogHeader>
           <div className="grid grid-cols-2 gap-3 py-2">
@@ -352,7 +470,7 @@ export default function PagamentoPublico() {
                 key={m}
                 disabled={!!paying}
                 onClick={() => methodChooser && pay(methodChooser.recordId, m)}
-                className="flex flex-col items-center gap-2 p-4 border rounded-lg hover:bg-accent hover:border-primary transition disabled:opacity-50"
+                className="flex flex-col items-center gap-2 p-4 border-2 rounded-xl hover:bg-accent hover:border-primary transition disabled:opacity-50 active:scale-95"
               >
                 <span className="text-3xl">{METHOD_LABELS[m].emoji}</span>
                 <span className="text-sm font-semibold">{METHOD_LABELS[m].label}</span>
