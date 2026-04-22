@@ -263,6 +263,51 @@ async function updateBitrixPaymentReportFields(supabase: any, dealId: string, to
   });
 }
 
+async function ensurePaymentReportTokenForDeal(supabase: any, opts: { dealId?: string | null; financialRecordId?: string | null; clientName?: string | null; dealTitle?: string | null }) {
+  let dealId = opts.dealId ? String(opts.dealId).trim() : "";
+  let contractId: string | null = null;
+  let dealTitle = opts.dealTitle || null;
+
+  if ((!dealId || !dealTitle) && opts.financialRecordId) {
+    const { data: fr } = await supabase
+      .from("financial_records")
+      .select("contract_id, bitrix24_deal_id, description")
+      .eq("id", opts.financialRecordId)
+      .maybeSingle();
+    dealId = dealId || (fr?.bitrix24_deal_id ? String(fr.bitrix24_deal_id) : "");
+    contractId = fr?.contract_id || null;
+    dealTitle = dealTitle || fr?.description || null;
+  }
+
+  if (!dealId) return null;
+
+  const { data: existing } = await supabase
+    .from("receipt_links")
+    .select("token")
+    .eq("bitrix24_deal_id", dealId)
+    .limit(1)
+    .maybeSingle();
+
+  let token = existing?.token || null;
+  if (!token) {
+    const { data: created, error } = await supabase
+      .from("receipt_links")
+      .insert({
+        contract_id: contractId,
+        bitrix24_deal_id: dealId,
+        client_name: opts.clientName || null,
+        deal_title: dealTitle,
+      })
+      .select("token")
+      .maybeSingle();
+    if (error) throw new Error(`Failed to create receipt_link: ${error.message}`);
+    token = created?.token || null;
+  }
+
+  if (token) await updateBitrixPaymentReportFields(supabase, dealId, token);
+  return token;
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
