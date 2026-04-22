@@ -1529,17 +1529,9 @@ function renderPaymentTab(opts: {
         } else {
           receiptToken = rlData[0].token;
         }
-        // Update Bitrix24 deal with receipt URL
+        // Update Bitrix24 deal with receipt/report URLs and TOKEN_PAY
         if (receiptToken) {
-          var receiptUrl = SUPABASE_URL + '/functions/v1/payment-receipt?token=' + receiptToken;
-          try {
-            BX24.callMethod('crm.deal.update', {
-              id: parseInt('${opts.entityId}'),
-              fields: {
-                UF_CRM_EMMELY_RECEIPT_URL: receiptUrl
-              }
-            }, function(r) { if (r.error()) console.error('Receipt URL update error:', r.error()); });
-          } catch(bxErr) { console.error('BX24 receipt update error:', bxErr); }
+          updatePaymentReportFields(receiptToken);
         }
       } catch(rlErr) { console.error('Receipt link error:', rlErr); }
 
@@ -1607,7 +1599,8 @@ function renderPaymentTab(opts: {
         token = created[0]?.token || created.token;
       }
       if (token) {
-        var link = SUPABASE_URL + '/functions/v1/payment-receipt?token=' + token;
+        var link = FRONTEND_BASE + '/pagamento/' + token;
+        updatePaymentReportFields(token);
         if (navigator.clipboard) {
           await navigator.clipboard.writeText(link);
           setStatus('Link copiado! ' + link, 'var(--value-paid)');
