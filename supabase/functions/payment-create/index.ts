@@ -744,6 +744,22 @@ Deno.serve(async (req) => {
 
     if (txError) throw new Error(txError.message);
 
+    // Immediate webhook/robot sync: create/reuse TOKEN_PAY and write it to the Bitrix24 deal as soon as the report can be generated.
+    try {
+      const bitrixDealId = body.bitrix_deal_id || extraMetadata?.bitrix_deal_id || extraMetadata?.bitrix24_deal_id;
+      if (bitrixDealId || financial_record_id) {
+        const token = await ensurePaymentReportTokenForDeal(supabase, {
+          dealId: bitrixDealId,
+          financialRecordId: financial_record_id || null,
+          clientName: customer_data?.name || extraMetadata?.client_name || null,
+          dealTitle: extraMetadata?.deal_title || description || null,
+        });
+        if (token) console.log(`[PAYMENT-CREATE] TOKEN_PAY synced immediately for deal ${bitrixDealId || "from_financial_record"}: ${token}`);
+      }
+    } catch (tokenPayErr) {
+      console.error("[PAYMENT-CREATE] Immediate TOKEN_PAY sync error:", tokenPayErr);
+    }
+
     // --- Bitrix24 Badge: emmely_payment_created ---
     try {
       const bitrixDealId = body.bitrix_deal_id || extraMetadata?.bitrix_deal_id;
