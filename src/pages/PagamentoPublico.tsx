@@ -79,16 +79,32 @@ export default function PagamentoPublico() {
   const [methodChooser, setMethodChooser] = useState<{ recordId: string } | null>(null);
 
   async function load() {
-    if (!token) return;
+    const normalizedToken = token?.trim();
     setLoading(true);
     setError(null);
+    setData(null);
+
+    if (!normalizedToken) {
+      setError("Token inválido ou ausente.");
+      setLoading(false);
+      return;
+    }
+
     try {
-      const res = await fetch(`${SUPABASE_URL}/functions/v1/payment-receipt?token=${token}&format=json`);
+      const res = await fetch(`${SUPABASE_URL}/functions/v1/payment-receipt?token=${encodeURIComponent(normalizedToken)}&format=json`, {
+        headers: { Accept: "application/json" },
+      });
       const json = await res.json();
       if (!res.ok) {
-        setError(json.error || "Não foi possível carregar o relatório.");
+        setError(res.status === 404 ? "Token não encontrado. Verifique o link recebido." : json.error || "Não foi possível carregar o relatório.");
         return;
       }
+
+      if (!json || !Array.isArray(json.installments)) {
+        setError("Relatório inválido ou indisponível.");
+        return;
+      }
+
       setData(json);
     } catch (e: any) {
       setError(e.message || "Erro de rede");
