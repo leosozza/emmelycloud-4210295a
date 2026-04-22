@@ -788,6 +788,7 @@ function renderPaymentTab(opts: {
 <script>
   var SUPABASE_URL = "${supabaseUrl}";
   var SUPABASE_KEY = "${Deno.env.get("SUPABASE_ANON_KEY") || ""}";
+  var FRONTEND_BASE = "${(Deno.env.get("FRONTEND_URL") || "https://emmelycloud.pages.dev").replace(/\/+$/, "")}";
   var MEMBER_ID = "${memberId}";
   var ENTITY_ID = "${opts.entityId}";
   var DEAL_RAW_GATEWAY = "${opts.rawGateway || ""}";
@@ -1101,6 +1102,33 @@ function renderPaymentTab(opts: {
   function toggleFlowRow(instId) {
     var row = document.getElementById('flow-row-' + instId);
     if (row) row.style.display = row.style.display === 'none' ? 'flex' : 'none';
+  }
+
+  function updatePaymentReportFields(token) {
+    if (!token || typeof BX24 === 'undefined') return;
+    var receiptUrl = SUPABASE_URL + '/functions/v1/payment-receipt?token=' + token;
+    var reportUrl = FRONTEND_BASE + '/pagamento/' + token;
+    try {
+      BX24.callMethod('crm.deal.userfield.add', {
+        fields: {
+          FIELD_NAME: 'UF_CRM_EMMELY_TOKEN_PAY',
+          USER_TYPE_ID: 'string',
+          SORT: 0,
+          EDIT_FORM_LABEL: { br: 'TOKEN_PAY', en: 'TOKEN_PAY', pt: 'TOKEN_PAY' },
+          LIST_COLUMN_LABEL: { br: 'TOKEN_PAY', en: 'TOKEN_PAY', pt: 'TOKEN_PAY' },
+          LIST_FILTER_LABEL: { br: 'TOKEN_PAY', en: 'TOKEN_PAY', pt: 'TOKEN_PAY' }
+        }
+      }, function() {
+        BX24.callMethod('crm.deal.update', {
+          id: parseInt(ENTITY_ID),
+          fields: {
+            UF_CRM_EMMELY_RECEIPT_URL: receiptUrl,
+            UF_CRM_EMMELY_RELATORIO_PAY: reportUrl,
+            UF_CRM_EMMELY_TOKEN_PAY: token
+          }
+        }, function(r) { if (r.error()) console.error('Payment report fields update error:', r.error()); });
+      });
+    } catch(e) { console.error('Payment report fields update error:', e); }
   }
 
   async function generatePaymentLink(inst) {
