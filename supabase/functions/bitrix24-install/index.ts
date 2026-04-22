@@ -424,6 +424,14 @@ Deno.serve(async (req) => {
           LIST_FILTER_LABEL: { br: "RELATÓRIO PAGAMENTOS", en: "PAYMENT REPORT", pt: "RELATÓRIO PAGAMENTOS" },
         },
         {
+          FIELD_NAME: "UF_CRM_EMMELY_TOKEN_PAY",
+          USER_TYPE_ID: "string",
+          SORT: 0,
+          EDIT_FORM_LABEL: { br: "TOKEN_PAY", en: "TOKEN_PAY", pt: "TOKEN_PAY" },
+          LIST_COLUMN_LABEL: { br: "TOKEN_PAY", en: "TOKEN_PAY", pt: "TOKEN_PAY" },
+          LIST_FILTER_LABEL: { br: "TOKEN_PAY", en: "TOKEN_PAY", pt: "TOKEN_PAY" },
+        },
+        {
           FIELD_NAME: "UF_CRM_EMMELY_RECEIPT_PDF",
           USER_TYPE_ID: "url",
           SORT: 0,
@@ -1314,6 +1322,14 @@ Deno.serve(async (req) => {
           LIST_FILTER_LABEL: { br: "RELATÓRIO PAGAMENTOS", en: "PAYMENT REPORT", pt: "RELATÓRIO PAGAMENTOS" },
         },
         {
+          FIELD_NAME: "UF_CRM_EMMELY_TOKEN_PAY",
+          USER_TYPE_ID: "string",
+          SORT: 0,
+          EDIT_FORM_LABEL: { br: "TOKEN_PAY", en: "TOKEN_PAY", pt: "TOKEN_PAY" },
+          LIST_COLUMN_LABEL: { br: "TOKEN_PAY", en: "TOKEN_PAY", pt: "TOKEN_PAY" },
+          LIST_FILTER_LABEL: { br: "TOKEN_PAY", en: "TOKEN_PAY", pt: "TOKEN_PAY" },
+        },
+        {
           FIELD_NAME: "UF_CRM_EMMELY_RECEIPT_PDF",
           USER_TYPE_ID: "url",
           SORT: 0,
@@ -1426,6 +1442,7 @@ Deno.serve(async (req) => {
           { bitrix_field_key: "UF_CRM_EMMELY_PAYMENT_NOTES", bitrix_field_title: "Notas de Pagamento", supabase_table: "financial_records", supabase_column: "description" },
           { bitrix_field_key: "UF_CRM_EMMELY_RECEIPT_URL", bitrix_field_title: "Comprovante (Link)", supabase_table: "receipt_links", supabase_column: "public_url" },
           { bitrix_field_key: "UF_CRM_EMMELY_RELATORIO_PAY", bitrix_field_title: "Relatório de Pagamentos", supabase_table: "receipt_links", supabase_column: "public_url" },
+          { bitrix_field_key: "UF_CRM_EMMELY_TOKEN_PAY", bitrix_field_title: "TOKEN_PAY", supabase_table: "receipt_links", supabase_column: "token" },
           { bitrix_field_key: "UF_CRM_EMMELY_RECEIPT_PDF", bitrix_field_title: "Comprovante (PDF)", supabase_table: "receipt_links", supabase_column: "pdf_url" },
           { bitrix_field_key: "UF_CRM_EMMELY_PROPOSAL_URL", bitrix_field_title: "Link da Proposta", supabase_table: "proposals", supabase_column: "accept_token" },
           { bitrix_field_key: "UF_CRM_EMMELY_PROPOSAL_PDF", bitrix_field_title: "PDF da Proposta", supabase_table: "proposals", supabase_column: "pdf_url" },
