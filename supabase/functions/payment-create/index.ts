@@ -263,6 +263,51 @@ async function updateBitrixPaymentReportFields(supabase: any, dealId: string, to
   });
 }
 
+async function ensurePaymentReportTokenForDeal(supabase: any, opts: { dealId?: string | null; financialRecordId?: string | null; clientName?: string | null; dealTitle?: string | null }) {
+  let dealId = opts.dealId ? String(opts.dealId).trim() : "";
+  let contractId: string | null = null;
+  let dealTitle = opts.dealTitle || null;
+
+  if ((!dealId || !dealTitle) && opts.financialRecordId) {
+    const { data: fr } = await supabase
+      .from("financial_records")
+      .select("contract_id, bitrix24_deal_id, description")
+      .eq("id", opts.financialRecordId)
+      .maybeSingle();
+    dealId = dealId || (fr?.bitrix24_deal_id ? String(fr.bitrix24_deal_id) : "");
+    contractId = fr?.contract_id || null;
+    dealTitle = dealTitle || fr?.description || null;
+  }
+
+  if (!dealId) return null;
+
+  const { data: existing } = await supabase
+    .from("receipt_links")
+    .select("token")
+    .eq("bitrix24_deal_id", dealId)
+    .limit(1)
+    .maybeSingle();
+
+  let token = existing?.token || null;
+  if (!token) {
+    const { data: created, error } = await supabase
+      .from("receipt_links")
+      .insert({
+        contract_id: contractId,
+        bitrix24_deal_id: dealId,
+        client_name: opts.clientName || null,
+        deal_title: dealTitle,
+      })
+      .select("token")
+      .maybeSingle();
+    if (error) throw new Error(`Failed to create receipt_link: ${error.message}`);
+    token = created?.token || null;
+  }
+
+  if (token) await updateBitrixPaymentReportFields(supabase, dealId, token);
+  return token;
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -698,6 +743,22 @@ Deno.serve(async (req) => {
     }
 
     if (txError) throw new Error(txError.message);
+
+    // Immediate webhook/robot sync: create/reuse TOKEN_PAY and write it to the Bitrix24 deal as soon as the report can be generated.
+    try {
+      const bitrixDealId = body.bitrix_deal_id || extraMetadata?.bitrix_deal_id || extraMetadata?.bitrix24_deal_id;
+      if (bitrixDealId || financial_record_id) {
+        const token = await ensurePaymentReportTokenForDeal(supabase, {
+          dealId: bitrixDealId,
+          financialRecordId: financial_record_id || null,
+          clientName: customer_data?.name || extraMetadata?.client_name || null,
+          dealTitle: extraMetadata?.deal_title || description || null,
+        });
+        if (token) console.log(`[PAYMENT-CREATE] TOKEN_PAY synced immediately for deal ${bitrixDealId || "from_financial_record"}: ${token}`);
+      }
+    } catch (tokenPayErr) {
+      console.error("[PAYMENT-CREATE] Immediate TOKEN_PAY sync error:", tokenPayErr);
+    }
 
     // --- Bitrix24 Badge: emmely_payment_created ---
     try {
