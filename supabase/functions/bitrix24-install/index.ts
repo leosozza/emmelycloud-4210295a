@@ -224,6 +224,73 @@ Deno.serve(async (req) => {
   }
 
   // --- repair_fields action: delete and recreate all UF_CRM_EMMELY_* fields ---
+  if (reqUrl.searchParams.get("action") === "repair_token_pay") {
+    const supabase = createClient(
+      Deno.env.get("SUPABASE_URL")!,
+      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
+    );
+
+    try {
+      const { data: integration } = await supabase
+        .from("bitrix24_integrations")
+        .select("*")
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (!integration?.client_endpoint || !integration?.access_token) {
+        return new Response(JSON.stringify({ error: "No integration found" }), { status: 400, headers: jsonHeaders });
+      }
+
+      const ep = integration.client_endpoint.endsWith("/") ? integration.client_endpoint : integration.client_endpoint + "/";
+      const token = integration.access_token;
+      const field = {
+        FIELD_NAME: "UF_CRM_EMMELY_TOKEN_PAY",
+        USER_TYPE_ID: "string",
+        SORT: 0,
+        EDIT_FORM_LABEL: { br: "TOKEN_PAY", en: "TOKEN_PAY", pt: "TOKEN_PAY" },
+        LIST_COLUMN_LABEL: { br: "TOKEN_PAY", en: "TOKEN_PAY", pt: "TOKEN_PAY" },
+        LIST_FILTER_LABEL: { br: "TOKEN_PAY", en: "TOKEN_PAY", pt: "TOKEN_PAY" },
+      };
+
+      const dealFields = await callBitrix(ep, token, "crm.deal.userfield.list", { filter: { FIELD_NAME: "UF_CRM_EMMELY_TOKEN_PAY" } });
+      const leadFields = await callBitrix(ep, token, "crm.lead.userfield.list", { filter: { FIELD_NAME: "UF_CRM_EMMELY_TOKEN_PAY" } });
+      const report: any = { deal_field: "exists", lead_field: "exists", deals_updated: 0, update_errors: [] };
+
+      if (!Array.isArray(dealFields.result) || dealFields.result.length === 0) {
+        const created = await callBitrix(ep, token, "crm.deal.userfield.add", { fields: field });
+        report.deal_field = created.result ? "created" : created.error || "error";
+      }
+      if (!Array.isArray(leadFields.result) || leadFields.result.length === 0) {
+        const created = await callBitrix(ep, token, "crm.lead.userfield.add", { fields: field });
+        report.lead_field = created.result ? "created" : created.error || "error";
+      }
+
+      const { data: links } = await supabase
+        .from("receipt_links")
+        .select("token, bitrix24_deal_id")
+        .not("bitrix24_deal_id", "is", null);
+
+      for (const link of links || []) {
+        if (!link?.token || !link?.bitrix24_deal_id) continue;
+        const reportUrl = `${(Deno.env.get("FRONTEND_URL") || "https://emmelycloud.pages.dev").replace(/\/+$/, "")}/pagamento/${link.token}`;
+        const updated = await callBitrix(ep, token, "crm.deal.update", {
+          id: parseInt(String(link.bitrix24_deal_id), 10),
+          fields: {
+            UF_CRM_EMMELY_RELATORIO_PAY: reportUrl,
+            UF_CRM_EMMELY_TOKEN_PAY: String(link.token),
+          },
+        });
+        if (updated.result) report.deals_updated += 1;
+        else report.update_errors.push({ deal_id: link.bitrix24_deal_id, error: updated.error || "unknown" });
+      }
+
+      return new Response(JSON.stringify(report), { headers: jsonHeaders });
+    } catch (e) {
+      return new Response(JSON.stringify({ error: String(e) }), { status: 500, headers: jsonHeaders });
+    }
+  }
+
   if (reqUrl.searchParams.get("action") === "repair_fields") {
     const supabase = createClient(
       Deno.env.get("SUPABASE_URL")!,
