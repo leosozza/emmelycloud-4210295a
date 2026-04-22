@@ -113,6 +113,14 @@ async function callBitrixWithRefresh(
   return result;
 }
 
+async function ensureBitrixDealUserField(integration: any, field: Record<string, any>) {
+  try {
+    await callBitrix(integration.client_endpoint, integration.access_token, "crm.deal.userfield.add", { fields: field });
+  } catch (_e) {
+    // Field already exists or no permission — ignore.
+  }
+}
+
 async function debugLog(
   supabase: any,
   integrationId: string | null,
@@ -1401,27 +1409,29 @@ async function handleSendPaymentReport(
       return { report_url: reportUrl, send_status: "error", error: "Bitrix24 integration not found" };
     }
 
-    // 3. Ensure UF_CRM_EMMELY_RELATORIO_PAY exists (idempotent — for legacy installs)
-    try {
-      await callBitrix(integration.client_endpoint, integration.access_token, "crm.deal.userfield.add", {
-        fields: {
-          FIELD_NAME: "UF_CRM_EMMELY_RELATORIO_PAY",
-          USER_TYPE_ID: "url",
-          SORT: 0,
-          EDIT_FORM_LABEL: { br: "RELATÓRIO DE PAGAMENTOS", en: "PAYMENT REPORT", pt: "RELATÓRIO DE PAGAMENTOS" },
-          LIST_COLUMN_LABEL: { br: "RELATÓRIO PAGAMENTOS", en: "PAYMENT REPORT", pt: "RELATÓRIO PAGAMENTOS" },
-          LIST_FILTER_LABEL: { br: "RELATÓRIO PAGAMENTOS", en: "PAYMENT REPORT", pt: "RELATÓRIO PAGAMENTOS" },
-        },
-      });
-    } catch (_e) {
-      // Field already exists or no permission — ignore.
-    }
+    // 3. Ensure payment report fields exist (idempotent — for legacy installs)
+    await ensureBitrixDealUserField(integration, {
+      FIELD_NAME: "UF_CRM_EMMELY_RELATORIO_PAY",
+      USER_TYPE_ID: "url",
+      SORT: 0,
+      EDIT_FORM_LABEL: { br: "RELATÓRIO DE PAGAMENTOS", en: "PAYMENT REPORT", pt: "RELATÓRIO DE PAGAMENTOS" },
+      LIST_COLUMN_LABEL: { br: "RELATÓRIO PAGAMENTOS", en: "PAYMENT REPORT", pt: "RELATÓRIO PAGAMENTOS" },
+      LIST_FILTER_LABEL: { br: "RELATÓRIO PAGAMENTOS", en: "PAYMENT REPORT", pt: "RELATÓRIO PAGAMENTOS" },
+    });
+    await ensureBitrixDealUserField(integration, {
+      FIELD_NAME: "UF_CRM_EMMELY_TOKEN_PAY",
+      USER_TYPE_ID: "string",
+      SORT: 0,
+      EDIT_FORM_LABEL: { br: "TOKEN_PAY", en: "TOKEN_PAY", pt: "TOKEN_PAY" },
+      LIST_COLUMN_LABEL: { br: "TOKEN_PAY", en: "TOKEN_PAY", pt: "TOKEN_PAY" },
+      LIST_FILTER_LABEL: { br: "TOKEN_PAY", en: "TOKEN_PAY", pt: "TOKEN_PAY" },
+    });
 
     // 4. Save URL to dedicated payment-report field
     try {
       await callBitrix(integration.client_endpoint, integration.access_token, "crm.deal.update", {
         id: parseInt(String(dealId)),
-        fields: { UF_CRM_EMMELY_RELATORIO_PAY: reportUrl },
+        fields: { UF_CRM_EMMELY_RELATORIO_PAY: reportUrl, UF_CRM_EMMELY_TOKEN_PAY: token },
       });
     } catch (bxErr) {
       console.error("[ROBOT] update deal error:", bxErr);
@@ -1446,7 +1456,7 @@ async function handleSendPaymentReport(
       }
 
       if (!targetPhone) {
-        return { report_url: reportUrl, send_status: "saved_no_phone", error: "Saved URL but no phone available" };
+        return { report_url: reportUrl, token_pay: token || "", send_status: "saved_no_phone", error: "Saved URL but no phone available" };
       }
 
       const prefix = customMessage ? `${customMessage}\n\n` : `📋 *Relatório de Pagamentos*\n\n`;
@@ -1456,11 +1466,11 @@ async function handleSendPaymentReport(
         sendStatus = "sent";
       } catch (waErr) {
         sendStatus = "send_error";
-        return { report_url: reportUrl, send_status: sendStatus, error: String(waErr) };
+        return { report_url: reportUrl, token_pay: token || "", send_status: sendStatus, error: String(waErr) };
       }
     }
 
-    return { report_url: reportUrl, send_status: sendStatus, error: "" };
+    return { report_url: reportUrl, token_pay: token || "", send_status: sendStatus, error: "" };
   } catch (e) {
     return { report_url: "", send_status: "error", error: String(e) };
   }
