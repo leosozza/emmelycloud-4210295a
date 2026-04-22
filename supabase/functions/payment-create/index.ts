@@ -225,6 +225,44 @@ async function createAsaasPayment(apiKey: string, amount: number, paymentMethod:
   };
 }
 
+async function callBitrix(endpoint: string, accessToken: string, method: string, params: Record<string, any>) {
+  return await fetch(`${endpoint}${method}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ...params, auth: accessToken }),
+  });
+}
+
+async function ensureBitrixTokenPayField(integration: any) {
+  await callBitrix(integration.client_endpoint, integration.access_token, "crm.deal.userfield.add", {
+    fields: {
+      FIELD_NAME: "UF_CRM_EMMELY_TOKEN_PAY",
+      USER_TYPE_ID: "string",
+      SORT: 0,
+      EDIT_FORM_LABEL: { br: "TOKEN_PAY", en: "TOKEN_PAY", pt: "TOKEN_PAY" },
+      LIST_COLUMN_LABEL: { br: "TOKEN_PAY", en: "TOKEN_PAY", pt: "TOKEN_PAY" },
+      LIST_FILTER_LABEL: { br: "TOKEN_PAY", en: "TOKEN_PAY", pt: "TOKEN_PAY" },
+    },
+  }).catch(() => null);
+}
+
+async function updateBitrixPaymentReportFields(supabase: any, dealId: string, token: string) {
+  const { data: integration } = await supabase.from("bitrix24_integrations").select("*").limit(1).maybeSingle();
+  if (!integration?.client_endpoint || !integration?.access_token) return;
+  const receiptUrl = `${Deno.env.get("SUPABASE_URL")}/functions/v1/payment-receipt?token=${token}`;
+  const frontendBase = (Deno.env.get("FRONTEND_URL") || "https://emmelycloud.pages.dev").replace(/\/+$/, "");
+  const reportUrl = `${frontendBase}/pagamento/${token}`;
+  await ensureBitrixTokenPayField(integration);
+  await callBitrix(integration.client_endpoint, integration.access_token, "crm.deal.update", {
+    id: parseInt(dealId),
+    fields: {
+      UF_CRM_EMMELY_RECEIPT_URL: receiptUrl,
+      UF_CRM_EMMELY_RELATORIO_PAY: reportUrl,
+      UF_CRM_EMMELY_TOKEN_PAY: token,
+    },
+  });
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -358,24 +396,11 @@ Deno.serve(async (req) => {
               }
               // Update Bitrix24 deal with receipt URL if we have a token and dealId
               if (receiptToken && dealId) {
-                const receiptUrl = `${Deno.env.get("SUPABASE_URL")}/functions/v1/payment-receipt?token=${receiptToken}`;
                 try {
-                  const { data: integration } = await supabase.from("bitrix24_integrations")
-                    .select("*").limit(1).maybeSingle();
-                  if (integration?.client_endpoint && integration?.access_token) {
-                    await fetch(`${integration.client_endpoint}crm.deal.update`, {
-                      method: "POST",
-                      headers: { "Content-Type": "application/json" },
-                      body: JSON.stringify({
-                        auth: integration.access_token,
-                        id: parseInt(dealId),
-                        fields: { UF_CRM_EMMELY_RECEIPT_URL: receiptUrl }
-                      }),
-                    });
-                    console.log(`[PAYMENT-CREATE] Updated Bitrix24 deal ${dealId} with receipt URL`);
-                  }
+                  await updateBitrixPaymentReportFields(supabase, dealId, receiptToken);
+                  console.log(`[PAYMENT-CREATE] Updated Bitrix24 deal ${dealId} with payment report fields`);
                 } catch (bxErr) {
-                  console.error(`[PAYMENT-CREATE] Bitrix24 receipt URL update error:`, bxErr);
+                  console.error(`[PAYMENT-CREATE] Bitrix24 payment report fields update error:`, bxErr);
                 }
               }
             }
@@ -455,24 +480,11 @@ Deno.serve(async (req) => {
                 console.log(`[PAYMENT-CREATE] Created receipt_link for deal=${dealId}`);
               }
               if (receiptToken) {
-                const receiptUrl = `${Deno.env.get("SUPABASE_URL")}/functions/v1/payment-receipt?token=${receiptToken}`;
                 try {
-                  const { data: integration } = await supabase.from("bitrix24_integrations")
-                    .select("*").limit(1).maybeSingle();
-                  if (integration?.client_endpoint && integration?.access_token) {
-                    await fetch(`${integration.client_endpoint}crm.deal.update`, {
-                      method: "POST",
-                      headers: { "Content-Type": "application/json" },
-                      body: JSON.stringify({
-                        auth: integration.access_token,
-                        id: parseInt(dealId),
-                        fields: { UF_CRM_EMMELY_RECEIPT_URL: receiptUrl }
-                      }),
-                    });
-                    console.log(`[PAYMENT-CREATE] Updated Bitrix24 deal ${dealId} with receipt URL`);
-                  }
+                  await updateBitrixPaymentReportFields(supabase, dealId, receiptToken);
+                  console.log(`[PAYMENT-CREATE] Updated Bitrix24 deal ${dealId} with payment report fields`);
                 } catch (bxErr) {
-                  console.error(`[PAYMENT-CREATE] Bitrix24 receipt URL update error:`, bxErr);
+                  console.error(`[PAYMENT-CREATE] Bitrix24 payment report fields update error:`, bxErr);
                 }
               }
             } catch (rlErr) {
