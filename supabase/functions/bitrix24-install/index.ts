@@ -669,6 +669,7 @@ Deno.serve(async (req) => {
           },
           RETURN_PROPERTIES: {
             report_url: { Name: "URL do Relatório", Type: "string" },
+            token_pay: { Name: "TOKEN_PAY", Type: "string" },
             send_status: { Name: "Status de Envio", Type: "string" },
             error: { Name: "Erro", Type: "string" },
           },
