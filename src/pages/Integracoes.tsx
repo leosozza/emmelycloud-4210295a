@@ -2428,7 +2428,8 @@ function IATab() {
   };
 
   return (
-    <div className="grid gap-4 md:grid-cols-2">
+    <div className="space-y-4">
+      <div className="grid gap-4 md:grid-cols-2">
       {/* Config card */}
       <Card>
         <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-2">
