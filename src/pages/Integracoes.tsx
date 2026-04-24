@@ -2470,17 +2470,64 @@ function ModelBenchmarkCard({ providerSlug }: { providerSlug: string }) {
           </div>
         )}
 
+        {/* Seletor de perfil de uso */}
+        {rows.length > 0 && (
+          <div className="rounded-lg border bg-muted/30 p-3 space-y-2">
+            <div className="flex items-center justify-between gap-3 flex-wrap">
+              <div className="flex items-center gap-2">
+                <Scale className="h-4 w-4 text-fuchsia-600" />
+                <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  Perfil de uso
+                </span>
+              </div>
+              <p className="text-[11px] text-muted-foreground italic flex-1 text-right min-w-[200px]">
+                {profile.description}
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {USAGE_PROFILES.map((p) => (
+                <button
+                  key={p.id}
+                  type="button"
+                  onClick={() => setProfileId(p.id)}
+                  className={`px-3 py-1.5 rounded-md text-xs font-medium border transition-colors ${
+                    profileId === p.id
+                      ? "bg-fuchsia-600 text-white border-fuchsia-600"
+                      : "bg-background hover:bg-muted border-border"
+                  }`}
+                >
+                  {p.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* Cards de destaque */}
-        {(best || fastest || balanced) && (
+        {(topForProfile || smartest || fastest) && (
           <div className="grid gap-3 sm:grid-cols-3">
-            {best && (
+            {topForProfile && (
+              <div className="rounded-lg border border-fuchsia-200 bg-fuchsia-50 p-3">
+                <div className="flex items-center gap-2 text-fuchsia-800">
+                  <Trophy className="h-4 w-4" />
+                  <span className="text-xs font-semibold uppercase tracking-wide">
+                    Melhor para “{profile.label}”
+                  </span>
+                </div>
+                <p className="mt-1 text-sm font-mono break-all">{topForProfile.model_name}</p>
+                <p className="text-[11px] text-fuchsia-700">
+                  Score {topForProfile.profile_score?.toFixed(0)}/100
+                </p>
+              </div>
+            )}
+            {smartest && (
               <div className="rounded-lg border border-amber-200 bg-amber-50 p-3">
                 <div className="flex items-center gap-2 text-amber-800">
-                  <Trophy className="h-4 w-4" />
+                  <Sparkles className="h-4 w-4" />
                   <span className="text-xs font-semibold uppercase tracking-wide">Mais inteligente</span>
                 </div>
-                <p className="mt-1 text-sm font-mono break-all">{best.model_name}</p>
-                <p className="text-[11px] text-amber-700">Qualidade {best.quality_score?.toFixed(0)}/100</p>
+                <p className="mt-1 text-sm font-mono break-all">{smartest.model_name}</p>
+                <p className="text-[11px] text-amber-700">Qualidade {smartest.quality_score?.toFixed(0)}/100</p>
               </div>
             )}
             {fastest && (
@@ -2491,18 +2538,6 @@ function ModelBenchmarkCard({ providerSlug }: { providerSlug: string }) {
                 </div>
                 <p className="mt-1 text-sm font-mono break-all">{fastest.model_name}</p>
                 <p className="text-[11px] text-blue-700">{fastest.tokens_per_second?.toFixed(1)} tok/s</p>
-              </div>
-            )}
-            {balanced && (
-              <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3">
-                <div className="flex items-center gap-2 text-emerald-800">
-                  <Scale className="h-4 w-4" />
-                  <span className="text-xs font-semibold uppercase tracking-wide">Custo/benefício</span>
-                </div>
-                <p className="mt-1 text-sm font-mono break-all">{balanced.model_name}</p>
-                <p className="text-[11px] text-emerald-700">
-                  Q {balanced.quality_score?.toFixed(0)} · {balanced.tokens_per_second?.toFixed(1)} tok/s
-                </p>
               </div>
             )}
           </div>
