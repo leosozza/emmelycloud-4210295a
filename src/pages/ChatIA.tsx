@@ -6,7 +6,8 @@ import { MarkdownMessage } from "@/components/chat/MarkdownMessage";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
-import { Send, Loader2, Sparkles, Square, AlertTriangle, Bot } from "lucide-react";
+import { Send, Loader2, Sparkles, Square, AlertTriangle, Bot, BookOpen } from "lucide-react";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { AudioRecordButton } from "@/components/chat/AudioRecordButton";
@@ -60,12 +61,51 @@ export default function ChatIAPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [streamElapsed, setStreamElapsed] = useState(0);
   const [hasFirstToken, setHasFirstToken] = useState(false);
+  const [knowledgeStats, setKnowledgeStats] = useState<{ docs: number; chunks: number; collections: string[] }>({ docs: 0, chunks: 0, collections: [] });
   const scrollRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
   const elapsedTimerRef = useRef<number | null>(null);
 
   const selectedAgent = agents.find((a) => a.id === selectedAgentId);
   const isHeavy = isHeavyModel(selectedAgent?.ai_model);
+
+  // Carrega contagem de conhecimento vinculado ao agente seleccionado
+  useEffect(() => {
+    if (!selectedAgentId) {
+      setKnowledgeStats({ docs: 0, chunks: 0, collections: [] });
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      const { data: links } = await supabase
+        .from("agent_knowledge_documents")
+        .select("document_id")
+        .eq("agent_id", selectedAgentId);
+      const docIds = (links || []).map((l: any) => l.document_id);
+      if (docIds.length === 0) {
+        if (!cancelled) setKnowledgeStats({ docs: 0, chunks: 0, collections: [] });
+        return;
+      }
+      const [{ count: chunkCount }, { data: docs }] = await Promise.all([
+        supabase
+          .from("knowledge_chunks")
+          .select("id", { count: "exact", head: true })
+          .in("document_id", docIds),
+        supabase
+          .from("knowledge_documents")
+          .select("collection_name")
+          .in("id", docIds),
+      ]);
+      const collSet = new Set<string>();
+      (docs || []).forEach((d: any) => { if (d.collection_name) collSet.add(d.collection_name); });
+      if (!cancelled) setKnowledgeStats({
+        docs: docIds.length,
+        chunks: chunkCount || 0,
+        collections: Array.from(collSet),
+      });
+    })();
+    return () => { cancelled = true; };
+  }, [selectedAgentId]);
 
   // Virtualizer
   const virtualItems = buildChatVirtualItems(messages, scrollRef.current?.clientWidth || 600, isLoading && !hasFirstToken);
@@ -385,12 +425,54 @@ export default function ChatIAPage() {
       <div className="flex-1 flex flex-col">
         {/* Model info bar */}
         {selectedAgent?.ai_model && (
-          <div className="border-b bg-muted/30 px-4 py-1.5 flex items-center gap-2 text-xs text-muted-foreground">
+          <div className="border-b bg-muted/30 px-4 py-1.5 flex items-center gap-2 text-xs text-muted-foreground flex-wrap">
             <Bot className="h-3 w-3" />
             <span className="font-mono">{selectedAgent.ai_model}</span>
             {selectedAgent.ai_provider && selectedAgent.ai_provider !== "lovable" && (
               <span className="text-muted-foreground/60">· {selectedAgent.ai_provider}</span>
             )}
+            <TooltipProvider delayDuration={200}>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Badge
+                    variant="outline"
+                    className={cn(
+                      "gap-1 cursor-help",
+                      knowledgeStats.docs > 0
+                        ? "text-emerald-600 border-emerald-500/40"
+                        : "text-muted-foreground/60 border-muted-foreground/20"
+                    )}
+                  >
+                    <BookOpen className="h-3 w-3" />
+                    {knowledgeStats.docs > 0
+                      ? `${knowledgeStats.docs} docs · ${knowledgeStats.chunks} chunks`
+                      : "Sem conhecimento"}
+                  </Badge>
+                </TooltipTrigger>
+                <TooltipContent side="bottom" className="max-w-xs">
+                  {knowledgeStats.docs > 0 ? (
+                    <div className="space-y-1">
+                      <p className="font-medium">Conhecimento ativo (RAG)</p>
+                      <p className="text-xs text-muted-foreground">
+                        O agente responde como especialista, ancorado nestes documentos.
+                      </p>
+                      {knowledgeStats.collections.length > 0 && (
+                        <ul className="text-xs list-disc list-inside mt-1">
+                          {knowledgeStats.collections.slice(0, 5).map((c) => (
+                            <li key={c}>{c}</li>
+                          ))}
+                          {knowledgeStats.collections.length > 5 && (
+                            <li>+{knowledgeStats.collections.length - 5} outras…</li>
+                          )}
+                        </ul>
+                      )}
+                    </div>
+                  ) : (
+                    <p className="text-xs">Este agente não tem documentos de treino vinculados — responde como modelo generalista.</p>
+                  )}
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
             {isHeavy && (
               <Badge variant="outline" className="ml-auto gap-1 text-amber-600 border-amber-500/40">
                 <AlertTriangle className="h-3 w-3" />

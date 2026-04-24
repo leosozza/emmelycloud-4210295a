@@ -6,13 +6,37 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
-// ─── Token optimization utilities (TOON-inspired) ───
-function chunksToToon(chunks: { content: string }[]): string {
+const RAG_TOP_K = 8;
+
+// ─── FTS search helper (mesma abordagem do ai-process-message) ───
+async function ftsSearch(supabase: any, queryText: string, docIds: string[], topK: number): Promise<any[]> {
+  try {
+    const searchTerms = queryText
+      .replace(/[^\w\sáàâãéèêíìîóòôõúùûçñ]/gi, " ")
+      .split(/\s+/)
+      .filter((t: string) => t.length > 2)
+      .slice(0, 10)
+      .join(" ");
+    if (!searchTerms) return [];
+    const { data: results, error } = await supabase.rpc("search_chunks_fts", {
+      search_query: searchTerms,
+      doc_ids: docIds,
+      max_results: topK,
+    });
+    if (error) { console.log("[AI-PLAYGROUND] FTS error:", error.message); return []; }
+    return results || [];
+  } catch (e) {
+    console.log("[AI-PLAYGROUND] FTS failed:", e);
+    return [];
+  }
+}
+
+function buildKnowledgeBlock(chunks: { content: string }[]): string {
   if (chunks.length === 0) return "";
-  const rows = chunks.map((c, i) =>
-    `  ${i + 1},${c.content.replace(/,/g, ";").replace(/\n+/g, " ").trim().substring(0, 500)}`
-  );
-  return `KB[${chunks.length}]{idx,content}:\n${rows.join("\n")}`;
+  const rows = chunks
+    .map((c, i) => `[Fonte ${i + 1}] ${(c.content || "").trim()}`)
+    .join("\n\n");
+  return `\n\n--- BASE DE CONHECIMENTO (especialista nesta área) ---\n${rows}\n--- FIM ---\n`;
 }
 
 serve(async (req) => {
@@ -44,29 +68,64 @@ serve(async (req) => {
       });
     }
 
+    // ─── RAG: buscar chunks relevantes para a última mensagem do utilizador ───
     const { data: linkedDocs } = await supabase
       .from("agent_knowledge_documents")
       .select("document_id")
       .eq("agent_id", agent_id);
 
     let knowledgeContext = "";
+    let ragMethod: "fts" | "fallback" | "none" = "none";
+    let ragChunkCount = 0;
+
     if (linkedDocs && linkedDocs.length > 0) {
       const docIds = linkedDocs.map((d: any) => d.document_id);
-      const { data: chunks } = await supabase
-        .from("knowledge_chunks")
-        .select("content")
-        .in("document_id", docIds)
-        .order("chunk_index")
-        .limit(20);
 
-      if (chunks && chunks.length > 0) {
-        const kbToon = chunksToToon(chunks);
-        knowledgeContext = `\n\n--- BASE DE CONHECIMENTO ---\n${kbToon}\n--- FIM ---\n`;
+      // Última mensagem do utilizador como query
+      const lastUserMsg = [...messages].reverse().find((m: any) => m.role === "user");
+      const queryText: string = (lastUserMsg?.content || "").toString();
+      const meaningfulWords = queryText
+        .split(/\s+/)
+        .filter((w) => w.length > 2).length;
+
+      let chunks: any[] = [];
+
+      if (meaningfulWords >= 2) {
+        chunks = await ftsSearch(supabase, queryText, docIds, RAG_TOP_K);
+        if (chunks.length > 0) ragMethod = "fts";
+      }
+
+      // Fallback sequencial se FTS não devolver nada (saudações, perguntas curtas)
+      if (chunks.length === 0) {
+        const { data: seqChunks } = await supabase
+          .from("knowledge_chunks")
+          .select("content")
+          .in("document_id", docIds)
+          .order("chunk_index")
+          .limit(RAG_TOP_K);
+        chunks = seqChunks || [];
+        if (chunks.length > 0) ragMethod = "fallback";
+      }
+
+      if (chunks.length > 0) {
+        knowledgeContext = buildKnowledgeBlock(chunks);
+        ragChunkCount = chunks.length;
       }
     }
 
+    // ─── Montagem do system prompt: persona (base_prompt) + instruções (system_prompt) + KB + regras ───
+    const personaBlock = agent.base_prompt ? `${agent.base_prompt}\n\n` : "";
+    const instructionsBlock = agent.system_prompt || "";
+
+    const groundingRule = knowledgeContext
+      ? `\n\nREGRA DE ESPECIALISTA:\n- Tu és especialista exclusivamente nesta área. Responde sempre dentro deste domínio.\n- Baseia as tuas respostas PRIORITARIAMENTE na BASE DE CONHECIMENTO acima. Não inventes factos que não estejam lá.\n- Quando usares informação da base, cita a fonte entre parêntesis: [Fonte 1], [Fonte 2], etc.\n- Se a pergunta sair do teu domínio ou a informação não estiver na base, diz claramente: "Não tenho essa informação na minha base de conhecimento" e oferece encaminhamento.\n`
+      : "";
+
     const autoLangPrompt = `\n\nIDIOMA: Deteta automaticamente o idioma da primeira mensagem do utilizador e responde SEMPRE nesse mesmo idioma durante toda a conversa. Não perguntes o idioma — adapta-te silenciosamente. Suportas: Português, English, Español, Français, Deutsch, Italiano, 中文, 日本語, العربية, e outros.\n`;
-    const systemPrompt = (agent.system_prompt || "") + knowledgeContext + autoLangPrompt;
+
+    const systemPrompt = personaBlock + instructionsBlock + knowledgeContext + groundingRule + autoLangPrompt;
+
+    console.log(`[AI-PLAYGROUND] agent="${agent.name}" model=${agent.ai_model} rag_method=${ragMethod} chunks=${ragChunkCount} ctx=${systemPrompt.length}chars`);
 
     let apiUrl: string;
     let apiKey: string;
