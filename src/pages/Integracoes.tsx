@@ -2411,9 +2411,17 @@ function ModelBenchmarkCard({ providerSlug }: { providerSlug: string }) {
 
   useEffect(() => { load(); }, [load]);
 
+  // Polling enquanto houver linhas marcadas como "__running__"
+  useEffect(() => {
+    const hasRunning = rows.some((r) => r.error_message === "__running__");
+    if (!hasRunning) return;
+    const t = setInterval(() => { load(); }, 5000);
+    return () => clearInterval(t);
+  }, [rows, load]);
+
   const runBenchmark = async (singleModel?: string) => {
     setRunning(true);
-    setProgress(singleModel ? `A reavaliar ${singleModel}…` : "A avaliar modelos (pode demorar 1-3 min)…");
+    setProgress(singleModel ? `A reavaliar ${singleModel}…` : "A avaliar modelos em background (5–60s por modelo)…");
     try {
       const { data, error } = await supabase.functions.invoke("ollama-benchmark-models", {
         body: singleModel ? { model: singleModel } : {},
@@ -2421,7 +2429,11 @@ function ModelBenchmarkCard({ providerSlug }: { providerSlug: string }) {
       if (error) {
         toast.error(`Erro: ${error.message}`);
       } else if (data?.ok) {
-        toast.success(`Avaliados ${data.evaluated} modelo(s)`);
+        toast.success(
+          data.queued
+            ? `Avaliação iniciada (${data.evaluated} modelo(s)). A tabela atualiza-se automaticamente.`
+            : `Avaliados ${data.evaluated} modelo(s)`,
+        );
         await load();
       } else {
         toast.error(data?.error || "Falha ao avaliar");
