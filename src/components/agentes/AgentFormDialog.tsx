@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import type { AIAgent, AIProvider, FlowOption, DocOption, CollectionOption } from "@/pages/Agentes";
 import { cn } from "@/lib/utils";
+import { SyncOllamaModelsButton } from "@/components/agentes/SyncOllamaModelsButton";
 
 const SKILL_TYPES = [
   { type: "crm", label: "Consultar CRM", description: "Buscar leads, propostas, contratos e casos no CRM", icon: "📊" },
