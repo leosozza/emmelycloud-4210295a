@@ -283,6 +283,115 @@ function assignRecommendations(results: ModelResult[]) {
   }
 }
 
+async function runBenchmarkBackground(
+  supabase: any,
+  baseUrl: string,
+  apiKey: string,
+  toRun: string[],
+  onlyModel: string | null,
+) {
+  // Marcar como "running" para feedback imediato no front
+  for (const m of toRun) {
+    await supabase
+      .from("ollama_model_benchmarks")
+      .upsert(
+        {
+          provider_slug: PROVIDER_SLUG,
+          model_name: m,
+          recommendation: "A avaliar…",
+          error_message: "__running__",
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: "provider_slug,model_name" },
+      );
+  }
+
+  console.log(`[ollama-benchmark] BG: a avaliar ${toRun.length} modelo(s):`, toRun);
+
+  const results: ModelResult[] = [];
+  for (const m of toRun) {
+    console.log(`[ollama-benchmark] BG -> ${m}`);
+    let r: ModelResult;
+    try {
+      r = await benchmarkOneModel(baseUrl, apiKey, m);
+    } catch (e: any) {
+      const isRate = e.message === "RATE_LIMIT";
+      const isCred = e.message === "CREDITS_EXHAUSTED";
+      r = {
+        model: m,
+        reasoning_score: null,
+        knowledge_score: null,
+        instruction_score: null,
+        quality_score: null,
+        avg_latency_ms: 0,
+        tokens_per_second: 0,
+        recommendation: "Indisponível",
+        error: isRate
+          ? "Limite de pedidos Lovable AI atingido"
+          : isCred
+            ? "Créditos Lovable AI esgotados"
+            : e.message?.slice(0, 300) || String(e),
+        per_prompt: [],
+      };
+    }
+    results.push(r);
+
+    // Persistir individualmente para o front ver progresso
+    await supabase
+      .from("ollama_model_benchmarks")
+      .upsert(
+        {
+          provider_slug: PROVIDER_SLUG,
+          model_name: r.model,
+          quality_score: r.quality_score,
+          reasoning_score: r.reasoning_score,
+          knowledge_score: r.knowledge_score,
+          instruction_score: r.instruction_score,
+          avg_latency_ms: r.avg_latency_ms || null,
+          tokens_per_second: r.tokens_per_second || null,
+          recommendation: r.recommendation,
+          raw_results: { per_prompt: r.per_prompt },
+          error_message: r.error || null,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: "provider_slug,model_name" },
+      );
+  }
+
+  // Recalcular recomendações com base em TODAS as linhas (não só esta corrida)
+  if (!onlyModel) {
+    const { data: allRows } = await supabase
+      .from("ollama_model_benchmarks")
+      .select("model_name, quality_score, tokens_per_second, error_message")
+      .eq("provider_slug", PROVIDER_SLUG);
+
+    const usable: ModelResult[] = (allRows || [])
+      .filter((r: any) => !r.error_message && r.quality_score !== null)
+      .map((r: any) => ({
+        model: r.model_name,
+        quality_score: r.quality_score,
+        tokens_per_second: r.tokens_per_second || 0,
+        reasoning_score: null,
+        knowledge_score: null,
+        instruction_score: null,
+        avg_latency_ms: 0,
+        recommendation: "Uso geral",
+        per_prompt: [],
+      }));
+
+    assignRecommendations(usable);
+    for (const r of usable) {
+      await supabase
+        .from("ollama_model_benchmarks")
+        .update({ recommendation: r.recommendation })
+        .eq("provider_slug", PROVIDER_SLUG)
+        .eq("model_name", r.model);
+    }
+  }
+
+  console.log(`[ollama-benchmark] BG: concluído (${results.length} modelo(s))`);
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
@@ -350,84 +459,24 @@ Deno.serve(async (req) => {
       toRun = toRun.slice(0, MAX_MODELS_PER_RUN);
     }
 
-    console.log(`[ollama-benchmark] A avaliar ${toRun.length} modelo(s):`, toRun);
-
-    const results: ModelResult[] = [];
-    for (const m of toRun) {
-      console.log(`[ollama-benchmark] -> ${m}`);
-      try {
-        const r = await benchmarkOneModel(baseUrl, apiKey, m);
-        results.push(r);
-      } catch (e: any) {
-        if (e.message === "RATE_LIMIT") {
-          return new Response(
-            JSON.stringify({
-              ok: false,
-              error: "Limite de pedidos atingido (Lovable AI). Tenta novamente daqui a um minuto.",
-              partial_results: results,
-            }),
-            { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } },
-          );
-        }
-        if (e.message === "CREDITS_EXHAUSTED") {
-          return new Response(
-            JSON.stringify({
-              ok: false,
-              error: "Créditos Lovable AI esgotados. Adiciona créditos em Definições → Workspace → Uso.",
-              partial_results: results,
-            }),
-            { status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" } },
-          );
-        }
-        results.push({
-          model: m,
-          reasoning_score: null,
-          knowledge_score: null,
-          instruction_score: null,
-          quality_score: null,
-          avg_latency_ms: 0,
-          tokens_per_second: 0,
-          recommendation: "Indisponível",
-          error: e.message?.slice(0, 300) || String(e),
-          per_prompt: [],
-        });
-      }
-    }
-
-    // Recomendações apenas se for run completo (não single model)
-    if (!onlyModel) assignRecommendations(results);
-
-    // Persistir
-    for (const r of results) {
-      await supabase
-        .from("ollama_model_benchmarks")
-        .upsert(
-          {
-            provider_slug: PROVIDER_SLUG,
-            model_name: r.model,
-            quality_score: r.quality_score,
-            reasoning_score: r.reasoning_score,
-            knowledge_score: r.knowledge_score,
-            instruction_score: r.instruction_score,
-            avg_latency_ms: r.avg_latency_ms || null,
-            tokens_per_second: r.tokens_per_second || null,
-            recommendation: r.recommendation,
-            raw_results: { per_prompt: r.per_prompt },
-            error_message: r.error || null,
-            updated_at: new Date().toISOString(),
-          },
-          { onConflict: "provider_slug,model_name" },
-        );
-    }
+    // ⚡ Corre em background — devolve imediatamente
+    // @ts-ignore — EdgeRuntime existe no runtime Supabase
+    EdgeRuntime.waitUntil(
+      runBenchmarkBackground(supabase, baseUrl, apiKey, toRun, onlyModel).catch((e) =>
+        console.error("[ollama-benchmark] BG falhou:", e),
+      ),
+    );
 
     return new Response(
       JSON.stringify({
         ok: true,
-        evaluated: results.length,
+        queued: true,
+        evaluated: toRun.length,
         total_models: models.length,
-        results,
+        message:
+          "Avaliação iniciada em background. A tabela atualiza-se à medida que cada modelo termina (5–60s por modelo).",
       }),
-      { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      { status: 202, headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );
   } catch (e: any) {
     console.error("[ollama-benchmark] error:", e);
