@@ -2632,11 +2632,15 @@ function ModelBenchmarkCard({ providerSlug }: { providerSlug: string }) {
                         <span className={`inline-block text-[10px] px-2 py-0.5 rounded-full border ${recommendationStyle(r.recommendation)}`}>
                           {r.recommendation || "—"}
                         </span>
-                        {r.error_message && (
+                        {r.error_message === "__running__" ? (
+                          <p className="text-[10px] text-violet-700 mt-0.5 flex items-center gap-1">
+                            <Loader2 className="h-2.5 w-2.5 animate-spin" /> a avaliar…
+                          </p>
+                        ) : r.error_message ? (
                           <p className="text-[10px] text-red-600 mt-0.5 max-w-[200px] truncate" title={r.error_message}>
                             ⚠ {r.error_message}
                           </p>
-                        )}
+                        ) : null}
                       </td>
                       <td className="px-2 py-2">
                         <Button
