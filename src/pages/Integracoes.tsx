@@ -2368,14 +2368,17 @@ function computeProfileScore(r: BenchmarkRow, profile: UsageProfile, maxTps: num
   const reasoning = r.reasoning_score ?? 0;
   const knowledge = r.knowledge_score ?? 0;
   const instruction = r.instruction_score ?? 0;
-  // Normaliza tokens/s para 0-100 com base no mais rápido do conjunto
+  // Normaliza tokens/s para escala 0-100 conforme o mais rápido do conjunto
   const speed = maxTps > 0 && r.tokens_per_second ? (r.tokens_per_second / maxTps) * 100 : 0;
   const w = profile.weights;
-  const totalQualityWeight = w.reasoning + w.knowledge + w.instruction;
-  const qualityPart = reasoning * w.reasoning + knowledge * w.knowledge + instruction * w.instruction;
-  const speedPart = speed * w.speed;
-  // Renormaliza para 0-100
-  return qualityPart + speedPart * (totalQualityWeight > 0 ? 1 : 0) / Math.max(totalQualityWeight + w.speed, 0.0001) * (totalQualityWeight + w.speed);
+  const totalW = w.reasoning + w.knowledge + w.instruction + w.speed;
+  if (totalW <= 0) return 0;
+  const weighted =
+    reasoning * w.reasoning +
+    knowledge * w.knowledge +
+    instruction * w.instruction +
+    speed * w.speed;
+  return weighted / totalW;
 }
 
 function ModelBenchmarkCard({ providerSlug }: { providerSlug: string }) {
