@@ -1,81 +1,62 @@
 
 
-## Objetivo
+## Problema
 
-Adicionar à página **Integrações → IA**, abaixo da lista de modelos disponíveis do Ollama, uma funcionalidade de **benchmark** que testa cada modelo individualmente e produz uma **classificação** (ranking) por:
+O `/chat` parece travado quando usas modelos LLM locais (Ollama via Cloudflare tunnel). Causas:
 
-- **Inteligência** (qualidade da resposta a um conjunto de prompts de teste)
-- **Velocidade** (latência média / tokens por segundo)
-- **Recomendação de uso** (ex.: "Melhor para raciocínio complexo", "Melhor para respostas rápidas", "Melhor custo/benefício")
+1. **Sem streaming** — a edge function `ai-playground` espera o Ollama gerar a resposta inteira antes de devolver. Com `qwen3.6:35b` isso demora 30-90s e o utilizador vê só um spinner.
+2. **Sem timeout nem feedback** — não há indicação de tempo decorrido nem aviso "modelo a carregar" (Ollama demora extra ~10-30s na primeira chamada para carregar o modelo na VRAM).
+3. **Tunnel Cloudflare** adiciona latência variável (50-500ms por chunk) que se acumula sem streaming.
+4. **Sem aviso de modelo lento** — a UI não mostra que o agente seleccionado é um modelo de 35B (lento por natureza).
 
-## Como vai funcionar
+## Plano de correção
 
-1. O utilizador clica em **"⚡ Avaliar modelos"** (novo botão por baixo dos badges).
-2. O sistema executa, para cada modelo retornado pelo servidor Ollama, **3 prompts padronizados**:
-   - **Raciocínio**: problema lógico/matemático curto.
-   - **Conhecimento**: pergunta factual.
-   - **Instrução**: pedido de formatação estruturada (ex.: "Responde só em JSON com chaves x,y").
-3. Para cada modelo regista:
-   - latência total (ms)
-   - tokens gerados estimados (palavras × 1.3)
-   - tokens/segundo
-   - **score de qualidade 0–100** atribuído por um modelo juiz (Lovable AI — `google/gemini-3-flash-preview`) que recebe pergunta + resposta e devolve nota estruturada via tool calling.
-4. Resultado renderizado como tabela ordenada com medalhas 🥇🥈🥉 e badge de recomendação:
-   - **Mais inteligente** → maior score de qualidade médio.
-   - **Mais rápido** → maior tokens/s.
-   - **Equilibrado** → melhor produto `qualidade × velocidade`.
-5. Resultados persistidos em nova tabela `ollama_model_benchmarks` para histórico (e poder mostrar último benchmark sem refazer).
+### 1. Streaming token-a-token na `ai-playground`
 
-## Plano de implementação
+- Aceitar `stream: true` no payload e passar para o Ollama (compatível com OpenAI API).
+- Devolver SSE (`text/event-stream`) directamente do Ollama para o cliente, sem buffer.
+- Manter modo não-streaming como fallback (compatibilidade com outros chamadores).
 
-### 1. Nova tabela `ollama_model_benchmarks`
+### 2. Frontend `/chat` consome stream
 
-Colunas-chave: `model_name`, `provider_slug` (default `qwen-local`), `quality_score` (0–100), `avg_latency_ms`, `tokens_per_second`, `reasoning_score`, `knowledge_score`, `instruction_score`, `recommendation` (texto curto), `raw_results` (jsonb), `created_at`.
+Em `src/pages/ChatIA.tsx`, refazer o `handleSend`:
+- Usar `fetch` directo para `${VITE_SUPABASE_URL}/functions/v1/ai-playground` com header `Authorization: Bearer <publishable_key>`.
+- Parser SSE linha-a-linha (padrão do skill `connecting-to-ai-models`).
+- Atualizar a última mensagem do assistant a cada token recebido — feedback imediato em vez de spinner de 60s.
+- Suporte a cancelar com `AbortController` (botão "Parar" enquanto streama).
 
-RLS: leitura/escrita apenas para `admin` (via `has_role`).
+### 3. Indicadores visuais de progresso
 
-### 2. Nova Edge Function `ollama-benchmark-models`
+Na bolha do assistant durante o streaming:
+- Enquanto não chega o primeiro token: badge **"A carregar modelo…"** (≤10s) → **"A pensar…"** (>10s).
+- Cronómetro discreto (`0:23`) ao lado do spinner para o utilizador saber que não está parado.
+- Mostrar o nome do modelo activo abaixo do header (ex.: `qwen3.6:35b · Qwen Local`).
 
-Responsabilidades:
+### 4. Aviso de modelo pesado
 
-- Lê `OLLAMA_BASE_URL` de `integration_credentials` (mesma fonte que `ollama-test-connection`).
-- Faz `GET /api/tags` → lista de modelos.
-- Para cada modelo, executa os 3 prompts via `POST /api/chat` (não-stream), medindo latência.
-- Para cada resposta, chama Lovable AI (gateway, `google/gemini-3-flash-preview`) com **tool calling** para devolver `{ score: 0-100, reason: string }` — evita parsing frágil de JSON.
-- Calcula `quality_score` médio, `tokens_per_second`, atribui `recommendation`.
-- Faz upsert em `ollama_model_benchmarks` (uma linha por modelo, sobrescreve a anterior) e também devolve o array completo na resposta.
-- Suporta query param `?model=<nome>` para avaliar apenas um modelo (botão "Re-testar" individual).
-- Timeout/proteção: máximo 6 modelos por chamada (configurável); se houver mais, devolve aviso.
+No selector de agentes (sidebar), se o modelo for `>=14B` ou `vl`, badge ⚠️ **"lento"** com tooltip: "Este modelo demora 30-90s. Para respostas rápidas escolhe um agente com `llama3.2:3b` ou similar."
 
-### 3. Frontend — `Integracoes.tsx` (aba IA)
+### 5. Timeout configurável e mensagem útil
 
-Por baixo do bloco "Modelos disponíveis":
+- Timeout de 180s na chamada ao Ollama (em vez do default que pode pendurar indefinidamente).
+- Em caso de timeout: toast "O modelo `<nome>` não respondeu em 3 min. Verifica se o servidor Ollama está activo ou escolhe um modelo mais leve."
 
-- Botão **"⚡ Avaliar modelos"** com spinner enquanto corre.
-- Carregamento inicial: lê `ollama_model_benchmarks` (último benchmark) e mostra tabela.
-- Tabela com colunas: **#**, **Modelo**, **Qualidade** (barra 0–100), **Velocidade** (tok/s), **Latência média**, **Recomendação** (badge colorido).
-- Ordenação por qualidade decrescente; medalhas nas 3 primeiras posições.
-- Cards de destaque no topo: 🥇 Mais inteligente · ⚡ Mais rápido · ⚖ Mais equilibrado.
-- Mensagem de progresso enquanto avalia ("A avaliar 3 de 6 modelos…").
+### 6. (Opcional, não bloqueante) Pre-warm do modelo
 
-### 4. Detalhes técnicos relevantes
+Botão **"Aquecer modelo"** no sidebar que faz uma chamada `POST /api/generate` com `keep_alive: "30m"` ao Ollama para o modelo ficar carregado em VRAM. Reduz a 1ª resposta em 10-30s.
 
-- Prompts de teste fixos no edge function (pt-PT) — mesmos para todos os modelos, garantindo comparação justa.
-- Modelo juiz: `google/gemini-3-flash-preview` via `LOVABLE_API_KEY` (já configurado).
-- Estimativa tokens/s = `palavras × 1.3 / (latency_ms / 1000)` (heurística simples já usada em outras partes do projeto).
-- Recomendação calculada server-side com regras simples:
-  - top quality → "Melhor para raciocínio"
-  - top speed → "Melhor para respostas rápidas"
-  - top quality×speed → "Melhor custo/benefício"
-  - restantes → "Uso geral"
-- Tratamento de erros: se um modelo falhar (404/timeout) regista linha com `quality_score = null` e `recommendation = "Indisponível"` para não quebrar o lote.
-- Rate-limit Lovable AI (402/429): apanhado e devolvido com mensagem amigável (toast).
+## Detalhes técnicos
 
-## Verificação
+- `ai-playground` passa a usar `stream: true` no body do Ollama; o response body é re-emitido com `Content-Type: text/event-stream`.
+- O parser do frontend segue o padrão do skill (line-by-line, ignora `:` keepalive, re-buffer JSON parcial, flush final).
+- `AbortController` no `handleSend` permite cancelar e o servidor Ollama fecha o stream quando o cliente desconecta.
+- Os campos persistidos na sessão continuam a ser a mensagem completa (ao acabar o stream).
 
-1. Abrir Integrações → IA → clicar **"⚡ Avaliar modelos"**.
-2. Ver progresso e, ao terminar, tabela ordenada com os 6 modelos atuais (`qwen3.6:35b`, `qwen3.6:latest`, `qwen2.5vl:32b`, `qwen2.5vl:32b-q4_K_M`, `llama3.2:3b`, `llama3.2:1b`).
-3. Confirmar que `llama3.2:1b` aparece com velocidade alta mas qualidade baixa, e `qwen3.6:35b` com qualidade alta e velocidade baixa.
-4. Recarregar a página → o último benchmark deve aparecer imediatamente (lido de `ollama_model_benchmarks`).
-5. Clicar em "Re-testar" só num modelo → atualiza apenas essa linha.
+## Como testar
+
+1. Abrir `/chat`, escolher agente com `qwen3.6:35b`, enviar "Olá". Primeiros tokens devem aparecer em ≤15s, não 60s.
+2. Trocar para agente com `llama3.2:3b`. Resposta deve começar em ≤2s.
+3. Enviar mensagem longa e clicar **Parar** a meio — stream interrompe imediatamente.
+4. Desligar o tunnel Cloudflare, enviar mensagem → toast de timeout claro após 3 min.
+5. Confirmar badge ⚠️ "lento" no selector para agentes com modelos `>=14B`.
 
