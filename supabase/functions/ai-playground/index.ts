@@ -7,8 +7,6 @@ const corsHeaders = {
 };
 
 // ─── Token optimization utilities (TOON-inspired) ───
-
-// Serializa chunks da KB em formato tabular compacto (reduz ~35% vs texto livre)
 function chunksToToon(chunks: { content: string }[]): string {
   if (chunks.length === 0) return "";
   const rows = chunks.map((c, i) =>
@@ -21,18 +19,19 @@ serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {
-    const { agent_id, messages } = await req.json();
+    const { agent_id, messages, stream } = await req.json();
     if (!agent_id || !messages) {
       return new Response(JSON.stringify({ error: "agent_id and messages required" }), {
         status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
+    const wantStream = stream === true;
+
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    // Get agent config
     const { data: agent, error: agentErr } = await supabase
       .from("ai_agents")
       .select("*")
@@ -45,7 +44,6 @@ serve(async (req) => {
       });
     }
 
-    // Get linked knowledge documents — serializar em TOON tabular
     const { data: linkedDocs } = await supabase
       .from("agent_knowledge_documents")
       .select("document_id")
@@ -70,7 +68,6 @@ serve(async (req) => {
     const autoLangPrompt = `\n\nIDIOMA: Deteta automaticamente o idioma da primeira mensagem do utilizador e responde SEMPRE nesse mesmo idioma durante toda a conversa. Não perguntes o idioma — adapta-te silenciosamente. Suportas: Português, English, Español, Français, Deutsch, Italiano, 中文, 日本語, العربية, e outros.\n`;
     const systemPrompt = (agent.system_prompt || "") + knowledgeContext + autoLangPrompt;
 
-    // Determine API URL and key
     let apiUrl: string;
     let apiKey: string;
     let authHeader: string | null = "Authorization";
@@ -80,7 +77,6 @@ serve(async (req) => {
       apiUrl = "https://ai.gateway.lovable.dev/v1/chat/completions";
       apiKey = Deno.env.get("LOVABLE_API_KEY") || "";
     } else {
-      // Custom provider - get from ai_providers table or agent config
       const { data: provider } = await supabase
         .from("ai_providers")
         .select("*")
@@ -91,7 +87,6 @@ serve(async (req) => {
       authHeader = provider?.auth_header || null;
       authPrefix = provider?.auth_prefix || null;
 
-      // Check for dynamic base_url override in integration_credentials
       if (provider?.credential_key === "base_url" || !authHeader) {
         const { data: urlOverride } = await supabase
           .from("integration_credentials")
@@ -108,7 +103,6 @@ serve(async (req) => {
         }
       }
 
-      // Get API key from integration_credentials
       const credKey = agent.ai_api_key_credential || (provider?.credential_key !== "base_url" ? provider?.credential_key : null);
       if (credKey) {
         const { data: cred } = await supabase
@@ -129,16 +123,19 @@ serve(async (req) => {
       });
     }
 
-    // Build request headers — skip auth for providers without auth_header (e.g. Ollama)
     const fetchHeaders: Record<string, string> = { "Content-Type": "application/json" };
     if (authHeader && apiKey) {
       fetchHeaders[authHeader] = `${authPrefix || ""} ${apiKey}`.trim();
     }
 
-    // Call AI API
+    // Timeout (3 min) — modelos locais grandes podem ser lentos
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 180000);
+
     const aiResponse = await fetch(apiUrl, {
       method: "POST",
       headers: fetchHeaders,
+      signal: controller.signal,
       body: JSON.stringify({
         model: agent.ai_model,
         messages: [
@@ -146,8 +143,14 @@ serve(async (req) => {
           ...messages,
         ],
         temperature: Math.min(1, Math.max(0, agent.temperature || 0.7)),
+        stream: wantStream,
       }),
+    }).catch((err) => {
+      clearTimeout(timeoutId);
+      throw err;
     });
+
+    clearTimeout(timeoutId);
 
     if (!aiResponse.ok) {
       const errorText = await aiResponse.text();
@@ -172,6 +175,19 @@ serve(async (req) => {
       });
     }
 
+    // ─── Streaming pass-through ───
+    if (wantStream && aiResponse.body) {
+      return new Response(aiResponse.body, {
+        headers: {
+          ...corsHeaders,
+          "Content-Type": "text/event-stream",
+          "Cache-Control": "no-cache",
+          "Connection": "keep-alive",
+        },
+      });
+    }
+
+    // ─── Non-streaming (legacy) ───
     const result = await aiResponse.json();
     const content = result.choices?.[0]?.message?.content || agent.fallback_message || "";
     const usage = result.usage || {};
@@ -181,10 +197,16 @@ serve(async (req) => {
     return new Response(JSON.stringify({ content, usage }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
-  } catch (e) {
+  } catch (e: any) {
     console.error("ai-playground error:", e);
-    return new Response(JSON.stringify({ error: e instanceof Error ? e.message : "Unknown error" }), {
-      status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
+    const isAbort = e?.name === "AbortError";
+    return new Response(JSON.stringify({
+      error: isAbort
+        ? "O modelo não respondeu em 3 min. Verifica se o servidor Ollama está activo ou escolhe um modelo mais leve."
+        : (e instanceof Error ? e.message : "Unknown error"),
+    }), {
+      status: isAbort ? 504 : 500,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }
 });
