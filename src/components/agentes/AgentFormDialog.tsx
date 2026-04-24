@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import type { AIAgent, AIProvider, FlowOption, DocOption, CollectionOption } from "@/pages/Agentes";
 import { cn } from "@/lib/utils";
+import { SyncOllamaModelsButton } from "@/components/agentes/SyncOllamaModelsButton";
 
 const SKILL_TYPES = [
   { type: "crm", label: "Consultar CRM", description: "Buscar leads, propostas, contratos e casos no CRM", icon: "📊" },
@@ -300,13 +301,35 @@ export function AgentFormDialog({
               </div>
 
               <div>
-                <Label className="text-sm font-medium">Modelo</Label>
-                <p className="text-xs text-muted-foreground mb-2">Modelos mais avançados são mais inteligentes mas podem custar mais.</p>
+                <div className="flex items-center justify-between mb-2">
+                  <div>
+                    <Label className="text-sm font-medium">Modelo</Label>
+                    <p className="text-xs text-muted-foreground">Modelos mais avançados são mais inteligentes mas podem custar mais.</p>
+                  </div>
+                  {editingAgent.ai_provider === "qwen-local" && (
+                    <SyncOllamaModelsButton
+                      onSynced={(models) => {
+                        // Update local provider models so dropdown refreshes immediately
+                        const newModels = models.map((n) => ({ name: n, display: n }));
+                        if (selectedTextProvider) {
+                          (selectedTextProvider as any).available_models = newModels;
+                        }
+                        // If current model not in list, switch to first available
+                        if (models.length > 0 && !models.includes(editingAgent.ai_model || "")) {
+                          setEditingAgent((prev) => ({ ...prev, ai_model: models[0] }));
+                        } else {
+                          // Force re-render
+                          setEditingAgent((prev) => ({ ...prev }));
+                        }
+                      }}
+                    />
+                  )}
+                </div>
                 <Select
                   value={editingAgent.ai_model || ""}
                   onValueChange={(v) => setEditingAgent(prev => ({ ...prev, ai_model: v }))}
                 >
-                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectTrigger><SelectValue placeholder={textModels.length === 0 ? "Nenhum modelo — clique em Sincronizar" : "Escolha um modelo"} /></SelectTrigger>
                   <SelectContent>
                     {textModels.map((m: any) => (
                       <SelectItem key={m.name} value={m.name}>{m.display || m.name}</SelectItem>

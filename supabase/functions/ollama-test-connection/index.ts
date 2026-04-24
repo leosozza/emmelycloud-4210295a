@@ -6,9 +6,25 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
+const PROVIDER_SLUG = "qwen-local";
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
+  }
+
+  // Allow caller to optionally request persistence of fetched models
+  let persist = false;
+  if (req.method === "POST") {
+    try {
+      const body = await req.json();
+      persist = !!body?.persist;
+    } catch {
+      // ignore
+    }
+  } else {
+    const url = new URL(req.url);
+    persist = url.searchParams.get("persist") === "1";
   }
 
   try {
@@ -17,11 +33,10 @@ Deno.serve(async (req) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
     );
 
-    // Fetch the real Ollama URL from integration_credentials
     const { data, error } = await supabase
       .from("integration_credentials")
       .select("credential_value")
-      .eq("provider", "qwen-local")
+      .eq("provider", PROVIDER_SLUG)
       .eq("credential_key", "OLLAMA_BASE_URL")
       .maybeSingle();
 
@@ -34,7 +49,6 @@ Deno.serve(async (req) => {
 
     const baseUrl = data.credential_value.replace(/\/v1\/chat\/completions$/, "").replace(/\/+$/, "");
 
-    // Test connectivity by calling /api/tags
     let resp;
     try {
       resp = await fetch(`${baseUrl}/api/tags`, { signal: AbortSignal.timeout(10000) });
@@ -61,7 +75,44 @@ Deno.serve(async (req) => {
     }
 
     const tagsData = await resp.json();
-    const models = (tagsData.models || []).map((m: any) => m.name);
+    const modelObjs = (tagsData.models || []).map((m: any) => ({ name: m.name, display: m.name }));
+    const models = modelObjs.map((m: any) => m.name);
+
+    let persisted = false;
+    let agents_updated = 0;
+    if (persist && modelObjs.length > 0) {
+      const fullChatUrl = `${baseUrl}/v1/chat/completions`;
+      await supabase
+        .from("ai_providers")
+        .update({
+          base_url: fullChatUrl,
+          available_models: modelObjs,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("slug", PROVIDER_SLUG);
+
+      // Clear stale ai_base_url on agents
+      await supabase
+        .from("ai_agents")
+        .update({ ai_base_url: null })
+        .eq("ai_provider", PROVIDER_SLUG);
+
+      // Reassign ai_model where current model no longer exists
+      const { data: agents } = await supabase
+        .from("ai_agents")
+        .select("id, ai_model")
+        .eq("ai_provider", PROVIDER_SLUG);
+
+      const fallback = models[0];
+      for (const a of agents || []) {
+        if (!models.includes(a.ai_model)) {
+          await supabase.from("ai_agents").update({ ai_model: fallback }).eq("id", a.id);
+          agents_updated++;
+        }
+      }
+
+      persisted = true;
+    }
 
     return new Response(
       JSON.stringify({
@@ -69,6 +120,8 @@ Deno.serve(async (req) => {
         message: `Conexão OK! Modelos: ${models.join(", ") || "nenhum encontrado"}`,
         url: baseUrl,
         models,
+        persisted,
+        agents_updated,
       }),
       { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
