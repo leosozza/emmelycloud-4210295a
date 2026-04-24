@@ -2328,11 +2328,70 @@ function recommendationStyle(rec?: string | null) {
   return "bg-muted text-muted-foreground";
 }
 
+// Perfis de uso: cada perfil pondera de forma diferente os scores do benchmark.
+// Os pesos somam 1.0 (qualidade total) + um peso opcional para velocidade.
+type UsageProfile = {
+  id: string;
+  label: string;
+  description: string;
+  weights: { reasoning: number; knowledge: number; instruction: number; speed: number };
+};
+
+const USAGE_PROFILES: UsageProfile[] = [
+  {
+    id: "balanced",
+    label: "Equilibrado",
+    description: "Ranking padrão por qualidade global.",
+    weights: { reasoning: 0.34, knowledge: 0.33, instruction: 0.33, speed: 0.0 },
+  },
+  {
+    id: "triagem",
+    label: "Triagem",
+    description: "Respostas rápidas e siga-instruções para classificar/encaminhar leads.",
+    weights: { reasoning: 0.15, knowledge: 0.15, instruction: 0.40, speed: 0.30 },
+  },
+  {
+    id: "redacao",
+    label: "Redação",
+    description: "Texto fluente e fiel ao briefing (instrução + conhecimento).",
+    weights: { reasoning: 0.20, knowledge: 0.40, instruction: 0.40, speed: 0.0 },
+  },
+  {
+    id: "analise",
+    label: "Análise jurídica",
+    description: "Raciocínio profundo e conhecimento — velocidade não importa.",
+    weights: { reasoning: 0.55, knowledge: 0.35, instruction: 0.10, speed: 0.0 },
+  },
+];
+
+function computeProfileScore(r: BenchmarkRow, profile: UsageProfile, maxTps: number): number {
+  const reasoning = r.reasoning_score ?? 0;
+  const knowledge = r.knowledge_score ?? 0;
+  const instruction = r.instruction_score ?? 0;
+  // Normaliza tokens/s para 0-100 com base no mais rápido do conjunto
+  const speed = maxTps > 0 && r.tokens_per_second ? (r.tokens_per_second / maxTps) * 100 : 0;
+  const w = profile.weights;
+  const totalQualityWeight = w.reasoning + w.knowledge + w.instruction;
+  const qualityPart = reasoning * w.reasoning + knowledge * w.knowledge + instruction * w.instruction;
+  const speedPart = speed * w.speed;
+  // Renormaliza para 0-100
+  return qualityPart + speedPart * (totalQualityWeight > 0 ? 1 : 0) / Math.max(totalQualityWeight + w.speed, 0.0001) * (totalQualityWeight + w.speed);
+}
+
 function ModelBenchmarkCard({ providerSlug }: { providerSlug: string }) {
   const [rows, setRows] = useState<BenchmarkRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [running, setRunning] = useState(false);
   const [progress, setProgress] = useState<string>("");
+  const [profileId, setProfileId] = useState<string>(() => {
+    if (typeof window === "undefined") return "balanced";
+    return localStorage.getItem("ollama_usage_profile") || "balanced";
+  });
+  const profile = USAGE_PROFILES.find((p) => p.id === profileId) ?? USAGE_PROFILES[0];
+
+  useEffect(() => {
+    try { localStorage.setItem("ollama_usage_profile", profileId); } catch {}
+  }, [profileId]);
 
   const load = useCallback(async () => {
     setLoading(true);
