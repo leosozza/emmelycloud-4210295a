@@ -6,7 +6,7 @@ import { MarkdownMessage } from "@/components/chat/MarkdownMessage";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
-import { Send, Loader2, Sparkles, Square, AlertTriangle } from "lucide-react";
+import { Send, Loader2, Sparkles, Square, AlertTriangle, Bot } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { AudioRecordButton } from "@/components/chat/AudioRecordButton";
