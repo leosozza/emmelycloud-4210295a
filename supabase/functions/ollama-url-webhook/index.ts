@@ -5,6 +5,65 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+const PROVIDER_SLUG = "qwen-local";
+
+async function syncOllamaProvider(supabase: any, baseUrl: string) {
+  // baseUrl is the raw URL we just stored (may or may not include /v1/chat/completions)
+  const cleanBase = baseUrl.replace(/\/v1\/chat\/completions$/, "").replace(/\/+$/, "");
+  const result: { models: string[]; error?: string } = { models: [] };
+
+  try {
+    const resp = await fetch(`${cleanBase}/api/tags`, { signal: AbortSignal.timeout(15000) });
+    if (!resp.ok) {
+      result.error = `HTTP ${resp.status} from /api/tags`;
+      return result;
+    }
+    const json = await resp.json();
+    const models = (json.models || []).map((m: any) => ({ name: m.name, display: m.name }));
+    result.models = models.map((m: any) => m.name);
+
+    // Update ai_providers with new base_url and available_models
+    const fullChatUrl = `${cleanBase}/v1/chat/completions`;
+    await supabase
+      .from("ai_providers")
+      .update({
+        base_url: fullChatUrl,
+        available_models: models,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("slug", PROVIDER_SLUG);
+
+    // Clear ai_base_url on all qwen-local agents so they always use credential override
+    await supabase
+      .from("ai_agents")
+      .update({ ai_base_url: null })
+      .eq("ai_provider", PROVIDER_SLUG);
+
+    // Reassign ai_model on agents whose current model is no longer available
+    if (models.length > 0) {
+      const availableNames = models.map((m: any) => m.name);
+      const { data: agentsToFix } = await supabase
+        .from("ai_agents")
+        .select("id, ai_model")
+        .eq("ai_provider", PROVIDER_SLUG);
+
+      const fallback = availableNames[0];
+      for (const a of agentsToFix || []) {
+        if (!availableNames.includes(a.ai_model)) {
+          await supabase
+            .from("ai_agents")
+            .update({ ai_model: fallback })
+            .eq("id", a.id);
+        }
+      }
+    }
+  } catch (e: any) {
+    result.error = e?.message || String(e);
+  }
+
+  return result;
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -22,7 +81,6 @@ Deno.serve(async (req) => {
     Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
   );
 
-  // Extract source IP
   const sourceIp = req.headers.get("cf-connecting-ip") || req.headers.get("x-forwarded-for") || "unknown";
 
   let body: any;
@@ -45,7 +103,6 @@ Deno.serve(async (req) => {
   try {
     const { url, secret } = body;
 
-    // Validate secret
     const expectedSecret = Deno.env.get("OLLAMA_WEBHOOK_SECRET");
     if (expectedSecret && secret !== expectedSecret) {
       await supabase.from("ollama_url_audit").insert({
@@ -62,7 +119,6 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Validate URL
     if (!url || typeof url !== "string") {
       await supabase.from("ollama_url_audit").insert({
         source_ip: sourceIp,
@@ -95,11 +151,10 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Get previous URL before updating
     const { data: prevData } = await supabase
       .from("integration_credentials")
       .select("credential_value")
-      .eq("provider", "qwen-local")
+      .eq("provider", PROVIDER_SLUG)
       .eq("credential_key", "OLLAMA_BASE_URL")
       .maybeSingle();
 
@@ -110,7 +165,7 @@ Deno.serve(async (req) => {
       .from("integration_credentials")
       .upsert(
         {
-          provider: "qwen-local",
+          provider: PROVIDER_SLUG,
           credential_key: "OLLAMA_BASE_URL",
           credential_value: newUrl,
         },
@@ -137,20 +192,35 @@ Deno.serve(async (req) => {
     const urlChanged = previousUrl !== newUrl;
     console.log(`[ollama-url-webhook] URL ${urlChanged ? "CHANGED" : "unchanged"}: ${previousUrl || "(none)"} → ${newUrl}`);
 
-    // Audit log — success
+    // Best-effort: sync provider models from /api/tags
+    const sync = await syncOllamaProvider(supabase, newUrl);
+    if (sync.error) {
+      console.warn("[ollama-url-webhook] sync warning:", sync.error);
+    } else {
+      console.log(`[ollama-url-webhook] synced ${sync.models.length} models:`, sync.models.join(", "));
+    }
+
     await supabase.from("ollama_url_audit").insert({
       source_ip: sourceIp,
       received_url: newUrl,
       previous_url: previousUrl,
       status: urlChanged ? "updated" : "unchanged",
-      error_message: null,
+      error_message: sync.error ? `sync warning: ${sync.error}` : null,
       secret_valid: true,
-      raw_payload: body,
+      raw_payload: { ...body, synced_models: sync.models },
     });
 
-    return new Response(JSON.stringify({ ok: true, url: newUrl, changed: urlChanged, previous: previousUrl }), {
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    return new Response(
+      JSON.stringify({
+        ok: true,
+        url: newUrl,
+        changed: urlChanged,
+        previous: previousUrl,
+        models_synced: sync.models,
+        sync_error: sync.error || null,
+      }),
+      { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+    );
   } catch (e) {
     console.error("ollama-url-webhook error:", e);
     await supabase.from("ollama_url_audit").insert({
