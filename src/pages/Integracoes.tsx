@@ -2308,6 +2308,22 @@ function IATab() {
   const [loading, setLoading] = useState(true);
   const [auditLogs, setAuditLogs] = useState<AuditEntry[]>([]);
   const [auditLoading, setAuditLoading] = useState(true);
+  const [availableModels, setAvailableModels] = useState<string[]>([]);
+
+  const loadProviderModels = useCallback(async () => {
+    try {
+      const { data } = await supabase
+        .from("ai_providers")
+        .select("available_models")
+        .eq("slug", "qwen-local")
+        .maybeSingle();
+      const list = Array.isArray(data?.available_models) ? data!.available_models : [];
+      const names = list
+        .map((m: any) => (typeof m === "string" ? m : m?.name))
+        .filter((n: any): n is string => typeof n === "string" && n.length > 0);
+      if (names.length) setAvailableModels(names);
+    } catch {}
+  }, []);
 
   const loadUrl = useCallback(async () => {
     setLoading(true);
@@ -2315,6 +2331,9 @@ function IATab() {
       const { data, error } = await supabase.functions.invoke("ollama-test-connection");
       if (!error && data?.url) {
         setCurrentUrl(data.url);
+        if (Array.isArray(data?.models) && data.models.length) {
+          setAvailableModels(data.models);
+        }
       } else {
         const { data: credData } = await supabase.functions.invoke("manage-credentials", { method: "GET" });
         if (credData?.credentials) {
@@ -2339,7 +2358,7 @@ function IATab() {
     setAuditLoading(false);
   }, []);
 
-  useEffect(() => { loadUrl(); loadAudit(); }, [loadUrl, loadAudit]);
+  useEffect(() => { loadUrl(); loadAudit(); loadProviderModels(); }, [loadUrl, loadAudit, loadProviderModels]);
 
   const handleSave = async () => {
     if (!ollamaUrl.trim()) return;
@@ -2355,6 +2374,7 @@ function IATab() {
         toast.success("URL do Ollama guardada com sucesso");
         setOllamaUrl("");
         await loadUrl();
+        await loadProviderModels();
       }
     } catch {
       toast.error("Erro de rede");
@@ -2366,12 +2386,19 @@ function IATab() {
     setTesting(true);
     setTestResult(null);
     try {
-      const { data, error } = await supabase.functions.invoke("ollama-test-connection");
+      const { data, error } = await supabase.functions.invoke("ollama-test-connection", {
+        body: { persist: true },
+      });
       if (error) {
         setTestResult({ ok: false, error: `Erro ao chamar teste: ${error.message}` });
       } else if (data?.ok) {
         setTestResult({ ok: true, message: data.message });
         if (data.url) setCurrentUrl(data.url);
+        if (Array.isArray(data?.models) && data.models.length) {
+          setAvailableModels(data.models);
+        } else {
+          await loadProviderModels();
+        }
       } else {
         setTestResult({ ok: false, error: data?.error || "Falha desconhecida" });
       }
@@ -2449,11 +2476,19 @@ function IATab() {
           )}
 
           <div className="pt-2 border-t space-y-1">
-            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Modelos disponíveis</p>
+            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+              Modelos disponíveis {availableModels.length > 0 && `(${availableModels.length})`}
+            </p>
             <div className="flex flex-wrap gap-1.5">
-              {["qwen2.5:7b", "qwen2.5:14b", "qwen2.5:32b"].map((m) => (
-                <Badge key={m} variant="secondary" className="text-xs">{m}</Badge>
-              ))}
+              {availableModels.length === 0 ? (
+                <p className="text-xs text-muted-foreground italic">
+                  Nenhum modelo carregado. Clique em "Testar Conexão Ollama" para sincronizar.
+                </p>
+              ) : (
+                availableModels.map((m) => (
+                  <Badge key={m} variant="secondary" className="text-xs">{m}</Badge>
+                ))
+              )}
             </div>
             <p className="text-[10px] text-muted-foreground">Selecione estes modelos ao criar/editar agentes com o provedor "Qwen Local".</p>
           </div>
