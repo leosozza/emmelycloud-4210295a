@@ -1,62 +1,78 @@
+## Objetivo
 
+Garantir que no `/chat` cada agente responde **como especialista da sua área**, citando e ancorando-se no **conhecimento vinculado** (coleções/documentos) e na **persona treinada** (`base_prompt`).
 
-## Problema
+## Problemas atuais (confirmados por inspeção)
 
-O `/chat` parece travado quando usas modelos LLM locais (Ollama via Cloudflare tunnel). Causas:
+1. **RAG ausente** — `ai-playground` carrega sempre os 20 primeiros chunks (por `chunk_index`), ignorando a pergunta. Agentes com 98 ou 186 chunks usam apenas ~10% do conhecimento.
+2. **`base_prompt` ignorado** — a persona gerada pelo treinamento (até 6 635 chars no Emmely AI) nunca chega ao modelo. Só vai o `system_prompt`.
+3. **Conteúdo truncado** — `chunksToToon` corta cada chunk a 500 chars e remove vírgulas/quebras, perdendo nuances jurídicas.
+4. **Sem ancoragem** — o modelo recebe contexto mas não é instruído a usá-lo prioritariamente nem a citá-lo.
+5. **UI cega** — utilizador não sabe se o conhecimento está a ser usado nem quantos chunks foram consultados.
 
-1. **Sem streaming** — a edge function `ai-playground` espera o Ollama gerar a resposta inteira antes de devolver. Com `qwen3.6:35b` isso demora 30-90s e o utilizador vê só um spinner.
-2. **Sem timeout nem feedback** — não há indicação de tempo decorrido nem aviso "modelo a carregar" (Ollama demora extra ~10-30s na primeira chamada para carregar o modelo na VRAM).
-3. **Tunnel Cloudflare** adiciona latência variável (50-500ms por chunk) que se acumula sem streaming.
-4. **Sem aviso de modelo lento** — a UI não mostra que o agente seleccionado é um modelo de 35B (lento por natureza).
+## Mudanças
 
-## Plano de correção
+### 1. `supabase/functions/ai-playground/index.ts` — RAG real + persona
 
-### 1. Streaming token-a-token na `ai-playground`
+- **Persona**: concatenar `base_prompt + system_prompt` (Persona vem antes das instruções), seguindo o padrão já usado no `ai-process-message`.
+- **Pesquisa por relevância**: extrair última mensagem do utilizador e chamar o RPC já existente `search_chunks_fts(search_query, doc_ids, match_count=8)`. Fallback para os 8 primeiros chunks se a pesquisa não devolver nada (perguntas muito curtas/genéricas tipo "olá").
+- **Sem TOON / sem truncar**: incluir o conteúdo completo dos chunks num bloco legível:
+  ```
+  --- BASE DE CONHECIMENTO (especialista nesta área) ---
+  [Fonte 1] <conteúdo integral>
+  [Fonte 2] <conteúdo integral>
+  ...
+  --- FIM ---
+  ```
+- **Instrução de ancoragem** acrescentada ao system prompt quando há conhecimento:
+  > "Responde como especialista exclusivamente nesta área. Baseia as respostas na BASE DE CONHECIMENTO acima. Se a informação não estiver lá, diz que não tens essa informação em vez de inventar. Cita as fontes referindo `[Fonte N]` quando relevante."
+- **Logs**: `console.log` com método (`fts`/`fallback`), nº de chunks, query, tamanho do contexto.
+- Manter streaming, timeout 180s, tratamento 429/402/504 (já existe).
 
-- Aceitar `stream: true` no payload e passar para o Ollama (compatível com OpenAI API).
-- Devolver SSE (`text/event-stream`) directamente do Ollama para o cliente, sem buffer.
-- Manter modo não-streaming como fallback (compatibilidade com outros chamadores).
+### 2. `src/pages/ChatIA.tsx` — feedback visual de conhecimento
 
-### 2. Frontend `/chat` consome stream
+- Carregar, ao listar agentes, contagens de docs e chunks vinculados (uma única query agregada).
+- Na barra de info do modelo (acima das mensagens) acrescentar à esquerda:
+  - 📚 **`N docs · M chunks`** quando o agente tem conhecimento.
+  - Tooltip com nomes das primeiras coleções.
+  - Ícone subtil quando o agente NÃO tem conhecimento (modo "generalista").
 
-Em `src/pages/ChatIA.tsx`, refazer o `handleSend`:
-- Usar `fetch` directo para `${VITE_SUPABASE_URL}/functions/v1/ai-playground` com header `Authorization: Bearer <publishable_key>`.
-- Parser SSE linha-a-linha (padrão do skill `connecting-to-ai-models`).
-- Atualizar a última mensagem do assistant a cada token recebido — feedback imediato em vez de spinner de 60s.
-- Suporte a cancelar com `AbortController` (botão "Parar" enquanto streama).
+### 3. (Sem alterações de DB)
 
-### 3. Indicadores visuais de progresso
-
-Na bolha do assistant durante o streaming:
-- Enquanto não chega o primeiro token: badge **"A carregar modelo…"** (≤10s) → **"A pensar…"** (>10s).
-- Cronómetro discreto (`0:23`) ao lado do spinner para o utilizador saber que não está parado.
-- Mostrar o nome do modelo activo abaixo do header (ex.: `qwen3.6:35b · Qwen Local`).
-
-### 4. Aviso de modelo pesado
-
-No selector de agentes (sidebar), se o modelo for `>=14B` ou `vl`, badge ⚠️ **"lento"** com tooltip: "Este modelo demora 30-90s. Para respostas rápidas escolhe um agente com `llama3.2:3b` ou similar."
-
-### 5. Timeout configurável e mensagem útil
-
-- Timeout de 180s na chamada ao Ollama (em vez do default que pode pendurar indefinidamente).
-- Em caso de timeout: toast "O modelo `<nome>` não respondeu em 3 min. Verifica se o servidor Ollama está activo ou escolhe um modelo mais leve."
-
-### 6. (Opcional, não bloqueante) Pre-warm do modelo
-
-Botão **"Aquecer modelo"** no sidebar que faz uma chamada `POST /api/generate` com `keep_alive: "30m"` ao Ollama para o modelo ficar carregado em VRAM. Reduz a 1ª resposta em 10-30s.
+O RPC `search_chunks_fts` e a tabela `knowledge_chunks` já existem e estão a ser usados pelo `ai-process-message`. Não há migração nem nova tabela.
 
 ## Detalhes técnicos
 
-- `ai-playground` passa a usar `stream: true` no body do Ollama; o response body é re-emitido com `Content-Type: text/event-stream`.
-- O parser do frontend segue o padrão do skill (line-by-line, ignora `:` keepalive, re-buffer JSON parcial, flush final).
-- `AbortController` no `handleSend` permite cancelar e o servidor Ollama fecha o stream quando o cliente desconecta.
-- Os campos persistidos na sessão continuam a ser a mensagem completa (ao acabar o stream).
+- O bloco de persona é concatenado assim:
+  ```
+  <base_prompt>
+  
+  <system_prompt>
+  
+  --- BASE DE CONHECIMENTO ---
+  ...
+  --- FIM ---
+  
+  <regra de idioma automático>
+  
+  <regra de ancoragem (só se houver conhecimento)>
+  ```
+- A query FTS usa apenas a última mensagem `user`. Se for `< 3` palavras úteis, salta direto para o fallback sequencial (evita resultados ruidosos em saudações).
+- Limite ajustável por constante (`RAG_TOP_K = 8`). Cada chunk normalmente ~1 000 chars → contexto ~8 KB, perfeitamente comportável para `qwen3.6:35b`.
+- A contagem de docs/chunks no frontend usa duas queries paralelas com `count: "exact", head: true` por agente seleccionado (não por todos, para não sobrecarregar).
+
+## Ficheiros a tocar
+
+| Ficheiro | Alteração |
+|---|---|
+| `supabase/functions/ai-playground/index.ts` | RAG via FTS, persona, instrução de ancoragem, logs |
+| `src/pages/ChatIA.tsx` | Badge de conhecimento, contagem de chunks/docs |
 
 ## Como testar
 
-1. Abrir `/chat`, escolher agente com `qwen3.6:35b`, enviar "Olá". Primeiros tokens devem aparecer em ≤15s, não 60s.
-2. Trocar para agente com `llama3.2:3b`. Resposta deve começar em ≤2s.
-3. Enviar mensagem longa e clicar **Parar** a meio — stream interrompe imediatamente.
-4. Desligar o tunnel Cloudflare, enviar mensagem → toast de timeout claro após 3 min.
-5. Confirmar badge ⚠️ "lento" no selector para agentes com modelos `>=14B`.
-
+1. **Especialista em Salário-Maternidade** (186 chunks): perguntar *"Quem tem direito a salário-maternidade rural?"* → resposta deve citar `[Fonte N]` e basear-se no conteúdo vinculado, não em conhecimento genérico.
+2. **Emmely AI** (0 chunks, 6 635 chars de persona): saudar → resposta deve refletir tom/identidade da Emmely (persona), sem referências externas.
+3. **Qwen Assistant** (0 docs, persona mínima): comportamento de modelo cru, sem badge 📚.
+4. **Pergunta fora do escopo** ao Especialista em Salário-Maternidade (ex: "qual é a capital da Austrália?") → deve recusar educadamente: *"Não tenho essa informação na minha base."*
+5. Logs da edge function mostram: `[AI-PLAYGROUND] RAG: method=fts, chunks=8, query="salário-maternidade rural", ctx=7843 chars`.
+6. Header do `/chat` mostra `📚 7 docs · 186 chunks` para o Especialista, nada para o Qwen Assistant.
