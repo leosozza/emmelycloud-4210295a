@@ -2524,6 +2524,57 @@ export type Database = {
         }
         Relationships: []
       }
+      ollama_model_benchmarks: {
+        Row: {
+          avg_latency_ms: number | null
+          created_at: string
+          error_message: string | null
+          id: string
+          instruction_score: number | null
+          knowledge_score: number | null
+          model_name: string
+          provider_slug: string
+          quality_score: number | null
+          raw_results: Json | null
+          reasoning_score: number | null
+          recommendation: string | null
+          tokens_per_second: number | null
+          updated_at: string
+        }
+        Insert: {
+          avg_latency_ms?: number | null
+          created_at?: string
+          error_message?: string | null
+          id?: string
+          instruction_score?: number | null
+          knowledge_score?: number | null
+          model_name: string
+          provider_slug?: string
+          quality_score?: number | null
+          raw_results?: Json | null
+          reasoning_score?: number | null
+          recommendation?: string | null
+          tokens_per_second?: number | null
+          updated_at?: string
+        }
+        Update: {
+          avg_latency_ms?: number | null
+          created_at?: string
+          error_message?: string | null
+          id?: string
+          instruction_score?: number | null
+          knowledge_score?: number | null
+          model_name?: string
+          provider_slug?: string
+          quality_score?: number | null
+          raw_results?: Json | null
+          reasoning_score?: number | null
+          recommendation?: string | null
+          tokens_per_second?: number | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
       ollama_url_audit: {
         Row: {
           created_at: string

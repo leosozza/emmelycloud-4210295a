@@ -48,6 +48,11 @@ import {
   ExternalLink,
   HelpCircle,
   ChevronRight,
+  Sparkles,
+  Trophy,
+  Zap,
+  Scale,
+  Gauge,
 } from "lucide-react";
 import {
   Dialog,
@@ -2299,6 +2304,244 @@ interface AuditEntry {
   secret_valid: boolean;
 }
 
+// ─── Model Benchmark / Ranking ───────────────────────────────────────────────
+
+interface BenchmarkRow {
+  model_name: string;
+  quality_score: number | null;
+  reasoning_score: number | null;
+  knowledge_score: number | null;
+  instruction_score: number | null;
+  avg_latency_ms: number | null;
+  tokens_per_second: number | null;
+  recommendation: string | null;
+  error_message: string | null;
+  updated_at: string;
+}
+
+function recommendationStyle(rec?: string | null) {
+  if (!rec) return "bg-muted text-muted-foreground";
+  if (rec.includes("Mais inteligente")) return "bg-amber-100 text-amber-800 border-amber-300";
+  if (rec.includes("Mais rápido")) return "bg-blue-100 text-blue-800 border-blue-300";
+  if (rec.includes("custo/benefício")) return "bg-emerald-100 text-emerald-800 border-emerald-300";
+  if (rec === "Indisponível") return "bg-red-50 text-red-700 border-red-200";
+  return "bg-muted text-muted-foreground";
+}
+
+function ModelBenchmarkCard({ providerSlug }: { providerSlug: string }) {
+  const [rows, setRows] = useState<BenchmarkRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [running, setRunning] = useState(false);
+  const [progress, setProgress] = useState<string>("");
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const { data } = await supabase
+        .from("ollama_model_benchmarks")
+        .select("model_name, quality_score, reasoning_score, knowledge_score, instruction_score, avg_latency_ms, tokens_per_second, recommendation, error_message, updated_at")
+        .eq("provider_slug", providerSlug)
+        .order("quality_score", { ascending: false, nullsFirst: false });
+      if (data) setRows(data as BenchmarkRow[]);
+    } catch {}
+    setLoading(false);
+  }, [providerSlug]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const runBenchmark = async (singleModel?: string) => {
+    setRunning(true);
+    setProgress(singleModel ? `A reavaliar ${singleModel}…` : "A avaliar modelos (pode demorar 1-3 min)…");
+    try {
+      const { data, error } = await supabase.functions.invoke("ollama-benchmark-models", {
+        body: singleModel ? { model: singleModel } : {},
+      });
+      if (error) {
+        toast.error(`Erro: ${error.message}`);
+      } else if (data?.ok) {
+        toast.success(`Avaliados ${data.evaluated} modelo(s)`);
+        await load();
+      } else {
+        toast.error(data?.error || "Falha ao avaliar");
+      }
+    } catch (e: any) {
+      toast.error(e.message || "Erro de rede");
+    }
+    setProgress("");
+    setRunning(false);
+  };
+
+  const sorted = [...rows].sort((a, b) => (b.quality_score ?? -1) - (a.quality_score ?? -1));
+  const best = sorted.find((r) => r.recommendation?.includes("Mais inteligente"));
+  const fastest = sorted.find((r) => r.recommendation?.includes("Mais rápido"));
+  const balanced = sorted.find((r) => r.recommendation?.includes("custo/benefício"));
+
+  return (
+    <Card>
+      <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-2">
+        <div className="flex items-center gap-3">
+          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-fuchsia-100">
+            <Trophy className="h-5 w-5 text-fuchsia-600" />
+          </div>
+          <div>
+            <CardTitle className="text-base">Classificação de Modelos</CardTitle>
+            <CardDescription>
+              Avaliação automática de cada modelo: qualidade, velocidade e recomendação de uso.
+            </CardDescription>
+          </div>
+        </div>
+        <Button size="sm" onClick={() => runBenchmark()} disabled={running}>
+          {running ? (
+            <><Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />A avaliar…</>
+          ) : (
+            <><Sparkles className="h-3.5 w-3.5 mr-1.5" />Avaliar modelos</>
+          )}
+        </Button>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {progress && (
+          <div className="rounded-md border border-violet-200 bg-violet-50 px-3 py-2 text-xs text-violet-800 flex items-center gap-2">
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            {progress}
+          </div>
+        )}
+
+        {/* Cards de destaque */}
+        {(best || fastest || balanced) && (
+          <div className="grid gap-3 sm:grid-cols-3">
+            {best && (
+              <div className="rounded-lg border border-amber-200 bg-amber-50 p-3">
+                <div className="flex items-center gap-2 text-amber-800">
+                  <Trophy className="h-4 w-4" />
+                  <span className="text-xs font-semibold uppercase tracking-wide">Mais inteligente</span>
+                </div>
+                <p className="mt-1 text-sm font-mono break-all">{best.model_name}</p>
+                <p className="text-[11px] text-amber-700">Qualidade {best.quality_score?.toFixed(0)}/100</p>
+              </div>
+            )}
+            {fastest && (
+              <div className="rounded-lg border border-blue-200 bg-blue-50 p-3">
+                <div className="flex items-center gap-2 text-blue-800">
+                  <Zap className="h-4 w-4" />
+                  <span className="text-xs font-semibold uppercase tracking-wide">Mais rápido</span>
+                </div>
+                <p className="mt-1 text-sm font-mono break-all">{fastest.model_name}</p>
+                <p className="text-[11px] text-blue-700">{fastest.tokens_per_second?.toFixed(1)} tok/s</p>
+              </div>
+            )}
+            {balanced && (
+              <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3">
+                <div className="flex items-center gap-2 text-emerald-800">
+                  <Scale className="h-4 w-4" />
+                  <span className="text-xs font-semibold uppercase tracking-wide">Custo/benefício</span>
+                </div>
+                <p className="mt-1 text-sm font-mono break-all">{balanced.model_name}</p>
+                <p className="text-[11px] text-emerald-700">
+                  Q {balanced.quality_score?.toFixed(0)} · {balanced.tokens_per_second?.toFixed(1)} tok/s
+                </p>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Tabela */}
+        {loading ? (
+          <p className="text-xs text-muted-foreground">A carregar…</p>
+        ) : sorted.length === 0 ? (
+          <div className="text-center py-8 text-muted-foreground">
+            <Gauge className="h-8 w-8 mx-auto mb-2 opacity-30" />
+            <p className="text-sm">Ainda não há benchmarks.</p>
+            <p className="text-[11px]">Clica em "Avaliar modelos" para gerar o ranking.</p>
+          </div>
+        ) : (
+          <div className="overflow-x-auto rounded-md border">
+            <table className="w-full text-sm">
+              <thead className="bg-muted/50 text-xs">
+                <tr>
+                  <th className="text-left px-3 py-2 w-10">#</th>
+                  <th className="text-left px-3 py-2">Modelo</th>
+                  <th className="text-left px-3 py-2">Qualidade</th>
+                  <th className="text-left px-3 py-2">Raciocínio</th>
+                  <th className="text-left px-3 py-2">Conhec.</th>
+                  <th className="text-left px-3 py-2">Instr.</th>
+                  <th className="text-left px-3 py-2">Velocidade</th>
+                  <th className="text-left px-3 py-2">Latência</th>
+                  <th className="text-left px-3 py-2">Recomendação</th>
+                  <th className="px-2 py-2"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {sorted.map((r, i) => {
+                  const medal = i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : "";
+                  const q = r.quality_score ?? 0;
+                  return (
+                    <tr key={r.model_name} className="border-t hover:bg-muted/30">
+                      <td className="px-3 py-2 text-xs font-medium">
+                        {medal || i + 1}
+                      </td>
+                      <td className="px-3 py-2 font-mono text-xs break-all max-w-[200px]">{r.model_name}</td>
+                      <td className="px-3 py-2">
+                        {r.quality_score !== null ? (
+                          <div className="flex items-center gap-2">
+                            <div className="w-20 h-1.5 bg-muted rounded-full overflow-hidden">
+                              <div
+                                className={`h-full ${q >= 75 ? "bg-emerald-500" : q >= 50 ? "bg-amber-500" : "bg-red-500"}`}
+                                style={{ width: `${q}%` }}
+                              />
+                            </div>
+                            <span className="text-xs font-medium w-9">{q.toFixed(0)}</span>
+                          </div>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">—</span>
+                        )}
+                      </td>
+                      <td className="px-3 py-2 text-xs">{r.reasoning_score?.toFixed(0) ?? "—"}</td>
+                      <td className="px-3 py-2 text-xs">{r.knowledge_score?.toFixed(0) ?? "—"}</td>
+                      <td className="px-3 py-2 text-xs">{r.instruction_score?.toFixed(0) ?? "—"}</td>
+                      <td className="px-3 py-2 text-xs">
+                        {r.tokens_per_second ? `${r.tokens_per_second.toFixed(1)} tok/s` : "—"}
+                      </td>
+                      <td className="px-3 py-2 text-xs">
+                        {r.avg_latency_ms ? `${(r.avg_latency_ms / 1000).toFixed(1)}s` : "—"}
+                      </td>
+                      <td className="px-3 py-2">
+                        <span className={`inline-block text-[10px] px-2 py-0.5 rounded-full border ${recommendationStyle(r.recommendation)}`}>
+                          {r.recommendation || "—"}
+                        </span>
+                        {r.error_message && (
+                          <p className="text-[10px] text-red-600 mt-0.5 max-w-[200px] truncate" title={r.error_message}>
+                            ⚠ {r.error_message}
+                          </p>
+                        )}
+                      </td>
+                      <td className="px-2 py-2">
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-7 px-2"
+                          disabled={running}
+                          onClick={() => runBenchmark(r.model_name)}
+                          title="Reavaliar este modelo"
+                        >
+                          <RefreshCw className="h-3 w-3" />
+                        </Button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        <p className="text-[10px] text-muted-foreground">
+          Cada modelo é avaliado com 3 prompts (raciocínio, conhecimento, instrução). A qualidade é classificada por um avaliador IA (0-100).
+        </p>
+      </CardContent>
+    </Card>
+  );
+}
+
 function IATab() {
   const [ollamaUrl, setOllamaUrl] = useState("");
   const [currentUrl, setCurrentUrl] = useState("");
@@ -2423,7 +2666,8 @@ function IATab() {
   };
 
   return (
-    <div className="grid gap-4 md:grid-cols-2">
+    <div className="space-y-4">
+      <div className="grid gap-4 md:grid-cols-2">
       {/* Config card */}
       <Card>
         <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-2">
@@ -2550,6 +2794,10 @@ function IATab() {
           </div>
         </CardContent>
       </Card>
+      </div>
+
+      {/* Benchmark / Ranking de Modelos — full width */}
+      <ModelBenchmarkCard providerSlug="qwen-local" />
     </div>
   );
 }
