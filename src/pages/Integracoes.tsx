@@ -2308,6 +2308,22 @@ function IATab() {
   const [loading, setLoading] = useState(true);
   const [auditLogs, setAuditLogs] = useState<AuditEntry[]>([]);
   const [auditLoading, setAuditLoading] = useState(true);
+  const [availableModels, setAvailableModels] = useState<string[]>([]);
+
+  const loadProviderModels = useCallback(async () => {
+    try {
+      const { data } = await supabase
+        .from("ai_providers")
+        .select("available_models")
+        .eq("slug", "qwen-local")
+        .maybeSingle();
+      const list = Array.isArray(data?.available_models) ? data!.available_models : [];
+      const names = list
+        .map((m: any) => (typeof m === "string" ? m : m?.name))
+        .filter((n: any): n is string => typeof n === "string" && n.length > 0);
+      if (names.length) setAvailableModels(names);
+    } catch {}
+  }, []);
 
   const loadUrl = useCallback(async () => {
     setLoading(true);
@@ -2315,6 +2331,9 @@ function IATab() {
       const { data, error } = await supabase.functions.invoke("ollama-test-connection");
       if (!error && data?.url) {
         setCurrentUrl(data.url);
+        if (Array.isArray(data?.models) && data.models.length) {
+          setAvailableModels(data.models);
+        }
       } else {
         const { data: credData } = await supabase.functions.invoke("manage-credentials", { method: "GET" });
         if (credData?.credentials) {
