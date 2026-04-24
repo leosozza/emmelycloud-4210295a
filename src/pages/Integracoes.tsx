@@ -2433,10 +2433,12 @@ function ModelBenchmarkCard({ providerSlug }: { providerSlug: string }) {
     setRunning(false);
   };
 
-  const sorted = [...rows].sort((a, b) => (b.quality_score ?? -1) - (a.quality_score ?? -1));
-  const best = sorted.find((r) => r.recommendation?.includes("Mais inteligente"));
-  const fastest = sorted.find((r) => r.recommendation?.includes("Mais rápido"));
-  const balanced = sorted.find((r) => r.recommendation?.includes("custo/benefício"));
+  const maxTps = Math.max(0, ...rows.map((r) => r.tokens_per_second ?? 0));
+  const scored = rows.map((r) => ({ ...r, profile_score: computeProfileScore(r, profile, maxTps) }));
+  const sorted = [...scored].sort((a, b) => (b.profile_score ?? -1) - (a.profile_score ?? -1));
+  const topForProfile = sorted[0];
+  const fastest = [...rows].sort((a, b) => (b.tokens_per_second ?? -1) - (a.tokens_per_second ?? -1))[0];
+  const smartest = [...rows].sort((a, b) => (b.quality_score ?? -1) - (a.quality_score ?? -1))[0];
 
   return (
     <Card>
