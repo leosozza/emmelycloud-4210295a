@@ -2328,11 +2328,73 @@ function recommendationStyle(rec?: string | null) {
   return "bg-muted text-muted-foreground";
 }
 
+// Perfis de uso: cada perfil pondera de forma diferente os scores do benchmark.
+// Os pesos somam 1.0 (qualidade total) + um peso opcional para velocidade.
+type UsageProfile = {
+  id: string;
+  label: string;
+  description: string;
+  weights: { reasoning: number; knowledge: number; instruction: number; speed: number };
+};
+
+const USAGE_PROFILES: UsageProfile[] = [
+  {
+    id: "balanced",
+    label: "Equilibrado",
+    description: "Ranking padrão por qualidade global.",
+    weights: { reasoning: 0.34, knowledge: 0.33, instruction: 0.33, speed: 0.0 },
+  },
+  {
+    id: "triagem",
+    label: "Triagem",
+    description: "Respostas rápidas e siga-instruções para classificar/encaminhar leads.",
+    weights: { reasoning: 0.15, knowledge: 0.15, instruction: 0.40, speed: 0.30 },
+  },
+  {
+    id: "redacao",
+    label: "Redação",
+    description: "Texto fluente e fiel ao briefing (instrução + conhecimento).",
+    weights: { reasoning: 0.20, knowledge: 0.40, instruction: 0.40, speed: 0.0 },
+  },
+  {
+    id: "analise",
+    label: "Análise jurídica",
+    description: "Raciocínio profundo e conhecimento — velocidade não importa.",
+    weights: { reasoning: 0.55, knowledge: 0.35, instruction: 0.10, speed: 0.0 },
+  },
+];
+
+function computeProfileScore(r: BenchmarkRow, profile: UsageProfile, maxTps: number): number {
+  const reasoning = r.reasoning_score ?? 0;
+  const knowledge = r.knowledge_score ?? 0;
+  const instruction = r.instruction_score ?? 0;
+  // Normaliza tokens/s para escala 0-100 conforme o mais rápido do conjunto
+  const speed = maxTps > 0 && r.tokens_per_second ? (r.tokens_per_second / maxTps) * 100 : 0;
+  const w = profile.weights;
+  const totalW = w.reasoning + w.knowledge + w.instruction + w.speed;
+  if (totalW <= 0) return 0;
+  const weighted =
+    reasoning * w.reasoning +
+    knowledge * w.knowledge +
+    instruction * w.instruction +
+    speed * w.speed;
+  return weighted / totalW;
+}
+
 function ModelBenchmarkCard({ providerSlug }: { providerSlug: string }) {
   const [rows, setRows] = useState<BenchmarkRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [running, setRunning] = useState(false);
   const [progress, setProgress] = useState<string>("");
+  const [profileId, setProfileId] = useState<string>(() => {
+    if (typeof window === "undefined") return "balanced";
+    return localStorage.getItem("ollama_usage_profile") || "balanced";
+  });
+  const profile = USAGE_PROFILES.find((p) => p.id === profileId) ?? USAGE_PROFILES[0];
+
+  useEffect(() => {
+    try { localStorage.setItem("ollama_usage_profile", profileId); } catch {}
+  }, [profileId]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -2371,10 +2433,12 @@ function ModelBenchmarkCard({ providerSlug }: { providerSlug: string }) {
     setRunning(false);
   };
 
-  const sorted = [...rows].sort((a, b) => (b.quality_score ?? -1) - (a.quality_score ?? -1));
-  const best = sorted.find((r) => r.recommendation?.includes("Mais inteligente"));
-  const fastest = sorted.find((r) => r.recommendation?.includes("Mais rápido"));
-  const balanced = sorted.find((r) => r.recommendation?.includes("custo/benefício"));
+  const maxTps = Math.max(0, ...rows.map((r) => r.tokens_per_second ?? 0));
+  const scored = rows.map((r) => ({ ...r, profile_score: computeProfileScore(r, profile, maxTps) }));
+  const sorted = [...scored].sort((a, b) => (b.profile_score ?? -1) - (a.profile_score ?? -1));
+  const topForProfile = sorted[0];
+  const fastest = [...rows].sort((a, b) => (b.tokens_per_second ?? -1) - (a.tokens_per_second ?? -1))[0];
+  const smartest = [...rows].sort((a, b) => (b.quality_score ?? -1) - (a.quality_score ?? -1))[0];
 
   return (
     <Card>
@@ -2406,17 +2470,64 @@ function ModelBenchmarkCard({ providerSlug }: { providerSlug: string }) {
           </div>
         )}
 
+        {/* Seletor de perfil de uso */}
+        {rows.length > 0 && (
+          <div className="rounded-lg border bg-muted/30 p-3 space-y-2">
+            <div className="flex items-center justify-between gap-3 flex-wrap">
+              <div className="flex items-center gap-2">
+                <Scale className="h-4 w-4 text-fuchsia-600" />
+                <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  Perfil de uso
+                </span>
+              </div>
+              <p className="text-[11px] text-muted-foreground italic flex-1 text-right min-w-[200px]">
+                {profile.description}
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {USAGE_PROFILES.map((p) => (
+                <button
+                  key={p.id}
+                  type="button"
+                  onClick={() => setProfileId(p.id)}
+                  className={`px-3 py-1.5 rounded-md text-xs font-medium border transition-colors ${
+                    profileId === p.id
+                      ? "bg-fuchsia-600 text-white border-fuchsia-600"
+                      : "bg-background hover:bg-muted border-border"
+                  }`}
+                >
+                  {p.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* Cards de destaque */}
-        {(best || fastest || balanced) && (
+        {(topForProfile || smartest || fastest) && (
           <div className="grid gap-3 sm:grid-cols-3">
-            {best && (
+            {topForProfile && (
+              <div className="rounded-lg border border-fuchsia-200 bg-fuchsia-50 p-3">
+                <div className="flex items-center gap-2 text-fuchsia-800">
+                  <Trophy className="h-4 w-4" />
+                  <span className="text-xs font-semibold uppercase tracking-wide">
+                    Melhor para “{profile.label}”
+                  </span>
+                </div>
+                <p className="mt-1 text-sm font-mono break-all">{topForProfile.model_name}</p>
+                <p className="text-[11px] text-fuchsia-700">
+                  Score {topForProfile.profile_score?.toFixed(0)}/100
+                </p>
+              </div>
+            )}
+            {smartest && (
               <div className="rounded-lg border border-amber-200 bg-amber-50 p-3">
                 <div className="flex items-center gap-2 text-amber-800">
-                  <Trophy className="h-4 w-4" />
+                  <Sparkles className="h-4 w-4" />
                   <span className="text-xs font-semibold uppercase tracking-wide">Mais inteligente</span>
                 </div>
-                <p className="mt-1 text-sm font-mono break-all">{best.model_name}</p>
-                <p className="text-[11px] text-amber-700">Qualidade {best.quality_score?.toFixed(0)}/100</p>
+                <p className="mt-1 text-sm font-mono break-all">{smartest.model_name}</p>
+                <p className="text-[11px] text-amber-700">Qualidade {smartest.quality_score?.toFixed(0)}/100</p>
               </div>
             )}
             {fastest && (
@@ -2427,18 +2538,6 @@ function ModelBenchmarkCard({ providerSlug }: { providerSlug: string }) {
                 </div>
                 <p className="mt-1 text-sm font-mono break-all">{fastest.model_name}</p>
                 <p className="text-[11px] text-blue-700">{fastest.tokens_per_second?.toFixed(1)} tok/s</p>
-              </div>
-            )}
-            {balanced && (
-              <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3">
-                <div className="flex items-center gap-2 text-emerald-800">
-                  <Scale className="h-4 w-4" />
-                  <span className="text-xs font-semibold uppercase tracking-wide">Custo/benefício</span>
-                </div>
-                <p className="mt-1 text-sm font-mono break-all">{balanced.model_name}</p>
-                <p className="text-[11px] text-emerald-700">
-                  Q {balanced.quality_score?.toFixed(0)} · {balanced.tokens_per_second?.toFixed(1)} tok/s
-                </p>
               </div>
             )}
           </div>
@@ -2460,6 +2559,7 @@ function ModelBenchmarkCard({ providerSlug }: { providerSlug: string }) {
                 <tr>
                   <th className="text-left px-3 py-2 w-10">#</th>
                   <th className="text-left px-3 py-2">Modelo</th>
+                  <th className="text-left px-3 py-2">Score perfil</th>
                   <th className="text-left px-3 py-2">Qualidade</th>
                   <th className="text-left px-3 py-2">Raciocínio</th>
                   <th className="text-left px-3 py-2">Conhec.</th>
@@ -2474,12 +2574,24 @@ function ModelBenchmarkCard({ providerSlug }: { providerSlug: string }) {
                 {sorted.map((r, i) => {
                   const medal = i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : "";
                   const q = r.quality_score ?? 0;
+                  const ps = r.profile_score ?? 0;
                   return (
                     <tr key={r.model_name} className="border-t hover:bg-muted/30">
                       <td className="px-3 py-2 text-xs font-medium">
                         {medal || i + 1}
                       </td>
                       <td className="px-3 py-2 font-mono text-xs break-all max-w-[200px]">{r.model_name}</td>
+                      <td className="px-3 py-2">
+                        <div className="flex items-center gap-2">
+                          <div className="w-16 h-1.5 bg-muted rounded-full overflow-hidden">
+                            <div
+                              className={`h-full ${ps >= 75 ? "bg-fuchsia-600" : ps >= 50 ? "bg-fuchsia-400" : "bg-fuchsia-200"}`}
+                              style={{ width: `${ps}%` }}
+                            />
+                          </div>
+                          <span className="text-xs font-semibold w-9 text-fuchsia-700">{ps.toFixed(0)}</span>
+                        </div>
+                      </td>
                       <td className="px-3 py-2">
                         {r.quality_score !== null ? (
                           <div className="flex items-center gap-2">
