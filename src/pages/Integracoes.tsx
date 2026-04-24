@@ -2476,11 +2476,19 @@ function IATab() {
           )}
 
           <div className="pt-2 border-t space-y-1">
-            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Modelos disponíveis</p>
+            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+              Modelos disponíveis {availableModels.length > 0 && `(${availableModels.length})`}
+            </p>
             <div className="flex flex-wrap gap-1.5">
-              {["qwen2.5:7b", "qwen2.5:14b", "qwen2.5:32b"].map((m) => (
-                <Badge key={m} variant="secondary" className="text-xs">{m}</Badge>
-              ))}
+              {availableModels.length === 0 ? (
+                <p className="text-xs text-muted-foreground italic">
+                  Nenhum modelo carregado. Clique em "Testar Conexão Ollama" para sincronizar.
+                </p>
+              ) : (
+                availableModels.map((m) => (
+                  <Badge key={m} variant="secondary" className="text-xs">{m}</Badge>
+                ))
+              )}
             </div>
             <p className="text-[10px] text-muted-foreground">Selecione estes modelos ao criar/editar agentes com o provedor "Qwen Local".</p>
           </div>
