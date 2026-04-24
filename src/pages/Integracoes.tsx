@@ -2542,7 +2542,7 @@ function ModelBenchmarkCard({ providerSlug }: { providerSlug: string }) {
   );
 }
 
-
+function IATab() {
   const [ollamaUrl, setOllamaUrl] = useState("");
   const [currentUrl, setCurrentUrl] = useState("");
   const [saving, setSaving] = useState(false);
