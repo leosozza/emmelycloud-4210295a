@@ -48,6 +48,11 @@ import {
   ExternalLink,
   HelpCircle,
   ChevronRight,
+  Sparkles,
+  Trophy,
+  Zap,
+  Scale,
+  Gauge,
 } from "lucide-react";
 import {
   Dialog,
