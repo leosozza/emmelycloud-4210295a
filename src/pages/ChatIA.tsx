@@ -6,7 +6,8 @@ import { MarkdownMessage } from "@/components/chat/MarkdownMessage";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
-import { Send, Loader2, Sparkles, Square, AlertTriangle, Bot } from "lucide-react";
+import { Send, Loader2, Sparkles, Square, AlertTriangle, Bot, BookOpen } from "lucide-react";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { AudioRecordButton } from "@/components/chat/AudioRecordButton";
@@ -60,12 +61,51 @@ export default function ChatIAPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [streamElapsed, setStreamElapsed] = useState(0);
   const [hasFirstToken, setHasFirstToken] = useState(false);
+  const [knowledgeStats, setKnowledgeStats] = useState<{ docs: number; chunks: number; collections: string[] }>({ docs: 0, chunks: 0, collections: [] });
   const scrollRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
   const elapsedTimerRef = useRef<number | null>(null);
 
   const selectedAgent = agents.find((a) => a.id === selectedAgentId);
   const isHeavy = isHeavyModel(selectedAgent?.ai_model);
+
+  // Carrega contagem de conhecimento vinculado ao agente seleccionado
+  useEffect(() => {
+    if (!selectedAgentId) {
+      setKnowledgeStats({ docs: 0, chunks: 0, collections: [] });
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      const { data: links } = await supabase
+        .from("agent_knowledge_documents")
+        .select("document_id")
+        .eq("agent_id", selectedAgentId);
+      const docIds = (links || []).map((l: any) => l.document_id);
+      if (docIds.length === 0) {
+        if (!cancelled) setKnowledgeStats({ docs: 0, chunks: 0, collections: [] });
+        return;
+      }
+      const [{ count: chunkCount }, { data: docs }] = await Promise.all([
+        supabase
+          .from("knowledge_chunks")
+          .select("id", { count: "exact", head: true })
+          .in("document_id", docIds),
+        supabase
+          .from("knowledge_documents")
+          .select("collection_name")
+          .in("id", docIds),
+      ]);
+      const collSet = new Set<string>();
+      (docs || []).forEach((d: any) => { if (d.collection_name) collSet.add(d.collection_name); });
+      if (!cancelled) setKnowledgeStats({
+        docs: docIds.length,
+        chunks: chunkCount || 0,
+        collections: Array.from(collSet),
+      });
+    })();
+    return () => { cancelled = true; };
+  }, [selectedAgentId]);
 
   // Virtualizer
   const virtualItems = buildChatVirtualItems(messages, scrollRef.current?.clientWidth || 600, isLoading && !hasFirstToken);
