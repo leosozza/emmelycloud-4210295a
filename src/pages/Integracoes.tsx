@@ -2559,6 +2559,7 @@ function ModelBenchmarkCard({ providerSlug }: { providerSlug: string }) {
                 <tr>
                   <th className="text-left px-3 py-2 w-10">#</th>
                   <th className="text-left px-3 py-2">Modelo</th>
+                  <th className="text-left px-3 py-2">Score perfil</th>
                   <th className="text-left px-3 py-2">Qualidade</th>
                   <th className="text-left px-3 py-2">Raciocínio</th>
                   <th className="text-left px-3 py-2">Conhec.</th>
@@ -2573,12 +2574,24 @@ function ModelBenchmarkCard({ providerSlug }: { providerSlug: string }) {
                 {sorted.map((r, i) => {
                   const medal = i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : "";
                   const q = r.quality_score ?? 0;
+                  const ps = r.profile_score ?? 0;
                   return (
                     <tr key={r.model_name} className="border-t hover:bg-muted/30">
                       <td className="px-3 py-2 text-xs font-medium">
                         {medal || i + 1}
                       </td>
                       <td className="px-3 py-2 font-mono text-xs break-all max-w-[200px]">{r.model_name}</td>
+                      <td className="px-3 py-2">
+                        <div className="flex items-center gap-2">
+                          <div className="w-16 h-1.5 bg-muted rounded-full overflow-hidden">
+                            <div
+                              className={`h-full ${ps >= 75 ? "bg-fuchsia-600" : ps >= 50 ? "bg-fuchsia-400" : "bg-fuchsia-200"}`}
+                              style={{ width: `${ps}%` }}
+                            />
+                          </div>
+                          <span className="text-xs font-semibold w-9 text-fuchsia-700">{ps.toFixed(0)}</span>
+                        </div>
+                      </td>
                       <td className="px-3 py-2">
                         {r.quality_score !== null ? (
                           <div className="flex items-center gap-2">
