@@ -2555,6 +2555,10 @@ function IATab() {
           </div>
         </CardContent>
       </Card>
+      </div>
+
+      {/* Benchmark / Ranking de Modelos — full width */}
+      <ModelBenchmarkCard providerSlug="qwen-local" />
     </div>
   );
 }
