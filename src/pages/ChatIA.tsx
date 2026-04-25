@@ -719,7 +719,5 @@ export default function ChatIAPage() {
         </div>
       </div>
     </div>
-      </div>
-    </div>
   );
 }
