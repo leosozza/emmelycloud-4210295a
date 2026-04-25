@@ -637,6 +637,43 @@ export default function ChatIAPage() {
           )}
         </div>
 
+        {/* Banner: modelo indisponível no servidor Ollama */}
+        {modelHealth.status === "unavailable" && (
+          <div className="border-t border-destructive/30 bg-destructive/5 px-4 py-3">
+            <div className="max-w-3xl mx-auto flex items-start gap-3">
+              <AlertTriangle className="h-5 w-5 text-destructive shrink-0 mt-0.5" />
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium text-destructive">
+                  Modelo indisponível: <span className="font-mono">{selectedAgent?.ai_model}</span>
+                </p>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  O servidor Ollama não consegue carregar este modelo (sem RAM/VRAM suficiente). Troca para um modelo mais leve para continuar.
+                </p>
+                {modelHealth.alternatives.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5 mt-2">
+                    {modelHealth.alternatives.map((alt) => (
+                      <Button
+                        key={alt.name}
+                        size="sm"
+                        variant="outline"
+                        disabled={switchingModel}
+                        onClick={() => switchToModel(alt.name)}
+                        className="h-7 text-xs"
+                      >
+                        {switchingModel ? (
+                          <Loader2 className="h-3 w-3 animate-spin mr-1" />
+                        ) : null}
+                        Trocar para <span className="font-mono ml-1">{alt.name}</span>
+                        <span className="ml-1 text-muted-foreground">({alt.label})</span>
+                      </Button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Input */}
         <div className="border-t bg-background p-4">
           <div className="max-w-3xl mx-auto flex gap-2">
@@ -644,14 +681,18 @@ export default function ChatIAPage() {
               value={input}
               onChange={handleTextareaInput}
               onKeyDown={handleKeyDown}
-              placeholder={selectedAgent ? "Escreva uma mensagem..." : "Selecione um agente"}
-              disabled={!selectedAgentId || isLoading}
+              placeholder={
+                modelHealth.status === "unavailable"
+                  ? "Troca o modelo para continuar"
+                  : selectedAgent ? "Escreva uma mensagem..." : "Selecione um agente"
+              }
+              disabled={!selectedAgentId || isLoading || modelHealth.status === "unavailable"}
               className="min-h-[44px] max-h-32 resize-none"
               rows={1}
             />
             <AudioRecordButton
               onTranscript={(text) => setInput((prev) => (prev ? prev + " " : "") + text)}
-              disabled={!selectedAgentId || isLoading}
+              disabled={!selectedAgentId || isLoading || modelHealth.status === "unavailable"}
               showEngineSelector
             />
             {isLoading ? (
@@ -668,7 +709,7 @@ export default function ChatIAPage() {
               <Button
                 size="icon"
                 onClick={handleSend}
-                disabled={!input.trim() || !selectedAgentId}
+                disabled={!input.trim() || !selectedAgentId || modelHealth.status === "unavailable"}
                 className="shrink-0 self-end"
               >
                 <Send className="h-4 w-4" />
@@ -676,6 +717,8 @@ export default function ChatIAPage() {
             )}
           </div>
         </div>
+      </div>
+    </div>
       </div>
     </div>
   );
