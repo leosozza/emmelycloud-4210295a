@@ -7,7 +7,7 @@ const corsHeaders = {
 };
 
 const PROVIDER_SLUG = "qwen-local";
-const MAX_MODELS_PER_RUN = 8;
+const MAX_MODELS_PER_RUN = 30;
 const JUDGE_MODEL = "google/gemini-3-flash-preview";
 
 // Prompts padronizados (pt-PT) — iguais para todos os modelos
@@ -53,7 +53,9 @@ async function fetchModels(baseUrl: string): Promise<string[]> {
   const resp = await fetch(url, { signal: AbortSignal.timeout(10000) });
   if (!resp.ok) throw new Error(`/api/tags retornou ${resp.status}`);
   const data = await resp.json();
-  return (data.models || []).map((m: any) => m.name).filter(Boolean);
+  const names = (data.models || []).map((m: any) => m.name).filter(Boolean);
+  // Ordenação alfabética determinística para garantir cobertura previsível
+  return names.sort((a: string, b: string) => a.localeCompare(b));
 }
 
 async function callOllamaChat(
