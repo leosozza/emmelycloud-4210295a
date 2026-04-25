@@ -2654,9 +2654,18 @@ function ModelBenchmarkCard({ providerSlug }: { providerSlug: string }) {
                         {r.avg_latency_ms ? `${(r.avg_latency_ms / 1000).toFixed(1)}s` : "—"}
                       </td>
                       <td className="px-3 py-2">
-                        <span className={`inline-block text-[10px] px-2 py-0.5 rounded-full border ${recommendationStyle(r.recommendation)}`}>
-                          {r.recommendation || "—"}
-                        </span>
+                        {r.recommendation === "Indisponível" ? (
+                          <span
+                            className={`inline-block text-[10px] px-2 py-0.5 rounded-full border cursor-help ${recommendationStyle(r.recommendation)}`}
+                            title="Modelo demasiado grande para o servidor Ollama actual. Soluções: (1) escolher modelo menor; (2) parar outros modelos com 'ollama stop'; (3) aumentar RAM/VRAM do servidor."
+                          >
+                            {r.recommendation}
+                          </span>
+                        ) : (
+                          <span className={`inline-block text-[10px] px-2 py-0.5 rounded-full border ${recommendationStyle(r.recommendation)}`}>
+                            {r.recommendation || "—"}
+                          </span>
+                        )}
                         {r.error_message === "__running__" ? (
                           <p className="text-[10px] text-violet-700 mt-0.5 flex items-center gap-1">
                             <Loader2 className="h-2.5 w-2.5 animate-spin" /> a avaliar…
