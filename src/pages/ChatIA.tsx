@@ -62,6 +62,8 @@ export default function ChatIAPage() {
   const [streamElapsed, setStreamElapsed] = useState(0);
   const [hasFirstToken, setHasFirstToken] = useState(false);
   const [knowledgeStats, setKnowledgeStats] = useState<{ docs: number; chunks: number; collections: string[] }>({ docs: 0, chunks: 0, collections: [] });
+  const [modelHealth, setModelHealth] = useState<{ status: "ok" | "unavailable" | "unknown"; error?: string; alternatives: { name: string; label: string }[] }>({ status: "unknown", alternatives: [] });
+  const [switchingModel, setSwitchingModel] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
   const elapsedTimerRef = useRef<number | null>(null);
