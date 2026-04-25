@@ -109,6 +109,65 @@ export default function ChatIAPage() {
     return () => { cancelled = true; };
   }, [selectedAgentId]);
 
+  // Verifica saúde do modelo do agente seleccionado (cross-ref com benchmarks)
+  useEffect(() => {
+    const agent = agents.find((a) => a.id === selectedAgentId);
+    if (!agent?.ai_model || agent.ai_provider === "lovable") {
+      setModelHealth({ status: "ok", alternatives: [] });
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      // Estado actual deste modelo
+      const { data: thisRow } = await supabase
+        .from("ollama_model_benchmarks")
+        .select("recommendation, error_message")
+        .eq("model_name", agent.ai_model)
+        .maybeSingle();
+
+      // Alternativas saudáveis (mesmo provider, com recommendation útil)
+      const { data: healthy } = await supabase
+        .from("ollama_model_benchmarks")
+        .select("model_name, recommendation, tokens_per_second")
+        .eq("provider_slug", agent.ai_provider)
+        .neq("recommendation", "Indisponível")
+        .not("tokens_per_second", "is", null)
+        .order("tokens_per_second", { ascending: false })
+        .limit(3);
+
+      const alternatives = (healthy || [])
+        .filter((h: any) => h.model_name !== agent.ai_model)
+        .map((h: any) => ({ name: h.model_name, label: h.recommendation || h.model_name }));
+
+      if (cancelled) return;
+
+      if (thisRow?.recommendation === "Indisponível") {
+        setModelHealth({ status: "unavailable", error: thisRow.error_message || undefined, alternatives });
+      } else {
+        setModelHealth({ status: "ok", alternatives });
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [selectedAgentId, agents]);
+
+  const switchToModel = async (newModel: string) => {
+    if (!selectedAgentId) return;
+    setSwitchingModel(true);
+    try {
+      const { error } = await supabase
+        .from("ai_agents")
+        .update({ ai_model: newModel })
+        .eq("id", selectedAgentId);
+      if (error) throw error;
+      setAgents((prev) => prev.map((a) => (a.id === selectedAgentId ? { ...a, ai_model: newModel } : a)));
+      toast.success(`Modelo trocado para ${newModel}`);
+    } catch (e: any) {
+      toast.error(`Falha ao trocar modelo: ${e.message}`);
+    } finally {
+      setSwitchingModel(false);
+    }
+  };
+
   // Virtualizer
   const virtualItems = buildChatVirtualItems(messages, scrollRef.current?.clientWidth || 600, isLoading && !hasFirstToken);
   const virtualizer = useVirtualizer({
