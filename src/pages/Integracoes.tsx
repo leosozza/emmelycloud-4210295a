@@ -2668,16 +2668,32 @@ function ModelBenchmarkCard({ providerSlug }: { providerSlug: string }) {
                         ) : null}
                       </td>
                       <td className="px-2 py-2">
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="h-7 px-2"
-                          disabled={running}
-                          onClick={() => runBenchmark(r.model_name)}
-                          title="Reavaliar este modelo"
-                        >
-                          <RefreshCw className="h-3 w-3" />
-                        </Button>
+                        <div className="flex items-center gap-1">
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-7 px-2"
+                            disabled={pinging === r.model_name}
+                            onClick={() => pingModel(r.model_name)}
+                            title="Teste rápido de conexão (ping)"
+                          >
+                            {pinging === r.model_name ? (
+                              <Loader2 className="h-3 w-3 animate-spin" />
+                            ) : (
+                              <Zap className="h-3 w-3" />
+                            )}
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-7 px-2"
+                            disabled={running}
+                            onClick={() => runBenchmark(r.model_name)}
+                            title="Reavaliar este modelo (benchmark completo)"
+                          >
+                            <RefreshCw className="h-3 w-3" />
+                          </Button>
+                        </div>
                       </td>
                     </tr>
                   );
