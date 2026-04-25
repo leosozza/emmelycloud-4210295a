@@ -2445,6 +2445,31 @@ function ModelBenchmarkCard({ providerSlug }: { providerSlug: string }) {
     setRunning(false);
   };
 
+  const [pinging, setPinging] = useState<string | null>(null);
+  const pingModel = async (modelName: string) => {
+    setPinging(modelName);
+    try {
+      const { data, error } = await supabase.functions.invoke("ollama-ping-model", {
+        body: { model: modelName },
+      });
+      if (error) {
+        toast.error(`Erro: ${error.message}`);
+      } else if (data?.ok) {
+        const sec = (data.latency_ms / 1000).toFixed(1);
+        toast.success(`✅ ${modelName} respondeu em ${sec}s`, {
+          description: data.response_excerpt ? `Resposta: "${data.response_excerpt}"` : undefined,
+        });
+      } else {
+        toast.error(`❌ ${modelName}: ${data?.error || "sem resposta"}`, {
+          description: data?.latency_ms ? `Após ${(data.latency_ms / 1000).toFixed(1)}s` : undefined,
+        });
+      }
+    } catch (e: any) {
+      toast.error(e.message || "Erro de rede");
+    }
+    setPinging(null);
+  };
+
   const maxTps = Math.max(0, ...rows.map((r) => r.tokens_per_second ?? 0));
   const scored = rows.map((r) => ({ ...r, profile_score: computeProfileScore(r, profile, maxTps) }));
   const sorted = [...scored].sort((a, b) => (b.profile_score ?? -1) - (a.profile_score ?? -1));
