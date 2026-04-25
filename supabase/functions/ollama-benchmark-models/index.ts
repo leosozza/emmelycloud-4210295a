@@ -7,7 +7,7 @@ const corsHeaders = {
 };
 
 const PROVIDER_SLUG = "qwen-local";
-const MAX_MODELS_PER_RUN = 8;
+const MAX_MODELS_PER_RUN = 30;
 const JUDGE_MODEL = "google/gemini-3-flash-preview";
 
 // Prompts padronizados (pt-PT) — iguais para todos os modelos
