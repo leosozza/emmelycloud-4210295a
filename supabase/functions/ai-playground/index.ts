@@ -226,6 +226,25 @@ serve(async (req) => {
         });
       }
 
+      // ─── Erros típicos do Ollama (modelo não cabe, modelo inexistente, etc.) ───
+      const lower = errorText.toLowerCase();
+      let friendly: string | null = null;
+      if (lower.includes("model failed to load") || lower.includes("resource limitations")) {
+        friendly = `O modelo **${agent.ai_model}** não cabe na memória do servidor Ollama (sem RAM/VRAM suficiente). Escolhe um modelo mais leve no agente, ou peça ao admin para libertar memória / reiniciar o serviço Ollama.`;
+      } else if (lower.includes("model") && (lower.includes("not found") || lower.includes("does not exist"))) {
+        friendly = `O modelo **${agent.ai_model}** não está instalado neste servidor Ollama. Faz \`ollama pull ${agent.ai_model}\` no servidor ou escolhe outro modelo.`;
+      }
+
+      if (friendly) {
+        return new Response(JSON.stringify({
+          content: friendly,
+          error: "model_unavailable",
+          model: agent.ai_model,
+        }), {
+          status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
       return new Response(JSON.stringify({
         content: agent.fallback_message || "Erro ao processar.",
         error: "AI API error",

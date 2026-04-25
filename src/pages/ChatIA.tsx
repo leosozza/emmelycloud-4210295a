@@ -62,6 +62,8 @@ export default function ChatIAPage() {
   const [streamElapsed, setStreamElapsed] = useState(0);
   const [hasFirstToken, setHasFirstToken] = useState(false);
   const [knowledgeStats, setKnowledgeStats] = useState<{ docs: number; chunks: number; collections: string[] }>({ docs: 0, chunks: 0, collections: [] });
+  const [modelHealth, setModelHealth] = useState<{ status: "ok" | "unavailable" | "unknown"; error?: string; alternatives: { name: string; label: string }[] }>({ status: "unknown", alternatives: [] });
+  const [switchingModel, setSwitchingModel] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
   const elapsedTimerRef = useRef<number | null>(null);
@@ -106,6 +108,65 @@ export default function ChatIAPage() {
     })();
     return () => { cancelled = true; };
   }, [selectedAgentId]);
+
+  // Verifica saúde do modelo do agente seleccionado (cross-ref com benchmarks)
+  useEffect(() => {
+    const agent = agents.find((a) => a.id === selectedAgentId);
+    if (!agent?.ai_model || agent.ai_provider === "lovable") {
+      setModelHealth({ status: "ok", alternatives: [] });
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      // Estado actual deste modelo
+      const { data: thisRow } = await supabase
+        .from("ollama_model_benchmarks")
+        .select("recommendation, error_message")
+        .eq("model_name", agent.ai_model)
+        .maybeSingle();
+
+      // Alternativas saudáveis (mesmo provider, com recommendation útil)
+      const { data: healthy } = await supabase
+        .from("ollama_model_benchmarks")
+        .select("model_name, recommendation, tokens_per_second")
+        .eq("provider_slug", agent.ai_provider)
+        .neq("recommendation", "Indisponível")
+        .not("tokens_per_second", "is", null)
+        .order("tokens_per_second", { ascending: false })
+        .limit(3);
+
+      const alternatives = (healthy || [])
+        .filter((h: any) => h.model_name !== agent.ai_model)
+        .map((h: any) => ({ name: h.model_name, label: h.recommendation || h.model_name }));
+
+      if (cancelled) return;
+
+      if (thisRow?.recommendation === "Indisponível") {
+        setModelHealth({ status: "unavailable", error: thisRow.error_message || undefined, alternatives });
+      } else {
+        setModelHealth({ status: "ok", alternatives });
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [selectedAgentId, agents]);
+
+  const switchToModel = async (newModel: string) => {
+    if (!selectedAgentId) return;
+    setSwitchingModel(true);
+    try {
+      const { error } = await supabase
+        .from("ai_agents")
+        .update({ ai_model: newModel })
+        .eq("id", selectedAgentId);
+      if (error) throw error;
+      setAgents((prev) => prev.map((a) => (a.id === selectedAgentId ? { ...a, ai_model: newModel } : a)));
+      toast.success(`Modelo trocado para ${newModel}`);
+    } catch (e: any) {
+      toast.error(`Falha ao trocar modelo: ${e.message}`);
+    } finally {
+      setSwitchingModel(false);
+    }
+  };
 
   // Virtualizer
   const virtualItems = buildChatVirtualItems(messages, scrollRef.current?.clientWidth || 600, isLoading && !hasFirstToken);
@@ -576,6 +637,43 @@ export default function ChatIAPage() {
           )}
         </div>
 
+        {/* Banner: modelo indisponível no servidor Ollama */}
+        {modelHealth.status === "unavailable" && (
+          <div className="border-t border-destructive/30 bg-destructive/5 px-4 py-3">
+            <div className="max-w-3xl mx-auto flex items-start gap-3">
+              <AlertTriangle className="h-5 w-5 text-destructive shrink-0 mt-0.5" />
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium text-destructive">
+                  Modelo indisponível: <span className="font-mono">{selectedAgent?.ai_model}</span>
+                </p>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  O servidor Ollama não consegue carregar este modelo (sem RAM/VRAM suficiente). Troca para um modelo mais leve para continuar.
+                </p>
+                {modelHealth.alternatives.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5 mt-2">
+                    {modelHealth.alternatives.map((alt) => (
+                      <Button
+                        key={alt.name}
+                        size="sm"
+                        variant="outline"
+                        disabled={switchingModel}
+                        onClick={() => switchToModel(alt.name)}
+                        className="h-7 text-xs"
+                      >
+                        {switchingModel ? (
+                          <Loader2 className="h-3 w-3 animate-spin mr-1" />
+                        ) : null}
+                        Trocar para <span className="font-mono ml-1">{alt.name}</span>
+                        <span className="ml-1 text-muted-foreground">({alt.label})</span>
+                      </Button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Input */}
         <div className="border-t bg-background p-4">
           <div className="max-w-3xl mx-auto flex gap-2">
@@ -583,14 +681,18 @@ export default function ChatIAPage() {
               value={input}
               onChange={handleTextareaInput}
               onKeyDown={handleKeyDown}
-              placeholder={selectedAgent ? "Escreva uma mensagem..." : "Selecione um agente"}
-              disabled={!selectedAgentId || isLoading}
+              placeholder={
+                modelHealth.status === "unavailable"
+                  ? "Troca o modelo para continuar"
+                  : selectedAgent ? "Escreva uma mensagem..." : "Selecione um agente"
+              }
+              disabled={!selectedAgentId || isLoading || modelHealth.status === "unavailable"}
               className="min-h-[44px] max-h-32 resize-none"
               rows={1}
             />
             <AudioRecordButton
               onTranscript={(text) => setInput((prev) => (prev ? prev + " " : "") + text)}
-              disabled={!selectedAgentId || isLoading}
+              disabled={!selectedAgentId || isLoading || modelHealth.status === "unavailable"}
               showEngineSelector
             />
             {isLoading ? (
@@ -607,7 +709,7 @@ export default function ChatIAPage() {
               <Button
                 size="icon"
                 onClick={handleSend}
-                disabled={!input.trim() || !selectedAgentId}
+                disabled={!input.trim() || !selectedAgentId || modelHealth.status === "unavailable"}
                 className="shrink-0 self-end"
               >
                 <Send className="h-4 w-4" />
