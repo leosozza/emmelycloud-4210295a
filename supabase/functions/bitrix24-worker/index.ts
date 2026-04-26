@@ -476,6 +476,21 @@ async function handleConnectorMessage(supabase: any, integration: any, payload: 
           ? "lid"
           : "instagram";
       console.log(`[WORKER] Conversation matched via ${matchVia}: ${conversation.id}`);
+
+      // Persist Bitrix Open Channel chat id to enable IM_TEXTAREA placement (audio/file send)
+      try {
+        const imData2 = msg.im || msg.IM || {};
+        const bxChatId = imData2.chat_id || imData2.CHAT_ID || null;
+        if (bxChatId) {
+          await supabase
+            .from("conversations")
+            .update({ bitrix_chat_id: String(bxChatId) })
+            .eq("id", conversation.id)
+            .is("bitrix_chat_id", null);
+        }
+      } catch (e) {
+        console.warn("[WORKER] Failed to persist bitrix_chat_id:", e);
+      }
     }
 
     if (conversation) {
