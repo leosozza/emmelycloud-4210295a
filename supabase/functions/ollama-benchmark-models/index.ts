@@ -225,6 +225,14 @@ async function benchmarkOneModel(
     per_prompt: [],
   };
 
+  // Pré-aquecimento (suporta modelos grandes que levam minutos a carregar pela 1ª vez)
+  const warm = await warmUpModel(baseUrl, model);
+  if (!warm.ok) {
+    result.error = warm.error || "warm-up falhou";
+    result.recommendation = "Indisponível";
+    return result;
+  }
+
   const latencies: number[] = [];
   const totalTokens: number[] = [];
   const scoresByCat: Record<string, number> = {};
