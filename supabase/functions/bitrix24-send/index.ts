@@ -137,7 +137,15 @@ async function sendWithFallbacks(
   message: string,
   channel: string,
   connectorId: string = DEFAULT_CONNECTOR_ID,
-  options: { silent?: boolean; agentName?: string; contactPhone?: string } = {}
+  options: {
+    silent?: boolean;
+    agentName?: string;
+    contactPhone?: string;
+    mediaUrl?: string;
+    mediaType?: string;
+    mediaFilename?: string;
+    mediaMime?: string;
+  } = {}
 ): Promise<boolean> {
   // 0. Ensure connector is active on this line
   try {
@@ -184,6 +192,19 @@ async function sendWithFallbacks(
     }
   }
 
+  // Build message object — attach files when media URL is present
+  const messageObj: Record<string, any> = {
+    text: message || "",
+  };
+  if (options.mediaUrl) {
+    messageObj.files = [{
+      name: options.mediaFilename || "arquivo",
+      link: options.mediaUrl,
+      type: options.mediaType || "file",
+      mime: options.mediaMime || undefined,
+    }];
+  }
+
   // 1. Primary: imconnector.send.messages
   const primary = await callBitrix(clientEndpoint, accessToken, "imconnector.send.messages", {
     CONNECTOR: connectorId,
@@ -192,9 +213,7 @@ async function sendWithFallbacks(
       {
         im_id: Date.now().toString(),
         user: userObj,
-        message: {
-          text: message,
-        },
+        message: messageObj,
         chat: {
           id: contactId,
         },
