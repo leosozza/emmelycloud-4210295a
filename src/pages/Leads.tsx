@@ -216,7 +216,7 @@ const LeadsPage = () => {
   return (
     <div className="space-y-4">
       <PageHeader title="Leads & Funil" description="Gestão de leads e funil de vendas">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 w-full sm:w-auto">
           <div className="flex rounded-full border border-white/20 overflow-hidden">
             <Button
               variant="ghost"
@@ -235,15 +235,15 @@ const LeadsPage = () => {
               <List className="h-4 w-4" />
             </Button>
           </div>
-          <Button onClick={openNew} className="bg-white/20 hover:bg-white/30 text-white border-0 rounded-full">
-            <Plus className="mr-2 h-4 w-4" /> Novo Lead
+          <Button onClick={openNew} className="bg-white/20 hover:bg-white/30 text-white border-0 rounded-full flex-1 sm:flex-none">
+            <Plus className="mr-2 h-4 w-4" /> <span className="sm:inline">Novo Lead</span>
           </Button>
         </div>
       </PageHeader>
 
 
 
-      <div className="relative max-w-sm">
+      <div className="relative w-full sm:max-w-sm">
         <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
         <Input
           placeholder="Pesquisar leads..."
