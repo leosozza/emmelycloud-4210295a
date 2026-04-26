@@ -593,6 +593,27 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ reply: fallbackReply, fallback: true }), { headers: jsonHeaders });
     }
 
+    // ─── Pré-aquecimento Ollama (replica comportamento do OpenWebUI) ───
+    // Garante que o modelo está em memória ANTES de inferir; suporta swap automático.
+    if (agent.ai_provider !== "lovable") {
+      try {
+        const warmRes = await supabase.functions.invoke("ollama-warm-model", {
+          body: { model: agent.ai_model },
+        });
+        const warmData = warmRes.data as any;
+        if (warmData && warmData.ready === false) {
+          const friendly = warmData.error
+            || `Não foi possível preparar o modelo ${agent.ai_model} no servidor Ollama.`;
+          if (!skip_send) await sendReply(supabase, supabaseUrl, serviceKey, conversation, agent, friendly);
+          await logUsage(supabase, conversation_id, agent.id, agent.ai_model, agent.ai_provider, 0, 0, 0, Date.now() - startTime, true, "model_warmup_failed", auxTokens, reactSteps);
+          return new Response(JSON.stringify({ reply: friendly, fallback: true, error: "model_warmup_failed" }), { headers: jsonHeaders });
+        }
+        console.log(`[AI-PROCESS] warm-up: ${agent.ai_model} ready=${warmData?.ready} was_loaded=${warmData?.was_loaded} load_ms=${warmData?.load_time_ms}`);
+      } catch (warmErr) {
+        console.warn("[AI-PROCESS] warm-up call failed (continuing anyway):", warmErr);
+      }
+    }
+
     // ReACT system prompt injection
     let reactSystemAddendum = tools ? `\n\nREACT MODE: Podes usar ferramentas para buscar informação antes de responder. Se precisares de dados, chama a ferramenta apropriada. Quando tiveres informação suficiente, responde diretamente ao cliente sem chamar mais ferramentas. Nunca exponhas detalhes internos das ferramentas ao cliente.\n` : "";
 
