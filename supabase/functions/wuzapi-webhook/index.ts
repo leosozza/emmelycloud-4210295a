@@ -140,24 +140,37 @@ Deno.serve(async (req) => {
 
     if (!content) content = "[Mensagem vazia]";
 
-    // Get sender name (push name)
-    const senderName = info.PushName || info.pushName || phone;
+    // Get sender name (push name) — fallback to phone, then LID
+    const senderName = info.PushName || info.pushName || phone || lidId || "Cliente";
 
     // External message ID
     const externalId = info.Id || info.id || info.MessageID || "";
 
-    // Upsert conversation
-    // For LID contacts, store the full JID so message-send knows to use @lid
-    const contactPhoneValue = isLidContact ? `${phone}@lid` : phone;
-
-    const { data: existingConv } = await supabase
-      .from("conversations")
-      .select("id, attendance_mode")
-      .eq("channel", "whatsapp")
-      .eq("contact_phone", contactPhoneValue)
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
+    // Find existing conversation: prefer by phone (real number), fall back to LID
+    // This lets us re-attach the conversation once a real phone is captured.
+    let existingConv: any = null;
+    if (phone) {
+      const r = await supabase
+        .from("conversations")
+        .select("id, attendance_mode, unread_count, contact_lid")
+        .eq("channel", "whatsapp")
+        .eq("contact_phone", phone)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      existingConv = r.data;
+    }
+    if (!existingConv && lidId) {
+      const r = await supabase
+        .from("conversations")
+        .select("id, attendance_mode, unread_count, contact_phone")
+        .eq("channel", "whatsapp")
+        .eq("contact_lid", lidId)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      existingConv = r.data;
+    }
 
     let conversationId: string;
     let attendanceMode = "bot";
@@ -165,19 +178,24 @@ Deno.serve(async (req) => {
     if (existingConv) {
       conversationId = existingConv.id;
       attendanceMode = existingConv.attendance_mode || "bot";
-      await supabase.from("conversations").update({
+      const updatePayload: Record<string, any> = {
         last_message_at: new Date().toISOString(),
         last_message_preview: content.slice(0, 100),
         last_customer_message_at: new Date().toISOString(),
         contact_name: senderName,
-        unread_count: (existingConv as any).unread_count ? (existingConv as any).unread_count + 1 : 1,
-      }).eq("id", conversationId);
+        unread_count: existingConv.unread_count ? existingConv.unread_count + 1 : 1,
+      };
+      // Backfill missing identifiers
+      if (phone && !existingConv.contact_phone) updatePayload.contact_phone = phone;
+      if (lidId && !existingConv.contact_lid) updatePayload.contact_lid = lidId;
+      await supabase.from("conversations").update(updatePayload).eq("id", conversationId);
     } else {
       const { data: newConv, error: convError } = await supabase
         .from("conversations")
         .insert({
           channel: "whatsapp",
-          contact_phone: contactPhoneValue,
+          contact_phone: phone || null,
+          contact_lid: lidId,
           contact_name: senderName,
           status: "aberta",
           attendance_mode: "bot",
