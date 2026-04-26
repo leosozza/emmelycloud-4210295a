@@ -89,36 +89,68 @@ function extractEmails(entity: any): string[] {
   return emails;
 }
 
-async function findConversationByPhone(supabase: any, phones: string[]): Promise<any> {
-  for (const phone of phones) {
-    if (phone.length < 8) continue;
-    const suffixes = [phone, phone.slice(-9), phone.slice(-8)].filter((s, i, arr) => arr.indexOf(s) === i);
-    for (const suffix of suffixes) {
-      // Try active first
-      const { data: active } = await supabase
-        .from("conversations")
-        .select("id, contact_name, attendance_mode, channel, status, contact_phone, bot_state")
-        .ilike("contact_phone", `%${suffix}%`)
-        .neq("status", "fechada")
-        .order("last_message_at", { ascending: false })
-        .limit(1)
-        .maybeSingle();
-      if (active) return active;
-      // Fallback: any status (including fechada)
-      const { data: anyConv } = await supabase
-        .from("conversations")
-        .select("id, contact_name, attendance_mode, channel, status, contact_phone, bot_state")
-        .ilike("contact_phone", `%${suffix}%`)
-        .order("last_message_at", { ascending: false })
-        .limit(1)
-        .maybeSingle();
-      if (anyConv) {
-        console.log("[CRM-TAB] Phone match found closed conversation:", anyConv.id, "status:", anyConv.status);
-        return anyConv;
-      }
+// Returns ALL whatsapp conversations matching any phone variant, sorted by active+recency.
+async function findConversationsByPhone(supabase: any, phones: string[]): Promise<any[]> {
+  const cleaned = phones
+    .map((p) => String(p || "").replace(/\D/g, ""))
+    .filter((p) => p.length >= 8);
+  if (cleaned.length === 0) return [];
+
+  // Build a set of suffix variants for fuzzy matching (full, last 11, last 10, last 9, last 8)
+  const variants = new Set<string>();
+  for (const p of cleaned) {
+    variants.add(p);
+    if (p.length >= 11) variants.add(p.slice(-11));
+    if (p.length >= 10) variants.add(p.slice(-10));
+    if (p.length >= 9) variants.add(p.slice(-9));
+    if (p.length >= 8) variants.add(p.slice(-8));
+  }
+
+  const collected = new Map<string, any>();
+  for (const variant of variants) {
+    const { data } = await supabase
+      .from("conversations")
+      .select("id, contact_name, attendance_mode, channel, status, contact_phone, contact_lid, last_message_at, bot_state")
+      .eq("channel", "whatsapp")
+      .ilike("contact_phone", `%${variant}%`)
+      .order("last_message_at", { ascending: false })
+      .limit(20);
+    for (const c of data || []) {
+      if (!collected.has(c.id)) collected.set(c.id, c);
     }
   }
-  return null;
+
+  // Also try contact_lid match (some BR numbers only deliver via @lid)
+  for (const p of cleaned) {
+    const { data } = await supabase
+      .from("conversations")
+      .select("id, contact_name, attendance_mode, channel, status, contact_phone, contact_lid, last_message_at, bot_state")
+      .eq("channel", "whatsapp")
+      .ilike("contact_lid", `%${p}%`)
+      .order("last_message_at", { ascending: false })
+      .limit(10);
+    for (const c of data || []) {
+      if (!collected.has(c.id)) collected.set(c.id, c);
+    }
+  }
+
+  const list = Array.from(collected.values());
+  // Sort: active conversations (status != fechada) first, then by last_message_at desc
+  list.sort((a, b) => {
+    const aActive = a.status !== "fechada" ? 1 : 0;
+    const bActive = b.status !== "fechada" ? 1 : 0;
+    if (aActive !== bActive) return bActive - aActive;
+    const aTs = a.last_message_at ? new Date(a.last_message_at).getTime() : 0;
+    const bTs = b.last_message_at ? new Date(b.last_message_at).getTime() : 0;
+    return bTs - aTs;
+  });
+  return list;
+}
+
+// Backwards-compatible single-result helper
+async function findConversationByPhone(supabase: any, phones: string[]): Promise<any> {
+  const list = await findConversationsByPhone(supabase, phones);
+  return list[0] || null;
 }
 
 async function findConversationByEmail(supabase: any, emails: string[]): Promise<any> {
@@ -285,11 +317,13 @@ function renderHtml(opts: {
   instagramEnabled: boolean;
   quickReplies: any[];
   agents: any[];
+  conversationCandidates?: any[];
 }): string {
   const {
     contactName, attendanceMode, channel, messages, conversationId,
     supabaseUrl, memberId, integrationId, phones, emails,
     whatsappEnabled, instagramEnabled, quickReplies, agents,
+    conversationCandidates = [],
   } = opts;
 
   const isBot = attendanceMode === "bot";
@@ -383,6 +417,21 @@ function renderHtml(opts: {
 
   // Agents JSON for JS
   const agentsJson = JSON.stringify(agents.map((a: any) => ({ id: a.id, name: a.name })));
+
+  // Conversation switcher (when multiple conversations match the same contact)
+  const switcherHtml = conversationCandidates.length > 1 ? `
+    <div style="background:#f9fafb;border-bottom:1px solid #f0f1f3;padding:6px 12px;display:flex;align-items:center;gap:6px;flex-shrink:0">
+      <span style="font-size:11px;color:#959ca4;white-space:nowrap">${conversationCandidates.length} conversas:</span>
+      <select id="conv-switcher" onchange="switchConversation(this.value)" style="flex:1;padding:4px 8px;border:1px solid #dfe0e3;border-radius:6px;font-size:11px;color:#333840;background:#fff;outline:none;cursor:pointer">
+        ${conversationCandidates.map((c: any) => {
+          const lastTs = c.last_message_at ? formatTime(c.last_message_at) : "—";
+          const phone = c.contact_phone || c.contact_lid || "?";
+          const statusLabel = c.status === "fechada" ? "fechada" : (c.attendance_mode === "human" ? "humano" : "bot");
+          const sel = c.id === conversationId ? " selected" : "";
+          return `<option value="${c.id}"${sel}>${(c.contact_name || "?").replace(/</g, "&lt;")} · ${phone} · ${statusLabel} · ${lastTs}</option>`;
+        }).join("")}
+      </select>
+    </div>` : "";
 
   return `<!DOCTYPE html>
 <html lang="pt">
@@ -485,6 +534,7 @@ function renderHtml(opts: {
 
   <!-- Tab: Conversa -->
   <div id="tab-conversa" class="tab-content active">
+    ${switcherHtml}
     <div id="messages" style="flex:1;overflow-y:auto;padding:12px 16px;display:flex;flex-direction:column">
       ${conversationId ? messagesHtml : startConvHtml}
     </div>
@@ -964,7 +1014,18 @@ Deno.serve(async (req) => {
 
     const entityTypeId = placementOptions.ENTITY_TYPE_ID || placementOptions.entity_type_id || body.ENTITY_TYPE_ID || inferredTypeId;
 
-    console.log("[CRM-TAB] entityId:", entityId, "entityTypeId:", entityTypeId, "memberId:", memberId);
+    // Optional: user can pick a specific conversation from the conversation switcher
+    const requestedConvId: string = (body.selected_conversation_id || body.conversation_id || "").toString();
+
+    // Optional: query string fallback for selected_conversation_id (e.g. iframe reload)
+    let queryConvId = "";
+    try {
+      const u = new URL(req.url);
+      queryConvId = u.searchParams.get("selected_conversation_id") || "";
+    } catch { /* ignore */ }
+    const selectedConvOverride = requestedConvId || queryConvId;
+
+    console.log("[CRM-TAB] entityId:", entityId, "entityTypeId:", entityTypeId, "memberId:", memberId, "selectedConv:", selectedConvOverride);
 
     // Find integration
     let integration: any = null;
@@ -1018,6 +1079,21 @@ Deno.serve(async (req) => {
     let contactName = "";
     let allPhones: string[] = [];
     let allEmails: string[] = [];
+    let conversationCandidates: any[] = [];
+
+    // If user explicitly chose a conversation from the switcher, load it directly
+    if (selectedConvOverride) {
+      const { data: chosen } = await supabase
+        .from("conversations")
+        .select("id, contact_name, attendance_mode, channel, status, contact_phone, contact_lid, last_message_at, bot_state")
+        .eq("id", selectedConvOverride)
+        .maybeSingle();
+      if (chosen) {
+        conversation = chosen;
+        if (chosen.contact_name) contactName = chosen.contact_name;
+        console.log("[CRM-TAB] Using user-selected conversation:", chosen.id);
+      }
+    }
 
     if (entityId) {
       const entityTypeNum = parseInt(entityTypeId);
@@ -1353,6 +1429,24 @@ Deno.serve(async (req) => {
       }
     }
 
+    // Always gather candidate conversations by phone (so the user can switch between
+    // multiple WhatsApp instances/conversations belonging to the same contact)
+    if (allPhones.length > 0) {
+      conversationCandidates = await findConversationsByPhone(supabase, allPhones);
+      console.log("[CRM-TAB] Candidate conversations found:", conversationCandidates.length);
+    }
+
+    // If no conversation was selected/matched but candidates exist, default to the best one
+    if (!conversation && conversationCandidates.length > 0) {
+      conversation = conversationCandidates[0];
+      console.log("[CRM-TAB] Defaulting to top candidate:", conversation.id);
+    }
+
+    // Make sure the currently selected conversation is in the candidates list
+    if (conversation && !conversationCandidates.some((c) => c.id === conversation.id)) {
+      conversationCandidates = [conversation, ...conversationCandidates];
+    }
+
     // Fetch messages if conversation found
     let messages: any[] = [];
     if (conversation) {
@@ -1383,6 +1477,7 @@ Deno.serve(async (req) => {
       instagramEnabled,
       quickReplies,
       agents,
+      conversationCandidates,
     }), { headers: htmlHeaders });
 
   } catch (e) {
