@@ -426,12 +426,12 @@ export function ChatPanel({
 
       {/* Input */}
       {conversation.status !== "fechada" && (
-        <div className="border-t bg-card p-3">
-          <div className="flex items-end gap-2">
-            <QuickReplies
-              replies={quickReplies}
-              onSelect={(content) => setInput(content)}
-            />
+        <div className="border-t bg-card flex items-end gap-1 px-2">
+          <QuickReplies
+            replies={quickReplies}
+            onSelect={(content) => setInput(content)}
+          />
+          <div className="flex-1 min-w-0">
             <ChatInput
               value={input}
               onChange={setInput}
@@ -440,7 +440,7 @@ export function ChatPanel({
               sending={sending}
               placeholder={
                 isAiMode
-                  ? "Escrever mensagem (a IA está ativa — sua mensagem será enviada como atendente)..."
+                  ? "Escrever (IA ativa — enviada como atendente)..."
                   : "Escrever mensagem..."
               }
             />
