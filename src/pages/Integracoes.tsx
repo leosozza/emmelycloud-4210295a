@@ -2070,6 +2070,9 @@ function InstancesTab() {
                   </div>
                 </div>
                 <div className="flex items-center gap-1.5">
+                  {inst.status === "active" && bitrixMappings.length > 0 && !inst.config.bitrix24_mapping_id && (
+                    <Badge variant="destructive" className="text-[10px] h-5">Sem Canal Aberto</Badge>
+                  )}
                   <StatusBadge status={inst.status === "error" ? "inactive" : inst.status as "active" | "inactive"} />
                 </div>
               </CardHeader>
