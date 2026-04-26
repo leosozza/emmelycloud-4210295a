@@ -130,7 +130,7 @@ Deno.serve(async (req) => {
     // Get conversation details
     const { data: conv, error: convError } = await supabase
       .from("conversations")
-      .select("id, channel, contact_phone, contact_instagram, contact_email, contact_name")
+      .select("id, channel, contact_phone, contact_lid, contact_instagram, contact_email, contact_name")
       .eq("id", conversation_id)
       .single();
 
@@ -220,23 +220,29 @@ Deno.serve(async (req) => {
 
     // ── WhatsApp: route by provider ──
     } else if (conv.channel === "whatsapp") {
-      if (!conv.contact_phone) {
-        return new Response(JSON.stringify({ error: "No phone number for WhatsApp contact" }), {
+      const rawPhone = (conv.contact_phone || "").trim();
+      const rawLid   = ((conv as any).contact_lid || "").trim();
+      // Legacy support: some old rows still have "<digits>@lid" stored in contact_phone
+      const legacyLidInPhone = rawPhone.endsWith("@lid") ? rawPhone.replace(/@.*$/, "") : "";
+
+      if (!rawPhone && !rawLid && !legacyLidInPhone) {
+        return new Response(JSON.stringify({ error: "No phone or LID for WhatsApp contact" }), {
           status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
-      const rawPhone = conv.contact_phone;
-      // Detect LID contacts: stored as "196847578665004@lid" by webhook
-      const isLidContact = rawPhone.includes("@lid");
-      const phone = rawPhone.replace(/@.*$/, "").replace(/[^0-9]/g, "");
+      const phone = rawPhone && !rawPhone.includes("@lid")
+        ? rawPhone.replace(/[^0-9]/g, "")
+        : "";
+      const lid = rawLid || legacyLidInPhone || "";
+      const isLidContact = !phone && !!lid;
 
       // ── WUZAPI (WhatsApp QRCode) ──
       if (resolvedProvider === "wuzapi") {
-        // For LID contacts, pass the full JID with @lid suffix
-        // For regular phone contacts, pass just the digits
-        const wuzapiPhone = isLidContact ? `${phone}@lid` : phone;
-        if (isLidContact) {
-          console.log(`[MESSAGE-SEND] Detected LID contact, using JID: ${wuzapiPhone}`);
+        // WUZAPI accepts either a phone number or a LID-suffixed JID.
+        // Prefer LID when present (some BR contacts only deliver via LID).
+        const wuzapiPhone = lid ? `${lid}@lid` : phone;
+        if (isLidContact || lid) {
+          console.log(`[MESSAGE-SEND] Using LID JID: ${wuzapiPhone}`);
         }
 
         let wuzapiBaseUrl = "";
