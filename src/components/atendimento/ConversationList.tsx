@@ -41,12 +41,20 @@ export function ConversationList({
   conversations,
   selectedId,
   onSelect,
+  onDoubleSelect,
 }: ConversationListProps) {
   const [search, setSearch] = useState("");
   const [channelFilter, setChannelFilter] = useState<ConversationChannel | "all">("all");
   const [statusFilter, setStatusFilter] = useState<ConversationStatus | "all">("aberta");
   const [quickFilter, setQuickFilter] = useState<QuickFilter>("all");
   const listRef = useRef<HTMLDivElement>(null);
+
+  const channelBorderColor: Record<ConversationChannel, string> = {
+    whatsapp: "border-l-[hsl(142,70%,45%)]",
+    instagram: "border-l-[hsl(330,70%,55%)]",
+    email: "border-l-[hsl(210,80%,55%)]",
+    webchat: "border-l-muted-foreground/40",
+  };
 
   const counters = useMemo(() => {
     const base = conversations.filter(
