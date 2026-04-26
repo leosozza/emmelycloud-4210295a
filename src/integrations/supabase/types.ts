@@ -1701,6 +1701,7 @@ export type Database = {
         Row: {
           assigned_to: string | null
           attendance_mode: string | null
+          bitrix_chat_id: string | null
           bot_state: Json | null
           channel: Database["public"]["Enums"]["channel_type"]
           client_id: string | null
@@ -1724,6 +1725,7 @@ export type Database = {
         Insert: {
           assigned_to?: string | null
           attendance_mode?: string | null
+          bitrix_chat_id?: string | null
           bot_state?: Json | null
           channel: Database["public"]["Enums"]["channel_type"]
           client_id?: string | null
@@ -1747,6 +1749,7 @@ export type Database = {
         Update: {
           assigned_to?: string | null
           attendance_mode?: string | null
+          bitrix_chat_id?: string | null
           bot_state?: Json | null
           channel?: Database["public"]["Enums"]["channel_type"]
           client_id?: string | null
