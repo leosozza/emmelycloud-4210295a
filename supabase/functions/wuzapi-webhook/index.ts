@@ -443,6 +443,10 @@ Deno.serve(async (req) => {
           channel: "whatsapp",
           conversationId,
           instanceId, // routes to the Open Line linked to this instance
+          mediaUrl: mediaUrl || undefined,
+          mediaType: mediaType || undefined,
+          mediaFilename: mediaFilename || undefined,
+          mediaMime: mediaMime || undefined,
         }),
       });
 
