@@ -317,11 +317,13 @@ function renderHtml(opts: {
   instagramEnabled: boolean;
   quickReplies: any[];
   agents: any[];
+  conversationCandidates?: any[];
 }): string {
   const {
     contactName, attendanceMode, channel, messages, conversationId,
     supabaseUrl, memberId, integrationId, phones, emails,
     whatsappEnabled, instagramEnabled, quickReplies, agents,
+    conversationCandidates = [],
   } = opts;
 
   const isBot = attendanceMode === "bot";
