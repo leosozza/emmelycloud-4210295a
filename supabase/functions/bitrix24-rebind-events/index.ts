@@ -150,6 +150,47 @@ Deno.serve(async (req) => {
       console.error("[REBIND] placement.bind error:", pe);
     }
 
+    // ── IM_TEXTAREA — Send Audio (WhatsApp) ──
+    try {
+      const sendAudioUrl = `${supabaseUrl}/functions/v1/bitrix24-im-send-audio`;
+      await callBitrix(integration.client_endpoint, accessToken, "placement.unbind", {
+        PLACEMENT: "IM_TEXTAREA", HANDLER: sendAudioUrl,
+      });
+      const r = await callBitrix(integration.client_endpoint, accessToken, "placement.bind", {
+        PLACEMENT: "IM_TEXTAREA",
+        HANDLER: sendAudioUrl,
+        TITLE: "Enviar Áudio (WhatsApp)",
+        DESCRIPTION: "Gravar e enviar áudio para o WhatsApp",
+        LANG_ALL: {
+          pt: { TITLE: "Enviar Áudio (WhatsApp)", DESCRIPTION: "Gravar e enviar áudio para o WhatsApp" },
+          en: { TITLE: "Send Audio (WhatsApp)", DESCRIPTION: "Record and send audio to WhatsApp" },
+        },
+        OPTIONS: { iconName: "fa-microphone", context: "LINES", color: "GREEN", role: "USER", width: "360", height: "220", extranet: "N" },
+      });
+      results["placement_IM_TEXTAREA_AUDIO"] = r.error ? `ERROR: ${r.error}` : "OK";
+    } catch (e) { results["placement_IM_TEXTAREA_AUDIO"] = `ERROR: ${e}`; }
+
+    // ── IM_TEXTAREA — Send File (WhatsApp) ──
+    try {
+      const sendFileUrl = `${supabaseUrl}/functions/v1/bitrix24-im-send-file`;
+      await callBitrix(integration.client_endpoint, accessToken, "placement.unbind", {
+        PLACEMENT: "IM_TEXTAREA", HANDLER: sendFileUrl,
+      });
+      const r = await callBitrix(integration.client_endpoint, accessToken, "placement.bind", {
+        PLACEMENT: "IM_TEXTAREA",
+        HANDLER: sendFileUrl,
+        TITLE: "Enviar Arquivo (WhatsApp)",
+        DESCRIPTION: "Enviar imagem, PDF ou documento para o WhatsApp",
+        LANG_ALL: {
+          pt: { TITLE: "Enviar Arquivo (WhatsApp)", DESCRIPTION: "Enviar imagem, PDF ou documento para o WhatsApp" },
+          en: { TITLE: "Send File (WhatsApp)", DESCRIPTION: "Send image, PDF or document to WhatsApp" },
+        },
+        OPTIONS: { iconName: "fa-paperclip", context: "LINES", color: "AZURE", role: "USER", width: "380", height: "260", extranet: "N" },
+      });
+      results["placement_IM_TEXTAREA_FILE"] = r.error ? `ERROR: ${r.error}` : "OK";
+    } catch (e) { results["placement_IM_TEXTAREA_FILE"] = `ERROR: ${e}`; }
+
+
     // ── CRM Detail Tabs — Emmely AI (crm-tab) ──
     const crmTabUrl = `${supabaseUrl}/functions/v1/bitrix24-crm-tab`;
     const crmAiPlacements = [
