@@ -1,85 +1,65 @@
-## Objetivo
+# Diagnóstico
 
-Adicionar dois botões dentro da caixa de mensagem (textarea) do bate-papo do Contact Center / Open Channels do Bitrix24:
+## O que aconteceu no teste do deal 26797
 
-1. **Enviar Áudio** (gravação de áudio para WhatsApp)
-2. **Enviar Arquivo** (PDF / imagem / documento)
+A análise dos logs (`bitrix24_debug_logs` + edge logs) mostra a sequência:
 
-Quando o operador clicar, abre um iframe da nossa aplicação que captura o ficheiro / áudio e o envia para o WhatsApp via WUZAPI usando o fluxo já existente (`message-send` + bucket `media`).
+1. **20:56** — Mensagem **enviada do Emmely → Bitrix24** com sucesso (`event_type: message_sent`, lineId 19, connector `emmely_connector`).
+2. **20:57 e 20:58** — Tu respondeste no chat do deal 26797 no Bitrix24. O webhook chegou ao `bitrix24-worker`, resolveu o `contactId = 5511978659280`, mas registou **`event_type: no_conversation`** (log: *"No conversation for contact: 5511978659280"*).
+3. Como não encontrou a conversa, **não encaminhou a resposta** para o WhatsApp e **não vinculou o placement** (que procura conversa pelo telefone do deal).
 
-## Como funciona no Bitrix24 (validado via MCP)
+## Causa raiz
 
-- O Bitrix24 **não** tem placements separados `IM_AUDIO` / `IM_FILE`. O placement oficial para botões dentro do textarea do messenger é **`IM_TEXTAREA`** (confirmado em `placement.bind` e no artigo *General Information on All Embedding Points*).
-- Cada chamada `placement.bind` com `PLACEMENT: "IM_TEXTAREA"` cria **um botão adicional** ao lado do textarea, com `iconName` (Font Awesome 6) e `TITLE` próprios.
-- Hoje o projeto já regista 1 botão IM_TEXTAREA ("Devolver ao Bot"). Vamos adicionar mais 2 (áudio e arquivo) com handlers iframe distintos.
-- O contexto deve ser `LINES` (Open Channels) para aparecer apenas nos chats vindos do WhatsApp/Contact Center.
-
-## Mudanças
-
-### 1. Duas novas Edge Functions (handlers iframe)
-
-- `supabase/functions/bitrix24-im-send-audio/index.ts`
-  - Serve uma página HTML pequena dentro do iframe com:
-    - Botão Gravar / Parar (MediaRecorder API → `audio/ogg; codecs=opus`)
-    - Pré-visualização e botão "Enviar"
-  - No envio: lê do `placementOptions` (BX24.placement.info) o `DIALOG_ID` / chat id, faz upload do blob para o bucket `media` e chama `message-send` com `message_type=audio` e o `mediaUrl` resultante.
-  - Headers: `X-Frame-Options: ALLOWALL`, CORS aberto.
-
-- `supabase/functions/bitrix24-im-send-file/index.ts`
-  - Mesma estrutura, mas com `<input type="file" accept="image/*,application/pdf,video/mp4,...">`.
-  - Detecta MIME e classifica como `image` / `document` / `video` antes de chamar `message-send`.
-
-Ambas as funções obtêm o `chat_id` / `dialog_id` via `BX24.placement.info()` (passado pelo Bitrix ao iframe) e mapeiam para a `conversation` correspondente em `whatsapp_messages` / `conversations` usando o `chat_id` Open Channel já gravado pelo `bitrix24-send` (campo `external_chat_id` / equivalente — verificar nome exato durante implementação).
-
-### 2. Registar os 2 placements adicionais
-
-Editar **`supabase/functions/bitrix24-install/index.ts`** (logo após o bloco existente do "Devolver ao Bot", linhas ~1884–1928) e **`supabase/functions/bitrix24-rebind-events/index.ts`** (após linha ~144) para fazer mais 2 chamadas `placement.bind`:
+A query no worker usa `.maybeSingle()`:
 
 ```ts
-// Botão de áudio
-await callBitrix(endpoint, accessToken, "placement.bind", {
-  PLACEMENT: "IM_TEXTAREA",
-  HANDLER: `${SUPABASE_URL}/functions/v1/bitrix24-im-send-audio`,
-  TITLE: "Enviar Áudio (WhatsApp)",
-  OPTIONS: {
-    iconName: "fa-microphone",
-    context: "LINES",
-    color: "GREEN",
-    width: 360, height: 200,
-  },
-});
-
-// Botão de arquivo
-await callBitrix(endpoint, accessToken, "placement.bind", {
-  PLACEMENT: "IM_TEXTAREA",
-  HANDLER: `${SUPABASE_URL}/functions/v1/bitrix24-im-send-file`,
-  TITLE: "Enviar Arquivo (WhatsApp)",
-  OPTIONS: {
-    iconName: "fa-paperclip",
-    context: "LINES",
-    color: "AZURE",
-    width: 360, height: 200,
-  },
-});
+const { data: conversation } = await supabase
+  .from("conversations")
+  .select(...)
+  .or(`contact_phone.eq.${contactId},contact_phone.eq.${contactId}@lid,...`)
+  .maybeSingle();
 ```
 
-Ambos serão registrados na **instalação** e na **re-vinculação** (`bitrix24-rebind-events`) para portais já instalados.
+A BD tem **duas conversas com o mesmo `contact_phone = 5511978659280`** (Thoth24):
 
-### 3. Reuso do pipeline existente
+| id | contact_phone | contact_lid | created_at |
+|---|---|---|---|
+| `df886b15…` | 5511978659280 | 196847578665004 | 2026-04-26 16:16 |
+| `89c299f8…` | 5511978659280 | 196847578665004@lid | 2026-04-14 19:41 |
 
-- Upload → bucket `media` (já existe).
-- Envio para WhatsApp → `message-send` (já trata `message_type` = `audio` / `image` / `document` / `video`).
-- Echo no chat do Bitrix → `bitrix24-send` é invocado normalmente pelo fluxo de outbound (já passa `mediaUrl` + `message.files`), garantindo que o anexo aparece na timeline do operador.
+Quando `.maybeSingle()` recebe **mais de uma linha**, devolve `data: null` silenciosamente — a conversa "desaparece" para o worker. O placement `bitrix24-crm-tab` (aba *Conversa*) usa o mesmo padrão `.maybeSingle()` em vários sítios, por isso também mostra "Nenhuma conversa ativa encontrada".
 
-### 4. config.toml
+# Correções
 
-Adicionar blocos para as 2 novas funções com `verify_jwt = false` (são iframes públicos servidos ao Bitrix) em `supabase/config.toml`.
+## 1. `supabase/functions/bitrix24-worker/index.ts` (lookup de conversa para reencaminhar resposta)
 
-## Pontos a confirmar durante a implementação
+- Trocar `.maybeSingle()` por `.order("last_message_at", { ascending: false }).limit(1)` e usar `data?.[0]`. Assim, se houver duplicados, escolhemos sempre o **mais recente** (a conversa "viva").
+- Ao receber `bitrix_chat_id`, persistir nessa conversa mais recente.
 
-- Nome do campo que liga o `DIALOG_ID` / `CHAT_ID` da Open Channel à nossa `conversation` (provavelmente `bitrix_chat_id` em `whatsapp_conversations`). Caso não exista, será preciso uma migração para guardá-lo no `bitrix24-send` (já recebemos esse id na resposta do `imconnector.send.messages`).
-- Após o envio do operador via iframe, **não** disparar `OnImConnectorMessageAdd` em loop — o áudio/arquivo será enviado apenas para o WhatsApp e replicado no chat via `imconnector.send.messages` (mesmo path do `bitrix24-send`), mantendo idempotência por `external_id`.
+## 2. `supabase/functions/bitrix24-crm-tab/index.ts` (placement do deal)
 
-## Após o deploy
+Mesmo tratamento — substituir todos os `.maybeSingle()` que procuram conversa por telefone/LID por `order(...).limit(1)`. Atinge as queries das linhas ~100, 110, 128, 137, 231, 240, 1073, 1080, 1092, 1105, 1155, 1160.
 
-Pedir ao utilizador para abrir o portal Bitrix24 e clicar no botão **"Re-registar eventos"** (ou reinstalar o app) para que os 2 novos botões `IM_TEXTAREA` apareçam no textarea dos chats de Open Channels.
+## 3. Consolidação dos duplicados existentes (one-shot SQL)
+
+Migration que:
+- Para cada `contact_phone` com >1 conversa do mesmo `channel`, mantém o registo com `last_message_at` mais recente.
+- Move as `messages` das conversas antigas para a sobrevivente (UPDATE `conversation_id`).
+- Apaga as conversas antigas.
+- Adiciona índice único parcial `(contact_phone, channel) WHERE contact_phone IS NOT NULL AND status <> 'arquivada'` para evitar criação futura de duplicados (na prática só impede 2 ATIVAS — arquivadas continuam a poder coexistir).
+
+## 4. `bitrix24-webhook` (criação de conversas) — guarda
+
+Antes de inserir nova conversa, fazer um `select … order(last_message_at desc).limit(1)` por `(contact_phone, channel)` e reutilizar se existir. Isto previne novas duplicatas mesmo se a constraint única for permissiva.
+
+# Detalhes técnicos
+
+- A função `maybeSingle()` do PostgREST devolve erro `PGRST116` quando há >1 linha, mas o destructuring `{ data, error }` ignora `error` em todos estes pontos — por isso a falha era silenciosa. A nova abordagem com `limit(1)` é determinística.
+- Conversas com `contact_lid` com e sem sufixo `@lid` partilhando `contact_phone` continuam a coexistir como rows distintas se o `status` for `arquivada` — não rebenta o índice.
+- Não tocamos no `message-send` nem na cadeia de envio para WhatsApp; o problema está apenas no lookup.
+
+# O que vai acontecer depois do fix
+
+- Respondes no deal 26797 → worker encontra a conversa `df886b15…` → `message-send` reencaminha para o WhatsApp do cliente.
+- O placement *Conversa* na ficha do deal mostra a conversa ativa em vez de "Nenhuma conversa ativa encontrada".
+- Futuras duplicações ficam barradas pelo índice único parcial + reutilização no webhook.
