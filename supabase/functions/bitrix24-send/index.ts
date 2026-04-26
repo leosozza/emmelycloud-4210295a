@@ -137,7 +137,7 @@ async function sendWithFallbacks(
   message: string,
   channel: string,
   connectorId: string = DEFAULT_CONNECTOR_ID,
-  options: { silent?: boolean; agentName?: string } = {}
+  options: { silent?: boolean; agentName?: string; contactPhone?: string } = {}
 ): Promise<boolean> {
   // 0. Ensure connector is active on this line
   try {
@@ -170,6 +170,20 @@ async function sendWithFallbacks(
     }
   }
 
+  // Build user object — include phone (E.164) when available so Bitrix24 can match
+  // existing CRM Contact + Deal automatically (skip_phone_validate avoids format errors).
+  const userObj: Record<string, any> = {
+    id: contactId,
+    name: contactName,
+  };
+  if (options.contactPhone) {
+    const digits = options.contactPhone.replace(/[^0-9]/g, "");
+    if (digits) {
+      userObj.phone = `+${digits}`;
+      userObj.skip_phone_validate = "Y";
+    }
+  }
+
   // 1. Primary: imconnector.send.messages
   const primary = await callBitrix(clientEndpoint, accessToken, "imconnector.send.messages", {
     CONNECTOR: connectorId,
@@ -177,10 +191,7 @@ async function sendWithFallbacks(
     MESSAGES: [
       {
         im_id: Date.now().toString(),
-        user: {
-          id: contactId,
-          name: contactName,
-        },
+        user: userObj,
         message: {
           text: message,
         },
