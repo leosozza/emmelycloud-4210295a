@@ -320,7 +320,7 @@ Deno.serve(async (req) => {
 
     let sentCount = 0;
     const effectiveConnectorId = reqConnectorId || DEFAULT_CONNECTOR_ID;
-    const sendOptions = { silent: !!silent, agentName: agentName || undefined };
+    const sendOptions = { silent: !!silent, agentName: agentName || undefined, contactPhone: contactPhone || undefined };
 
     for (const integration of integrations) {
       try {
