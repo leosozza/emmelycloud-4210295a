@@ -1898,6 +1898,19 @@ function InstancesTab() {
     setLinkingInstance(instanceId);
     const inst = instances.find((i) => i.id === instanceId);
     if (!inst) return;
+
+    // Enforce 1:1 — block if another instance already uses this mapping
+    if (mappingId !== "none") {
+      const conflict = instances.find(
+        (i) => i.id !== instanceId && i.config?.bitrix24_mapping_id === mappingId
+      );
+      if (conflict) {
+        toast.error(`Esta linha já está vinculada à instância "${conflict.name}". Cada Canal Aberto só pode ter 1 instância.`);
+        setLinkingInstance(null);
+        return;
+      }
+    }
+
     const newConfig = { ...inst.config, bitrix24_mapping_id: mappingId === "none" ? null : mappingId };
     const { error } = await supabase
       .from("channel_instances")
