@@ -1707,6 +1707,7 @@ export type Database = {
           contact_avatar_url: string | null
           contact_email: string | null
           contact_instagram: string | null
+          contact_lid: string | null
           contact_name: string
           contact_phone: string | null
           created_at: string
@@ -1729,6 +1730,7 @@ export type Database = {
           contact_avatar_url?: string | null
           contact_email?: string | null
           contact_instagram?: string | null
+          contact_lid?: string | null
           contact_name: string
           contact_phone?: string | null
           created_at?: string
@@ -1751,6 +1753,7 @@ export type Database = {
           contact_avatar_url?: string | null
           contact_email?: string | null
           contact_instagram?: string | null
+          contact_lid?: string | null
           contact_name?: string
           contact_phone?: string | null
           created_at?: string
