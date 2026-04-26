@@ -218,6 +218,10 @@ export default function AtendimentoPage() {
           conversations={conversations}
           selectedId={selectedId}
           onSelect={setSelectedId}
+          onDoubleSelect={(id) => {
+            setSelectedId(id);
+            setProfileOpen(true);
+          }}
         />
       </div>
 
@@ -228,6 +232,7 @@ export default function AtendimentoPage() {
           messages={messages}
           quickReplies={quickReplies}
           onBack={() => setSelectedId(undefined)}
+          onToggleProfile={() => setProfileOpen((v) => !v)}
           onSendMessage={() => {
             queryClient.invalidateQueries({ queryKey: ["conversations"] });
           }}
@@ -242,10 +247,15 @@ export default function AtendimentoPage() {
         />
       </div>
 
-      {/* Right panel — contact profile (only on desktop) */}
-      <div className="hidden lg:block">
-        <ContactProfile conversation={selectedConversation} />
-      </div>
+      {/* Right panel — contact profile (only on desktop, toggled) */}
+      {profileOpen && (
+        <div className="hidden lg:block">
+          <ContactProfile
+            conversation={selectedConversation}
+            onClose={() => setProfileOpen(false)}
+          />
+        </div>
+      )}
     </div>
   );
 }
