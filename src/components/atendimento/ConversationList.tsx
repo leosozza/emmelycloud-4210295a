@@ -17,6 +17,7 @@ interface ConversationListProps {
   conversations: Conversation[];
   selectedId?: string;
   onSelect: (id: string) => void;
+  onDoubleSelect?: (id: string) => void;
 }
 
 function FormatTimeWrapper({ dateStr }: { dateStr: string }) {
