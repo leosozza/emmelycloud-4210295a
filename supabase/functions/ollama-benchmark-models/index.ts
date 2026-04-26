@@ -58,6 +58,43 @@ async function fetchModels(baseUrl: string): Promise<string[]> {
   return names.sort((a: string, b: string) => a.localeCompare(b));
 }
 
+// Pré-aquece um modelo (replica OpenWebUI). Devolve true se ficou pronto.
+function maxLoadTimeoutMs(model: string): number {
+  const m = model.toLowerCase();
+  if (/(:?35b|:?32b|:?30b|:?70b|:?34b)/.test(m)) return 360_000;
+  if (/(:?14b|:?13b|:?8b|:?7b|qwen3|qwen2\.5)/.test(m)) return 180_000;
+  return 90_000;
+}
+
+async function warmUpModel(baseUrl: string, model: string): Promise<{ ok: boolean; error?: string }> {
+  // Verifica se já está em memória
+  try {
+    const psR = await fetch(baseUrl.replace(/\/+$/, "") + "/api/ps", { signal: AbortSignal.timeout(5000) });
+    if (psR.ok) {
+      const psJ = await psR.json();
+      const loaded: string[] = (psJ.models || []).map((m: any) => m.name || m.model || "");
+      if (loaded.some((n) => n === model)) return { ok: true };
+    }
+  } catch { /* segue para load */ }
+
+  try {
+    const r = await fetch(baseUrl.replace(/\/+$/, "") + "/api/generate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      signal: AbortSignal.timeout(maxLoadTimeoutMs(model)),
+      body: JSON.stringify({ model, prompt: "", stream: false, keep_alive: "10m" }),
+    });
+    if (!r.ok) {
+      const txt = await r.text().catch(() => "");
+      return { ok: false, error: `warm-up HTTP ${r.status}: ${txt.slice(0, 200)}` };
+    }
+    await r.json().catch(() => null);
+    return { ok: true };
+  } catch (e: any) {
+    return { ok: false, error: `warm-up: ${e?.message || String(e)}` };
+  }
+}
+
 async function callOllamaChat(
   baseUrl: string,
   model: string,
