@@ -231,6 +231,7 @@ Deno.serve(async (req) => {
           contactId: phone,
           channel: "whatsapp",
           conversationId,
+          instanceId, // routes to the Open Line linked to this instance
         }),
       });
 
