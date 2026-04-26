@@ -336,11 +336,14 @@ Deno.serve(async (req) => {
       existingConv = r.data;
     }
     if (!existingConv && lidId) {
+      // Match LID with or without "@lid" suffix (legacy rows used both formats).
+      const lidStripped = String(lidId).replace(/@lid$/, "");
       const r = await supabase
         .from("conversations")
         .select("id, attendance_mode, unread_count, contact_phone")
         .eq("channel", "whatsapp")
-        .eq("contact_lid", lidId)
+        .or(`contact_lid.eq.${lidStripped},contact_lid.eq.${lidStripped}@lid`)
+        .order("last_message_at", { ascending: false, nullsFirst: false })
         .order("created_at", { ascending: false })
         .limit(1)
         .maybeSingle();
