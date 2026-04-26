@@ -158,15 +158,15 @@ Deno.serve(async (req) => {
       }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
-    // 2) Disparar carregamento (com keep_alive longo)
+    // 2) Disparar carregamento com retry e unload de outros modelos
     const timeout = maxLoadTimeoutMs(model);
-    const loadResult = await triggerLoad(baseUrl, model, timeout);
+    const loadResult = await loadWithRetry(baseUrl, model, timeout);
 
     if (!loadResult.ok) {
       const lower = (loadResult.error || "").toLowerCase();
       let friendly = loadResult.error || "Erro desconhecido";
-      if (lower.includes("model failed to load") || lower.includes("resource limitations")) {
-        friendly = `O servidor Ollama não conseguiu carregar **${model}** mesmo libertando memória. RAM/VRAM insuficiente para este modelo.`;
+      if (lower.includes("model failed to load") || lower.includes("resource limitations") || lower.includes("out of memory")) {
+        friendly = `O servidor Ollama não consegue carregar **${model}** mesmo após libertar memória (${loadResult.attempts} tentativas, descarregados: ${loadResult.unloaded.join(", ") || "nenhum"}). RAM/VRAM do servidor insuficiente para este modelo isoladamente.`;
       } else if (lower.includes("not found") || lower.includes("no such file") || lower.includes("does not exist")) {
         friendly = `Modelo **${model}** não está instalado no servidor Ollama. Faz \`ollama pull ${model}\`.`;
       } else if (lower.includes("timeout") || lower.includes("timed out") || lower.includes("aborted")) {
@@ -176,17 +176,21 @@ Deno.serve(async (req) => {
         ready: false,
         error: friendly,
         raw_error: loadResult.error,
+        attempts: loadResult.attempts,
+        unloaded_models: loadResult.unloaded,
         load_time_ms: Date.now() - t0,
         model,
       }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
-    // 3) Confirmar via /api/ps (geralmente já está, mas confirmamos)
+    // 3) Confirmar via /api/ps
     const loaded = await isModelLoaded(baseUrl, model);
 
     return new Response(JSON.stringify({
       ready: loaded,
       was_loaded: false,
+      attempts: loadResult.attempts,
+      unloaded_models: loadResult.unloaded,
       load_time_ms: Date.now() - t0,
       model,
       ...(loaded ? {} : { warning: "Carregamento devolveu OK mas /api/ps não confirma" }),
