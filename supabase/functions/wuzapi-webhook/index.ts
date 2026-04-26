@@ -161,10 +161,21 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Extract message content
+    // Extract message content + media node (encrypted media metadata)
     let content = "";
     let mediaType: string | null = null;
     let mediaUrl: string | null = null;
+    let mediaFilename: string | null = null;
+    let mediaMime: string | null = null;
+    let mediaNode: any = null;          // raw node containing Url/MediaKey/etc.
+    let mediaDownloadKind: string | null = null; // "image"|"audio"|"document"|"video"
+
+    const pickField = (obj: any, names: string[]) => {
+      for (const n of names) {
+        if (obj && obj[n] !== undefined && obj[n] !== null && obj[n] !== "") return obj[n];
+      }
+      return undefined;
+    };
 
     if (message.Conversation || message.conversation) {
       content = message.Conversation || message.conversation;
@@ -173,22 +184,40 @@ Deno.serve(async (req) => {
       content = ext.Text || ext.text || "";
     } else if (message.ImageMessage || message.imageMessage) {
       const img = message.ImageMessage || message.imageMessage;
-      content = img.Caption || img.caption || "[Imagem]";
+      content = img.Caption || img.caption || "";
       mediaType = "image";
-    } else if (message.DocumentMessage || message.documentMessage) {
-      const doc = message.DocumentMessage || message.documentMessage;
-      content = doc.Title || doc.title || doc.FileName || doc.fileName || "[Documento]";
+      mediaNode = img;
+      mediaDownloadKind = "image";
+      mediaMime = pickField(img, ["Mimetype", "mimetype", "MimeType"]) || "image/jpeg";
+    } else if (message.DocumentMessage || message.documentMessage || message.documentWithCaptionMessage) {
+      const doc = message.DocumentMessage || message.documentMessage || message.documentWithCaptionMessage?.message?.documentMessage || {};
+      mediaFilename = pickField(doc, ["FileName", "fileName", "Title", "title"]) || null;
+      content = doc.Caption || doc.caption || mediaFilename || "";
       mediaType = "document";
+      mediaNode = doc;
+      mediaDownloadKind = "document";
+      mediaMime = pickField(doc, ["Mimetype", "mimetype"]) || "application/octet-stream";
     } else if (message.AudioMessage || message.audioMessage) {
-      content = "[Áudio]";
+      const aud = message.AudioMessage || message.audioMessage;
+      content = "";
       mediaType = "audio";
+      mediaNode = aud;
+      mediaDownloadKind = "audio";
+      mediaMime = pickField(aud, ["Mimetype", "mimetype"]) || "audio/ogg";
     } else if (message.VideoMessage || message.videoMessage) {
       const vid = message.VideoMessage || message.videoMessage;
-      content = vid.Caption || vid.caption || "[Vídeo]";
+      content = vid.Caption || vid.caption || "";
       mediaType = "video";
+      mediaNode = vid;
+      mediaDownloadKind = "video";
+      mediaMime = pickField(vid, ["Mimetype", "mimetype"]) || "video/mp4";
     } else if (message.StickerMessage || message.stickerMessage) {
-      content = "[Sticker]";
+      const stk = message.StickerMessage || message.stickerMessage;
+      content = "";
       mediaType = "image";
+      mediaNode = stk;
+      mediaDownloadKind = "image";
+      mediaMime = pickField(stk, ["Mimetype", "mimetype"]) || "image/webp";
     } else if (message.ContactMessage || message.contactMessage) {
       const ct = message.ContactMessage || message.contactMessage;
       content = `[Contato] ${ct.DisplayName || ct.displayName || ""}`;
@@ -198,7 +227,93 @@ Deno.serve(async (req) => {
       content = "[Mensagem não suportada]";
     }
 
-    if (!content) content = "[Mensagem vazia]";
+    // Try to download + upload media to Storage so Bitrix24 can fetch it via public URL
+    if (mediaNode && mediaDownloadKind) {
+      try {
+        const { data: wuzCreds2 } = await supabase
+          .from("integration_credentials")
+          .select("credential_key, credential_value")
+          .eq("provider", "wuzapi");
+        let dlBaseUrl = "";
+        let dlToken = "";
+        for (const c of (wuzCreds2 || [])) {
+          if (c.credential_key === "WUZAPI_BASE_URL" && !dlBaseUrl) dlBaseUrl = c.credential_value?.trim() || "";
+          if (c.credential_key === "WUZAPI_USER_TOKEN" && !dlToken) dlToken = c.credential_value?.trim() || "";
+        }
+        if (dlBaseUrl && dlToken) {
+          dlBaseUrl = dlBaseUrl.replace(/\/+$/, "");
+          const dlPayload: Record<string, any> = {
+            Url: pickField(mediaNode, ["Url", "URL", "url", "DirectPath", "directPath"]),
+            DirectPath: pickField(mediaNode, ["DirectPath", "directPath"]),
+            Mimetype: mediaMime,
+            FileSHA256: pickField(mediaNode, ["FileSHA256", "FileSha256", "fileSha256"]),
+            FileEncSHA256: pickField(mediaNode, ["FileEncSHA256", "FileEncSha256", "fileEncSha256"]),
+            FileLength: pickField(mediaNode, ["FileLength", "fileLength"]),
+            MediaKey: pickField(mediaNode, ["MediaKey", "mediaKey"]),
+          };
+          // Strip undefined to keep WUZAPI happy
+          for (const k of Object.keys(dlPayload)) if (dlPayload[k] === undefined) delete dlPayload[k];
+
+          const sizeBytes = Number(dlPayload.FileLength || 0);
+          if (sizeBytes > 16 * 1024 * 1024) {
+            console.warn(`[WUZAPI-WEBHOOK] Media size ${sizeBytes}B may exceed safe limits`);
+          }
+
+          const dlEndpoint = `/chat/download${mediaDownloadKind}`;
+          console.log(`[WUZAPI-WEBHOOK] Downloading media: ${dlEndpoint} (${mediaMime}, ${sizeBytes}B)`);
+          const dlRes = await fetch(`${dlBaseUrl}${dlEndpoint}`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "token": dlToken },
+            body: JSON.stringify(dlPayload),
+          });
+
+          if (!dlRes.ok) {
+            console.warn(`[WUZAPI-WEBHOOK] Download failed (${dlRes.status}):`, (await dlRes.text()).slice(0, 200));
+          } else {
+            const dlJson: any = await dlRes.json().catch(() => ({}));
+            // WUZAPI returns base64 in data.Data or data
+            const b64: string | undefined = dlJson?.data?.Data || dlJson?.Data || dlJson?.data;
+            if (b64 && typeof b64 === "string") {
+              // Decode base64 → bytes
+              const cleanB64 = b64.replace(/^data:[^;]+;base64,/, "");
+              const binary = Uint8Array.from(atob(cleanB64), (c) => c.charCodeAt(0));
+              const ext = (mediaMime?.split("/")?.[1] || "bin").split(";")[0].split("+")[0];
+              const safeName = mediaFilename || `${mediaDownloadKind}-${Date.now()}.${ext}`;
+              const objectPath = `wuzapi-inbound/${Date.now()}-${safeName.replace(/[^a-zA-Z0-9._-]/g, "_")}`;
+              const { error: upErr } = await supabase.storage.from("media").upload(objectPath, binary, {
+                contentType: mediaMime || "application/octet-stream",
+                upsert: false,
+              });
+              if (upErr) {
+                console.warn("[WUZAPI-WEBHOOK] Storage upload failed:", upErr.message);
+              } else {
+                const { data: pub } = supabase.storage.from("media").getPublicUrl(objectPath);
+                mediaUrl = pub.publicUrl;
+                if (!mediaFilename) mediaFilename = safeName;
+                console.log(`[WUZAPI-WEBHOOK] Media uploaded: ${mediaUrl}`);
+              }
+            } else {
+              console.warn("[WUZAPI-WEBHOOK] Download response missing base64 payload");
+            }
+          }
+        } else {
+          console.warn("[WUZAPI-WEBHOOK] WUZAPI credentials missing — cannot download media");
+        }
+      } catch (e) {
+        console.warn("[WUZAPI-WEBHOOK] Media download/upload error:", e);
+      }
+    }
+
+    // Fallback content text when no caption was provided
+    if (!content) {
+      const placeholders: Record<string, string> = {
+        image: "[Imagem]",
+        audio: "[Áudio]",
+        document: mediaFilename ? `[Documento] ${mediaFilename}` : "[Documento]",
+        video: "[Vídeo]",
+      };
+      content = (mediaType && placeholders[mediaType]) || "[Mensagem vazia]";
+    }
 
     // Get sender name (push name) — fallback to phone, then LID
     const senderName = info.PushName || info.pushName || phone || lidId || "Cliente";
