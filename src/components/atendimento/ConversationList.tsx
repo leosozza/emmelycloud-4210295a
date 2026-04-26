@@ -201,11 +201,14 @@ export function ConversationList({
                     transform: `translateY(${vRow.start}px)`,
                   }}
                   className={cn(
-                    "w-full text-left px-3 py-[10px] border-b border-border/30 hover:bg-accent/50 transition-colors",
-                    selectedId === conv.id && "bg-accent",
+                    "w-full text-left px-3 py-[10px] border-b border-border/30 border-l-4 hover:bg-accent/50 transition-colors",
+                    channelBorderColor[conv.channel],
+                    selectedId === conv.id && "bg-primary/10",
                     conv.unread_count > 0 && "bg-primary/5"
                   )}
                   onClick={() => onSelect(conv.id)}
+                  onDoubleClick={() => onDoubleSelect?.(conv.id)}
+                  title="Clique duplo para ver detalhes do contacto"
                 >
                   <div className="flex items-center gap-3 w-full min-w-0">
                     <div className="relative shrink-0">
