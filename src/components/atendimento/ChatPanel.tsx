@@ -244,48 +244,55 @@ export function ChatPanel({
               <ArrowLeft className="h-5 w-5" />
             </Button>
           )}
-          <Avatar className="h-9 w-9">
-            <AvatarImage src={conversation.contact_avatar_url ?? undefined} />
-            <AvatarFallback className="text-xs bg-primary/10 text-primary">
-              {conversation.contact_name
-                .split(" ")
-                .map((n) => n[0])
-                .join("")
-                .slice(0, 2)
-                .toUpperCase()}
-            </AvatarFallback>
-          </Avatar>
-          <div>
-            <div className="flex items-center gap-2">
-              <span className="text-sm font-semibold">
-                {conversation.contact_name}
-              </span>
-              <ChannelIcon channel={conversation.channel} />
+          <button
+            type="button"
+            onClick={onToggleProfile}
+            className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1 hover:bg-accent/50 -mx-1 px-1 py-0.5 rounded-md transition-colors text-left"
+            title="Ver detalhes do contacto"
+          >
+            <Avatar className="h-9 w-9 shrink-0">
+              <AvatarImage src={conversation.contact_avatar_url ?? undefined} />
+              <AvatarFallback className="text-xs bg-primary/10 text-primary">
+                {conversation.contact_name
+                  .split(" ")
+                  .map((n) => n[0])
+                  .join("")
+                  .slice(0, 2)
+                  .toUpperCase()}
+              </AvatarFallback>
+            </Avatar>
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 min-w-0">
+                <span className="text-sm font-semibold truncate">
+                  {conversation.contact_name}
+                </span>
+                <ChannelIcon channel={conversation.channel} />
+                <Badge
+                  variant="outline"
+                  className={`text-[10px] h-5 flex items-center gap-1 shrink-0 ${
+                    isAiMode
+                      ? "bg-violet-500/10 text-violet-700 border-violet-200"
+                      : "bg-orange-500/10 text-orange-700 border-orange-200"
+                  }`}
+                >
+                  {isAiMode ? (
+                    <Bot className="h-2.5 w-2.5" />
+                  ) : (
+                    <User className="h-2.5 w-2.5" />
+                  )}
+                  {isAiMode ? "IA" : "Humano"}
+                </Badge>
+              </div>
               <Badge
                 variant="outline"
-                className={`text-[10px] h-5 flex items-center gap-1 ${
-                  isAiMode
-                    ? "bg-violet-500/10 text-violet-700 border-violet-200"
-                    : "bg-orange-500/10 text-orange-700 border-orange-200"
+                className={`text-[10px] h-5 ${
+                  statusColors[conversation.status] ?? ""
                 }`}
               >
-                {isAiMode ? (
-                  <Bot className="h-2.5 w-2.5" />
-                ) : (
-                  <User className="h-2.5 w-2.5" />
-                )}
-                {isAiMode ? "IA" : "Humano"}
+                {statusLabels[conversation.status] ?? conversation.status}
               </Badge>
             </div>
-            <Badge
-              variant="outline"
-              className={`text-[10px] h-5 ${
-                statusColors[conversation.status] ?? ""
-              }`}
-            >
-              {statusLabels[conversation.status] ?? conversation.status}
-            </Badge>
-          </div>
+          </button>
         </div>
 
         <div className="flex items-center gap-1">
