@@ -326,7 +326,51 @@ async function handleConnectorMessage(supabase: any, integration: any, payload: 
     const messageText = messageObj.text || messageObj.TEXT || msg.message?.text || "";
     const messageId = msg.im_id || msg.ID || "";
 
-    if (!messageText) continue;
+    // Detect file attachments — Bitrix may deliver them in different shapes per tenant
+    type B24File = { name: string; link: string; type?: string; mime?: string; size?: number };
+    const detectedFiles: B24File[] = [];
+    const filesRaw = messageObj.files || messageObj.FILES || messageObj.params?.FILES || messageObj.PARAMS?.FILES || msg.files || [];
+    if (filesRaw && (Array.isArray(filesRaw) || typeof filesRaw === "object")) {
+      const arr = Array.isArray(filesRaw) ? filesRaw : Object.values(filesRaw);
+      for (const f of arr as any[]) {
+        if (!f) continue;
+        const link = f.link || f.LINK || f.url || f.URL || f.urlMachine || f.URL_MACHINE || f.urlDownload || "";
+        const name = f.name || f.NAME || f.fileName || f.FILE_NAME || "arquivo";
+        const type = (f.type || f.TYPE || "").toString().toLowerCase();
+        const mime = f.mime || f.MIME || f.contentType || f.CONTENT_TYPE || "";
+        const size = Number(f.size || f.SIZE || 0) || undefined;
+        if (link && /^https?:\/\//i.test(link)) {
+          detectedFiles.push({ name, link, type, mime, size });
+        }
+      }
+    }
+    // Also accept attachments structure
+    const attachRaw = messageObj.attach || messageObj.ATTACH || msg.attach;
+    if (attachRaw && Array.isArray(attachRaw)) {
+      for (const at of attachRaw) {
+        const blocks = at?.BLOCKS || at?.blocks || [];
+        for (const b of blocks) {
+          const fileBlock = b?.FILE || b?.file;
+          if (fileBlock) {
+            const link = fileBlock.LINK || fileBlock.link || "";
+            if (link && /^https?:\/\//i.test(link)) {
+              detectedFiles.push({
+                name: fileBlock.NAME || fileBlock.name || "arquivo",
+                link,
+                type: (fileBlock.TYPE || fileBlock.type || "").toString().toLowerCase(),
+              });
+            }
+          }
+        }
+      }
+    }
+
+    if (detectedFiles.length > 0) {
+      console.log(`[WORKER] Detected ${detectedFiles.length} file(s) in message ${messageId}`);
+    }
+
+    // Skip empty messages with neither text nor files
+    if (!messageText && detectedFiles.length === 0) continue;
 
     // Dedup: check if this message was sent by Emmely (echo prevention)
     if (messageId) {
