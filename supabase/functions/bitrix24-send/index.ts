@@ -282,7 +282,7 @@ Deno.serve(async (req) => {
 
   try {
     const body = await req.json();
-    const { message, contactName, contactId, contactPhone, channel, conversationId, connectorId: reqConnectorId, lineId: reqLineId, silent, agentName, instanceId } = body;
+    const { message, contactName, contactId, contactPhone, channel, conversationId, connectorId: reqConnectorId, lineId: reqLineId, silent, agentName, instanceId, mediaUrl, mediaType, mediaFilename, mediaMime } = body;
 
     // Resolve mapping_id from instance (1:1 instance ↔ Open Line)
     let resolvedMappingId: string | null = null;
