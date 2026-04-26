@@ -4,7 +4,11 @@
       "Bash(claude mcp:*)",
       "Bash(where claude:*)",
       "Read(//c/Users/HP 240 G6/AppData/Roaming/npm/**)",
-      "Read(//c/Users/HP 240 G6/AppData/Local/Programs/**)"
+      "Read(//c/Users/HP 240 G6/AppData/Local/Programs/**)",
+      "WebSearch",
+      "WebFetch(domain:apidocs.bitrix24.com)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:helpdesk.bitrix24.com)"
     ]
   }
 }

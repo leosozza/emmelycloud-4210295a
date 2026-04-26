@@ -315,6 +315,38 @@ Deno.serve(async (req) => {
       content = (mediaType && placeholders[mediaType]) || "[Mensagem vazia]";
     }
 
+    // Auto-transcribe audio messages before forwarding to Bitrix24
+    // This follows the Bitrix24 imconnector.send.messages approach: include the
+    // transcription in the `text` field alongside the audio file URL in `files`.
+    if (mediaType === "audio" && mediaUrl && !mediaUrl.startsWith("data:")) {
+      try {
+        const _sttUrl = `${Deno.env.get("SUPABASE_URL")}/functions/v1/elevenlabs-stt`;
+        const sttController = new AbortController();
+        const sttTimeout = setTimeout(() => sttController.abort(), 15000);
+        const sttRes = await fetch(_sttUrl, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")}`,
+          },
+          body: JSON.stringify({ audio_url: mediaUrl, language_code: "pt", mime_type: mediaMime || "audio/ogg" }),
+          signal: sttController.signal,
+        }).catch(() => null);
+        clearTimeout(sttTimeout);
+        if (sttRes?.ok) {
+          const sttData = await sttRes.json().catch(() => null);
+          if (sttData?.text) {
+            content = `🎤 ${sttData.text}`;
+            console.log("[WUZAPI-WEBHOOK] Auto-transcription succeeded:", content.slice(0, 80));
+          }
+        } else {
+          console.warn("[WUZAPI-WEBHOOK] Auto-transcription failed (status):", sttRes?.status);
+        }
+      } catch (e) {
+        console.warn("[WUZAPI-WEBHOOK] Auto-transcription error:", e);
+      }
+    }
+
     // Get sender name (push name) — fallback to phone, then LID
     const senderName = info.PushName || info.pushName || phone || lidId || "Cliente";
 
