@@ -34,16 +34,44 @@ async function getOllamaBaseUrl(supabase: any): Promise<string | null> {
   return data.credential_value.replace(/\/v1\/chat\/completions$/, "").replace(/\/+$/, "");
 }
 
-async function isModelLoaded(baseUrl: string, model: string): Promise<boolean> {
+async function listLoadedModels(baseUrl: string): Promise<string[]> {
   try {
     const r = await fetch(`${baseUrl}/api/ps`, { signal: AbortSignal.timeout(8000) });
-    if (!r.ok) return false;
+    if (!r.ok) return [];
     const j = await r.json();
-    const loaded: string[] = (j.models || []).map((m: any) => m.name || m.model || "");
-    return loaded.some((n) => n === model || n.startsWith(model + ":") || model.startsWith(n));
+    return (j.models || []).map((m: any) => m.name || m.model || "").filter(Boolean);
   } catch {
-    return false;
+    return [];
   }
+}
+
+async function isModelLoaded(baseUrl: string, model: string): Promise<boolean> {
+  const loaded = await listLoadedModels(baseUrl);
+  return loaded.some((n) => n === model || n.startsWith(model + ":") || model.startsWith(n));
+}
+
+// Força unload imediato de um modelo (keep_alive: 0)
+async function unloadModel(baseUrl: string, model: string): Promise<void> {
+  try {
+    await fetch(`${baseUrl}/api/generate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      signal: AbortSignal.timeout(15_000),
+      body: JSON.stringify({ model, prompt: "", stream: false, keep_alive: 0 }),
+    });
+  } catch { /* best-effort */ }
+}
+
+// Descarrega todos os modelos exceto o alvo, para libertar RAM/VRAM
+async function unloadOtherModels(baseUrl: string, keepModel: string): Promise<string[]> {
+  const loaded = await listLoadedModels(baseUrl);
+  const toUnload = loaded.filter((n) => n !== keepModel && !n.startsWith(keepModel + ":") && !keepModel.startsWith(n));
+  if (toUnload.length === 0) return [];
+  console.log(`[warm-model] descarregando ${toUnload.length} modelo(s) para libertar memória:`, toUnload);
+  await Promise.all(toUnload.map((m) => unloadModel(baseUrl, m)));
+  // Aguardar Ollama libertar memória
+  await new Promise((r) => setTimeout(r, 2500));
+  return toUnload;
 }
 
 async function triggerLoad(baseUrl: string, model: string, timeoutMs: number): Promise<{ ok: boolean; error?: string }> {
@@ -68,6 +96,31 @@ async function triggerLoad(baseUrl: string, model: string, timeoutMs: number): P
   } catch (e: any) {
     return { ok: false, error: e?.message || String(e) };
   }
+}
+
+// Tenta carregar com retry: se falhar com "resource limitations", liberta memória e tenta novamente
+async function loadWithRetry(baseUrl: string, model: string, timeoutMs: number): Promise<{ ok: boolean; error?: string; attempts: number; unloaded: string[] }> {
+  const MAX_ATTEMPTS = 3;
+  let lastError: string | undefined;
+  let totalUnloaded: string[] = [];
+
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    // Antes de cada tentativa, descarregar outros modelos
+    const unloaded = await unloadOtherModels(baseUrl, model);
+    totalUnloaded.push(...unloaded);
+
+    const r = await triggerLoad(baseUrl, model, timeoutMs);
+    if (r.ok) return { ok: true, attempts: attempt, unloaded: totalUnloaded };
+
+    lastError = r.error;
+    const isResource = /resource limitations|model failed to load|out of memory|cuda/i.test(r.error || "");
+    console.log(`[warm-model] tentativa ${attempt}/${MAX_ATTEMPTS} falhou${isResource ? " (recursos)" : ""}: ${r.error?.substring(0, 150)}`);
+
+    if (!isResource) break; // erro não recuperável (ex.: modelo não existe)
+    if (attempt < MAX_ATTEMPTS) await new Promise((res) => setTimeout(res, 5000));
+  }
+
+  return { ok: false, error: lastError, attempts: MAX_ATTEMPTS, unloaded: totalUnloaded };
 }
 
 Deno.serve(async (req) => {

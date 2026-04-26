@@ -1,133 +1,63 @@
-## Objetivo
+## Diagnóstico real
 
-Fazer com que **todos os modelos** instalados no servidor Ollama (incluindo `qwen3.6:35b`, `qwen3.6:latest`) funcionem no Emmely, exatamente como já funcionam no OpenWebUI.
-
-A "limitação" não é de hardware — é da nossa implementação atual:
-- Usamos `/v1/chat/completions` (camada compatível OpenAI) sem controlo de `keep_alive`
-- Timeout fixo de 3 min é insuficiente para o 1º carregamento de modelos 35B
-- Não pré-descarregamos modelos antigos antes de carregar o novo → Ollama tenta meter 2 em memória → erro 500
-- Cada chamada é "fria" — sem aquecimento prévio
-
-## Solução: 5 alterações coordenadas
-
-### 1. Nova edge function `ollama-warm-model`
-
-**Ficheiro novo:** `supabase/functions/ollama-warm-model/index.ts`
-
-Função utilitária que:
-- Recebe `{ model: string }`
-- Lê a `OLLAMA_BASE_URL` da `integration_credentials`
-- Chama `GET /api/ps` para ver o que está carregado
-- Se o modelo pedido **já está quente** → devolve `{ ready: true, was_loaded: true }` em <1s
-- Se não está → faz `POST /api/generate` com `{ model, prompt: "", keep_alive: "10m" }` (esta chamada faz o Ollama carregar o modelo e descarregar os outros automaticamente)
-- Faz polling em `/api/ps` (até 6 min) até confirmar que está em memória
-- Devolve `{ ready: true, load_time_ms: 145000 }` ou `{ ready: false, error: "..." }`
-
-Esta função é a peça-chave: replica o que o OpenWebUI faz internamente.
-
-### 2. Reescrever `ai-playground` para usar pré-aquecimento
-
-**Ficheiro:** `supabase/functions/ai-playground/index.ts`
-
-Fluxo novo (apenas para `ai_provider !== 'lovable'`):
+Os logs confirmam que `qwen3.6:35b` e `qwen3.6:latest` falham com:
 
 ```
-1. Antes de fazer fetch ao Ollama, invocar ollama-warm-model com o modelo do agente
-2. Esperar até receber { ready: true } (ou erro claro)
-3. Se warm-up demorou >0ms (modelo estava frio), usar timeout de 30s para a inferência
-   Se warm-up foi instantâneo (já quente), manter timeout 3 min para respostas longas
-4. Fazer a chamada normal /v1/chat/completions
-5. Se warm-up falhar → devolver mensagem clara ao utilizador antes de tentar inferência
+HTTP 500: model failed to load, this may be due to resource limitations
+or an internal error, check ollama server logs for details
 ```
 
-Vantagem: nunca mais o erro "model failed to load" durante inferência — ou pré-carrega com sucesso, ou aborta cedo com mensagem útil.
+A falha é **imediata** (não timeout) — o Ollama recusa carregar porque já tem outros modelos grandes em memória dos testes anteriores do mesmo benchmark (`qwen2.5vl:32b` + `qwen2.5vl:32b-q4_K_M`, ~40GB combinados).
 
-### 3. Aplicar mesma estratégia ao `ai-process-message`
+O OpenWebUI funciona porque **descarrega outros modelos antes de carregar um novo grande** e **faz retry** quando a primeira tentativa falha. O nosso warm-up atual só verifica `/api/ps` e dispara o load — não liberta memória.
 
-**Ficheiro:** `supabase/functions/ai-process-message/index.ts` (motor principal de chat)
+## Solução
 
-Mesma lógica do ponto 2 — pré-aquecer antes de inferir. Cobertura completa: chat playground + WhatsApp + Instagram + Bitrix24 chatbots.
+### 1. Função `ollama-warm-model` — libertar memória antes de carregar
 
-### 4. Atualizar `ollama-benchmark-models` para usar warm-up
+Antes de chamar `/api/generate` para carregar o modelo alvo:
 
-**Ficheiro:** `supabase/functions/ollama-benchmark-models/index.ts`
+- Chamar `/api/ps` e listar todos os modelos atualmente em memória
+- Para cada modelo carregado **diferente do alvo**, fazer `POST /api/generate` com `keep_alive: 0` e `prompt: ""` para forçar unload imediato
+- Aguardar 2 segundos para o Ollama libertar a memória
+- Só depois disparar o load do modelo alvo
 
-Atualmente o benchmark falha em modelos grandes porque tenta inferir diretamente. Com warm-up:
-- Cada modelo é pré-carregado primeiro (com timeout de 6 min)
-- Só depois é medida a velocidade de inferência (1 frase curta)
-- Modelos antes marcados "Indisponível" passarão a ter benchmark real
+### 2. Retry automático em falha de "resource limitations"
 
-### 5. Remover bloqueios proativos no frontend (`ChatIA.tsx`)
+Quando o load falha com a mensagem `model failed to load` ou `resource limitations`:
 
-**Ficheiro:** `src/pages/ChatIA.tsx`
+- Aguardar 5 segundos
+- Tentar **mais 2 vezes** (3 tentativas no total)
+- Em cada retry, voltar a descarregar tudo o resto
 
-O banner vermelho "Modelo indisponível" + bloqueio de input criados na iteração anterior deixam de fazer sentido — agora **todos os modelos vão funcionar**.
+### 3. Aplicar a mesma lógica no benchmark
 
-Substituir por:
-- **Indicador subtil** de estado do modelo: "🔥 Modelo quente" / "⏳ A aquecer modelo (pode demorar 1-3 min na 1ª utilização)" / "✅ Pronto"
-- **Sem bloqueio de input** — utilizador pode escrever; mensagem só é enviada após warm-up
-- **Sem botão "trocar modelo"** automático
+A função `ollama-benchmark-models` tem uma versão inline do warm-up — atualizar para também descarregar os outros modelos antes de cada benchmark. Isto resolve o problema da imagem onde `qwen3.6:35b` falhou porque os 32b ainda estavam carregados.
+
+### 4. Mensagens mais claras
+
+Quando mesmo com retry e unload o modelo continua a falhar com "resource limitations", a mensagem deve ser explícita: o servidor Ollama não tem RAM/VRAM suficiente para este modelo isolado — não é problema da nossa app.
 
 ## Detalhes técnicos
 
-### Endpoints Ollama nativos usados
+**Ficheiros a editar:**
+- `supabase/functions/ollama-warm-model/index.ts` — adicionar `unloadOtherModels()` + loop de retry
+- `supabase/functions/ollama-benchmark-models/index.ts` — atualizar `warmUpModel()` inline com a mesma lógica (unload + retry)
 
-| Endpoint | Uso |
-|---|---|
-| `GET /api/tags` | Listar modelos instalados (já usamos) |
-| `GET /api/ps` | Ver modelos atualmente em memória (novo) |
-| `POST /api/generate` com `prompt:""` e `keep_alive` | Pré-carregar modelo (novo) |
-| `POST /v1/chat/completions` | Inferência real (mantém-se) |
-
-### Timeouts revistos
-
-| Operação | Timeout atual | Timeout novo |
-|---|---|---|
-| Warm-up modelo pequeno (<5GB) | — | 60s |
-| Warm-up modelo médio (5-15GB) | — | 180s |
-| Warm-up modelo grande (>15GB, ex: 35B) | — | 360s (6 min) |
-| Inferência após warm-up | 180s | 180s |
-
-### Fluxo visual (chat)
-
-```text
-Utilizador escreve → Submit
-    ↓
-Frontend mostra "⏳ A preparar modelo..."
-    ↓
-Edge function: warm-up (instantâneo se quente, até 6 min se frio)
-    ↓
-Frontend mostra "💬 A pensar..."
-    ↓
-Edge function: inferência real
-    ↓
-Resposta (streaming)
+**Endpoint Ollama usado para unload:**
+```
+POST /api/generate
+{ "model": "<nome>", "keep_alive": 0, "prompt": "", "stream": false }
 ```
 
-### Casos de erro residuais
+**Nenhuma alteração na UI** (`ChatIA.tsx`) é necessária — a correção é puramente backend.
 
-Mesmo com warm-up, podem ocorrer:
-- Modelo realmente não cabe em RAM → `/api/generate` devolve 500 → mensagem clara: *"O servidor Ollama não tem memória suficiente para carregar este modelo nem mesmo descarregando os outros. Aumente RAM/VRAM."*
-- Túnel Cloudflare caiu → erro de rede claro
-- Servidor Ollama desligado → erro de conexão claro
+**Nenhuma migração de BD** — só código de Edge Functions.
 
-## Ficheiros alterados
+## Resultado esperado
 
-- ✨ **Novo:** `supabase/functions/ollama-warm-model/index.ts`
-- ✏️ `supabase/functions/ai-playground/index.ts` (adicionar warm-up)
-- ✏️ `supabase/functions/ai-process-message/index.ts` (adicionar warm-up)
-- ✏️ `supabase/functions/ollama-benchmark-models/index.ts` (warm-up antes de medir)
-- ✏️ `src/pages/ChatIA.tsx` (remover bloqueio, adicionar indicador de aquecimento)
+Ao clicar **"Avaliar modelos"** em `/integracoes`:
 
-## Verificação após implementação
-
-1. Selecionar agente com `qwen3.6:35b` → enviar "olá" → deve aquecer (1-3 min na 1ª vez) e responder
-2. Re-enviar imediatamente → deve responder em segundos (modelo quente)
-3. Trocar para `llama3.2:3b` → deve descarregar o 35B e carregar o 3B automaticamente
-4. Re-correr benchmark em `/integracoes` → todos os modelos devem aparecer com tempo real (sem "Indisponível")
-
-## O que NÃO muda
-
-- Lovable AI (`ai_provider = 'lovable'`) continua sem warm-up — não é necessário
-- Configuração do servidor Ollama remoto — zero mudanças do lado dele
-- Estrutura de agentes, base_prompt, RAG, knowledge base — tudo intacto
+- `qwen3.6:35b` e `qwen3.6:latest` passarão a ter scores reais (a menos que sozinhos não caibam na memória do servidor — aí sim, é hardware)
+- O benchmark pode demorar mais 30-60s no total devido aos unloads, mas será fiável
+- Recomendações (🥇 / ⚡ / ⚖️) serão calculadas com todos os modelos
