@@ -6,14 +6,17 @@ import { MarkdownMessage } from "@/components/chat/MarkdownMessage";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
-import { Send, Loader2, Sparkles, Square, AlertTriangle, Bot, BookOpen } from "lucide-react";
+import { Send, Loader2, Sparkles, Square, AlertTriangle, Bot, BookOpen, Menu } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { AudioRecordButton } from "@/components/chat/AudioRecordButton";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { buildChatVirtualItems } from "@/lib/chatLayout";
 import { useCanvasAutoResize } from "@/hooks/useCanvasAutoResize";
+import { useIsMobile } from "@/hooks/use-mobile";
+
 
 interface Message {
   role: "user" | "assistant";
