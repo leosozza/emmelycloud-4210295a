@@ -480,19 +480,64 @@ async function handleConnectorMessage(supabase: any, integration: any, payload: 
 
     if (conversation) {
       try {
-        const sendRes = await fetch(`${supabaseUrl}/functions/v1/message-send`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "Authorization": `Bearer ${serviceKey}`,
-          },
-          body: JSON.stringify({
+        // Helper: classify mime → message_type used by message-send
+        const mimeToType = (mime: string, fallbackType: string): string => {
+          const m = (mime || "").toLowerCase();
+          const t = (fallbackType || "").toLowerCase();
+          if (m.startsWith("image/") || t === "image" || t === "picture") return "image";
+          if (m.startsWith("audio/") || t === "audio" || t === "voice") return "audio";
+          if (m.startsWith("video/") || t === "video") return "video";
+          return "document";
+        };
+
+        // 1. If text present, send it first
+        if (cleanText) {
+          const sendRes = await fetch(`${supabaseUrl}/functions/v1/message-send`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Authorization": `Bearer ${serviceKey}`,
+            },
+            body: JSON.stringify({
+              conversation_id: conversation.id,
+              content: cleanText,
+            }),
+          });
+          const sendResult = await sendRes.json().catch(() => ({}));
+          console.log("[WORKER] message-send (text) result:", JSON.stringify(sendResult).substring(0, 200));
+        }
+
+        // 2. Send each detected file as its own message
+        for (const f of detectedFiles) {
+          const msgType = mimeToType(f.mime || "", f.type || "");
+          const caption = !cleanText ? "" : ""; // caption already sent as separate text message
+          const filePayload = {
             conversation_id: conversation.id,
-            content: cleanText,
-          }),
-        });
-        const sendResult = await sendRes.json();
-        console.log("[WORKER] message-send result:", JSON.stringify(sendResult).substring(0, 200));
+            content: caption || (msgType === "document" ? f.name : ""),
+            message_type: msgType,
+            resolvedInteractiveData: { url: f.link, filename: f.name },
+          };
+          console.log(`[WORKER] Forwarding file (${msgType}): ${f.name} → ${f.link.substring(0, 80)}`);
+          try {
+            const fileRes = await fetch(`${supabaseUrl}/functions/v1/message-send`, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                "Authorization": `Bearer ${serviceKey}`,
+              },
+              body: JSON.stringify(filePayload),
+            });
+            const fileResult = await fileRes.json().catch(() => ({}));
+            console.log("[WORKER] message-send (file) result:", JSON.stringify(fileResult).substring(0, 200));
+            await debugLog(supabase, integration.id, "media_forwarded_to_channel", "outbound", {
+              conversationId: conversation.id, channel: conversation.channel,
+              fileName: f.name, mime: f.mime, type: msgType,
+            });
+          } catch (fe) {
+            console.error("[WORKER] File forward error:", fe);
+            await debugLog(supabase, integration.id, "media_forward_error", "outbound", { fileName: f.name }, String(fe));
+          }
+        }
 
         // Delivery ACK — estrutura correta conforme documentação oficial
         const accessToken = await ensureValidToken(supabase, integration);
@@ -510,7 +555,7 @@ async function handleConnectorMessage(supabase: any, integration: any, payload: 
 
         await debugLog(supabase, integration.id, "message_forwarded", "outbound", {
           conversationId: conversation.id, channel: conversation.channel,
-          messageText: cleanText.substring(0, 100),
+          messageText: cleanText.substring(0, 100), fileCount: detectedFiles.length,
         });
       } catch (e) {
         console.error("[WORKER] Forward error:", e);
