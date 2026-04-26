@@ -412,12 +412,27 @@ async function handleConnectorMessage(supabase: any, integration: any, payload: 
 
     console.log("[WORKER] Contact ID resolved:", contactId);
 
-    // Find conversation - try both raw ID and @lid suffix
+    // Find conversation - try phone, LID and instagram identifiers.
+    // contactId from Bitrix can be either a real phone or the BR @lid hash (without "@lid" suffix).
+    const lidStripped = contactId.replace(/@lid$/, "");
     const { data: conversation } = await supabase
       .from("conversations")
-      .select("id, contact_phone, contact_instagram, channel")
-      .or(`contact_phone.eq.${contactId},contact_phone.eq.${contactId}@lid,contact_instagram.eq.${contactId}`)
+      .select("id, contact_phone, contact_lid, contact_instagram, channel")
+      .or(
+        `contact_phone.eq.${contactId},contact_phone.eq.${contactId}@lid,` +
+        `contact_lid.eq.${lidStripped},contact_lid.eq.${lidStripped}@lid,` +
+        `contact_instagram.eq.${contactId}`
+      )
       .maybeSingle();
+
+    if (conversation) {
+      const matchVia = conversation.contact_phone === contactId
+        ? "phone"
+        : (conversation.contact_lid === lidStripped || conversation.contact_lid === `${lidStripped}@lid`)
+          ? "lid"
+          : "instagram";
+      console.log(`[WORKER] Conversation matched via ${matchVia}: ${conversation.id}`);
+    }
 
     if (conversation) {
       try {

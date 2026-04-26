@@ -1,88 +1,72 @@
-# Corrigir recepção WhatsApp BR — LID vs número real e vínculo com Deal
+## Diagnóstico (confirmado em produção)
 
-## Diagnóstico
+Identifiquei **três bugs** na conversa do número `+5511978659280` (LID `196847578665004`):
 
-Validei nos logs do `wuzapi-webhook`. O número que você enviou (11978659280) chegou, mas:
+**1. `contact_phone` ficou nulo na nova conversa**
+- Na tabela `conversations`, a linha tem `contact_phone = NULL` e `contact_lid = "196847578665004"`.
+- Isso indica que o payload da WUZAPI deste número trouxe **só** o JID com `@lid` em ambos os campos `Chat` e `Sender` — então a função `wuzapi-webhook` não conseguiu extrair o telefone real.
 
+**2. Bitrix recebeu o LID como identificador (não o telefone)**
+- A `bitrix24-send` enviou `chat.id = "196847578665004"` e `user.id = "196847578665004"` no `imconnector.send.messages`.
+- Como **não passamos o campo `user.phone`** com `skip_phone_validate: "Y"` (suportado pela API conforme documentação oficial), o Bitrix24 não tem como casar com o Contato/Deal existente — então cria um contato novo "sem contacto" (foi exatamente o que apareceu na sua tela).
+
+**3. Resposta do operador no Bitrix nunca volta ao WhatsApp**
+- Confirmei na fila `bitrix_event_queue`: chegaram **2 eventos `ONIMCONNECTORMESSAGEADD`** ("teste bitrix" e "envio 13:17") com `chat.id = "196847578665004"`.
+- O `bitrix24-worker` (linha 416-420) procura a conversa só por:
+  ```
+  contact_phone.eq.<id> OR contact_phone.eq.<id>@lid OR contact_instagram.eq.<id>
+  ```
+  Como agora o LID está em `contact_lid`, **a query não encontra a conversa** e a mensagem do operador é descartada silenciosamente.
+
+---
+
+## Correções propostas
+
+### A. `bitrix24-worker` — incluir `contact_lid` no lookup
+No handler `handleConnectorMessage` (linha ~416), expandir o `.or()` para também procurar por `contact_lid.eq.<id>`. Assim a resposta do Bitrix encontra a conversa correta e dispara `message-send`, que já sabe usar o LID para enviar via WUZAPI.
+
+### B. `bitrix24-send` — passar telefone real ao Bitrix para casar com a Deal
+Aceitar um novo parâmetro opcional `contactPhone` no body. Quando presente, incluir no `imconnector.send.messages`:
+```js
+user: {
+  id: contactId,
+  name: contactName,
+  phone: "+" + contactPhone,         // ex: "+5511978659280"
+  skip_phone_validate: "Y"
+}
 ```
-Chat:   "196847578665004@lid"   ← identificador anônimo do WhatsApp (LID)
-Sender: "55119786...@s.whatsapp.net"  ← número real (truncado no log)
-```
+Isto faz o Bitrix vincular automaticamente ao Contato/Deal existente que tem esse telefone — exatamente o comportamento que estava acontecendo antes da mudança para LID.
 
-Desde 2024 o WhatsApp passou a entregar mensagens com **dois identificadores**:
-- **`@lid`** — Linked ID, um hash anônimo da conta (não é telefone)
-- **`@s.whatsapp.net`** — o número real internacional
+### C. `wuzapi-webhook` — enviar o telefone real ao `bitrix24-send`
+Passar `contactPhone: phone` no fetch para `bitrix24-send` quando o telefone real foi extraído.
 
-O WUZAPI v2 envia os dois no payload (`Info.Chat` = LID, `Info.Sender` = número real). O código atual de `wuzapi-webhook` faz:
+### D. `wuzapi-webhook` — fallback para resolver telefone real do LID
+Quando o payload trouxer **só** LID (caso atual), tentar:
+1. **Lookup local primeiro**: procurar em `conversations` por `contact_lid = <lid>` que já tenha `contact_phone` preenchido (de mensagens anteriores ou backfill).
+2. **Lookup WUZAPI**: chamar o endpoint `/user/info` da WUZAPI passando o JID com `@lid` — a API retorna o `VerifiedName`/`PushName` e, em muitos casos, o número real associado.
+3. Se mesmo assim não houver telefone, gravar a conversa só com LID (comportamento atual) e o Bitrix criará contato sem telefone — sem regressão.
 
-```ts
-const chatJid = info.Chat || info.RemoteJid || ... || info.Sender || "";
-```
+### E. Backfill da conversa atual
+Atualizar a linha `df886b15-d9e4-404a-9389-44345f5bf011` (e `89c299f8-...`) com `contact_phone = "5511978659280"`, para que as próximas respostas do operador no Bitrix já encontrem a conversa por telefone **e** o placement Emmely Pay vincule à Deal correta.
 
-Como `Chat` vem preenchido com o LID, ele **nunca cai** no `Sender`. Resultado: gravamos `196847578665004@lid` como `contact_phone` e enviamos esse mesmo "número" para o `bitrix24-send`, que:
-1. Cria/encontra um contato no Bitrix com `PHONE = 196847578665004@lid` (lixo)
-2. Não consegue casar com o Deal #23691, que está vinculado ao número real `+5511978659280`
-3. Por isso aparece o `@lid` no card e o deal não vincula
+---
 
-O problema afeta **só conversas em PV de números BR/novos** (grupos e contatos antigos ainda chegam com `@s.whatsapp.net` no `Chat`).
+## Detalhes técnicos
 
-## O que vamos corrigir
+**Arquivos editados:**
+- `supabase/functions/bitrix24-worker/index.ts` — adicionar `contact_lid.eq.${contactId}` no `.or()` da busca de conversas (linha ~419) e logar quando o match foi via LID.
+- `supabase/functions/bitrix24-send/index.ts` — aceitar `contactPhone` no body, propagar para `sendWithFallbacks`, incluir `phone` + `skip_phone_validate: "Y"` no `user` do `imconnector.send.messages`.
+- `supabase/functions/wuzapi-webhook/index.ts` — adicionar resolver `resolveRealPhone(lid)`: 1) busca em `conversations` pelo LID, 2) chama `/user/info` da WUZAPI; usar o resultado para preencher `contact_phone` da nova conversa e enviar `contactPhone` ao `bitrix24-send`.
+- **SQL migration**: backfill `UPDATE conversations SET contact_phone = '5511978659280' WHERE id IN ('df886b15-d9e4-404a-9389-44345f5bf011', '89c299f8-e903-4d42-b498-759bdce639ed')`.
 
-### 1. Extrair sempre o número real no `wuzapi-webhook`
-Mudar a ordem de prioridade e isolar LID:
+**Confirmação MCP Bitrix24:** A documentação oficial de `imconnector.send.messages` lista `user.phone` + `user.skip_phone_validate: "Y"` como campos válidos justamente para permitir match automático com Contato/Deal por telefone (sem disparar a validação de formato do Bitrix).
 
-```ts
-// Número real para identificação (Bitrix, Deal, contato)
-const senderJid = info.Sender || info.sender || "";
-const chatJid   = info.Chat || info.RemoteJid || info.remoteJid || "";
+**Sem mudanças em:** `message-send` (já sabe usar `contact_lid` para enviar via WUZAPI), `bitrix24-events`, schema da tabela `conversations`.
 
-// Telefone real: preferir Sender (sempre @s.whatsapp.net), nunca @lid
-const realPhoneJid = !senderJid.includes("@lid") ? senderJid : "";
-const phone = realPhoneJid
-  ? realPhoneJid.replace(/@.*$/, "")
-  : (chatJid.includes("@lid") ? "" : chatJid.replace(/@.*$/, ""));
+---
 
-// LID guardado em paralelo só para envio (WUZAPI exige LID para responder)
-const lidJid = chatJid.includes("@lid") ? chatJid : (senderJid.includes("@lid") ? senderJid : null);
-```
+## Resultado esperado após o fix
 
-- `contact_phone` na tabela `conversations` passa a guardar **o número real** (ex: `5511978659280`)
-- Adicionar coluna `contact_lid` em `conversations` para guardar o `@lid` (necessário para o `message-send` continuar respondendo via WUZAPI)
-- Quando só houver LID (caso raríssimo), gravar como `lid:196847578665004` em vez de tratar como telefone
-
-### 2. Migração no banco
-- `ALTER TABLE conversations ADD COLUMN contact_lid TEXT NULL`
-- Backfill: para conversas existentes onde `contact_phone LIKE '%@lid'`, mover o valor para `contact_lid` e marcar `contact_phone = NULL` (impede que fiquem "presas" como contato fantasma)
-- Índice em `contact_lid`
-
-### 3. Ajustar `message-send` (WUZAPI)
-- Ao enviar resposta: se `conversation.contact_lid` existir, usar o LID como destino (WUZAPI exige isso para entregar). Se não, usar `contact_phone`.
-
-### 4. Repassar o número correto ao `bitrix24-send`
-- `contactId` enviado ao Bitrix passa a ser o número real (`5511978659280`), não mais o LID
-- Isso permite o `bitrix24-send` casar com o Contact / Deal #23691 existente via busca por telefone (`crm.duplicate.findbycomm` ou equivalente)
-
-### 5. Verificar matching de telefone no `bitrix24-send`
-- Conferir se a busca de contato no Bitrix usa `crm.duplicate.findbycomm` com `TYPE=PHONE` e variantes (`5511978659280`, `+5511978659280`, `11978659280`). Se não estiver normalizando, normalizar para E.164 antes da busca.
-- Se o contato vier de Deal já vinculado via portfólio, priorizar o `CONTACT_ID` do deal antes de criar novo.
-
-### 6. Limpeza opcional (sob aprovação)
-- Listar conversas/contatos do Bitrix criados como `*@lid` nos últimos dias (você decide se quer mesclar manualmente ou deixar uma rotina de merge)
-
-## Arquivos afetados
-- `supabase/functions/wuzapi-webhook/index.ts` — extração de JID
-- `supabase/functions/bitrix24-send/index.ts` — normalização do telefone + duplicate-find
-- `supabase/functions/message-send/index.ts` — usar LID quando disponível
-- Nova migração SQL — coluna `contact_lid` + backfill + índice
-
-## Como vou validar
-1. Ler payload completo nos logs para confirmar formato exato do `Sender`
-2. Após implementar, pedir para você reenviar uma mensagem do 11978659280
-3. Conferir nos logs: `phone = 5511978659280`, `lid = 196847578665004@lid`, `bitrix24-send` recebe `contactId=5511978659280`
-4. Verificar no Bitrix se a mensagem entrou no Deal #23691 e se o card mostra o telefone correto
-
-## Fora de escopo
-- Não vou mexer no fluxo Meta (oficial) — esse já recebe número real direto
-- Não vou criar UI de gerenciamento de LIDs
-
-Aguardando aprovação para implementar.
+- Operador responde no Bitrix → mensagem chega no WhatsApp do cliente (via WUZAPI usando o LID).
+- O placement (Emmely AI / Emmely Pay) vincula à Deal `23855` existente, em vez de criar contato fantasma.
+- Mensagens futuras do mesmo número continuam funcionando mesmo se o WhatsApp só entregar LID.
