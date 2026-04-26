@@ -27,6 +27,7 @@ import FlowsPage from "./pages/Flows";
 import PlaygroundIAPage from "./pages/PlaygroundIA";
 import VoiceAgentsPage from "./pages/VoiceAgents";
 import ApiDocsPage from "./pages/ApiDocs";
+import ApiKeysPage from "./pages/ApiKeys";
 import ManualPage from "./pages/Manual";
 import ChatIAPage from "./pages/ChatIA";
 import ObservabilidadeIAPage from "./pages/ObservabilidadeIA";
@@ -63,6 +64,8 @@ const App = () => (
           <Route path="/proposta/:token" element={<PropostaPublica />} />
           <Route path="/sign/:token" element={<SignContract />} />
           <Route path="/pagamento/:token" element={<PagamentoPublico />} />
+          <Route path="/api-docs" element={<ApiDocsPage />} />
+          <Route path="/api-docs/keys" element={<ApiKeysPage />} />
           <Route path="/propostas/template-editor" element={<TemplateEditor />} />
           <Route path="/propostas/template-editor/:id" element={<TemplateEditor />} />
           <Route element={<AppLayout />}>
@@ -84,7 +87,6 @@ const App = () => (
             <Route path="/flows" element={<FlowsPage />} />
             <Route path="/playground" element={<PlaygroundIAPage />} />
             <Route path="/voice-agents" element={<VoiceAgentsPage />} />
-            <Route path="/api-docs" element={<ApiDocsPage />} />
             <Route path="/manual" element={<ManualPage />} />
             <Route path="/chat" element={<ChatIAPage />} />
             <Route path="/observabilidade-ia" element={<ObservabilidadeIAPage />} />
