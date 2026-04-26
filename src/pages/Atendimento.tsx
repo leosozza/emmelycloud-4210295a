@@ -11,6 +11,7 @@ const MESSAGES_PAGE_SIZE = 50;
 
 export default function AtendimentoPage() {
   const [selectedId, setSelectedId] = useState<string | undefined>();
+  const [profileOpen, setProfileOpen] = useState(false);
   const queryClient = useQueryClient();
   const realtimeRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
 
