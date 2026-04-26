@@ -1,95 +1,85 @@
-## Diagnóstico
+## Objetivo
 
-O fluxo de texto está OK, mas mídias (áudio/imagem/PDF/vídeo) falham nas duas direções porque:
+Adicionar dois botões dentro da caixa de mensagem (textarea) do bate-papo do Contact Center / Open Channels do Bitrix24:
 
-### Cliente → Bitrix24 (atualmente quebrado)
-- `wuzapi-webhook` apenas **detecta** o tipo de mídia e grava `media_type`, mas:
-  - `media_url` fica sempre `null` (nunca baixa o arquivo da WUZAPI)
-  - Envia para Bitrix24 só o texto `[Imagem]`, `[Áudio]`, `[Documento]` — sem anexo
-- `bitrix24-send` envia `message.text` sem `message.files`, então Bitrix nunca recebe o arquivo
+1. **Enviar Áudio** (gravação de áudio para WhatsApp)
+2. **Enviar Arquivo** (PDF / imagem / documento)
 
-### Bitrix24 → Cliente (atualmente quebrado)
-- `bitrix24-worker` lê apenas `messageObj.text`. Ignora qualquer estrutura de anexo (`FILES`, `params.FILES`, `disk`)
-- Encaminha para `message-send` apenas `{ content }` — sem `message_type`, sem `resolvedInteractiveData`
-- Resultado: arquivos enviados pelo operador no canal aberto desaparecem
+Quando o operador clicar, abre um iframe da nossa aplicação que captura o ficheiro / áudio e o envia para o WhatsApp via WUZAPI usando o fluxo já existente (`message-send` + bucket `media`).
 
-Curiosamente, `message-send` **já tem** suporte completo a `image`, `audio`, `document`, `video` para WUZAPI — só não é acionado.
+## Como funciona no Bitrix24 (validado via MCP)
 
----
+- O Bitrix24 **não** tem placements separados `IM_AUDIO` / `IM_FILE`. O placement oficial para botões dentro do textarea do messenger é **`IM_TEXTAREA`** (confirmado em `placement.bind` e no artigo *General Information on All Embedding Points*).
+- Cada chamada `placement.bind` com `PLACEMENT: "IM_TEXTAREA"` cria **um botão adicional** ao lado do textarea, com `iconName` (Font Awesome 6) e `TITLE` próprios.
+- Hoje o projeto já regista 1 botão IM_TEXTAREA ("Devolver ao Bot"). Vamos adicionar mais 2 (áudio e arquivo) com handlers iframe distintos.
+- O contexto deve ser `LINES` (Open Channels) para aparecer apenas nos chats vindos do WhatsApp/Contact Center.
 
-## Plano
+## Mudanças
 
-### 1. Recepção de mídia (cliente → Emmely → Bitrix)
+### 1. Duas novas Edge Functions (handlers iframe)
 
-**`wuzapi-webhook/index.ts`**
-- Para cada tipo de mensagem com mídia (`ImageMessage`, `AudioMessage`, `DocumentMessage`, `VideoMessage`, `StickerMessage`), extrair os campos criptográficos do payload: `Url`, `Mimetype`, `FileSHA256`, `FileLength`, `MediaKey`, `FileEncSHA256`
-- Chamar o endpoint da WUZAPI correspondente para descriptografar e baixar o binário:
-  - `/chat/downloadimage`
-  - `/chat/downloadaudio`
-  - `/chat/downloaddocument`
-  - `/chat/downloadvideo`
-- Fazer upload do binário para o bucket `media` (Supabase Storage), pasta `wuzapi-inbound/<conversation>/<timestamp>-<filename>`
-- Obter URL pública e salvar em `messages.media_url` + `media_type`
-- Definir `media_filename` quando aplicável (documentos)
+- `supabase/functions/bitrix24-im-send-audio/index.ts`
+  - Serve uma página HTML pequena dentro do iframe com:
+    - Botão Gravar / Parar (MediaRecorder API → `audio/ogg; codecs=opus`)
+    - Pré-visualização e botão "Enviar"
+  - No envio: lê do `placementOptions` (BX24.placement.info) o `DIALOG_ID` / chat id, faz upload do blob para o bucket `media` e chama `message-send` com `message_type=audio` e o `mediaUrl` resultante.
+  - Headers: `X-Frame-Options: ALLOWALL`, CORS aberto.
 
-### 2. Encaminhamento de mídia para Bitrix24 (cliente → Bitrix)
+- `supabase/functions/bitrix24-im-send-file/index.ts`
+  - Mesma estrutura, mas com `<input type="file" accept="image/*,application/pdf,video/mp4,...">`.
+  - Detecta MIME e classifica como `image` / `document` / `video` antes de chamar `message-send`.
 
-**`bitrix24-send/index.ts`**
-- Aceitar novos parâmetros opcionais: `mediaUrl`, `mediaType`, `mediaFilename`
-- No payload de `imconnector.send.messages`, quando houver mídia, anexar `message.files`:
-  ```
-  message: {
-    text: caption || message,
-    files: [{ name: mediaFilename || "arquivo", link: mediaUrl, type: mediaType }]
-  }
-  ```
-- Bitrix24 baixa a URL pública e exibe no chat aberto
+Ambas as funções obtêm o `chat_id` / `dialog_id` via `BX24.placement.info()` (passado pelo Bitrix ao iframe) e mapeiam para a `conversation` correspondente em `whatsapp_messages` / `conversations` usando o `chat_id` Open Channel já gravado pelo `bitrix24-send` (campo `external_chat_id` / equivalente — verificar nome exato durante implementação).
 
-**`wuzapi-webhook/index.ts`**
-- Passar `mediaUrl`, `mediaType`, `mediaFilename` ao chamar `bitrix24-send`
+### 2. Registar os 2 placements adicionais
 
-### 3. Recepção de mídia do operador no Bitrix (Bitrix → cliente)
+Editar **`supabase/functions/bitrix24-install/index.ts`** (logo após o bloco existente do "Devolver ao Bot", linhas ~1884–1928) e **`supabase/functions/bitrix24-rebind-events/index.ts`** (após linha ~144) para fazer mais 2 chamadas `placement.bind`:
 
-**`bitrix24-worker/index.ts`**
-- Ao processar cada mensagem do evento `ONIMCONNECTORMESSAGEADD`, detectar anexos em qualquer um destes locais (a estrutura varia por tenant):
-  - `messageObj.files` (array de objetos `{ name, link, type, size }`)
-  - `messageObj.params.FILES` ou `messageObj.PARAMS.FILES` (IDs do Disk)
-  - `msg.message.attach` (array)
-- Para cada arquivo:
-  - Se já tiver `link/url` HTTP, usar diretamente
-  - Se vier apenas como ID do Disk, chamar `disk.attachedObject.get` (módulo `disk`) ou `im.disk.file.commit` para resolver a URL de download autenticada
-  - Detectar tipo (imagem / áudio / documento / vídeo) por `type` ou MIME
-- Encaminhar para `message-send` com:
-  ```json
-  {
-    "conversation_id": "...",
-    "content": "<caption ou nome do arquivo>",
-    "message_type": "image|audio|document|video",
-    "resolvedInteractiveData": { "url": "<link>", "filename": "<name>" }
-  }
-  ```
-- Quando houver vários arquivos numa só mensagem, despachar uma chamada por arquivo
-- Manter o ACK `imconnector.send.status.delivery` para todos os IDs
+```ts
+// Botão de áudio
+await callBitrix(endpoint, accessToken, "placement.bind", {
+  PLACEMENT: "IM_TEXTAREA",
+  HANDLER: `${SUPABASE_URL}/functions/v1/bitrix24-im-send-audio`,
+  TITLE: "Enviar Áudio (WhatsApp)",
+  OPTIONS: {
+    iconName: "fa-microphone",
+    context: "LINES",
+    color: "GREEN",
+    width: 360, height: 200,
+  },
+});
 
-### 4. Storage para mídia recebida
+// Botão de arquivo
+await callBitrix(endpoint, accessToken, "placement.bind", {
+  PLACEMENT: "IM_TEXTAREA",
+  HANDLER: `${SUPABASE_URL}/functions/v1/bitrix24-im-send-file`,
+  TITLE: "Enviar Arquivo (WhatsApp)",
+  OPTIONS: {
+    iconName: "fa-paperclip",
+    context: "LINES",
+    color: "AZURE",
+    width: 360, height: 200,
+  },
+});
+```
 
-- Verificar se o bucket `media` existe; se não, criar como **público** (já existem outros buckets públicos — `proposal-files`, `signatures`)
-- Adicionar bucket `media` via SQL migration apenas se necessário
+Ambos serão registrados na **instalação** e na **re-vinculação** (`bitrix24-rebind-events`) para portais já instalados.
 
-### 5. Detalhes técnicos
+### 3. Reuso do pipeline existente
 
-- **Limite de tamanho WUZAPI**: arquivos grandes podem timeoutar — registar warning quando `FileLength > 16MB` mas tentar downloadar mesmo assim
-- **MIME → message_type**: mapeamento canónico
-  - `image/*` → `image`
-  - `audio/*` → `audio` (oggs PTT também)
-  - `video/*` → `video`
-  - todo o resto → `document`
-- **Nome de arquivo**: para áudio/imagem sem nome, gerar `<timestamp>.<ext>` baseado no MIME
-- **Logs**: aumentar verbosidade em `bitrix24_debug_logs` com novos `event_type`: `media_inbound_downloaded`, `media_outbound_received`, `media_forwarded_to_wuzapi`
-- **Falhas**: se download da WUZAPI falhar, manter o registo da mensagem com `media_url=null` mas o texto descritivo (`[Imagem - falha ao baixar]`) para não perder a mensagem
+- Upload → bucket `media` (já existe).
+- Envio para WhatsApp → `message-send` (já trata `message_type` = `audio` / `image` / `document` / `video`).
+- Echo no chat do Bitrix → `bitrix24-send` é invocado normalmente pelo fluxo de outbound (já passa `mediaUrl` + `message.files`), garantindo que o anexo aparece na timeline do operador.
 
-### Arquivos a editar
-- `supabase/functions/wuzapi-webhook/index.ts` — download de mídia + upload para Storage + envio com link ao Bitrix
-- `supabase/functions/bitrix24-send/index.ts` — incluir `message.files` no payload
-- `supabase/functions/bitrix24-worker/index.ts` — detectar anexos do Bitrix + chamar `message-send` com `message_type` + URL
-- (Eventual) migração SQL para criar bucket `media` se não existir
+### 4. config.toml
+
+Adicionar blocos para as 2 novas funções com `verify_jwt = false` (são iframes públicos servidos ao Bitrix) em `supabase/config.toml`.
+
+## Pontos a confirmar durante a implementação
+
+- Nome do campo que liga o `DIALOG_ID` / `CHAT_ID` da Open Channel à nossa `conversation` (provavelmente `bitrix_chat_id` em `whatsapp_conversations`). Caso não exista, será preciso uma migração para guardá-lo no `bitrix24-send` (já recebemos esse id na resposta do `imconnector.send.messages`).
+- Após o envio do operador via iframe, **não** disparar `OnImConnectorMessageAdd` em loop — o áudio/arquivo será enviado apenas para o WhatsApp e replicado no chat via `imconnector.send.messages` (mesmo path do `bitrix24-send`), mantendo idempotência por `external_id`.
+
+## Após o deploy
+
+Pedir ao utilizador para abrir o portal Bitrix24 e clicar no botão **"Re-registar eventos"** (ou reinstalar o app) para que os 2 novos botões `IM_TEXTAREA` apareçam no textarea dos chats de Open Channels.
