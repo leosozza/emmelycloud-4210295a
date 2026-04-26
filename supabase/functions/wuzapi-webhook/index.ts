@@ -61,22 +61,36 @@ Deno.serve(async (req) => {
     const info = messageData.Info || messageData.info || {};
     const message = messageData.Message || messageData.message || {};
 
-    // Get sender info from JID
-    // WUZAPI v2+ uses LID format: 196847578665004@lid
-    // Classic format: 5511999999999@s.whatsapp.net
-    const chatJid = info.Chat || info.RemoteJid || info.remoteJid || info.Sender || info.sender || "";
-    const phone = chatJid.replace(/@.*$/, "");
-    // Preserve the JID suffix to know if it's a LID or phone-based contact
-    const isLidContact = chatJid.includes("@lid");
+    // WhatsApp (since 2024) sends TWO identifiers per message:
+    //  - Chat:   "196847578665004@lid"           ← Linked ID (anonymous hash, NOT a phone)
+    //  - Sender: "5511978659280@s.whatsapp.net"  ← real international phone number
+    // We must persist BOTH: phone for Bitrix/CRM matching, LID for sending replies via WUZAPI.
+    const chatRaw   = info.Chat || info.RemoteJid || info.remoteJid || "";
+    const senderRaw = info.Sender || info.sender || info.SenderAlt || "";
 
-    if (!phone) {
-      console.log("[WUZAPI-WEBHOOK] No phone number found in payload");
-      return new Response(JSON.stringify({ ok: true, no_phone: true }), {
+    // Pick a JID that is NOT @lid as the real phone source
+    const realPhoneJid =
+      (!senderRaw.includes("@lid") && senderRaw) ||
+      (!chatRaw.includes("@lid") && chatRaw) ||
+      "";
+
+    // Pick the LID (if any)
+    const lidJid =
+      (chatRaw.includes("@lid") && chatRaw) ||
+      (senderRaw.includes("@lid") && senderRaw) ||
+      null;
+
+    const phone = realPhoneJid ? realPhoneJid.replace(/@.*$/, "").replace(/[^0-9]/g, "") : "";
+    const lidId = lidJid ? lidJid.replace(/@.*$/, "") : null;
+
+    if (!phone && !lidId) {
+      console.log("[WUZAPI-WEBHOOK] No phone or LID found in payload");
+      return new Response(JSON.stringify({ ok: true, no_identifier: true }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    console.log(`[WUZAPI-WEBHOOK] Contact: ${phone}, isLID: ${isLidContact}, JID: ${chatJid}`);
+    console.log(`[WUZAPI-WEBHOOK] Identified — phone: ${phone || "(none)"} | lid: ${lidId || "(none)"} | chat: ${chatRaw} | sender: ${senderRaw}`);
 
     // Skip outgoing messages (from me)
     const fromMe = info.FromMe || info.fromMe || false;
