@@ -61,22 +61,36 @@ Deno.serve(async (req) => {
     const info = messageData.Info || messageData.info || {};
     const message = messageData.Message || messageData.message || {};
 
-    // Get sender info from JID
-    // WUZAPI v2+ uses LID format: 196847578665004@lid
-    // Classic format: 5511999999999@s.whatsapp.net
-    const chatJid = info.Chat || info.RemoteJid || info.remoteJid || info.Sender || info.sender || "";
-    const phone = chatJid.replace(/@.*$/, "");
-    // Preserve the JID suffix to know if it's a LID or phone-based contact
-    const isLidContact = chatJid.includes("@lid");
+    // WhatsApp (since 2024) sends TWO identifiers per message:
+    //  - Chat:   "196847578665004@lid"           ← Linked ID (anonymous hash, NOT a phone)
+    //  - Sender: "5511978659280@s.whatsapp.net"  ← real international phone number
+    // We must persist BOTH: phone for Bitrix/CRM matching, LID for sending replies via WUZAPI.
+    const chatRaw   = info.Chat || info.RemoteJid || info.remoteJid || "";
+    const senderRaw = info.Sender || info.sender || info.SenderAlt || "";
 
-    if (!phone) {
-      console.log("[WUZAPI-WEBHOOK] No phone number found in payload");
-      return new Response(JSON.stringify({ ok: true, no_phone: true }), {
+    // Pick a JID that is NOT @lid as the real phone source
+    const realPhoneJid =
+      (!senderRaw.includes("@lid") && senderRaw) ||
+      (!chatRaw.includes("@lid") && chatRaw) ||
+      "";
+
+    // Pick the LID (if any)
+    const lidJid =
+      (chatRaw.includes("@lid") && chatRaw) ||
+      (senderRaw.includes("@lid") && senderRaw) ||
+      null;
+
+    const phone = realPhoneJid ? realPhoneJid.replace(/@.*$/, "").replace(/[^0-9]/g, "") : "";
+    const lidId = lidJid ? lidJid.replace(/@.*$/, "") : null;
+
+    if (!phone && !lidId) {
+      console.log("[WUZAPI-WEBHOOK] No phone or LID found in payload");
+      return new Response(JSON.stringify({ ok: true, no_identifier: true }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    console.log(`[WUZAPI-WEBHOOK] Contact: ${phone}, isLID: ${isLidContact}, JID: ${chatJid}`);
+    console.log(`[WUZAPI-WEBHOOK] Identified — phone: ${phone || "(none)"} | lid: ${lidId || "(none)"} | chat: ${chatRaw} | sender: ${senderRaw}`);
 
     // Skip outgoing messages (from me)
     const fromMe = info.FromMe || info.fromMe || false;
@@ -126,24 +140,37 @@ Deno.serve(async (req) => {
 
     if (!content) content = "[Mensagem vazia]";
 
-    // Get sender name (push name)
-    const senderName = info.PushName || info.pushName || phone;
+    // Get sender name (push name) — fallback to phone, then LID
+    const senderName = info.PushName || info.pushName || phone || lidId || "Cliente";
 
     // External message ID
     const externalId = info.Id || info.id || info.MessageID || "";
 
-    // Upsert conversation
-    // For LID contacts, store the full JID so message-send knows to use @lid
-    const contactPhoneValue = isLidContact ? `${phone}@lid` : phone;
-
-    const { data: existingConv } = await supabase
-      .from("conversations")
-      .select("id, attendance_mode")
-      .eq("channel", "whatsapp")
-      .eq("contact_phone", contactPhoneValue)
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
+    // Find existing conversation: prefer by phone (real number), fall back to LID
+    // This lets us re-attach the conversation once a real phone is captured.
+    let existingConv: any = null;
+    if (phone) {
+      const r = await supabase
+        .from("conversations")
+        .select("id, attendance_mode, unread_count, contact_lid")
+        .eq("channel", "whatsapp")
+        .eq("contact_phone", phone)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      existingConv = r.data;
+    }
+    if (!existingConv && lidId) {
+      const r = await supabase
+        .from("conversations")
+        .select("id, attendance_mode, unread_count, contact_phone")
+        .eq("channel", "whatsapp")
+        .eq("contact_lid", lidId)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      existingConv = r.data;
+    }
 
     let conversationId: string;
     let attendanceMode = "bot";
@@ -151,19 +178,24 @@ Deno.serve(async (req) => {
     if (existingConv) {
       conversationId = existingConv.id;
       attendanceMode = existingConv.attendance_mode || "bot";
-      await supabase.from("conversations").update({
+      const updatePayload: Record<string, any> = {
         last_message_at: new Date().toISOString(),
         last_message_preview: content.slice(0, 100),
         last_customer_message_at: new Date().toISOString(),
         contact_name: senderName,
-        unread_count: (existingConv as any).unread_count ? (existingConv as any).unread_count + 1 : 1,
-      }).eq("id", conversationId);
+        unread_count: existingConv.unread_count ? existingConv.unread_count + 1 : 1,
+      };
+      // Backfill missing identifiers
+      if (phone && !existingConv.contact_phone) updatePayload.contact_phone = phone;
+      if (lidId && !existingConv.contact_lid) updatePayload.contact_lid = lidId;
+      await supabase.from("conversations").update(updatePayload).eq("id", conversationId);
     } else {
       const { data: newConv, error: convError } = await supabase
         .from("conversations")
         .insert({
           channel: "whatsapp",
-          contact_phone: contactPhoneValue,
+          contact_phone: phone || null,
+          contact_lid: lidId,
           contact_name: senderName,
           status: "aberta",
           attendance_mode: "bot",
@@ -218,6 +250,9 @@ Deno.serve(async (req) => {
     const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
     // Forward message to Bitrix24 Open Channel
+    // contactId MUST be the real phone (not the LID) so Bitrix matches existing
+    // Contact + Deal in the portal. Fall back to LID only when no phone is available.
+    const bitrixContactId = phone || lidId || "";
     try {
       const bitrixResponse = await fetch(`${supabaseUrl}/functions/v1/bitrix24-send`, {
         method: "POST",
@@ -228,7 +263,7 @@ Deno.serve(async (req) => {
         body: JSON.stringify({
           message: content,
           contactName: senderName,
-          contactId: phone,
+          contactId: bitrixContactId,
           channel: "whatsapp",
           conversationId,
           instanceId, // routes to the Open Line linked to this instance
@@ -262,7 +297,7 @@ Deno.serve(async (req) => {
       } catch {}
     }
 
-    console.log(`[WUZAPI-WEBHOOK] Processed message from ${phone} in conversation ${conversationId}`);
+    console.log(`[WUZAPI-WEBHOOK] Processed message — phone:${phone || "-"} lid:${lidId || "-"} conv:${conversationId}`);
 
     return new Response(JSON.stringify({ ok: true, conversation_id: conversationId }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },

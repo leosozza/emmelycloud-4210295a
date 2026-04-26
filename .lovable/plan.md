@@ -1,91 +1,88 @@
-## Contexto
+# Corrigir recepção WhatsApp BR — LID vs número real e vínculo com Deal
 
-O conector **Emmely Messages** já está registado no Bitrix24 (via `imconnector.register`) e cria automaticamente um `bitrix24_channel_mappings` por cada Canal Aberto onde o utilizador ativar o conector dentro do Bitrix24 (placement `SETTING_CONNECTOR`).
+## Diagnóstico
 
-Hoje existe **2 mapeamentos ativos** no portal (linhas 17 e 19) e **2 instâncias WhatsApp** ativas (`emmely br`, `WhatsApp QRCode`). Apenas a primeira está vinculada (campo `config.bitrix24_mapping_id`). A segunda envia para "qualquer mapeamento ativo" (fallback do `bitrix24-send`), o que pode encaminhar mensagens para a linha errada.
+Validei nos logs do `wuzapi-webhook`. O número que você enviou (11978659280) chegou, mas:
 
-## Objetivo
-
-Garantir que, ao conectar uma instância WhatsApp ao Bitrix24, o utilizador escolhe **explicitamente** qual Canal Aberto recebe as mensagens daquela instância — uma instância ↔ uma linha (1:1).
-
-## Análise do MCP / API Bitrix24
-
-Métodos relevantes confirmados via MCP:
-- `imconnector.register` — regista o conector "emmely_connector" (uma vez por portal). ✓ já feito.
-- `imconnector.activate` — ativa o conector numa LINE específica. ✓ já feito por `bitrix24-connector-settings`.
-- `imconnector.connector.data.set` — define metadados (nome, URL handler) por LINE. ✓ já feito.
-- `imconnector.send.messages` — envia mensagem para a LINE correta usando `CONNECTOR + LINE + CHAT.id`. ✓ já usado em `bitrix24-send`.
-- `imopenlines.config.list.get` — lista as linhas disponíveis. ✓ já usado para popular `line_name`.
-
-**Conclusão**: a infraestrutura no Bitrix24 já suporta múltiplas linhas por conector. O que falta é **bloquear o fallback** e tornar a seleção obrigatória/visível por instância.
-
-## Mudanças
-
-### 1. UI — Página Integrações (vincular instância → linha)
-Arquivo: `src/pages/Integracoes.tsx`
-
-- O `Select` "Vincular ao Bitrix24" já existe (`handleLinkToBitrix`). Vamos:
-  - Mostrar **badge de aviso** vermelho quando uma instância ativa não tem `bitrix24_mapping_id` definido.
-  - Filtrar do dropdown mapeamentos já usados por outra instância (evitar duplicação 1:N).
-  - Mostrar `line_name` + `line_id` na lista para clareza.
-  - Adicionar um pequeno texto explicativo: *"Cada instância só pode ligar a 1 Canal Aberto."*
-
-### 2. UI — Aba "Canais Bitrix24"
-Adicionar uma secção informativa que liste:
-- Linhas disponíveis no portal (`bitrix24_channel_mappings`).
-- Para cada uma: instância vinculada (ou "não vinculada").
-- Botão "Sincronizar linhas" que chama `bitrix24-connector-settings?format=json` e atualiza nomes de linhas.
-
-### 3. Backend — `bitrix24-send`
-Arquivo: `supabase/functions/bitrix24-send/index.ts`
-
-**Remover o fallback "qualquer mapeamento ativo"** (linhas 315–347). Em vez disso:
-- Se a mensagem é originada de uma `channel_instance`, ler `config.bitrix24_mapping_id` e usar exatamente essa linha.
-- Se não houver `mapping_id` (instância não vinculada), **não enviar** e registar `no_channel_mapping_for_instance` em `bitrix24_debug_logs`.
-- Adicionar parâmetro opcional `instance_id` na payload do `bitrix24-send` para que o caller (webhooks WUZAPI / Meta) passe a instância de origem.
-
-### 4. Webhooks que originam mensagens
-Verificar e atualizar os pontos onde `bitrix24-send` é invocado a partir de mensagens recebidas (WUZAPI / Meta) para passar `instance_id` ou já o `lineId` resolvido a partir do `channel_instances.config.bitrix24_mapping_id`. Pontos a inspecionar:
-- `supabase/functions/wuzapi-webhook` (encaminhamento já documentado em memória).
-- `supabase/functions/meta-webhook` (Instagram/WhatsApp Cloud).
-
-### 5. Validação UX
-- Toast de erro claro quando o utilizador tenta ativar uma instância sem linha vinculada.
-- Tooltip no badge a explicar como vincular.
-
-## Pontos técnicos importantes
-
-- Não é necessária migração SQL — `channel_instances.config` (jsonb) já guarda `bitrix24_mapping_id`.
-- Não é necessário re-registar o conector no Bitrix24.
-- O unique constraint atual (`integration_id, channel, line_id`) garante que uma linha não duplica entradas.
-- Vamos adicionar **constraint lógica no frontend**: um `mapping_id` só pode estar em uso por uma `channel_instance` (validar antes do update).
-
-## Diagrama do fluxo após as mudanças
-
-```text
-WhatsApp (WUZAPI)                    Bitrix24
-       │                                 │
-       ▼                                 │
- channel_instance "emmely br"            │
-   config.bitrix24_mapping_id ──┐        │
-                                ▼        │
-                    bitrix24_channel_mappings
-                       (line_id = 19)
-                                │
-                                ▼
-                    imconnector.send.messages
-                       (CONNECTOR=emmely_connector,
-                        LINE=19)
-                                │
-                                ▼
-                       Open Line "WhatsApp BR"
+```
+Chat:   "196847578665004@lid"   ← identificador anônimo do WhatsApp (LID)
+Sender: "55119786...@s.whatsapp.net"  ← número real (truncado no log)
 ```
 
-## Ficheiros que serão alterados
+Desde 2024 o WhatsApp passou a entregar mensagens com **dois identificadores**:
+- **`@lid`** — Linked ID, um hash anônimo da conta (não é telefone)
+- **`@s.whatsapp.net`** — o número real internacional
 
-- `src/pages/Integracoes.tsx` (UI vinculação + aba canais)
-- `supabase/functions/bitrix24-send/index.ts` (remover fallback + suportar `instance_id`)
-- `supabase/functions/wuzapi-webhook/index.ts` (passar `instance_id` ou resolver `lineId`)
-- `supabase/functions/meta-webhook/index.ts` (idem, se aplicável)
+O WUZAPI v2 envia os dois no payload (`Info.Chat` = LID, `Info.Sender` = número real). O código atual de `wuzapi-webhook` faz:
 
-Sem alterações de schema necessárias.
+```ts
+const chatJid = info.Chat || info.RemoteJid || ... || info.Sender || "";
+```
+
+Como `Chat` vem preenchido com o LID, ele **nunca cai** no `Sender`. Resultado: gravamos `196847578665004@lid` como `contact_phone` e enviamos esse mesmo "número" para o `bitrix24-send`, que:
+1. Cria/encontra um contato no Bitrix com `PHONE = 196847578665004@lid` (lixo)
+2. Não consegue casar com o Deal #23691, que está vinculado ao número real `+5511978659280`
+3. Por isso aparece o `@lid` no card e o deal não vincula
+
+O problema afeta **só conversas em PV de números BR/novos** (grupos e contatos antigos ainda chegam com `@s.whatsapp.net` no `Chat`).
+
+## O que vamos corrigir
+
+### 1. Extrair sempre o número real no `wuzapi-webhook`
+Mudar a ordem de prioridade e isolar LID:
+
+```ts
+// Número real para identificação (Bitrix, Deal, contato)
+const senderJid = info.Sender || info.sender || "";
+const chatJid   = info.Chat || info.RemoteJid || info.remoteJid || "";
+
+// Telefone real: preferir Sender (sempre @s.whatsapp.net), nunca @lid
+const realPhoneJid = !senderJid.includes("@lid") ? senderJid : "";
+const phone = realPhoneJid
+  ? realPhoneJid.replace(/@.*$/, "")
+  : (chatJid.includes("@lid") ? "" : chatJid.replace(/@.*$/, ""));
+
+// LID guardado em paralelo só para envio (WUZAPI exige LID para responder)
+const lidJid = chatJid.includes("@lid") ? chatJid : (senderJid.includes("@lid") ? senderJid : null);
+```
+
+- `contact_phone` na tabela `conversations` passa a guardar **o número real** (ex: `5511978659280`)
+- Adicionar coluna `contact_lid` em `conversations` para guardar o `@lid` (necessário para o `message-send` continuar respondendo via WUZAPI)
+- Quando só houver LID (caso raríssimo), gravar como `lid:196847578665004` em vez de tratar como telefone
+
+### 2. Migração no banco
+- `ALTER TABLE conversations ADD COLUMN contact_lid TEXT NULL`
+- Backfill: para conversas existentes onde `contact_phone LIKE '%@lid'`, mover o valor para `contact_lid` e marcar `contact_phone = NULL` (impede que fiquem "presas" como contato fantasma)
+- Índice em `contact_lid`
+
+### 3. Ajustar `message-send` (WUZAPI)
+- Ao enviar resposta: se `conversation.contact_lid` existir, usar o LID como destino (WUZAPI exige isso para entregar). Se não, usar `contact_phone`.
+
+### 4. Repassar o número correto ao `bitrix24-send`
+- `contactId` enviado ao Bitrix passa a ser o número real (`5511978659280`), não mais o LID
+- Isso permite o `bitrix24-send` casar com o Contact / Deal #23691 existente via busca por telefone (`crm.duplicate.findbycomm` ou equivalente)
+
+### 5. Verificar matching de telefone no `bitrix24-send`
+- Conferir se a busca de contato no Bitrix usa `crm.duplicate.findbycomm` com `TYPE=PHONE` e variantes (`5511978659280`, `+5511978659280`, `11978659280`). Se não estiver normalizando, normalizar para E.164 antes da busca.
+- Se o contato vier de Deal já vinculado via portfólio, priorizar o `CONTACT_ID` do deal antes de criar novo.
+
+### 6. Limpeza opcional (sob aprovação)
+- Listar conversas/contatos do Bitrix criados como `*@lid` nos últimos dias (você decide se quer mesclar manualmente ou deixar uma rotina de merge)
+
+## Arquivos afetados
+- `supabase/functions/wuzapi-webhook/index.ts` — extração de JID
+- `supabase/functions/bitrix24-send/index.ts` — normalização do telefone + duplicate-find
+- `supabase/functions/message-send/index.ts` — usar LID quando disponível
+- Nova migração SQL — coluna `contact_lid` + backfill + índice
+
+## Como vou validar
+1. Ler payload completo nos logs para confirmar formato exato do `Sender`
+2. Após implementar, pedir para você reenviar uma mensagem do 11978659280
+3. Conferir nos logs: `phone = 5511978659280`, `lid = 196847578665004@lid`, `bitrix24-send` recebe `contactId=5511978659280`
+4. Verificar no Bitrix se a mensagem entrou no Deal #23691 e se o card mostra o telefone correto
+
+## Fora de escopo
+- Não vou mexer no fluxo Meta (oficial) — esse já recebe número real direto
+- Não vou criar UI de gerenciamento de LIDs
+
+Aguardando aprovação para implementar.
