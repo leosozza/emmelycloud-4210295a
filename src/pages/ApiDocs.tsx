@@ -1,379 +1,271 @@
 import { useState } from "react";
-import { PageHeader } from "@/components/PageHeader";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import {
-  Collapsible, CollapsibleContent, CollapsibleTrigger,
-} from "@/components/ui/collapsible";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { toast } from "sonner";
+import { Link } from "react-router-dom";
+import { useAuthContext } from "@/contexts/AuthContext";
 import {
-  Copy, ChevronDown, Search, MessageCircle, CreditCard, Bot, Phone,
-  Plug, Shield, Webhook, FileText, ExternalLink,
+  Copy, ChevronDown, Search, MessageCircle, CreditCard, Bot, FileText,
+  Shield, Plug, Workflow, Database, Key, Server, Volume2, Brain, Mic, Layers, ArrowLeft,
 } from "lucide-react";
 
-const BASE_URL = `https://${import.meta.env.VITE_SUPABASE_PROJECT_ID}.supabase.co/functions/v1`;
+const PROJECT_ID = import.meta.env.VITE_SUPABASE_PROJECT_ID;
+const BASE_URL = `https://${PROJECT_ID}.supabase.co/functions/v1`;
+const MCP_URL = `${BASE_URL}/mcp-server`;
+
+type AuthType = "Bearer JWT" | "API Key" | "Webhook Secret" | "Public" | "Service Role";
+type Category =
+  | "omnichannel" | "payments" | "ai" | "agents" | "voice"
+  | "bitrix24" | "knowledge" | "flows" | "admin" | "mcp";
 
 interface Endpoint {
   name: string;
   method: string;
   path: string;
-  auth: "Bearer JWT" | "Webhook Secret" | "Public" | "Service Role";
+  auth: AuthType;
+  category: Category;
   description: string;
-  category: string;
   request?: string;
   response?: string;
   notes?: string;
 }
 
 const endpoints: Endpoint[] = [
-  // ── Omni Channel - Unified Send ──
-  {
-    name: "Enviar Mensagem (Unificado)",
-    method: "POST",
-    path: "/message-send",
-    auth: "Service Role",
-    category: "omnichannel",
-    description: "Envia mensagem via WhatsApp Business API ou Instagram Graph API. Roteia automaticamente pelo canal da conversa.",
+  // ─────────── OMNICHANNEL ───────────
+  { category: "omnichannel", name: "Enviar Mensagem (Unificado)", method: "POST", path: "/message-send", auth: "Service Role",
+    description: "Roteia automaticamente para WhatsApp/Instagram/Email conforme o canal da conversa.",
+    request: `{ "conversation_id": "uuid", "content": "Olá!" }`,
+    response: `{ "success": true, "message_id": "..." }` },
+  { category: "omnichannel", name: "Webhook WhatsApp Cloud (Meta)", method: "GET/POST", path: "/whatsapp-webhook", auth: "Public",
+    description: "Recebe mensagens do WhatsApp Business API. GET = verificação, POST = mensagens." },
+  { category: "omnichannel", name: "Webhook Instagram (Meta)", method: "GET/POST", path: "/instagram-webhook", auth: "Public",
+    description: "Recebe DMs e comentários do Instagram via Graph API." },
+  { category: "omnichannel", name: "Enviar Instagram Direct", method: "POST", path: "/instagram-send", auth: "Bearer JWT",
+    description: "Envia DM via Instagram Messaging API.",
+    request: `{ "conversation_id": "uuid", "content": "Olá!" }` },
+  { category: "omnichannel", name: "Publicar no Instagram Feed", method: "POST", path: "/instagram-publish", auth: "Bearer JWT",
+    description: "Publica imagem ou vídeo no feed via Graph API.",
+    request: `{ "image_url": "...", "caption": "...", "media_type": "IMAGE" }` },
+  { category: "omnichannel", name: "Testar Conexão Instagram", method: "POST", path: "/instagram-test-connection", auth: "Bearer JWT",
+    description: "Valida META_PAGE_ACCESS_TOKEN e META_IG_ACCOUNT_ID." },
+  { category: "omnichannel", name: "Webhook WUZAPI (WhatsApp QR)", method: "POST", path: "/wuzapi-webhook", auth: "Public",
+    description: "Recebe mensagens do WhatsApp QR-Code via WUZAPI. Encaminha para Open Channels do Bitrix24." },
+  { category: "omnichannel", name: "Testar Conexão WUZAPI", method: "POST", path: "/wuzapi-test-connection", auth: "Bearer JWT",
+    description: "Verifica estado da sessão WUZAPI (connected/loggedIn)." },
+
+  // ─────────── PAGAMENTOS ───────────
+  { category: "payments", name: "Criar Pagamento", method: "POST", path: "/payment-create", auth: "Bearer JWT",
+    description: "Cria transação Stripe ou Asaas com normalização de gateway/método.",
+    request: `{ "amount": 99.90, "currency": "BRL", "gateway": "asaas", "method": "pix", "customer": {...} }` },
+  { category: "payments", name: "Criar Link de Pagamento", method: "POST", path: "/payment-create-link", auth: "Bearer JWT",
+    description: "Gera link público de pagamento com idempotência (reutiliza transação ativa)." },
+  { category: "payments", name: "Status de Pagamento", method: "GET", path: "/payment-status?id=...", auth: "Public",
+    description: "Consulta status de uma transação pública." },
+  { category: "payments", name: "Webhook Stripe", method: "POST", path: "/payment-webhook-stripe", auth: "Webhook Secret",
+    description: "Recebe eventos Stripe (multi-conta). Suporta stripe_pt e stripe_br via integration_credentials." },
+  { category: "payments", name: "Webhook Asaas", method: "POST", path: "/payment-webhook-asaas", auth: "Webhook Secret",
+    description: "Recebe eventos Asaas (PIX, boleto, cartão). Atualiza financial_records." },
+  { category: "payments", name: "Comprovativo de Pagamento", method: "POST", path: "/payment-receipt", auth: "Service Role",
+    description: "Envia automaticamente comprovativo + extrato ao cliente após confirmação." },
+  { category: "payments", name: "Lembrete de Cobrança (CRON)", method: "POST", path: "/payment-reminder", auth: "Service Role",
+    description: "Executado diariamente (09h) — envia lembretes D-3, D-1, D0 e atrasos via WhatsApp." },
+
+  // ─────────── INTELIGÊNCIA ARTIFICIAL ───────────
+  { category: "ai", name: "Processar Mensagem (ReACT Loop)", method: "POST", path: "/ai-process-message", auth: "Service Role",
+    description: "Motor principal de IA com ciclo ReACT (Reasoning → Action → Observation), max 5 iterações. Audit trail completa." },
+  { category: "ai", name: "Playground de IA", method: "POST", path: "/ai-playground", auth: "Bearer JWT",
+    description: "Chat de teste contra qualquer agente/modelo configurado. Suporta streaming." },
+  { category: "ai", name: "Sessão de Runtime", method: "POST", path: "/ai-session-runtime", auth: "Service Role",
+    description: "Gere ciclo de vida de sessões de IA (start, continue, timeout, complete)." },
+  { category: "ai", name: "Compactar Histórico", method: "POST", path: "/ai-history-compactor", auth: "Service Role",
+    description: "Compacta histórico longo de conversas em sumários (top-5 mantidos por conversa)." },
+  { category: "ai", name: "Auditoria de Paridade", method: "POST", path: "/ai-parity-audit", auth: "Bearer JWT",
+    description: "Compara respostas entre múltiplos modelos para garantir paridade." },
+  { category: "ai", name: "Tracker de Custo", method: "POST", path: "/ai-cost-tracker", auth: "Service Role",
+    description: "Registra tokens, custo USD e latência em ai_usage_logs por agente." },
+  { category: "ai", name: "Automações Internas (CRON)", method: "POST", path: "/ai-internal-automations", auth: "Service Role",
+    description: "Suite de automações executada a cada 2h: enriquecimento de leads, scoring, classificação." },
+  { category: "ai", name: "Agente de Automação", method: "POST", path: "/ai-automation-agent", auth: "Service Role",
+    description: "Executa ações automáticas baseadas em regras (consolidação de logica de agentes)." },
+  { category: "ai", name: "Executor de Crew Multi-Agente", method: "POST", path: "/ai-crew-executor", auth: "Bearer JWT",
+    description: "Executa tarefas distribuídas entre múltiplos agentes com delegate_to_agent." },
+
+  // ─────────── AGENTES ───────────
+  { category: "agents", name: "Builder de Agente", method: "POST", path: "/agent-builder", auth: "Bearer JWT",
+    description: "Cria/atualiza agentes IA com prompts, modelos, ferramentas e personalidade." },
+  { category: "agents", name: "Heartbeat Runner (CRON)", method: "POST", path: "/agent-heartbeat-runner", auth: "Service Role",
+    description: "Executa tarefas agendadas (Heartbeats) de cada agente autonomamente." },
+  { category: "agents", name: "Persona Trainer", method: "POST", path: "/persona-trainer", auth: "Bearer JWT",
+    description: "Treina o base_prompt (Persona) a partir de documentos e exemplos." },
+  { category: "agents", name: "Sumarizar Treinamento", method: "POST", path: "/summarize-training", auth: "Bearer JWT",
+    description: "Gera resumo estruturado dos dados de treino para o Persona." },
+  { category: "agents", name: "Engine de Simulação", method: "POST", path: "/simulation-engine", auth: "Bearer JWT",
+    description: "Sandbox multi-persona para teste de agentes com memória temporal." },
+  { category: "agents", name: "Agente de Relatórios", method: "POST", path: "/report-agent", auth: "Bearer JWT",
+    description: "Gera relatórios analíticos com IA sobre dados internos." },
+  { category: "agents", name: "Relatório Público", method: "GET", path: "/report-public?token=...", auth: "Public",
+    description: "Acesso público a relatórios partilhados via token." },
+
+  // ─────────── VOZ / ÁUDIO ───────────
+  { category: "voice", name: "Token ElevenLabs (Conversa)", method: "POST", path: "/elevenlabs-conversation-token", auth: "Bearer JWT",
+    description: "Gera token efémero para conversas em tempo real com agentes ElevenLabs." },
+  { category: "voice", name: "Token ElevenLabs (Scribe/STT)", method: "POST", path: "/elevenlabs-scribe-token", auth: "Bearer JWT",
+    description: "Gera token para transcrição de áudio (Speech-to-Text)." },
+
+  // ─────────── BITRIX24 ───────────
+  { category: "bitrix24", name: "Instalar Aplicação", method: "POST", path: "/bitrix24-install", auth: "Public",
+    description: "Handler de instalação OAuth + binding de placements + registro de robots." },
+  { category: "bitrix24", name: "Receber Eventos", method: "POST", path: "/bitrix24-events", auth: "Public",
+    description: "Recebe ONIMBOTMESSAGEADD, ONIMCONNECTORMESSAGEADD, OnCrmDealUpdate, etc." },
+  { category: "bitrix24", name: "Enviar Mensagem (Bitrix)", method: "POST", path: "/bitrix24-send", auth: "Service Role",
+    description: "Envia mensagens para Open Channels via imconnector.send.messages." },
+  { category: "bitrix24", name: "Worker (Inbound)", method: "POST", path: "/bitrix24-worker", auth: "Service Role",
+    description: "Encaminha mensagens inbound do Bitrix para conversations + dispara flow-engine." },
+  { category: "bitrix24", name: "Sincronização Bidirecional", method: "POST", path: "/bitrix24-sync", auth: "Bearer JWT",
+    description: "Sincroniza Leads, Deals, Contacts entre Emmely e Bitrix24 com anti-loop." },
+  { category: "bitrix24", name: "Robot Handler (BizProc)", method: "POST", path: "/bitrix24-robot-handler", auth: "Public",
+    description: "Suite de robots: emmely_send_whatsapp, emmely_generate_proposal, emmely_create_invoice, etc." },
+  { category: "bitrix24", name: "Configurações de Conector", method: "POST", path: "/bitrix24-connector-settings", auth: "Bearer JWT",
+    description: "Configura LINE_ID, ACTIVE, ICONs do Open Channel." },
+  { category: "bitrix24", name: "Testar Conexão", method: "POST", path: "/bitrix24-test-connection", auth: "Bearer JWT",
+    description: "Valida access_token, refresh proativo (5min antes da expiração)." },
+  { category: "bitrix24", name: "Listar Campos", method: "GET", path: "/bitrix24-fields?entity=lead", auth: "Bearer JWT",
+    description: "Retorna schema de campos (incluindo userfields) de Lead/Deal/Contact." },
+  { category: "bitrix24", name: "Buscar Deals", method: "GET", path: "/bitrix24-fetch-deals", auth: "Bearer JWT",
+    description: "Lista deals com paginação (até 50 por página, ordem decrescente)." },
+  { category: "bitrix24", name: "Buscar Entidades", method: "GET", path: "/bitrix24-fetch-entities", auth: "Bearer JWT",
+    description: "Lista batch de entidades CRM (lead, contact, company, deal)." },
+  { category: "bitrix24", name: "Buscar Carteira", method: "GET", path: "/bitrix24-fetch-portfolio", auth: "Bearer JWT",
+    description: "Carrega carteira de clientes importados (Pipeline 15)." },
+  { category: "bitrix24", name: "Buscar Utilizadores", method: "GET", path: "/bitrix24-fetch-users", auth: "Bearer JWT",
+    description: "Lista utilizadores (responsáveis) do portal Bitrix24." },
+  { category: "bitrix24", name: "Estatísticas Dashboard", method: "GET", path: "/bitrix24-dashboard-stats", auth: "Bearer JWT",
+    description: "KPIs em tempo real do portal Bitrix24 com cache." },
+  { category: "bitrix24", name: "Relatórios", method: "POST", path: "/bitrix24-reports", auth: "Bearer JWT",
+    description: "Relatórios financeiros centralizados com nome do responsável." },
+  { category: "bitrix24", name: "Limpar Duplicados", method: "POST", path: "/bitrix24-cleanup-duplicates", auth: "Bearer JWT",
+    description: "Remove duplicatas de Leads/Contacts baseado em telefone/email." },
+  { category: "bitrix24", name: "Atualizar Pagamento do Deal", method: "POST", path: "/bitrix24-update-deal-payment", auth: "Service Role",
+    description: "Atualiza Smart Invoice + status do Deal após reconciliação." },
+  { category: "bitrix24", name: "Sincronizar Status de Fatura", method: "POST", path: "/bitrix24-sync-invoice-status", auth: "Service Role",
+    description: "Sincroniza status financial_records → Bitrix24 (com anti-loop via emmely.sync_origin)." },
+  { category: "bitrix24", name: "Sincronizar Produto", method: "POST", path: "/bitrix24-sync-product", auth: "Service Role",
+    description: "Mantém sincronização services ↔ catálogo Bitrix24." },
+  { category: "bitrix24", name: "Webhook de Pagamento", method: "POST", path: "/bitrix24-payment-webhook", auth: "Public",
+    description: "Recebe eventos de pagamento do Bitrix24 (Sale.Payment)." },
+  { category: "bitrix24", name: "Re-registrar Eventos", method: "POST", path: "/bitrix24-rebind-events", auth: "Bearer JWT",
+    description: "Re-vincula handlers de eventos e placements (incluindo IM_TEXTAREA, CRM_*)." },
+  { category: "bitrix24", name: "Re-registrar Bot", method: "POST", path: "/bitrix24-reregister-bot", auth: "Bearer JWT",
+    description: "Re-registra agentes IA como chatbots (multi-bot architecture)." },
+  { category: "bitrix24", name: "Devolver ao Bot", method: "POST", path: "/bitrix24-return-to-bot", auth: "Public",
+    description: "Devolve controlo de uma sessão ao bot (após handoff humano)." },
+  // Placements (servem iframe HTML)
+  { category: "bitrix24", name: "Placement: CRM Tab", method: "GET", path: "/bitrix24-crm-tab", auth: "Public",
+    description: "Iframe Emmely Consulta na ficha CRM (Lead/Deal/Contact)." },
+  { category: "bitrix24", name: "Placement: Payment Tab", method: "GET", path: "/bitrix24-payment-tab", auth: "Public",
+    description: "Iframe Emmely Pay (geração de links + reconciliação)." },
+  { category: "bitrix24", name: "Placement: Booking Tab", method: "GET", path: "/bitrix24-booking-tab", auth: "Public",
+    description: "Iframe de agendamento integrado (Calendar/Booking)." },
+  { category: "bitrix24", name: "Placement: IM Sidebar", method: "GET", path: "/bitrix24-im-sidebar", auth: "Public",
+    description: "Sidebar IA no chat IM (perfil + histórico + sugestões)." },
+  { category: "bitrix24", name: "Placement: IM Context Menu", method: "GET", path: "/bitrix24-im-context-menu", auth: "Public",
+    description: "Menu de contexto em mensagens (gerar tarefa, criar lead)." },
+  { category: "bitrix24", name: "Placement: IM Send Audio", method: "GET", path: "/bitrix24-im-send-audio", auth: "Public",
+    description: "Botão 🎙️ no IM_TEXTAREA para gravar e enviar áudio (ogg/opus) via WhatsApp." },
+  { category: "bitrix24", name: "Placement: IM Send File", method: "GET", path: "/bitrix24-im-send-file", auth: "Public",
+    description: "Botão 📎 no IM_TEXTAREA para enviar imagem/vídeo/documento via WhatsApp." },
+  { category: "bitrix24", name: "Payment Handler (UI)", method: "POST", path: "/bitrix24-payment-handler", auth: "Public",
+    description: "Backend do iframe Emmely Pay — cria links, reconcilia, gera comprovativos." },
+
+  // ─────────── KNOWLEDGE / RAG ───────────
+  { category: "knowledge", name: "Gerar Embeddings", method: "POST", path: "/generate-embeddings", auth: "Service Role",
+    description: "Gera embeddings vectoriais de chunks de documentos para busca semântica." },
+  { category: "knowledge", name: "Parser de Documentos", method: "POST", path: "/parse-document", auth: "Bearer JWT",
+    description: "Parse local de PDF/DOCX/XLSX. Fallback para LLM se necessário." },
+  { category: "knowledge", name: "Gerar Template a partir de Imagem", method: "POST", path: "/generate-template-from-image", auth: "Bearer JWT",
+    description: "Gera template de proposta a partir de imagem (Vision)." },
+
+  // ─────────── FLUXOS / AUTOMAÇÕES ───────────
+  { category: "flows", name: "Flow Engine", method: "POST", path: "/flow-engine", auth: "Service Role",
+    description: "Motor de fluxos com IA-Intenção, IA-Ação, IA-Roteador, sub-flows e waiting_for_reply." },
+  { category: "flows", name: "Queue Worker", method: "POST", path: "/queue-worker", auth: "Service Role",
+    description: "Processa message_queue com SKIP LOCKED, retries e release de jobs presos." },
+
+  // ─────────── ADMINISTRAÇÃO ───────────
+  { category: "admin", name: "Aceitar Proposta (Público)", method: "POST", path: "/proposal-accept", auth: "Public",
+    description: "Endpoint público para aceitação de propostas via /proposta/:token." },
+  { category: "admin", name: "Gerar PDF de Proposta", method: "POST", path: "/proposal-pdf", auth: "Bearer JWT",
+    description: "Gera PDF formatado da proposta (uso interno)." },
+  { category: "admin", name: "Assinar Contrato (Público)", method: "POST", path: "/sign-contract", auth: "Public",
+    description: "Captura assinatura digital, IP, geo, hash do documento." },
+  { category: "admin", name: "Certificado de Assinatura", method: "GET", path: "/signature-certificate?id=...", auth: "Public",
+    description: "Gera PDF do certificado de assinatura (validade jurídica BR/UE)." },
+  { category: "admin", name: "Importar Dados (Access)", method: "POST", path: "/import-access-data", auth: "Bearer JWT",
+    description: "Importa XLSX legado para tabelas internas com import_sessions." },
+  { category: "admin", name: "Gerir Credenciais", method: "POST", path: "/manage-credentials", auth: "Bearer JWT",
+    description: "CRUD de integration_credentials (chaves de API por integração)." },
+  { category: "admin", name: "Dashboard Principal", method: "GET", path: "/dashboard-main", auth: "Bearer JWT",
+    description: "KPIs agregados do dashboard (leads, receita, casos, contratos)." },
+
+  // ─────────── OLLAMA (IA local) ───────────
+  { category: "ai", name: "Webhook URL Ollama", method: "POST", path: "/ollama-url-webhook", auth: "Webhook Secret",
+    description: "Sincroniza URL base do servidor Ollama remoto (qwen-local)." },
+  { category: "ai", name: "Testar Conexão Ollama", method: "POST", path: "/ollama-test-connection", auth: "Bearer JWT",
+    description: "Verifica acessibilidade do servidor Ollama configurado." },
+  { category: "ai", name: "Ping ao Modelo Ollama", method: "POST", path: "/ollama-ping-model", auth: "Bearer JWT",
+    description: "Faz ping num modelo específico para verificar disponibilidade." },
+  { category: "ai", name: "Aquecer Modelo Ollama", method: "POST", path: "/ollama-warm-model", auth: "Bearer JWT",
+    description: "Pré-carrega modelo na memória do servidor Ollama." },
+  { category: "ai", name: "Benchmark de Modelos Ollama", method: "POST", path: "/ollama-benchmark-models", auth: "Bearer JWT",
+    description: "Compara performance (tokens/s, latência) entre modelos Ollama." },
+
+  // ─────────── MCP ───────────
+  { category: "mcp", name: "MCP Server (JSON-RPC)", method: "GET/POST", path: "/mcp-server", auth: "API Key",
+    description: "Servidor MCP (Model Context Protocol) — Streamable HTTP. Compatível com OpenClaw, Claude Desktop, Cursor.",
     request: `{
-  "conversation_id": "uuid",
-  "content": "Olá, como posso ajudar?"
-}`,
-    response: `{
-  "success": true,
-  "message_id": "external-id"
-}`,
-    notes: "Instagram usa META_PAGE_ACCESS_TOKEN + META_IG_ACCOUNT_ID. WhatsApp usa META_WA_ACCESS_TOKEN + META_WA_PHONE_NUMBER_ID.",
-  },
-  {
-    name: "Webhook WhatsApp (Meta)",
-    method: "GET/POST",
-    path: "/whatsapp-webhook",
-    auth: "Public",
-    category: "omnichannel",
-    description: "Recebe mensagens inbound do WhatsApp Business API. GET para verificação, POST para mensagens. Cria conversas e dispara flow-engine automaticamente.",
-    notes: "Configure no Meta Business > WhatsApp > Configuration > Webhook URL. O verify_token é META_APP_SECRET.",
-  },
-  {
-    name: "Webhook Instagram (Meta)",
-    method: "GET/POST",
-    path: "/instagram-webhook",
-    auth: "Public",
-    category: "omnichannel",
-    description: "Recebe mensagens inbound do Instagram Messaging API. GET para verificação, POST para mensagens. Cria conversas e dispara flow-engine automaticamente.",
-    notes: "Configure no Meta Developers > Instagram > Webhooks. O verify_token é META_APP_SECRET.",
-  },
-  // ── Omni Channel - Instagram ──
-  {
-    name: "Enviar Mensagem (Instagram Direct)",
-    method: "POST",
-    path: "/instagram-send",
-    auth: "Bearer JWT",
-    category: "omnichannel",
-    description: "Envia mensagem via Instagram Messaging API (Meta Graph API v24.0). Uso direto pelo frontend.",
-    request: `{
-  "conversation_id": "uuid",
-  "content": "Olá!"
-}`,
-    response: `{
-  "success": true,
-  "message_id": "ig-message-id"
-}`,
-    notes: "Requer META_PAGE_ACCESS_TOKEN (prefixo IGAA...) e META_IG_ACCOUNT_ID configurados.",
-  },
-  {
-    name: "Publicar no Instagram Feed",
-    method: "POST",
-    path: "/instagram-publish",
-    auth: "Bearer JWT",
-    category: "omnichannel",
-    description: "Publica imagem ou vídeo (Reels) no feed do Instagram.",
-    request: `{
-  "image_url": "https://example.com/image.jpg",
-  "caption": "Legenda do post",
-  "media_type": "IMAGE"
-}`,
-    response: `{
-  "success": true,
-  "media_id": "ig-media-id"
-}`,
-  },
-  {
-    name: "Testar Conexão Instagram",
-    method: "GET",
-    path: "/instagram-test-connection",
-    auth: "Public",
-    category: "omnichannel",
-    description: "Verifica o estado da conexão Meta Graph API para Instagram.",
-    response: `{
-  "ok": true,
-  "message": "Conexão Instagram operacional!",
-  "meta": { "ok": true, "username": "emmelycloud" }
-}`,
-  },
-  {
-    name: "AI Process Message",
-    method: "POST",
-    path: "/ai-process-message",
-    auth: "Service Role",
-    category: "ai",
-    description: "Motor de processamento IA unificado. RAG semântico (pgvector), tool calling, memória longa, reflexão e análise de sentimento.",
-    request: `{
-  "conversation_id": "uuid",
-  "message_text": "Qual o prazo?"
-}`,
-    response: `{
-  "reply": "O prazo médio é...",
-  "agent_id": "uuid"
-}`,
-    notes: "Chamado pelo flow-engine. Suporta RAG semântico com embeddings, router multi-agente e auto-escalação por sentimento.",
-  },
-  // ── Pagamentos ──
-  {
-    name: "Criar Cobrança",
-    method: "POST",
-    path: "/payment-create",
-    auth: "Public",
-    category: "payments",
-    description: "Cria cobrança unificada. Seleciona automaticamente Stripe (EUR/Europa) ou Asaas (BRL/Brasil) com base no país/moeda.",
-    request: `{
-  "contract_id": "uuid (opcional)",
-  "client_id": "uuid (opcional)",
-  "financial_record_id": "uuid (opcional)",
-  "amount": 150.00,
-  "currency": "EUR",  // ou "BRL"
-  "payment_method": "card",  // "card", "pix", "boleto"
-  "customer_data": {
-    "name": "João Silva",
-    "email": "joao@email.com",
-    "country": "Portugal",
-    "cpf_cnpj": "12345678900"  // apenas Brasil
-  },
-  "description": "Honorários advocatícios"
-}`,
-    response: `{
-  "ok": true,
-  "transaction": {
-    "id": "uuid",
-    "gateway": "stripe",
-    "gateway_payment_id": "pi_xxx",
-    "status": "pending",
-    "payment_url": "https://...",
-    "pix_qr_code": "base64 (Asaas PIX)",
-    "pix_code": "copia-e-cola"
+  "jsonrpc": "2.0",
+  "id": 1,
+  "method": "tools/call",
+  "params": {
+    "name": "list_leads",
+    "arguments": { "limit": 10 }
   }
 }`,
-    notes: "Para Stripe, retorna client_secret em metadata para integração frontend. Para Asaas PIX, retorna QR code base64 e código copia-e-cola.",
-  },
-  {
-    name: "Consultar Pagamento",
-    method: "GET",
-    path: "/payment-status?transaction_id=uuid",
-    auth: "Public",
-    category: "payments",
-    description: "Consulta o status de um pagamento em tempo real, incluindo informações do gateway.",
     response: `{
-  "ok": true,
-  "transaction": { "id": "...", "status": "confirmed", "amount": 150 },
-  "gateway_status": {
-    "stripe_status": "succeeded",
-    "amount_received": 150
+  "jsonrpc": "2.0",
+  "id": 1,
+  "result": {
+    "content": [{ "type": "text", "text": "[...leads...]" }],
+    "isError": false
   }
 }`,
-    notes: "Também suporta ?list=true para listar as últimas 20 transações.",
-  },
-  {
-    name: "Webhook Stripe",
-    method: "POST",
-    path: "/payment-webhook-stripe",
-    auth: "Webhook Secret",
-    category: "payments",
-    description: "Processa eventos Stripe (payment_intent.succeeded, payment_failed, canceled, charge.refunded). Atualiza payment_transactions e financial_records.",
-    notes: "Configure o webhook no Stripe Dashboard → Developers → Webhooks. O STRIPE_WEBHOOK_SECRET é lido de integration_credentials. Inclui verificação de assinatura HMAC-SHA256.",
-  },
-  {
-    name: "Webhook Asaas",
-    method: "POST",
-    path: "/payment-webhook-asaas",
-    auth: "Webhook Secret",
-    category: "payments",
-    description: "Processa eventos Asaas (PAYMENT_CONFIRMED, RECEIVED, OVERDUE, REFUNDED, etc.). Atualiza payment_transactions e financial_records.",
-    notes: "O ASAAS_WEBHOOK_TOKEN é opcional mas recomendado. Configure no painel Asaas → Integrações → Webhooks.",
-  },
-  // ── Inteligência Artificial ──
-  {
-    name: "AI Playground (Chat)",
-    method: "POST",
-    path: "/ai-playground",
-    auth: "Public",
-    category: "ai",
-    description: "Envia mensagens para um agente de IA e recebe respostas. Suporta multi-provedor (Emmely AI, OpenAI, Anthropic, etc.) e base de conhecimento RAG.",
-    request: `{
-  "agent_id": "uuid",
-  "messages": [
-    { "role": "user", "content": "Qual o prazo para cidadania portuguesa?" }
-  ]
-}`,
-    response: `{
-  "content": "O prazo médio para a concessão de cidadania...",
-  "usage": {
-    "prompt_tokens": 150,
-    "completion_tokens": 200,
-    "total_tokens": 350
-  }
-}`,
-    notes: "O system_prompt do agente é combinado com os chunks da base de conhecimento vinculada. Chaves de API de provedores externos são lidas de integration_credentials.",
-  },
-  {
-    name: "Token de Conversa (ElevenLabs)",
-    method: "POST",
-    path: "/elevenlabs-conversation-token",
-    auth: "Public",
-    category: "ai",
-    description: "Gera token WebRTC para conversa de voz com agente ElevenLabs. A API key é lida de integration_credentials.",
-    request: `{
-  "agent_id": "uuid"
-}`,
-    response: `{
-  "token": "elevenlabs-conversation-token",
-  "agent_id": "elevenlabs-agent-id"
-}`,
-    notes: "Requer integration_credentials: provider='elevenlabs', credential_key='api_key'. O voice_id do agente ou credential 'agent_id' define o ElevenLabs Agent.",
-  },
-  // ── Credenciais ──
-  {
-    name: "Listar Credenciais",
-    method: "GET",
-    path: "/manage-credentials",
-    auth: "Bearer JWT",
-    category: "admin",
-    description: "Lista todas as credenciais de integração (valores mascarados). Apenas admin.",
-    response: `{
-  "credentials": [
-    {
-      "id": "uuid",
-      "provider": "stripe",
-      "credential_key": "STRIPE_SECRET_KEY",
-      "credential_value_masked": "sk_l••••test",
-      "has_value": true,
-      "updated_at": "2025-01-01T00:00:00Z"
-    }
-  ]
-}`,
-  },
-  {
-    name: "Salvar Credencial",
-    method: "POST",
-    path: "/manage-credentials",
-    auth: "Bearer JWT",
-    category: "admin",
-    description: "Cria ou atualiza uma credencial de integração. Apenas admin.",
-    request: `{
-  "provider": "stripe",
-  "credential_key": "STRIPE_SECRET_KEY",
-  "credential_value": "sk_live_xxx"
-}`,
-    response: `{ "ok": true }`,
-  },
-  // ── Bitrix24 ──
-  {
-    name: "Instalação Bitrix24",
-    method: "POST",
-    path: "/bitrix24-install",
-    auth: "Public",
-    category: "bitrix24",
-    description: "Endpoint de instalação do app Bitrix24. Processa OAuth handshake, regista conector Open Channel, vincula eventos e regista robots BizProc.",
-    notes: "Configure como Install URL no Bitrix24 Marketplace. Regista automaticamente: conector 'emmely_connector', eventos (OnImConnectorMessageAdd, etc.) e 4 robots BizProc (WhatsApp, Instagram, Criar Cobrança, Verificar Pagamento).",
-  },
-  {
-    name: "Eventos Bitrix24",
-    method: "POST",
-    path: "/bitrix24-events",
-    auth: "Public",
-    category: "bitrix24",
-    description: "Processa eventos do Bitrix24 (OnImConnectorMessageAdd, OnImConnectorStatusDelete, ONIMBOTMESSAGEADD). Encaminha mensagens via Meta API direta.",
-    notes: "Inclui detecção de mensagens de bot para evitar loops. Faz refresh automático de tokens OAuth expirados.",
-  },
-  {
-    name: "Enviar para Bitrix24",
-    method: "POST",
-    path: "/bitrix24-send",
-    auth: "Service Role",
-    category: "bitrix24",
-    description: "Encaminha mensagens recebidas para o Open Channel do Bitrix24. Chamado internamente pelos webhooks de Instagram e WhatsApp.",
-    request: `{
-  "message": "Texto da mensagem",
-  "contactName": "João Silva",
-  "contactId": "+351912345678",
-  "channel": "whatsapp",
-  "conversationId": "uuid"
-}`,
-    notes: "Utiliza imconnector.send.messages como método principal e im.notify.system.add como fallback.",
-  },
-  {
-    name: "Configurações Bitrix24",
-    method: "GET/POST",
-    path: "/bitrix24-connector-settings",
-    auth: "Public",
-    category: "bitrix24",
-    description: "Settings Handler do conector Bitrix24. Retorna HTML para iframe ou JSON (format=json). Mostra estado do conector e canais mapeados.",
-  },
-  {
-    name: "Testar Conexão Bitrix24",
-    method: "GET",
-    path: "/bitrix24-test-connection",
-    auth: "Public",
-    category: "bitrix24",
-    description: "Verifica se o token Bitrix24 está válido chamando app.info na API REST.",
-    response: `{
-  "ok": true,
-  "message": "Conexão válida! Token ativo.",
-  "details": {
-    "domain": "portal.bitrix24.com",
-    "connector_registered": true,
-    "connector_active": true,
-    "app_status": "L"
-  }
-}`,
-  },
-  {
-    name: "Robot Handler Bitrix24",
-    method: "POST",
-    path: "/bitrix24-robot-handler",
-    auth: "Public",
-    category: "bitrix24",
-    description: "Processa execuções dos 4 robots BizProc: emmely_send_whatsapp, emmely_send_instagram, emmely_create_charge, emmely_check_payment.",
-    request: `{
-  "code": "emmely_send_whatsapp",
-  "event_token": "bitrix-event-token",
-  "properties": {
-    "phone": "+351912345678",
-    "message": "Olá!"
-  },
-  "auth": { "member_id": "..." }
-}`,
-    response: `{
-  "ok": true,
-  "returnValues": {
-    "message_id": "callbell-uuid",
-    "status": "sent",
-    "error": ""
-  }
-}`,
-    notes: "Retorna resultados ao workflow Bitrix24 via bizproc.event.send. Os robots disponíveis são registados automaticamente durante a instalação.",
-  },
+    notes: "Métodos suportados: initialize, tools/list, tools/call, ping. Autenticar com Bearer emk_live_..." },
+  { category: "mcp", name: "Criar Chave de API", method: "POST", path: "/api-key-create", auth: "Bearer JWT",
+    description: "Gera nova chave API (mostrada apenas uma vez).",
+    request: `{ "name": "OpenClaw Production", "scopes": ["read", "write"] }`,
+    response: `{ "id": "...", "key": "emk_live_...", "key_prefix": "emk_live_xxxxx" }` },
+  { category: "mcp", name: "Revogar Chave de API", method: "POST", path: "/api-key-revoke", auth: "Bearer JWT",
+    description: "Revoga uma chave existente. Definitivo.",
+    request: `{ "id": "uuid-da-chave" }` },
 ];
 
-const categories = [
+const categories: { id: Category | "all"; label: string; icon: any }[] = [
   { id: "all", label: "Todos", icon: FileText },
-  { id: "omnichannel", label: "Omni Channel", icon: MessageCircle },
+  { id: "mcp", label: "MCP", icon: Server },
+  { id: "omnichannel", label: "Omnichannel", icon: MessageCircle },
   { id: "payments", label: "Pagamentos", icon: CreditCard },
-  { id: "ai", label: "Inteligência Artificial", icon: Bot },
-  { id: "admin", label: "Administração", icon: Shield },
+  { id: "ai", label: "IA", icon: Bot },
+  { id: "agents", label: "Agentes", icon: Brain },
+  { id: "voice", label: "Voz", icon: Mic },
   { id: "bitrix24", label: "Bitrix24", icon: Plug },
+  { id: "knowledge", label: "Conhecimento", icon: Database },
+  { id: "flows", label: "Fluxos", icon: Workflow },
+  { id: "admin", label: "Admin", icon: Shield },
 ];
 
 const methodColors: Record<string, string> = {
@@ -383,25 +275,36 @@ const methodColors: Record<string, string> = {
 };
 
 function CodeBlock({ code, title }: { code: string; title?: string }) {
-  const copy = () => {
-    navigator.clipboard.writeText(code);
-    toast.success("Código copiado!");
-  };
   return (
     <div className="relative group">
       {title && <p className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1">{title}</p>}
-      <pre className="bg-muted/50 border rounded-md p-3 text-xs overflow-x-auto whitespace-pre-wrap font-mono">
-        {code}
-      </pre>
-      <Button
-        variant="ghost" size="icon"
+      <pre className="bg-muted/50 border rounded-md p-3 text-xs overflow-x-auto whitespace-pre-wrap font-mono">{code}</pre>
+      <Button variant="ghost" size="icon"
         className="absolute top-1 right-1 h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
-        onClick={copy}
-      >
+        onClick={() => { navigator.clipboard.writeText(code); toast.success("Copiado!"); }}>
         <Copy className="h-3 w-3" />
       </Button>
     </div>
   );
+}
+
+function generateCurl(ep: Endpoint): string {
+  const url = `${BASE_URL}${ep.path.split("?")[0]}`;
+  const verb = ep.method.split("/")[0];
+  const parts = [`curl -X ${verb} "${url}"`, `  -H "Content-Type: application/json"`];
+  if (ep.auth === "Bearer JWT") {
+    parts.push(`  -H "Authorization: Bearer YOUR_JWT_TOKEN"`);
+    parts.push(`  -H "apikey: YOUR_ANON_KEY"`);
+  } else if (ep.auth === "API Key") {
+    parts.push(`  -H "Authorization: Bearer emk_live_YOUR_API_KEY"`);
+  }
+  if (verb !== "GET" && ep.request) {
+    try {
+      const body = JSON.parse(ep.request);
+      parts.push(`  -d '${JSON.stringify(body, null, 2)}'`);
+    } catch { parts.push(`  -d '${ep.request}'`); }
+  }
+  return parts.join(" \\\n");
 }
 
 function EndpointCard({ ep }: { ep: Endpoint }) {
@@ -411,12 +314,8 @@ function EndpointCard({ ep }: { ep: Endpoint }) {
         <Card className="hover:border-primary/30 transition-colors cursor-pointer">
           <CardContent className="p-4">
             <div className="flex items-center gap-3">
-              <Badge variant="outline" className={`text-[10px] font-mono ${methodColors[ep.method] || ""}`}>
-                {ep.method}
-              </Badge>
-              <code className="text-xs font-mono text-muted-foreground flex-1 text-left truncate">
-                {ep.path}
-              </code>
+              <Badge variant="outline" className={`text-[10px] font-mono ${methodColors[ep.method] || ""}`}>{ep.method}</Badge>
+              <code className="text-xs font-mono text-muted-foreground flex-1 text-left truncate">{ep.path}</code>
               <Badge variant="secondary" className="text-[10px]">{ep.auth}</Badge>
               <ChevronDown className="h-3.5 w-3.5 text-muted-foreground transition-transform" />
             </div>
@@ -436,131 +335,146 @@ function EndpointCard({ ep }: { ep: Endpoint }) {
           {ep.response && <CodeBlock code={ep.response} title="Response" />}
           {ep.notes && (
             <div className="bg-primary/5 border border-primary/10 rounded-md p-3">
-              <p className="text-xs text-foreground"><strong>Notas:</strong> {ep.notes}</p>
+              <p className="text-xs"><strong>Notas:</strong> {ep.notes}</p>
             </div>
           )}
-          <div>
-            <p className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1">Exemplo cURL</p>
-            <CodeBlock code={generateCurl(ep)} />
-          </div>
+          <CodeBlock code={generateCurl(ep)} title="Exemplo cURL" />
         </div>
       </CollapsibleContent>
     </Collapsible>
   );
 }
 
-function generateCurl(ep: Endpoint): string {
-  const url = `${BASE_URL}${ep.path.split("?")[0]}`;
-  const parts = [`curl -X ${ep.method.split("/")[0]} "${url}"`];
-
-  parts.push(`  -H "Content-Type: application/json"`);
-
-  if (ep.auth === "Bearer JWT") {
-    parts.push(`  -H "Authorization: Bearer YOUR_JWT_TOKEN"`);
-    parts.push(`  -H "apikey: YOUR_ANON_KEY"`);
-  }
-
-  if (ep.method.includes("POST") && ep.request) {
-    try {
-      const body = JSON.parse(ep.request);
-      parts.push(`  -d '${JSON.stringify(body, null, 2)}'`);
-    } catch {
-      parts.push(`  -d '${ep.request}'`);
-    }
-  }
-
-  return parts.join(" \\\n");
-}
-
 export default function ApiDocsPage() {
+  const { session } = useAuthContext();
   const [search, setSearch] = useState("");
-  const [activeCategory, setActiveCategory] = useState("all");
+  const [activeCategory, setActiveCategory] = useState<string>("all");
 
   const filtered = endpoints.filter((ep) => {
-    const matchesCategory = activeCategory === "all" || ep.category === activeCategory;
-    const matchesSearch = !search ||
+    const cat = activeCategory === "all" || ep.category === activeCategory;
+    const q = !search ||
       ep.name.toLowerCase().includes(search.toLowerCase()) ||
       ep.path.toLowerCase().includes(search.toLowerCase()) ||
       ep.description.toLowerCase().includes(search.toLowerCase());
-    return matchesCategory && matchesSearch;
+    return cat && q;
   });
 
   const categoryCount = (cat: string) =>
     cat === "all" ? endpoints.length : endpoints.filter((e) => e.category === cat).length;
 
   return (
-    <div>
-      <PageHeader
-        title="Documentação API"
-        description="Referência completa de todos os endpoints, webhooks e edge functions do sistema Emmely Cloud"
-      />
-
-      {/* Overview Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
-        <Card>
-          <CardContent className="p-4 text-center">
-            <p className="text-2xl font-bold text-primary">{endpoints.length}</p>
-            <p className="text-xs text-muted-foreground">Endpoints</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4 text-center">
-            <p className="text-2xl font-bold text-primary">{endpoints.filter(e => e.category === "omnichannel").length}</p>
-            <p className="text-xs text-muted-foreground">Omni Channel</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4 text-center">
-            <p className="text-2xl font-bold text-primary">{endpoints.filter(e => e.category === "payments").length}</p>
-            <p className="text-xs text-muted-foreground">Pagamentos</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4 text-center">
-            <p className="text-2xl font-bold text-primary">{endpoints.filter(e => e.category === "bitrix24").length}</p>
-            <p className="text-xs text-muted-foreground">Bitrix24</p>
-          </CardContent>
-        </Card>
+    <div className="container max-w-7xl mx-auto p-4 md:p-8">
+      {/* Header público */}
+      <div className="flex items-center justify-between flex-wrap gap-3 mb-6">
+        <div>
+          <div className="flex items-center gap-2 mb-1">
+            <Layers className="h-6 w-6 text-primary" />
+            <h1 className="text-2xl font-bold">Documentação API · Emmely Cloud</h1>
+            <Badge variant="outline" className="text-[10px]">Pública</Badge>
+          </div>
+          <p className="text-sm text-muted-foreground">
+            Referência completa de {endpoints.length} endpoints, webhooks, edge functions e do servidor MCP.
+          </p>
+        </div>
+        <div className="flex gap-2">
+          {session ? (
+            <>
+              <Link to="/api-docs/keys">
+                <Button variant="default" size="sm"><Key className="h-4 w-4 mr-2" /> Minhas Chaves API</Button>
+              </Link>
+              <Link to="/">
+                <Button variant="outline" size="sm"><ArrowLeft className="h-4 w-4 mr-2" /> App</Button>
+              </Link>
+            </>
+          ) : (
+            <Link to="/auth?redirect=/api-docs/keys">
+              <Button variant="default" size="sm"><Key className="h-4 w-4 mr-2" /> Iniciar sessão para gerar chave</Button>
+            </Link>
+          )}
+        </div>
       </div>
 
-      {/* Auth Info */}
-      <Card className="mb-6">
+      {/* Cartão MCP em destaque */}
+      <Card className="mb-6 border-primary/30 bg-primary/5">
         <CardHeader className="pb-3">
-          <CardTitle className="text-sm flex items-center gap-2"><Shield className="h-4 w-4" /> Autenticação</CardTitle>
+          <CardTitle className="text-base flex items-center gap-2">
+            <Server className="h-5 w-5 text-primary" /> Servidor MCP (Model Context Protocol)
+          </CardTitle>
+          <CardDescription className="text-xs">
+            Conecte agentes (OpenClaw, Claude Desktop, Cursor, Continue) directamente ao Emmely.
+            Suporta JSON-RPC 2.0 sobre Streamable HTTP.
+          </CardDescription>
         </CardHeader>
         <CardContent className="space-y-2 text-xs">
-          <div className="grid md:grid-cols-2 gap-3">
-            <div className="space-y-1">
-              <Badge variant="outline" className="text-[10px]">Bearer JWT</Badge>
-              <p className="text-muted-foreground">Requer token de sessão do utilizador autenticado. Incluir headers: <code className="text-[10px]">Authorization: Bearer TOKEN</code> e <code className="text-[10px]">apikey: ANON_KEY</code></p>
-            </div>
-            <div className="space-y-1">
-              <Badge variant="outline" className="text-[10px]">Webhook Secret</Badge>
-              <p className="text-muted-foreground">Validado por assinatura HMAC (Stripe) ou token (Asaas). Credenciais lidas de <code className="text-[10px]">integration_credentials</code>.</p>
-            </div>
-            <div className="space-y-1">
-              <Badge variant="outline" className="text-[10px]">Public</Badge>
-              <p className="text-muted-foreground">Sem autenticação. Usado para webhooks externos e endpoints de teste.</p>
-            </div>
-            <div className="space-y-1">
-              <Badge variant="outline" className="text-[10px]">Service Role</Badge>
-              <p className="text-muted-foreground">Chamado internamente entre edge functions. Usa <code className="text-[10px]">SUPABASE_SERVICE_ROLE_KEY</code>.</p>
-            </div>
+          <div className="flex items-center gap-2">
+            <Badge variant="outline" className="text-[10px] w-16 justify-center">URL</Badge>
+            <code className="font-mono bg-background px-2 py-1 rounded flex-1 truncate">{MCP_URL}</code>
+            <Button variant="ghost" size="icon" className="h-6 w-6"
+              onClick={() => { navigator.clipboard.writeText(MCP_URL); toast.success("Copiado!"); }}>
+              <Copy className="h-3 w-3" />
+            </Button>
+          </div>
+          <div className="flex items-center gap-2">
+            <Badge variant="outline" className="text-[10px] w-16 justify-center">Auth</Badge>
+            <code className="font-mono bg-background px-2 py-1 rounded">Authorization: Bearer emk_live_…</code>
+          </div>
+          <div className="flex items-center gap-2">
+            <Badge variant="outline" className="text-[10px] w-16 justify-center">Tools</Badge>
+            <span className="text-muted-foreground">
+              list_leads · get_lead · create_lead · send_whatsapp · list_conversations ·
+              list_financial_records · create_payment_link · search_knowledge · get_dashboard
+            </span>
           </div>
         </CardContent>
       </Card>
 
-      {/* Search + Filter */}
-      <div className="flex flex-col md:flex-row gap-3 mb-4">
-        <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input
-            placeholder="Pesquisar endpoints..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="pl-9"
-          />
-        </div>
+      {/* Stats */}
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-6">
+        {[
+          { label: "Endpoints", value: endpoints.length },
+          { label: "Omnichannel", value: endpoints.filter((e) => e.category === "omnichannel").length },
+          { label: "Pagamentos", value: endpoints.filter((e) => e.category === "payments").length },
+          { label: "Bitrix24", value: endpoints.filter((e) => e.category === "bitrix24").length },
+          { label: "MCP Tools", value: 9 },
+        ].map((s) => (
+          <Card key={s.label}>
+            <CardContent className="p-4 text-center">
+              <p className="text-2xl font-bold text-primary">{s.value}</p>
+              <p className="text-xs text-muted-foreground">{s.label}</p>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+
+      {/* Auth info */}
+      <Card className="mb-6">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-sm flex items-center gap-2"><Shield className="h-4 w-4" /> Autenticação</CardTitle>
+        </CardHeader>
+        <CardContent className="grid md:grid-cols-2 gap-3 text-xs">
+          <div className="space-y-1">
+            <Badge variant="outline" className="text-[10px]">API Key (MCP / programático)</Badge>
+            <p className="text-muted-foreground">Gere uma chave em <Link to="/api-docs/keys" className="text-primary underline">/api-docs/keys</Link>. Use <code>Authorization: Bearer emk_live_...</code></p>
+          </div>
+          <div className="space-y-1">
+            <Badge variant="outline" className="text-[10px]">Bearer JWT</Badge>
+            <p className="text-muted-foreground">Token de sessão de utilizador autenticado. Headers: <code>Authorization: Bearer ...</code> + <code>apikey: ANON_KEY</code></p>
+          </div>
+          <div className="space-y-1">
+            <Badge variant="outline" className="text-[10px]">Webhook Secret</Badge>
+            <p className="text-muted-foreground">Validado por HMAC (Stripe) ou token (Asaas/Meta). Lido de <code>integration_credentials</code>.</p>
+          </div>
+          <div className="space-y-1">
+            <Badge variant="outline" className="text-[10px]">Public</Badge>
+            <p className="text-muted-foreground">Sem autenticação. Webhooks públicos, iframes e endpoints partilhados via token.</p>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Search */}
+      <div className="relative mb-4">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+        <Input placeholder="Pesquisar endpoints..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9" />
       </div>
 
       <Tabs value={activeCategory} onValueChange={setActiveCategory}>
@@ -577,11 +491,7 @@ export default function ApiDocsPage() {
         {categories.map((cat) => (
           <TabsContent key={cat.id} value={cat.id} className="space-y-3">
             {filtered.length === 0 ? (
-              <Card>
-                <CardContent className="py-8 text-center text-muted-foreground text-sm">
-                  Nenhum endpoint encontrado.
-                </CardContent>
-              </Card>
+              <Card><CardContent className="py-8 text-center text-muted-foreground text-sm">Nenhum endpoint encontrado.</CardContent></Card>
             ) : (
               filtered.map((ep, i) => <EndpointCard key={i} ep={ep} />)
             )}
@@ -589,34 +499,10 @@ export default function ApiDocsPage() {
         ))}
       </Tabs>
 
-      {/* Database Schema Summary */}
       <Separator className="my-8" />
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-sm">Tabelas Principais</CardTitle>
-          <CardDescription className="text-xs">Esquema resumido das tabelas utilizadas pelas APIs</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-3 text-xs">
-            {[
-              { name: "conversations", cols: "channel, contact_name, contact_phone, contact_instagram, status, unread_count" },
-              { name: "messages", cols: "conversation_id, direction, content, sender_name, external_id, delivery_status" },
-              { name: "payment_transactions", cols: "gateway, amount, currency, status, payment_url, pix_code, gateway_payment_id" },
-              { name: "ai_agents", cols: "ai_provider, ai_model, system_prompt, temperature, voice_provider, voice_id, agent_type" },
-              { name: "ai_providers", cols: "slug, base_url, credential_key, auth_header, available_models" },
-              { name: "integration_credentials", cols: "provider, credential_key, credential_value" },
-              { name: "bitrix24_integrations", cols: "member_id, domain, access_token, connector_active" },
-              { name: "bitrix24_channel_mappings", cols: "integration_id, channel, line_id, is_active" },
-              { name: "knowledge_documents", cols: "title, content, source_type, status, chunks_count" },
-            ].map((t) => (
-              <div key={t.name} className="border rounded-md p-3">
-                <p className="font-mono font-medium text-primary">{t.name}</p>
-                <p className="text-muted-foreground mt-1">{t.cols}</p>
-              </div>
-            ))}
-          </div>
-        </CardContent>
-      </Card>
+      <p className="text-center text-xs text-muted-foreground">
+        Emmely Cloud · Edge Functions hospedadas na infraestrutura Lovable Cloud · {endpoints.length} endpoints documentados
+      </p>
     </div>
   );
 }
