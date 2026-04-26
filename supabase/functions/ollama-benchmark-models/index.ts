@@ -66,33 +66,74 @@ function maxLoadTimeoutMs(model: string): number {
   return 90_000;
 }
 
+async function listLoadedModels(baseUrl: string): Promise<string[]> {
+  try {
+    const r = await fetch(baseUrl.replace(/\/+$/, "") + "/api/ps", { signal: AbortSignal.timeout(8000) });
+    if (!r.ok) return [];
+    const j = await r.json();
+    return (j.models || []).map((m: any) => m.name || m.model || "").filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
+async function unloadOtherModels(baseUrl: string, keepModel: string): Promise<string[]> {
+  const loaded = await listLoadedModels(baseUrl);
+  const toUnload = loaded.filter((n) => n !== keepModel && !n.startsWith(keepModel + ":") && !keepModel.startsWith(n));
+  if (toUnload.length === 0) return [];
+  console.log(`[ollama-benchmark] descarregando ${toUnload.length} modelo(s) antes de ${keepModel}:`, toUnload);
+  await Promise.all(
+    toUnload.map((m) =>
+      fetch(baseUrl.replace(/\/+$/, "") + "/api/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        signal: AbortSignal.timeout(15_000),
+        body: JSON.stringify({ model: m, prompt: "", stream: false, keep_alive: 0 }),
+      }).catch(() => null),
+    ),
+  );
+  await new Promise((r) => setTimeout(r, 2500));
+  return toUnload;
+}
+
 async function warmUpModel(baseUrl: string, model: string): Promise<{ ok: boolean; error?: string }> {
   // Verifica se já está em memória
   try {
-    const psR = await fetch(baseUrl.replace(/\/+$/, "") + "/api/ps", { signal: AbortSignal.timeout(5000) });
-    if (psR.ok) {
-      const psJ = await psR.json();
-      const loaded: string[] = (psJ.models || []).map((m: any) => m.name || m.model || "");
-      if (loaded.some((n) => n === model)) return { ok: true };
-    }
+    const loaded = await listLoadedModels(baseUrl);
+    if (loaded.some((n) => n === model)) return { ok: true };
   } catch { /* segue para load */ }
 
-  try {
-    const r = await fetch(baseUrl.replace(/\/+$/, "") + "/api/generate", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      signal: AbortSignal.timeout(maxLoadTimeoutMs(model)),
-      body: JSON.stringify({ model, prompt: "", stream: false, keep_alive: "10m" }),
-    });
-    if (!r.ok) {
+  const MAX_ATTEMPTS = 3;
+  let lastError: string | undefined;
+
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    // Libertar memória antes de cada tentativa
+    await unloadOtherModels(baseUrl, model);
+
+    try {
+      const r = await fetch(baseUrl.replace(/\/+$/, "") + "/api/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        signal: AbortSignal.timeout(maxLoadTimeoutMs(model)),
+        body: JSON.stringify({ model, prompt: "", stream: false, keep_alive: "10m" }),
+      });
+      if (r.ok) {
+        await r.json().catch(() => null);
+        return { ok: true };
+      }
       const txt = await r.text().catch(() => "");
-      return { ok: false, error: `warm-up HTTP ${r.status}: ${txt.slice(0, 200)}` };
+      lastError = `warm-up HTTP ${r.status}: ${txt.slice(0, 200)}`;
+      const isResource = /resource limitations|model failed to load|out of memory|cuda/i.test(txt);
+      console.log(`[ollama-benchmark] ${model} tentativa ${attempt}/${MAX_ATTEMPTS} falhou${isResource ? " (recursos)" : ""}`);
+      if (!isResource) break;
+      if (attempt < MAX_ATTEMPTS) await new Promise((res) => setTimeout(res, 5000));
+    } catch (e: any) {
+      lastError = `warm-up: ${e?.message || String(e)}`;
+      break;
     }
-    await r.json().catch(() => null);
-    return { ok: true };
-  } catch (e: any) {
-    return { ok: false, error: `warm-up: ${e?.message || String(e)}` };
   }
+
+  return { ok: false, error: lastError || "warm-up falhou após retries" };
 }
 
 async function callOllamaChat(
