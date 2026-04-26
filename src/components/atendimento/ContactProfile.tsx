@@ -2,13 +2,20 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { ChannelIcon } from "./ChannelIcon";
-import { Phone, Mail, Instagram, Link2, User, UserPlus, ChevronDown, Sparkles, Loader2, FileSearch, ExternalLink } from "lucide-react";
+import { Phone, Mail, Instagram, Link2, User, ChevronDown, Sparkles, Loader2, FileSearch, ExternalLink, Save, Briefcase, Layers, X } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useSummarizeConversation, useExtractLeadData } from "@/hooks/useAiAutomation";
+import { toast } from "sonner";
 
 type Channel = "whatsapp" | "instagram" | "email" | "webchat";
 
@@ -26,6 +33,7 @@ interface ContactProfileProps {
     client_id?: string | null;
     bot_state?: Record<string, any> | null;
   } | null;
+  onClose?: () => void;
 }
 
 function CollapsibleSection({ title, defaultOpen = false, children }: { title: string; defaultOpen?: boolean; children: React.ReactNode }) {
@@ -43,13 +51,15 @@ function CollapsibleSection({ title, defaultOpen = false, children }: { title: s
   );
 }
 
-export function ContactProfile({ conversation }: ContactProfileProps) {
+export function ContactProfile({ conversation, onClose }: ContactProfileProps) {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const summarize = useSummarizeConversation();
   const extractData = useExtractLeadData();
   const [summary, setSummary] = useState<string | null>(null);
+  const [savingCrm, setSavingCrm] = useState<null | "lead" | "deal" | "spa">(null);
 
-  // Check if a lead already exists for this conversation
+  // Check if a lead already exists for this conversation (local DB)
   const { data: existingLead } = useQuery({
     queryKey: ["lead-by-conversation", conversation?.id],
     enabled: !!conversation?.id,
@@ -72,24 +82,6 @@ export function ContactProfile({ conversation }: ContactProfileProps) {
     );
   }
 
-  const channelToOrigin: Record<Channel, string> = {
-    whatsapp: "whatsapp",
-    instagram: "instagram",
-    email: "email",
-    webchat: "outro",
-  };
-
-  const handleCreateLead = () => {
-    const params = new URLSearchParams();
-    params.set("from_conversation", conversation.id);
-    params.set("name", conversation.contact_name);
-    if (conversation.contact_phone) params.set("phone", conversation.contact_phone);
-    if (conversation.contact_email) params.set("email", conversation.contact_email);
-    params.set("origin", channelToOrigin[conversation.channel]);
-    if (conversation.client_id) params.set("client_id", conversation.client_id);
-    navigate(`/leads?${params.toString()}`);
-  };
-
   const initials = conversation.contact_name
     .split(" ")
     .map((n) => n[0])
@@ -103,27 +95,66 @@ export function ContactProfile({ conversation }: ContactProfileProps) {
   const bitrixLeadId = bs.bitrix_lead_id;
   const bitrixEntityId = bs.bitrix_entity_id;
 
-  // Parse entity type from bitrix_entity_id (format "type:id")
+  // Build deep link + label for existing CRM entity
   let bitrixEntityLabel = "";
+  let bitrixDeepPath = "";
   if (bitrixDealId) {
-    bitrixEntityLabel = `Deal #${bitrixDealId}`;
+    bitrixEntityLabel = `Negócio #${bitrixDealId}`;
+    bitrixDeepPath = `crm/deal/details/${bitrixDealId}/`;
   } else if (bitrixLeadId) {
     bitrixEntityLabel = `Lead #${bitrixLeadId}`;
+    bitrixDeepPath = `crm/lead/details/${bitrixLeadId}/`;
   } else if (bitrixEntityId) {
     const parts = String(bitrixEntityId).split(":");
     if (parts.length === 2) {
-      const typeLabels: Record<string, string> = { "1": "Lead", "2": "Deal", "3": "Contacto" };
+      const typeLabels: Record<string, string> = { "1": "Lead", "2": "Negócio", "3": "Contacto" };
       bitrixEntityLabel = `${typeLabels[parts[0]] || "Entidade"} #${parts[1]}`;
+      if (parts[0] === "1") bitrixDeepPath = `crm/lead/details/${parts[1]}/`;
+      else if (parts[0] === "2") bitrixDeepPath = `crm/deal/details/${parts[1]}/`;
+      else bitrixDeepPath = `crm/type/${parts[0]}/details/${parts[1]}/`;
     } else {
       bitrixEntityLabel = `#${bitrixEntityId}`;
     }
   }
 
-  const hasExistingLead = !!existingLead;
+  const isLinkedToCrm = !!(bitrixDealId || bitrixLeadId || bitrixEntityId) || !!existingLead?.bitrix24_id;
+
+  const handleSaveToCrm = async (entityType: "lead" | "deal" | "spa") => {
+    setSavingCrm(entityType);
+    try {
+      const { data, error } = await supabase.functions.invoke("crm-save-from-conversation", {
+        body: { conversation_id: conversation.id, entity_type: entityType },
+      });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+      toast.success(`Salvo no CRM: ${data?.entity_label ?? entityType}`);
+      // Invalidate to refresh existingLead query and conversation bot_state
+      queryClient.invalidateQueries({ queryKey: ["lead-by-conversation", conversation.id] });
+      queryClient.invalidateQueries({ queryKey: ["conversations"] });
+      if (data?.deep_link) {
+        window.open(data.deep_link, "_blank", "noopener,noreferrer");
+      }
+    } catch (err: any) {
+      toast.error(err?.message || "Erro ao salvar no CRM");
+    } finally {
+      setSavingCrm(null);
+    }
+  };
 
   return (
     <div className="w-72 xl:w-80 border-l bg-card hidden lg:flex flex-col shrink-0">
-      <div className="p-4 flex flex-col items-center text-center border-b">
+      <div className="p-4 flex flex-col items-center text-center border-b relative">
+        {onClose && (
+          <Button
+            variant="ghost"
+            size="icon"
+            className="absolute top-2 right-2 h-7 w-7"
+            onClick={onClose}
+            aria-label="Fechar painel"
+          >
+            <X className="h-4 w-4" />
+          </Button>
+        )}
         <Avatar className="h-16 w-16 mb-3">
           <AvatarImage src={conversation.contact_avatar_url ?? undefined} />
           <AvatarFallback className="text-lg">{initials}</AvatarFallback>
@@ -192,40 +223,80 @@ export function ContactProfile({ conversation }: ContactProfileProps) {
           )}
         </CollapsibleSection>
 
-        <CollapsibleSection title="Comercial">
-          {hasExistingLead ? (
+        <CollapsibleSection title="CRM Bitrix24" defaultOpen>
+          {isLinkedToCrm ? (
             <div className="space-y-2">
-              <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                <User className="h-3 w-3" />
-                <span>Lead: <strong className="text-foreground">{existingLead.name}</strong></span>
-              </div>
-              {existingLead.bitrix24_id && (
+              {existingLead && (
                 <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                  <ExternalLink className="h-3 w-3" />
-                  <span>Bitrix24 Lead #{existingLead.bitrix24_id}</span>
+                  <User className="h-3 w-3" />
+                  <span>Lead local: <strong className="text-foreground">{existingLead.name}</strong></span>
                 </div>
               )}
-              <Badge variant="secondary" className="text-[10px]">
-                {existingLead.funnel_stage}
-              </Badge>
-              <Button
-                variant="outline"
-                size="sm"
-                className="w-full text-xs"
-                onClick={() => navigate(`/leads`)}
-              >
-                <ExternalLink className="h-3 w-3 mr-1" /> Ver Lead
-              </Button>
+              {bitrixEntityLabel && (
+                <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <ExternalLink className="h-3 w-3" />
+                  <span>{bitrixEntityLabel}</span>
+                </div>
+              )}
+              {existingLead?.funnel_stage && (
+                <Badge variant="secondary" className="text-[10px]">
+                  {existingLead.funnel_stage}
+                </Badge>
+              )}
+              {bitrixDeepPath && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="w-full text-xs"
+                  onClick={() => {
+                    // Best-effort: extract portal from any known integration via window? Just rely on backend deep_link previously returned. As fallback, open Bitrix24 search.
+                    toast.info("Use o botão 'Salvar no CRM' para receber o link directo na próxima criação.");
+                  }}
+                >
+                  <ExternalLink className="h-3 w-3 mr-1" /> Abrir no Bitrix24
+                </Button>
+              )}
+              {existingLead && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="w-full text-xs"
+                  onClick={() => navigate(`/leads`)}
+                >
+                  <User className="h-3 w-3 mr-1" /> Ver Lead local
+                </Button>
+              )}
             </div>
           ) : (
-            <Button
-              variant="default"
-              size="sm"
-              className="w-full text-xs"
-              onClick={handleCreateLead}
-            >
-              <UserPlus className="h-3 w-3 mr-1" /> Criar Lead a partir desta conversa
-            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="default"
+                  size="sm"
+                  className="w-full text-xs"
+                  disabled={savingCrm !== null}
+                >
+                  {savingCrm ? (
+                    <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                  ) : (
+                    <Save className="h-3 w-3 mr-1" />
+                  )}
+                  Salvar no CRM
+                  <ChevronDown className="h-3 w-3 ml-auto" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" className="w-56">
+                <DropdownMenuItem onClick={() => handleSaveToCrm("lead")}>
+                  <User className="h-3.5 w-3.5 mr-2" /> Lead
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => handleSaveToCrm("deal")}>
+                  <Briefcase className="h-3.5 w-3.5 mr-2" /> Negócio (Deal)
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => handleSaveToCrm("spa")}>
+                  <Layers className="h-3.5 w-3.5 mr-2" /> SPA (Smart Process)
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           )}
         </CollapsibleSection>
 

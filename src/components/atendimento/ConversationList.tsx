@@ -17,6 +17,7 @@ interface ConversationListProps {
   conversations: Conversation[];
   selectedId?: string;
   onSelect: (id: string) => void;
+  onDoubleSelect?: (id: string) => void;
 }
 
 function FormatTimeWrapper({ dateStr }: { dateStr: string }) {
@@ -40,12 +41,20 @@ export function ConversationList({
   conversations,
   selectedId,
   onSelect,
+  onDoubleSelect,
 }: ConversationListProps) {
   const [search, setSearch] = useState("");
   const [channelFilter, setChannelFilter] = useState<ConversationChannel | "all">("all");
   const [statusFilter, setStatusFilter] = useState<ConversationStatus | "all">("aberta");
   const [quickFilter, setQuickFilter] = useState<QuickFilter>("all");
   const listRef = useRef<HTMLDivElement>(null);
+
+  const channelBorderColor: Record<ConversationChannel, string> = {
+    whatsapp: "border-l-[hsl(142,70%,45%)]",
+    instagram: "border-l-[hsl(330,70%,55%)]",
+    email: "border-l-[hsl(210,80%,55%)]",
+    webchat: "border-l-muted-foreground/40",
+  };
 
   const counters = useMemo(() => {
     const base = conversations.filter(
@@ -192,11 +201,14 @@ export function ConversationList({
                     transform: `translateY(${vRow.start}px)`,
                   }}
                   className={cn(
-                    "w-full text-left px-3 py-[10px] border-b border-border/30 hover:bg-accent/50 transition-colors",
-                    selectedId === conv.id && "bg-accent",
+                    "w-full text-left px-3 py-[10px] border-b border-border/30 border-l-4 hover:bg-accent/50 transition-colors",
+                    channelBorderColor[conv.channel],
+                    selectedId === conv.id && "bg-primary/10",
                     conv.unread_count > 0 && "bg-primary/5"
                   )}
                   onClick={() => onSelect(conv.id)}
+                  onDoubleClick={() => onDoubleSelect?.(conv.id)}
+                  title="Clique duplo para ver detalhes do contacto"
                 >
                   <div className="flex items-center gap-3 w-full min-w-0">
                     <div className="relative shrink-0">
