@@ -137,7 +137,7 @@ Deno.serve(async (req) => {
               let igToken = "";
               const { data: igInst } = await supabase
                 .from("channel_instances")
-                .select("config")
+                .select("id, config")
                 .eq("channel_type", "instagram")
                 .eq("status", "active")
                 .order("created_at")
