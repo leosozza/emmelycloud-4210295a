@@ -1411,6 +1411,24 @@ Deno.serve(async (req) => {
       }
     }
 
+    // Always gather candidate conversations by phone (so the user can switch between
+    // multiple WhatsApp instances/conversations belonging to the same contact)
+    if (allPhones.length > 0) {
+      conversationCandidates = await findConversationsByPhone(supabase, allPhones);
+      console.log("[CRM-TAB] Candidate conversations found:", conversationCandidates.length);
+    }
+
+    // If no conversation was selected/matched but candidates exist, default to the best one
+    if (!conversation && conversationCandidates.length > 0) {
+      conversation = conversationCandidates[0];
+      console.log("[CRM-TAB] Defaulting to top candidate:", conversation.id);
+    }
+
+    // Make sure the currently selected conversation is in the candidates list
+    if (conversation && !conversationCandidates.some((c) => c.id === conversation.id)) {
+      conversationCandidates = [conversation, ...conversationCandidates];
+    }
+
     // Fetch messages if conversation found
     let messages: any[] = [];
     if (conversation) {
@@ -1441,6 +1459,7 @@ Deno.serve(async (req) => {
       instagramEnabled,
       quickReplies,
       agents,
+      conversationCandidates,
     }), { headers: htmlHeaders });
 
   } catch (e) {
