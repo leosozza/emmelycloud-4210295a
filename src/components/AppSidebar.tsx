@@ -121,7 +121,7 @@ export function AppSidebar() {
                       to={item.url}
                       end={item.url === "/"}
                       className="text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground rounded-lg transition-all"
-                      activeClassName="bg-sidebar-accent text-sidebar-accent-foreground font-semibold"
+                      activeClassName="bg-sidebar-accent text-sidebar-accent-foreground font-semibold" onClick={handleNavClick}
                     >
                       <item.icon className="h-[18px] w-[18px]" strokeWidth={1.5} />
                       <span>{item.title}</span>
@@ -145,7 +145,7 @@ export function AppSidebar() {
                     <NavLink
                       to={item.url}
                       className="text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground rounded-lg transition-all"
-                      activeClassName="bg-sidebar-accent text-sidebar-accent-foreground font-semibold"
+                      activeClassName="bg-sidebar-accent text-sidebar-accent-foreground font-semibold" onClick={handleNavClick}
                     >
                       <item.icon className="h-[18px] w-[18px]" strokeWidth={1.5} />
                       <span>{item.title}</span>
@@ -169,7 +169,7 @@ export function AppSidebar() {
                     <NavLink
                       to={item.url}
                       className="text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground rounded-lg transition-all"
-                      activeClassName="bg-sidebar-accent text-sidebar-accent-foreground font-semibold"
+                      activeClassName="bg-sidebar-accent text-sidebar-accent-foreground font-semibold" onClick={handleNavClick}
                     >
                       <item.icon className="h-[18px] w-[18px]" strokeWidth={1.5} />
                       <span>{item.title}</span>
@@ -193,7 +193,7 @@ export function AppSidebar() {
                     <NavLink
                       to={item.url}
                       className="text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground rounded-lg transition-all"
-                      activeClassName="bg-sidebar-accent text-sidebar-accent-foreground font-semibold"
+                      activeClassName="bg-sidebar-accent text-sidebar-accent-foreground font-semibold" onClick={handleNavClick}
                     >
                       <item.icon className="h-[18px] w-[18px]" strokeWidth={1.5} />
                       <span>{item.title}</span>
