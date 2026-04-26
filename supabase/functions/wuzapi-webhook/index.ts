@@ -324,6 +324,7 @@ Deno.serve(async (req) => {
           message: content,
           contactName: senderName,
           contactId: bitrixContactId,
+          contactPhone: phone || undefined,
           channel: "whatsapp",
           conversationId,
           instanceId, // routes to the Open Line linked to this instance
