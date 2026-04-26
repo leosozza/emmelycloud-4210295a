@@ -1243,8 +1243,11 @@ function ConfigView({ integration, botId, domain, loading, onResync, onRefresh }
           </div>
         )}
         <Button onClick={handleRebindEvents} disabled={rebinding} className="w-full rounded-md" variant="outline">
-          {rebinding ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Registando webhooks...</> : <><Zap className="h-4 w-4 mr-2" />Re-registar Webhooks</>}
+          {rebinding ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Registando eventos e botões...</> : <><Zap className="h-4 w-4 mr-2" />Registar Eventos & Botões do Chat</>}
         </Button>
+        <p className="text-[10px] text-muted-foreground text-center -mt-1 px-2">
+          Inclui eventos do Open Channels/IMBot e os botões de Áudio, Anexar Ficheiro, Devolver ao Bot e Templates no bate-papo do Contact Center.
+        </p>
         {rebindResult && (
           <div className={cn("text-xs text-center px-3 py-2 rounded-lg flex items-center justify-center gap-1.5", rebindResult.includes("Erro") ? "bg-destructive/10 text-destructive" : "bg-success/10 text-success")}>
             {rebindResult.includes("Erro") ? <XCircle className="h-3 w-3" /> : <CheckCircle className="h-3 w-3" />}
