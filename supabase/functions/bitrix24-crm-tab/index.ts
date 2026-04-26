@@ -1061,6 +1061,21 @@ Deno.serve(async (req) => {
     let contactName = "";
     let allPhones: string[] = [];
     let allEmails: string[] = [];
+    let conversationCandidates: any[] = [];
+
+    // If user explicitly chose a conversation from the switcher, load it directly
+    if (selectedConvOverride) {
+      const { data: chosen } = await supabase
+        .from("conversations")
+        .select("id, contact_name, attendance_mode, channel, status, contact_phone, contact_lid, last_message_at, bot_state")
+        .eq("id", selectedConvOverride)
+        .maybeSingle();
+      if (chosen) {
+        conversation = chosen;
+        if (chosen.contact_name) contactName = chosen.contact_name;
+        console.log("[CRM-TAB] Using user-selected conversation:", chosen.id);
+      }
+    }
 
     if (entityId) {
       const entityTypeNum = parseInt(entityTypeId);
