@@ -637,34 +637,32 @@ export default function ChatIAPage() {
           )}
         </div>
 
-        {/* Banner: modelo indisponível no servidor Ollama */}
+        {/* Aviso informativo: modelo grande pode demorar a aquecer (1ª utilização) */}
         {modelHealth.status === "unavailable" && (
-          <div className="border-t border-destructive/30 bg-destructive/5 px-4 py-3">
-            <div className="max-w-3xl mx-auto flex items-start gap-3">
-              <AlertTriangle className="h-5 w-5 text-destructive shrink-0 mt-0.5" />
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-destructive">
-                  Modelo indisponível: <span className="font-mono">{selectedAgent?.ai_model}</span>
-                </p>
-                <p className="text-xs text-muted-foreground mt-0.5">
-                  O servidor Ollama não consegue carregar este modelo (sem RAM/VRAM suficiente). Troca para um modelo mais leve para continuar.
-                </p>
+          <div className="border-t border-amber-500/30 bg-amber-500/5 px-4 py-2">
+            <div className="max-w-3xl mx-auto flex items-start gap-2">
+              <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" />
+              <div className="flex-1 min-w-0 text-xs">
+                <span className="font-medium text-amber-700 dark:text-amber-400">
+                  Modelo pesado: <span className="font-mono">{selectedAgent?.ai_model}</span>
+                </span>
+                <span className="text-muted-foreground ml-2">
+                  pode demorar 1–3 min a aquecer na 1ª utilização. Será carregado automaticamente quando enviares a mensagem.
+                </span>
                 {modelHealth.alternatives.length > 0 && (
-                  <div className="flex flex-wrap gap-1.5 mt-2">
-                    {modelHealth.alternatives.map((alt) => (
+                  <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
+                    <span className="text-muted-foreground">Alternativas mais rápidas:</span>
+                    {modelHealth.alternatives.slice(0, 2).map((alt) => (
                       <Button
                         key={alt.name}
                         size="sm"
-                        variant="outline"
+                        variant="ghost"
                         disabled={switchingModel}
                         onClick={() => switchToModel(alt.name)}
-                        className="h-7 text-xs"
+                        className="h-6 text-xs px-2"
                       >
-                        {switchingModel ? (
-                          <Loader2 className="h-3 w-3 animate-spin mr-1" />
-                        ) : null}
-                        Trocar para <span className="font-mono ml-1">{alt.name}</span>
-                        <span className="ml-1 text-muted-foreground">({alt.label})</span>
+                        {switchingModel ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : null}
+                        <span className="font-mono">{alt.name}</span>
                       </Button>
                     ))}
                   </div>
