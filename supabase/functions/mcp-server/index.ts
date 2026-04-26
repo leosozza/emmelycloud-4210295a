@@ -256,19 +256,26 @@ function jsonRpcResponse(id: any, result?: any, error?: any) {
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
 
-  // GET → discovery (server info)
+  // GET → discovery (server info / health)
   if (req.method === "GET") {
     return new Response(
       JSON.stringify({
         name: "emmely-mcp",
         version: "1.0.0",
-        description: "Emmely Cloud MCP Server — acesso programático ao CRM, omnichannel, pagamentos e IA.",
+        description: "Emmely Cloud MCP Server — acesso programático ao CRM, omnichannel, pagamentos, agentes de IA e Bitrix24.",
         protocol: "mcp/2024-11-05",
         transport: "streamable-http",
         endpoints: { rpc: "POST /" },
-        auth: "Bearer emk_live_<api_key>",
+        auth: {
+          type: "api_key",
+          header: "X-API-Key",
+          alternative_headers: ["Authorization: Bearer <key>", "Authorization: ApiKey <key>"],
+          format: "emk_live_<base64url>",
+          generate_at: "https://emmelycloud.lovable.app/api-docs/keys",
+        },
         tools_count: TOOLS.length,
-      }),
+        tools: TOOLS.map((t) => ({ name: t.name, description: t.description })),
+      }, null, 2),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   }
