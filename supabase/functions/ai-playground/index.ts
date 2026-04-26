@@ -182,12 +182,38 @@ serve(async (req) => {
       });
     }
 
+    // ─── Pré-aquecimento Ollama (replica comportamento do OpenWebUI) ───
+    // Para providers locais (não-Lovable), garantimos que o modelo está carregado
+    // ANTES de tentar inferir. Isto evita erros "model failed to load" durante
+    // o chat e suporta swap automático entre modelos no mesmo servidor.
+    if (agent.ai_provider !== "lovable") {
+      try {
+        const warmRes = await supabase.functions.invoke("ollama-warm-model", {
+          body: { model: agent.ai_model },
+        });
+        const warmData = warmRes.data as any;
+        if (warmData && warmData.ready === false) {
+          const friendly = warmData.error
+            || `Não foi possível preparar o modelo **${agent.ai_model}** no servidor Ollama.`;
+          return new Response(JSON.stringify({
+            content: friendly,
+            error: "model_warmup_failed",
+            model: agent.ai_model,
+            load_time_ms: warmData.load_time_ms,
+          }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        }
+        console.log(`[AI-PLAYGROUND] warm-up: ${agent.ai_model} ready=${warmData?.ready} was_loaded=${warmData?.was_loaded} load_ms=${warmData?.load_time_ms}`);
+      } catch (warmErr) {
+        console.warn("[AI-PLAYGROUND] warm-up call failed (continuing anyway):", warmErr);
+      }
+    }
+
     const fetchHeaders: Record<string, string> = { "Content-Type": "application/json" };
     if (authHeader && apiKey) {
       fetchHeaders[authHeader] = `${authPrefix || ""} ${apiKey}`.trim();
     }
 
-    // Timeout (3 min) — modelos locais grandes podem ser lentos
+    // Timeout (3 min) — após warm-up, a inferência em si é rápida
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 180000);
 
