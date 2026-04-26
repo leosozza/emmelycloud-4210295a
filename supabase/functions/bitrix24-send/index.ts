@@ -252,7 +252,38 @@ Deno.serve(async (req) => {
 
   try {
     const body = await req.json();
-    const { message, contactName, contactId, channel, conversationId, connectorId: reqConnectorId, lineId: reqLineId, silent, agentName } = body;
+    const { message, contactName, contactId, channel, conversationId, connectorId: reqConnectorId, lineId: reqLineId, silent, agentName, instanceId } = body;
+
+    // Resolve mapping_id from instance (1:1 instance ↔ Open Line)
+    let resolvedMappingId: string | null = null;
+    let resolvedLineId: number | null = reqLineId || null;
+    if (instanceId && !reqLineId) {
+      const { data: inst } = await supabase
+        .from("channel_instances")
+        .select("config")
+        .eq("id", instanceId)
+        .maybeSingle();
+      const cfg = (inst?.config || {}) as Record<string, any>;
+      resolvedMappingId = cfg.bitrix24_mapping_id || null;
+      if (resolvedMappingId) {
+        const { data: mp } = await supabase
+          .from("bitrix24_channel_mappings")
+          .select("line_id, connector_id, is_active")
+          .eq("id", resolvedMappingId)
+          .maybeSingle();
+        if (mp?.is_active && mp.line_id) {
+          resolvedLineId = mp.line_id;
+        } else {
+          resolvedMappingId = null;
+        }
+      }
+      if (!resolvedLineId) {
+        console.log(`[SEND] Instance ${instanceId} has no active Bitrix24 mapping — skipping`);
+        return new Response(JSON.stringify({ ok: true, skipped: "instance_not_linked_to_open_line", instanceId }), {
+          headers: jsonHeaders,
+        });
+      }
+    }
 
     if (!message || !contactId) {
       return new Response(JSON.stringify({ error: "Missing message or contactId" }), {
