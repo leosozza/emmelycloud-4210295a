@@ -679,18 +679,14 @@ export default function ChatIAPage() {
               value={input}
               onChange={handleTextareaInput}
               onKeyDown={handleKeyDown}
-              placeholder={
-                modelHealth.status === "unavailable"
-                  ? "Troca o modelo para continuar"
-                  : selectedAgent ? "Escreva uma mensagem..." : "Selecione um agente"
-              }
-              disabled={!selectedAgentId || isLoading || modelHealth.status === "unavailable"}
+              placeholder={selectedAgent ? "Escreva uma mensagem..." : "Selecione um agente"}
+              disabled={!selectedAgentId || isLoading}
               className="min-h-[44px] max-h-32 resize-none"
               rows={1}
             />
             <AudioRecordButton
               onTranscript={(text) => setInput((prev) => (prev ? prev + " " : "") + text)}
-              disabled={!selectedAgentId || isLoading || modelHealth.status === "unavailable"}
+              disabled={!selectedAgentId || isLoading}
               showEngineSelector
             />
             {isLoading ? (
@@ -707,7 +703,7 @@ export default function ChatIAPage() {
               <Button
                 size="icon"
                 onClick={handleSend}
-                disabled={!input.trim() || !selectedAgentId || modelHealth.status === "unavailable"}
+                disabled={!input.trim() || !selectedAgentId}
                 className="shrink-0 self-end"
               >
                 <Send className="h-4 w-4" />
