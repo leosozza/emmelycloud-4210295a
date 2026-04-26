@@ -20,6 +20,7 @@ import {
   CheckCheck,
   MessageCircle,
   RefreshCw,
+  ArrowLeft,
 } from "lucide-react";
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { format } from "date-fns";
@@ -40,6 +41,7 @@ interface ChatPanelProps {
   onCloseConversation: () => void;
   onAttendanceModeChange?: (mode: "ai" | "human") => void;
   onScrollToTop?: () => void;
+  onBack?: () => void;
 }
 
 const statusLabels: Record<string, string> = {
@@ -65,6 +67,7 @@ export function ChatPanel({
   onCloseConversation,
   onAttendanceModeChange,
   onScrollToTop,
+  onBack,
 }: ChatPanelProps) {
   const [input, setInput] = useState("");
   const [localMessages, setLocalMessages] = useState<Message[]>([]);
@@ -226,8 +229,19 @@ export function ChatPanel({
   return (
     <div className="flex-1 flex flex-col bg-background">
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 border-b bg-card">
-        <div className="flex items-center gap-3">
+      <div className="flex items-center justify-between px-3 sm:px-4 py-2 sm:py-3 border-b bg-card gap-2">
+        <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
+          {onBack && (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="md:hidden h-9 w-9 -ml-1 shrink-0"
+              onClick={onBack}
+              aria-label="Voltar"
+            >
+              <ArrowLeft className="h-5 w-5" />
+            </Button>
+          )}
           <Avatar className="h-9 w-9">
             <AvatarImage src={conversation.contact_avatar_url ?? undefined} />
             <AvatarFallback className="text-xs bg-primary/10 text-primary">

@@ -209,11 +209,10 @@ export default function AtendimentoPage() {
 
   return (
     <div
-      className="-m-6 flex bg-background"
-      style={{ height: "calc(100vh - 5.5rem)" }}
+      className="-m-3 sm:-m-4 md:-m-6 flex bg-background h-[calc(100vh-3.5rem)] sm:h-[calc(100vh-5.5rem)]"
     >
-      {/* Left panel — conversation list */}
-      <div className="w-[420px] shrink-0 border-r flex flex-col">
+      {/* Left panel — conversation list (hidden on mobile when conversation open) */}
+      <div className={`${selectedId ? "hidden md:flex" : "flex"} w-full md:w-[360px] lg:w-[420px] shrink-0 border-r flex-col`}>
         <ConversationList
           conversations={conversations}
           selectedId={selectedId}
@@ -221,12 +220,13 @@ export default function AtendimentoPage() {
         />
       </div>
 
-      {/* Center panel — chat */}
-      <div className="flex-1 min-w-0 flex flex-col">
+      {/* Center panel — chat (hidden on mobile when no conversation selected) */}
+      <div className={`${selectedId ? "flex" : "hidden md:flex"} flex-1 min-w-0 flex-col`}>
         <ChatPanel
           conversation={selectedConversation}
           messages={messages}
           quickReplies={quickReplies}
+          onBack={() => setSelectedId(undefined)}
           onSendMessage={() => {
             queryClient.invalidateQueries({ queryKey: ["conversations"] });
           }}
@@ -241,8 +241,10 @@ export default function AtendimentoPage() {
         />
       </div>
 
-      {/* Right panel — contact profile */}
-      <ContactProfile conversation={selectedConversation} />
+      {/* Right panel — contact profile (only on desktop) */}
+      <div className="hidden lg:block">
+        <ContactProfile conversation={selectedConversation} />
+      </div>
     </div>
   );
 }

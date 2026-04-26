@@ -145,20 +145,20 @@ const FinanceiroPage = () => {
       </PageHeader>
 
       <Tabs defaultValue="overview" className="space-y-4">
-        <TabsList className="grid w-full grid-cols-5">
-          <TabsTrigger value="overview" className="gap-1.5 text-xs sm:text-sm">
+        <TabsList className="flex w-full overflow-x-auto scrollbar-none justify-start md:grid md:grid-cols-5 h-auto p-1">
+          <TabsTrigger value="overview" className="gap-1.5 text-xs sm:text-sm shrink-0 whitespace-nowrap">
             <LayoutDashboard className="h-4 w-4 hidden sm:inline" /> Visão Geral
           </TabsTrigger>
-          <TabsTrigger value="recebimentos" className="gap-1.5 text-xs sm:text-sm">
+          <TabsTrigger value="recebimentos" className="gap-1.5 text-xs sm:text-sm shrink-0 whitespace-nowrap">
             <Receipt className="h-4 w-4 hidden sm:inline" /> Recebimentos
           </TabsTrigger>
-          <TabsTrigger value="inadimplencia" className="gap-1.5 text-xs sm:text-sm">
+          <TabsTrigger value="inadimplencia" className="gap-1.5 text-xs sm:text-sm shrink-0 whitespace-nowrap">
             <AlertTriangle className="h-4 w-4 hidden sm:inline" /> Inadimplência
           </TabsTrigger>
-          <TabsTrigger value="comissoes" className="gap-1.5 text-xs sm:text-sm">
+          <TabsTrigger value="comissoes" className="gap-1.5 text-xs sm:text-sm shrink-0 whitespace-nowrap">
             <Percent className="h-4 w-4 hidden sm:inline" /> Comissões
           </TabsTrigger>
-          <TabsTrigger value="ranking" className="gap-1.5 text-xs sm:text-sm">
+          <TabsTrigger value="ranking" className="gap-1.5 text-xs sm:text-sm shrink-0 whitespace-nowrap">
             <Trophy className="h-4 w-4 hidden sm:inline" /> Ranking
           </TabsTrigger>
         </TabsList>
@@ -169,9 +169,9 @@ const FinanceiroPage = () => {
 
         <TabsContent value="recebimentos">
           <Card>
-            <CardHeader className="flex flex-row items-center justify-between">
+            <CardHeader className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
               <CardTitle className="text-base">Parcelas</CardTitle>
-              <div className="flex gap-1">
+              <div className="flex flex-wrap gap-1">
                 {["all", "paga", "pendente", "atrasada"].map((st) => (
                   <Button key={st} size="sm" variant={statusFilter === st ? "default" : "outline"} className="text-xs h-7 px-2"
                     onClick={() => setStatusFilter(st)}>
@@ -180,7 +180,7 @@ const FinanceiroPage = () => {
                 ))}
               </div>
             </CardHeader>
-            <CardContent className="p-0">
+            <CardContent className="p-0 overflow-x-auto">
               {isLoading ? (
                 <div className="p-8 text-center text-muted-foreground">Carregando...</div>
               ) : transactions.length === 0 ? (

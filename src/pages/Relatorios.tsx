@@ -31,22 +31,22 @@ const RelatoriosPage = () => {
       <ReportFiltersBar filters={filters} onFiltersChange={setFilters} profiles={profiles || []} />
 
       <Tabs defaultValue="leads" className="space-y-4">
-        <TabsList className="grid w-full grid-cols-4">
-          <TabsTrigger value="leads" className="gap-1.5">
+        <TabsList className="flex w-full overflow-x-auto scrollbar-none justify-start md:grid md:grid-cols-4 h-auto p-1">
+          <TabsTrigger value="leads" className="gap-1.5 shrink-0 whitespace-nowrap">
             <BarChart3 className="h-3.5 w-3.5" />
-            <span className="hidden sm:inline">Leads</span>
+            <span>Leads</span>
           </TabsTrigger>
-          <TabsTrigger value="financeiro" className="gap-1.5">
+          <TabsTrigger value="financeiro" className="gap-1.5 shrink-0 whitespace-nowrap">
             <DollarSign className="h-3.5 w-3.5" />
-            <span className="hidden sm:inline">Financeiro</span>
+            <span>Financeiro</span>
           </TabsTrigger>
-          <TabsTrigger value="atendimento" className="gap-1.5">
+          <TabsTrigger value="atendimento" className="gap-1.5 shrink-0 whitespace-nowrap">
             <MessageSquare className="h-3.5 w-3.5" />
-            <span className="hidden sm:inline">Atendimento</span>
+            <span>Atendimento</span>
           </TabsTrigger>
-          <TabsTrigger value="performance" className="gap-1.5">
+          <TabsTrigger value="performance" className="gap-1.5 shrink-0 whitespace-nowrap">
             <Award className="h-3.5 w-3.5" />
-            <span className="hidden sm:inline">Performance</span>
+            <span>Performance</span>
           </TabsTrigger>
         </TabsList>
 

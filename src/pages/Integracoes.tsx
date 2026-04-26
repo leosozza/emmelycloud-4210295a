@@ -1949,14 +1949,14 @@ function InstancesTab() {
   return (
     <div className="space-y-4">
       {/* Header with create button */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
           <h3 className="text-sm font-semibold">Instâncias de Canal</h3>
           <p className="text-xs text-muted-foreground">Crie e configure instâncias de WhatsApp (API Oficial Meta) ou Instagram.</p>
         </div>
         <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
           <DialogTrigger asChild>
-            <Button size="sm" className="gap-1.5">
+            <Button size="sm" className="gap-1.5 w-full sm:w-auto">
               <Plus className="h-4 w-4" />
               Nova Instância
             </Button>
@@ -2179,7 +2179,7 @@ function InstancesTab() {
                 )}
 
                 {/* Action buttons */}
-                <div className="flex gap-2 pt-1">
+                <div className="flex flex-wrap gap-2 pt-1">
                   {isWuzapi ? (
                     <>
                       {!Boolean(wuzapiStatus._global?.logged_in ?? wuzapiStatus._global?.connected) && (
@@ -2995,36 +2995,38 @@ function MapeamentoTab() {
 
 export default function IntegracoesPage() {
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 sm:space-y-6">
       <PageHeader title="Central de Integrações" description="Gerencie todas as integrações e conectores do sistema" />
 
       <Tabs defaultValue="instancias" className="w-full">
-        <TabsList className="grid w-full grid-cols-7">
-          <TabsTrigger value="instancias" className="flex items-center gap-2">
+        {/* Mobile: scroll horizontal; Desktop: grid 7 colunas */}
+        <TabsList className="flex w-full overflow-x-auto scrollbar-none justify-start md:grid md:grid-cols-7 h-auto p-1">
+          <TabsTrigger value="instancias" className="flex items-center gap-1.5 sm:gap-2 shrink-0 text-xs sm:text-sm whitespace-nowrap">
             <Server className="h-4 w-4" />
             Instâncias
           </TabsTrigger>
-          <TabsTrigger value="crm" className="flex items-center gap-2">
+          <TabsTrigger value="crm" className="flex items-center gap-1.5 sm:gap-2 shrink-0 text-xs sm:text-sm whitespace-nowrap">
             <Plug className="h-4 w-4" />
             CRM
           </TabsTrigger>
-          <TabsTrigger value="mapeamento" className="flex items-center gap-2">
+          <TabsTrigger value="mapeamento" className="flex items-center gap-1.5 sm:gap-2 shrink-0 text-xs sm:text-sm whitespace-nowrap">
             <Link className="h-4 w-4" />
             Mapeamento
           </TabsTrigger>
-          <TabsTrigger value="omnichannel" className="flex items-center gap-2">
+          <TabsTrigger value="omnichannel" className="flex items-center gap-1.5 sm:gap-2 shrink-0 text-xs sm:text-sm whitespace-nowrap">
             <MessageCircle className="h-4 w-4" />
-            Omni Channel
+            <span className="hidden xs:inline sm:inline">Omni Channel</span>
+            <span className="xs:hidden sm:hidden">Omni</span>
           </TabsTrigger>
-          <TabsTrigger value="chatbot" className="flex items-center gap-2">
+          <TabsTrigger value="chatbot" className="flex items-center gap-1.5 sm:gap-2 shrink-0 text-xs sm:text-sm whitespace-nowrap">
             <Bot className="h-4 w-4" />
             Chatbot
           </TabsTrigger>
-          <TabsTrigger value="pagamentos" className="flex items-center gap-2">
+          <TabsTrigger value="pagamentos" className="flex items-center gap-1.5 sm:gap-2 shrink-0 text-xs sm:text-sm whitespace-nowrap">
             <CreditCard className="h-4 w-4" />
             Pagamentos
           </TabsTrigger>
-          <TabsTrigger value="ia" className="flex items-center gap-2">
+          <TabsTrigger value="ia" className="flex items-center gap-1.5 sm:gap-2 shrink-0 text-xs sm:text-sm whitespace-nowrap">
             <Bot className="h-4 w-4" />
             IA
           </TabsTrigger>
@@ -3041,3 +3043,4 @@ export default function IntegracoesPage() {
     </div>
   );
 }
+

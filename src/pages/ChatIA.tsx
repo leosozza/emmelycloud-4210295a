@@ -6,14 +6,17 @@ import { MarkdownMessage } from "@/components/chat/MarkdownMessage";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
-import { Send, Loader2, Sparkles, Square, AlertTriangle, Bot, BookOpen } from "lucide-react";
+import { Send, Loader2, Sparkles, Square, AlertTriangle, Bot, BookOpen, Menu } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { AudioRecordButton } from "@/components/chat/AudioRecordButton";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { buildChatVirtualItems } from "@/lib/chatLayout";
 import { useCanvasAutoResize } from "@/hooks/useCanvasAutoResize";
+import { useIsMobile } from "@/hooks/use-mobile";
+
 
 interface Message {
   role: "user" | "assistant";
@@ -51,6 +54,8 @@ function isHeavyModel(model: string | null | undefined): boolean {
 export default function ChatIAPage() {
   const { session: authSession } = useAuthContext();
   const userId = authSession?.user?.id;
+  const isMobile = useIsMobile();
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const [agents, setAgents] = useState<Agent[]>([]);
   const [selectedAgentId, setSelectedAgentId] = useState("");
@@ -470,20 +475,49 @@ export default function ChatIAPage() {
         : "Modelo grande, aguarda…"
     : null;
 
-  return (
-    <div className="flex h-[calc(100vh-5rem)] -m-6">
-      <ChatSidebar
-        sessions={sessions.map((s) => ({ id: s.id, title: s.title, updated_at: s.updated_at }))}
-        activeSessionId={activeSessionId}
-        agents={agents}
-        selectedAgentId={selectedAgentId}
-        onSelectSession={selectSession}
-        onNewSession={createNewSession}
-        onDeleteSession={deleteSession}
-        onSelectAgent={(id) => { setSelectedAgentId(id); createNewSession(); }}
-      />
+  const sidebarComponent = (
+    <ChatSidebar
+      sessions={sessions.map((s) => ({ id: s.id, title: s.title, updated_at: s.updated_at }))}
+      activeSessionId={activeSessionId}
+      agents={agents}
+      selectedAgentId={selectedAgentId}
+      onSelectSession={(id) => { selectSession(id); if (isMobile) setSidebarOpen(false); }}
+      onNewSession={() => { createNewSession(); if (isMobile) setSidebarOpen(false); }}
+      onDeleteSession={deleteSession}
+      onSelectAgent={(id) => { setSelectedAgentId(id); createNewSession(); if (isMobile) setSidebarOpen(false); }}
+    />
+  );
 
-      <div className="flex-1 flex flex-col">
+  return (
+    <div className="flex h-[calc(100vh-3.5rem)] sm:h-[calc(100vh-5rem)] -m-3 sm:-m-4 md:-m-6">
+      {/* Desktop sidebar */}
+      <div className="hidden md:block">
+        {sidebarComponent}
+      </div>
+
+      {/* Mobile sidebar (drawer) */}
+      <Sheet open={sidebarOpen} onOpenChange={setSidebarOpen}>
+        <SheetContent side="left" className="p-0 w-72 max-w-[85vw]">
+          {sidebarComponent}
+        </SheetContent>
+      </Sheet>
+
+      <div className="flex-1 flex flex-col min-w-0">
+        {/* Mobile top bar with menu trigger */}
+        <div className="md:hidden border-b bg-background flex items-center gap-2 px-3 py-2">
+          <SheetTrigger asChild onClick={() => setSidebarOpen(true)}>
+            <Button variant="ghost" size="icon" className="h-9 w-9 -ml-1" aria-label="Conversas">
+              <Menu className="h-5 w-5" />
+            </Button>
+          </SheetTrigger>
+          <span className="text-sm font-medium truncate flex-1">
+            {selectedAgent?.name || "Chat IA"}
+          </span>
+          <Button size="sm" variant="outline" onClick={() => { createNewSession(); }} className="h-8 text-xs">
+            <Sparkles className="h-3.5 w-3.5 mr-1" /> Novo
+          </Button>
+        </div>
+
         {/* Model info bar */}
         {selectedAgent?.ai_model && (
           <div className="border-b bg-muted/30 px-4 py-1.5 flex items-center gap-2 text-xs text-muted-foreground flex-wrap">
@@ -565,7 +599,7 @@ export default function ChatIAPage() {
             </div>
           ) : (
             <div
-              className="max-w-3xl mx-auto py-6 px-4"
+              className="max-w-3xl mx-auto py-4 sm:py-6 px-3 sm:px-4"
               style={{ height: `${virtualizer.getTotalSize()}px`, position: "relative" }}
             >
               {virtualizer.getVirtualItems().map((vRow) => {
@@ -673,15 +707,15 @@ export default function ChatIAPage() {
         )}
 
         {/* Input */}
-        <div className="border-t bg-background p-4">
-          <div className="max-w-3xl mx-auto flex gap-2">
+        <div className="border-t bg-background p-2 sm:p-4 pb-[max(0.5rem,env(safe-area-inset-bottom))]">
+          <div className="max-w-3xl mx-auto flex gap-1.5 sm:gap-2 items-end">
             <Textarea
               value={input}
               onChange={handleTextareaInput}
               onKeyDown={handleKeyDown}
               placeholder={selectedAgent ? "Escreva uma mensagem..." : "Selecione um agente"}
               disabled={!selectedAgentId || isLoading}
-              className="min-h-[44px] max-h-32 resize-none"
+              className="min-h-[44px] max-h-32 resize-none text-base sm:text-sm"
               rows={1}
             />
             <AudioRecordButton
@@ -694,7 +728,7 @@ export default function ChatIAPage() {
                 size="icon"
                 variant="destructive"
                 onClick={handleStop}
-                className="shrink-0 self-end"
+                className="shrink-0 h-11 w-11"
                 title="Parar geração"
               >
                 <Square className="h-4 w-4" />
@@ -704,7 +738,7 @@ export default function ChatIAPage() {
                 size="icon"
                 onClick={handleSend}
                 disabled={!input.trim() || !selectedAgentId}
-                className="shrink-0 self-end"
+                className="shrink-0 h-11 w-11"
               >
                 <Send className="h-4 w-4" />
               </Button>

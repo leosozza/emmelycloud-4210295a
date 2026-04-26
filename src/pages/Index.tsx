@@ -121,22 +121,22 @@ const Index = () => {
   };
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6 sm:space-y-8">
       {/* Header */}
-      <div className="flex items-center justify-between flex-wrap gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-foreground">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+        <div className="min-w-0">
+          <h1 className="text-xl sm:text-2xl font-bold text-foreground truncate">
             {getGreeting()}{userName ? `, ${userName}` : ""}
           </h1>
           <div className="flex items-center gap-2 mt-1">
-            <p className="text-sm text-muted-foreground capitalize">{todayFormatted}</p>
-            <div className="flex items-center gap-1.5 text-xs text-success font-medium">
+            <p className="text-xs sm:text-sm text-muted-foreground capitalize truncate">{todayFormatted}</p>
+            <div className="flex items-center gap-1.5 text-xs text-success font-medium shrink-0">
               <div className="h-1.5 w-1.5 rounded-full bg-success animate-live-pulse" />
               live
             </div>
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <PeriodFilter value={period} onChange={setPeriod} />
           <DashboardCustomizer
             widgets={widgets}
@@ -149,7 +149,7 @@ const Index = () => {
 
       <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
         <SortableContext items={visibleWidgets} strategy={verticalListSortingStrategy}>
-          <div className="space-y-6">
+          <div className="space-y-4 sm:space-y-6">
             {fullWidgets.map((id) => (
               <SortableWidget key={id} id={id}>
                 {renderWidget(id)}
@@ -157,7 +157,7 @@ const Index = () => {
             ))}
 
             {chartWidgets.length > 0 && (
-              <div className="grid gap-5 md:grid-cols-2">
+              <div className="grid gap-4 sm:gap-5 md:grid-cols-2">
                 {chartWidgets.map((id) => (
                   <SortableWidget key={id} id={id}>
                     {renderWidget(id)}
@@ -167,7 +167,7 @@ const Index = () => {
             )}
 
             {(bottomLeft.length > 0 || bottomRight.length > 0) && (
-              <div className="grid gap-6 lg:grid-cols-[1fr_300px]">
+              <div className="grid gap-4 sm:gap-6 lg:grid-cols-[1fr_300px]">
                 <div className="space-y-6">
                   {bottomLeft.map((id) => (
                     <SortableWidget key={id} id={id}>
