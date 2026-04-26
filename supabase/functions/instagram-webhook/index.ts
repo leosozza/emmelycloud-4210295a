@@ -224,7 +224,16 @@ Deno.serve(async (req) => {
             }),
           }).catch((e) => console.error("[IG-WEBHOOK] Flow engine error:", e));
 
-          // Fire and forget: forward to Bitrix24
+          // Fire and forget: forward to Bitrix24 — resolve IG instance for routing
+          const { data: igActive } = await supabase
+            .from("channel_instances")
+            .select("id")
+            .eq("channel_type", "instagram")
+            .eq("status", "active")
+            .order("created_at")
+            .limit(1)
+            .maybeSingle();
+
           fetch(`${supabaseUrl}/functions/v1/bitrix24-send`, {
             method: "POST",
             headers: {
@@ -237,6 +246,7 @@ Deno.serve(async (req) => {
               contactId: senderId,
               channel: "instagram",
               conversationId,
+              instanceId: igActive?.id || null,
             }),
           }).catch((e) => console.error("[IG-WEBHOOK] Bitrix24 forward error:", e));
         }
