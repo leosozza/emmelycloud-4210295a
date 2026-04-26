@@ -707,15 +707,15 @@ export default function ChatIAPage() {
         )}
 
         {/* Input */}
-        <div className="border-t bg-background p-4">
-          <div className="max-w-3xl mx-auto flex gap-2">
+        <div className="border-t bg-background p-2 sm:p-4 pb-[max(0.5rem,env(safe-area-inset-bottom))]">
+          <div className="max-w-3xl mx-auto flex gap-1.5 sm:gap-2 items-end">
             <Textarea
               value={input}
               onChange={handleTextareaInput}
               onKeyDown={handleKeyDown}
               placeholder={selectedAgent ? "Escreva uma mensagem..." : "Selecione um agente"}
               disabled={!selectedAgentId || isLoading}
-              className="min-h-[44px] max-h-32 resize-none"
+              className="min-h-[44px] max-h-32 resize-none text-base sm:text-sm"
               rows={1}
             />
             <AudioRecordButton
@@ -728,7 +728,7 @@ export default function ChatIAPage() {
                 size="icon"
                 variant="destructive"
                 onClick={handleStop}
-                className="shrink-0 self-end"
+                className="shrink-0 h-11 w-11"
                 title="Parar geração"
               >
                 <Square className="h-4 w-4" />
@@ -738,7 +738,7 @@ export default function ChatIAPage() {
                 size="icon"
                 onClick={handleSend}
                 disabled={!input.trim() || !selectedAgentId}
-                className="shrink-0 self-end"
+                className="shrink-0 h-11 w-11"
               >
                 <Send className="h-4 w-4" />
               </Button>
