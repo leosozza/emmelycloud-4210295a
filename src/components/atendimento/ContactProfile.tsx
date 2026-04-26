@@ -2,13 +2,20 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { ChannelIcon } from "./ChannelIcon";
-import { Phone, Mail, Instagram, Link2, User, UserPlus, ChevronDown, Sparkles, Loader2, FileSearch, ExternalLink } from "lucide-react";
+import { Phone, Mail, Instagram, Link2, User, ChevronDown, Sparkles, Loader2, FileSearch, ExternalLink, Save, Briefcase, Layers, X } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useSummarizeConversation, useExtractLeadData } from "@/hooks/useAiAutomation";
+import { toast } from "sonner";
 
 type Channel = "whatsapp" | "instagram" | "email" | "webchat";
 
@@ -26,6 +33,7 @@ interface ContactProfileProps {
     client_id?: string | null;
     bot_state?: Record<string, any> | null;
   } | null;
+  onClose?: () => void;
 }
 
 function CollapsibleSection({ title, defaultOpen = false, children }: { title: string; defaultOpen?: boolean; children: React.ReactNode }) {
