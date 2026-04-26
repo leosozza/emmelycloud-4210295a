@@ -297,7 +297,7 @@ Deno.serve(async (req) => {
       } catch {}
     }
 
-    console.log(`[WUZAPI-WEBHOOK] Processed message from ${phone} in conversation ${conversationId}`);
+    console.log(`[WUZAPI-WEBHOOK] Processed message — phone:${phone || "-"} lid:${lidId || "-"} conv:${conversationId}`);
 
     return new Response(JSON.stringify({ ok: true, conversation_id: conversationId }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
