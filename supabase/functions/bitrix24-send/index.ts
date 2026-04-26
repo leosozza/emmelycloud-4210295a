@@ -340,7 +340,15 @@ Deno.serve(async (req) => {
 
     let sentCount = 0;
     const effectiveConnectorId = reqConnectorId || DEFAULT_CONNECTOR_ID;
-    const sendOptions = { silent: !!silent, agentName: agentName || undefined, contactPhone: contactPhone || undefined };
+    const sendOptions = {
+      silent: !!silent,
+      agentName: agentName || undefined,
+      contactPhone: contactPhone || undefined,
+      mediaUrl: mediaUrl || undefined,
+      mediaType: mediaType || undefined,
+      mediaFilename: mediaFilename || undefined,
+      mediaMime: mediaMime || undefined,
+    };
 
     for (const integration of integrations) {
       try {
