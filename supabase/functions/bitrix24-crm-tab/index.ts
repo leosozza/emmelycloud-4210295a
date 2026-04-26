@@ -534,6 +534,7 @@ function renderHtml(opts: {
 
   <!-- Tab: Conversa -->
   <div id="tab-conversa" class="tab-content active">
+    ${switcherHtml}
     <div id="messages" style="flex:1;overflow-y:auto;padding:12px 16px;display:flex;flex-direction:column">
       ${conversationId ? messagesHtml : startConvHtml}
     </div>
