@@ -1110,6 +1110,8 @@ Deno.serve(async (req) => {
     console.error("[WORKER] Fatal error:", error);
     return new Response(JSON.stringify({ error: "Internal error" }), {
       status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
 });
 
 // ─────────────────────────────────────────────────────────────────────
@@ -1200,5 +1202,4 @@ async function handleDynamicItemUpdate(supabase: any, integration: any, payload:
     console.error("[WORKER] handleDynamicItemUpdate error:", e);
   }
 }
-  }
-});
+
