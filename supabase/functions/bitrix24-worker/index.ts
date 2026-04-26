@@ -458,16 +458,20 @@ async function handleConnectorMessage(supabase: any, integration: any, payload: 
 
     // Find conversation - try phone, LID and instagram identifiers.
     // contactId from Bitrix can be either a real phone or the BR @lid hash (without "@lid" suffix).
+    // Use order+limit instead of maybeSingle: if duplicates exist, pick the most recently active.
     const lidStripped = contactId.replace(/@lid$/, "");
-    const { data: conversation } = await supabase
+    const { data: convList } = await supabase
       .from("conversations")
-      .select("id, contact_phone, contact_lid, contact_instagram, channel")
+      .select("id, contact_phone, contact_lid, contact_instagram, channel, last_message_at, created_at")
       .or(
         `contact_phone.eq.${contactId},contact_phone.eq.${contactId}@lid,` +
         `contact_lid.eq.${lidStripped},contact_lid.eq.${lidStripped}@lid,` +
         `contact_instagram.eq.${contactId}`
       )
-      .maybeSingle();
+      .order("last_message_at", { ascending: false, nullsFirst: false })
+      .order("created_at", { ascending: false })
+      .limit(1);
+    const conversation = convList?.[0] || null;
 
     if (conversation) {
       const matchVia = conversation.contact_phone === contactId
