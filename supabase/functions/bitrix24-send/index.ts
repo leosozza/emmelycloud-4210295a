@@ -137,7 +137,15 @@ async function sendWithFallbacks(
   message: string,
   channel: string,
   connectorId: string = DEFAULT_CONNECTOR_ID,
-  options: { silent?: boolean; agentName?: string; contactPhone?: string } = {}
+  options: {
+    silent?: boolean;
+    agentName?: string;
+    contactPhone?: string;
+    mediaUrl?: string;
+    mediaType?: string;
+    mediaFilename?: string;
+    mediaMime?: string;
+  } = {}
 ): Promise<boolean> {
   // 0. Ensure connector is active on this line
   try {
@@ -184,6 +192,19 @@ async function sendWithFallbacks(
     }
   }
 
+  // Build message object — attach files when media URL is present
+  const messageObj: Record<string, any> = {
+    text: message || "",
+  };
+  if (options.mediaUrl) {
+    messageObj.files = [{
+      name: options.mediaFilename || "arquivo",
+      link: options.mediaUrl,
+      type: options.mediaType || "file",
+      mime: options.mediaMime || undefined,
+    }];
+  }
+
   // 1. Primary: imconnector.send.messages
   const primary = await callBitrix(clientEndpoint, accessToken, "imconnector.send.messages", {
     CONNECTOR: connectorId,
@@ -192,9 +213,7 @@ async function sendWithFallbacks(
       {
         im_id: Date.now().toString(),
         user: userObj,
-        message: {
-          text: message,
-        },
+        message: messageObj,
         chat: {
           id: contactId,
         },
@@ -263,7 +282,7 @@ Deno.serve(async (req) => {
 
   try {
     const body = await req.json();
-    const { message, contactName, contactId, contactPhone, channel, conversationId, connectorId: reqConnectorId, lineId: reqLineId, silent, agentName, instanceId } = body;
+    const { message, contactName, contactId, contactPhone, channel, conversationId, connectorId: reqConnectorId, lineId: reqLineId, silent, agentName, instanceId, mediaUrl, mediaType, mediaFilename, mediaMime } = body;
 
     // Resolve mapping_id from instance (1:1 instance ↔ Open Line)
     let resolvedMappingId: string | null = null;
@@ -296,8 +315,9 @@ Deno.serve(async (req) => {
       }
     }
 
-    if (!message || !contactId) {
-      return new Response(JSON.stringify({ error: "Missing message or contactId" }), {
+    // Allow media-only messages (no text) when a mediaUrl is provided
+    if ((!message && !mediaUrl) || !contactId) {
+      return new Response(JSON.stringify({ error: "Missing message/media or contactId" }), {
         status: 400,
         headers: jsonHeaders,
       });
@@ -320,7 +340,15 @@ Deno.serve(async (req) => {
 
     let sentCount = 0;
     const effectiveConnectorId = reqConnectorId || DEFAULT_CONNECTOR_ID;
-    const sendOptions = { silent: !!silent, agentName: agentName || undefined, contactPhone: contactPhone || undefined };
+    const sendOptions = {
+      silent: !!silent,
+      agentName: agentName || undefined,
+      contactPhone: contactPhone || undefined,
+      mediaUrl: mediaUrl || undefined,
+      mediaType: mediaType || undefined,
+      mediaFilename: mediaFilename || undefined,
+      mediaMime: mediaMime || undefined,
+    };
 
     for (const integration of integrations) {
       try {

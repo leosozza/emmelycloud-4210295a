@@ -326,7 +326,51 @@ async function handleConnectorMessage(supabase: any, integration: any, payload: 
     const messageText = messageObj.text || messageObj.TEXT || msg.message?.text || "";
     const messageId = msg.im_id || msg.ID || "";
 
-    if (!messageText) continue;
+    // Detect file attachments — Bitrix may deliver them in different shapes per tenant
+    type B24File = { name: string; link: string; type?: string; mime?: string; size?: number };
+    const detectedFiles: B24File[] = [];
+    const filesRaw = messageObj.files || messageObj.FILES || messageObj.params?.FILES || messageObj.PARAMS?.FILES || msg.files || [];
+    if (filesRaw && (Array.isArray(filesRaw) || typeof filesRaw === "object")) {
+      const arr = Array.isArray(filesRaw) ? filesRaw : Object.values(filesRaw);
+      for (const f of arr as any[]) {
+        if (!f) continue;
+        const link = f.link || f.LINK || f.url || f.URL || f.urlMachine || f.URL_MACHINE || f.urlDownload || "";
+        const name = f.name || f.NAME || f.fileName || f.FILE_NAME || "arquivo";
+        const type = (f.type || f.TYPE || "").toString().toLowerCase();
+        const mime = f.mime || f.MIME || f.contentType || f.CONTENT_TYPE || "";
+        const size = Number(f.size || f.SIZE || 0) || undefined;
+        if (link && /^https?:\/\//i.test(link)) {
+          detectedFiles.push({ name, link, type, mime, size });
+        }
+      }
+    }
+    // Also accept attachments structure
+    const attachRaw = messageObj.attach || messageObj.ATTACH || msg.attach;
+    if (attachRaw && Array.isArray(attachRaw)) {
+      for (const at of attachRaw) {
+        const blocks = at?.BLOCKS || at?.blocks || [];
+        for (const b of blocks) {
+          const fileBlock = b?.FILE || b?.file;
+          if (fileBlock) {
+            const link = fileBlock.LINK || fileBlock.link || "";
+            if (link && /^https?:\/\//i.test(link)) {
+              detectedFiles.push({
+                name: fileBlock.NAME || fileBlock.name || "arquivo",
+                link,
+                type: (fileBlock.TYPE || fileBlock.type || "").toString().toLowerCase(),
+              });
+            }
+          }
+        }
+      }
+    }
+
+    if (detectedFiles.length > 0) {
+      console.log(`[WORKER] Detected ${detectedFiles.length} file(s) in message ${messageId}`);
+    }
+
+    // Skip empty messages with neither text nor files
+    if (!messageText && detectedFiles.length === 0) continue;
 
     // Dedup: check if this message was sent by Emmely (echo prevention)
     if (messageId) {
@@ -353,8 +397,8 @@ async function handleConnectorMessage(supabase: any, integration: any, payload: 
       } catch (_e) { /* ignore dedup cache errors */ }
     }
 
-    // Skip bot messages
-    if (isBotMessage(messageText)) {
+    // Skip bot messages (only when text is present and there are no files)
+    if (messageText && detectedFiles.length === 0 && isBotMessage(messageText)) {
       console.log("[WORKER] Skipping bot message");
       try {
         const accessToken = await ensureValidToken(supabase, integration);
@@ -374,7 +418,7 @@ async function handleConnectorMessage(supabase: any, integration: any, payload: 
     }
 
     // Clean BBCode for external channels
-    const cleanText = stripBBCode(messageText);
+    const cleanText = stripBBCode(messageText || "");
 
     // Find channel mapping
     const { data: mapping } = await supabase
@@ -436,19 +480,64 @@ async function handleConnectorMessage(supabase: any, integration: any, payload: 
 
     if (conversation) {
       try {
-        const sendRes = await fetch(`${supabaseUrl}/functions/v1/message-send`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "Authorization": `Bearer ${serviceKey}`,
-          },
-          body: JSON.stringify({
+        // Helper: classify mime → message_type used by message-send
+        const mimeToType = (mime: string, fallbackType: string): string => {
+          const m = (mime || "").toLowerCase();
+          const t = (fallbackType || "").toLowerCase();
+          if (m.startsWith("image/") || t === "image" || t === "picture") return "image";
+          if (m.startsWith("audio/") || t === "audio" || t === "voice") return "audio";
+          if (m.startsWith("video/") || t === "video") return "video";
+          return "document";
+        };
+
+        // 1. If text present, send it first
+        if (cleanText) {
+          const sendRes = await fetch(`${supabaseUrl}/functions/v1/message-send`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Authorization": `Bearer ${serviceKey}`,
+            },
+            body: JSON.stringify({
+              conversation_id: conversation.id,
+              content: cleanText,
+            }),
+          });
+          const sendResult = await sendRes.json().catch(() => ({}));
+          console.log("[WORKER] message-send (text) result:", JSON.stringify(sendResult).substring(0, 200));
+        }
+
+        // 2. Send each detected file as its own message
+        for (const f of detectedFiles) {
+          const msgType = mimeToType(f.mime || "", f.type || "");
+          const caption = !cleanText ? "" : ""; // caption already sent as separate text message
+          const filePayload = {
             conversation_id: conversation.id,
-            content: cleanText,
-          }),
-        });
-        const sendResult = await sendRes.json();
-        console.log("[WORKER] message-send result:", JSON.stringify(sendResult).substring(0, 200));
+            content: caption || (msgType === "document" ? f.name : ""),
+            message_type: msgType,
+            resolvedInteractiveData: { url: f.link, filename: f.name },
+          };
+          console.log(`[WORKER] Forwarding file (${msgType}): ${f.name} → ${f.link.substring(0, 80)}`);
+          try {
+            const fileRes = await fetch(`${supabaseUrl}/functions/v1/message-send`, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                "Authorization": `Bearer ${serviceKey}`,
+              },
+              body: JSON.stringify(filePayload),
+            });
+            const fileResult = await fileRes.json().catch(() => ({}));
+            console.log("[WORKER] message-send (file) result:", JSON.stringify(fileResult).substring(0, 200));
+            await debugLog(supabase, integration.id, "media_forwarded_to_channel", "outbound", {
+              conversationId: conversation.id, channel: conversation.channel,
+              fileName: f.name, mime: f.mime, type: msgType,
+            });
+          } catch (fe) {
+            console.error("[WORKER] File forward error:", fe);
+            await debugLog(supabase, integration.id, "media_forward_error", "outbound", { fileName: f.name }, String(fe));
+          }
+        }
 
         // Delivery ACK — estrutura correta conforme documentação oficial
         const accessToken = await ensureValidToken(supabase, integration);
@@ -466,7 +555,7 @@ async function handleConnectorMessage(supabase: any, integration: any, payload: 
 
         await debugLog(supabase, integration.id, "message_forwarded", "outbound", {
           conversationId: conversation.id, channel: conversation.channel,
-          messageText: cleanText.substring(0, 100),
+          messageText: cleanText.substring(0, 100), fileCount: detectedFiles.length,
         });
       } catch (e) {
         console.error("[WORKER] Forward error:", e);
