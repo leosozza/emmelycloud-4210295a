@@ -418,6 +418,21 @@ function renderHtml(opts: {
   // Agents JSON for JS
   const agentsJson = JSON.stringify(agents.map((a: any) => ({ id: a.id, name: a.name })));
 
+  // Conversation switcher (when multiple conversations match the same contact)
+  const switcherHtml = conversationCandidates.length > 1 ? `
+    <div style="background:#f9fafb;border-bottom:1px solid #f0f1f3;padding:6px 12px;display:flex;align-items:center;gap:6px;flex-shrink:0">
+      <span style="font-size:11px;color:#959ca4;white-space:nowrap">${conversationCandidates.length} conversas:</span>
+      <select id="conv-switcher" onchange="switchConversation(this.value)" style="flex:1;padding:4px 8px;border:1px solid #dfe0e3;border-radius:6px;font-size:11px;color:#333840;background:#fff;outline:none;cursor:pointer">
+        ${conversationCandidates.map((c: any) => {
+          const lastTs = c.last_message_at ? formatTime(c.last_message_at) : "—";
+          const phone = c.contact_phone || c.contact_lid || "?";
+          const statusLabel = c.status === "fechada" ? "fechada" : (c.attendance_mode === "human" ? "humano" : "bot");
+          const sel = c.id === conversationId ? " selected" : "";
+          return `<option value="${c.id}"${sel}>${(c.contact_name || "?").replace(/</g, "&lt;")} · ${phone} · ${statusLabel} · ${lastTs}</option>`;
+        }).join("")}
+      </select>
+    </div>` : "";
+
   return `<!DOCTYPE html>
 <html lang="pt">
 <head>
