@@ -89,36 +89,68 @@ function extractEmails(entity: any): string[] {
   return emails;
 }
 
-async function findConversationByPhone(supabase: any, phones: string[]): Promise<any> {
-  for (const phone of phones) {
-    if (phone.length < 8) continue;
-    const suffixes = [phone, phone.slice(-9), phone.slice(-8)].filter((s, i, arr) => arr.indexOf(s) === i);
-    for (const suffix of suffixes) {
-      // Try active first
-      const { data: active } = await supabase
-        .from("conversations")
-        .select("id, contact_name, attendance_mode, channel, status, contact_phone, bot_state")
-        .ilike("contact_phone", `%${suffix}%`)
-        .neq("status", "fechada")
-        .order("last_message_at", { ascending: false })
-        .limit(1)
-        .maybeSingle();
-      if (active) return active;
-      // Fallback: any status (including fechada)
-      const { data: anyConv } = await supabase
-        .from("conversations")
-        .select("id, contact_name, attendance_mode, channel, status, contact_phone, bot_state")
-        .ilike("contact_phone", `%${suffix}%`)
-        .order("last_message_at", { ascending: false })
-        .limit(1)
-        .maybeSingle();
-      if (anyConv) {
-        console.log("[CRM-TAB] Phone match found closed conversation:", anyConv.id, "status:", anyConv.status);
-        return anyConv;
-      }
+// Returns ALL whatsapp conversations matching any phone variant, sorted by active+recency.
+async function findConversationsByPhone(supabase: any, phones: string[]): Promise<any[]> {
+  const cleaned = phones
+    .map((p) => String(p || "").replace(/\D/g, ""))
+    .filter((p) => p.length >= 8);
+  if (cleaned.length === 0) return [];
+
+  // Build a set of suffix variants for fuzzy matching (full, last 11, last 10, last 9, last 8)
+  const variants = new Set<string>();
+  for (const p of cleaned) {
+    variants.add(p);
+    if (p.length >= 11) variants.add(p.slice(-11));
+    if (p.length >= 10) variants.add(p.slice(-10));
+    if (p.length >= 9) variants.add(p.slice(-9));
+    if (p.length >= 8) variants.add(p.slice(-8));
+  }
+
+  const collected = new Map<string, any>();
+  for (const variant of variants) {
+    const { data } = await supabase
+      .from("conversations")
+      .select("id, contact_name, attendance_mode, channel, status, contact_phone, contact_lid, last_message_at, bot_state")
+      .eq("channel", "whatsapp")
+      .ilike("contact_phone", `%${variant}%`)
+      .order("last_message_at", { ascending: false })
+      .limit(20);
+    for (const c of data || []) {
+      if (!collected.has(c.id)) collected.set(c.id, c);
     }
   }
-  return null;
+
+  // Also try contact_lid match (some BR numbers only deliver via @lid)
+  for (const p of cleaned) {
+    const { data } = await supabase
+      .from("conversations")
+      .select("id, contact_name, attendance_mode, channel, status, contact_phone, contact_lid, last_message_at, bot_state")
+      .eq("channel", "whatsapp")
+      .ilike("contact_lid", `%${p}%`)
+      .order("last_message_at", { ascending: false })
+      .limit(10);
+    for (const c of data || []) {
+      if (!collected.has(c.id)) collected.set(c.id, c);
+    }
+  }
+
+  const list = Array.from(collected.values());
+  // Sort: active conversations (status != fechada) first, then by last_message_at desc
+  list.sort((a, b) => {
+    const aActive = a.status !== "fechada" ? 1 : 0;
+    const bActive = b.status !== "fechada" ? 1 : 0;
+    if (aActive !== bActive) return bActive - aActive;
+    const aTs = a.last_message_at ? new Date(a.last_message_at).getTime() : 0;
+    const bTs = b.last_message_at ? new Date(b.last_message_at).getTime() : 0;
+    return bTs - aTs;
+  });
+  return list;
+}
+
+// Backwards-compatible single-result helper
+async function findConversationByPhone(supabase: any, phones: string[]): Promise<any> {
+  const list = await findConversationsByPhone(supabase, phones);
+  return list[0] || null;
 }
 
 async function findConversationByEmail(supabase: any, emails: string[]): Promise<any> {
