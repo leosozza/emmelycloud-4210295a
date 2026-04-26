@@ -315,8 +315,9 @@ Deno.serve(async (req) => {
       }
     }
 
-    if (!message || !contactId) {
-      return new Response(JSON.stringify({ error: "Missing message or contactId" }), {
+    // Allow media-only messages (no text) when a mediaUrl is provided
+    if ((!message && !mediaUrl) || !contactId) {
+      return new Response(JSON.stringify({ error: "Missing message/media or contactId" }), {
         status: 400,
         headers: jsonHeaders,
       });
