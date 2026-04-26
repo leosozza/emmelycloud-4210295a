@@ -134,7 +134,7 @@ export function ConversationList({
         </div>
 
         <div className="flex gap-1 flex-wrap">
-          {(["all", "whatsapp", "instagram", "email"] as const).map((ch) => (
+          {(["all", "whatsapp"] as const).map((ch) => (
             <Button
               key={ch}
               variant={channelFilter === ch ? "default" : "outline"}
