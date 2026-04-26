@@ -996,7 +996,18 @@ Deno.serve(async (req) => {
 
     const entityTypeId = placementOptions.ENTITY_TYPE_ID || placementOptions.entity_type_id || body.ENTITY_TYPE_ID || inferredTypeId;
 
-    console.log("[CRM-TAB] entityId:", entityId, "entityTypeId:", entityTypeId, "memberId:", memberId);
+    // Optional: user can pick a specific conversation from the conversation switcher
+    const requestedConvId: string = (body.selected_conversation_id || body.conversation_id || "").toString();
+
+    // Optional: query string fallback for selected_conversation_id (e.g. iframe reload)
+    let queryConvId = "";
+    try {
+      const u = new URL(req.url);
+      queryConvId = u.searchParams.get("selected_conversation_id") || "";
+    } catch { /* ignore */ }
+    const selectedConvOverride = requestedConvId || queryConvId;
+
+    console.log("[CRM-TAB] entityId:", entityId, "entityTypeId:", entityTypeId, "memberId:", memberId, "selectedConv:", selectedConvOverride);
 
     // Find integration
     let integration: any = null;
