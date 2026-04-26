@@ -326,16 +326,20 @@ Deno.serve(async (req) => {
           wuzapiPayload = { Phone: wuzapiPhone, Body: content, ButtonText: "Selecionar", Title: "Opções", Sections: [{ Title: "Opções", Rows: rows }] };
         } else if (message_type === "image" && resolvedInteractiveData) {
           wuzapiEndpoint = "/chat/send/image";
-          wuzapiPayload = { Phone: wuzapiPhone, Image: resolvedInteractiveData.url || resolvedInteractiveData, Caption: content };
+          const src = resolvedInteractiveData.url || resolvedInteractiveData;
+          wuzapiPayload = { Phone: wuzapiPhone, Image: await toDataUri(src, "image/jpeg"), Caption: content };
         } else if (message_type === "document" && resolvedInteractiveData) {
           wuzapiEndpoint = "/chat/send/document";
-          wuzapiPayload = { Phone: wuzapiPhone, Document: resolvedInteractiveData.url || resolvedInteractiveData, FileName: resolvedInteractiveData.filename || "documento", Caption: content };
+          const src = resolvedInteractiveData.url || resolvedInteractiveData;
+          wuzapiPayload = { Phone: wuzapiPhone, Document: await toDataUri(src, "application/pdf"), FileName: resolvedInteractiveData.filename || "documento", Caption: content };
         } else if (message_type === "audio" && resolvedInteractiveData) {
           wuzapiEndpoint = "/chat/send/audio";
-          wuzapiPayload = { Phone: wuzapiPhone, Audio: resolvedInteractiveData.url || resolvedInteractiveData };
+          const src = resolvedInteractiveData.url || resolvedInteractiveData;
+          wuzapiPayload = { Phone: wuzapiPhone, Audio: await toDataUri(src, "audio/ogg") };
         } else if (message_type === "video" && resolvedInteractiveData) {
           wuzapiEndpoint = "/chat/send/video";
-          wuzapiPayload = { Phone: wuzapiPhone, Video: resolvedInteractiveData.url || resolvedInteractiveData, Caption: content };
+          const src = resolvedInteractiveData.url || resolvedInteractiveData;
+          wuzapiPayload = { Phone: wuzapiPhone, Video: await toDataUri(src, "video/mp4"), Caption: content };
         } else if (message_type === "location" && resolvedInteractiveData) {
           wuzapiEndpoint = "/chat/send/location";
           wuzapiPayload = { Phone: wuzapiPhone, Latitude: resolvedInteractiveData.latitude, Longitude: resolvedInteractiveData.longitude, Name: resolvedInteractiveData.name || "", Address: resolvedInteractiveData.address || "" };
