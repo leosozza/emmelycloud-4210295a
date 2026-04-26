@@ -54,6 +54,8 @@ function isHeavyModel(model: string | null | undefined): boolean {
 export default function ChatIAPage() {
   const { session: authSession } = useAuthContext();
   const userId = authSession?.user?.id;
+  const isMobile = useIsMobile();
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const [agents, setAgents] = useState<Agent[]>([]);
   const [selectedAgentId, setSelectedAgentId] = useState("");
