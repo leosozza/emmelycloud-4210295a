@@ -80,7 +80,7 @@ Deno.serve(async (req) => {
       (senderRaw.includes("@lid") && senderRaw) ||
       null;
 
-    const phone = realPhoneJid ? realPhoneJid.replace(/@.*$/, "").replace(/[^0-9]/g, "") : "";
+    let phone = realPhoneJid ? realPhoneJid.replace(/@.*$/, "").replace(/[^0-9]/g, "") : "";
     const lidId = lidJid ? lidJid.replace(/@.*$/, "") : null;
 
     if (!phone && !lidId) {
@@ -91,6 +91,66 @@ Deno.serve(async (req) => {
     }
 
     console.log(`[WUZAPI-WEBHOOK] Identified — phone: ${phone || "(none)"} | lid: ${lidId || "(none)"} | chat: ${chatRaw} | sender: ${senderRaw}`);
+
+    // If we only got a LID, try to resolve the real phone:
+    //  1) Look up an existing conversation for this LID that already has contact_phone
+    //  2) Ask WUZAPI's /user/info for this JID — many BR contacts return the real number there
+    if (!phone && lidId) {
+      try {
+        const { data: prior } = await supabase
+          .from("conversations")
+          .select("contact_phone")
+          .eq("channel", "whatsapp")
+          .eq("contact_lid", lidId)
+          .not("contact_phone", "is", null)
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (prior?.contact_phone) {
+          phone = String(prior.contact_phone).replace(/[^0-9]/g, "");
+          console.log(`[WUZAPI-WEBHOOK] Phone resolved from prior conversation: ${phone}`);
+        }
+      } catch (_e) { /* ignore */ }
+
+      if (!phone) {
+        try {
+          const { data: wuzCreds } = await supabase
+            .from("integration_credentials")
+            .select("credential_key, credential_value")
+            .eq("provider", "wuzapi");
+          let baseUrl = "";
+          let token = "";
+          for (const c of (wuzCreds || [])) {
+            if (c.credential_key === "WUZAPI_BASE_URL" && !baseUrl) baseUrl = c.credential_value?.trim() || "";
+            if (c.credential_key === "WUZAPI_USER_TOKEN" && !token) token = c.credential_value?.trim() || "";
+          }
+          if (baseUrl && token) {
+            baseUrl = baseUrl.replace(/\/+$/, "");
+            const infoRes = await fetch(`${baseUrl}/user/info`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json", "token": token },
+              body: JSON.stringify({ Phone: [`${lidId}@lid`] }),
+            });
+            if (infoRes.ok) {
+              const infoJson: any = await infoRes.json().catch(() => ({}));
+              // Response shape: { code, success, data: { Users: { "<jid>": { VerifiedName, ... } } } } or similar
+              const usersBlock = infoJson?.data?.Users || infoJson?.Users || {};
+              const userInfo: any = usersBlock[`${lidId}@lid`] || Object.values(usersBlock)[0];
+              const candidate = userInfo?.JID || userInfo?.Jid || userInfo?.jid || userInfo?.Phone || userInfo?.PhoneNumber || "";
+              const cleaned = String(candidate).replace(/@.*$/, "").replace(/[^0-9]/g, "");
+              if (cleaned && cleaned !== lidId) {
+                phone = cleaned;
+                console.log(`[WUZAPI-WEBHOOK] Phone resolved from /user/info: ${phone}`);
+              } else {
+                console.log("[WUZAPI-WEBHOOK] /user/info did not return a real phone, keeping LID only");
+              }
+            }
+          }
+        } catch (e) {
+          console.warn("[WUZAPI-WEBHOOK] /user/info lookup failed:", e);
+        }
+      }
+    }
 
     // Skip outgoing messages (from me)
     const fromMe = info.FromMe || info.fromMe || false;
@@ -264,6 +324,7 @@ Deno.serve(async (req) => {
           message: content,
           contactName: senderName,
           contactId: bitrixContactId,
+          contactPhone: phone || undefined,
           channel: "whatsapp",
           conversationId,
           instanceId, // routes to the Open Line linked to this instance
