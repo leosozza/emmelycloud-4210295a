@@ -1,12 +1,18 @@
 // MCP Server (Streamable HTTP / JSON-RPC 2.0)
-// Compatível com clientes MCP como OpenClaw, Claude Desktop, Cursor, etc.
-// Autenticação: header `Authorization: Bearer emk_live_...` (chave de API criada em /api-docs/keys)
+// Compatível com OpenClaw, Claude Desktop, Cursor, Continue, etc.
+//
+// Autenticação (qualquer um dos seguintes headers):
+//   X-API-Key: emk_live_...        ← preferido pelo OpenClaw
+//   Authorization: Bearer emk_live_...
+//   Authorization: ApiKey emk_live_...
+//
+// Gere chaves em https://emmelycloud.lovable.app/api-docs/keys
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, mcp-session-id",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, mcp-session-id, x-api-key, accept",
   "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
   "Access-Control-Expose-Headers": "mcp-session-id",
 };
@@ -27,15 +33,33 @@ interface AuthCtx {
   key_id: string;
 }
 
+function extractApiKey(req: Request): string | null {
+  // 1) X-API-Key header (preferido pelo OpenClaw)
+  const xKey = req.headers.get("X-API-Key") || req.headers.get("x-api-key");
+  if (xKey && xKey.startsWith("emk_live_")) return xKey.trim();
+
+  // 2) Authorization: Bearer / ApiKey
+  const auth = req.headers.get("Authorization") || req.headers.get("authorization") || "";
+  const m = auth.match(/^(?:Bearer|ApiKey)\s+(emk_live_[A-Za-z0-9_-]+)$/i);
+  if (m) return m[1];
+
+  // 3) ?api_key=... (último recurso)
+  const url = new URL(req.url);
+  const qp = url.searchParams.get("api_key");
+  if (qp && qp.startsWith("emk_live_")) return qp;
+
+  return null;
+}
+
 async function authenticate(req: Request): Promise<AuthCtx | null> {
-  const auth = req.headers.get("Authorization") || "";
-  const match = auth.match(/^Bearer\s+(emk_live_[A-Za-z0-9_-]+)$/);
-  if (!match) return null;
-  const hash = await sha256(match[1]);
+  const key = extractApiKey(req);
+  if (!key) return null;
+  const hash = await sha256(key);
   const { data, error } = await admin.rpc("verify_api_key", { p_key_hash: hash });
   if (error || !data || !data.length) return null;
   return data[0] as AuthCtx;
 }
+
 
 // ── MCP Tools ──
 const TOOLS = [
