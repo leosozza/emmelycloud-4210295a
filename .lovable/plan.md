@@ -1,72 +1,95 @@
-## Diagnóstico (confirmado em produção)
+## Diagnóstico
 
-Identifiquei **três bugs** na conversa do número `+5511978659280` (LID `196847578665004`):
+O fluxo de texto está OK, mas mídias (áudio/imagem/PDF/vídeo) falham nas duas direções porque:
 
-**1. `contact_phone` ficou nulo na nova conversa**
-- Na tabela `conversations`, a linha tem `contact_phone = NULL` e `contact_lid = "196847578665004"`.
-- Isso indica que o payload da WUZAPI deste número trouxe **só** o JID com `@lid` em ambos os campos `Chat` e `Sender` — então a função `wuzapi-webhook` não conseguiu extrair o telefone real.
+### Cliente → Bitrix24 (atualmente quebrado)
+- `wuzapi-webhook` apenas **detecta** o tipo de mídia e grava `media_type`, mas:
+  - `media_url` fica sempre `null` (nunca baixa o arquivo da WUZAPI)
+  - Envia para Bitrix24 só o texto `[Imagem]`, `[Áudio]`, `[Documento]` — sem anexo
+- `bitrix24-send` envia `message.text` sem `message.files`, então Bitrix nunca recebe o arquivo
 
-**2. Bitrix recebeu o LID como identificador (não o telefone)**
-- A `bitrix24-send` enviou `chat.id = "196847578665004"` e `user.id = "196847578665004"` no `imconnector.send.messages`.
-- Como **não passamos o campo `user.phone`** com `skip_phone_validate: "Y"` (suportado pela API conforme documentação oficial), o Bitrix24 não tem como casar com o Contato/Deal existente — então cria um contato novo "sem contacto" (foi exatamente o que apareceu na sua tela).
+### Bitrix24 → Cliente (atualmente quebrado)
+- `bitrix24-worker` lê apenas `messageObj.text`. Ignora qualquer estrutura de anexo (`FILES`, `params.FILES`, `disk`)
+- Encaminha para `message-send` apenas `{ content }` — sem `message_type`, sem `resolvedInteractiveData`
+- Resultado: arquivos enviados pelo operador no canal aberto desaparecem
 
-**3. Resposta do operador no Bitrix nunca volta ao WhatsApp**
-- Confirmei na fila `bitrix_event_queue`: chegaram **2 eventos `ONIMCONNECTORMESSAGEADD`** ("teste bitrix" e "envio 13:17") com `chat.id = "196847578665004"`.
-- O `bitrix24-worker` (linha 416-420) procura a conversa só por:
+Curiosamente, `message-send` **já tem** suporte completo a `image`, `audio`, `document`, `video` para WUZAPI — só não é acionado.
+
+---
+
+## Plano
+
+### 1. Recepção de mídia (cliente → Emmely → Bitrix)
+
+**`wuzapi-webhook/index.ts`**
+- Para cada tipo de mensagem com mídia (`ImageMessage`, `AudioMessage`, `DocumentMessage`, `VideoMessage`, `StickerMessage`), extrair os campos criptográficos do payload: `Url`, `Mimetype`, `FileSHA256`, `FileLength`, `MediaKey`, `FileEncSHA256`
+- Chamar o endpoint da WUZAPI correspondente para descriptografar e baixar o binário:
+  - `/chat/downloadimage`
+  - `/chat/downloadaudio`
+  - `/chat/downloaddocument`
+  - `/chat/downloadvideo`
+- Fazer upload do binário para o bucket `media` (Supabase Storage), pasta `wuzapi-inbound/<conversation>/<timestamp>-<filename>`
+- Obter URL pública e salvar em `messages.media_url` + `media_type`
+- Definir `media_filename` quando aplicável (documentos)
+
+### 2. Encaminhamento de mídia para Bitrix24 (cliente → Bitrix)
+
+**`bitrix24-send/index.ts`**
+- Aceitar novos parâmetros opcionais: `mediaUrl`, `mediaType`, `mediaFilename`
+- No payload de `imconnector.send.messages`, quando houver mídia, anexar `message.files`:
   ```
-  contact_phone.eq.<id> OR contact_phone.eq.<id>@lid OR contact_instagram.eq.<id>
+  message: {
+    text: caption || message,
+    files: [{ name: mediaFilename || "arquivo", link: mediaUrl, type: mediaType }]
+  }
   ```
-  Como agora o LID está em `contact_lid`, **a query não encontra a conversa** e a mensagem do operador é descartada silenciosamente.
+- Bitrix24 baixa a URL pública e exibe no chat aberto
 
----
+**`wuzapi-webhook/index.ts`**
+- Passar `mediaUrl`, `mediaType`, `mediaFilename` ao chamar `bitrix24-send`
 
-## Correções propostas
+### 3. Recepção de mídia do operador no Bitrix (Bitrix → cliente)
 
-### A. `bitrix24-worker` — incluir `contact_lid` no lookup
-No handler `handleConnectorMessage` (linha ~416), expandir o `.or()` para também procurar por `contact_lid.eq.<id>`. Assim a resposta do Bitrix encontra a conversa correta e dispara `message-send`, que já sabe usar o LID para enviar via WUZAPI.
+**`bitrix24-worker/index.ts`**
+- Ao processar cada mensagem do evento `ONIMCONNECTORMESSAGEADD`, detectar anexos em qualquer um destes locais (a estrutura varia por tenant):
+  - `messageObj.files` (array de objetos `{ name, link, type, size }`)
+  - `messageObj.params.FILES` ou `messageObj.PARAMS.FILES` (IDs do Disk)
+  - `msg.message.attach` (array)
+- Para cada arquivo:
+  - Se já tiver `link/url` HTTP, usar diretamente
+  - Se vier apenas como ID do Disk, chamar `disk.attachedObject.get` (módulo `disk`) ou `im.disk.file.commit` para resolver a URL de download autenticada
+  - Detectar tipo (imagem / áudio / documento / vídeo) por `type` ou MIME
+- Encaminhar para `message-send` com:
+  ```json
+  {
+    "conversation_id": "...",
+    "content": "<caption ou nome do arquivo>",
+    "message_type": "image|audio|document|video",
+    "resolvedInteractiveData": { "url": "<link>", "filename": "<name>" }
+  }
+  ```
+- Quando houver vários arquivos numa só mensagem, despachar uma chamada por arquivo
+- Manter o ACK `imconnector.send.status.delivery` para todos os IDs
 
-### B. `bitrix24-send` — passar telefone real ao Bitrix para casar com a Deal
-Aceitar um novo parâmetro opcional `contactPhone` no body. Quando presente, incluir no `imconnector.send.messages`:
-```js
-user: {
-  id: contactId,
-  name: contactName,
-  phone: "+" + contactPhone,         // ex: "+5511978659280"
-  skip_phone_validate: "Y"
-}
-```
-Isto faz o Bitrix vincular automaticamente ao Contato/Deal existente que tem esse telefone — exatamente o comportamento que estava acontecendo antes da mudança para LID.
+### 4. Storage para mídia recebida
 
-### C. `wuzapi-webhook` — enviar o telefone real ao `bitrix24-send`
-Passar `contactPhone: phone` no fetch para `bitrix24-send` quando o telefone real foi extraído.
+- Verificar se o bucket `media` existe; se não, criar como **público** (já existem outros buckets públicos — `proposal-files`, `signatures`)
+- Adicionar bucket `media` via SQL migration apenas se necessário
 
-### D. `wuzapi-webhook` — fallback para resolver telefone real do LID
-Quando o payload trouxer **só** LID (caso atual), tentar:
-1. **Lookup local primeiro**: procurar em `conversations` por `contact_lid = <lid>` que já tenha `contact_phone` preenchido (de mensagens anteriores ou backfill).
-2. **Lookup WUZAPI**: chamar o endpoint `/user/info` da WUZAPI passando o JID com `@lid` — a API retorna o `VerifiedName`/`PushName` e, em muitos casos, o número real associado.
-3. Se mesmo assim não houver telefone, gravar a conversa só com LID (comportamento atual) e o Bitrix criará contato sem telefone — sem regressão.
+### 5. Detalhes técnicos
 
-### E. Backfill da conversa atual
-Atualizar a linha `df886b15-d9e4-404a-9389-44345f5bf011` (e `89c299f8-...`) com `contact_phone = "5511978659280"`, para que as próximas respostas do operador no Bitrix já encontrem a conversa por telefone **e** o placement Emmely Pay vincule à Deal correta.
+- **Limite de tamanho WUZAPI**: arquivos grandes podem timeoutar — registar warning quando `FileLength > 16MB` mas tentar downloadar mesmo assim
+- **MIME → message_type**: mapeamento canónico
+  - `image/*` → `image`
+  - `audio/*` → `audio` (oggs PTT também)
+  - `video/*` → `video`
+  - todo o resto → `document`
+- **Nome de arquivo**: para áudio/imagem sem nome, gerar `<timestamp>.<ext>` baseado no MIME
+- **Logs**: aumentar verbosidade em `bitrix24_debug_logs` com novos `event_type`: `media_inbound_downloaded`, `media_outbound_received`, `media_forwarded_to_wuzapi`
+- **Falhas**: se download da WUZAPI falhar, manter o registo da mensagem com `media_url=null` mas o texto descritivo (`[Imagem - falha ao baixar]`) para não perder a mensagem
 
----
-
-## Detalhes técnicos
-
-**Arquivos editados:**
-- `supabase/functions/bitrix24-worker/index.ts` — adicionar `contact_lid.eq.${contactId}` no `.or()` da busca de conversas (linha ~419) e logar quando o match foi via LID.
-- `supabase/functions/bitrix24-send/index.ts` — aceitar `contactPhone` no body, propagar para `sendWithFallbacks`, incluir `phone` + `skip_phone_validate: "Y"` no `user` do `imconnector.send.messages`.
-- `supabase/functions/wuzapi-webhook/index.ts` — adicionar resolver `resolveRealPhone(lid)`: 1) busca em `conversations` pelo LID, 2) chama `/user/info` da WUZAPI; usar o resultado para preencher `contact_phone` da nova conversa e enviar `contactPhone` ao `bitrix24-send`.
-- **SQL migration**: backfill `UPDATE conversations SET contact_phone = '5511978659280' WHERE id IN ('df886b15-d9e4-404a-9389-44345f5bf011', '89c299f8-e903-4d42-b498-759bdce639ed')`.
-
-**Confirmação MCP Bitrix24:** A documentação oficial de `imconnector.send.messages` lista `user.phone` + `user.skip_phone_validate: "Y"` como campos válidos justamente para permitir match automático com Contato/Deal por telefone (sem disparar a validação de formato do Bitrix).
-
-**Sem mudanças em:** `message-send` (já sabe usar `contact_lid` para enviar via WUZAPI), `bitrix24-events`, schema da tabela `conversations`.
-
----
-
-## Resultado esperado após o fix
-
-- Operador responde no Bitrix → mensagem chega no WhatsApp do cliente (via WUZAPI usando o LID).
-- O placement (Emmely AI / Emmely Pay) vincula à Deal `23855` existente, em vez de criar contato fantasma.
-- Mensagens futuras do mesmo número continuam funcionando mesmo se o WhatsApp só entregar LID.
+### Arquivos a editar
+- `supabase/functions/wuzapi-webhook/index.ts` — download de mídia + upload para Storage + envio com link ao Bitrix
+- `supabase/functions/bitrix24-send/index.ts` — incluir `message.files` no payload
+- `supabase/functions/bitrix24-worker/index.ts` — detectar anexos do Bitrix + chamar `message-send` com `message_type` + URL
+- (Eventual) migração SQL para criar bucket `media` se não existir
