@@ -599,7 +599,7 @@ export default function ChatIAPage() {
             </div>
           ) : (
             <div
-              className="max-w-3xl mx-auto py-6 px-4"
+              className="max-w-3xl mx-auto py-4 sm:py-6 px-3 sm:px-4"
               style={{ height: `${virtualizer.getTotalSize()}px`, position: "relative" }}
             >
               {virtualizer.getVirtualItems().map((vRow) => {
