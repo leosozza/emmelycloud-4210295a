@@ -34,16 +34,44 @@ async function getOllamaBaseUrl(supabase: any): Promise<string | null> {
   return data.credential_value.replace(/\/v1\/chat\/completions$/, "").replace(/\/+$/, "");
 }
 
-async function isModelLoaded(baseUrl: string, model: string): Promise<boolean> {
+async function listLoadedModels(baseUrl: string): Promise<string[]> {
   try {
     const r = await fetch(`${baseUrl}/api/ps`, { signal: AbortSignal.timeout(8000) });
-    if (!r.ok) return false;
+    if (!r.ok) return [];
     const j = await r.json();
-    const loaded: string[] = (j.models || []).map((m: any) => m.name || m.model || "");
-    return loaded.some((n) => n === model || n.startsWith(model + ":") || model.startsWith(n));
+    return (j.models || []).map((m: any) => m.name || m.model || "").filter(Boolean);
   } catch {
-    return false;
+    return [];
   }
+}
+
+async function isModelLoaded(baseUrl: string, model: string): Promise<boolean> {
+  const loaded = await listLoadedModels(baseUrl);
+  return loaded.some((n) => n === model || n.startsWith(model + ":") || model.startsWith(n));
+}
+
+// Força unload imediato de um modelo (keep_alive: 0)
+async function unloadModel(baseUrl: string, model: string): Promise<void> {
+  try {
+    await fetch(`${baseUrl}/api/generate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      signal: AbortSignal.timeout(15_000),
+      body: JSON.stringify({ model, prompt: "", stream: false, keep_alive: 0 }),
+    });
+  } catch { /* best-effort */ }
+}
+
+// Descarrega todos os modelos exceto o alvo, para libertar RAM/VRAM
+async function unloadOtherModels(baseUrl: string, keepModel: string): Promise<string[]> {
+  const loaded = await listLoadedModels(baseUrl);
+  const toUnload = loaded.filter((n) => n !== keepModel && !n.startsWith(keepModel + ":") && !keepModel.startsWith(n));
+  if (toUnload.length === 0) return [];
+  console.log(`[warm-model] descarregando ${toUnload.length} modelo(s) para libertar memória:`, toUnload);
+  await Promise.all(toUnload.map((m) => unloadModel(baseUrl, m)));
+  // Aguardar Ollama libertar memória
+  await new Promise((r) => setTimeout(r, 2500));
+  return toUnload;
 }
 
 async function triggerLoad(baseUrl: string, model: string, timeoutMs: number): Promise<{ ok: boolean; error?: string }> {
@@ -68,6 +96,31 @@ async function triggerLoad(baseUrl: string, model: string, timeoutMs: number): P
   } catch (e: any) {
     return { ok: false, error: e?.message || String(e) };
   }
+}
+
+// Tenta carregar com retry: se falhar com "resource limitations", liberta memória e tenta novamente
+async function loadWithRetry(baseUrl: string, model: string, timeoutMs: number): Promise<{ ok: boolean; error?: string; attempts: number; unloaded: string[] }> {
+  const MAX_ATTEMPTS = 3;
+  let lastError: string | undefined;
+  let totalUnloaded: string[] = [];
+
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    // Antes de cada tentativa, descarregar outros modelos
+    const unloaded = await unloadOtherModels(baseUrl, model);
+    totalUnloaded.push(...unloaded);
+
+    const r = await triggerLoad(baseUrl, model, timeoutMs);
+    if (r.ok) return { ok: true, attempts: attempt, unloaded: totalUnloaded };
+
+    lastError = r.error;
+    const isResource = /resource limitations|model failed to load|out of memory|cuda/i.test(r.error || "");
+    console.log(`[warm-model] tentativa ${attempt}/${MAX_ATTEMPTS} falhou${isResource ? " (recursos)" : ""}: ${r.error?.substring(0, 150)}`);
+
+    if (!isResource) break; // erro não recuperável (ex.: modelo não existe)
+    if (attempt < MAX_ATTEMPTS) await new Promise((res) => setTimeout(res, 5000));
+  }
+
+  return { ok: false, error: lastError, attempts: MAX_ATTEMPTS, unloaded: totalUnloaded };
 }
 
 Deno.serve(async (req) => {
@@ -105,15 +158,15 @@ Deno.serve(async (req) => {
       }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
-    // 2) Disparar carregamento (com keep_alive longo)
+    // 2) Disparar carregamento com retry e unload de outros modelos
     const timeout = maxLoadTimeoutMs(model);
-    const loadResult = await triggerLoad(baseUrl, model, timeout);
+    const loadResult = await loadWithRetry(baseUrl, model, timeout);
 
     if (!loadResult.ok) {
       const lower = (loadResult.error || "").toLowerCase();
       let friendly = loadResult.error || "Erro desconhecido";
-      if (lower.includes("model failed to load") || lower.includes("resource limitations")) {
-        friendly = `O servidor Ollama não conseguiu carregar **${model}** mesmo libertando memória. RAM/VRAM insuficiente para este modelo.`;
+      if (lower.includes("model failed to load") || lower.includes("resource limitations") || lower.includes("out of memory")) {
+        friendly = `O servidor Ollama não consegue carregar **${model}** mesmo após libertar memória (${loadResult.attempts} tentativas, descarregados: ${loadResult.unloaded.join(", ") || "nenhum"}). RAM/VRAM do servidor insuficiente para este modelo isoladamente.`;
       } else if (lower.includes("not found") || lower.includes("no such file") || lower.includes("does not exist")) {
         friendly = `Modelo **${model}** não está instalado no servidor Ollama. Faz \`ollama pull ${model}\`.`;
       } else if (lower.includes("timeout") || lower.includes("timed out") || lower.includes("aborted")) {
@@ -123,17 +176,21 @@ Deno.serve(async (req) => {
         ready: false,
         error: friendly,
         raw_error: loadResult.error,
+        attempts: loadResult.attempts,
+        unloaded_models: loadResult.unloaded,
         load_time_ms: Date.now() - t0,
         model,
       }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
-    // 3) Confirmar via /api/ps (geralmente já está, mas confirmamos)
+    // 3) Confirmar via /api/ps
     const loaded = await isModelLoaded(baseUrl, model);
 
     return new Response(JSON.stringify({
       ready: loaded,
       was_loaded: false,
+      attempts: loadResult.attempts,
+      unloaded_models: loadResult.unloaded,
       load_time_ms: Date.now() - t0,
       model,
       ...(loaded ? {} : { warning: "Carregamento devolveu OK mas /api/ps não confirma" }),
