@@ -2108,13 +2108,23 @@ function InstancesTab() {
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="none">Nenhuma (desvinculado)</SelectItem>
-                        {bitrixMappings.map((m) => (
-                          <SelectItem key={m.id} value={m.id}>
-                            {m.line_name || m.channel} {m.is_active ? "✓" : ""}
-                          </SelectItem>
-                        ))}
+                        {bitrixMappings.map((m) => {
+                          const usedBy = instances.find(
+                            (i) => i.id !== inst.id && i.config?.bitrix24_mapping_id === m.id
+                          );
+                          const disabled = !!usedBy || !m.is_active;
+                          return (
+                            <SelectItem key={m.id} value={m.id} disabled={disabled}>
+                              {m.line_name || m.channel} {m.is_active ? "" : "(inativo)"}
+                              {usedBy ? ` — em uso por "${usedBy.name}"` : ""}
+                            </SelectItem>
+                          );
+                        })}
                       </SelectContent>
                     </Select>
+                    <p className="text-[10px] text-muted-foreground">
+                      Cada instância só pode ligar a 1 Canal Aberto. Mensagens recebidas serão encaminhadas exclusivamente para a linha selecionada.
+                    </p>
                     {inst.config.bitrix24_mapping_id && (
                       <p className="text-[10px] text-green-600">
                         ✓ Vinculado à linha "{bitrixMappings.find((m) => m.id === inst.config.bitrix24_mapping_id)?.line_name || "—"}"
