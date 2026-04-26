@@ -69,6 +69,7 @@ export function ChatPanel({
   onAttendanceModeChange,
   onScrollToTop,
   onBack,
+  onToggleProfile,
 }: ChatPanelProps) {
   const [input, setInput] = useState("");
   const [localMessages, setLocalMessages] = useState<Message[]>([]);
