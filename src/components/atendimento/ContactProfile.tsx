@@ -28,11 +28,11 @@ interface ContactProfileProps {
   } | null;
 }
 
-function CollapsibleSection({ title, defaultOpen = true, children }: { title: string; defaultOpen?: boolean; children: React.ReactNode }) {
+function CollapsibleSection({ title, defaultOpen = false, children }: { title: string; defaultOpen?: boolean; children: React.ReactNode }) {
   const [open, setOpen] = useState(defaultOpen);
   return (
     <Collapsible open={open} onOpenChange={setOpen} className="border-b last:border-b-0">
-      <CollapsibleTrigger className="flex items-center justify-between w-full py-2.5 text-xs font-medium text-muted-foreground uppercase tracking-wider hover:text-foreground transition-colors">
+      <CollapsibleTrigger className="flex items-center justify-between w-full py-2.5 px-1 -mx-1 rounded text-xs font-medium text-muted-foreground uppercase tracking-wider hover:text-foreground hover:bg-muted/50 transition-colors cursor-pointer">
         {title}
         <ChevronDown className={`h-3.5 w-3.5 transition-transform ${open ? "rotate-180" : ""}`} />
       </CollapsibleTrigger>
@@ -141,7 +141,7 @@ export function ContactProfile({ conversation }: ContactProfileProps) {
       </div>
 
       <div className="flex-1 overflow-y-auto px-4 space-y-0">
-        <CollapsibleSection title="Contacto">
+        <CollapsibleSection title="Contacto" defaultOpen>
           <div className="space-y-2">
             {conversation.contact_phone && (
               <div className="flex items-center gap-2 text-sm">
