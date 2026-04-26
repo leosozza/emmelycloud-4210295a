@@ -397,8 +397,8 @@ async function handleConnectorMessage(supabase: any, integration: any, payload: 
       } catch (_e) { /* ignore dedup cache errors */ }
     }
 
-    // Skip bot messages
-    if (isBotMessage(messageText)) {
+    // Skip bot messages (only when text is present and there are no files)
+    if (messageText && detectedFiles.length === 0 && isBotMessage(messageText)) {
       console.log("[WORKER] Skipping bot message");
       try {
         const accessToken = await ensureValidToken(supabase, integration);
@@ -418,7 +418,7 @@ async function handleConnectorMessage(supabase: any, integration: any, payload: 
     }
 
     // Clean BBCode for external channels
-    const cleanText = stripBBCode(messageText);
+    const cleanText = stripBBCode(messageText || "");
 
     // Find channel mapping
     const { data: mapping } = await supabase
