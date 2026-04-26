@@ -8,7 +8,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Send, Loader2, Sparkles, Square, AlertTriangle, Bot, BookOpen, Menu } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
+import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { AudioRecordButton } from "@/components/chat/AudioRecordButton";
@@ -505,11 +505,15 @@ export default function ChatIAPage() {
       <div className="flex-1 flex flex-col min-w-0">
         {/* Mobile top bar with menu trigger */}
         <div className="md:hidden border-b bg-background flex items-center gap-2 px-3 py-2">
-          <SheetTrigger asChild onClick={() => setSidebarOpen(true)}>
-            <Button variant="ghost" size="icon" className="h-9 w-9 -ml-1" aria-label="Conversas">
-              <Menu className="h-5 w-5" />
-            </Button>
-          </SheetTrigger>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-9 w-9 -ml-1"
+            aria-label="Conversas"
+            onClick={() => setSidebarOpen(true)}
+          >
+            <Menu className="h-5 w-5" />
+          </Button>
           <span className="text-sm font-medium truncate flex-1">
             {selectedAgent?.name || "Chat IA"}
           </span>
