@@ -42,6 +42,7 @@ interface ChatPanelProps {
   onAttendanceModeChange?: (mode: "ai" | "human") => void;
   onScrollToTop?: () => void;
   onBack?: () => void;
+  onToggleProfile?: () => void;
 }
 
 const statusLabels: Record<string, string> = {
