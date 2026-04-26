@@ -28,11 +28,8 @@ export function AudioMessageBubble({ msg }: AudioMessageBubbleProps) {
       const body: Record<string, string> = { language_code: "por" };
 
       if (isDataUri) {
-        // Extract base64 from data URI
-        const base64Part = msg.media_url.split(",")[1];
-        if (base64Part) {
-          body.audio_base64 = base64Part;
-        }
+        // Pass full data URI so the edge function can recover MIME type
+        body.audio_base64 = msg.media_url;
       } else {
         body.audio_url = msg.media_url;
       }
