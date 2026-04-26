@@ -8,6 +8,41 @@ const corsHeaders = {
 const IG_GRAPH_URL = "https://graph.instagram.com/v24.0";
 const WA_GRAPH_URL = "https://graph.facebook.com/v22.0";
 
+/**
+ * Convert a media URL or raw base64 string to a data URI required by WUZAPI.
+ * WUZAPI's /chat/send/{audio,image,document,video} endpoints expect the
+ * media field to start with "data:<mime>;base64,...".
+ */
+async function toDataUri(input: string, fallbackMime: string): Promise<string> {
+  if (!input) return input;
+  // Already a data URI
+  if (input.startsWith("data:")) return input;
+
+  // Looks like a URL → fetch and convert
+  if (/^https?:\/\//i.test(input)) {
+    try {
+      const res = await fetch(input);
+      if (!res.ok) throw new Error(`fetch failed: ${res.status}`);
+      const mime = res.headers.get("content-type")?.split(";")[0]?.trim() || fallbackMime;
+      const buf = new Uint8Array(await res.arrayBuffer());
+      // Encode to base64 in chunks to avoid stack overflow on large files
+      let binary = "";
+      const chunkSize = 0x8000;
+      for (let i = 0; i < buf.length; i += chunkSize) {
+        binary += String.fromCharCode.apply(null, Array.from(buf.subarray(i, i + chunkSize)));
+      }
+      const b64 = btoa(binary);
+      return `data:${mime};base64,${b64}`;
+    } catch (e) {
+      console.error("[MESSAGE-SEND] toDataUri fetch error:", e);
+      throw new Error(`Failed to fetch media for data URI conversion: ${(e as Error).message}`);
+    }
+  }
+
+  // Assume raw base64 string
+  return `data:${fallbackMime};base64,${input}`;
+}
+
 interface InstanceCredentials {
   accessToken: string;
   phoneNumberId?: string;
@@ -291,16 +326,20 @@ Deno.serve(async (req) => {
           wuzapiPayload = { Phone: wuzapiPhone, Body: content, ButtonText: "Selecionar", Title: "Opções", Sections: [{ Title: "Opções", Rows: rows }] };
         } else if (message_type === "image" && resolvedInteractiveData) {
           wuzapiEndpoint = "/chat/send/image";
-          wuzapiPayload = { Phone: wuzapiPhone, Image: resolvedInteractiveData.url || resolvedInteractiveData, Caption: content };
+          const src = resolvedInteractiveData.url || resolvedInteractiveData;
+          wuzapiPayload = { Phone: wuzapiPhone, Image: await toDataUri(src, "image/jpeg"), Caption: content };
         } else if (message_type === "document" && resolvedInteractiveData) {
           wuzapiEndpoint = "/chat/send/document";
-          wuzapiPayload = { Phone: wuzapiPhone, Document: resolvedInteractiveData.url || resolvedInteractiveData, FileName: resolvedInteractiveData.filename || "documento", Caption: content };
+          const src = resolvedInteractiveData.url || resolvedInteractiveData;
+          wuzapiPayload = { Phone: wuzapiPhone, Document: await toDataUri(src, "application/pdf"), FileName: resolvedInteractiveData.filename || "documento", Caption: content };
         } else if (message_type === "audio" && resolvedInteractiveData) {
           wuzapiEndpoint = "/chat/send/audio";
-          wuzapiPayload = { Phone: wuzapiPhone, Audio: resolvedInteractiveData.url || resolvedInteractiveData };
+          const src = resolvedInteractiveData.url || resolvedInteractiveData;
+          wuzapiPayload = { Phone: wuzapiPhone, Audio: await toDataUri(src, "audio/ogg") };
         } else if (message_type === "video" && resolvedInteractiveData) {
           wuzapiEndpoint = "/chat/send/video";
-          wuzapiPayload = { Phone: wuzapiPhone, Video: resolvedInteractiveData.url || resolvedInteractiveData, Caption: content };
+          const src = resolvedInteractiveData.url || resolvedInteractiveData;
+          wuzapiPayload = { Phone: wuzapiPhone, Video: await toDataUri(src, "video/mp4"), Caption: content };
         } else if (message_type === "location" && resolvedInteractiveData) {
           wuzapiEndpoint = "/chat/send/location";
           wuzapiPayload = { Phone: wuzapiPhone, Latitude: resolvedInteractiveData.latitude, Longitude: resolvedInteractiveData.longitude, Name: resolvedInteractiveData.name || "", Address: resolvedInteractiveData.address || "" };
