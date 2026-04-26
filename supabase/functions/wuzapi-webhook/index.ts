@@ -250,6 +250,9 @@ Deno.serve(async (req) => {
     const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
     // Forward message to Bitrix24 Open Channel
+    // contactId MUST be the real phone (not the LID) so Bitrix matches existing
+    // Contact + Deal in the portal. Fall back to LID only when no phone is available.
+    const bitrixContactId = phone || lidId || "";
     try {
       const bitrixResponse = await fetch(`${supabaseUrl}/functions/v1/bitrix24-send`, {
         method: "POST",
@@ -260,7 +263,7 @@ Deno.serve(async (req) => {
         body: JSON.stringify({
           message: content,
           contactName: senderName,
-          contactId: phone,
+          contactId: bitrixContactId,
           channel: "whatsapp",
           conversationId,
           instanceId, // routes to the Open Line linked to this instance
