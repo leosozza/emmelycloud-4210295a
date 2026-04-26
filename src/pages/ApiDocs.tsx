@@ -244,7 +244,7 @@ const endpoints: Endpoint[] = [
     "isError": false
   }
 }`,
-    notes: "Métodos suportados: initialize, tools/list, tools/call, ping. Autenticar com Bearer emk_live_..." },
+    notes: "Métodos suportados: initialize, tools/list, tools/call, ping. Autentique com header X-API-Key: emk_live_... (também aceita Authorization: Bearer ou ApiKey)." },
   { category: "mcp", name: "Criar Chave de API", method: "POST", path: "/api-key-create", auth: "Bearer JWT",
     description: "Gera nova chave API (mostrada apenas uma vez).",
     request: `{ "name": "OpenClaw Production", "scopes": ["read", "write"] }`,
@@ -296,7 +296,8 @@ function generateCurl(ep: Endpoint): string {
     parts.push(`  -H "Authorization: Bearer YOUR_JWT_TOKEN"`);
     parts.push(`  -H "apikey: YOUR_ANON_KEY"`);
   } else if (ep.auth === "API Key") {
-    parts.push(`  -H "Authorization: Bearer emk_live_YOUR_API_KEY"`);
+    parts.push(`  -H "X-API-Key: emk_live_YOUR_API_KEY"`);
+    parts.push(`  -H "Accept: application/json, text/event-stream"`);
   }
   if (verb !== "GET" && ep.request) {
     try {
@@ -415,8 +416,9 @@ export default function ApiDocsPage() {
             </Button>
           </div>
           <div className="flex items-center gap-2">
-            <Badge variant="outline" className="text-[10px] w-16 justify-center">Auth</Badge>
-            <code className="font-mono bg-background px-2 py-1 rounded">Authorization: Bearer emk_live_…</code>
+            <Badge variant="outline" className="text-[10px] w-16 justify-center">Header</Badge>
+            <code className="font-mono bg-background px-2 py-1 rounded">X-API-Key: emk_live_…</code>
+            <span className="text-[10px] text-muted-foreground">(ou Authorization: Bearer / ApiKey)</span>
           </div>
           <div className="flex items-center gap-2">
             <Badge variant="outline" className="text-[10px] w-16 justify-center">Tools</Badge>
@@ -454,7 +456,7 @@ export default function ApiDocsPage() {
         <CardContent className="grid md:grid-cols-2 gap-3 text-xs">
           <div className="space-y-1">
             <Badge variant="outline" className="text-[10px]">API Key (MCP / programático)</Badge>
-            <p className="text-muted-foreground">Gere uma chave em <Link to="/api-docs/keys" className="text-primary underline">/api-docs/keys</Link>. Use <code>Authorization: Bearer emk_live_...</code></p>
+            <p className="text-muted-foreground">Gere em <Link to="/api-docs/keys" className="text-primary underline">/api-docs/keys</Link>. Envie <code>X-API-Key: emk_live_...</code> (ou <code>Authorization: Bearer/ApiKey emk_live_...</code>).</p>
           </div>
           <div className="space-y-1">
             <Badge variant="outline" className="text-[10px]">Bearer JWT</Badge>
