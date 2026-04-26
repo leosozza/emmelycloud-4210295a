@@ -169,9 +169,9 @@ const FinanceiroPage = () => {
 
         <TabsContent value="recebimentos">
           <Card>
-            <CardHeader className="flex flex-row items-center justify-between">
+            <CardHeader className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
               <CardTitle className="text-base">Parcelas</CardTitle>
-              <div className="flex gap-1">
+              <div className="flex flex-wrap gap-1">
                 {["all", "paga", "pendente", "atrasada"].map((st) => (
                   <Button key={st} size="sm" variant={statusFilter === st ? "default" : "outline"} className="text-xs h-7 px-2"
                     onClick={() => setStatusFilter(st)}>
@@ -180,7 +180,7 @@ const FinanceiroPage = () => {
                 ))}
               </div>
             </CardHeader>
-            <CardContent className="p-0">
+            <CardContent className="p-0 overflow-x-auto">
               {isLoading ? (
                 <div className="p-8 text-center text-muted-foreground">Carregando...</div>
               ) : transactions.length === 0 ? (
