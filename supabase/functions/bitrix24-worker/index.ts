@@ -1202,5 +1202,4 @@ async function handleDynamicItemUpdate(supabase: any, integration: any, payload:
     console.error("[WORKER] handleDynamicItemUpdate error:", e);
   }
 }
-  }
-});
+
