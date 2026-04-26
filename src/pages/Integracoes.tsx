@@ -1949,14 +1949,14 @@ function InstancesTab() {
   return (
     <div className="space-y-4">
       {/* Header with create button */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
           <h3 className="text-sm font-semibold">Instâncias de Canal</h3>
           <p className="text-xs text-muted-foreground">Crie e configure instâncias de WhatsApp (API Oficial Meta) ou Instagram.</p>
         </div>
         <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
           <DialogTrigger asChild>
-            <Button size="sm" className="gap-1.5">
+            <Button size="sm" className="gap-1.5 w-full sm:w-auto">
               <Plus className="h-4 w-4" />
               Nova Instância
             </Button>
@@ -2179,7 +2179,7 @@ function InstancesTab() {
                 )}
 
                 {/* Action buttons */}
-                <div className="flex gap-2 pt-1">
+                <div className="flex flex-wrap gap-2 pt-1">
                   {isWuzapi ? (
                     <>
                       {!Boolean(wuzapiStatus._global?.logged_in ?? wuzapiStatus._global?.connected) && (
