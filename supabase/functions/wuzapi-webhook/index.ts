@@ -11,13 +11,19 @@ Deno.serve(async (req) => {
   }
 
   try {
+    const url = new URL(req.url);
+    // Instance UUID may be supplied via query (?instance=...) or header — used to route to the correct Bitrix24 Open Line
+    const instanceIdFromUrl = url.searchParams.get("instance") || url.searchParams.get("instanceId") || req.headers.get("x-instance-id") || null;
+
     const body = await req.json();
-    console.log("[WUZAPI-WEBHOOK] Received:", JSON.stringify(body).slice(0, 500));
+    console.log("[WUZAPI-WEBHOOK] Received:", JSON.stringify(body).slice(0, 500), "instance:", instanceIdFromUrl);
 
     const supabase = createClient(
       Deno.env.get("SUPABASE_URL")!,
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
     );
+
+    const instanceId: string | null = instanceIdFromUrl || body.instance_id || body.instanceId || null;
 
     // WUZAPI sends different payload formats:
     // Format A (expected):  { event: "Message", data: { Info: {...}, Message: {...} } }
@@ -225,6 +231,7 @@ Deno.serve(async (req) => {
           contactId: phone,
           channel: "whatsapp",
           conversationId,
+          instanceId, // routes to the Open Line linked to this instance
         }),
       });
 

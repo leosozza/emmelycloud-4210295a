@@ -1898,6 +1898,19 @@ function InstancesTab() {
     setLinkingInstance(instanceId);
     const inst = instances.find((i) => i.id === instanceId);
     if (!inst) return;
+
+    // Enforce 1:1 — block if another instance already uses this mapping
+    if (mappingId !== "none") {
+      const conflict = instances.find(
+        (i) => i.id !== instanceId && i.config?.bitrix24_mapping_id === mappingId
+      );
+      if (conflict) {
+        toast.error(`Esta linha já está vinculada à instância "${conflict.name}". Cada Canal Aberto só pode ter 1 instância.`);
+        setLinkingInstance(null);
+        return;
+      }
+    }
+
     const newConfig = { ...inst.config, bitrix24_mapping_id: mappingId === "none" ? null : mappingId };
     const { error } = await supabase
       .from("channel_instances")
@@ -2057,6 +2070,9 @@ function InstancesTab() {
                   </div>
                 </div>
                 <div className="flex items-center gap-1.5">
+                  {inst.status === "active" && bitrixMappings.length > 0 && !inst.config.bitrix24_mapping_id && (
+                    <Badge variant="destructive" className="text-[10px] h-5">Sem Canal Aberto</Badge>
+                  )}
                   <StatusBadge status={inst.status === "error" ? "inactive" : inst.status as "active" | "inactive"} />
                 </div>
               </CardHeader>
@@ -2092,13 +2108,23 @@ function InstancesTab() {
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="none">Nenhuma (desvinculado)</SelectItem>
-                        {bitrixMappings.map((m) => (
-                          <SelectItem key={m.id} value={m.id}>
-                            {m.line_name || m.channel} {m.is_active ? "✓" : ""}
-                          </SelectItem>
-                        ))}
+                        {bitrixMappings.map((m) => {
+                          const usedBy = instances.find(
+                            (i) => i.id !== inst.id && i.config?.bitrix24_mapping_id === m.id
+                          );
+                          const disabled = !!usedBy || !m.is_active;
+                          return (
+                            <SelectItem key={m.id} value={m.id} disabled={disabled}>
+                              {m.line_name || m.channel} {m.is_active ? "" : "(inativo)"}
+                              {usedBy ? ` — em uso por "${usedBy.name}"` : ""}
+                            </SelectItem>
+                          );
+                        })}
                       </SelectContent>
                     </Select>
+                    <p className="text-[10px] text-muted-foreground">
+                      Cada instância só pode ligar a 1 Canal Aberto. Mensagens recebidas serão encaminhadas exclusivamente para a linha selecionada.
+                    </p>
                     {inst.config.bitrix24_mapping_id && (
                       <p className="text-[10px] text-green-600">
                         ✓ Vinculado à linha "{bitrixMappings.find((m) => m.id === inst.config.bitrix24_mapping_id)?.line_name || "—"}"

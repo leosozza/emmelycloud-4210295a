@@ -321,8 +321,7 @@ Deno.serve(async (req) => {
               }),
             }).catch((e) => console.error("[WA-WEBHOOK] Flow engine error:", e));
 
-            // Forward to Bitrix24 (fire and forget)
-            const bitrixMappingId = instance?.config?.bitrix24_mapping_id || null;
+            // Forward to Bitrix24 (fire and forget) — bitrix24-send resolves the Open Line via instanceId
             fetch(`${supabaseUrl}/functions/v1/bitrix24-send`, {
               method: "POST",
               headers: {
@@ -335,7 +334,7 @@ Deno.serve(async (req) => {
                 contactId: from,
                 channel: "whatsapp",
                 conversationId,
-                bitrix24MappingId: bitrixMappingId,
+                instanceId: instance?.id || null,
               }),
             }).catch((e) => console.error("[WA-WEBHOOK] Bitrix24 forward error:", e));
           }
