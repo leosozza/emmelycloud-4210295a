@@ -141,7 +141,7 @@ export function ContactProfile({ conversation }: ContactProfileProps) {
       </div>
 
       <div className="flex-1 overflow-y-auto px-4 space-y-0">
-        <CollapsibleSection title="Contacto">
+        <CollapsibleSection title="Contacto" defaultOpen>
           <div className="space-y-2">
             {conversation.contact_phone && (
               <div className="flex items-center gap-2 text-sm">
