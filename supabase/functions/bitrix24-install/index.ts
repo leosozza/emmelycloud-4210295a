@@ -1927,6 +1927,77 @@ Deno.serve(async (req) => {
       await debugLog(supabase, integrationId, "placement_bind_error", "outbound", null, String(placementError));
     }
 
+    // --- Register IM_TEXTAREA placement (Send Audio to WhatsApp) ---
+    try {
+      const sendAudioUrl = `${supabaseUrl}/functions/v1/bitrix24-im-send-audio`;
+      await callBitrix(clientEndpoint, accessToken, "placement.unbind", {
+        PLACEMENT: "IM_TEXTAREA",
+        HANDLER: sendAudioUrl,
+      });
+      const audioRes = await callBitrix(clientEndpoint, accessToken, "placement.bind", {
+        PLACEMENT: "IM_TEXTAREA",
+        HANDLER: sendAudioUrl,
+        TITLE: "Enviar Áudio (WhatsApp)",
+        DESCRIPTION: "Gravar e enviar áudio para o WhatsApp",
+        LANG_ALL: {
+          pt: { TITLE: "Enviar Áudio (WhatsApp)", DESCRIPTION: "Gravar e enviar áudio para o WhatsApp" },
+          en: { TITLE: "Send Audio (WhatsApp)", DESCRIPTION: "Record and send audio to WhatsApp" },
+          es: { TITLE: "Enviar Audio (WhatsApp)", DESCRIPTION: "Grabar y enviar audio a WhatsApp" },
+        },
+        OPTIONS: {
+          iconName: "fa-microphone",
+          context: "LINES",
+          color: "GREEN",
+          role: "USER",
+          width: "360",
+          height: "220",
+          extranet: "N",
+        },
+      });
+      if (!audioRes.error || String(audioRes.error).toLowerCase().includes("already")) {
+        console.log("[INSTALL] placement.bind IM_TEXTAREA (audio): OK");
+        installSummary.placements_registered.push("IM_TEXTAREA_AUDIO");
+      } else {
+        console.error("[INSTALL] placement.bind audio error:", audioRes.error, audioRes.error_description);
+      }
+    } catch (e) { console.error("[INSTALL] audio placement error:", e); }
+
+    // --- Register IM_TEXTAREA placement (Send File to WhatsApp) ---
+    try {
+      const sendFileUrl = `${supabaseUrl}/functions/v1/bitrix24-im-send-file`;
+      await callBitrix(clientEndpoint, accessToken, "placement.unbind", {
+        PLACEMENT: "IM_TEXTAREA",
+        HANDLER: sendFileUrl,
+      });
+      const fileRes = await callBitrix(clientEndpoint, accessToken, "placement.bind", {
+        PLACEMENT: "IM_TEXTAREA",
+        HANDLER: sendFileUrl,
+        TITLE: "Enviar Arquivo (WhatsApp)",
+        DESCRIPTION: "Enviar imagem, PDF ou documento para o WhatsApp",
+        LANG_ALL: {
+          pt: { TITLE: "Enviar Arquivo (WhatsApp)", DESCRIPTION: "Enviar imagem, PDF ou documento para o WhatsApp" },
+          en: { TITLE: "Send File (WhatsApp)", DESCRIPTION: "Send image, PDF or document to WhatsApp" },
+          es: { TITLE: "Enviar Archivo (WhatsApp)", DESCRIPTION: "Enviar imagen, PDF o documento a WhatsApp" },
+        },
+        OPTIONS: {
+          iconName: "fa-paperclip",
+          context: "LINES",
+          color: "AZURE",
+          role: "USER",
+          width: "380",
+          height: "260",
+          extranet: "N",
+        },
+      });
+      if (!fileRes.error || String(fileRes.error).toLowerCase().includes("already")) {
+        console.log("[INSTALL] placement.bind IM_TEXTAREA (file): OK");
+        installSummary.placements_registered.push("IM_TEXTAREA_FILE");
+      } else {
+        console.error("[INSTALL] placement.bind file error:", fileRes.error, fileRes.error_description);
+      }
+    } catch (e) { console.error("[INSTALL] file placement error:", e); }
+
+
     // --- Register IM_SIDEBAR placement (Emmely AI Assistant sidebar in messenger) ---
     try {
       const imSidebarUrl = `${supabaseUrl}/functions/v1/bitrix24-im-sidebar`;
