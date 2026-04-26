@@ -133,13 +133,13 @@ export default function ApiKeysPage() {
 
       <Card className="mb-6">
         <CardHeader>
-          <CardTitle className="text-sm">Conexão MCP</CardTitle>
-          <CardDescription className="text-xs">Configure o seu cliente MCP (ex. OpenClaw) com este endpoint</CardDescription>
+          <CardTitle className="text-sm">Conexão MCP (OpenClaw, Claude Desktop, Cursor)</CardTitle>
+          <CardDescription className="text-xs">Configure o seu cliente MCP com este endpoint</CardDescription>
         </CardHeader>
         <CardContent className="space-y-2 text-xs">
           <div className="flex items-center gap-2">
-            <Badge variant="outline" className="text-[10px]">URL</Badge>
-            <code className="font-mono bg-muted/50 px-2 py-1 rounded flex-1">
+            <Badge variant="outline" className="text-[10px] w-20 justify-center">URL</Badge>
+            <code className="font-mono bg-muted/50 px-2 py-1 rounded flex-1 truncate">
               https://{import.meta.env.VITE_SUPABASE_PROJECT_ID}.supabase.co/functions/v1/mcp-server
             </code>
             <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() =>
@@ -149,9 +149,12 @@ export default function ApiKeysPage() {
             </Button>
           </div>
           <div className="flex items-center gap-2">
-            <Badge variant="outline" className="text-[10px]">Auth</Badge>
-            <code className="font-mono bg-muted/50 px-2 py-1 rounded">Authorization: Bearer emk_live_...</code>
+            <Badge variant="outline" className="text-[10px] w-20 justify-center">Header</Badge>
+            <code className="font-mono bg-muted/50 px-2 py-1 rounded">X-API-Key: emk_live_...</code>
           </div>
+          <p className="text-[10px] text-muted-foreground pl-[88px]">
+            Também suportado: <code>Authorization: Bearer emk_live_...</code> ou <code>Authorization: ApiKey emk_live_...</code>
+          </p>
         </CardContent>
       </Card>
 
