@@ -475,20 +475,49 @@ export default function ChatIAPage() {
         : "Modelo grande, aguarda…"
     : null;
 
-  return (
-    <div className="flex h-[calc(100vh-5rem)] -m-6">
-      <ChatSidebar
-        sessions={sessions.map((s) => ({ id: s.id, title: s.title, updated_at: s.updated_at }))}
-        activeSessionId={activeSessionId}
-        agents={agents}
-        selectedAgentId={selectedAgentId}
-        onSelectSession={selectSession}
-        onNewSession={createNewSession}
-        onDeleteSession={deleteSession}
-        onSelectAgent={(id) => { setSelectedAgentId(id); createNewSession(); }}
-      />
+  const sidebarComponent = (
+    <ChatSidebar
+      sessions={sessions.map((s) => ({ id: s.id, title: s.title, updated_at: s.updated_at }))}
+      activeSessionId={activeSessionId}
+      agents={agents}
+      selectedAgentId={selectedAgentId}
+      onSelectSession={(id) => { selectSession(id); if (isMobile) setSidebarOpen(false); }}
+      onNewSession={() => { createNewSession(); if (isMobile) setSidebarOpen(false); }}
+      onDeleteSession={deleteSession}
+      onSelectAgent={(id) => { setSelectedAgentId(id); createNewSession(); if (isMobile) setSidebarOpen(false); }}
+    />
+  );
 
-      <div className="flex-1 flex flex-col">
+  return (
+    <div className="flex h-[calc(100vh-3.5rem)] sm:h-[calc(100vh-5rem)] -m-3 sm:-m-4 md:-m-6">
+      {/* Desktop sidebar */}
+      <div className="hidden md:block">
+        {sidebarComponent}
+      </div>
+
+      {/* Mobile sidebar (drawer) */}
+      <Sheet open={sidebarOpen} onOpenChange={setSidebarOpen}>
+        <SheetContent side="left" className="p-0 w-72 max-w-[85vw]">
+          {sidebarComponent}
+        </SheetContent>
+      </Sheet>
+
+      <div className="flex-1 flex flex-col min-w-0">
+        {/* Mobile top bar with menu trigger */}
+        <div className="md:hidden border-b bg-background flex items-center gap-2 px-3 py-2">
+          <SheetTrigger asChild onClick={() => setSidebarOpen(true)}>
+            <Button variant="ghost" size="icon" className="h-9 w-9 -ml-1" aria-label="Conversas">
+              <Menu className="h-5 w-5" />
+            </Button>
+          </SheetTrigger>
+          <span className="text-sm font-medium truncate flex-1">
+            {selectedAgent?.name || "Chat IA"}
+          </span>
+          <Button size="sm" variant="outline" onClick={() => { createNewSession(); }} className="h-8 text-xs">
+            <Sparkles className="h-3.5 w-3.5 mr-1" /> Novo
+          </Button>
+        </div>
+
         {/* Model info bar */}
         {selectedAgent?.ai_model && (
           <div className="border-b bg-muted/30 px-4 py-1.5 flex items-center gap-2 text-xs text-muted-foreground flex-wrap">
