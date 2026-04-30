@@ -228,7 +228,7 @@ Deno.serve(async (req) => {
       status: urlChanged ? "updated" : "unchanged",
       error_message: sync.error ? `sync warning: ${sync.error}` : null,
       secret_valid: true,
-      raw_payload: { ...body, synced_models: sync.models },
+      raw_payload: { ...body, synced_models: sync.models, forwarded_to_yai: { status: forwardStatus, error: forwardError } },
     });
 
     return new Response(
@@ -239,6 +239,7 @@ Deno.serve(async (req) => {
         previous: previousUrl,
         models_synced: sync.models,
         sync_error: sync.error || null,
+        forwarded: { url: FORWARD_URL, status: forwardStatus, error: forwardError },
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
