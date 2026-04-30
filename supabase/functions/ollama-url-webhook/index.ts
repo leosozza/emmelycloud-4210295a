@@ -194,6 +194,27 @@ Deno.serve(async (req) => {
 
     // Best-effort: sync provider models from /api/tags
     const sync = await syncOllamaProvider(supabase, newUrl);
+
+    // Best-effort: forward URL update to external mirror endpoint (yai-update-url)
+    const FORWARD_URL = "https://gkvvtfqfggddzotxltxf.supabase.co/functions/v1/yai-update-url";
+    let forwardStatus: number | null = null;
+    let forwardError: string | null = null;
+    try {
+      const fwd = await fetch(FORWARD_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: newUrl }),
+        signal: AbortSignal.timeout(10000),
+      });
+      forwardStatus = fwd.status;
+      if (!fwd.ok) {
+        forwardError = `HTTP ${fwd.status}: ${(await fwd.text()).slice(0, 200)}`;
+      }
+      console.log(`[ollama-url-webhook] forwarded to yai-update-url → ${fwd.status}`);
+    } catch (e: any) {
+      forwardError = e?.message || String(e);
+      console.warn(`[ollama-url-webhook] forward failed: ${forwardError}`);
+    }
     if (sync.error) {
       console.warn("[ollama-url-webhook] sync warning:", sync.error);
     } else {
