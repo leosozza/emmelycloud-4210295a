@@ -59,15 +59,15 @@ Deno.serve(async (req) => {
     if (action === "meta") {
       // Combinar crm.*.fields + userfield.list (paginar userfield.list)
       const crmMethod = entity === "deal" ? "crm.deal.fields" : "crm.lead.fields";
-      const entityId = entity === "deal" ? "CRM_DEAL" : "CRM_LEAD";
+      const ufMethod = entity === "deal" ? "crm.deal.userfield.list" : "crm.lead.userfield.list";
       const crmRes = await callBitrix(ep, token, crmMethod);
       // userfield.list paginado
       const userfields: any[] = [];
       let s = 0;
       while (true) {
-        const r = await callBitrix(ep, token, "userfield.list", {
-          ORDER: { ID: "ASC" },
-          FILTER: { ENTITY_ID: entityId },
+        const r = await callBitrix(ep, token, ufMethod, {
+          order: { ID: "ASC" },
+          filter: {},
           start: s,
         });
         if (r.error) throw new Error(`userfield.list: ${r.error_description || r.error}`);
