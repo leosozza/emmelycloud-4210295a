@@ -136,6 +136,21 @@ async function warmUpModel(baseUrl: string, model: string): Promise<{ ok: boolea
   return { ok: false, error: lastError || "warm-up falhou após retries" };
 }
 
+function isThinkingModel(model: string): boolean {
+  const m = model.toLowerCase();
+  // Qwen3 (incluindo qwen3.6), DeepSeek-R1, QwQ, o1, generic *-r1 — todos thinking por padrão
+  return /(qwen3|qwen-?3|deepseek-?r1|qwq|^o1|[-:]r1)/.test(m);
+}
+
+function stripThinkTags(text: string): string {
+  if (!text) return "";
+  // Remove blocos <think>...</think> ou <thinking>...</thinking> (até fim, caso esteja truncado)
+  return text
+    .replace(/<think(?:ing)?>[\s\S]*?<\/think(?:ing)?>/gi, "")
+    .replace(/<think(?:ing)?>[\s\S]*$/i, "")
+    .trim();
+}
+
 async function callOllamaChat(
   baseUrl: string,
   model: string,
@@ -143,16 +158,24 @@ async function callOllamaChat(
 ): Promise<{ text: string; latency_ms: number }> {
   const url = baseUrl.replace(/\/+$/, "") + "/api/chat";
   const start = Date.now();
+  const thinking = isThinkingModel(model);
   const resp = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       model,
       stream: false,
+      // think: false desativa o raciocínio interno em modelos Qwen3/DeepSeek-R1 (Ollama >= 0.5.x);
+      // versões antigas ignoram silenciosamente este campo, daí o fallback abaixo.
+      ...(thinking ? { think: false } : {}),
       messages: [{ role: "user", content: prompt }],
-      options: { temperature: 0.2, num_predict: 400 },
+      options: {
+        temperature: 0.2,
+        // Modelos thinking precisam de orçamento maior para chegar à resposta final
+        num_predict: thinking ? 1500 : 600,
+      },
     }),
-    signal: AbortSignal.timeout(120_000),
+    signal: AbortSignal.timeout(180_000),
   });
   const latency_ms = Date.now() - start;
   if (!resp.ok) {
@@ -160,7 +183,18 @@ async function callOllamaChat(
     throw new Error(`Ollama ${resp.status}: ${t.slice(0, 200)}`);
   }
   const data = await resp.json();
-  const text = data?.message?.content || data?.response || "";
+  // Fallback em cascata: content -> response -> thinking (caso o servidor antigo só devolva o raciocínio)
+  let text: string =
+    data?.message?.content ||
+    data?.response ||
+    data?.message?.thinking ||
+    "";
+  text = stripThinkTags(text);
+  if (!text.trim()) {
+    throw new Error(
+      "Resposta vazia do modelo (provável thinking model — atualize o Ollama para suportar 'think: false' ou use um modelo non-thinking)",
+    );
+  }
   return { text, latency_ms };
 }
 
