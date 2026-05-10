@@ -100,14 +100,15 @@ const FIX_STAGE_BATCH_SIZE = 15;
 async function selfInvokeContinue(sessionId: string, limitParam: number, mode: "execute" | "fix_stages" = "execute") {
   try {
     const url = `${Deno.env.get("SUPABASE_URL")}/functions/v1/bitrix24-migrate-deals-to-spa?mode=${mode}&continue_session=${sessionId}${limitParam > 0 ? `&limit=${limitParam}` : ""}`;
-    // Fire-and-forget; do not await response
-    fetch(url, {
+    const request = fetch(url, {
       method: "GET",
       headers: {
         "Authorization": `Bearer ${Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")}`,
         "apikey": Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
       },
-    }).catch((e) => console.error("[self-invoke]", e));
+    }).then((res) => res.text()).catch((e) => console.error("[self-invoke]", e));
+    // @ts-ignore EdgeRuntime is provided by Supabase Edge runtime
+    EdgeRuntime.waitUntil(request);
     console.log(`[self-invoke] chained ${mode} continuation for session=${sessionId}`);
   } catch (e) {
     console.error("[self-invoke] failed", e);
