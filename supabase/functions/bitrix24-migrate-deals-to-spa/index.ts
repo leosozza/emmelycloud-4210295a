@@ -366,7 +366,9 @@ Deno.serve(async (req) => {
 
     const token = await ensureValidToken(supabase, integration);
     const ep = integration.client_endpoint;
-    const sessionId = crypto.randomUUID();
+    // Reuse session_id when chained (auto-retry continuation) so progress aggregates
+    const sessionId = continueSession || crypto.randomUUID();
+    if (continueSession) console.log(`[migrate] continuing session=${sessionId}`);
 
     // Build SPA + deal field maps
     const spaFieldsRes = await bx(ep, token, "crm.item.fields.json", { entityTypeId: TARGET_ENTITY_TYPE_ID });
