@@ -514,26 +514,70 @@ Deno.serve(async (req) => {
 
       let fixed = 0, skipped = 0, failed = 0;
       const sample: any[] = [];
+      const fixStartedAt = Date.now();
+      const fixLogBuffer: any[] = [];
+      const flushFixLogs = async () => {
+        if (!fixLogBuffer.length) return;
+        const chunk = fixLogBuffer.splice(0, fixLogBuffer.length);
+        const { error } = await supabase.from("spa_migration_log").insert(chunk);
+        if (error) console.error("[fix_stages] log insert error:", error);
+      };
       for (const [spaId, info] of byItem) {
+        if ((fixed + skipped + failed) >= FIX_STAGE_BATCH_SIZE || Date.now() - fixStartedAt > FIX_STAGE_TIME_BUDGET_MS) break;
         const currentStageId = dealById[info.deal_id]?.STAGE_ID || info.source_stage_id;
         const targetStage = stageMap[currentStageId];
-        if (!targetStage) { skipped++; continue; }
+        if (!targetStage) {
+          skipped++;
+          fixLogBuffer.push({
+            session_id: fixSession, deal_id: String(info.deal_id), spa_item_id: spaId,
+            source_category_id: SOURCE_CATEGORY_ID, target_entity_type_id: TARGET_ENTITY_TYPE_ID,
+            source_stage_id: currentStageId, target_stage_id: null,
+            deal_title: null, status: "skipped", error_message: "Etapa de destino não encontrada",
+            mode: "fix_stages", payload: null,
+          });
+          if (fixLogBuffer.length >= 25) await flushFixLogs();
+          continue;
+        }
         const upd = await bx(ep, token, "crm.item.update.json", {
           entityTypeId: TARGET_ENTITY_TYPE_ID, id: spaId, fields: { stageId: targetStage },
         });
         if (upd.error) {
           failed++;
           if (sample.length < 5) sample.push({ spaId, error: upd.error_description || upd.error });
+          fixLogBuffer.push({
+            session_id: fixSession, deal_id: String(info.deal_id), spa_item_id: spaId,
+            source_category_id: SOURCE_CATEGORY_ID, target_entity_type_id: TARGET_ENTITY_TYPE_ID,
+            source_stage_id: currentStageId, target_stage_id: targetStage,
+            deal_title: null, status: "failed", error_message: `fix_stages: ${upd.error_description || upd.error}`,
+            mode: "fix_stages", payload: { stageId: targetStage },
+          });
         } else {
           fixed++;
+          fixLogBuffer.push({
+            session_id: fixSession, deal_id: String(info.deal_id), spa_item_id: spaId,
+            source_category_id: SOURCE_CATEGORY_ID, target_entity_type_id: TARGET_ENTITY_TYPE_ID,
+            source_stage_id: currentStageId, target_stage_id: targetStage,
+            deal_title: null, status: "success", error_message: null,
+            mode: "fix_stages", payload: { stageId: targetStage },
+          });
         }
+        if (fixLogBuffer.length >= 25) await flushFixLogs();
       }
+      await flushFixLogs();
+
+      const processedNow = fixed + skipped + failed;
+      const remaining = Math.max(0, byItem.size - processedNow);
+      const shouldContinue = remaining > 0;
+      if (shouldContinue) await selfInvokeContinue(fixSession, limitParam, "fix_stages");
 
       return json({
-        success: true, mode: "fix_stages", session_id: fixSession,
-        total_processed: byItem.size, fixed, skipped, failed,
+        success: true, mode: "fix_stages", session_id: fixSession, background: shouldContinue,
+        total_processed: processedSpaIds.size + byItem.size, fixed, skipped, failed,
         stage_map: stageMap, unmatched_source_stages: unmatched.map((u: any) => ({ id: u.STATUS_ID, name: u.NAME })),
-        sample,
+        mapped_uf_fields: [], sample,
+        message: shouldContinue
+          ? `Correção de etapas processou ${processedNow}; continuando em background (${remaining} restantes).`
+          : `Correção de etapas concluída.`,
       });
     }
 
