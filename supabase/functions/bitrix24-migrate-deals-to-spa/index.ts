@@ -245,7 +245,7 @@ Deno.serve(async (req) => {
 
   try {
     const url = new URL(req.url);
-    const mode = (url.searchParams.get("mode") || "dry_run") as "dry_run" | "execute" | "status" | "backfill";
+    const mode = (url.searchParams.get("mode") || "dry_run") as "dry_run" | "execute" | "status" | "backfill" | "fix_stages";
     const limitParam = parseInt(url.searchParams.get("limit") || "0");
     const sessionIdParam = url.searchParams.get("session_id");
     const continueSession = url.searchParams.get("continue_session");
