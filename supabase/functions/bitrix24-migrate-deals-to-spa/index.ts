@@ -242,7 +242,7 @@ Deno.serve(async (req) => {
       while (pages < maxPages) {
         const r = await bx(ep, token, "crm.deal.list", {
           filter: { CATEGORY_ID: SOURCE_CATEGORY_ID, [`!${REVERSE_LINK_FIELD}`]: false },
-          select: ["ID", "TITLE", REVERSE_LINK_FIELD],
+          select: ["ID", "TITLE", "ASSIGNED_BY_ID", REVERSE_LINK_FIELD],
           order: { ID: "ASC" }, start,
         });
         if (r.error) throw new Error(`crm.deal.list: ${r.error_description}`);
