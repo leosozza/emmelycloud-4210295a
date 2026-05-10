@@ -591,6 +591,16 @@ Deno.serve(async (req) => {
       const remaining = Math.max(0, byItem.size - processedNow);
       const shouldContinue = remaining > 0;
       if (shouldContinue) await selfInvokeContinue(fixSession, limitParam, "fix_stages");
+      if (!shouldContinue) {
+        const { error } = await supabase.from("spa_migration_log").insert({
+          session_id: fixSession, deal_id: "__fix_stages_done__", spa_item_id: "__done__",
+          source_category_id: SOURCE_CATEGORY_ID, target_entity_type_id: TARGET_ENTITY_TYPE_ID,
+          source_stage_id: null, target_stage_id: null, deal_title: null,
+          status: "skipped", error_message: null, mode: "fix_stages",
+          payload: { done: true, processed_total: processedSpaIds.size + processedNow },
+        });
+        if (error) console.error("[fix_stages] done marker insert error:", error);
+      }
 
       return json({
         success: true, mode: "fix_stages", session_id: fixSession, background: shouldContinue,
