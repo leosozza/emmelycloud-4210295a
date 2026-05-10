@@ -152,12 +152,22 @@ Deno.serve(async (req) => {
     }
 
     // 2) Mapa de etapas: deal cat 25 -> SPA stage
-    const dealStagesRes = await bx(ep, token, "crm.dealcategory.stage.list", { id: SOURCE_CATEGORY_ID });
-    const dealStages = dealStagesRes.result || [];
-    const spaStagesRes = await bx(ep, token, "crm.status.list", {
-      filter: { ENTITY_ID: `DYNAMIC_${TARGET_ENTITY_TYPE_ID}_STAGE_0` }
+    const dealStageEntityRes = await bx(ep, token, "crm.dealcategory.status.json", { id: SOURCE_CATEGORY_ID });
+    const dealStageEntityId = dealStageEntityRes.result || `DEAL_STAGE_${SOURCE_CATEGORY_ID}`;
+    const dealStagesRes = await bx(ep, token, "crm.status.list.json", {
+      filter: { ENTITY_ID: dealStageEntityId }
     });
-    const spaStages = spaStagesRes.result || [];
+    const dealStages = dealStagesRes.result || [];
+    const spaStageEntities = [`DYNAMIC_${TARGET_ENTITY_TYPE_ID}_STAGE_0`, `DYNAMIC_${TARGET_ENTITY_TYPE_ID}_STAGE`];
+    let spaStages: any[] = [];
+    for (const entityId of spaStageEntities) {
+      const spaStagesRes = await bx(ep, token, "crm.status.list.json", { filter: { ENTITY_ID: entityId } });
+      const rows = spaStagesRes.result || [];
+      if (rows.length > 0) {
+        spaStages = rows;
+        break;
+      }
+    }
     const stageMap: Record<string, string> = {};
     for (const ds of dealStages) {
       const match = spaStages.find((ss: any) => normalize(ss.NAME) === normalize(ds.NAME));
