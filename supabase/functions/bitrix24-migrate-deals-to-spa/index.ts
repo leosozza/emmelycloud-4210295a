@@ -211,6 +211,108 @@ Deno.serve(async (req) => {
       return json({ success: true, session_id: sessionIdParam, processed: data?.length || 0, counts });
     }
 
+    // BACKFILL endpoint: percorre deals do pipeline 25 que já têm UF_CRM_1778431525
+    // preenchido (link reverso) e atualiza o item da SPA setando o campo DEAL com o ID do deal.
+    if (mode === "backfill") {
+      const { data: integration } = await supabase
+        .from("bitrix24_integrations")
+        .select("*").order("updated_at", { ascending: false }).limit(1).maybeSingle();
+      if (!integration) return json({ error: "No integration" }, 404);
+      const token = await ensureValidToken(supabase, integration);
+      const ep = integration.client_endpoint;
+      const backfillSession = crypto.randomUUID();
+
+      // Resolve campo DEAL na SPA
+      const spaFieldsRes = await bx(ep, token, "crm.item.fields.json", { entityTypeId: TARGET_ENTITY_TYPE_ID });
+      const spaFields = spaFieldsRes.result?.fields || spaFieldsRes.result || {};
+      const spaCodeToField: Record<string, string> = {};
+      for (const [code] of Object.entries<any>(spaFields)) {
+        const logical = normalizeCode(code);
+        if (logical) spaCodeToField[logical] = code;
+      }
+      const dealField = spaCodeToField.DEAL_ORIGEM_ID || spaCodeToField.DEAL || spaCodeToField.DEAL_ID || spaCodeToField.DEALID;
+      const urlField = spaCodeToField.DEAL_ORIGEM_URL || spaCodeToField.DEAL_URL;
+      if (!dealField) return json({ error: "Campo DEAL não encontrado na SPA. Disponíveis: " + Object.keys(spaCodeToField).join(",") }, 400);
+
+      // Buscar deals com link reverso preenchido
+      const linked: any[] = [];
+      let start: any = 0;
+      const maxPages = limitParam > 0 ? Math.ceil(limitParam / 50) : 50;
+      let pages = 0;
+      while (pages < maxPages) {
+        const r = await bx(ep, token, "crm.deal.list", {
+          filter: { CATEGORY_ID: SOURCE_CATEGORY_ID, [`!${REVERSE_LINK_FIELD}`]: false },
+          select: ["ID", "TITLE", REVERSE_LINK_FIELD],
+          order: { ID: "ASC" }, start,
+        });
+        if (r.error) throw new Error(`crm.deal.list: ${r.error_description}`);
+        const items = (r.result || []).filter((d: any) => d[REVERSE_LINK_FIELD] && String(d[REVERSE_LINK_FIELD]).trim() !== "");
+        linked.push(...items);
+        if (limitParam > 0 && linked.length >= limitParam) { linked.length = limitParam; break; }
+        if (typeof r.next === "undefined" || (r.result || []).length === 0) break;
+        start = r.next;
+        pages++;
+      }
+
+      const runBackfill = async () => {
+        let success = 0, failed = 0;
+        const buf: any[] = [];
+        const flush = async () => {
+          if (!buf.length) return;
+          const c = buf.splice(0, buf.length);
+          await supabase.from("spa_migration_log").insert(c);
+        };
+        for (const d of linked) {
+          const spaId = String(d[REVERSE_LINK_FIELD]);
+          const fields: Record<string, any> = { [dealField]: String(d.ID) };
+          if (urlField) fields[urlField] = `${ep.replace(/\/rest\/$/, "")}/crm/deal/details/${d.ID}/`;
+          const upd = await bx(ep, token, "crm.item.update.json", {
+            entityTypeId: TARGET_ENTITY_TYPE_ID, id: spaId, fields,
+          });
+          if (upd.error) {
+            failed++;
+            buf.push({
+              session_id: backfillSession, deal_id: String(d.ID), spa_item_id: spaId,
+              source_category_id: SOURCE_CATEGORY_ID, target_entity_type_id: TARGET_ENTITY_TYPE_ID,
+              source_stage_id: null, target_stage_id: null,
+              deal_title: d.TITLE, status: "failed",
+              error_message: `backfill: ${upd.error_description || upd.error}`,
+              mode: "backfill", payload: fields,
+            });
+          } else {
+            success++;
+            buf.push({
+              session_id: backfillSession, deal_id: String(d.ID), spa_item_id: spaId,
+              source_category_id: SOURCE_CATEGORY_ID, target_entity_type_id: TARGET_ENTITY_TYPE_ID,
+              source_stage_id: null, target_stage_id: null,
+              deal_title: d.TITLE, status: "success", error_message: null,
+              mode: "backfill", payload: fields,
+            });
+          }
+          if (buf.length >= 50) await flush();
+        }
+        await flush();
+        console.log(`[backfill] done. success=${success} failed=${failed}`);
+      };
+
+      if (linked.length > 20) {
+        // @ts-ignore
+        EdgeRuntime.waitUntil(runBackfill().catch(e => console.error("[bg backfill]", e)));
+        return json({
+          success: true, mode: "backfill", session_id: backfillSession, background: true,
+          total_processed: linked.length, success_count: 0, failed_count: 0, skipped_count: 0,
+          stage_map: {}, mapped_uf_fields: [`${dealField} <- deal.ID`],
+          sample: [], message: `Backfill rodando em background para ${linked.length} items.`,
+        });
+      }
+      await runBackfill();
+      return json({
+        success: true, mode: "backfill", session_id: backfillSession, background: false,
+        total_processed: linked.length, success_count: linked.length, failed_count: 0, skipped_count: 0,
+        stage_map: {}, mapped_uf_fields: [`${dealField} <- deal.ID`], sample: [],
+      });
+    }
+
     const { data: integration } = await supabase
       .from("bitrix24_integrations")
       .select("*").order("updated_at", { ascending: false }).limit(1).maybeSingle();
