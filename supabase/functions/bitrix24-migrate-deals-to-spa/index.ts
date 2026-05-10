@@ -84,6 +84,27 @@ function fieldLabel(meta: any) {
   return "";
 }
 
+// Soft time budget per invocation. After this, break loop and self-invoke
+// to continue. Set well below the 150s edge IDLE_TIMEOUT.
+const TIME_BUDGET_MS = 110_000;
+
+async function selfInvokeContinue(sessionId: string, limitParam: number) {
+  try {
+    const url = `${Deno.env.get("SUPABASE_URL")}/functions/v1/bitrix24-migrate-deals-to-spa?mode=execute&continue_session=${sessionId}${limitParam > 0 ? `&limit=${limitParam}` : ""}`;
+    // Fire-and-forget; do not await response
+    fetch(url, {
+      method: "GET",
+      headers: {
+        "Authorization": `Bearer ${Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")}`,
+        "apikey": Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+      },
+    }).catch((e) => console.error("[self-invoke]", e));
+    console.log(`[self-invoke] chained continuation for session=${sessionId}`);
+  } catch (e) {
+    console.error("[self-invoke] failed", e);
+  }
+}
+
 async function processMigration(opts: {
   supabase: any;
   ep: string;
@@ -95,9 +116,13 @@ async function processMigration(opts: {
   defaultSpaStage: string;
   sessionId: string;
   mode: "dry_run" | "execute";
-}) {
-  const { supabase, ep, token, allDeals, dealUfToSpaField, spaCodeToField, stageMap, defaultSpaStage, sessionId, mode } = opts;
+  limitParam?: number;
+}): Promise<{ processed: number; remaining: number; chained: boolean }> {
+  const { supabase, ep, token, allDeals, dealUfToSpaField, spaCodeToField, stageMap, defaultSpaStage, sessionId, mode, limitParam = 0 } = opts;
   const logBuffer: any[] = [];
+  const startedAt = Date.now();
+  let processedCount = 0;
+  let timedOut = false;
 
   const flush = async () => {
     if (logBuffer.length === 0) return;
