@@ -75,6 +75,18 @@ export function MessageBubble({ msg, conversationId, workspaceId, containerWidth
 
   const showFeedback = msg.is_from_bot && isOutgoing && msg.content;
 
+  // Normalise media kind: DB uses media_type; legacy code used message_type.
+  // Also infer from mime/url when only one is set.
+  const rawType = (msg.media_type || msg.message_type || "").toString().toLowerCase();
+  const mediaKind: "audio" | "image" | "video" | "document" | null =
+    rawType.includes("audio") || rawType === "ptt" ? "audio"
+    : rawType.includes("image") || rawType.includes("sticker") || rawType === "photo" ? "image"
+    : rawType.includes("video") ? "video"
+    : rawType.includes("document") || rawType.includes("file") || rawType === "pdf" ? "document"
+    : null;
+  const hasHttpUrl = !!msg.media_url && /^https?:\/\//i.test(msg.media_url);
+  const hasDataUri = !!msg.media_url && msg.media_url.startsWith("data:");
+
   const handleFeedback = async (rating: "up" | "down") => {
     if (feedbackGiven) return;
     setFeedbackGiven(rating);
