@@ -144,8 +144,9 @@ Deno.serve(async (req) => {
     const dealUfToSpaField: Record<string, string> = {};
     for (const [code, meta] of Object.entries<any>(dealFields)) {
       if (!code.startsWith("UF_CRM_")) continue;
-      const label = meta?.formLabel || meta?.title || meta?.listLabel || "";
-      const spaLogicalCode = LABEL_TO_SPA_CODE[label];
+      const label = fieldLabel(meta);
+      const spaLogicalCode = Object.entries(LABEL_TO_SPA_CODE)
+        .find(([sourceLabel]) => normalize(sourceLabel) === normalize(label))?.[1];
       const spaTarget = spaLogicalCode ? spaCodeToField[spaLogicalCode] : null;
       if (spaTarget) dealUfToSpaField[code] = spaTarget;
     }
