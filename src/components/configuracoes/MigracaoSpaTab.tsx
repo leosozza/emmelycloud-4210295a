@@ -84,15 +84,16 @@ export default function MigracaoSpaTab() {
         return;
       }
       if (r.background) {
-        toast.info(`Migração iniciada em background: ${r.total_processed} deals. Acompanhando...`);
+        toast.info(`${mode === "fix_stages" ? "Correção de etapas" : "Migração"} iniciada em background. Acompanhando...`);
         // Poll status every 4s
         const sessionId = r.session_id;
-        const total = r.total_processed;
+        let total = r.total_processed || 0;
         const poll = async () => {
           const s = await callFn("bitrix24-migrate-deals-to-spa", { mode: "status", session_id: sessionId });
           if (s?.success) {
+            total = Math.max(total, s.total_processed || 0, s.processed || 0);
             setBgStatus({ processed: s.processed, total, counts: s.counts });
-            if (s.processed >= total) {
+            if (s.done || (total > 0 && s.processed >= total)) {
               toast.success(`Migração concluída: ${s.counts.success} sucesso, ${s.counts.failed} erros, ${s.counts.skipped} já migrados`);
               return true;
             }
