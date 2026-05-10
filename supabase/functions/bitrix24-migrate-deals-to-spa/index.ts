@@ -132,6 +132,13 @@ async function processMigration(opts: {
   };
 
   for (const deal of allDeals) {
+    // Time budget check — break early to allow self-invoke continuation
+    if (mode === "execute" && Date.now() - startedAt > TIME_BUDGET_MS) {
+      timedOut = true;
+      console.log(`[migrate] time budget hit after ${processedCount} deals; will self-invoke`);
+      break;
+    }
+
     if (deal[REVERSE_LINK_FIELD] && String(deal[REVERSE_LINK_FIELD]).trim() !== "") {
       logBuffer.push({
         session_id: sessionId, deal_id: String(deal.ID), spa_item_id: String(deal[REVERSE_LINK_FIELD]),
@@ -203,10 +210,22 @@ async function processMigration(opts: {
       }
     }
 
+    processedCount++;
     if (logBuffer.length >= 50) await flush();
   }
 
   await flush();
+
+  // If we ran out of time, chain a self-invoke. The next invocation will
+  // re-fetch the deal list; deals already migrated will be naturally skipped
+  // because their REVERSE_LINK_FIELD is now populated. No duplicates.
+  let chained = false;
+  if (timedOut && mode === "execute") {
+    await selfInvokeContinue(sessionId, limitParam);
+    chained = true;
+  }
+
+  return { processed: processedCount, remaining: allDeals.length - processedCount, chained };
 }
 
 Deno.serve(async (req) => {
