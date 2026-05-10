@@ -264,7 +264,7 @@ export default function MigracaoSpaTab() {
                   <span className="text-xs text-muted-foreground">{bgStatus.processed} / {bgStatus.total}</span>
                 </div>
                 <div className="h-2 w-full overflow-hidden rounded bg-muted">
-                  <div className="h-full bg-primary transition-all" style={{ width: `${Math.min(100, (bgStatus.processed / bgStatus.total) * 100)}%` }} />
+                  <div className="h-full bg-primary transition-all" style={{ width: `${bgStatus.total > 0 ? Math.min(100, (bgStatus.processed / bgStatus.total) * 100) : 5}%` }} />
                 </div>
                 <div className="flex flex-wrap gap-2 text-xs">
                   <Badge variant="default">{bgStatus.counts.success || 0} sucesso</Badge>
