@@ -100,14 +100,15 @@ const FIX_STAGE_BATCH_SIZE = 15;
 async function selfInvokeContinue(sessionId: string, limitParam: number, mode: "execute" | "fix_stages" = "execute") {
   try {
     const url = `${Deno.env.get("SUPABASE_URL")}/functions/v1/bitrix24-migrate-deals-to-spa?mode=${mode}&continue_session=${sessionId}${limitParam > 0 ? `&limit=${limitParam}` : ""}`;
-    // Fire-and-forget; do not await response
-    fetch(url, {
+    const request = fetch(url, {
       method: "GET",
       headers: {
         "Authorization": `Bearer ${Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")}`,
         "apikey": Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
       },
-    }).catch((e) => console.error("[self-invoke]", e));
+    }).then((res) => res.text()).catch((e) => console.error("[self-invoke]", e));
+    // @ts-ignore EdgeRuntime is provided by Supabase Edge runtime
+    EdgeRuntime.waitUntil(request);
     console.log(`[self-invoke] chained ${mode} continuation for session=${sessionId}`);
   } catch (e) {
     console.error("[self-invoke] failed", e);
@@ -257,12 +258,23 @@ Deno.serve(async (req) => {
       if (!sessionIdParam) return json({ error: "session_id required" }, 400);
       const { data, error } = await supabase
         .from("spa_migration_log")
-        .select("status")
+        .select("status,payload,spa_item_id")
         .eq("session_id", sessionIdParam);
       if (error) return json({ error: error.message }, 500);
       const counts = { success: 0, failed: 0, skipped: 0, preview: 0 };
-      for (const r of data || []) counts[r.status as keyof typeof counts] = (counts[r.status as keyof typeof counts] || 0) + 1;
-      return json({ success: true, session_id: sessionIdParam, processed: data?.length || 0, counts });
+      let processed = 0;
+      let done = false;
+      let totalProcessed: number | null = null;
+      for (const r of data || []) {
+        if (r.payload?.done === true) {
+          done = true;
+          totalProcessed = Number(r.payload?.processed_total || 0) || null;
+          continue;
+        }
+        processed++;
+        counts[r.status as keyof typeof counts] = (counts[r.status as keyof typeof counts] || 0) + 1;
+      }
+      return json({ success: true, session_id: sessionIdParam, processed, total_processed: totalProcessed ?? processed, done, counts });
     }
 
     // BACKFILL endpoint: percorre deals do pipeline 25 que já têm UF_CRM_1778431525
@@ -378,6 +390,16 @@ Deno.serve(async (req) => {
     // Reuse session_id when chained (auto-retry continuation) so progress aggregates
     const sessionId = continueSession || crypto.randomUUID();
     if (continueSession) console.log(`[migrate] continuing session=${sessionId}`);
+
+    if (mode === "fix_stages" && !continueSession) {
+      await selfInvokeContinue(sessionId, limitParam, "fix_stages");
+      return json({
+        success: true, mode: "fix_stages", session_id: sessionId, background: true,
+        total_processed: 0, success_count: 0, failed_count: 0, skipped_count: 0,
+        stage_map: {}, mapped_uf_fields: [], sample: [],
+        message: `Correção de etapas iniciada em background. Use mode=status&session_id=${sessionId} para acompanhar.`,
+      });
+    }
 
     // Build SPA + deal field maps
     const spaFieldsRes = await bx(ep, token, "crm.item.fields.json", { entityTypeId: TARGET_ENTITY_TYPE_ID });
@@ -569,6 +591,16 @@ Deno.serve(async (req) => {
       const remaining = Math.max(0, byItem.size - processedNow);
       const shouldContinue = remaining > 0;
       if (shouldContinue) await selfInvokeContinue(fixSession, limitParam, "fix_stages");
+      if (!shouldContinue) {
+        const { error } = await supabase.from("spa_migration_log").insert({
+          session_id: fixSession, deal_id: "__fix_stages_done__", spa_item_id: "__done__",
+          source_category_id: SOURCE_CATEGORY_ID, target_entity_type_id: TARGET_ENTITY_TYPE_ID,
+          source_stage_id: null, target_stage_id: null, deal_title: null,
+          status: "skipped", error_message: null, mode: "fix_stages",
+          payload: { done: true, processed_total: processedSpaIds.size + processedNow },
+        });
+        if (error) console.error("[fix_stages] done marker insert error:", error);
+      }
 
       return json({
         success: true, mode: "fix_stages", session_id: fixSession, background: shouldContinue,

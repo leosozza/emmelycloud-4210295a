@@ -84,15 +84,16 @@ export default function MigracaoSpaTab() {
         return;
       }
       if (r.background) {
-        toast.info(`Migração iniciada em background: ${r.total_processed} deals. Acompanhando...`);
+        toast.info(`${mode === "fix_stages" ? "Correção de etapas" : "Migração"} iniciada em background. Acompanhando...`);
         // Poll status every 4s
         const sessionId = r.session_id;
-        const total = r.total_processed;
+        let total = r.total_processed || 0;
         const poll = async () => {
           const s = await callFn("bitrix24-migrate-deals-to-spa", { mode: "status", session_id: sessionId });
           if (s?.success) {
+            total = Math.max(total, s.total_processed || 0, s.processed || 0);
             setBgStatus({ processed: s.processed, total, counts: s.counts });
-            if (s.processed >= total) {
+            if (s.done || (total > 0 && s.processed >= total)) {
               toast.success(`Migração concluída: ${s.counts.success} sucesso, ${s.counts.failed} erros, ${s.counts.skipped} já migrados`);
               return true;
             }
@@ -263,7 +264,7 @@ export default function MigracaoSpaTab() {
                   <span className="text-xs text-muted-foreground">{bgStatus.processed} / {bgStatus.total}</span>
                 </div>
                 <div className="h-2 w-full overflow-hidden rounded bg-muted">
-                  <div className="h-full bg-primary transition-all" style={{ width: `${Math.min(100, (bgStatus.processed / bgStatus.total) * 100)}%` }} />
+                  <div className="h-full bg-primary transition-all" style={{ width: `${bgStatus.total > 0 ? Math.min(100, (bgStatus.processed / bgStatus.total) * 100) : 5}%` }} />
                 </div>
                 <div className="flex flex-wrap gap-2 text-xs">
                   <Badge variant="default">{bgStatus.counts.success || 0} sucesso</Badge>
