@@ -58,7 +58,7 @@ export default function MigracaoSpaTab() {
     }
   };
 
-  const handleRun = async (mode: "dry_run" | "execute", limit?: number) => {
+  const handleRun = async (mode: "dry_run" | "execute" | "backfill", limit?: number) => {
     if (mode === "execute") {
       const ok1 = confirm(
         `⚠️ Você vai migrar deals reais do pipeline 25 para a SPA 1118.\n\n` +
@@ -199,6 +199,30 @@ export default function MigracaoSpaTab() {
             <Button onClick={() => handleRun("execute")} disabled={running} variant="destructive">
               {running ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Rocket className="mr-2 h-4 w-4" />}
               Migrar TODOS
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card className="border-amber-500/40">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Wand2 className="h-4 w-4" /> Passo 4 — Backfill do campo DEAL na SPA
+          </CardTitle>
+          <CardDescription>
+            Para items já criados na SPA mas sem o campo DEAL preenchido — percorre os deals do pipeline 25 que já têm
+            UF_CRM_1778431525 e atualiza o item da SPA correspondente, gravando o ID do deal no campo DEAL (UF_CRM_41_DEAL).
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="flex flex-wrap gap-2">
+            <Button onClick={() => handleRun("backfill", 5)} disabled={running} variant="outline">
+              {running ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Wand2 className="mr-2 h-4 w-4" />}
+              Backfill teste (5)
+            </Button>
+            <Button onClick={() => handleRun("backfill")} disabled={running} variant="secondary">
+              {running ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Wand2 className="mr-2 h-4 w-4" />}
+              Backfill TODOS
             </Button>
           </div>
         </CardContent>
