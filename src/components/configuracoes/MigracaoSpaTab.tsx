@@ -58,7 +58,7 @@ export default function MigracaoSpaTab() {
     }
   };
 
-  const handleRun = async (mode: "dry_run" | "execute" | "backfill", limit?: number) => {
+  const handleRun = async (mode: "dry_run" | "execute" | "backfill" | "fix_stages", limit?: number) => {
     if (mode === "execute") {
       const ok1 = confirm(
         `⚠️ Você vai migrar deals reais do pipeline 25 para a SPA 1118.\n\n` +
