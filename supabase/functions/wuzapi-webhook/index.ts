@@ -229,6 +229,12 @@ Deno.serve(async (req) => {
 
     // Try to download + upload media to Storage so Bitrix24 can fetch it via public URL
     if (mediaNode && mediaDownloadKind) {
+      // 0) Some WUZAPI forks expose a ready-to-use HTTPS URL on the node itself
+      const directHttpsUrl = pickField(mediaNode, ["DownloadUrl", "downloadUrl", "PublicUrl", "publicUrl"]);
+      if (directHttpsUrl && /^https?:\/\//i.test(directHttpsUrl)) {
+        mediaUrl = directHttpsUrl;
+        console.log(`[WUZAPI-WEBHOOK] Media direct URL used: ${mediaUrl}`);
+      }
       try {
         const { data: wuzCreds2 } = await supabase
           .from("integration_credentials")
@@ -240,7 +246,7 @@ Deno.serve(async (req) => {
           if (c.credential_key === "WUZAPI_BASE_URL" && !dlBaseUrl) dlBaseUrl = c.credential_value?.trim() || "";
           if (c.credential_key === "WUZAPI_USER_TOKEN" && !dlToken) dlToken = c.credential_value?.trim() || "";
         }
-        if (dlBaseUrl && dlToken) {
+        if (!mediaUrl && dlBaseUrl && dlToken) {
           dlBaseUrl = dlBaseUrl.replace(/\/+$/, "");
           const dlPayload: Record<string, any> = {
             Url: pickField(mediaNode, ["Url", "URL", "url", "DirectPath", "directPath"]),
@@ -251,16 +257,12 @@ Deno.serve(async (req) => {
             FileLength: pickField(mediaNode, ["FileLength", "fileLength"]),
             MediaKey: pickField(mediaNode, ["MediaKey", "mediaKey"]),
           };
-          // Strip undefined to keep WUZAPI happy
           for (const k of Object.keys(dlPayload)) if (dlPayload[k] === undefined) delete dlPayload[k];
 
           const sizeBytes = Number(dlPayload.FileLength || 0);
-          if (sizeBytes > 16 * 1024 * 1024) {
-            console.warn(`[WUZAPI-WEBHOOK] Media size ${sizeBytes}B may exceed safe limits`);
-          }
-
           const dlEndpoint = `/chat/download${mediaDownloadKind}`;
-          console.log(`[WUZAPI-WEBHOOK] Downloading media: ${dlEndpoint} (${mediaMime}, ${sizeBytes}B)`);
+          console.log(`[WUZAPI-WEBHOOK] Downloading media: ${dlEndpoint} mime=${mediaMime} size=${sizeBytes}B keys=${Object.keys(dlPayload).join(",")}`);
+
           const dlRes = await fetch(`${dlBaseUrl}${dlEndpoint}`, {
             method: "POST",
             headers: { "Content-Type": "application/json", "token": dlToken },
@@ -268,39 +270,44 @@ Deno.serve(async (req) => {
           });
 
           if (!dlRes.ok) {
-            console.warn(`[WUZAPI-WEBHOOK] Download failed (${dlRes.status}):`, (await dlRes.text()).slice(0, 200));
+            const errBody = (await dlRes.text()).slice(0, 400);
+            console.warn(`[WUZAPI-WEBHOOK] Download failed status=${dlRes.status} body=${errBody}`);
           } else {
             const dlJson: any = await dlRes.json().catch(() => ({}));
-            // WUZAPI returns base64 in data.Data or data
-            const b64: string | undefined = dlJson?.data?.Data || dlJson?.Data || dlJson?.data;
+            const b64: string | undefined =
+              dlJson?.data?.Data || dlJson?.Data || dlJson?.data ||
+              dlJson?.data?.base64 || dlJson?.base64;
             if (b64 && typeof b64 === "string") {
-              // Decode base64 → bytes
               const cleanB64 = b64.replace(/^data:[^;]+;base64,/, "");
-              const binary = Uint8Array.from(atob(cleanB64), (c) => c.charCodeAt(0));
-              const ext = (mediaMime?.split("/")?.[1] || "bin").split(";")[0].split("+")[0];
-              const safeName = mediaFilename || `${mediaDownloadKind}-${Date.now()}.${ext}`;
-              const objectPath = `wuzapi-inbound/${Date.now()}-${safeName.replace(/[^a-zA-Z0-9._-]/g, "_")}`;
-              const { error: upErr } = await supabase.storage.from("media").upload(objectPath, binary, {
-                contentType: mediaMime || "application/octet-stream",
-                upsert: false,
-              });
-              if (upErr) {
-                console.warn("[WUZAPI-WEBHOOK] Storage upload failed:", upErr.message);
-              } else {
-                const { data: pub } = supabase.storage.from("media").getPublicUrl(objectPath);
-                mediaUrl = pub.publicUrl;
-                if (!mediaFilename) mediaFilename = safeName;
-                console.log(`[WUZAPI-WEBHOOK] Media uploaded: ${mediaUrl}`);
+              try {
+                const binary = Uint8Array.from(atob(cleanB64), (c) => c.charCodeAt(0));
+                const ext = (mediaMime?.split("/")?.[1] || "bin").split(";")[0].split("+")[0];
+                const safeName = mediaFilename || `${mediaDownloadKind}-${Date.now()}.${ext}`;
+                const objectPath = `wuzapi-inbound/${Date.now()}-${safeName.replace(/[^a-zA-Z0-9._-]/g, "_")}`;
+                const { error: upErr } = await supabase.storage.from("media").upload(objectPath, binary, {
+                  contentType: mediaMime || "application/octet-stream",
+                  upsert: false,
+                });
+                if (upErr) {
+                  console.warn("[WUZAPI-WEBHOOK] Storage upload failed:", upErr.message);
+                } else {
+                  const { data: pub } = supabase.storage.from("media").getPublicUrl(objectPath);
+                  mediaUrl = pub.publicUrl;
+                  if (!mediaFilename) mediaFilename = safeName;
+                  console.log(`[WUZAPI-WEBHOOK] Media uploaded (${binary.length}B): ${mediaUrl}`);
+                }
+              } catch (decErr) {
+                console.warn("[WUZAPI-WEBHOOK] Base64 decode failed:", decErr);
               }
             } else {
-              console.warn("[WUZAPI-WEBHOOK] Download response missing base64 payload");
+              console.warn(`[WUZAPI-WEBHOOK] Download response missing base64. Keys: ${Object.keys(dlJson || {}).join(",")}`);
             }
           }
-        } else {
-          console.warn("[WUZAPI-WEBHOOK] WUZAPI credentials missing — cannot download media");
+        } else if (!mediaUrl) {
+          console.warn(`[WUZAPI-WEBHOOK] Cannot download media — baseUrl=${!!dlBaseUrl} token=${!!dlToken}`);
         }
       } catch (e) {
-        console.warn("[WUZAPI-WEBHOOK] Media download/upload error:", e);
+        console.warn("[WUZAPI-WEBHOOK] Media download/upload error:", (e as Error).message);
       }
     }
 
