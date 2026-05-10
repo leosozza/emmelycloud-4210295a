@@ -27,6 +27,7 @@ export default function MigracaoSpaTab() {
   const [createResult, setCreateResult] = useState<any>(null);
   const [migrationResult, setMigrationResult] = useState<MigrationResult | null>(null);
   const [limitTest, setLimitTest] = useState(5);
+  const [bgStatus, setBgStatus] = useState<{ processed: number; total: number; counts: any } | null>(null);
 
   const callFn = async (path: string, params: Record<string, string> = {}) => {
     const url = new URL(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/${path}`);
