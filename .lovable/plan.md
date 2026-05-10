@@ -1,41 +1,90 @@
-## Problema
+## Análise da Pipeline 25 (Ação Judicial) → SPA 1118
 
-O benchmark de LLMs marca `qwen3.6:35b` e `qwen3.6:latest` com score 0 porque retornam **resposta vazia** (~3s de latência). A causa: são modelos da família **Qwen3 com "thinking mode" ativo por padrão**. O Ollama gera o bloco de raciocínio interno (`<think>...</think>` ou campo `thinking`) mas, com `num_predict: 400`, o orçamento de tokens esgota antes do modelo emitir a resposta final visível em `message.content`.
+**561 deals** analisados. Dos 190 campos do pipeline, apenas ~35 têm dados reais. A maioria dos campos jurídicos foi **criada no deal mas nunca preenchida** (ex: Número do processo, Prazo fatal, Audiência) — eles devem viver na SPA, não no deal.
 
-O código atual em `supabase/functions/ollama-benchmark-models/index.ts`:
-- Lê apenas `data.message.content` (vazio para modelos thinking)
-- Não passa `think: false` ao Ollama
-- Não aumenta `num_predict` para acomodar raciocínio
+### Campos a CRIAR na SPA 1118
 
-## Solução
+**1. Identificação & Vínculos (nativos da SPA — não criar)**
+Title, contactId, companyId, assignedById, stageId, opportunity, currencyId, createdTime — já existem por padrão.
 
-Tornar o benchmark robusto a modelos Qwen3/DeepSeek-R1/qualquer modelo "thinking":
+**2. Dados Jurídicos do Processo** (núcleo da SPA)
+| Campo SPA | Tipo | Origem deal |
+|---|---|---|
+| `ufCrm_NUMERO_PROCESSO` | string | Número do processo |
+| `ufCrm_URL_PROCESSO` | string (URL) | URL do Processo |
+| `ufCrm_VALOR_CONDENACAO` | money | Valor da condenação |
+| `ufCrm_PARTE_CONTRARIA` | string | Parte contrária |
+| `ufCrm_PARTE_CONTRARIA_TEXTO` | string | Parte contraria (Texto) |
+| `ufCrm_CLIENTE_TEXTO` | string | Cliente (Texto) |
+| `ufCrm_RESPONSAVEL_TEXTO` | string | Responsável (Texto) |
 
-### 1. Detecção e tratamento de thinking models em `callOllamaChat`
+**3. Prazos**
+| Campo SPA | Tipo |
+|---|---|
+| `ufCrm_TIPO_PRAZO` | enum (lista) |
+| `ufCrm_PRAZO_FATAL` | date |
+| `ufCrm_PRAZO_ATIVIDADE` | date |
+| `ufCrm_DESCRICAO_PRAZO` | string (text) |
 
-- Detectar pelo nome do modelo (`qwen3`, `deepseek-r1`, `qwq`, `o1`, `r1`) e desativar thinking via `think: false` na chamada `/api/chat`.
-- Caso o servidor Ollama não suporte `think: false` (versões antigas), aplicar fallback:
-  - Aumentar `num_predict` para `1500` para modelos thinking (em vez de `400`).
-  - Se `message.content` vier vazio mas existir `message.thinking`, usar `thinking` como fallback de resposta.
-  - Limpar tags `<think>...</think>` do texto antes de devolver, caso apareçam embutidas.
+**4. Audiências**
+| Campo SPA | Tipo |
+|---|---|
+| `ufCrm_TIPO_AUDIENCIA` | enum |
+| `ufCrm_MODALIDADE` | enum (presencial/online) |
+| `ufCrm_DATA_HORA_AUDIENCIA` | datetime |
+| `ufCrm_LINK_LOCAL_AUDIENCIA` | string |
 
-### 2. Mensagem de erro mais clara
+**5. Identificação Fiscal Cliente**
+`ufCrm_NIF` (string), `ufCrm_NISS` (string)
 
-Quando a resposta continuar vazia após os fallbacks, em vez de gravar score 0 silenciosamente, gravar `error_message: "Modelo devolveu resposta vazia (provavelmente thinking model sem suporte)"` para o utilizador entender porque ficou 0/0 na tabela do frontend.
+**6. Vínculo de Origem (rastreabilidade)**
+| Campo | Tipo | Função |
+|---|---|---|
+| `ufCrm_DEAL_ORIGEM_ID` | integer | ID do deal original do pipeline 25 |
+| `ufCrm_DEAL_ORIGEM_URL` | string | Link direto ao deal (auditoria) |
 
-### 3. Ajuste do `num_predict` global
+**7. Financeiro herdado** (apenas se quiser histórico — opcional, recomendo NÃO duplicar pois Emmely Pay já gerencia)
+- `ufCrm_DATA_PRIMEIRA_PARCELA` (date)
+- `ufCrm_QTD_PARCELAS` (integer)
+- `ufCrm_VALOR_PARCELA` (money)
 
-Aumentar o `num_predict` padrão de `400` para `600` (margem de segurança para todos os modelos sem afetar performance dos não-thinking).
+### Campos que NÃO devem ser recriados na SPA
+- Toda a sub-suite CPLP/Imigração (Passaporte, PB4, Convidado, etc.) — não pertence ao domínio judicial.
+- Tempo na Etapa 1-10, UTM_*, Pós-venda — métricas/marketing fora de escopo.
+- Campos `(Apagar)`, duplicatas, `Negócio`, `criar SPA`, `calculadora` — lixo.
+- Campos financeiros completos (LINK PAGAMENTO, GATEWAY, TOKEN_PAY, etc.) — já existem em `financial_records` (regra do projeto).
 
-## Como testar
+### Etapas do Plano
 
-1. Após o deploy, ir em **Integrações → Servidor Ollama → Avaliar modelos**.
-2. Re-executar o benchmark apenas para `qwen3.6:35b` e `qwen3.6:latest`.
-3. Confirmar que agora ou recebem score real (>0) ou mostram mensagem de erro clara.
-4. Confirmar que `qwen2.5vl:32b-q4_K_M` continua a pontuar 100/100.
+**Fase 1 — Criar campos na SPA 1118**
+- Edge function `bitrix24-spa-create-fields` que chama `crm.item.fields` (leitura) + `userfieldconfig.add` (escrita) com `entityId = "CRM_5"` (ou correspondente ao SPA 1118 — confirmar com `crm.type.get`).
+- Cria os ~18 campos listados em §2-§6 (+3 opcionais §7) com labels PT-BR.
+- Idempotente: se já existir, pula.
 
-## Arquivos afetados
+**Fase 2 — Adicionar UF de rastreio reverso no deal (já existe)**
+- `UF_CRM_1778431525` confirmado pelo usuário. Não criar.
 
-- `supabase/functions/ollama-benchmark-models/index.ts` — atualizar `callOllamaChat`, `benchmarkOneModel`, e a lógica de validação de resposta vazia.
+**Fase 3 — Script de migração (`bitrix24-migrate-deals-to-spa`)**
+1. Pagina `crm.deal.list` filtro `CATEGORY_ID=25` (loops de 50, range pattern conforme regra do projeto).
+2. Para cada deal:
+   - Mapeia os campos preenchidos → payload SPA.
+   - `crm.item.add` com `entityTypeId=1118`, vínculos `contactId`/`companyId`/`assignedById`, e `stageId` mapeado conforme tabela "etapas copiadas".
+   - Captura o `id` do item criado.
+   - `crm.deal.update` no deal original setando `UF_CRM_1778431525 = <novo_id>`.
+   - Loga em nova tabela `spa_migration_log` (deal_id, spa_item_id, status, error, timestamp).
+3. **Modo dry-run obrigatório** primeiro: gera CSV de pré-visualização sem escrever.
+4. **Mapa de etapas** (Fase ↔ stageId SPA) — preciso que você forneça ou eu extraio comparando os 2 kanbans via `crm.dealcategory.stage.list` (cat 25) vs `crm.status.list` (DYNAMIC_1118_STAGE_0).
 
-Nenhuma alteração de schema ou frontend necessária.
+**Fase 4 — UI**
+Tela "Migração Pipeline 25 → SPA Ação Judicial" em Configurações:
+- Botão "Criar campos na SPA" (Fase 1)
+- Pré-visualização (dry-run) com tabela e contagem
+- Botão "Executar migração" com dupla confirmação
+- Log da execução em tempo real
+
+### Antes de implementar, preciso confirmar:
+
+1. **Mapa de etapas**: as etapas da SPA têm exatamente os mesmos nomes das do pipeline 25? Posso fazer match automático por NAME, ou você fornece a tabela?
+2. **Campos opcionais §7 (financeiro)**: criar ou ignorar? (Recomendo ignorar — `financial_records` já é a fonte canônica.)
+3. **Deals já fechados/perdidos** (status WON/LOSE) também migram, ou apenas abertos?
+4. **O que fazer com o deal original** após migração: arquivar, mover de pipeline, ou deixar intacto apenas com o UF preenchido?
