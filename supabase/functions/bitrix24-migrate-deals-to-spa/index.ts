@@ -242,7 +242,7 @@ Deno.serve(async (req) => {
       while (pages < maxPages) {
         const r = await bx(ep, token, "crm.deal.list", {
           filter: { CATEGORY_ID: SOURCE_CATEGORY_ID, [`!${REVERSE_LINK_FIELD}`]: false },
-          select: ["ID", "TITLE", REVERSE_LINK_FIELD],
+          select: ["ID", "TITLE", "ASSIGNED_BY_ID", REVERSE_LINK_FIELD],
           order: { ID: "ASC" }, start,
         });
         if (r.error) throw new Error(`crm.deal.list: ${r.error_description}`);
@@ -266,6 +266,7 @@ Deno.serve(async (req) => {
           const spaId = String(d[REVERSE_LINK_FIELD]);
           const fields: Record<string, any> = { [dealField]: String(d.ID) };
           if (urlField) fields[urlField] = `${ep.replace(/\/rest\/$/, "")}/crm/deal/details/${d.ID}/`;
+          if (d.ASSIGNED_BY_ID) fields.assignedById = d.ASSIGNED_BY_ID;
           const upd = await bx(ep, token, "crm.item.update.json", {
             entityTypeId: TARGET_ENTITY_TYPE_ID, id: spaId, fields,
           });
