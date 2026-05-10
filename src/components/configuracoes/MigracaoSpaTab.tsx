@@ -213,6 +213,22 @@ export default function MigracaoSpaTab() {
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
+            {migrationResult.background && bgStatus && (
+              <div className="rounded-lg border bg-muted/30 p-3 text-sm space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="font-medium">Progresso em background</span>
+                  <span className="text-xs text-muted-foreground">{bgStatus.processed} / {bgStatus.total}</span>
+                </div>
+                <div className="h-2 w-full overflow-hidden rounded bg-muted">
+                  <div className="h-full bg-primary transition-all" style={{ width: `${Math.min(100, (bgStatus.processed / bgStatus.total) * 100)}%` }} />
+                </div>
+                <div className="flex flex-wrap gap-2 text-xs">
+                  <Badge variant="default">{bgStatus.counts.success || 0} sucesso</Badge>
+                  {(bgStatus.counts.failed || 0) > 0 && <Badge variant="destructive">{bgStatus.counts.failed} erros</Badge>}
+                  {(bgStatus.counts.skipped || 0) > 0 && <Badge variant="secondary">{bgStatus.counts.skipped} já migrados</Badge>}
+                </div>
+              </div>
+            )}
             <div className="flex flex-wrap gap-2">
               <Badge variant="default">{migrationResult.success_count} sucesso</Badge>
               {migrationResult.failed_count > 0 && <Badge variant="destructive">{migrationResult.failed_count} erros</Badge>}
