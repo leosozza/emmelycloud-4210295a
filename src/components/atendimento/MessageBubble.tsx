@@ -121,79 +121,64 @@ export function MessageBubble({ msg, conversationId, workspaceId, containerWidth
         )}
 
         {/* Media */}
-        {(msg.message_type === "audio" || msg.message_type === "ptt") && msg.media_url ? (
-          <AudioMessageBubble msg={{ id: msg.id, media_url: msg.media_url, message_type: msg.message_type }} />
-        ) : (msg.message_type === "audio" || msg.message_type === "ptt") && !msg.media_url ? (
-          <div className="flex items-center gap-2 text-xs text-muted-foreground py-1">
+        {mediaKind === "audio" && (hasHttpUrl || hasDataUri) ? (
+          <AudioMessageBubble msg={{ id: msg.id, media_url: msg.media_url!, message_type: "audio" }} />
+        ) : mediaKind === "audio" ? (
+          <div className="flex items-center gap-2 text-xs text-muted-foreground py-1.5 px-2 rounded-md bg-background/40 border border-border/40">
             <span>🎤</span>
-            <span>Áudio não disponível</span>
+            <span>Áudio recebido — mídia não baixada</span>
           </div>
-        ) : msg.message_type === "image" && msg.media_url ? (
-          msg.media_url.startsWith("http") ? (
-            <div className="mt-1 mb-2">
-              <img 
-                src={msg.media_url} 
-                alt="Mídia" 
-                className="max-w-full rounded-lg border border-border/50 shadow-sm cursor-pointer hover:opacity-90 transition-opacity" 
-                loading="lazy"
-                onClick={() => window.open(msg.media_url, "_blank")}
-              />
-            </div>
-          ) : (
-            <div className="flex items-center gap-2 text-xs text-muted-foreground py-1">
-              <span>🖼️</span>
-              <span>Imagem não disponível</span>
-            </div>
-          )
-        ) : msg.message_type === "video" && msg.media_url ? (
-          msg.media_url.startsWith("http") ? (
-            <video controls className="max-w-full rounded-lg mb-1" preload="none">
-              <source src={msg.media_url} />
-            </video>
-          ) : (
-            <div className="flex items-center gap-2 text-xs text-muted-foreground py-1">
-              <span>🎬</span>
-              <span>Vídeo não disponível</span>
-            </div>
-          )
-        ) : msg.message_type === "document" && msg.media_url ? (
-          msg.media_url.startsWith("http") ? (
-            <div className="mt-1 mb-2">
-              <div className="relative group">
-                <a 
-                  href={msg.media_url} 
-                  target="_blank" 
-                  rel="noopener noreferrer" 
-                  className="flex items-center gap-2 p-2 rounded-md bg-background/50 border border-border/50 text-xs font-medium hover:bg-background/80 transition-colors"
-                >
-                  <div className="p-1.5 rounded bg-primary/10 text-primary">
-                    <FileText className="h-4 w-4" />
-                  </div>
-                  <div className="flex flex-col overflow-hidden">
-                    <span className="truncate max-w-[150px]">{msg.content || "Documento"}</span>
-                    <span className="text-[10px] text-muted-foreground uppercase">PDF / Documento</span>
-                  </div>
-                </a>
-                <a 
-                  href={msg.media_url} 
-                  download 
-                  className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded-full bg-background/80 border border-border opacity-0 group-hover:opacity-100 transition-opacity hover:bg-primary/10 hover:text-primary"
-                  title="Baixar arquivo"
-                >
-                  <Clock className="h-3 w-3 rotate-180" /> {/* Using Clock as a placeholder for download or similar small icon if available, but let's stick to simple text if unsure */}
-                </a>
+        ) : mediaKind === "image" && (hasHttpUrl || hasDataUri) ? (
+          <div className="mt-1 mb-2">
+            <img
+              src={msg.media_url!}
+              alt="Mídia"
+              className="max-w-full rounded-lg border border-border/50 shadow-sm cursor-pointer hover:opacity-90 transition-opacity"
+              loading="lazy"
+              onClick={() => window.open(msg.media_url!, "_blank")}
+              onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }}
+            />
+          </div>
+        ) : mediaKind === "image" ? (
+          <div className="flex items-center gap-2 text-xs text-muted-foreground py-1.5 px-2 rounded-md bg-background/40 border border-border/40">
+            <span>🖼️</span>
+            <span>Imagem recebida — mídia não baixada</span>
+          </div>
+        ) : mediaKind === "video" && (hasHttpUrl || hasDataUri) ? (
+          <video controls className="max-w-full rounded-lg mb-1" preload="none">
+            <source src={msg.media_url!} />
+          </video>
+        ) : mediaKind === "video" ? (
+          <div className="flex items-center gap-2 text-xs text-muted-foreground py-1.5 px-2 rounded-md bg-background/40 border border-border/40">
+            <span>🎬</span>
+            <span>Vídeo recebido — mídia não baixada</span>
+          </div>
+        ) : mediaKind === "document" && hasHttpUrl ? (
+          <div className="mt-1 mb-2">
+            <a
+              href={msg.media_url!}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-2 p-2 rounded-md bg-background/50 border border-border/50 text-xs font-medium hover:bg-background/80 transition-colors"
+            >
+              <div className="p-1.5 rounded bg-primary/10 text-primary">
+                <FileText className="h-4 w-4" />
               </div>
-            </div>
-          ) : (
-            <div className="flex items-center gap-2 text-xs text-muted-foreground py-1">
-              <span>📎</span>
-              <span>Documento não disponível</span>
-            </div>
-          )
+              <div className="flex flex-col overflow-hidden">
+                <span className="truncate max-w-[180px]">{msg.content || "Documento"}</span>
+                <span className="text-[10px] text-muted-foreground uppercase">Documento</span>
+              </div>
+            </a>
+          </div>
+        ) : mediaKind === "document" ? (
+          <div className="flex items-center gap-2 text-xs text-muted-foreground py-1.5 px-2 rounded-md bg-background/40 border border-border/40">
+            <span>📎</span>
+            <span>Documento recebido — mídia não baixada</span>
+          </div>
         ) : null}
 
-        {/* Text content */}
-        {msg.content && (
+        {/* Text content (skip placeholder labels when we already render a media card) */}
+        {msg.content && !(mediaKind && /^\[(Áudio|Imagem|Vídeo|Documento)\]/.test(msg.content)) && (
           <p className="text-[13.5px] leading-[1.4] whitespace-pre-wrap">{msg.content}</p>
         )}
 
