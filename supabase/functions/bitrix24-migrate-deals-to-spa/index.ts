@@ -257,12 +257,23 @@ Deno.serve(async (req) => {
       if (!sessionIdParam) return json({ error: "session_id required" }, 400);
       const { data, error } = await supabase
         .from("spa_migration_log")
-        .select("status")
+        .select("status,payload,spa_item_id")
         .eq("session_id", sessionIdParam);
       if (error) return json({ error: error.message }, 500);
       const counts = { success: 0, failed: 0, skipped: 0, preview: 0 };
-      for (const r of data || []) counts[r.status as keyof typeof counts] = (counts[r.status as keyof typeof counts] || 0) + 1;
-      return json({ success: true, session_id: sessionIdParam, processed: data?.length || 0, counts });
+      let processed = 0;
+      let done = false;
+      let totalProcessed: number | null = null;
+      for (const r of data || []) {
+        if (r.payload?.done === true) {
+          done = true;
+          totalProcessed = Number(r.payload?.processed_total || 0) || null;
+          continue;
+        }
+        processed++;
+        counts[r.status as keyof typeof counts] = (counts[r.status as keyof typeof counts] || 0) + 1;
+      }
+      return json({ success: true, session_id: sessionIdParam, processed, total_processed: totalProcessed ?? processed, done, counts });
     }
 
     // BACKFILL endpoint: percorre deals do pipeline 25 que já têm UF_CRM_1778431525
