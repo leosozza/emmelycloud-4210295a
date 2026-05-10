@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { Settings, Check, AlertCircle, Save, RefreshCw, Palette, Shield, CalendarDays } from "lucide-react";
+import { Settings, Check, AlertCircle, Save, RefreshCw, Palette, Shield, CalendarDays, ArrowRightLeft } from "lucide-react";
+import MigracaoSpaTab from "@/components/configuracoes/MigracaoSpaTab";
 import { useColorTheme, type ColorTheme } from "@/contexts/ThemeContext";
 import { cn } from "@/lib/utils";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -211,7 +212,7 @@ function EncargosTab() {
 
 export default function Configuracoes() {
   return (
-    <div className="max-w-2xl space-y-8">
+    <div className="max-w-5xl space-y-8">
       <div className="flex items-center gap-3">
         <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10">
           <Settings className="h-5 w-5 text-primary" strokeWidth={1.5} />
@@ -236,6 +237,9 @@ export default function Configuracoes() {
           <TabsTrigger value="permissoes" className="gap-1.5">
             <Shield className="h-3.5 w-3.5" /> Permissões
           </TabsTrigger>
+          <TabsTrigger value="migracao-spa" className="gap-1.5">
+            <ArrowRightLeft className="h-3.5 w-3.5" /> Migração SPA
+          </TabsTrigger>
         </TabsList>
         <TabsContent value="aparencia">
           <AparenciaTab />
@@ -248,6 +252,9 @@ export default function Configuracoes() {
         </TabsContent>
         <TabsContent value="permissoes">
           <PermissoesTab />
+        </TabsContent>
+        <TabsContent value="migracao-spa">
+          <MigracaoSpaTab />
         </TabsContent>
       </Tabs>
     </div>
