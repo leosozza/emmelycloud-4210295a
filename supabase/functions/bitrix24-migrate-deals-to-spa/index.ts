@@ -463,7 +463,7 @@ Deno.serve(async (req) => {
       EdgeRuntime.waitUntil(
         processMigration({
           supabase, ep, token, allDeals, dealUfToSpaField, spaCodeToField,
-          stageMap, defaultSpaStage, sessionId, mode,
+          stageMap, defaultSpaStage, sessionId, mode, limitParam,
         }).catch((e) => console.error("[bg migration]", e))
       );
       return json({
