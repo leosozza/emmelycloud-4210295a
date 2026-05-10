@@ -18,29 +18,30 @@ const FIELD_MAP: Record<string, string> = {
   // pois a função usa LABELS, não códigos UF, para fazer o match.
 };
 
-// Map por LABEL (mais robusto que UF code, que muda por instalação)
-const LABEL_TO_SPA_FIELD: Record<string, string> = {
-  "Número do processo": "ufCrm_NUMERO_PROCESSO",
-  "URL do Processo": "ufCrm_URL_PROCESSO",
-  " URL do Processo": "ufCrm_URL_PROCESSO",
-  "Valor da condenação": "ufCrm_VALOR_CONDENACAO",
-  " Valor da condenação": "ufCrm_VALOR_CONDENACAO",
-  "Parte contrária": "ufCrm_PARTE_CONTRARIA",
-  "Parte contrária:": "ufCrm_PARTE_CONTRARIA",
-  "Parte contraria (Texto)": "ufCrm_PARTE_CONTRARIA_TEXTO",
-  " Cliente (Texto)": "ufCrm_CLIENTE_TEXTO",
-  "Cliente (Texto)": "ufCrm_CLIENTE_TEXTO",
-  "Responsável (Texto)": "ufCrm_RESPONSAVEL_TEXTO",
-  "Tipo de prazo:": "ufCrm_TIPO_PRAZO",
-  "Prazo fatal:": "ufCrm_PRAZO_FATAL",
-  "Prazo da atividade:": "ufCrm_PRAZO_ATIVIDADE",
-  "Descrição do prazo:": "ufCrm_DESCRICAO_PRAZO",
-  "Tipo de audiência:": "ufCrm_TIPO_AUDIENCIA",
-  "Modalidade:": "ufCrm_MODALIDADE",
-  "Data/Hora da audiência:": "ufCrm_DATA_HORA_AUDIENCIA",
-  "Link/Local de audiência:": "ufCrm_LINK_LOCAL_AUDIENCIA",
-  "NIF": "ufCrm_NIF",
-  "NISS": "ufCrm_NISS",
+// Map por LABEL (deal origem) -> código lógico do campo na SPA.
+// A chave real da SPA é resolvida dinamicamente via crm.item.fields, pois o Bitrix gera ufCrm{spaId}NomeCampo.
+const LABEL_TO_SPA_CODE: Record<string, string> = {
+  "Número do processo": "NUMERO_PROCESSO",
+  "URL do Processo": "URL_PROCESSO",
+  " URL do Processo": "URL_PROCESSO",
+  "Valor da condenação": "VALOR_CONDENACAO",
+  " Valor da condenação": "VALOR_CONDENACAO",
+  "Parte contrária": "PARTE_CONTRARIA",
+  "Parte contrária:": "PARTE_CONTRARIA",
+  "Parte contraria (Texto)": "PARTE_CONTRARIA_TEXTO",
+  " Cliente (Texto)": "CLIENTE_TEXTO",
+  "Cliente (Texto)": "CLIENTE_TEXTO",
+  "Responsável (Texto)": "RESPONSAVEL_TEXTO",
+  "Tipo de prazo:": "TIPO_PRAZO",
+  "Prazo fatal:": "PRAZO_FATAL",
+  "Prazo da atividade:": "PRAZO_ATIVIDADE",
+  "Descrição do prazo:": "DESCRICAO_PRAZO",
+  "Tipo de audiência:": "TIPO_AUDIENCIA",
+  "Modalidade:": "MODALIDADE",
+  "Data/Hora da audiência:": "DATA_HORA_AUDIENCIA",
+  "Link/Local de audiência:": "LINK_LOCAL_AUDIENCIA",
+  "NIF": "NIF",
+  "NISS": "NISS",
 };
 
 async function ensureValidToken(supabase: any, integration: any): Promise<string> {
@@ -77,6 +78,27 @@ async function bx(ep: string, token: string, method: string, body: Record<string
 
 function normalize(s: string) {
   return (s || "").trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+function normalizeCode(s: string) {
+  return (s || "")
+    .replace(/^ufCrm/i, "")
+    .replace(/^UF_CRM_/i, "")
+    .replace(/^[0-9]+_?/, "")
+    .replace(/[^A-Z0-9]/gi, "")
+    .toUpperCase();
+}
+
+function fieldLabel(meta: any) {
+  const candidates = [meta?.formLabel, meta?.title, meta?.listLabel, meta?.listColumnLabel, meta?.listFilterLabel];
+  for (const c of candidates) {
+    if (typeof c === "string" && c.trim()) return c.trim();
+    if (c && typeof c === "object") {
+      const v = c.pt || c.en || c.br || Object.values(c).find((x: any) => typeof x === "string" && x.trim());
+      if (typeof v === "string" && v.trim()) return v.trim();
+    }
+  }
+  return "";
 }
 
 Deno.serve(async (req) => {
