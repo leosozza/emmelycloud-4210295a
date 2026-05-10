@@ -67,7 +67,14 @@ async function bx(ep: string, token: string, method: string, body: Record<string
   return r.json();
 }
 
-const normalize = (s: string) => (s || "").trim().toLowerCase().replace(/\s+/g, " ");
+const normalize = (s: string) =>
+  (s || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")        // strip accents
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")            // strip punctuation
+    .trim()
+    .replace(/\s+/g, " ");
 const normalizeCode = (s: string) =>
   (s || "").replace(/^ufCrm/i, "").replace(/^UF_CRM_/i, "").replace(/^[0-9]+_?/, "")
     .replace(/[^A-Z0-9]/gi, "").toUpperCase();
