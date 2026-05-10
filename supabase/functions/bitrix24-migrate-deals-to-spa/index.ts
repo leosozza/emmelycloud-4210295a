@@ -94,8 +94,8 @@ function fieldLabel(meta: any) {
 // Soft time budget per invocation. After this, break loop and self-invoke
 // to continue. Set well below the 150s edge IDLE_TIMEOUT.
 const TIME_BUDGET_MS = 110_000;
-const FIX_STAGE_TIME_BUDGET_MS = 90_000;
-const FIX_STAGE_BATCH_SIZE = 35;
+const FIX_STAGE_TIME_BUDGET_MS = 60_000;
+const FIX_STAGE_BATCH_SIZE = 15;
 
 async function selfInvokeContinue(sessionId: string, limitParam: number, mode: "execute" | "fix_stages" = "execute") {
   try {
