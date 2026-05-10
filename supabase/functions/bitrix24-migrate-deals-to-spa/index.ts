@@ -125,14 +125,28 @@ Deno.serve(async (req) => {
     const token = await ensureValidToken(supabase, integration);
     const ep = integration.client_endpoint;
 
-    // 1) Mapas: deal fields (UF -> label) e SPA fields (label -> ufCrm_*)
+    // 1) Mapas: deal fields (UF -> label) e SPA fields reais (código lógico -> ufCrm{spaId}*)
+    const spaFieldsRes = await bx(ep, token, "crm.item.fields.json", { entityTypeId: TARGET_ENTITY_TYPE_ID });
+    if (spaFieldsRes.error) throw new Error(`crm.item.fields: ${spaFieldsRes.error_description || spaFieldsRes.error}`);
+    const spaFields = spaFieldsRes.result?.fields || spaFieldsRes.result || {};
+    const spaCodeToField: Record<string, string> = {};
+    for (const [code, meta] of Object.entries<any>(spaFields)) {
+      const logical = normalizeCode(code);
+      if (logical) spaCodeToField[logical] = code;
+      const xmlLogical = normalizeCode(String(meta?.xmlId || "").replace(/^emmely_acao_judicial_/i, ""));
+      if (xmlLogical) spaCodeToField[xmlLogical] = code;
+      const labelLogical = Object.entries(LABEL_TO_SPA_CODE).find(([label]) => normalize(fieldLabel(meta)) === normalize(label))?.[1];
+      if (labelLogical) spaCodeToField[labelLogical] = code;
+    }
+
     const dealFieldsRes = await bx(ep, token, "crm.deal.fields.json");
     const dealFields = dealFieldsRes.result || {};
     const dealUfToSpaField: Record<string, string> = {};
     for (const [code, meta] of Object.entries<any>(dealFields)) {
       if (!code.startsWith("UF_CRM_")) continue;
       const label = meta?.formLabel || meta?.title || meta?.listLabel || "";
-      const spaTarget = LABEL_TO_SPA_FIELD[label];
+      const spaLogicalCode = LABEL_TO_SPA_CODE[label];
+      const spaTarget = spaLogicalCode ? spaCodeToField[spaLogicalCode] : null;
       if (spaTarget) dealUfToSpaField[code] = spaTarget;
     }
 
@@ -202,9 +216,12 @@ Deno.serve(async (req) => {
         contactId: deal.CONTACT_ID || undefined,
         companyId: deal.COMPANY_ID || undefined,
         assignedById: deal.ASSIGNED_BY_ID || undefined,
-        ufCrm_DEAL_ORIGEM_ID: parseInt(deal.ID),
-        ufCrm_DEAL_ORIGEM_URL: `${ep.replace(/\/rest\/$/, "")}/crm/deal/details/${deal.ID}/`,
       };
+
+      const dealOrigemIdField = spaCodeToField.DEAL_ORIGEM_ID;
+      const dealOrigemUrlField = spaCodeToField.DEAL_ORIGEM_URL;
+      if (dealOrigemIdField) item[dealOrigemIdField] = parseInt(deal.ID);
+      if (dealOrigemUrlField) item[dealOrigemUrlField] = `${ep.replace(/\/rest\/$/, "")}/crm/deal/details/${deal.ID}/`;
 
       // Copiar UFs mapeados que tenham valor
       for (const [dealUf, spaField] of Object.entries(dealUfToSpaField)) {
@@ -288,7 +305,8 @@ Deno.serve(async (req) => {
       failed_count: failCount,
       skipped_count: skipCount,
       stage_map: stageMap,
-      mapped_uf_fields: Object.keys(dealUfToSpaField),
+      mapped_uf_fields: Object.entries(dealUfToSpaField).map(([dealField, spaField]) => `${dealField} -> ${spaField}`),
+      spa_field_map: spaCodeToField,
       sample: logRows.slice(0, 5),
     }), { headers: { ...corsHeaders, "Content-Type": "application/json" }});
 
