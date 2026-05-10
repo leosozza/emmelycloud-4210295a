@@ -228,6 +228,25 @@ export default function MigracaoSpaTab() {
         </CardContent>
       </Card>
 
+      <Card className="border-blue-500/40">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Wand2 className="h-4 w-4" /> Passo 5 — Corrigir Etapas dos Itens já Migrados
+          </CardTitle>
+          <CardDescription>
+            Atualiza o <code>stageId</code> de todos os itens da SPA que já foram migrados, recolocando-os
+            na etapa correspondente ao <code>STAGE_ID</code> atual do deal de origem. Use isto se as colunas
+            do funil SPA não estão batendo com o pipeline 25.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Button onClick={() => handleRun("fix_stages")} disabled={running} variant="default">
+            {running ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Wand2 className="mr-2 h-4 w-4" />}
+            Corrigir Etapas Agora
+          </Button>
+        </CardContent>
+      </Card>
+
       {migrationResult && (
         <Card>
           <CardHeader>
