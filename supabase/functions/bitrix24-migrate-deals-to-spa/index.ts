@@ -391,6 +391,16 @@ Deno.serve(async (req) => {
     const sessionId = continueSession || crypto.randomUUID();
     if (continueSession) console.log(`[migrate] continuing session=${sessionId}`);
 
+    if (mode === "fix_stages" && !continueSession) {
+      await selfInvokeContinue(sessionId, limitParam, "fix_stages");
+      return json({
+        success: true, mode: "fix_stages", session_id: sessionId, background: true,
+        total_processed: 0, success_count: 0, failed_count: 0, skipped_count: 0,
+        stage_map: {}, mapped_uf_fields: [], sample: [],
+        message: `Correção de etapas iniciada em background. Use mode=status&session_id=${sessionId} para acompanhar.`,
+      });
+    }
+
     // Build SPA + deal field maps
     const spaFieldsRes = await bx(ep, token, "crm.item.fields.json", { entityTypeId: TARGET_ENTITY_TYPE_ID });
     if (spaFieldsRes.error) throw new Error(`crm.item.fields: ${spaFieldsRes.error_description || spaFieldsRes.error}`);
