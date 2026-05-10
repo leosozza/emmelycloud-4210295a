@@ -479,7 +479,7 @@ Deno.serve(async (req) => {
     // Synchronous (dry_run or small execute)
     await processMigration({
       supabase, ep, token, allDeals, dealUfToSpaField, spaCodeToField,
-      stageMap, defaultSpaStage, sessionId, mode,
+      stageMap, defaultSpaStage, sessionId, mode, limitParam,
     });
 
     const { data: logRows } = await supabase
