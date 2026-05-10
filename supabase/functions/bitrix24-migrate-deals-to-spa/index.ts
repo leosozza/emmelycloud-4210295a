@@ -126,9 +126,10 @@ async function processMigration(opts: {
         companyId: deal.COMPANY_ID || undefined,
         assignedById: deal.ASSIGNED_BY_ID || undefined,
       };
-      const dealOrigemIdField = spaCodeToField.DEAL_ORIGEM_ID;
-      const dealOrigemUrlField = spaCodeToField.DEAL_ORIGEM_URL;
-      if (dealOrigemIdField) item[dealOrigemIdField] = parseInt(deal.ID);
+      // Resolve campo do deal de origem — aceita várias variações
+      const dealOrigemIdField = spaCodeToField.DEAL_ORIGEM_ID || spaCodeToField.DEAL || spaCodeToField.DEAL_ID || spaCodeToField.DEALID;
+      const dealOrigemUrlField = spaCodeToField.DEAL_ORIGEM_URL || spaCodeToField.DEAL_URL || spaCodeToField.URL_DEAL;
+      if (dealOrigemIdField) item[dealOrigemIdField] = String(deal.ID);
       if (dealOrigemUrlField) item[dealOrigemUrlField] = `${ep.replace(/\/rest\/$/, "")}/crm/deal/details/${deal.ID}/`;
       for (const [dealUf, spaField] of Object.entries(dealUfToSpaField)) {
         const v = deal[dealUf];
