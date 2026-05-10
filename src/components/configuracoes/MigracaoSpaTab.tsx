@@ -10,6 +10,7 @@ interface MigrationResult {
   success: boolean;
   mode: string;
   session_id: string;
+  background?: boolean;
   total_processed: number;
   success_count: number;
   failed_count: number;
@@ -17,6 +18,7 @@ interface MigrationResult {
   stage_map: Record<string, string>;
   mapped_uf_fields: string[];
   sample: any[];
+  message?: string;
 }
 
 export default function MigracaoSpaTab() {
