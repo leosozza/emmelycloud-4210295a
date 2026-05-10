@@ -266,6 +266,7 @@ Deno.serve(async (req) => {
           const spaId = String(d[REVERSE_LINK_FIELD]);
           const fields: Record<string, any> = { [dealField]: String(d.ID) };
           if (urlField) fields[urlField] = `${ep.replace(/\/rest\/$/, "")}/crm/deal/details/${d.ID}/`;
+          if (d.ASSIGNED_BY_ID) fields.assignedById = d.ASSIGNED_BY_ID;
           const upd = await bx(ep, token, "crm.item.update.json", {
             entityTypeId: TARGET_ENTITY_TYPE_ID, id: spaId, fields,
           });
