@@ -73,17 +73,42 @@ export default function MigracaoSpaTab() {
       }
     }
     setRunning(true);
+    setBgStatus(null);
     try {
       const params: Record<string, string> = { mode };
       if (limit) params.limit = String(limit);
       const r = await callFn("bitrix24-migrate-deals-to-spa", params);
       setMigrationResult(r);
-      if (r.success) {
+      if (!r.success) {
+        toast.error(r.error || "Falha");
+        return;
+      }
+      if (r.background) {
+        toast.info(`Migração iniciada em background: ${r.total_processed} deals. Acompanhando...`);
+        // Poll status every 4s
+        const sessionId = r.session_id;
+        const total = r.total_processed;
+        const poll = async () => {
+          const s = await callFn("bitrix24-migrate-deals-to-spa", { mode: "status", session_id: sessionId });
+          if (s?.success) {
+            setBgStatus({ processed: s.processed, total, counts: s.counts });
+            if (s.processed >= total) {
+              toast.success(`Migração concluída: ${s.counts.success} sucesso, ${s.counts.failed} erros, ${s.counts.skipped} já migrados`);
+              return true;
+            }
+          }
+          return false;
+        };
+        const interval = setInterval(async () => {
+          const done = await poll();
+          if (done) clearInterval(interval);
+        }, 4000);
+        // Stop polling after 30 min safety
+        setTimeout(() => clearInterval(interval), 30 * 60 * 1000);
+      } else {
         toast.success(
           `${mode === "dry_run" ? "Pré-visualização" : "Migração"}: ${r.success_count} sucesso, ${r.failed_count} erros, ${r.skipped_count} já migrados`
         );
-      } else {
-        toast.error(r.error || "Falha");
       }
     } catch (e) {
       toast.error(String(e));
