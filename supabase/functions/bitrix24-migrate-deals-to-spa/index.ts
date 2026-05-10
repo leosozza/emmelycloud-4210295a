@@ -154,10 +154,20 @@ Deno.serve(async (req) => {
     // 2) Mapa de etapas: deal cat 25 -> SPA stage
     const dealStageEntityRes = await bx(ep, token, "crm.dealcategory.status.json", { id: SOURCE_CATEGORY_ID });
     const dealStageEntityId = dealStageEntityRes.result || `DEAL_STAGE_${SOURCE_CATEGORY_ID}`;
-    const dealStagesRes = await bx(ep, token, "crm.status.list.json", {
+    let dealStagesRes = await bx(ep, token, "crm.status.list.json", {
       filter: { ENTITY_ID: dealStageEntityId }
     });
-    const dealStages = dealStagesRes.result || [];
+    let dealStages = dealStagesRes.result || [];
+    if (dealStages.length === 0) {
+      dealStagesRes = await bx(ep, token, "crm.dealcategory.stage.list.json", { id: SOURCE_CATEGORY_ID });
+      dealStages = dealStagesRes.result || [];
+    }
+    if (dealStages.length === 0) {
+      const allStatusesRes = await bx(ep, token, "crm.status.list.json", {});
+      dealStages = (allStatusesRes.result || []).filter((s: any) =>
+        s.ENTITY_ID === dealStageEntityId || String(s.STATUS_ID || "").startsWith(`C${SOURCE_CATEGORY_ID}:`)
+      );
+    }
     const spaStageEntities = [`DYNAMIC_${TARGET_ENTITY_TYPE_ID}_STAGE_0`, `DYNAMIC_${TARGET_ENTITY_TYPE_ID}_STAGE`];
     let spaStages: any[] = [];
     for (const entityId of spaStageEntities) {
@@ -167,6 +177,20 @@ Deno.serve(async (req) => {
         spaStages = rows;
         break;
       }
+    }
+    if (spaStages.length === 0) {
+      const allStatusesRes = await bx(ep, token, "crm.status.list.json", {});
+      spaStages = (allStatusesRes.result || []).filter((s: any) =>
+        String(s.ENTITY_ID || "").startsWith(`DYNAMIC_${TARGET_ENTITY_TYPE_ID}_STAGE`) ||
+        String(s.STATUS_ID || "").startsWith(`DYNAMIC_${TARGET_ENTITY_TYPE_ID}_STAGE`)
+      );
+    }
+    if (spaStages.length === 0 && spaFields.stageId?.items) {
+      spaStages = spaFields.stageId.items.map((item: any) => ({
+        STATUS_ID: item.ID || item.STATUS_ID || item.VALUE,
+        NAME: item.VALUE || item.NAME || item.TITLE,
+        SORT: item.SORT || 0,
+      }));
     }
     const stageMap: Record<string, string> = {};
     for (const ds of dealStages) {
