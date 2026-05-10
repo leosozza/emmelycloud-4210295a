@@ -94,10 +94,12 @@ function fieldLabel(meta: any) {
 // Soft time budget per invocation. After this, break loop and self-invoke
 // to continue. Set well below the 150s edge IDLE_TIMEOUT.
 const TIME_BUDGET_MS = 110_000;
+const FIX_STAGE_TIME_BUDGET_MS = 90_000;
+const FIX_STAGE_BATCH_SIZE = 35;
 
-async function selfInvokeContinue(sessionId: string, limitParam: number) {
+async function selfInvokeContinue(sessionId: string, limitParam: number, mode: "execute" | "fix_stages" = "execute") {
   try {
-    const url = `${Deno.env.get("SUPABASE_URL")}/functions/v1/bitrix24-migrate-deals-to-spa?mode=execute&continue_session=${sessionId}${limitParam > 0 ? `&limit=${limitParam}` : ""}`;
+    const url = `${Deno.env.get("SUPABASE_URL")}/functions/v1/bitrix24-migrate-deals-to-spa?mode=${mode}&continue_session=${sessionId}${limitParam > 0 ? `&limit=${limitParam}` : ""}`;
     // Fire-and-forget; do not await response
     fetch(url, {
       method: "GET",
@@ -106,7 +108,7 @@ async function selfInvokeContinue(sessionId: string, limitParam: number) {
         "apikey": Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
       },
     }).catch((e) => console.error("[self-invoke]", e));
-    console.log(`[self-invoke] chained continuation for session=${sessionId}`);
+    console.log(`[self-invoke] chained ${mode} continuation for session=${sessionId}`);
   } catch (e) {
     console.error("[self-invoke] failed", e);
   }
