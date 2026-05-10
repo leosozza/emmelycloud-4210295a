@@ -572,7 +572,9 @@ Deno.serve(async (req) => {
 
       return json({
         success: true, mode: "fix_stages", session_id: fixSession, background: shouldContinue,
-        total_processed: processedSpaIds.size + byItem.size, fixed, skipped, failed,
+        total_processed: processedSpaIds.size + byItem.size,
+        success_count: fixed, failed_count: failed, skipped_count: skipped,
+        fixed, skipped, failed,
         stage_map: stageMap, unmatched_source_stages: unmatched.map((u: any) => ({ id: u.STATUS_ID, name: u.NAME })),
         mapped_uf_fields: [], sample,
         message: shouldContinue
