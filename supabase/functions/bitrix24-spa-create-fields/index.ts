@@ -9,6 +9,8 @@ const corsHeaders = {
 
 const ENTITY_TYPE_ID = 1118;
 
+type SpaTypeInfo = { id: number; entityTypeId: number; title?: string };
+
 // Campos a criar na SPA Ação Judicial
 // type: string | url | money | date | datetime | enumeration | integer
 const FIELDS = [
@@ -72,6 +74,24 @@ async function bx(ep: string, token: string, method: string, body: Record<string
   return r.json();
 }
 
+function normalizeCode(s: string) {
+  return (s || "")
+    .replace(/^ufCrm/i, "")
+    .replace(/^UF_CRM_/i, "")
+    .replace(/^[0-9]+_?/, "")
+    .replace(/[^A-Z0-9]/gi, "")
+    .toUpperCase();
+}
+
+async function getSpaType(ep: string, token: string): Promise<SpaTypeInfo> {
+  const res = await bx(ep, token, "crm.type.list.json", {});
+  if (res.error) throw new Error(`crm.type.list: ${res.error_description || res.error}`);
+  const types = res.result?.types || [];
+  const match = types.find((t: any) => Number(t.entityTypeId) === ENTITY_TYPE_ID);
+  if (!match?.id) throw new Error(`SPA entityTypeId ${ENTITY_TYPE_ID} não encontrada em crm.type.list`);
+  return { id: Number(match.id), entityTypeId: Number(match.entityTypeId), title: match.title };
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
@@ -94,11 +114,18 @@ Deno.serve(async (req) => {
     const token = await ensureValidToken(supabase, integration);
     const ep = integration.client_endpoint;
 
+    const spaType = await getSpaType(ep, token);
+    const entityId = `CRM_${spaType.id}`;
+
     // Get existing fields to skip duplicates
     const existingRes = await bx(ep, token, "crm.item.fields.json", { entityTypeId: ENTITY_TYPE_ID });
     const existingFields = existingRes.result?.fields || existingRes.result || {};
     const existingCodes = new Set(
-      Object.keys(existingFields).map(k => k.replace(/^ufCrm_?/i, "").toUpperCase())
+      Object.entries<any>(existingFields).flatMap(([k, meta]) => [
+        normalizeCode(k),
+        normalizeCode(meta?.title || ""),
+        normalizeCode(meta?.formLabel || ""),
+      ])
     );
 
     const results: any[] = [];
@@ -113,9 +140,10 @@ Deno.serve(async (req) => {
       }
 
       const payload: Record<string, any> = {
-        entityTypeId: ENTITY_TYPE_ID,
+        moduleId: "crm",
         field: {
-          fieldName: `UF_CRM_${upperCode}`,
+          entityId,
+          fieldName: `UF_CRM_${spaType.id}_${upperCode}`,
           userTypeId: f.type === "url" ? "url"
             : f.type === "money" ? "money"
             : f.type === "date" ? "date"
@@ -123,19 +151,21 @@ Deno.serve(async (req) => {
             : f.type === "enumeration" ? "enumeration"
             : f.type === "integer" ? "integer"
             : "string",
-          edit_form_label: { pt: f.label, en: f.label, ru: f.label },
-          list_column_label: { pt: f.label, en: f.label, ru: f.label },
-          list_filter_label: { pt: f.label, en: f.label, ru: f.label },
+          editFormLabel: { pt: f.label, en: f.label, ru: f.label },
+          listColumnLabel: { pt: f.label, en: f.label, ru: f.label },
+          listFilterLabel: { pt: f.label, en: f.label, ru: f.label },
+          xmlId: `emmely_acao_judicial_${upperCode.toLowerCase()}`,
+          sort: 100,
         },
       };
 
       if (f.type === "enumeration" && f.items) {
         payload.field.enum = f.items.map((v, i) => ({
-          VALUE: v, DEF: i === 0 ? "Y" : "N", SORT: (i + 1) * 10,
+          value: v, def: i === 0 ? "Y" : "N", sort: (i + 1) * 10,
         }));
       }
 
-      const r = await bx(ep, token, "crm.item.userfield.add.json", payload);
+      const r = await bx(ep, token, "userfieldconfig.add.json", payload);
       if (r.error) {
         results.push({ code: f.code, status: "error", error: r.error_description || r.error });
       } else {
@@ -145,6 +175,9 @@ Deno.serve(async (req) => {
 
     return new Response(JSON.stringify({
       success: true,
+      entity_id: entityId,
+      spa_type_id: spaType.id,
+      entity_type_id: ENTITY_TYPE_ID,
       total: FIELDS.length,
       created: results.filter(r => r.status === "created").length,
       skipped: results.filter(r => r.status === "skipped").length,
