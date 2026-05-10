@@ -3380,6 +3380,57 @@ export type Database = {
         }
         Relationships: []
       }
+      spa_migration_log: {
+        Row: {
+          created_at: string
+          deal_id: string
+          deal_title: string | null
+          error_message: string | null
+          id: string
+          mode: string
+          payload: Json | null
+          session_id: string
+          source_category_id: number
+          source_stage_id: string | null
+          spa_item_id: string | null
+          status: string
+          target_entity_type_id: number
+          target_stage_id: string | null
+        }
+        Insert: {
+          created_at?: string
+          deal_id: string
+          deal_title?: string | null
+          error_message?: string | null
+          id?: string
+          mode: string
+          payload?: Json | null
+          session_id: string
+          source_category_id: number
+          source_stage_id?: string | null
+          spa_item_id?: string | null
+          status: string
+          target_entity_type_id: number
+          target_stage_id?: string | null
+        }
+        Update: {
+          created_at?: string
+          deal_id?: string
+          deal_title?: string | null
+          error_message?: string | null
+          id?: string
+          mode?: string
+          payload?: Json | null
+          session_id?: string
+          source_category_id?: number
+          source_stage_id?: string | null
+          spa_item_id?: string | null
+          status?: string
+          target_entity_type_id?: number
+          target_stage_id?: string | null
+        }
+        Relationships: []
+      }
       swarm_reports: {
         Row: {
           content: string
