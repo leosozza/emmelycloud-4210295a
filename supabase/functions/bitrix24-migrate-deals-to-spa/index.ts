@@ -9,17 +9,8 @@ const corsHeaders = {
 
 const SOURCE_CATEGORY_ID = 25;
 const TARGET_ENTITY_TYPE_ID = 1118;
-const REVERSE_LINK_FIELD = "UF_CRM_1778431525"; // campo do deal que recebe ID da SPA
+const REVERSE_LINK_FIELD = "UF_CRM_1778431525";
 
-// Mapeamento campo deal -> campo SPA
-const FIELD_MAP: Record<string, string> = {
-  // Estes UFs vêm dos deals atuais — copiados conforme estiverem preenchidos
-  // O nome do campo deal precisa ser identificado dinamicamente no momento da migração
-  // pois a função usa LABELS, não códigos UF, para fazer o match.
-};
-
-// Map por LABEL (deal origem) -> código lógico do campo na SPA.
-// A chave real da SPA é resolvida dinamicamente via crm.item.fields, pois o Bitrix gera ufCrm{spaId}NomeCampo.
 const LABEL_TO_SPA_CODE: Record<string, string> = {
   "Número do processo": "NUMERO_PROCESSO",
   "URL do Processo": "URL_PROCESSO",
@@ -76,18 +67,10 @@ async function bx(ep: string, token: string, method: string, body: Record<string
   return r.json();
 }
 
-function normalize(s: string) {
-  return (s || "").trim().toLowerCase().replace(/\s+/g, " ");
-}
-
-function normalizeCode(s: string) {
-  return (s || "")
-    .replace(/^ufCrm/i, "")
-    .replace(/^UF_CRM_/i, "")
-    .replace(/^[0-9]+_?/, "")
-    .replace(/[^A-Z0-9]/gi, "")
-    .toUpperCase();
-}
+const normalize = (s: string) => (s || "").trim().toLowerCase().replace(/\s+/g, " ");
+const normalizeCode = (s: string) =>
+  (s || "").replace(/^ufCrm/i, "").replace(/^UF_CRM_/i, "").replace(/^[0-9]+_?/, "")
+    .replace(/[^A-Z0-9]/gi, "").toUpperCase();
 
 function fieldLabel(meta: any) {
   const candidates = [meta?.formLabel, meta?.title, meta?.listLabel, meta?.listColumnLabel, meta?.listFilterLabel];
@@ -101,31 +84,142 @@ function fieldLabel(meta: any) {
   return "";
 }
 
+async function processMigration(opts: {
+  supabase: any;
+  ep: string;
+  token: string;
+  allDeals: any[];
+  dealUfToSpaField: Record<string, string>;
+  spaCodeToField: Record<string, string>;
+  stageMap: Record<string, string>;
+  defaultSpaStage: string;
+  sessionId: string;
+  mode: "dry_run" | "execute";
+}) {
+  const { supabase, ep, token, allDeals, dealUfToSpaField, spaCodeToField, stageMap, defaultSpaStage, sessionId, mode } = opts;
+  const logBuffer: any[] = [];
+
+  const flush = async () => {
+    if (logBuffer.length === 0) return;
+    const chunk = logBuffer.splice(0, logBuffer.length);
+    const { error } = await supabase.from("spa_migration_log").insert(chunk);
+    if (error) console.error("[migrate] log insert error:", error);
+  };
+
+  for (const deal of allDeals) {
+    if (deal[REVERSE_LINK_FIELD] && String(deal[REVERSE_LINK_FIELD]).trim() !== "") {
+      logBuffer.push({
+        session_id: sessionId, deal_id: String(deal.ID), spa_item_id: String(deal[REVERSE_LINK_FIELD]),
+        source_category_id: SOURCE_CATEGORY_ID, target_entity_type_id: TARGET_ENTITY_TYPE_ID,
+        source_stage_id: deal.STAGE_ID, target_stage_id: null,
+        deal_title: deal.TITLE, status: "skipped", error_message: "Já migrado",
+        mode, payload: null,
+      });
+    } else {
+      const targetStage = stageMap[deal.STAGE_ID] || defaultSpaStage;
+      const item: Record<string, any> = {
+        title: deal.TITLE || `Migrado do Deal #${deal.ID}`,
+        stageId: targetStage,
+        opportunity: deal.OPPORTUNITY ? parseFloat(deal.OPPORTUNITY) : undefined,
+        currencyId: deal.CURRENCY_ID || "EUR",
+        contactId: deal.CONTACT_ID || undefined,
+        companyId: deal.COMPANY_ID || undefined,
+        assignedById: deal.ASSIGNED_BY_ID || undefined,
+      };
+      const dealOrigemIdField = spaCodeToField.DEAL_ORIGEM_ID;
+      const dealOrigemUrlField = spaCodeToField.DEAL_ORIGEM_URL;
+      if (dealOrigemIdField) item[dealOrigemIdField] = parseInt(deal.ID);
+      if (dealOrigemUrlField) item[dealOrigemUrlField] = `${ep.replace(/\/rest\/$/, "")}/crm/deal/details/${deal.ID}/`;
+      for (const [dealUf, spaField] of Object.entries(dealUfToSpaField)) {
+        const v = deal[dealUf];
+        if (v !== null && v !== undefined && v !== "" && !(Array.isArray(v) && v.length === 0)) {
+          item[spaField] = v;
+        }
+      }
+
+      if (mode === "dry_run") {
+        logBuffer.push({
+          session_id: sessionId, deal_id: String(deal.ID), spa_item_id: null,
+          source_category_id: SOURCE_CATEGORY_ID, target_entity_type_id: TARGET_ENTITY_TYPE_ID,
+          source_stage_id: deal.STAGE_ID, target_stage_id: targetStage,
+          deal_title: deal.TITLE, status: "preview", error_message: null,
+          mode, payload: item,
+        });
+      } else {
+        const createRes = await bx(ep, token, "crm.item.add.json", {
+          entityTypeId: TARGET_ENTITY_TYPE_ID, fields: item,
+        });
+        if (createRes.error || !createRes.result?.item?.id) {
+          logBuffer.push({
+            session_id: sessionId, deal_id: String(deal.ID), spa_item_id: null,
+            source_category_id: SOURCE_CATEGORY_ID, target_entity_type_id: TARGET_ENTITY_TYPE_ID,
+            source_stage_id: deal.STAGE_ID, target_stage_id: targetStage,
+            deal_title: deal.TITLE, status: "failed",
+            error_message: createRes.error_description || createRes.error || "Sem ID retornado",
+            mode, payload: item,
+          });
+        } else {
+          const newId = String(createRes.result.item.id);
+          const updRes = await bx(ep, token, "crm.deal.update.json", {
+            id: deal.ID, fields: { [REVERSE_LINK_FIELD]: newId },
+          });
+          logBuffer.push({
+            session_id: sessionId, deal_id: String(deal.ID), spa_item_id: newId,
+            source_category_id: SOURCE_CATEGORY_ID, target_entity_type_id: TARGET_ENTITY_TYPE_ID,
+            source_stage_id: deal.STAGE_ID, target_stage_id: targetStage,
+            deal_title: deal.TITLE, status: "success",
+            error_message: updRes.error
+              ? `SPA criada (${newId}) mas falha link reverso: ${updRes.error_description || updRes.error}`
+              : null,
+            mode, payload: item,
+          });
+        }
+      }
+    }
+
+    if (logBuffer.length >= 50) await flush();
+  }
+
+  await flush();
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   const supabase = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+  const json = (b: any, s = 200) => new Response(JSON.stringify(b), {
+    status: s, headers: { ...corsHeaders, "Content-Type": "application/json" }
+  });
 
   try {
     const url = new URL(req.url);
-    const mode = (url.searchParams.get("mode") || "dry_run") as "dry_run" | "execute";
+    const mode = (url.searchParams.get("mode") || "dry_run") as "dry_run" | "execute" | "status";
     const limitParam = parseInt(url.searchParams.get("limit") || "0");
-    const offset = parseInt(url.searchParams.get("offset") || "0");
     const sessionIdParam = url.searchParams.get("session_id");
-    const sessionId = sessionIdParam || crypto.randomUUID();
+
+    // STATUS endpoint: poll spa_migration_log counts
+    if (mode === "status") {
+      if (!sessionIdParam) return json({ error: "session_id required" }, 400);
+      const { data, error } = await supabase
+        .from("spa_migration_log")
+        .select("status")
+        .eq("session_id", sessionIdParam);
+      if (error) return json({ error: error.message }, 500);
+      const counts = { success: 0, failed: 0, skipped: 0, preview: 0 };
+      for (const r of data || []) counts[r.status as keyof typeof counts] = (counts[r.status as keyof typeof counts] || 0) + 1;
+      return json({ success: true, session_id: sessionIdParam, processed: data?.length || 0, counts });
+    }
 
     const { data: integration } = await supabase
       .from("bitrix24_integrations")
       .select("*").order("updated_at", { ascending: false }).limit(1).maybeSingle();
-    if (!integration) {
-      return new Response(JSON.stringify({ error: "No integration" }), {
-        status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" }});
-    }
+    if (!integration) return json({ error: "No integration" }, 404);
 
     const token = await ensureValidToken(supabase, integration);
     const ep = integration.client_endpoint;
+    const sessionId = crypto.randomUUID();
 
-    // 1) Mapas: deal fields (UF -> label) e SPA fields reais (código lógico -> ufCrm{spaId}*)
+    // Build SPA + deal field maps
     const spaFieldsRes = await bx(ep, token, "crm.item.fields.json", { entityTypeId: TARGET_ENTITY_TYPE_ID });
     if (spaFieldsRes.error) throw new Error(`crm.item.fields: ${spaFieldsRes.error_description || spaFieldsRes.error}`);
     const spaFields = spaFieldsRes.result?.fields || spaFieldsRes.result || {};
@@ -151,12 +245,10 @@ Deno.serve(async (req) => {
       if (spaTarget) dealUfToSpaField[code] = spaTarget;
     }
 
-    // 2) Mapa de etapas: deal cat 25 -> SPA stage
+    // Stage mapping
     const dealStageEntityRes = await bx(ep, token, "crm.dealcategory.status.json", { id: SOURCE_CATEGORY_ID });
     const dealStageEntityId = dealStageEntityRes.result || `DEAL_STAGE_${SOURCE_CATEGORY_ID}`;
-    let dealStagesRes = await bx(ep, token, "crm.status.list.json", {
-      filter: { ENTITY_ID: dealStageEntityId }
-    });
+    let dealStagesRes = await bx(ep, token, "crm.status.list.json", { filter: { ENTITY_ID: dealStageEntityId } });
     let dealStages = dealStagesRes.result || [];
     if (dealStages.length === 0) {
       dealStagesRes = await bx(ep, token, "crm.dealcategory.stage.list.json", { id: SOURCE_CATEGORY_ID });
@@ -168,15 +260,10 @@ Deno.serve(async (req) => {
         s.ENTITY_ID === dealStageEntityId || String(s.STATUS_ID || "").startsWith(`C${SOURCE_CATEGORY_ID}:`)
       );
     }
-    const spaStageEntities = [`DYNAMIC_${TARGET_ENTITY_TYPE_ID}_STAGE_0`, `DYNAMIC_${TARGET_ENTITY_TYPE_ID}_STAGE`];
     let spaStages: any[] = [];
-    for (const entityId of spaStageEntities) {
-      const spaStagesRes = await bx(ep, token, "crm.status.list.json", { filter: { ENTITY_ID: entityId } });
-      const rows = spaStagesRes.result || [];
-      if (rows.length > 0) {
-        spaStages = rows;
-        break;
-      }
+    for (const entityId of [`DYNAMIC_${TARGET_ENTITY_TYPE_ID}_STAGE_0`, `DYNAMIC_${TARGET_ENTITY_TYPE_ID}_STAGE`]) {
+      const r = await bx(ep, token, "crm.status.list.json", { filter: { ENTITY_ID: entityId } });
+      if ((r.result || []).length > 0) { spaStages = r.result; break; }
     }
     if (spaStages.length === 0) {
       const allStatusesRes = await bx(ep, token, "crm.status.list.json", {});
@@ -189,7 +276,6 @@ Deno.serve(async (req) => {
       spaStages = spaFields.stageId.items.map((item: any) => ({
         STATUS_ID: item.ID || item.STATUS_ID || item.VALUE,
         NAME: item.VALUE || item.NAME || item.TITLE,
-        SORT: item.SORT || 0,
       }));
     }
     const stageMap: Record<string, string> = {};
@@ -197,158 +283,73 @@ Deno.serve(async (req) => {
       const match = spaStages.find((ss: any) => normalize(ss.NAME) === normalize(ds.NAME));
       if (match) stageMap[ds.STATUS_ID] = match.STATUS_ID;
     }
-    // Fallback: primeira etapa da SPA
     const defaultSpaStage = spaStages[0]?.STATUS_ID || `DYNAMIC_${TARGET_ENTITY_TYPE_ID}_STAGE_0:NEW`;
 
-    // 3) Buscar deals da categoria 25, paginado
+    // Fetch deals
     const allDeals: any[] = [];
-    let start: any = offset || 0;
+    let start: any = 0;
     let pages = 0;
     const maxPages = limitParam > 0 ? Math.ceil(limitParam / 50) : 50;
     while (pages < maxPages) {
       const r = await bx(ep, token, "crm.deal.list", {
         filter: { CATEGORY_ID: SOURCE_CATEGORY_ID },
-        select: ["*", "UF_*"],
-        order: { ID: "ASC" },
-        start,
+        select: ["*", "UF_*"], order: { ID: "ASC" }, start,
       });
       if (r.error) throw new Error(`crm.deal.list: ${r.error_description}`);
       const items = r.result || [];
       allDeals.push(...items);
-      if (limitParam > 0 && allDeals.length >= limitParam) {
-        allDeals.length = limitParam;
-        break;
-      }
+      if (limitParam > 0 && allDeals.length >= limitParam) { allDeals.length = limitParam; break; }
       if (typeof r.next === "undefined" || items.length === 0) break;
       start = r.next;
       pages++;
     }
 
-    // 4) Para cada deal: gerar payload + criar (se execute) + atualizar deal
-    const logRows: any[] = [];
-    let successCount = 0, failCount = 0, skipCount = 0;
+    // Decide background vs sync. Threshold: >20 deals in execute mode runs in background.
+    const runInBackground = mode === "execute" && allDeals.length > 20;
 
-    for (const deal of allDeals) {
-      // Skip se já tem REVERSE_LINK_FIELD preenchido
-      if (deal[REVERSE_LINK_FIELD] && String(deal[REVERSE_LINK_FIELD]).trim() !== "") {
-        skipCount++;
-        logRows.push({
-          session_id: sessionId, deal_id: String(deal.ID), spa_item_id: String(deal[REVERSE_LINK_FIELD]),
-          source_category_id: SOURCE_CATEGORY_ID, target_entity_type_id: TARGET_ENTITY_TYPE_ID,
-          source_stage_id: deal.STAGE_ID, target_stage_id: null,
-          deal_title: deal.TITLE, status: "skipped", error_message: "Já migrado",
-          mode, payload: null,
-        });
-        continue;
-      }
-
-      const targetStage = stageMap[deal.STAGE_ID] || defaultSpaStage;
-      const item: Record<string, any> = {
-        title: deal.TITLE || `Migrado do Deal #${deal.ID}`,
-        stageId: targetStage,
-        opportunity: deal.OPPORTUNITY ? parseFloat(deal.OPPORTUNITY) : undefined,
-        currencyId: deal.CURRENCY_ID || "EUR",
-        contactId: deal.CONTACT_ID || undefined,
-        companyId: deal.COMPANY_ID || undefined,
-        assignedById: deal.ASSIGNED_BY_ID || undefined,
-      };
-
-      const dealOrigemIdField = spaCodeToField.DEAL_ORIGEM_ID;
-      const dealOrigemUrlField = spaCodeToField.DEAL_ORIGEM_URL;
-      if (dealOrigemIdField) item[dealOrigemIdField] = parseInt(deal.ID);
-      if (dealOrigemUrlField) item[dealOrigemUrlField] = `${ep.replace(/\/rest\/$/, "")}/crm/deal/details/${deal.ID}/`;
-
-      // Copiar UFs mapeados que tenham valor
-      for (const [dealUf, spaField] of Object.entries(dealUfToSpaField)) {
-        const v = deal[dealUf];
-        if (v !== null && v !== undefined && v !== "" && !(Array.isArray(v) && v.length === 0)) {
-          item[spaField] = v;
-        }
-      }
-
-      if (mode === "dry_run") {
-        logRows.push({
-          session_id: sessionId, deal_id: String(deal.ID), spa_item_id: null,
-          source_category_id: SOURCE_CATEGORY_ID, target_entity_type_id: TARGET_ENTITY_TYPE_ID,
-          source_stage_id: deal.STAGE_ID, target_stage_id: targetStage,
-          deal_title: deal.TITLE, status: "preview", error_message: null,
-          mode, payload: item,
-        });
-        successCount++;
-        continue;
-      }
-
-      // EXECUTE
-      const createRes = await bx(ep, token, "crm.item.add.json", {
-        entityTypeId: TARGET_ENTITY_TYPE_ID, fields: item,
+    if (runInBackground) {
+      // @ts-ignore EdgeRuntime is provided by Supabase Edge runtime
+      EdgeRuntime.waitUntil(
+        processMigration({
+          supabase, ep, token, allDeals, dealUfToSpaField, spaCodeToField,
+          stageMap, defaultSpaStage, sessionId, mode,
+        }).catch((e) => console.error("[bg migration]", e))
+      );
+      return json({
+        success: true, mode, session_id: sessionId, background: true,
+        total_processed: allDeals.length, success_count: 0, failed_count: 0, skipped_count: 0,
+        stage_map: stageMap,
+        mapped_uf_fields: Object.entries(dealUfToSpaField).map(([d, s]) => `${d} -> ${s}`),
+        sample: [],
+        message: `Migração rodando em background. Use mode=status&session_id=${sessionId} para acompanhar.`,
       });
-
-      if (createRes.error || !createRes.result?.item?.id) {
-        failCount++;
-        logRows.push({
-          session_id: sessionId, deal_id: String(deal.ID), spa_item_id: null,
-          source_category_id: SOURCE_CATEGORY_ID, target_entity_type_id: TARGET_ENTITY_TYPE_ID,
-          source_stage_id: deal.STAGE_ID, target_stage_id: targetStage,
-          deal_title: deal.TITLE, status: "failed",
-          error_message: createRes.error_description || createRes.error || "Sem ID retornado",
-          mode, payload: item,
-        });
-        continue;
-      }
-
-      const newId = String(createRes.result.item.id);
-
-      // Atualizar deal com link reverso
-      const updRes = await bx(ep, token, "crm.deal.update.json", {
-        id: deal.ID,
-        fields: { [REVERSE_LINK_FIELD]: newId },
-      });
-
-      if (updRes.error) {
-        // SPA criada mas update falhou - log com warning
-        logRows.push({
-          session_id: sessionId, deal_id: String(deal.ID), spa_item_id: newId,
-          source_category_id: SOURCE_CATEGORY_ID, target_entity_type_id: TARGET_ENTITY_TYPE_ID,
-          source_stage_id: deal.STAGE_ID, target_stage_id: targetStage,
-          deal_title: deal.TITLE, status: "success",
-          error_message: `SPA criada (${newId}) mas falha ao gravar link reverso: ${updRes.error_description || updRes.error}`,
-          mode, payload: item,
-        });
-      } else {
-        logRows.push({
-          session_id: sessionId, deal_id: String(deal.ID), spa_item_id: newId,
-          source_category_id: SOURCE_CATEGORY_ID, target_entity_type_id: TARGET_ENTITY_TYPE_ID,
-          source_stage_id: deal.STAGE_ID, target_stage_id: targetStage,
-          deal_title: deal.TITLE, status: "success", error_message: null,
-          mode, payload: item,
-        });
-      }
-      successCount++;
     }
 
-    // Persistir log em batch (chunks de 500)
-    for (let i = 0; i < logRows.length; i += 500) {
-      const chunk = logRows.slice(i, i + 500);
-      const { error } = await supabase.from("spa_migration_log").insert(chunk);
-      if (error) console.error("[migrate] log insert error:", error);
-    }
+    // Synchronous (dry_run or small execute)
+    await processMigration({
+      supabase, ep, token, allDeals, dealUfToSpaField, spaCodeToField,
+      stageMap, defaultSpaStage, sessionId, mode,
+    });
 
-    return new Response(JSON.stringify({
-      success: true, mode, session_id: sessionId,
+    const { data: logRows } = await supabase
+      .from("spa_migration_log").select("status,payload,deal_id,spa_item_id")
+      .eq("session_id", sessionId);
+    const counts = { success: 0, failed: 0, skipped: 0, preview: 0 };
+    for (const r of logRows || []) counts[r.status as keyof typeof counts] = (counts[r.status as keyof typeof counts] || 0) + 1;
+
+    return json({
+      success: true, mode, session_id: sessionId, background: false,
       total_processed: allDeals.length,
-      success_count: successCount,
-      failed_count: failCount,
-      skipped_count: skipCount,
+      success_count: counts.success + counts.preview,
+      failed_count: counts.failed,
+      skipped_count: counts.skipped,
       stage_map: stageMap,
-      mapped_uf_fields: Object.entries(dealUfToSpaField).map(([dealField, spaField]) => `${dealField} -> ${spaField}`),
-      spa_field_map: spaCodeToField,
-      sample: logRows.slice(0, 5),
-    }), { headers: { ...corsHeaders, "Content-Type": "application/json" }});
+      mapped_uf_fields: Object.entries(dealUfToSpaField).map(([d, s]) => `${d} -> ${s}`),
+      sample: (logRows || []).slice(0, 5),
+    });
 
   } catch (e) {
     console.error("[migrate-deals-to-spa]", e);
-    return new Response(JSON.stringify({ error: String(e) }), {
-      status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" }
-    });
+    return json({ error: String(e) }, 500);
   }
 });

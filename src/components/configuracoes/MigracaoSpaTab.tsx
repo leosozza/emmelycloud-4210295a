@@ -10,6 +10,7 @@ interface MigrationResult {
   success: boolean;
   mode: string;
   session_id: string;
+  background?: boolean;
   total_processed: number;
   success_count: number;
   failed_count: number;
@@ -17,6 +18,7 @@ interface MigrationResult {
   stage_map: Record<string, string>;
   mapped_uf_fields: string[];
   sample: any[];
+  message?: string;
 }
 
 export default function MigracaoSpaTab() {
@@ -25,6 +27,7 @@ export default function MigracaoSpaTab() {
   const [createResult, setCreateResult] = useState<any>(null);
   const [migrationResult, setMigrationResult] = useState<MigrationResult | null>(null);
   const [limitTest, setLimitTest] = useState(5);
+  const [bgStatus, setBgStatus] = useState<{ processed: number; total: number; counts: any } | null>(null);
 
   const callFn = async (path: string, params: Record<string, string> = {}) => {
     const url = new URL(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/${path}`);
@@ -70,17 +73,42 @@ export default function MigracaoSpaTab() {
       }
     }
     setRunning(true);
+    setBgStatus(null);
     try {
       const params: Record<string, string> = { mode };
       if (limit) params.limit = String(limit);
       const r = await callFn("bitrix24-migrate-deals-to-spa", params);
       setMigrationResult(r);
-      if (r.success) {
+      if (!r.success) {
+        toast.error(r.error || "Falha");
+        return;
+      }
+      if (r.background) {
+        toast.info(`Migração iniciada em background: ${r.total_processed} deals. Acompanhando...`);
+        // Poll status every 4s
+        const sessionId = r.session_id;
+        const total = r.total_processed;
+        const poll = async () => {
+          const s = await callFn("bitrix24-migrate-deals-to-spa", { mode: "status", session_id: sessionId });
+          if (s?.success) {
+            setBgStatus({ processed: s.processed, total, counts: s.counts });
+            if (s.processed >= total) {
+              toast.success(`Migração concluída: ${s.counts.success} sucesso, ${s.counts.failed} erros, ${s.counts.skipped} já migrados`);
+              return true;
+            }
+          }
+          return false;
+        };
+        const interval = setInterval(async () => {
+          const done = await poll();
+          if (done) clearInterval(interval);
+        }, 4000);
+        // Stop polling after 30 min safety
+        setTimeout(() => clearInterval(interval), 30 * 60 * 1000);
+      } else {
         toast.success(
           `${mode === "dry_run" ? "Pré-visualização" : "Migração"}: ${r.success_count} sucesso, ${r.failed_count} erros, ${r.skipped_count} já migrados`
         );
-      } else {
-        toast.error(r.error || "Falha");
       }
     } catch (e) {
       toast.error(String(e));
@@ -185,6 +213,22 @@ export default function MigracaoSpaTab() {
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
+            {migrationResult.background && bgStatus && (
+              <div className="rounded-lg border bg-muted/30 p-3 text-sm space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="font-medium">Progresso em background</span>
+                  <span className="text-xs text-muted-foreground">{bgStatus.processed} / {bgStatus.total}</span>
+                </div>
+                <div className="h-2 w-full overflow-hidden rounded bg-muted">
+                  <div className="h-full bg-primary transition-all" style={{ width: `${Math.min(100, (bgStatus.processed / bgStatus.total) * 100)}%` }} />
+                </div>
+                <div className="flex flex-wrap gap-2 text-xs">
+                  <Badge variant="default">{bgStatus.counts.success || 0} sucesso</Badge>
+                  {(bgStatus.counts.failed || 0) > 0 && <Badge variant="destructive">{bgStatus.counts.failed} erros</Badge>}
+                  {(bgStatus.counts.skipped || 0) > 0 && <Badge variant="secondary">{bgStatus.counts.skipped} já migrados</Badge>}
+                </div>
+              </div>
+            )}
             <div className="flex flex-wrap gap-2">
               <Badge variant="default">{migrationResult.success_count} sucesso</Badge>
               {migrationResult.failed_count > 0 && <Badge variant="destructive">{migrationResult.failed_count} erros</Badge>}
