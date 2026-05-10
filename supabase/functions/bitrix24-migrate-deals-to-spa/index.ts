@@ -475,7 +475,7 @@ Deno.serve(async (req) => {
 
     // FIX_STAGES mode: atualiza stageId dos itens SPA já criados conforme STAGE_ID atual do deal
     if (mode === "fix_stages") {
-      const fixSession = crypto.randomUUID();
+      const fixSession = sessionId;
       const { data: migrated } = await supabase
         .from("spa_migration_log")
         .select("deal_id, spa_item_id, source_stage_id, created_at")
@@ -484,9 +484,19 @@ Deno.serve(async (req) => {
         .not("spa_item_id", "is", null)
         .order("created_at", { ascending: true });
 
+      const { data: alreadyProcessed } = await supabase
+        .from("spa_migration_log")
+        .select("spa_item_id")
+        .eq("session_id", fixSession)
+        .eq("mode", "fix_stages")
+        .not("spa_item_id", "is", null);
+      const processedSpaIds = new Set((alreadyProcessed || []).map((r: any) => String(r.spa_item_id)));
+
       const byItem = new Map<string, { deal_id: string; source_stage_id: string }>();
       for (const r of migrated || []) {
-        if (r.spa_item_id) byItem.set(String(r.spa_item_id), { deal_id: String(r.deal_id), source_stage_id: r.source_stage_id });
+        if (r.spa_item_id && !processedSpaIds.has(String(r.spa_item_id))) {
+          byItem.set(String(r.spa_item_id), { deal_id: String(r.deal_id), source_stage_id: r.source_stage_id });
+        }
       }
 
       // Re-fetch deals para obter STAGE_ID atual
