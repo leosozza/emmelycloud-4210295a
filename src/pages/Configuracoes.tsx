@@ -237,6 +237,9 @@ export default function Configuracoes() {
           <TabsTrigger value="permissoes" className="gap-1.5">
             <Shield className="h-3.5 w-3.5" /> Permissões
           </TabsTrigger>
+          <TabsTrigger value="migracao-spa" className="gap-1.5">
+            <ArrowRightLeft className="h-3.5 w-3.5" /> Migração SPA
+          </TabsTrigger>
         </TabsList>
         <TabsContent value="aparencia">
           <AparenciaTab />
@@ -249,6 +252,9 @@ export default function Configuracoes() {
         </TabsContent>
         <TabsContent value="permissoes">
           <PermissoesTab />
+        </TabsContent>
+        <TabsContent value="migracao-spa">
+          <MigracaoSpaTab />
         </TabsContent>
       </Tabs>
     </div>
