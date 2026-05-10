@@ -84,6 +84,27 @@ function fieldLabel(meta: any) {
   return "";
 }
 
+// Soft time budget per invocation. After this, break loop and self-invoke
+// to continue. Set well below the 150s edge IDLE_TIMEOUT.
+const TIME_BUDGET_MS = 110_000;
+
+async function selfInvokeContinue(sessionId: string, limitParam: number) {
+  try {
+    const url = `${Deno.env.get("SUPABASE_URL")}/functions/v1/bitrix24-migrate-deals-to-spa?mode=execute&continue_session=${sessionId}${limitParam > 0 ? `&limit=${limitParam}` : ""}`;
+    // Fire-and-forget; do not await response
+    fetch(url, {
+      method: "GET",
+      headers: {
+        "Authorization": `Bearer ${Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")}`,
+        "apikey": Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+      },
+    }).catch((e) => console.error("[self-invoke]", e));
+    console.log(`[self-invoke] chained continuation for session=${sessionId}`);
+  } catch (e) {
+    console.error("[self-invoke] failed", e);
+  }
+}
+
 async function processMigration(opts: {
   supabase: any;
   ep: string;
@@ -95,9 +116,13 @@ async function processMigration(opts: {
   defaultSpaStage: string;
   sessionId: string;
   mode: "dry_run" | "execute";
-}) {
-  const { supabase, ep, token, allDeals, dealUfToSpaField, spaCodeToField, stageMap, defaultSpaStage, sessionId, mode } = opts;
+  limitParam?: number;
+}): Promise<{ processed: number; remaining: number; chained: boolean }> {
+  const { supabase, ep, token, allDeals, dealUfToSpaField, spaCodeToField, stageMap, defaultSpaStage, sessionId, mode, limitParam = 0 } = opts;
   const logBuffer: any[] = [];
+  const startedAt = Date.now();
+  let processedCount = 0;
+  let timedOut = false;
 
   const flush = async () => {
     if (logBuffer.length === 0) return;
@@ -107,6 +132,13 @@ async function processMigration(opts: {
   };
 
   for (const deal of allDeals) {
+    // Time budget check — break early to allow self-invoke continuation
+    if (mode === "execute" && Date.now() - startedAt > TIME_BUDGET_MS) {
+      timedOut = true;
+      console.log(`[migrate] time budget hit after ${processedCount} deals; will self-invoke`);
+      break;
+    }
+
     if (deal[REVERSE_LINK_FIELD] && String(deal[REVERSE_LINK_FIELD]).trim() !== "") {
       logBuffer.push({
         session_id: sessionId, deal_id: String(deal.ID), spa_item_id: String(deal[REVERSE_LINK_FIELD]),
@@ -178,10 +210,22 @@ async function processMigration(opts: {
       }
     }
 
+    processedCount++;
     if (logBuffer.length >= 50) await flush();
   }
 
   await flush();
+
+  // If we ran out of time, chain a self-invoke. The next invocation will
+  // re-fetch the deal list; deals already migrated will be naturally skipped
+  // because their REVERSE_LINK_FIELD is now populated. No duplicates.
+  let chained = false;
+  if (timedOut && mode === "execute") {
+    await selfInvokeContinue(sessionId, limitParam);
+    chained = true;
+  }
+
+  return { processed: processedCount, remaining: allDeals.length - processedCount, chained };
 }
 
 Deno.serve(async (req) => {
@@ -197,6 +241,7 @@ Deno.serve(async (req) => {
     const mode = (url.searchParams.get("mode") || "dry_run") as "dry_run" | "execute" | "status" | "backfill";
     const limitParam = parseInt(url.searchParams.get("limit") || "0");
     const sessionIdParam = url.searchParams.get("session_id");
+    const continueSession = url.searchParams.get("continue_session");
 
     // STATUS endpoint: poll spa_migration_log counts
     if (mode === "status") {
@@ -321,7 +366,9 @@ Deno.serve(async (req) => {
 
     const token = await ensureValidToken(supabase, integration);
     const ep = integration.client_endpoint;
-    const sessionId = crypto.randomUUID();
+    // Reuse session_id when chained (auto-retry continuation) so progress aggregates
+    const sessionId = continueSession || crypto.randomUUID();
+    if (continueSession) console.log(`[migrate] continuing session=${sessionId}`);
 
     // Build SPA + deal field maps
     const spaFieldsRes = await bx(ep, token, "crm.item.fields.json", { entityTypeId: TARGET_ENTITY_TYPE_ID });
@@ -416,7 +463,7 @@ Deno.serve(async (req) => {
       EdgeRuntime.waitUntil(
         processMigration({
           supabase, ep, token, allDeals, dealUfToSpaField, spaCodeToField,
-          stageMap, defaultSpaStage, sessionId, mode,
+          stageMap, defaultSpaStage, sessionId, mode, limitParam,
         }).catch((e) => console.error("[bg migration]", e))
       );
       return json({
@@ -432,7 +479,7 @@ Deno.serve(async (req) => {
     // Synchronous (dry_run or small execute)
     await processMigration({
       supabase, ep, token, allDeals, dealUfToSpaField, spaCodeToField,
-      stageMap, defaultSpaStage, sessionId, mode,
+      stageMap, defaultSpaStage, sessionId, mode, limitParam,
     });
 
     const { data: logRows } = await supabase
