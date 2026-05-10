@@ -11,8 +11,6 @@ const ENTITY_TYPE_ID = 1118;
 
 type SpaTypeInfo = { id: number; entityTypeId: number; title?: string };
 
-// Campos a criar na SPA Ação Judicial
-// type: string | url | money | date | datetime | enumeration | integer
 const FIELDS = [
   { code: "NUMERO_PROCESSO", label: "Número do processo", type: "string" },
   { code: "URL_PROCESSO", label: "URL do Processo", type: "url" },
@@ -41,10 +39,14 @@ const FIELDS = [
   { code: "DEAL_ORIGEM_URL", label: "URL Deal Origem (Migração)", type: "url" },
 ];
 
+// Lang map abrangendo PT (PT), BR, EN, RU para garantir que o label aparece em qualquer interface
+const labelMap = (label: string) => ({
+  pt: label, br: label, en: label, ru: label, de: label, ua: label, la: label,
+});
+
 async function ensureValidToken(supabase: any, integration: any): Promise<string> {
   const expiresAt = new Date(integration.expires_at);
   if (expiresAt.getTime() - Date.now() > 5 * 60 * 1000) return integration.access_token;
-
   const r = await fetch("https://oauth.bitrix.info/oauth/token/", {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -74,21 +76,12 @@ async function bx(ep: string, token: string, method: string, body: Record<string
   return r.json();
 }
 
-function normalizeCode(s: string) {
-  return (s || "")
-    .replace(/^ufCrm/i, "")
-    .replace(/^UF_CRM_/i, "")
-    .replace(/^[0-9]+_?/, "")
-    .replace(/[^A-Z0-9]/gi, "")
-    .toUpperCase();
-}
-
 async function getSpaType(ep: string, token: string): Promise<SpaTypeInfo> {
   const res = await bx(ep, token, "crm.type.list.json", {});
   if (res.error) throw new Error(`crm.type.list: ${res.error_description || res.error}`);
   const types = res.result?.types || [];
   const match = types.find((t: any) => Number(t.entityTypeId) === ENTITY_TYPE_ID);
-  if (!match?.id) throw new Error(`SPA entityTypeId ${ENTITY_TYPE_ID} não encontrada em crm.type.list`);
+  if (!match?.id) throw new Error(`SPA entityTypeId ${ENTITY_TYPE_ID} não encontrada`);
   return { id: Number(match.id), entityTypeId: Number(match.entityTypeId), title: match.title };
 }
 
@@ -96,94 +89,109 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   const supabase = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+  const json = (b: any, s = 200) => new Response(JSON.stringify(b), {
+    status: s, headers: { ...corsHeaders, "Content-Type": "application/json" }
+  });
 
   try {
     const { data: integration } = await supabase
       .from("bitrix24_integrations")
-      .select("*")
-      .order("updated_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-
-    if (!integration) {
-      return new Response(JSON.stringify({ error: "No integration" }), {
-        status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" }
-      });
-    }
+      .select("*").order("updated_at", { ascending: false }).limit(1).maybeSingle();
+    if (!integration) return json({ error: "No integration" }, 404);
 
     const token = await ensureValidToken(supabase, integration);
     const ep = integration.client_endpoint;
-
     const spaType = await getSpaType(ep, token);
     const entityId = `CRM_${spaType.id}`;
 
-    // Get existing fields to skip duplicates
-    const existingRes = await bx(ep, token, "crm.item.fields.json", { entityTypeId: ENTITY_TYPE_ID });
-    const existingFields = existingRes.result?.fields || existingRes.result || {};
-    const existingCodes = new Set(
-      Object.entries<any>(existingFields).flatMap(([k, meta]) => [
-        normalizeCode(k),
-        normalizeCode(meta?.title || ""),
-        normalizeCode(meta?.formLabel || ""),
-      ])
-    );
+    // Lista campos existentes (com IDs) para poder fazer UPDATE de labels
+    const listRes = await bx(ep, token, "userfieldconfig.list.json", {
+      moduleId: "crm",
+      filter: { entityId },
+    });
+    const existingList = listRes.result || [];
+    const byFieldName: Record<string, any> = {};
+    for (const f of existingList) {
+      const name = String(f.fieldName || f.FIELD_NAME || "").toUpperCase();
+      if (name) byFieldName[name] = f;
+    }
 
     const results: any[] = [];
 
     for (const f of FIELDS) {
       const upperCode = f.code.toUpperCase();
-      const alreadyExists = [...existingCodes].some(c => c === upperCode || c.endsWith("_" + upperCode));
+      const fieldName = `UF_CRM_${spaType.id}_${upperCode}`;
+      const existing = byFieldName[fieldName];
 
-      if (alreadyExists) {
-        results.push({ code: f.code, status: "skipped", reason: "already exists" });
+      const userTypeId =
+        f.type === "url" ? "url"
+        : f.type === "money" ? "money"
+        : f.type === "date" ? "date"
+        : f.type === "datetime" ? "datetime"
+        : f.type === "enumeration" ? "enumeration"
+        : f.type === "integer" ? "integer"
+        : "string";
+
+      if (existing) {
+        // UPDATE labels
+        const updatePayload: Record<string, any> = {
+          moduleId: "crm",
+          id: existing.id || existing.ID,
+          field: {
+            editFormLabel: labelMap(f.label),
+            listColumnLabel: labelMap(f.label),
+            listFilterLabel: labelMap(f.label),
+            helpMessage: labelMap(f.label),
+          },
+        };
+        const r = await bx(ep, token, "userfieldconfig.update.json", updatePayload);
+        if (r.error) {
+          results.push({ code: f.code, status: "update_error", error: r.error_description || r.error });
+        } else {
+          results.push({ code: f.code, status: "updated", label: f.label });
+        }
         continue;
       }
 
+      // CREATE
       const payload: Record<string, any> = {
         moduleId: "crm",
         field: {
           entityId,
-          fieldName: `UF_CRM_${spaType.id}_${upperCode}`,
-          userTypeId: f.type === "url" ? "url"
-            : f.type === "money" ? "money"
-            : f.type === "date" ? "date"
-            : f.type === "datetime" ? "datetime"
-            : f.type === "enumeration" ? "enumeration"
-            : f.type === "integer" ? "integer"
-            : "string",
-          editFormLabel: { pt: f.label, en: f.label, ru: f.label },
-          listColumnLabel: { pt: f.label, en: f.label, ru: f.label },
-          listFilterLabel: { pt: f.label, en: f.label, ru: f.label },
+          fieldName,
+          userTypeId,
+          editFormLabel: labelMap(f.label),
+          listColumnLabel: labelMap(f.label),
+          listFilterLabel: labelMap(f.label),
+          helpMessage: labelMap(f.label),
           xmlId: `emmely_acao_judicial_${upperCode.toLowerCase()}`,
           sort: 100,
+          showFilter: "Y",
         },
       };
-
       if (f.type === "enumeration" && f.items) {
         payload.field.enum = f.items.map((v, i) => ({
           value: v, def: i === 0 ? "Y" : "N", sort: (i + 1) * 10,
         }));
       }
-
       const r = await bx(ep, token, "userfieldconfig.add.json", payload);
       if (r.error) {
-        results.push({ code: f.code, status: "error", error: r.error_description || r.error });
+        results.push({ code: f.code, status: "create_error", error: r.error_description || r.error });
       } else {
-        results.push({ code: f.code, status: "created", id: r.result });
+        results.push({ code: f.code, status: "created", id: r.result, label: f.label });
       }
     }
 
-    return new Response(JSON.stringify({
+    return json({
       success: true,
       entity_id: entityId,
       spa_type_id: spaType.id,
-      entity_type_id: ENTITY_TYPE_ID,
       total: FIELDS.length,
       created: results.filter(r => r.status === "created").length,
-      skipped: results.filter(r => r.status === "skipped").length,
-      errors: results.filter(r => r.status === "error").length,
+      updated: results.filter(r => r.status === "updated").length,
+      errors: results.filter(r => r.status?.endsWith("error")).length,
       results,
-    }), { headers: { ...corsHeaders, "Content-Type": "application/json" }});
+    });
   } catch (e) {
     console.error("[spa-create-fields]", e);
     return new Response(JSON.stringify({ error: String(e) }), {
