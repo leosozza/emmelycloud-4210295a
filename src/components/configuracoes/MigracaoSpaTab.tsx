@@ -58,7 +58,7 @@ export default function MigracaoSpaTab() {
     }
   };
 
-  const handleRun = async (mode: "dry_run" | "execute" | "backfill", limit?: number) => {
+  const handleRun = async (mode: "dry_run" | "execute" | "backfill" | "fix_stages", limit?: number) => {
     if (mode === "execute") {
       const ok1 = confirm(
         `⚠️ Você vai migrar deals reais do pipeline 25 para a SPA 1118.\n\n` +
@@ -225,6 +225,25 @@ export default function MigracaoSpaTab() {
               Backfill TODOS
             </Button>
           </div>
+        </CardContent>
+      </Card>
+
+      <Card className="border-blue-500/40">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Wand2 className="h-4 w-4" /> Passo 5 — Corrigir Etapas dos Itens já Migrados
+          </CardTitle>
+          <CardDescription>
+            Atualiza o <code>stageId</code> de todos os itens da SPA que já foram migrados, recolocando-os
+            na etapa correspondente ao <code>STAGE_ID</code> atual do deal de origem. Use isto se as colunas
+            do funil SPA não estão batendo com o pipeline 25.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Button onClick={() => handleRun("fix_stages")} disabled={running} variant="default">
+            {running ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Wand2 className="mr-2 h-4 w-4" />}
+            Corrigir Etapas Agora
+          </Button>
         </CardContent>
       </Card>
 

@@ -67,7 +67,14 @@ async function bx(ep: string, token: string, method: string, body: Record<string
   return r.json();
 }
 
-const normalize = (s: string) => (s || "").trim().toLowerCase().replace(/\s+/g, " ");
+const normalize = (s: string) =>
+  (s || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")        // strip accents
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")            // strip punctuation
+    .trim()
+    .replace(/\s+/g, " ");
 const normalizeCode = (s: string) =>
   (s || "").replace(/^ufCrm/i, "").replace(/^UF_CRM_/i, "").replace(/^[0-9]+_?/, "")
     .replace(/[^A-Z0-9]/gi, "").toUpperCase();
@@ -238,7 +245,7 @@ Deno.serve(async (req) => {
 
   try {
     const url = new URL(req.url);
-    const mode = (url.searchParams.get("mode") || "dry_run") as "dry_run" | "execute" | "status" | "backfill";
+    const mode = (url.searchParams.get("mode") || "dry_run") as "dry_run" | "execute" | "status" | "backfill" | "fix_stages";
     const limitParam = parseInt(url.searchParams.get("limit") || "0");
     const sessionIdParam = url.searchParams.get("session_id");
     const continueSession = url.searchParams.get("continue_session");
@@ -429,12 +436,94 @@ Deno.serve(async (req) => {
         NAME: item.VALUE || item.NAME || item.TITLE,
       }));
     }
+    // Sort both lists by SORT (Bitrix order field) so positional fallback works
+    const sortedDealStages = [...dealStages].sort(
+      (a: any, b: any) => (parseInt(a.SORT) || 0) - (parseInt(b.SORT) || 0)
+    );
+    const sortedSpaStages = [...spaStages].sort(
+      (a: any, b: any) => (parseInt(a.SORT) || 0) - (parseInt(b.SORT) || 0)
+    );
+
     const stageMap: Record<string, string> = {};
-    for (const ds of dealStages) {
-      const match = spaStages.find((ss: any) => normalize(ss.NAME) === normalize(ds.NAME));
-      if (match) stageMap[ds.STATUS_ID] = match.STATUS_ID;
+    const unmatched: any[] = [];
+    for (const ds of sortedDealStages) {
+      const match = sortedSpaStages.find((ss: any) => normalize(ss.NAME) === normalize(ds.NAME));
+      if (match) {
+        stageMap[ds.STATUS_ID] = match.STATUS_ID;
+      } else {
+        unmatched.push(ds);
+      }
     }
-    const defaultSpaStage = spaStages[0]?.STATUS_ID || `DYNAMIC_${TARGET_ENTITY_TYPE_ID}_STAGE_0:NEW`;
+
+    // Positional fallback: para cada deal-stage não casado por nome, usa SPA stage no mesmo índice
+    const usedSpaIds = new Set(Object.values(stageMap));
+    for (const ds of unmatched) {
+      const dsIdx = sortedDealStages.findIndex((x: any) => x.STATUS_ID === ds.STATUS_ID);
+      const candidate = sortedSpaStages[dsIdx];
+      if (candidate && !usedSpaIds.has(candidate.STATUS_ID)) {
+        stageMap[ds.STATUS_ID] = candidate.STATUS_ID;
+        usedSpaIds.add(candidate.STATUS_ID);
+        console.log(`[stage-fallback] ${ds.STATUS_ID} (${ds.NAME}) -> ${candidate.STATUS_ID} (${candidate.NAME}) by index ${dsIdx}`);
+      } else {
+        console.warn(`[stage-unmatched] ${ds.STATUS_ID} (${ds.NAME}) — sem destino na SPA`);
+      }
+    }
+
+    const defaultSpaStage = sortedSpaStages[0]?.STATUS_ID || `DYNAMIC_${TARGET_ENTITY_TYPE_ID}_STAGE_0:NEW`;
+
+    // FIX_STAGES mode: atualiza stageId dos itens SPA já criados conforme STAGE_ID atual do deal
+    if (mode === "fix_stages") {
+      const fixSession = crypto.randomUUID();
+      const { data: migrated } = await supabase
+        .from("spa_migration_log")
+        .select("deal_id, spa_item_id, source_stage_id, created_at")
+        .eq("source_category_id", SOURCE_CATEGORY_ID)
+        .in("status", ["success", "skipped"])
+        .not("spa_item_id", "is", null)
+        .order("created_at", { ascending: true });
+
+      const byItem = new Map<string, { deal_id: string; source_stage_id: string }>();
+      for (const r of migrated || []) {
+        if (r.spa_item_id) byItem.set(String(r.spa_item_id), { deal_id: String(r.deal_id), source_stage_id: r.source_stage_id });
+      }
+
+      // Re-fetch deals para obter STAGE_ID atual
+      const dealById: Record<string, any> = {};
+      let s: any = 0;
+      for (let p = 0; p < 50; p++) {
+        const r = await bx(ep, token, "crm.deal.list", {
+          filter: { CATEGORY_ID: SOURCE_CATEGORY_ID },
+          select: ["ID", "STAGE_ID"], order: { ID: "ASC" }, start: s,
+        });
+        for (const d of (r.result || [])) dealById[String(d.ID)] = d;
+        if (typeof r.next === "undefined" || (r.result || []).length === 0) break;
+        s = r.next;
+      }
+
+      let fixed = 0, skipped = 0, failed = 0;
+      const sample: any[] = [];
+      for (const [spaId, info] of byItem) {
+        const currentStageId = dealById[info.deal_id]?.STAGE_ID || info.source_stage_id;
+        const targetStage = stageMap[currentStageId];
+        if (!targetStage) { skipped++; continue; }
+        const upd = await bx(ep, token, "crm.item.update.json", {
+          entityTypeId: TARGET_ENTITY_TYPE_ID, id: spaId, fields: { stageId: targetStage },
+        });
+        if (upd.error) {
+          failed++;
+          if (sample.length < 5) sample.push({ spaId, error: upd.error_description || upd.error });
+        } else {
+          fixed++;
+        }
+      }
+
+      return json({
+        success: true, mode: "fix_stages", session_id: fixSession,
+        total_processed: byItem.size, fixed, skipped, failed,
+        stage_map: stageMap, unmatched_source_stages: unmatched.map((u: any) => ({ id: u.STATUS_ID, name: u.NAME })),
+        sample,
+      });
+    }
 
     // Fetch deals
     const allDeals: any[] = [];
