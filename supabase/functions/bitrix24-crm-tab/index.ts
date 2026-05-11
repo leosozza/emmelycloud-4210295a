@@ -1274,6 +1274,25 @@ Deno.serve(async (req) => {
           if (conversation) console.log("[CRM-TAB] ✓ Matched via deal's LEAD_ID:", entity.LEAD_ID);
         }
 
+        // ── 2.5 Open Channel chat_id (LID) lookup — handles WhatsApp contacts without real phone ──
+        if (!conversation) {
+          conversation = await findConversationByOpenChannelChatId(
+            supabase, endpoint, accessToken, entityTypeNum, String(entityId),
+            entityTypeNum === 2 ? entity?.CONTACT_ID : undefined,
+          );
+          if (conversation) {
+            console.log("[CRM-TAB] ✓ Matched via openchannel LID:", conversation.contact_lid);
+            try {
+              const prevState = (conversation.bot_state as any) || {};
+              await supabase.from("conversations").update({
+                bot_state: { ...prevState, bitrix_entity_id: `${entityTypeNum}:${entityId}` },
+              }).eq("id", conversation.id);
+            } catch (e) {
+              console.warn("[CRM-TAB] Failed to cache bitrix_entity_id:", String((e as any)?.message || e));
+            }
+          }
+        }
+
         // ── 3. Phone/email lookup ──
         if (!conversation && allPhones.length > 0) {
           conversation = await findConversationByPhone(supabase, allPhones);
