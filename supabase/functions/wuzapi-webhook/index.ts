@@ -266,6 +266,8 @@ Deno.serve(async (req) => {
 
     // Try to download + upload media to Storage so Bitrix24 and Atendimento can fetch it via public URL
     if (mediaNode && mediaDownloadKind) {
+      // Dump full media node for debugging — WUZAPI payload shapes vary by fork/version
+      console.log(`[WUZAPI-WEBHOOK] Media node detected (${mediaDownloadKind}) keys=${Object.keys(mediaNode).join(",")} node=${JSON.stringify(mediaNode).slice(0, 1500)}`);
       // 0) Some WUZAPI forks expose a ready-to-use HTTPS URL on the node itself
       const directHttpsUrl = pickField(mediaNode, ["DownloadUrl", "downloadUrl", "PublicUrl", "publicUrl", "MediaUrl", "mediaUrl"]);
       if (directHttpsUrl && /^https?:\/\//i.test(directHttpsUrl)) {
