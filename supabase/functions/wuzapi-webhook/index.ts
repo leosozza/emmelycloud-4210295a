@@ -177,6 +177,55 @@ Deno.serve(async (req) => {
       return undefined;
     };
 
+    const normalizeBase64Field = (value: unknown): string | undefined => {
+      if (value === undefined || value === null || value === "") return undefined;
+      return String(value).trim().replace(/\s/g, "+");
+    };
+
+    const getNested = (obj: any, path: string[]): any =>
+      path.reduce((acc, key) => (acc && acc[key] !== undefined ? acc[key] : undefined), obj);
+
+    const extractDownloadedBase64 = (payload: any): string | undefined => {
+      const candidates = [
+        payload?.data?.Data,
+        payload?.data?.data,
+        payload?.data?.base64,
+        payload?.Data,
+        payload?.Base64,
+        payload?.base64,
+        typeof payload?.data === "string" ? payload.data : undefined,
+        typeof payload === "string" ? payload : undefined,
+      ];
+      const found = candidates.find((candidate) => typeof candidate === "string" && candidate.trim().length > 0);
+      return found ? found.replace(/^data:[^;]+;base64,/, "") : undefined;
+    };
+
+    const encodeBinaryToBase64 = (bytes: Uint8Array): string => {
+      let binary = "";
+      const chunkSize = 0x8000;
+      for (let i = 0; i < bytes.length; i += chunkSize) {
+        binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
+      }
+      return btoa(binary);
+    };
+
+    const uploadMediaBytes = async (bytes: Uint8Array, kind: string, mime: string | null, filename: string | null) => {
+      const ext = (mime?.split("/")?.[1] || "bin").split(";")[0].split("+")[0] || "bin";
+      const safeName = filename || `${kind}-${Date.now()}.${ext}`;
+      const objectPath = `wuzapi-inbound/${Date.now()}-${safeName.replace(/[^a-zA-Z0-9._-]/g, "_")}`;
+      const { error: upErr } = await supabase.storage.from("media").upload(objectPath, bytes, {
+        contentType: mime || "application/octet-stream",
+        upsert: false,
+      });
+      if (upErr) {
+        console.warn("[WUZAPI-WEBHOOK] Storage upload failed:", upErr.message);
+        return null;
+      }
+      const { data: pub } = supabase.storage.from("media").getPublicUrl(objectPath);
+      console.log(`[WUZAPI-WEBHOOK] Media uploaded (${bytes.length}B): ${pub.publicUrl}`);
+      return { publicUrl: pub.publicUrl, filename: safeName };
+    };
+
     if (message.Conversation || message.conversation) {
       content = message.Conversation || message.conversation;
     } else if (message.ExtendedTextMessage || message.extendedTextMessage) {
