@@ -1,15 +1,5 @@
 // Backfill missing media for inbound messages by pulling Bitrix24 Open Channel history.
-// Strategy:
-//   1) Find inbound messages with media_type but no media_url, joined to a conversation with bitrix_chat_id.
-//   2) Group by bitrix_chat_id; call imopenlines.session.history.get per chat.
-//   3) Build a list of files (id, type, date, urldownload) from response.files.
-//   4) For each missing message, find the closest file (same media kind, ±90s) and:
-//        - fetch file bytes (follow redirects, auth via cookie not needed for signed urldownload)
-//        - upload to public 'media' bucket
-//        - update messages.media_url with public URL.
-//   5) Return summary.
-//
-// Body: { dryRun?: boolean, limit?: number, conversation_id?: uuid }
+// Body: { dryRun?: boolean, limit?: number, conversation_id?: uuid, chatId?: string }
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
@@ -22,63 +12,68 @@ type FileEntry = {
   id: number;
   type: string;
   name: string;
-  date: number; // epoch ms
-  urldownload: string;
   ext: string;
+  date: number;
+  urldownload: string;
 };
-
-function kindFromBitrixType(t: string): "audio" | "image" | "video" | "document" | null {
-  const x = (t || "").toLowerCase();
-  if (x === "image" || x === "sticker") return "image";
-  if (x === "audio" || x === "voice") return "audio";
-  if (x === "video") return "video";
-  if (x === "file" || x === "document") return "document";
-  return "document";
-}
 
 function normalizeKind(t?: string | null): "audio" | "image" | "video" | "document" | null {
   const x = (t || "").toLowerCase();
   if (!x) return null;
-  if (x.includes("audio") || x === "ptt") return "audio";
+  if (x.includes("audio") || x === "ptt" || x === "voice") return "audio";
   if (x.includes("image") || x.includes("sticker") || x === "photo") return "image";
   if (x.includes("video")) return "video";
   if (x.includes("doc") || x.includes("file") || x === "pdf") return "document";
   return null;
 }
 
+function extToMime(ext: string, kind: string): string {
+  const e = (ext || "").toLowerCase();
+  const map: Record<string, string> = {
+    jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png", gif: "image/gif", webp: "image/webp",
+    mp3: "audio/mpeg", ogg: "audio/ogg", oga: "audio/ogg", opus: "audio/ogg", m4a: "audio/mp4", wav: "audio/wav",
+    mp4: "video/mp4", mov: "video/quicktime", webm: "video/webm",
+    pdf: "application/pdf", doc: "application/msword",
+    docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    xls: "application/vnd.ms-excel",
+    xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  };
+  if (map[e]) return map[e];
+  if (kind === "audio") return "audio/ogg";
+  if (kind === "image") return "image/jpeg";
+  if (kind === "video") return "video/mp4";
+  return "application/octet-stream";
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {
-    const supabase = createClient(
-      Deno.env.get("SUPABASE_URL")!,
-      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
-    );
+    const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
+    const supabase = createClient(SUPABASE_URL, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
 
     const body = req.method === "POST" ? await req.json().catch(() => ({})) : {};
     const dryRun: boolean = body.dryRun === true;
     const limit: number = Math.min(Number(body.limit) || 200, 500);
     const onlyConv: string | null = body.conversation_id || null;
+    const onlyChat: string | null = body.chatId || null;
 
-    // 1) Load Bitrix integration
+    // Bitrix integration
     const { data: integration } = await supabase
       .from("bitrix24_integrations")
-      .select("client_endpoint, access_token, domain")
+      .select("client_endpoint, access_token")
       .order("created_at", { ascending: false })
       .limit(1)
       .maybeSingle();
 
     if (!integration?.client_endpoint || !integration?.access_token) {
       return new Response(JSON.stringify({ error: "no bitrix integration" }), {
-        status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
-    const ep = integration.client_endpoint.endsWith("/")
-      ? integration.client_endpoint
-      : integration.client_endpoint + "/";
+    const ep = integration.client_endpoint.endsWith("/") ? integration.client_endpoint : integration.client_endpoint + "/";
 
-    // 2) Find missing-media messages with bitrix_chat_id
+    // Find target messages
     let q = supabase
       .from("messages")
       .select("id, conversation_id, media_type, content, created_at, conversations!inner(bitrix_chat_id)")
@@ -93,34 +88,33 @@ Deno.serve(async (req) => {
     const { data: msgs, error: qerr } = await q;
     if (qerr) {
       return new Response(JSON.stringify({ error: qerr.message }), {
-        status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
-
-    if (!msgs || msgs.length === 0) {
+    if (!msgs?.length) {
       return new Response(JSON.stringify({ ok: true, total: 0, matched: 0, updated: 0 }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    // 3) Group by chat
-    const byChat = new Map<string, typeof msgs>();
+    // Group by chat
+    const byChat = new Map<string, any[]>();
     for (const m of msgs as any[]) {
       const cid = m.conversations?.bitrix_chat_id;
       if (!cid) continue;
-      if (!byChat.has(cid)) byChat.set(cid, [] as any);
-      (byChat.get(cid) as any[]).push(m);
+      if (onlyChat && cid !== onlyChat) continue;
+      if (!byChat.has(cid)) byChat.set(cid, []);
+      byChat.get(cid)!.push(m);
     }
 
-    let matched = 0;
-    let updated = 0;
+    let matchedCount = 0;
+    let updatedCount = 0;
     const errors: string[] = [];
-    const sampleMatches: any[] = [];
+    const samples: any[] = [];
 
     for (const [chatId, chatMsgs] of byChat.entries()) {
-      // 4) Pull history
-      let files: FileEntry[] = [];
+      // Pull history
+      let history: any;
       try {
         const url = `${ep}imopenlines.session.history.get?auth=${encodeURIComponent(integration.access_token)}`;
         const r = await fetch(url, {
@@ -128,24 +122,114 @@ Deno.serve(async (req) => {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ CHAT_ID: parseInt(chatId) }),
         });
-        const j = await r.json();
-        const filesObj = j?.result?.files || {};
-        for (const [fidStr, f of Object.entries<any>(filesObj)] as any) {
-          // Iterate: fix syntax — done below
-        }
+        history = await r.json();
       } catch (e) {
-        errors.push(`chat ${chatId}: history fetch failed: ${(e as Error).message}`);
+        errors.push(`chat ${chatId}: ${(e as Error).message}`);
         continue;
+      }
+
+      const filesObj = history?.result?.files || {};
+      const messagesObj = history?.result?.message || {};
+
+      // Build messageId -> fileIds
+      const msgFileMap = new Map<string, number[]>();
+      for (const [mid, m] of Object.entries<any>(messagesObj)) {
+        const fids: number[] = m?.params?.fileId || m?.params?.FILE_ID || [];
+        if (Array.isArray(fids) && fids.length) msgFileMap.set(mid, fids);
+      }
+
+      // Build files index by kind, sorted by date
+      const filesByKind: Record<string, FileEntry[]> = { audio: [], image: [], video: [], document: [] };
+      for (const [fidStr, f] of Object.entries<any>(filesObj)) {
+        const kind = normalizeKind(f.type) || "document";
+        const date = f.date ? new Date(f.date).getTime() : 0;
+        filesByKind[kind].push({
+          id: Number(fidStr),
+          type: f.type,
+          name: f.name || `file_${fidStr}`,
+          ext: f.extension || "",
+          date,
+          urldownload: f.urldownload || f.urlpreview || "",
+        });
+      }
+      for (const k of Object.keys(filesByKind)) filesByKind[k].sort((a, b) => a.date - b.date);
+
+      // Match each missing message to closest unused file of same kind within ±5min
+      const used = new Set<number>();
+      for (const m of chatMsgs) {
+        const kind = normalizeKind(m.media_type);
+        if (!kind) continue;
+        const target = new Date(m.created_at).getTime();
+        const candidates = filesByKind[kind] || [];
+        let best: FileEntry | null = null;
+        let bestDiff = Infinity;
+        for (const f of candidates) {
+          if (used.has(f.id)) continue;
+          if (!f.urldownload) continue;
+          const d = Math.abs(f.date - target);
+          if (d < bestDiff && d <= 5 * 60 * 1000) {
+            best = f;
+            bestDiff = d;
+          }
+        }
+        if (!best) continue;
+        used.add(best.id);
+        matchedCount++;
+        samples.push({ msgId: m.id, fileId: best.id, kind, name: best.name, diffSec: Math.round(bestDiff / 1000) });
+
+        if (dryRun) continue;
+
+        // Download file
+        try {
+          const dl = await fetch(best.urldownload, { redirect: "follow" });
+          if (!dl.ok) {
+            errors.push(`msg ${m.id}: download HTTP ${dl.status}`);
+            continue;
+          }
+          const buf = new Uint8Array(await dl.arrayBuffer());
+          const mime = extToMime(best.ext || (best.name.split(".").pop() || ""), kind);
+          const safeName = `bitrix-${chatId}-${best.id}.${best.ext || "bin"}`.replace(/[^\w.\-]/g, "_");
+          const path = `backfill/${m.conversation_id}/${safeName}`;
+
+          const up = await supabase.storage.from("media").upload(path, buf, {
+            contentType: mime,
+            upsert: true,
+          });
+          if (up.error) {
+            errors.push(`msg ${m.id}: upload ${up.error.message}`);
+            continue;
+          }
+          const pub = supabase.storage.from("media").getPublicUrl(path);
+          const publicUrl = pub.data.publicUrl;
+
+          const { error: updErr } = await supabase
+            .from("messages")
+            .update({ media_url: publicUrl, content: best.name })
+            .eq("id", m.id);
+          if (updErr) {
+            errors.push(`msg ${m.id}: update ${updErr.message}`);
+            continue;
+          }
+          updatedCount++;
+        } catch (e) {
+          errors.push(`msg ${m.id}: ${(e as Error).message}`);
+        }
       }
     }
 
-    return new Response(JSON.stringify({ ok: true, total: msgs.length, matched, updated, errors, sampleMatches }), {
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    return new Response(JSON.stringify({
+      ok: true,
+      scanned: msgs.length,
+      chats: byChat.size,
+      matched: matchedCount,
+      updated: updatedCount,
+      dryRun,
+      errors: errors.slice(0, 50),
+      samples: samples.slice(0, 20),
+    }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
   } catch (err) {
     return new Response(JSON.stringify({ error: (err as Error).message }), {
-      status: 500,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
+      status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }
 });
