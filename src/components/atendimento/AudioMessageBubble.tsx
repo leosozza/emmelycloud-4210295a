@@ -8,6 +8,7 @@ interface AudioMessage {
   id: string;
   media_url: string | null;
   message_type: string;
+  content?: string | null;
 }
 
 interface AudioMessageBubbleProps {
@@ -15,9 +16,10 @@ interface AudioMessageBubbleProps {
 }
 
 export function AudioMessageBubble({ msg }: AudioMessageBubbleProps) {
+  const initialTranscript = msg.content?.startsWith("🎤") ? msg.content.replace(/^🎤\s*/, "") : null;
   const [transcribing, setTranscribing] = useState(false);
-  const [transcript, setTranscript] = useState<string | null>(null);
-  const [showTranscript, setShowTranscript] = useState(false);
+  const [transcript, setTranscript] = useState<string | null>(initialTranscript);
+  const [showTranscript, setShowTranscript] = useState(Boolean(initialTranscript));
 
   const handleTranscribe = async () => {
     if (!msg.media_url) return;
