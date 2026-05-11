@@ -192,16 +192,25 @@ async function sendWithFallbacks(
     }
   }
 
-  // Build message object — attach files when media URL is present
+  // Build message object — attach files when media URL is present.
+  // Bitrix imconnector expects { url, name } per file (NOT link/type/mime),
+  // otherwise the file is silently dropped and the message renders as
+  // "[Mensagem não suportada]" in the Open Channel.
   const messageObj: Record<string, any> = {
+    id: `ext-${Date.now()}`,
+    date: Math.floor(Date.now() / 1000),
     text: message || "",
   };
-  if (options.mediaUrl) {
+  if (options.mediaUrl && /^https?:\/\//i.test(options.mediaUrl)) {
+    // Default filename based on media type/mime so audio/image render correctly
+    let defaultName = "arquivo";
+    if (options.mediaType === "audio") defaultName = "audio.ogg";
+    else if (options.mediaType === "image") defaultName = "imagem.jpg";
+    else if (options.mediaType === "video") defaultName = "video.mp4";
+    else if (options.mediaType === "document") defaultName = "documento";
     messageObj.files = [{
-      name: options.mediaFilename || "arquivo",
-      link: options.mediaUrl,
-      type: options.mediaType || "file",
-      mime: options.mediaMime || undefined,
+      url: options.mediaUrl,
+      name: options.mediaFilename || defaultName,
     }];
   }
 
