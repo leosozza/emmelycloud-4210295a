@@ -122,11 +122,11 @@ export function MessageBubble({ msg, conversationId, workspaceId, containerWidth
 
         {/* Media */}
         {mediaKind === "audio" && (hasHttpUrl || hasDataUri) ? (
-          <AudioMessageBubble msg={{ id: msg.id, media_url: msg.media_url!, message_type: "audio" }} />
+          <AudioMessageBubble msg={{ id: msg.id, media_url: msg.media_url!, message_type: "audio", content: msg.content }} />
         ) : mediaKind === "audio" ? (
           <div className="flex items-center gap-2 text-xs text-muted-foreground py-1.5 px-2 rounded-md bg-background/40 border border-border/40">
             <span>🎤</span>
-            <span>Áudio recebido — mídia não baixada</span>
+            <span>Áudio recebido — aguardando arquivo</span>
           </div>
         ) : mediaKind === "image" && (hasHttpUrl || hasDataUri) ? (
           <div className="mt-1 mb-2">
@@ -178,7 +178,7 @@ export function MessageBubble({ msg, conversationId, workspaceId, containerWidth
         ) : null}
 
         {/* Text content (skip placeholder labels when we already render a media card) */}
-        {msg.content && !(mediaKind && /^\[(Áudio|Imagem|Vídeo|Documento)\]/.test(msg.content)) && (
+        {msg.content && !(mediaKind && (/^\[(Áudio|Imagem|Vídeo|Documento)\]/.test(msg.content) || (mediaKind === "audio" && msg.content.startsWith("🎤")))) && (
           <p className="text-[13.5px] leading-[1.4] whitespace-pre-wrap">{msg.content}</p>
         )}
 
