@@ -266,6 +266,8 @@ Deno.serve(async (req) => {
 
     // Try to download + upload media to Storage so Bitrix24 and Atendimento can fetch it via public URL
     if (mediaNode && mediaDownloadKind) {
+      // Dump full media node for debugging — WUZAPI payload shapes vary by fork/version
+      console.log(`[WUZAPI-WEBHOOK] Media node detected (${mediaDownloadKind}) keys=${Object.keys(mediaNode).join(",")} node=${JSON.stringify(mediaNode).slice(0, 1500)}`);
       // 0) Some WUZAPI forks expose a ready-to-use HTTPS URL on the node itself
       const directHttpsUrl = pickField(mediaNode, ["DownloadUrl", "downloadUrl", "PublicUrl", "publicUrl", "MediaUrl", "mediaUrl"]);
       if (directHttpsUrl && /^https?:\/\//i.test(directHttpsUrl)) {
@@ -358,7 +360,15 @@ Deno.serve(async (req) => {
           }
 
           if (!dlOk) {
-            console.warn(`[WUZAPI-WEBHOOK] Download failed status=${lastStatus} body=${lastBody}`);
+            console.warn(`[WUZAPI-WEBHOOK] Download failed endpoint=${dlEndpoint} status=${lastStatus} body=${lastBody}`);
+            try {
+              await supabase.from("bitrix24_debug_logs").insert({
+                event_type: "wuzapi_media_download_failed",
+                direction: "inbound",
+                payload: { endpoint: dlEndpoint, status: lastStatus, body: lastBody, mediaNode },
+                error: `status=${lastStatus}`,
+              });
+            } catch (_e) { /* ignore */ }
           } else {
             const b64 = extractDownloadedBase64(dlJson);
             if (b64 && typeof b64 === "string") {
@@ -374,7 +384,15 @@ Deno.serve(async (req) => {
                 console.warn("[WUZAPI-WEBHOOK] Base64 decode failed:", decErr);
               }
             } else {
-              console.warn(`[WUZAPI-WEBHOOK] Download response missing base64. Keys: ${Object.keys(dlJson || {}).join(",")}`);
+              const sample = typeof dlJson === "string" ? dlJson.slice(0, 400) : JSON.stringify(dlJson).slice(0, 400);
+              console.warn(`[WUZAPI-WEBHOOK] Download response missing base64. Keys=${Object.keys(dlJson || {}).join(",")} sample=${sample}`);
+              try {
+                await supabase.from("bitrix24_debug_logs").insert({
+                  event_type: "wuzapi_media_no_base64",
+                  direction: "inbound",
+                  payload: { endpoint: dlEndpoint, response: dlJson, mediaNode },
+                });
+              } catch (_e) { /* ignore */ }
             }
           }
         } else if (!mediaUrl) {
