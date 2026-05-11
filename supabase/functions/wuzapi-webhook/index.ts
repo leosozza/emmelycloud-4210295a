@@ -182,9 +182,6 @@ Deno.serve(async (req) => {
       return String(value).trim().replace(/\s/g, "+");
     };
 
-    const getNested = (obj: any, path: string[]): any =>
-      path.reduce((acc, key) => (acc && acc[key] !== undefined ? acc[key] : undefined), obj);
-
     const extractDownloadedBase64 = (payload: any): string | undefined => {
       const candidates = [
         payload?.data?.Data,
@@ -198,15 +195,6 @@ Deno.serve(async (req) => {
       ];
       const found = candidates.find((candidate) => typeof candidate === "string" && candidate.trim().length > 0);
       return found ? found.replace(/^data:[^;]+;base64,/, "") : undefined;
-    };
-
-    const encodeBinaryToBase64 = (bytes: Uint8Array): string => {
-      let binary = "";
-      const chunkSize = 0x8000;
-      for (let i = 0; i < bytes.length; i += chunkSize) {
-        binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
-      }
-      return btoa(binary);
     };
 
     const uploadMediaBytes = async (bytes: Uint8Array, kind: string, mime: string | null, filename: string | null) => {
