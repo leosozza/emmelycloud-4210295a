@@ -151,16 +151,13 @@ Deno.serve(async (req) => {
     const samples: any[] = [];
 
     for (const [chatId, chatMsgs] of byChat.entries()) {
-      // Pull history
       let history: any;
       try {
-        const url = `${ep}imopenlines.session.history.get?auth=${encodeURIComponent(integration.access_token)}`;
-        const r = await fetch(url, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ CHAT_ID: parseInt(chatId) }),
-        });
-        history = await r.json();
+        history = await bitrixCall("imopenlines.session.history.get", { CHAT_ID: parseInt(chatId) });
+        if (history?.error) {
+          errors.push(`chat ${chatId}: ${history.error} ${history.error_description || ""}`);
+          continue;
+        }
       } catch (e) {
         errors.push(`chat ${chatId}: ${(e as Error).message}`);
         continue;
