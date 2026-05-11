@@ -22,6 +22,47 @@ function normalizeLanguage(code: string): string {
   return LANG_MAP[lower] ?? lower;
 }
 
+async function transcribeWithLovableAI(audioBytes: Uint8Array, mime: string, languageCode: string): Promise<string | null> {
+  const apiKey = Deno.env.get("LOVABLE_API_KEY");
+  if (!apiKey) return null;
+
+  let binary = "";
+  const chunkSize = 0x8000;
+  for (let i = 0; i < audioBytes.length; i += chunkSize) {
+    binary += String.fromCharCode(...audioBytes.subarray(i, i + chunkSize));
+  }
+  const dataUrl = `data:${mime || "audio/ogg"};base64,${btoa(binary)}`;
+
+  const aiRes = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model: "google/gemini-2.5-flash",
+      temperature: 0,
+      messages: [
+        { role: "system", content: "Transcreva o áudio exatamente como falado. Responda apenas com a transcrição, sem comentários." },
+        {
+          role: "user",
+          content: [
+            { type: "text", text: `Idioma esperado: ${normalizeLanguage(languageCode)}. Transcreva este áudio.` },
+            { type: "file", file: { file_data: dataUrl, mime_type: mime || "audio/ogg" } },
+          ],
+        },
+      ],
+    }),
+  });
+
+  if (!aiRes.ok) {
+    console.warn("[elevenlabs-stt] Lovable AI fallback failed:", aiRes.status, await aiRes.text());
+    return null;
+  }
+  const aiData = await aiRes.json().catch(() => null);
+  return aiData?.choices?.[0]?.message?.content?.trim() || null;
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
