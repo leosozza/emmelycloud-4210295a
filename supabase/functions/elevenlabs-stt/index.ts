@@ -142,9 +142,13 @@ Deno.serve(async (req) => {
     const form = new FormData();
     form.append("model_id", "scribe_v1");
     form.append("language_code", normalizeLanguage(language_code));
+    const audioArrayBuffer = audioBytes.buffer.slice(
+      audioBytes.byteOffset,
+      audioBytes.byteOffset + audioBytes.byteLength
+    ) as ArrayBuffer;
     form.append(
       "audio",
-      new Blob([audioBytes], { type: resolvedMime }),
+      new Blob([audioArrayBuffer], { type: resolvedMime }),
       `audio.${ext}`
     );
 
