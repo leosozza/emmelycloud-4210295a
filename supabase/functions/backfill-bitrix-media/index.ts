@@ -61,7 +61,7 @@ Deno.serve(async (req) => {
     // Bitrix integration
     const { data: integration } = await supabase
       .from("bitrix24_integrations")
-      .select("client_endpoint, access_token")
+      .select("id, client_endpoint, access_token, refresh_token")
       .order("created_at", { ascending: false })
       .limit(1)
       .maybeSingle();
@@ -72,6 +72,44 @@ Deno.serve(async (req) => {
       });
     }
     const ep = integration.client_endpoint.endsWith("/") ? integration.client_endpoint : integration.client_endpoint + "/";
+    let authToken: string = integration.access_token;
+
+    async function refreshToken(): Promise<boolean> {
+      try {
+        const r = await fetch("https://oauth.bitrix.info/oauth/token/", {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body: new URLSearchParams({
+            grant_type: "refresh_token",
+            client_id: Deno.env.get("BITRIX24_CLIENT_ID")!,
+            client_secret: Deno.env.get("BITRIX24_CLIENT_SECRET")!,
+            refresh_token: integration.refresh_token!,
+          }),
+        });
+        const j = await r.json();
+        if (j.error || !j.access_token) return false;
+        authToken = j.access_token;
+        await supabase.from("bitrix24_integrations").update({
+          access_token: j.access_token,
+          refresh_token: j.refresh_token,
+          expires_at: new Date(Date.now() + j.expires_in * 1000).toISOString(),
+        }).eq("id", integration.id);
+        return true;
+      } catch { return false; }
+    }
+
+    async function bitrixCall(method: string, body: Record<string, any>): Promise<any> {
+      const url = (t: string) => `${ep}${method}?auth=${encodeURIComponent(t)}`;
+      let r = await fetch(url(authToken), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+      let j = await r.json();
+      if (j?.error === "expired_token") {
+        if (await refreshToken()) {
+          r = await fetch(url(authToken), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+          j = await r.json();
+        }
+      }
+      return j;
+    }
 
     // Find target messages
     let q = supabase
