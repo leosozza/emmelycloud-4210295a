@@ -74,22 +74,6 @@ Deno.serve(async (req) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
     );
 
-    // Get ElevenLabs API key
-    const { data: cred } = await supabase
-      .from("integration_credentials")
-      .select("credential_value")
-      .eq("provider", "elevenlabs")
-      .eq("credential_key", "api_key")
-      .single();
-
-    const apiKey = cred?.credential_value?.trim();
-    if (!apiKey) {
-      return new Response(
-        JSON.stringify({ error: "No ElevenLabs API key found. Configure it in Integrações." }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
     const body = await req.json();
     const { audio_url, audio_base64, language_code = "pt", mime_type = "audio/ogg" } = body;
 
@@ -122,6 +106,28 @@ Deno.serve(async (req) => {
     } else {
       return new Response(
         JSON.stringify({ error: "Provide audio_url or audio_base64" }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // Get ElevenLabs API key. If it is not configured, use Lovable AI as fallback.
+    const { data: cred } = await supabase
+      .from("integration_credentials")
+      .select("credential_value")
+      .eq("provider", "elevenlabs")
+      .eq("credential_key", "api_key")
+      .single();
+
+    const apiKey = cred?.credential_value?.trim();
+    if (!apiKey) {
+      const fallbackText = await transcribeWithLovableAI(audioBytes, resolvedMime, language_code);
+      if (fallbackText) {
+        return new Response(JSON.stringify({ text: fallbackText, provider: "lovable" }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      return new Response(
+        JSON.stringify({ error: "No transcription provider available" }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
