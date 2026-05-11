@@ -348,7 +348,11 @@ Deno.serve(async (req) => {
               lastBody = rawBody.slice(0, 400);
               continue;
             }
-            dlJson = JSON.parse(rawBody || "{}");
+            try {
+              dlJson = JSON.parse(rawBody || "{}");
+            } catch {
+              dlJson = rawBody;
+            }
             dlOk = true;
             break;
           }
