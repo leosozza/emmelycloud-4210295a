@@ -1,90 +1,50 @@
-## Análise da Pipeline 25 (Ação Judicial) → SPA 1118
+## Problema
 
-**561 deals** analisados. Dos 190 campos do pipeline, apenas ~35 têm dados reais. A maioria dos campos jurídicos foi **criada no deal mas nunca preenchida** (ex: Número do processo, Prazo fatal, Audiência) — eles devem viver na SPA, não no deal.
+No Deal #31035 (Paulo Neto Cigano) a aba "Emmely AI" mostra "Nenhuma conversa ativa encontrada", apesar da conversa existir (`3bcf8edc-693e-4f60-8094-5e272d074acf`).
 
-### Campos a CRIAR na SPA 1118
+**Causa raiz:** este contacto chegou via WhatsApp pelo WUZAPI usando apenas LID (`36777922437277@lid`). Os logs confirmam: `phone: (none) | lid: 36777922437277` e `/user/info did not return a real phone, keeping LID only`. A conversa fica gravada com `contact_phone = null` e apenas `contact_lid = 36777922437277`.
 
-**1. Identificação & Vínculos (nativos da SPA — não criar)**
-Title, contactId, companyId, assignedById, stageId, opportunity, currencyId, createdTime — já existem por padrão.
+A função `bitrix24-crm-tab` faz lookup por:
+1. `leads.bitrix24_id` 2. `bot_state.bitrix_deal_id/lead_id/entity_id` 3. telefone 4. email 5. `clients.bitrix24_id` 6. nome.
 
-**2. Dados Jurídicos do Processo** (núcleo da SPA)
-| Campo SPA | Tipo | Origem deal |
-|---|---|---|
-| `ufCrm_NUMERO_PROCESSO` | string | Número do processo |
-| `ufCrm_URL_PROCESSO` | string (URL) | URL do Processo |
-| `ufCrm_VALOR_CONDENACAO` | money | Valor da condenação |
-| `ufCrm_PARTE_CONTRARIA` | string | Parte contrária |
-| `ufCrm_PARTE_CONTRARIA_TEXTO` | string | Parte contraria (Texto) |
-| `ufCrm_CLIENTE_TEXTO` | string | Cliente (Texto) |
-| `ufCrm_RESPONSAVEL_TEXTO` | string | Responsável (Texto) |
+Nenhum desses caminhos consulta o **LID**, portanto a conversa nunca é casada com o Deal — e o `bitrix24-worker` também não escreve `bitrix_entity_id` no `bot_state` porque também depende de `contact_phone` para procurar no Bitrix.
 
-**3. Prazos**
-| Campo SPA | Tipo |
-|---|---|
-| `ufCrm_TIPO_PRAZO` | enum (lista) |
-| `ufCrm_PRAZO_FATAL` | date |
-| `ufCrm_PRAZO_ATIVIDADE` | date |
-| `ufCrm_DESCRICAO_PRAZO` | string (text) |
+## Solução
 
-**4. Audiências**
-| Campo SPA | Tipo |
-|---|---|
-| `ufCrm_TIPO_AUDIENCIA` | enum |
-| `ufCrm_MODALIDADE` | enum (presencial/online) |
-| `ufCrm_DATA_HORA_AUDIENCIA` | datetime |
-| `ufCrm_LINK_LOCAL_AUDIENCIA` | string |
+Duas correções complementares no `supabase/functions/bitrix24-crm-tab/index.ts` (zero alteração de schema, zero front-end):
 
-**5. Identificação Fiscal Cliente**
-`ufCrm_NIF` (string), `ufCrm_NISS` (string)
+### 1. Novo lookup determinístico por LID via Open Channel Activity
 
-**6. Vínculo de Origem (rastreabilidade)**
-| Campo | Tipo | Função |
-|---|---|---|
-| `ufCrm_DEAL_ORIGEM_ID` | integer | ID do deal original do pipeline 25 |
-| `ufCrm_DEAL_ORIGEM_URL` | string | Link direto ao deal (auditoria) |
+Quando o placement carrega o Deal:
 
-**7. Financeiro herdado** (apenas se quiser histórico — opcional, recomendo NÃO duplicar pois Emmely Pay já gerencia)
-- `ufCrm_DATA_PRIMEIRA_PARCELA` (date)
-- `ufCrm_QTD_PARCELAS` (integer)
-- `ufCrm_VALOR_PARCELA` (money)
+- Chamar `crm.activity.list` com `filter: { OWNER_ID: dealId, OWNER_TYPE_ID: 2, PROVIDER_ID: "IMOPENLINES_SESSION" }` e `select: ["ID","PROVIDER_PARAMS","COMMUNICATIONS","ASSOCIATED_ENTITY_ID"]`.
+- Para cada actividade, extrair o `chat_id` da Open Channel (vem em `PROVIDER_PARAMS.USER_CODE` no formato `imol|emmely_connector|19|36777922437277|...` ou em `COMMUNICATIONS[].VALUE`).
+- Repetir para o Contact ligado (`OWNER_TYPE_ID: 3, OWNER_ID: CONTACT_ID`).
+- Recolher todos os LIDs candidatos e consultar `conversations` com `.in("contact_lid", lids)` (canal `whatsapp`), preferindo as não-fechadas e mais recentes.
 
-### Campos que NÃO devem ser recriados na SPA
-- Toda a sub-suite CPLP/Imigração (Passaporte, PB4, Convidado, etc.) — não pertence ao domínio judicial.
-- Tempo na Etapa 1-10, UTM_*, Pós-venda — métricas/marketing fora de escopo.
-- Campos `(Apagar)`, duplicatas, `Negócio`, `criar SPA`, `calculadora` — lixo.
-- Campos financeiros completos (LINK PAGAMENTO, GATEWAY, TOKEN_PAY, etc.) — já existem em `financial_records` (regra do projeto).
+### 2. Cache do `bitrix_entity_id` quando casar pelo LID
 
-### Etapas do Plano
+Após casar via LID, gravar no `bot_state` da conversa:
+```ts
+{ ...bot_state, bitrix_entity_id: `${entityTypeId}:${entityId}` }
+```
+Assim, a próxima abertura do placement (e o `bitrix24-worker` para badges) acerta imediatamente sem chamar `crm.activity.list`.
 
-**Fase 1 — Criar campos na SPA 1118**
-- Edge function `bitrix24-spa-create-fields` que chama `crm.item.fields` (leitura) + `userfieldconfig.add` (escrita) com `entityId = "CRM_5"` (ou correspondente ao SPA 1118 — confirmar com `crm.type.get`).
-- Cria os ~18 campos listados em §2-§6 (+3 opcionais §7) com labels PT-BR.
-- Idempotente: se já existir, pula.
+### Posicionamento na cadeia de lookups
 
-**Fase 2 — Adicionar UF de rastreio reverso no deal (já existe)**
-- `UF_CRM_1778431525` confirmado pelo usuário. Não criar.
+Inserir o novo passo **entre o passo 2 (bot_state) e o passo 3 (telefone/email)**, para preservar a ordem determinística → heurística que já existe.
 
-**Fase 3 — Script de migração (`bitrix24-migrate-deals-to-spa`)**
-1. Pagina `crm.deal.list` filtro `CATEGORY_ID=25` (loops de 50, range pattern conforme regra do projeto).
-2. Para cada deal:
-   - Mapeia os campos preenchidos → payload SPA.
-   - `crm.item.add` com `entityTypeId=1118`, vínculos `contactId`/`companyId`/`assignedById`, e `stageId` mapeado conforme tabela "etapas copiadas".
-   - Captura o `id` do item criado.
-   - `crm.deal.update` no deal original setando `UF_CRM_1778431525 = <novo_id>`.
-   - Loga em nova tabela `spa_migration_log` (deal_id, spa_item_id, status, error, timestamp).
-3. **Modo dry-run obrigatório** primeiro: gera CSV de pré-visualização sem escrever.
-4. **Mapa de etapas** (Fase ↔ stageId SPA) — preciso que você forneça ou eu extraio comparando os 2 kanbans via `crm.dealcategory.stage.list` (cat 25) vs `crm.status.list` (DYNAMIC_1118_STAGE_0).
+## Detalhes técnicos
 
-**Fase 4 — UI**
-Tela "Migração Pipeline 25 → SPA Ação Judicial" em Configurações:
-- Botão "Criar campos na SPA" (Fase 1)
-- Pré-visualização (dry-run) com tabela e contagem
-- Botão "Executar migração" com dupla confirmação
-- Log da execução em tempo real
+- Arquivo único: `supabase/functions/bitrix24-crm-tab/index.ts`.
+- Helper novo: `findConversationByOpenChannelChatId(supabase, endpoint, accessToken, entityTypeNum, entityId, contactId?)`.
+- Regex tolerante para extrair o chat_id de `USER_CODE`: `/\|(\d{10,})(?:\||$)/`.
+- Fallback: se `crm.activity.list` falhar ou vier vazio, registar `console.warn` e seguir para os lookups de telefone existentes (sem regressão).
+- Sem mudança de tipos/RLS/migrations.
 
-### Antes de implementar, preciso confirmar:
+## Como validar
 
-1. **Mapa de etapas**: as etapas da SPA têm exatamente os mesmos nomes das do pipeline 25? Posso fazer match automático por NAME, ou você fornece a tabela?
-2. **Campos opcionais §7 (financeiro)**: criar ou ignorar? (Recomendo ignorar — `financial_records` já é a fonte canônica.)
-3. **Deals já fechados/perdidos** (status WON/LOSE) também migram, ou apenas abertos?
-4. **O que fazer com o deal original** após migração: arquivar, mover de pipeline, ou deixar intacto apenas com o UF preenchido?
+1. Abrir o iframe Emmely AI no Deal #31035 → deve listar a conversa de Paulo Neto Cigano.
+2. Ver logs `[CRM-TAB] ✓ Matched via openchannel LID: 36777922437277`.
+3. Recarregar uma 2ª vez → log esperado: `[CRM-TAB] ✓ Matched via bot_state` (cache).
+4. Próxima mensagem do mesmo contacto → o badge do `bitrix24-worker` passa a aparecer (já tem `bitrix_entity_id` em cache).

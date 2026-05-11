@@ -282,6 +282,69 @@ async function findConversationByName(supabase: any, name: string): Promise<any>
   return null;
 }
 
+// Lookup conversations via Open Channel session activities attached to a CRM entity.
+// Many WhatsApp contacts (esp. WUZAPI BR) have no real phone — only a LID like 36777922437277.
+// Bitrix attaches an "imopenlines" activity to the Lead/Deal/Contact whose USER_CODE encodes the chat_id.
+async function findConversationByOpenChannelChatId(
+  supabase: any,
+  endpoint: string,
+  accessToken: string,
+  entityTypeNum: number,
+  entityId: string,
+  contactId?: string,
+): Promise<any> {
+  const lids = new Set<string>();
+
+  const targets: Array<{ ownerType: number; ownerId: string }> = [];
+  targets.push({ ownerType: entityTypeNum, ownerId: String(entityId) });
+  if (contactId) targets.push({ ownerType: 3, ownerId: String(contactId) });
+
+  for (const t of targets) {
+    try {
+      const res = await callBitrix(endpoint, accessToken, "crm.activity.list", {
+        filter: { OWNER_TYPE_ID: t.ownerType, OWNER_ID: t.ownerId, PROVIDER_ID: "IMOPENLINES_SESSION" },
+        select: ["ID", "PROVIDER_PARAMS", "COMMUNICATIONS", "ASSOCIATED_ENTITY_ID", "SUBJECT"],
+        order: { ID: "DESC" },
+      });
+      const acts = res?.result || [];
+      for (const a of acts) {
+        // USER_CODE format: "imol|emmely_connector|19|36777922437277|..." OR "livechat|..."
+        const userCode: string = a?.PROVIDER_PARAMS?.USER_CODE || "";
+        const m = userCode.match(/\|(\d{10,})(?:\||$)/);
+        if (m) lids.add(m[1]);
+        // Also scan COMMUNICATIONS values for raw chat ids
+        const comms = Array.isArray(a?.COMMUNICATIONS) ? a.COMMUNICATIONS : [];
+        for (const c of comms) {
+          const v = String(c?.VALUE || "");
+          const cm = v.match(/(\d{10,})(?:@|$)/);
+          if (cm) lids.add(cm[1]);
+        }
+        // Subject may also embed chat id (rare)
+        const subj = String(a?.SUBJECT || "");
+        const sm = subj.match(/(\d{12,})/);
+        if (sm) lids.add(sm[1]);
+      }
+    } catch (e) {
+      console.warn("[CRM-TAB] crm.activity.list openchannel lookup failed:", String((e as any)?.message || e));
+    }
+  }
+
+  if (lids.size === 0) return null;
+  console.log("[CRM-TAB] OpenChannel LIDs found:", Array.from(lids));
+
+  const { data: convs } = await supabase
+    .from("conversations")
+    .select("id, contact_name, attendance_mode, channel, status, contact_phone, contact_lid, bot_state, last_message_at")
+    .eq("channel", "whatsapp")
+    .in("contact_lid", Array.from(lids))
+    .order("last_message_at", { ascending: false })
+    .limit(10);
+
+  if (!convs?.length) return null;
+  const active = convs.find((c: any) => c.status !== "fechada");
+  return active || convs[0];
+}
+
 const B24_ICONS = {
   message: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>`,
   robot: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="10" rx="2"/><circle cx="12" cy="5" r="2"/><line x1="12" y1="7" x2="12" y2="11"/><line x1="1" y1="16" x2="3" y2="16"/><line x1="21" y1="16" x2="23" y2="16"/><circle cx="8.5" cy="15.5" r="1"/><circle cx="15.5" cy="15.5" r="1"/></svg>`,
@@ -1209,6 +1272,25 @@ Deno.serve(async (req) => {
             conversation = await findConversationByBotState(supabase, String(entity.LEAD_ID));
           }
           if (conversation) console.log("[CRM-TAB] ✓ Matched via deal's LEAD_ID:", entity.LEAD_ID);
+        }
+
+        // ── 2.5 Open Channel chat_id (LID) lookup — handles WhatsApp contacts without real phone ──
+        if (!conversation) {
+          conversation = await findConversationByOpenChannelChatId(
+            supabase, endpoint, accessToken, entityTypeNum, String(entityId),
+            entityTypeNum === 2 ? entity?.CONTACT_ID : undefined,
+          );
+          if (conversation) {
+            console.log("[CRM-TAB] ✓ Matched via openchannel LID:", conversation.contact_lid);
+            try {
+              const prevState = (conversation.bot_state as any) || {};
+              await supabase.from("conversations").update({
+                bot_state: { ...prevState, bitrix_entity_id: `${entityTypeNum}:${entityId}` },
+              }).eq("id", conversation.id);
+            } catch (e) {
+              console.warn("[CRM-TAB] Failed to cache bitrix_entity_id:", String((e as any)?.message || e));
+            }
+          }
         }
 
         // ── 3. Phone/email lookup ──
