@@ -167,8 +167,8 @@ Deno.serve(async (req) => {
               // Response shape: { code, success, data: { Users: { "<jid>": { VerifiedName, ... } } } } or similar
               const usersBlock = infoJson?.data?.Users || infoJson?.Users || {};
               const userInfo: any = usersBlock[`${lidId}@lid`] || Object.values(usersBlock)[0];
-              const candidate = userInfo?.JID || userInfo?.Jid || userInfo?.jid || userInfo?.Phone || userInfo?.PhoneNumber || "";
-              const cleaned = String(candidate).replace(/@.*$/, "").replace(/[^0-9]/g, "");
+              const candidate = userInfo?.JID || userInfo?.Jid || userInfo?.jid || userInfo?.Phone || userInfo?.PhoneNumber || userInfo?.Number || userInfo?.PN || "";
+              const cleaned = cleanWhatsappPhone(String(candidate));
               if (cleaned && cleaned !== lidId) {
                 phone = cleaned;
                 console.log(`[WUZAPI-WEBHOOK] Phone resolved from /user/info: ${phone}`);
