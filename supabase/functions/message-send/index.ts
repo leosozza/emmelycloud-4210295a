@@ -136,7 +136,7 @@ function remuxWebmOpusToOgg(webm: Uint8Array): Uint8Array | null {
     let trackNo = 0;
     let trackType = 0;
     let codec = "";
-    let privateData: Uint8Array | null = null;
+    let privateData: any = null;
     parseEbmlElements(webm, start, end, (id, cs, ce) => {
       const val = webm.subarray(cs, ce);
       if (id === 0xd7) trackNo = readUnsigned(val);
