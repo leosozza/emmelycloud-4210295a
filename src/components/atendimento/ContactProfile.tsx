@@ -60,6 +60,33 @@ export function ContactProfile({ conversation, onClose }: ContactProfileProps) {
   const extractData = useExtractLeadData();
   const [summary, setSummary] = useState<string | null>(null);
   const [savingCrm, setSavingCrm] = useState<null | "lead" | "deal" | "spa">(null);
+  const [manualDealId, setManualDealId] = useState("");
+  const [savingManual, setSavingManual] = useState(false);
+
+  const handleManualLink = async () => {
+    const id = manualDealId.trim();
+    if (!/^\d+$/.test(id)) {
+      toast.error("ID do deal deve ser numérico");
+      return;
+    }
+    if (!conversation) return;
+    setSavingManual(true);
+    try {
+      const newBotState = { ...(conversation.bot_state || {}), bitrix_deal_id: id, bitrix_entity_id: `2:${id}` };
+      const { error } = await supabase
+        .from("conversations")
+        .update({ bot_state: newBotState } as any)
+        .eq("id", conversation.id);
+      if (error) throw error;
+      toast.success(`Vinculado ao deal ${id}`);
+      setManualDealId("");
+      queryClient.invalidateQueries({ queryKey: ["conversations"] });
+    } catch (err: any) {
+      toast.error(err?.message || "Falha ao vincular");
+    } finally {
+      setSavingManual(false);
+    }
+  };
 
   // Check if a lead already exists for this conversation (local DB)
   const { data: existingLead } = useQuery({
