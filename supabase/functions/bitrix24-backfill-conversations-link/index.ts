@@ -193,38 +193,49 @@ Deno.serve(async (req) => {
           return bestScore > 0 ? bestId : ids[0];
         };
 
-        try {
-          const deals: any = await callBitrix(endpoint, token, "crm.deal.list", {
-            filter: { "%TITLE": name }, select: ["ID"], order: { ID: "DESC" }, start: 0,
-          });
-          if (Array.isArray(deals) && deals.length && deals.length <= 10) {
-            dealId = await pickBest("deal", deals.map((d: any) => String(d.ID)));
-            matchedByName = true;
+        // Try first/last name tokens too (e.g. "Ruth Silva" → also search "Ruth")
+        const nameTokens = name.split(/\s+/).filter((t) => t.length >= 3);
+        const nameQueries = Array.from(new Set([name, ...nameTokens]));
+
+        const searchEntity = async (
+          method: string, filterKey: string, entity: "deal" | "lead" | "contact"
+        ): Promise<string | null> => {
+          for (const q of nameQueries) {
+            try {
+              const list: any = await callBitrix(endpoint, token, method, {
+                filter: { [filterKey]: q }, select: ["ID"], order: { ID: "DESC" }, start: 0,
+              });
+              if (Array.isArray(list) && list.length) {
+                const ids = list.map((x: any) => String(x.ID));
+                // Always disambiguate via content scoring (top 10 candidates)
+                const best = await pickBest(entity, ids);
+                if (best) return best;
+              }
+            } catch (_e) { /* ignore */ }
           }
-        } catch (_e) { /* ignore */ }
+          return null;
+        };
+
+        dealId = await searchEntity("crm.deal.list", "%TITLE", "deal");
+        if (dealId) matchedByName = true;
 
         if (!dealId) {
-          try {
-            const leads: any = await callBitrix(endpoint, token, "crm.lead.list", {
-              filter: { "%TITLE": name }, select: ["ID"], order: { ID: "DESC" }, start: 0,
-            });
-            if (Array.isArray(leads) && leads.length && leads.length <= 10) {
-              leadId = await pickBest("lead", leads.map((l: any) => String(l.ID)));
-              matchedByName = true;
-            }
-          } catch (_e) { /* ignore */ }
+          contactId = await searchEntity("crm.contact.list", "%NAME", "contact");
+          if (contactId) {
+            matchedByName = true;
+            // Try to find a deal linked to this contact
+            try {
+              const dealList: any = await callBitrix(endpoint, token, "crm.deal.list", {
+                filter: { CONTACT_ID: contactId }, select: ["ID"], order: { ID: "DESC" }, start: 0,
+              });
+              if (Array.isArray(dealList) && dealList.length) dealId = String(dealList[0].ID);
+            } catch (_e) { /* ignore */ }
+          }
         }
 
-        if (!dealId && !leadId) {
-          try {
-            const contacts: any = await callBitrix(endpoint, token, "crm.contact.list", {
-              filter: { "%NAME": name }, select: ["ID"], order: { ID: "DESC" }, start: 0,
-            });
-            if (Array.isArray(contacts) && contacts.length && contacts.length <= 10) {
-              contactId = await pickBest("contact", contacts.map((c: any) => String(c.ID)));
-              matchedByName = true;
-            }
-          } catch (_e) { /* ignore */ }
+        if (!dealId && !contactId) {
+          leadId = await searchEntity("crm.lead.list", "%TITLE", "lead");
+          if (leadId) matchedByName = true;
         }
       }
 
