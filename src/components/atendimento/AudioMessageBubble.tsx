@@ -64,6 +64,15 @@ export function AudioMessageBubble({ msg }: AudioMessageBubbleProps) {
     }
   };
 
+  // Auto-transcribe once on mount when no transcript is present yet
+  useEffect(() => {
+    if (!transcript && msg.media_url && !autoTriedRef.current) {
+      autoTriedRef.current = true;
+      handleTranscribe();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [msg.media_url]);
+
   return (
     <div className="space-y-1">
       <div className="flex items-center gap-2">
