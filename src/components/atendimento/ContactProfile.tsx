@@ -9,7 +9,8 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { ChannelIcon } from "./ChannelIcon";
-import { Phone, Mail, Instagram, Link2, User, ChevronDown, Sparkles, Loader2, FileSearch, ExternalLink, Save, Briefcase, Layers, X } from "lucide-react";
+import { Phone, Mail, Instagram, Link2, User, ChevronDown, Sparkles, Loader2, FileSearch, ExternalLink, Save, Briefcase, Layers, X, Pencil } from "lucide-react";
+import { Input } from "@/components/ui/input";
 import { useNavigate } from "react-router-dom";
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -59,6 +60,33 @@ export function ContactProfile({ conversation, onClose }: ContactProfileProps) {
   const extractData = useExtractLeadData();
   const [summary, setSummary] = useState<string | null>(null);
   const [savingCrm, setSavingCrm] = useState<null | "lead" | "deal" | "spa">(null);
+  const [manualDealId, setManualDealId] = useState("");
+  const [savingManual, setSavingManual] = useState(false);
+
+  const handleManualLink = async () => {
+    const id = manualDealId.trim();
+    if (!/^\d+$/.test(id)) {
+      toast.error("ID do deal deve ser numérico");
+      return;
+    }
+    if (!conversation) return;
+    setSavingManual(true);
+    try {
+      const newBotState = { ...(conversation.bot_state || {}), bitrix_deal_id: id, bitrix_entity_id: `2:${id}` };
+      const { error } = await supabase
+        .from("conversations")
+        .update({ bot_state: newBotState } as any)
+        .eq("id", conversation.id);
+      if (error) throw error;
+      toast.success(`Vinculado ao deal ${id}`);
+      setManualDealId("");
+      queryClient.invalidateQueries({ queryKey: ["conversations"] });
+    } catch (err: any) {
+      toast.error(err?.message || "Falha ao vincular");
+    } finally {
+      setSavingManual(false);
+    }
+  };
 
   // Check if a lead already exists for this conversation (local DB)
   const { data: existingLead } = useQuery({
@@ -305,6 +333,32 @@ export function ContactProfile({ conversation, onClose }: ContactProfileProps) {
               </DropdownMenuContent>
             </DropdownMenu>
           )}
+
+          <div className="mt-3 pt-3 border-t space-y-1.5">
+            <p className="text-[10px] uppercase tracking-wider text-muted-foreground flex items-center gap-1">
+              <Pencil className="h-2.5 w-2.5" />
+              {bitrixDealId ? "Alterar deal vinculado" : "Vincular deal manualmente"}
+            </p>
+            <div className="flex gap-1">
+              <Input
+                value={manualDealId}
+                onChange={(e) => setManualDealId(e.target.value.replace(/\D/g, ""))}
+                placeholder={bitrixDealId ? `Atual: ${bitrixDealId}` : "ID do deal"}
+                className="h-7 text-xs"
+                maxLength={10}
+                onKeyDown={(e) => e.key === "Enter" && handleManualLink()}
+              />
+              <Button
+                size="sm"
+                variant="secondary"
+                className="h-7 text-xs px-2"
+                disabled={savingManual || !manualDealId}
+                onClick={handleManualLink}
+              >
+                {savingManual ? <Loader2 className="h-3 w-3 animate-spin" /> : "OK"}
+              </Button>
+            </div>
+          </div>
         </CollapsibleSection>
 
         <CollapsibleSection title="IA">
