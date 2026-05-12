@@ -234,12 +234,15 @@ Deno.serve(async (req) => {
           return bestId;
         };
 
+        // Strip emojis/symbols to get the "clean" alphanumeric part (e.g. "Cleide🙏🙏" → "Cleide")
+        const cleanName = name.replace(/[^\p{L}\p{N}\s'-]/gu, "").replace(/\s+/g, " ").trim();
+        const baseNames = Array.from(new Set([name, cleanName].filter((n) => n && n.length >= 2)));
         // Channel-suffixed variants first (e.g. "Davi - WhatsApp BR") — high precision
         const channelSuffixes = ["WhatsApp BR", "WhatsApp PT", "WhatsApp", "Instagram", "Email", "Webchat"];
-        const channelQueries = channelSuffixes.map((s) => `${name} - ${s}`);
+        const channelQueries = baseNames.flatMap((n) => channelSuffixes.map((s) => `${n} - ${s}`));
         // Try first/last name tokens too (e.g. "Ruth Silva" → also search "Ruth")
-        const nameTokens = name.split(/\s+/).filter((t) => t.length >= 3);
-        const nameQueries = Array.from(new Set([...channelQueries, name, ...nameTokens]));
+        const nameTokens = baseNames.flatMap((n) => n.split(/\s+/)).filter((t) => t.length >= 3);
+        const nameQueries = Array.from(new Set([...channelQueries, ...baseNames, ...nameTokens]));
 
         const searchEntity = async (
           method: string, filterKey: string, entity: "deal" | "lead" | "contact"
