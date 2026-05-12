@@ -611,6 +611,9 @@ function renderHtml(opts: {
     
     ${conversationId ? `
     <div id="client-send-bar">
+      <input type="file" id="client-file-input" style="display:none" onchange="onFilePicked(event)" accept="image/*,audio/*,video/*,application/pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.zip" />
+      <button class="icon-btn" type="button" title="Anexar arquivo" onclick="document.getElementById('client-file-input').click()">${B24_ICONS.paperclip}</button>
+      <button class="icon-btn" id="mic-btn" type="button" title="Gravar áudio" onclick="toggleAudioRecording()">${B24_ICONS.mic}</button>
       <textarea id="client-input" rows="1" placeholder="Escreva ao cliente..." oninput="autoResize(this)"></textarea>
       <button onclick="sendClientMessage()" id="send-client-btn">${B24_ICONS.send} Enviar</button>
     </div>
