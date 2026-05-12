@@ -231,9 +231,12 @@ export default function AtendimentoPage() {
   const selectConversation = useCallback(
     (id: string | undefined) => {
       setSelectedId(id);
-      navigate(id ? `/atendimento/${id}` : "/atendimento", { replace: true });
+      const conv = id ? conversations.find((c) => c.id === id) : null;
+      const phone = (conv?.contact_phone || "").replace(/\D/g, "");
+      const slug = phone || id; // fallback to UUID when no phone
+      navigate(id ? `/atendimento/${slug}` : "/atendimento", { replace: true });
     },
-    [navigate]
+    [navigate, conversations]
   );
 
   return (
