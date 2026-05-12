@@ -17,6 +17,10 @@ function isBotMessage(text: string): boolean {
 }
 
 // Strip BBCode for WhatsApp/Instagram
+function getPrimaryContactId(conversation: any): string {
+  return conversation?.contact_phone || conversation?.contact_lid || conversation?.contact_instagram || conversation?.contact_email || conversation?.id || "";
+}
+
 function stripBBCode(text: string): string {
   return text
     .replace(/\[b\](.*?)\[\/b\]/g, "*$1*")
@@ -153,7 +157,7 @@ async function createBitrixBadgeActivity(params: BadgeParams): Promise<void> {
     if (conversationId) {
       const { data: conv } = await supabase
         .from("conversations")
-        .select("bot_state, contact_phone, contact_instagram, contact_email")
+        .select("bot_state, contact_phone, contact_lid, contact_instagram, contact_email")
         .eq("id", conversationId)
         .single();
 
@@ -214,6 +218,26 @@ async function createBitrixBadgeActivity(params: BadgeParams): Promise<void> {
           }
         }
 
+
+        // 4. For WUZAPI-only contacts, use cached/open-channel LID when no phone exists
+        if (!ownerId && conv.contact_lid) {
+          const lid = String(conv.contact_lid).replace(/@lid$/, "");
+          const activities = await callBitrixListAll(integration.client_endpoint, accessToken, "crm.activity.list", {
+            filter: { PROVIDER_ID: "IMOPENLINES_SESSION", "%PROVIDER_PARAMS": lid },
+            select: ["ID", "OWNER_TYPE_ID", "OWNER_ID", "PROVIDER_PARAMS"],
+            order: { ID: "DESC" },
+          }, 20);
+          const hit = activities.find((a: any) => String(a?.PROVIDER_PARAMS?.USER_CODE || "").includes(lid));
+          if (hit?.OWNER_ID) {
+            ownerTypeId = parseInt(hit.OWNER_TYPE_ID) || 1;
+            ownerId = parseInt(hit.OWNER_ID) || 0;
+            if (ownerId) {
+              await supabase.from("conversations").update({
+                bot_state: { ...botState, bitrix_entity_id: `${ownerTypeId}:${ownerId}` },
+              }).eq("id", conversationId);
+            }
+          }
+        }
       }
     }
 

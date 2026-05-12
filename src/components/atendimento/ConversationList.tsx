@@ -75,7 +75,8 @@ export function ConversationList({
       if (
         search &&
         !c.contact_name.toLowerCase().includes(search.toLowerCase()) &&
-        !(c.contact_phone ?? "").includes(search)
+        !(c.contact_phone ?? "").includes(search) &&
+        !(c.contact_lid ?? "").includes(search)
       )
         return false;
       if (channelFilter !== "all" && c.channel !== channelFilter) return false;
@@ -266,7 +267,7 @@ export function ConversationList({
                               : "text-muted-foreground"
                           )}
                         >
-                          {conv.last_message_preview || "Sem mensagens"}
+                          {conv.last_message_preview || (conv.contact_lid ? `LID ${conv.contact_lid}` : "Sem mensagens")}
                         </p>
                         {conv.unread_count > 0 && (
                           <Badge className="h-5 min-w-5 rounded-full px-1.5 py-0 flex items-center justify-center text-[11px] font-bold shrink-0 bg-primary text-primary-foreground">

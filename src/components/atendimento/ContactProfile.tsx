@@ -25,6 +25,7 @@ interface ContactProfileProps {
     contact_name: string;
     contact_avatar_url?: string | null;
     contact_phone?: string | null;
+    contact_lid?: string | null;
     contact_email?: string | null;
     contact_instagram?: string | null;
     channel: Channel;
@@ -178,6 +179,12 @@ export function ContactProfile({ conversation, onClose }: ContactProfileProps) {
               <div className="flex items-center gap-2 text-sm">
                 <Phone className="h-3.5 w-3.5 text-muted-foreground" />
                 <span>{conversation.contact_phone}</span>
+              </div>
+            )}
+            {!conversation.contact_phone && conversation.contact_lid && (
+              <div className="flex items-center gap-2 text-sm">
+                <Phone className="h-3.5 w-3.5 text-muted-foreground" />
+                <span>LID {conversation.contact_lid}</span>
               </div>
             )}
             {conversation.contact_email && (
