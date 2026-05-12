@@ -50,7 +50,36 @@ export function ConversationList({
   const [channelFilter, setChannelFilter] = useState<ConversationChannel | "all">("all");
   const [statusFilter, setStatusFilter] = useState<ConversationStatus | "all">("aberta");
   const [quickFilter, setQuickFilter] = useState<QuickFilter>("all");
+  const [linkingId, setLinkingId] = useState<string | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
+  const queryClient = useQueryClient();
+
+  const handleLinkBitrix = async (e: React.MouseEvent, conv: Conversation) => {
+    e.stopPropagation();
+    if (linkingId) return;
+    setLinkingId(conv.id);
+    try {
+      const { data, error } = await supabase.functions.invoke(
+        "bitrix24-backfill-conversations-link",
+        { body: { conversation_id: conv.id, force: true } }
+      );
+      if (error) throw error;
+      const sample = (data as any)?.sample?.[0];
+      if (sample?.matched && sample?.deal_id) {
+        toast.success(`Vinculado ao deal ${sample.deal_id}`);
+        queryClient.invalidateQueries({ queryKey: ["conversations"] });
+      } else if (sample?.matched) {
+        toast.success("Vinculado ao Bitrix");
+        queryClient.invalidateQueries({ queryKey: ["conversations"] });
+      } else {
+        toast.error("Nenhuma correspondência no Bitrix");
+      }
+    } catch (err: any) {
+      toast.error(err?.message || "Falha ao vincular");
+    } finally {
+      setLinkingId(null);
+    }
+  };
 
   const channelBorderColor: Record<ConversationChannel, string> = {
     whatsapp: "border-l-[hsl(142,70%,45%)]",
