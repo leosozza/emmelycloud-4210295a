@@ -190,7 +190,9 @@ Deno.serve(async (req) => {
               if (s > bestScore) { bestScore = s; bestId = id; }
             } catch (_e) { /* ignore */ }
           }
-          return bestScore > 0 ? bestId : ids[0];
+          // If multiple candidates and no content overlap, refuse to guess
+          if (ids.length > 1 && bestScore <= 0) return null as any;
+          return bestId;
         };
 
         // Try first/last name tokens too (e.g. "Ruth Silva" → also search "Ruth")
