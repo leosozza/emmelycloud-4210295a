@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Mic, FileText, Loader2 } from "lucide-react";
@@ -16,10 +16,13 @@ interface AudioMessageBubbleProps {
 }
 
 export function AudioMessageBubble({ msg }: AudioMessageBubbleProps) {
-  const initialTranscript = msg.content?.startsWith("🎤") ? msg.content.replace(/^🎤\s*/, "") : null;
+  const initialTranscript = msg.content && !["[Áudio]", "🎤 Áudio", "audio"].includes(msg.content.trim())
+    ? msg.content.replace(/^🎤\s*/, "")
+    : null;
   const [transcribing, setTranscribing] = useState(false);
   const [transcript, setTranscript] = useState<string | null>(initialTranscript);
-  const [showTranscript, setShowTranscript] = useState(Boolean(initialTranscript));
+  const [showTranscript, setShowTranscript] = useState(true);
+  const autoTriedRef = useRef(false);
 
   const handleTranscribe = async () => {
     if (!msg.media_url) return;
@@ -43,7 +46,14 @@ export function AudioMessageBubble({ msg }: AudioMessageBubbleProps) {
       if (data?.text) {
         setTranscript(data.text);
         setShowTranscript(true);
-      } else {
+        // Persist transcript so it doesn't re-run on next load
+        try {
+          await supabase
+            .from("messages")
+            .update({ content: `🎤 ${data.text}` })
+            .eq("id", msg.id);
+        } catch {}
+      } else if (!autoTriedRef.current) {
         toast.error("Não foi possível transcrever o áudio");
       }
     } catch (err) {
@@ -53,6 +63,15 @@ export function AudioMessageBubble({ msg }: AudioMessageBubbleProps) {
       setTranscribing(false);
     }
   };
+
+  // Auto-transcribe once on mount when no transcript is present yet
+  useEffect(() => {
+    if (!transcript && msg.media_url && !autoTriedRef.current) {
+      autoTriedRef.current = true;
+      handleTranscribe();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [msg.media_url]);
 
   return (
     <div className="space-y-1">
