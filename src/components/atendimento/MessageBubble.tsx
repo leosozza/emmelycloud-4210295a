@@ -109,7 +109,7 @@ export function MessageBubble({ msg, conversationId, workspaceId, containerWidth
       <div
         className={cn(
           "relative px-3.5 py-2 overflow-hidden break-words",
-          mediaKind === "audio" ? "w-[340px] max-w-[85%]" : "max-w-[80%] md:max-w-[65%]",
+          mediaKind === "audio" ? "w-[360px] max-w-[92vw] sm:max-w-[78%] md:max-w-[58%]" : "max-w-[80%] md:max-w-[65%]",
           bubbleClass
         )}
         style={bubbleStyle}
@@ -126,13 +126,25 @@ export function MessageBubble({ msg, conversationId, workspaceId, containerWidth
         {mediaKind === "audio" && (hasHttpUrl || hasDataUri) ? (
           <AudioMessageBubble msg={{ id: msg.id, media_url: msg.media_url!, message_type: "audio", content: msg.content }} />
         ) : mediaKind === "audio" ? (
-          <div className="flex items-center gap-2.5 py-2">
-            <div className="h-9 w-9 shrink-0 rounded-full bg-primary/15 flex items-center justify-center">
+          <div className="flex items-center gap-3 py-2 min-h-[64px]">
+            <div className="h-10 w-10 shrink-0 rounded-full bg-primary/15 flex items-center justify-center text-primary">
               <span className="text-base">🎤</span>
             </div>
-            <span className="text-xs text-muted-foreground leading-snug">
-              {isOutgoing ? "Áudio enviado — processando…" : "Áudio recebido — aguardando arquivo"}
-            </span>
+            <div className="flex-1 min-w-0 space-y-2">
+              <div className="flex items-center gap-[3px] h-6 opacity-60">
+                {Array.from({ length: 28 }).map((_, i) => (
+                  <span
+                    key={i}
+                    className="w-[3px] rounded-full bg-muted-foreground/45"
+                    style={{ height: `${28 + Math.abs(Math.sin(i * 0.85)) * 72}%` }}
+                  />
+                ))}
+              </div>
+              <div className="flex items-center justify-between gap-3 text-[11px] text-muted-foreground leading-none">
+                <span>{isOutgoing ? "Enviando áudio…" : "Recebendo áudio…"}</span>
+                <span>aguardando arquivo</span>
+              </div>
+            </div>
           </div>
         ) : mediaKind === "image" && (hasHttpUrl || hasDataUri) ? (
           <div className="mt-1 mb-2">
