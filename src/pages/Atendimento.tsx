@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react";
+import { useParams, useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient, useInfiniteQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { ConversationList } from "@/components/atendimento/ConversationList";
@@ -9,7 +10,11 @@ import type { MediaPayload } from "@/components/atendimento/ChatInput";
 
 const MESSAGES_PAGE_SIZE = 50;
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export default function AtendimentoPage() {
+  const { convParam } = useParams<{ convParam?: string }>();
+  const navigate = useNavigate();
   const [selectedId, setSelectedId] = useState<string | undefined>();
   const [profileOpen, setProfileOpen] = useState(false);
   const queryClient = useQueryClient();
