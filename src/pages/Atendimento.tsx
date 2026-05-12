@@ -245,9 +245,9 @@ export default function AtendimentoPage() {
         <ConversationList
           conversations={conversations}
           selectedId={selectedId}
-          onSelect={setSelectedId}
+          onSelect={selectConversation}
           onDoubleSelect={(id) => {
-            setSelectedId(id);
+            selectConversation(id);
             setProfileOpen(true);
           }}
         />
@@ -259,7 +259,7 @@ export default function AtendimentoPage() {
           conversation={selectedConversation}
           messages={messages}
           quickReplies={quickReplies}
-          onBack={() => setSelectedId(undefined)}
+          onBack={() => selectConversation(undefined)}
           onToggleProfile={() => setProfileOpen((v) => !v)}
           onSendMessage={() => {
             queryClient.invalidateQueries({ queryKey: ["conversations"] });
