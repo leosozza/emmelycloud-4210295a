@@ -157,7 +157,7 @@ async function findConversationByEmail(supabase: any, emails: string[]): Promise
   for (const email of emails) {
     const { data: active } = await supabase
       .from("conversations")
-      .select("id, contact_name, attendance_mode, channel, status, contact_phone, bot_state")
+      .select("id, contact_name, attendance_mode, channel, status, contact_phone, contact_lid, bot_state")
       .ilike("contact_email", `%${email}%`)
       .neq("status", "fechada")
       .order("last_message_at", { ascending: false })
@@ -166,7 +166,7 @@ async function findConversationByEmail(supabase: any, emails: string[]): Promise
     if (active) return active;
     const { data: anyConv } = await supabase
       .from("conversations")
-      .select("id, contact_name, attendance_mode, channel, status, contact_phone, bot_state")
+      .select("id, contact_name, attendance_mode, channel, status, contact_phone, contact_lid, bot_state")
       .ilike("contact_email", `%${email}%`)
       .order("last_message_at", { ascending: false })
       .limit(1)
@@ -180,7 +180,7 @@ async function findConversationByEmail(supabase: any, emails: string[]): Promise
 }
 
 async function findConversationByBotState(supabase: any, entityId: string, entityTypeId?: string): Promise<any> {
-  const selectCols = "id, contact_name, attendance_mode, channel, status, contact_phone, bot_state";
+  const selectCols = "id, contact_name, attendance_mode, channel, status, contact_phone, contact_lid, bot_state";
   const eid = String(entityId);
 
   // 1. Try exact bitrix_deal_id match
@@ -260,7 +260,7 @@ async function findConversationByName(supabase: any, name: string): Promise<any>
   for (const word of words.slice(0, 3)) {
     const { data: active } = await supabase
       .from("conversations")
-      .select("id, contact_name, attendance_mode, channel, status, contact_phone, bot_state")
+      .select("id, contact_name, attendance_mode, channel, status, contact_phone, contact_lid, bot_state")
       .ilike("contact_name", `%${word}%`)
       .neq("status", "fechada")
       .order("last_message_at", { ascending: false })
@@ -269,7 +269,7 @@ async function findConversationByName(supabase: any, name: string): Promise<any>
     if (active) return active;
     const { data: anyConv } = await supabase
       .from("conversations")
-      .select("id, contact_name, attendance_mode, channel, status, contact_phone, bot_state")
+      .select("id, contact_name, attendance_mode, channel, status, contact_phone, contact_lid, bot_state")
       .ilike("contact_name", `%${word}%`)
       .order("last_message_at", { ascending: false })
       .limit(1)
@@ -1216,7 +1216,7 @@ Deno.serve(async (req) => {
             if (localLead.conversation_id) {
               const { data: conv } = await supabase
                 .from("conversations")
-                .select("id, contact_name, attendance_mode, channel, status, contact_phone, bot_state")
+                .select("id, contact_name, attendance_mode, channel, status, contact_phone, contact_lid, bot_state")
                 .eq("id", localLead.conversation_id)
                 .maybeSingle();
               if (conv) {
@@ -1228,7 +1228,7 @@ Deno.serve(async (req) => {
               // Try active first
               const { data: activeConv } = await supabase
                 .from("conversations")
-                .select("id, contact_name, attendance_mode, channel, status, contact_phone, bot_state")
+                .select("id, contact_name, attendance_mode, channel, status, contact_phone, contact_lid, bot_state")
                 .eq("client_id", localLead.client_id)
                 .neq("status", "fechada")
                 .order("last_message_at", { ascending: false })
@@ -1241,7 +1241,7 @@ Deno.serve(async (req) => {
                 // Fallback: include closed
                 const { data: anyConv } = await supabase
                   .from("conversations")
-                  .select("id, contact_name, attendance_mode, channel, status, contact_phone, bot_state")
+                  .select("id, contact_name, attendance_mode, channel, status, contact_phone, contact_lid, bot_state")
                   .eq("client_id", localLead.client_id)
                   .order("last_message_at", { ascending: false })
                   .limit(1)
@@ -1315,7 +1315,7 @@ Deno.serve(async (req) => {
               // Try active first
               const { data: activeConv } = await supabase
                 .from("conversations")
-                .select("id, contact_name, attendance_mode, channel, status, contact_phone, bot_state")
+                .select("id, contact_name, attendance_mode, channel, status, contact_phone, contact_lid, bot_state")
                 .eq("client_id", client.id)
                 .neq("status", "fechada")
                 .order("last_message_at", { ascending: false })
@@ -1327,7 +1327,7 @@ Deno.serve(async (req) => {
               } else {
                 const { data: anyConv } = await supabase
                   .from("conversations")
-                  .select("id, contact_name, attendance_mode, channel, status, contact_phone, bot_state")
+                  .select("id, contact_name, attendance_mode, channel, status, contact_phone, contact_lid, bot_state")
                   .eq("client_id", client.id)
                   .order("last_message_at", { ascending: false })
                   .limit(1)
@@ -1392,7 +1392,7 @@ Deno.serve(async (req) => {
                     if (client) {
                       const { data: conv } = await supabase
                         .from("conversations")
-                        .select("id, contact_name, attendance_mode, channel, status, contact_phone, bot_state")
+                        .select("id, contact_name, attendance_mode, channel, status, contact_phone, contact_lid, bot_state")
                         .eq("client_id", client.id)
                         .order("last_message_at", { ascending: false })
                         .limit(1)
@@ -1413,7 +1413,7 @@ Deno.serve(async (req) => {
                     if (lead?.conversation_id) {
                       const { data: conv } = await supabase
                         .from("conversations")
-                        .select("id, contact_name, attendance_mode, channel, status, contact_phone, bot_state")
+                        .select("id, contact_name, attendance_mode, channel, status, contact_phone, contact_lid, bot_state")
                         .eq("id", lead.conversation_id)
                         .maybeSingle();
                       if (conv) {

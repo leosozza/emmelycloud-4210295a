@@ -261,7 +261,7 @@ async function executeFlow(
 
   // Variáveis: sistema + fluxo + estado atual
   const variables: Record<string, any> = {
-    telefone: conversation.contact_phone || conversation.phone || "",
+    telefone: conversation.contact_phone || conversation.contact_lid || conversation.phone || "",
     nome_contato: conversation.contact_name || "",
     ultima_mensagem: messageText || "",
     conversation_id: conversation.id,
@@ -1445,7 +1445,7 @@ async function sendViaBitrixConnector(
     headers: { "Content-Type": "application/json", "Authorization": `Bearer ${serviceKey}` },
     body: JSON.stringify({
       message: content,
-      contactId: conversation.contact_phone || conversation.contact_instagram || conversation.id,
+      contactId: conversation.contact_phone || conversation.contact_lid || conversation.contact_instagram || conversation.id,
       contactName: conversation.contact_name || "Cliente",
       channel: conversation.channel || "whatsapp",
       conversationId: conversation.id,

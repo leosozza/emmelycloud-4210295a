@@ -81,7 +81,7 @@ Deno.serve(async (req) => {
     // Load conversation
     const { data: conv, error: cErr } = await supabase
       .from("conversations")
-      .select("id, contact_name, contact_phone, contact_email, contact_instagram, channel, bot_state, last_message_preview")
+      .select("id, contact_name, contact_phone, contact_lid, contact_email, contact_instagram, channel, bot_state, last_message_preview")
       .eq("id", conversation_id)
       .maybeSingle();
     if (cErr || !conv) throw new Error("Conversation not found");
@@ -106,7 +106,7 @@ Deno.serve(async (req) => {
       const fields: any = {
         TITLE: conv.contact_name || "Lead via Atendimento",
         SOURCE_ID: conv.channel === "whatsapp" ? "WHATSAPP" : "OTHER",
-        COMMENTS: conv.last_message_preview || "",
+        COMMENTS: [conv.last_message_preview || "", conv.contact_lid ? `WhatsApp LID: ${conv.contact_lid}` : ""].filter(Boolean).join("\n"),
       };
       if (conv.contact_phone) fields.PHONE = [{ VALUE: conv.contact_phone, VALUE_TYPE: "WORK" }];
       if (conv.contact_email) fields.EMAIL = [{ VALUE: conv.contact_email, VALUE_TYPE: "WORK" }];

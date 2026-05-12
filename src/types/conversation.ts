@@ -28,6 +28,7 @@ export interface Conversation {
   channel: ConversationChannel;
   contact_name: string;
   contact_phone?: string | null;
+  contact_lid?: string | null;
   contact_email?: string | null;
   contact_instagram?: string | null;
   contact_avatar_url?: string | null;

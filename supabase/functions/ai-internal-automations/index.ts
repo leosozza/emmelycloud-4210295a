@@ -63,7 +63,7 @@ async function runAutoSummary(supabase: any, config: ReturnType<typeof getAIConf
   // Find conversations with enough new messages and no recent summary
   const { data: conversations } = await supabase
     .from("conversations")
-    .select("id, contact_name, contact_phone, contact_instagram, channel")
+    .select("id, contact_name, contact_phone, contact_lid, contact_instagram, channel")
     .in("status", ["open", "pending"])
     .order("last_message_at", { ascending: false })
     .limit(20);
@@ -312,7 +312,7 @@ async function runSentiment(supabase: any, config: ReturnType<typeof getAIConfig
 
   const { data: conversations } = await supabase
     .from("conversations")
-    .select("id, contact_name, contact_phone, contact_instagram, contact_email, channel")
+    .select("id, contact_name, contact_phone, contact_lid, contact_instagram, contact_email, channel")
     .in("status", ["open", "pending"])
     .order("last_customer_message_at", { ascending: false })
     .limit(15);
@@ -362,7 +362,7 @@ async function runSentiment(supabase: any, config: ReturnType<typeof getAIConfig
       const analysis = JSON.parse(toolCall.function.arguments);
 
       // Save to user_memory
-      const contactId = conv.contact_phone || conv.contact_instagram || conv.contact_email;
+      const contactId = conv.contact_phone || conv.contact_lid || conv.contact_instagram || conv.contact_email;
       const channel = conv.channel || "whatsapp";
       if (contactId) {
         await supabase.rpc("upsert_user_memory", {

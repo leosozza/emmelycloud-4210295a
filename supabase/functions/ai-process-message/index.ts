@@ -135,7 +135,7 @@ Deno.serve(async (req) => {
 
       const { data: conv } = await supabase
         .from("conversations")
-        .select("id, channel, contact_phone, contact_instagram, contact_email, contact_name, attendance_mode, bot_state")
+        .select("id, channel, contact_phone, contact_lid, contact_instagram, contact_email, contact_name, attendance_mode, bot_state")
         .eq("id", conversation_id)
         .single();
 
@@ -328,9 +328,9 @@ Deno.serve(async (req) => {
     // 6b. Load long-term user memory
     let memoryContext = "";
     if (conversation) {
-      const contactId = conversation.contact_phone || conversation.contact_instagram || conversation.contact_email;
+      const contactId = conversation.contact_phone || conversation.contact_lid || conversation.contact_instagram || conversation.contact_email;
       if (contactId) {
-        const phoneCol = conversation.contact_phone ? "contact_phone" : conversation.contact_instagram ? "contact_instagram" : "contact_email";
+        const phoneCol = (conversation.contact_phone || conversation.contact_lid) ? "contact_phone" : conversation.contact_instagram ? "contact_instagram" : "contact_email";
         const { data: memories } = await supabase
           .from("user_memory")
           .select("key, value")
@@ -1352,7 +1352,7 @@ async function sendReply(supabase: any, supabaseUrl: string, serviceKey: string,
       body: JSON.stringify({
         message: botMessage,
         contactName: conversation.contact_name,
-        contactId: conversation.contact_phone || conversation.contact_instagram || conversation.contact_email,
+        contactId: conversation.contact_phone || conversation.contact_lid || conversation.contact_instagram || conversation.contact_email,
         channel: conversation.channel,
         conversationId: conversation.id,
         agentName: agentDisplayName,
@@ -1374,7 +1374,7 @@ async function sendReply(supabase: any, supabaseUrl: string, serviceKey: string,
 
 // ─── Extract user memory ───
 async function extractUserMemory(supabase: any, supabaseUrl: string, serviceKey: string, conversation: any, _lastReply: string) {
-  const contactId = conversation.contact_phone || conversation.contact_instagram || conversation.contact_email;
+  const contactId = conversation.contact_phone || conversation.contact_lid || conversation.contact_instagram || conversation.contact_email;
   if (!contactId) return;
   const { count } = await supabase.from("messages").select("id", { count: "exact", head: true }).eq("conversation_id", conversation.id);
   const isTransfer = conversation.attendance_mode === "human";
@@ -1408,10 +1408,11 @@ async function extractUserMemory(supabase: any, supabaseUrl: string, serviceKey:
   for (const fact of facts) {
     if (!fact.key || !fact.value) continue;
     const { error: upsertErr } = await supabase.rpc("upsert_user_memory", {
-      p_contact_phone: conversation.contact_phone || null,
-      p_contact_instagram: conversation.contact_instagram || null,
-      p_contact_email: conversation.contact_email || null,
-      p_channel: channel, p_key: fact.key, p_value: String(fact.value), p_source: "auto",
+      p_channel: channel,
+      p_contact_id: contactId,
+      p_key: fact.key,
+      p_value: String(fact.value),
+      p_source: "auto",
     });
     if (upsertErr) console.error(`[AI-PROCESS] Memory upsert error for "${fact.key}":`, upsertErr.message);
   }

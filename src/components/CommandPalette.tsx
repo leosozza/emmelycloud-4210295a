@@ -108,7 +108,7 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
       const { data } = await supabase
         .from("conversations")
         .select("id, contact_name, channel, last_message_preview")
-        .or(`contact_name.ilike.%${search}%,contact_phone.ilike.%${search}%,last_message_preview.ilike.%${search}%`)
+        .or(`contact_name.ilike.%${search}%,contact_phone.ilike.%${search}%,contact_lid.ilike.%${search}%,last_message_preview.ilike.%${search}%`)
         .limit(5);
       return data || [];
     },
