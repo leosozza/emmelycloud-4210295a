@@ -391,15 +391,15 @@ async function handleConnectorMessage(supabase: any, integration: any, payload: 
 
     // PowerZap / inline audio link pattern: text contains an audio URL (e.g. "🎵 PowerZap Áudio 🎵 (https://.../audio.mp3)")
     // Bitrix sends these as plain text instead of file attachments — extract and treat as audio file.
-    if (detectedFiles.length === 0 && messageText) {
-      const audioUrlMatch = messageText.match(/(https?:\/\/[^\s)<>"]+\.(?:mp3|ogg|opus|m4a|wav|aac))(?:\?[^\s)<>"]*)?/i);
-      if (audioUrlMatch) {
-        const link = audioUrlMatch[0];
+    const audioUrlMatch = messageText.match(/(https?:\/\/[^\s)<>"]+\.(?:mp3|ogg|opus|m4a|wav|aac|webm))(?:\?[^\s)<>"]*)?/i);
+    if (audioUrlMatch) {
+      const link = audioUrlMatch[0];
+      if (!detectedFiles.some((f) => f.link === link)) {
         const ext = (link.split("?")[0].split(".").pop() || "mp3").toLowerCase();
-        const mimeMap: Record<string, string> = { mp3: "audio/mpeg", ogg: "audio/ogg", opus: "audio/ogg", m4a: "audio/mp4", wav: "audio/wav", aac: "audio/aac" };
+        const mimeMap: Record<string, string> = { mp3: "audio/mpeg", ogg: "audio/ogg", opus: "audio/ogg", m4a: "audio/mp4", wav: "audio/wav", aac: "audio/aac", webm: "audio/webm" };
         detectedFiles.push({ name: `audio.${ext}`, link, type: "audio", mime: mimeMap[ext] || "audio/mpeg" });
-        console.log(`[WORKER] Detected inline audio URL in text: ${link}`);
       }
+      console.log(`[WORKER] Detected inline audio URL in text: ${link}`);
     }
 
     if (detectedFiles.length > 0) {
@@ -410,7 +410,7 @@ async function handleConnectorMessage(supabase: any, integration: any, payload: 
     if (!messageText && detectedFiles.length === 0) continue;
 
     // If we extracted audio from text, suppress the original text so we don't send the link as well
-    const suppressText = detectedFiles.some((f) => (f.type === "audio" || (f.mime || "").startsWith("audio/"))) && /https?:\/\/[^\s)]+\.(mp3|ogg|opus|m4a|wav|aac)/i.test(messageText);
+    const suppressText = !!audioUrlMatch && detectedFiles.some((f) => (f.type === "audio" || (f.mime || "").startsWith("audio/")));
 
     // Dedup: check if this message was sent by Emmely (echo prevention)
     if (messageId) {
