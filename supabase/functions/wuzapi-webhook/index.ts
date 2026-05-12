@@ -594,7 +594,7 @@ Deno.serve(async (req) => {
     }
 
     // Insert message
-    await supabase.from("messages").insert({
+    const { error: insertError } = await supabase.from("messages").insert({
       conversation_id: conversationId,
       direction: "inbound",
       content,
@@ -602,18 +602,12 @@ Deno.serve(async (req) => {
       external_id: externalId,
       media_type: mediaType,
       media_url: mediaUrl,
-      metadata: mediaNode ? {
-        wuzapi_media: {
-          kind: mediaDownloadKind,
-          mime: mediaMime,
-          filename: mediaFilename,
-          downloaded: Boolean(mediaUrl),
-          node: mediaUrl ? undefined : mediaNode,
-        },
-      } : undefined,
       delivery_status: "delivered",
       sync_source: "bitrix24",
     });
+    if (insertError) {
+      console.error("[WUZAPI-WEBHOOK] messages insert error:", insertError);
+    }
 
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
