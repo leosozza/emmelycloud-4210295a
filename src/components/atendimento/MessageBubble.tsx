@@ -55,26 +55,6 @@ export function MessageBubble({ msg, conversationId, workspaceId, containerWidth
   const sourceLabel = getSourceLabel(msg);
   const [feedbackGiven, setFeedbackGiven] = useState<"up" | "down" | null>(null);
 
-  // Shrink-wrap: compute tight bubble width if we have text and container info
-  const bubbleStyle = useMemo(() => {
-    if (!msg.content || !containerWidth || containerWidth < 100) return {};
-    const isMobile = containerWidth < 640;
-    const maxW = Math.floor(containerWidth * (isMobile ? 0.8 : 0.65));
-    const tight = shrinkWrapWidth(msg.content, maxW - 28); // 28 = px-3.5 * 2
-    if (tight < maxW) {
-      return { maxWidth: `${Math.min(tight, maxW)}px` };
-    }
-    return {};
-  }, [msg.content, containerWidth]);
-
-  const bubbleClass = !isOutgoing
-    ? "msg-bubble-client"
-    : msg.is_from_bot
-      ? "msg-bubble-ai"
-      : "msg-bubble-operator";
-
-  const showFeedback = msg.is_from_bot && isOutgoing && msg.content;
-
   // Normalise media kind: DB uses media_type; legacy code used message_type.
   // Also infer from mime/url when only one is set.
   const rawType = (msg.media_type || msg.message_type || "").toString().toLowerCase();
@@ -87,11 +67,34 @@ export function MessageBubble({ msg, conversationId, workspaceId, containerWidth
   const hasHttpUrl = !!msg.media_url && /^https?:\/\//i.test(msg.media_url);
   const hasDataUri = !!msg.media_url && msg.media_url.startsWith("data:");
 
+  // Shrink-wrap: compute tight bubble width if we have text and container info
+  const bubbleStyle = useMemo(() => {
+    if (mediaKind === "audio") return {};
+    if (!msg.content || !containerWidth || containerWidth < 100) return {};
+    const isMobile = containerWidth < 640;
+    const maxW = Math.floor(containerWidth * (isMobile ? 0.8 : 0.65));
+    const tight = shrinkWrapWidth(msg.content, maxW - 28); // 28 = px-3.5 * 2
+    if (tight < maxW) {
+      return { maxWidth: `${Math.min(tight, maxW)}px` };
+    }
+    return {};
+  }, [msg.content, containerWidth, mediaKind]);
+
+  const bubbleClass = !isOutgoing
+    ? "msg-bubble-client"
+    : msg.is_from_bot
+      ? "msg-bubble-ai"
+      : "msg-bubble-operator";
+
+  const showFeedback = msg.is_from_bot && isOutgoing && msg.content;
+
   const handleFeedback = async (rating: "up" | "down") => {
     if (feedbackGiven) return;
     setFeedbackGiven(rating);
     try {
-      await supabase.from("conversation_feedback" as any).insert({
+      await (supabase as unknown as { from: (table: string) => { insert: (payload: unknown) => Promise<unknown> } })
+        .from("conversation_feedback")
+        .insert({
         conversation_id: conversationId || msg.conversation_id,
         workspace_id: workspaceId,
         message_id: msg.id,
@@ -108,7 +111,7 @@ export function MessageBubble({ msg, conversationId, workspaceId, containerWidth
       <div
         className={cn(
           "relative px-3.5 py-2 overflow-hidden break-words",
-          mediaKind === "audio" ? "w-[340px] max-w-[85%]" : "max-w-[80%] md:max-w-[65%]",
+          mediaKind === "audio" ? "w-[360px] max-w-[92vw] sm:max-w-[78%] md:max-w-[58%]" : "max-w-[80%] md:max-w-[65%]",
           bubbleClass
         )}
         style={bubbleStyle}
@@ -125,13 +128,25 @@ export function MessageBubble({ msg, conversationId, workspaceId, containerWidth
         {mediaKind === "audio" && (hasHttpUrl || hasDataUri) ? (
           <AudioMessageBubble msg={{ id: msg.id, media_url: msg.media_url!, message_type: "audio", content: msg.content }} />
         ) : mediaKind === "audio" ? (
-          <div className="flex items-center gap-2.5 py-2">
-            <div className="h-9 w-9 shrink-0 rounded-full bg-primary/15 flex items-center justify-center">
+          <div className="flex items-center gap-3 py-2 min-h-[64px]">
+            <div className="h-10 w-10 shrink-0 rounded-full bg-primary/15 flex items-center justify-center text-primary">
               <span className="text-base">🎤</span>
             </div>
-            <span className="text-xs text-muted-foreground leading-snug">
-              {isOutgoing ? "Áudio enviado — processando…" : "Áudio recebido — aguardando arquivo"}
-            </span>
+            <div className="flex-1 min-w-0 space-y-2">
+              <div className="flex items-center gap-[3px] h-6 opacity-60">
+                {Array.from({ length: 28 }).map((_, i) => (
+                  <span
+                    key={i}
+                    className="w-[3px] rounded-full bg-muted-foreground/45"
+                    style={{ height: `${28 + Math.abs(Math.sin(i * 0.85)) * 72}%` }}
+                  />
+                ))}
+              </div>
+              <div className="flex items-center justify-between gap-3 text-[11px] text-muted-foreground leading-none">
+                <span>{isOutgoing ? "Enviando áudio…" : "Recebendo áudio…"}</span>
+                <span>aguardando arquivo</span>
+              </div>
+            </div>
           </div>
         ) : mediaKind === "image" && (hasHttpUrl || hasDataUri) ? (
           <div className="mt-1 mb-2">
