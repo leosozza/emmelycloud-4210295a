@@ -602,6 +602,15 @@ Deno.serve(async (req) => {
       external_id: externalId,
       media_type: mediaType,
       media_url: mediaUrl,
+      metadata: mediaNode ? {
+        wuzapi_media: {
+          kind: mediaDownloadKind,
+          mime: mediaMime,
+          filename: mediaFilename,
+          downloaded: Boolean(mediaUrl),
+          node: mediaUrl ? undefined : mediaNode,
+        },
+      } : undefined,
       delivery_status: "delivered",
       sync_source: "bitrix24",
     });
