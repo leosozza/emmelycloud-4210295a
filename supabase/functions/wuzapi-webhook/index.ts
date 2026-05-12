@@ -67,9 +67,14 @@ Deno.serve(async (req) => {
     // We must persist BOTH: phone for Bitrix/CRM matching, LID for sending replies via WUZAPI.
     const chatRaw   = info.Chat || info.RemoteJid || info.remoteJid || "";
     const senderRaw = info.Sender || info.sender || info.SenderAlt || "";
+    // WhatsApp LID-system also exposes the real phone via these alt fields when available
+    const senderPnRaw = info.SenderPN || info.SenderPn || info.senderPn || info.sender_pn || "";
+    const participantPnRaw = info.ParticipantPN || info.ParticipantPn || info.participantPn || info.participant_pn || "";
 
     // Pick a JID that is NOT @lid as the real phone source
     const realPhoneJid =
+      (senderPnRaw && !senderPnRaw.includes("@lid") && senderPnRaw) ||
+      (participantPnRaw && !participantPnRaw.includes("@lid") && participantPnRaw) ||
       (!senderRaw.includes("@lid") && senderRaw) ||
       (!chatRaw.includes("@lid") && chatRaw) ||
       "";
