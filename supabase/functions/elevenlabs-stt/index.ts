@@ -31,7 +31,9 @@ async function transcribeWithLovableAI(audioBytes: Uint8Array, mime: string, lan
   for (let i = 0; i < audioBytes.length; i += chunkSize) {
     binary += String.fromCharCode(...audioBytes.subarray(i, i + chunkSize));
   }
-  const dataUrl = `data:${mime || "audio/ogg"};base64,${btoa(binary)}`;
+  // Strip codec params + whitespace — data URI mime must be "audio/ogg", not "audio/ogg; codecs=opus".
+  const cleanMime = (mime || "audio/ogg").split(";")[0].trim() || "audio/ogg";
+  const dataUrl = `data:${cleanMime};base64,${btoa(binary)}`;
 
   const aiRes = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
     method: "POST",
@@ -48,7 +50,7 @@ async function transcribeWithLovableAI(audioBytes: Uint8Array, mime: string, lan
           role: "user",
           content: [
             { type: "text", text: `Idioma esperado: ${normalizeLanguage(languageCode)}. Transcreva este áudio.` },
-            { type: "file", file: { file_data: dataUrl, mime_type: mime || "audio/ogg" } },
+            { type: "file", file: { file_data: dataUrl, mime_type: cleanMime } },
           ],
         },
       ],
