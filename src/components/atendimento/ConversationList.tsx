@@ -275,6 +275,30 @@ export function ConversationList({
                           {conv.attendance_mode === "ai" && (
                             <Bot className="h-3 w-3 text-violet-500 shrink-0" />
                           )}
+                          {(() => {
+                            const linked = !!conv.bot_state?.bitrix_deal_id;
+                            const isLoading = linkingId === conv.id;
+                            return (
+                              <button
+                                type="button"
+                                onClick={(e) => !linked && handleLinkBitrix(e, conv)}
+                                disabled={linked || isLoading}
+                                title={
+                                  linked
+                                    ? `Vinculado ao Bitrix (deal ${conv.bot_state?.bitrix_deal_id})`
+                                    : "Clique para vincular ao Bitrix"
+                                }
+                                className={cn(
+                                  "h-4 w-4 rounded-sm text-[10px] font-bold flex items-center justify-center shrink-0 transition-colors",
+                                  linked
+                                    ? "bg-blue-500 text-white cursor-default"
+                                    : "bg-muted text-muted-foreground hover:bg-muted-foreground/20 cursor-pointer"
+                                )}
+                              >
+                                {isLoading ? <Loader2 className="h-2.5 w-2.5 animate-spin" /> : "B"}
+                              </button>
+                            );
+                          })()}
                         </div>
                         {conv.last_message_at && (
                           <span
