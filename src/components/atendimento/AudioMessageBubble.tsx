@@ -46,7 +46,14 @@ export function AudioMessageBubble({ msg }: AudioMessageBubbleProps) {
       if (data?.text) {
         setTranscript(data.text);
         setShowTranscript(true);
-      } else {
+        // Persist transcript so it doesn't re-run on next load
+        try {
+          await supabase
+            .from("messages")
+            .update({ content: `🎤 ${data.text}` })
+            .eq("id", msg.id);
+        } catch {}
+      } else if (!autoTriedRef.current) {
         toast.error("Não foi possível transcrever o áudio");
       }
     } catch (err) {
