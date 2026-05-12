@@ -449,6 +449,7 @@ Deno.serve(async (req) => {
         delivery_status: "sent",
         sync_source: "emmely",
         media_type: message_type && message_type !== "interactive_buttons" && message_type !== "interactive_list" ? message_type : null,
+        media_url: (resolvedInteractiveData as any)?.url ?? null,
       });
 
       // Register in dedup cache to prevent echo from webhooks

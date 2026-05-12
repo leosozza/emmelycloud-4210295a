@@ -126,7 +126,7 @@ export function MessageBubble({ msg, conversationId, workspaceId, containerWidth
         ) : mediaKind === "audio" ? (
           <div className="flex items-center gap-2 text-xs text-muted-foreground py-1.5 px-2 rounded-md bg-background/40 border border-border/40">
             <span>🎤</span>
-            <span>Áudio recebido — aguardando arquivo</span>
+            <span>{isOutgoing ? "Áudio enviado — processando" : "Áudio recebido — aguardando arquivo"}</span>
           </div>
         ) : mediaKind === "image" && (hasHttpUrl || hasDataUri) ? (
           <div className="mt-1 mb-2">
