@@ -331,7 +331,12 @@ Deno.serve(async (req) => {
         } else if (message_type === "document" && resolvedInteractiveData) {
           wuzapiEndpoint = "/chat/send/document";
           const src = resolvedInteractiveData.url || resolvedInteractiveData;
-          wuzapiPayload = { Phone: wuzapiPhone, Document: await toDataUri(src, "application/pdf"), FileName: resolvedInteractiveData.filename || "documento", Caption: content };
+          // WUZAPI requires the document data URI to use application/octet-stream
+          const rawDoc = await toDataUri(src, "application/octet-stream");
+          const docData = rawDoc.startsWith("data:")
+            ? `data:application/octet-stream;base64,${rawDoc.split(",")[1] ?? ""}`
+            : rawDoc;
+          wuzapiPayload = { Phone: wuzapiPhone, Document: docData, FileName: resolvedInteractiveData.filename || "documento", Caption: content };
         } else if (message_type === "audio" && resolvedInteractiveData) {
           // Per WUZAPI docs (/chat/send/audio): Audio accepts a public HTTP URL
           // directly (no need to base64-encode). Mimetype overrides detection,
