@@ -3,12 +3,15 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ChannelIcon } from "./ChannelIcon";
-import { Search, Bot, User, BellDot } from "lucide-react";
+import { Search, Bot, User, BellDot, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { format, isToday, isYesterday } from "date-fns";
 import { useLocale } from "@/contexts/LocaleContext";
 import { useState, useMemo, useRef } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
+import { supabase } from "@/integrations/supabase/client";
+import { useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 import type { Conversation, ConversationChannel, ConversationStatus } from "@/types/conversation";
 
 type QuickFilter = "all" | "unread" | "ai" | "human";
@@ -47,7 +50,36 @@ export function ConversationList({
   const [channelFilter, setChannelFilter] = useState<ConversationChannel | "all">("all");
   const [statusFilter, setStatusFilter] = useState<ConversationStatus | "all">("aberta");
   const [quickFilter, setQuickFilter] = useState<QuickFilter>("all");
+  const [linkingId, setLinkingId] = useState<string | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
+  const queryClient = useQueryClient();
+
+  const handleLinkBitrix = async (e: React.MouseEvent, conv: Conversation) => {
+    e.stopPropagation();
+    if (linkingId) return;
+    setLinkingId(conv.id);
+    try {
+      const { data, error } = await supabase.functions.invoke(
+        "bitrix24-backfill-conversations-link",
+        { body: { conversation_id: conv.id, force: true } }
+      );
+      if (error) throw error;
+      const sample = (data as any)?.sample?.[0];
+      if (sample?.matched && sample?.deal_id) {
+        toast.success(`Vinculado ao deal ${sample.deal_id}`);
+        queryClient.invalidateQueries({ queryKey: ["conversations"] });
+      } else if (sample?.matched) {
+        toast.success("Vinculado ao Bitrix");
+        queryClient.invalidateQueries({ queryKey: ["conversations"] });
+      } else {
+        toast.error("Nenhuma correspondência no Bitrix");
+      }
+    } catch (err: any) {
+      toast.error(err?.message || "Falha ao vincular");
+    } finally {
+      setLinkingId(null);
+    }
+  };
 
   const channelBorderColor: Record<ConversationChannel, string> = {
     whatsapp: "border-l-[hsl(142,70%,45%)]",
@@ -243,6 +275,30 @@ export function ConversationList({
                           {conv.attendance_mode === "ai" && (
                             <Bot className="h-3 w-3 text-violet-500 shrink-0" />
                           )}
+                          {(() => {
+                            const linked = !!conv.bot_state?.bitrix_deal_id;
+                            const isLoading = linkingId === conv.id;
+                            return (
+                              <button
+                                type="button"
+                                onClick={(e) => !linked && handleLinkBitrix(e, conv)}
+                                disabled={linked || isLoading}
+                                title={
+                                  linked
+                                    ? `Vinculado ao Bitrix (deal ${conv.bot_state?.bitrix_deal_id})`
+                                    : "Clique para vincular ao Bitrix"
+                                }
+                                className={cn(
+                                  "h-4 w-4 rounded-sm text-[10px] font-bold flex items-center justify-center shrink-0 transition-colors",
+                                  linked
+                                    ? "bg-blue-500 text-white cursor-default"
+                                    : "bg-muted text-muted-foreground hover:bg-muted-foreground/20 cursor-pointer"
+                                )}
+                              >
+                                {isLoading ? <Loader2 className="h-2.5 w-2.5 animate-spin" /> : "B"}
+                              </button>
+                            );
+                          })()}
                         </div>
                         {conv.last_message_at && (
                           <span

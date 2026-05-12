@@ -78,9 +78,24 @@ Deno.serve(async (req) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
     );
 
+    let dryRun = false;
+    let limit = 500;
+    let conversationId: string | null = null;
+    let force = false;
+    if (req.method === "POST") {
+      try {
+        const body = await req.json();
+        dryRun = body?.dry_run === true || body?.dry_run === 1;
+        if (body?.limit) limit = Number(body.limit);
+        if (body?.conversation_id) conversationId = String(body.conversation_id);
+        force = body?.force === true || body?.force === 1;
+      } catch (_e) { /* no body */ }
+    }
     const url = new URL(req.url);
-    const dryRun = url.searchParams.get("dry_run") === "1";
-    const limit = Number(url.searchParams.get("limit") || 500);
+    if (url.searchParams.get("dry_run") === "1") dryRun = true;
+    if (url.searchParams.get("limit")) limit = Number(url.searchParams.get("limit"));
+    if (url.searchParams.get("conversation_id")) conversationId = url.searchParams.get("conversation_id");
+    if (url.searchParams.get("force") === "1") force = true;
 
     const { data: integration } = await supabase
       .from("bitrix24_integrations")
@@ -93,15 +108,23 @@ Deno.serve(async (req) => {
     const endpoint = integration.client_endpoint;
 
     // Pull conversations needing linkage
-    const { data: convs, error: cErr } = await supabase
+    let convsQuery = supabase
       .from("conversations")
       .select("id, contact_phone, contact_name, bot_state")
       .eq("channel", "whatsapp")
-      .not("contact_phone", "is", null)
-      .limit(limit);
+      .not("contact_phone", "is", null);
+    if (conversationId) {
+      convsQuery = convsQuery.eq("id", conversationId);
+    } else {
+      convsQuery = convsQuery.limit(limit);
+    }
+    const { data: convs, error: cErr } = await convsQuery;
     if (cErr) throw cErr;
 
-    const todo = (convs || []).filter((c: any) => !(c.bot_state && c.bot_state.bitrix_deal_id));
+    const todo = (convs || []).filter(
+      (c: any) => force || !(c.bot_state && c.bot_state.bitrix_deal_id)
+    );
+    console.log(`[BACKFILL-LINK] ${todo.length} conversations to process (force=${force})`);
     console.log(`[BACKFILL-LINK] ${todo.length} conversations to process`);
 
     const results: any[] = [];
