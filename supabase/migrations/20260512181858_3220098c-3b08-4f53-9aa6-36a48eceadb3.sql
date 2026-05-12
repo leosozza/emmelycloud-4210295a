@@ -1,0 +1,1 @@
+UPDATE public.conversations SET bot_state = jsonb_build_object('bitrix_contact_id','120707','bitrix_entity_id','3:120707') WHERE id='7ab6e2a6-fb0a-407f-aef4-f8ae1f4a2d4f';
