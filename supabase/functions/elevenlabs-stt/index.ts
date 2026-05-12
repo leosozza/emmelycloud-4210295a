@@ -50,7 +50,7 @@ async function transcribeWithLovableAI(audioBytes: Uint8Array, mime: string, lan
           role: "user",
           content: [
             { type: "text", text: `Idioma esperado: ${normalizeLanguage(languageCode)}. Transcreva este áudio.` },
-            { type: "file", file: { file_data: dataUrl, mime_type: mime || "audio/ogg" } },
+            { type: "file", file: { file_data: dataUrl, mime_type: cleanMime } },
           ],
         },
       ],
