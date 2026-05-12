@@ -37,6 +37,9 @@ export function ChatInput({
   const [mediaRecorder, setMediaRecorder] = useState<MediaRecorder | null>(null);
   const [recordingTime, setRecordingTime] = useState(0);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [previewBlob, setPreviewBlob] = useState<Blob | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [previewMime, setPreviewMime] = useState<string>("");
 
   const handleInput = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     onChange(e.target.value);
@@ -89,21 +92,10 @@ export function ChatInput({
         setRecordingTime(0);
 
         const blob = new Blob(chunks, { type: mimeType });
-        const reader = new FileReader();
-        reader.onloadend = () => {
-        const base64 = (reader.result as string).split(",")[1];
-          if (base64) {
-            onSendMedia({
-              type: "audio",
-              base64,
-              // Use the REAL recorded mime (Chrome usually gives webm/opus, not ogg).
-              // Lying about the container makes WhatsApp silently drop the PTT.
-              mimeType,
-              fileName: `audio-${Date.now()}.${mimeType.includes("ogg") ? "ogg" : "webm"}`,
-            });
-          }
-        };
-        reader.readAsDataURL(blob);
+        const url = URL.createObjectURL(blob);
+        setPreviewBlob(blob);
+        setPreviewUrl(url);
+        setPreviewMime(mimeType);
       };
 
       recorder.start();
@@ -136,6 +128,32 @@ export function ChatInput({
     setRecording(false);
     setMediaRecorder(null);
     setRecordingTime(0);
+  };
+
+  const discardPreview = () => {
+    if (previewUrl) URL.revokeObjectURL(previewUrl);
+    setPreviewBlob(null);
+    setPreviewUrl(null);
+    setPreviewMime("");
+  };
+
+  const sendPreview = () => {
+    if (!previewBlob || !onSendMedia) return;
+    const mimeType = previewMime;
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      const base64 = (reader.result as string).split(",")[1];
+      if (base64) {
+        onSendMedia({
+          type: "audio",
+          base64,
+          mimeType,
+          fileName: `audio-${Date.now()}.${mimeType.includes("ogg") ? "ogg" : "webm"}`,
+        });
+      }
+      discardPreview();
+    };
+    reader.readAsDataURL(previewBlob);
   };
 
   // === File Attachment ===
@@ -176,6 +194,35 @@ export function ChatInput({
     const s = seconds % 60;
     return `${m}:${s.toString().padStart(2, "0")}`;
   };
+
+  // === Audio Preview UI ===
+  if (previewUrl) {
+    return (
+      <div className="chat-input-area p-2.5 md:p-3 flex-shrink-0">
+        <div className="flex items-center gap-3 max-w-3xl mx-auto">
+          <Button
+            size="icon"
+            variant="ghost"
+            className="shrink-0 h-11 w-11 rounded-full text-destructive hover:bg-destructive/10"
+            onClick={discardPreview}
+            aria-label="Descartar áudio"
+          >
+            <X className="h-5 w-5" />
+          </Button>
+          <audio src={previewUrl} controls className="flex-1 h-11" />
+          <Button
+            size="icon"
+            className="shrink-0 h-11 w-11 rounded-full bg-primary hover:bg-primary/90 shadow-md"
+            onClick={sendPreview}
+            disabled={sending}
+            aria-label="Enviar áudio"
+          >
+            {sending ? <Loader2 className="h-5 w-5 animate-spin" /> : <Send className="h-5 w-5" />}
+          </Button>
+        </div>
+      </div>
+    );
+  }
 
   // === Recording UI ===
   if (recording) {
