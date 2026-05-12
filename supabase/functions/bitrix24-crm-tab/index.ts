@@ -1056,7 +1056,7 @@ function renderHtml(opts: {
           stream.getTracks().forEach(function(t) { t.stop(); });
           var blob = new Blob(_audioChunks, { type: mime });
           if (blob.size === 0) { setStatus('Áudio vazio', '#f59e0b'); return; }
-          sendMedia(blob, 'audio-' + Date.now() + '.ogg', 'audio/ogg', 'audio');
+          showAudioPreview(blob);
         };
         _mediaRecorder.start();
         if (btn) { btn.classList.add('recording'); btn.innerHTML = '${B24_ICONS.stop}'; btn.title = 'Parar gravação'; }
