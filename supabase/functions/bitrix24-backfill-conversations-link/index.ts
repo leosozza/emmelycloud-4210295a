@@ -158,15 +158,18 @@ Deno.serve(async (req) => {
       if (!dealId && !contactId && !leadId && conv.contact_name && conv.contact_name.trim().length >= 3) {
         const name = conv.contact_name.trim();
 
-        // Pull last conversation messages for content-based disambiguation
+        // Pull first + last messages for content + date disambiguation
         const { data: msgs } = await supabase
           .from("messages")
-          .select("content")
+          .select("content, created_at")
           .eq("conversation_id", conv.id)
           .order("created_at", { ascending: false })
           .limit(20);
         const convText = (msgs || []).map((m: any) => String(m.content || "")).join(" ").toLowerCase();
         const convTokens = new Set(convText.split(/\W+/).filter((w) => w.length >= 4));
+        const firstMsgAt = (msgs && msgs.length)
+          ? new Date(msgs[msgs.length - 1].created_at).getTime()
+          : 0;
 
         const scoreCandidate = (text: string): number => {
           if (!convTokens.size || !text) return 0;
@@ -174,6 +177,19 @@ Deno.serve(async (req) => {
           let hits = 0;
           for (const t of cand) if (convTokens.has(t)) hits++;
           return hits;
+        };
+
+        // Date proximity bonus: +3 if entity created within 7d of first message,
+        // +2 within 30d, +1 within 90d (only when first message timestamp known)
+        const dateBonus = (createdAtStr?: string): number => {
+          if (!firstMsgAt || !createdAtStr) return 0;
+          const t = new Date(createdAtStr).getTime();
+          if (!t) return 0;
+          const diffDays = Math.abs(firstMsgAt - t) / 86_400_000;
+          if (diffDays <= 7) return 3;
+          if (diffDays <= 30) return 2;
+          if (diffDays <= 90) return 1;
+          return 0;
         };
 
         const pickBest = async (entity: "deal" | "lead" | "contact", ids: string[]) => {
@@ -186,11 +202,11 @@ Deno.serve(async (req) => {
               const e: any = await callBitrix(endpoint, token, getMethod, { id });
               const blob = [e?.TITLE, e?.NAME, e?.LAST_NAME, e?.COMMENTS, e?.ADDITIONAL_INFO]
                 .filter(Boolean).join(" ");
-              const s = scoreCandidate(blob);
+              const s = scoreCandidate(blob) + dateBonus(e?.DATE_CREATE);
               if (s > bestScore) { bestScore = s; bestId = id; }
             } catch (_e) { /* ignore */ }
           }
-          // If multiple candidates and no content overlap, refuse to guess
+          // If multiple candidates and no signal at all, refuse to guess
           if (ids.length > 1 && bestScore <= 0) return null as any;
           return bestId;
         };
