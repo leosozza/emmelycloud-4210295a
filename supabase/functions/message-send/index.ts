@@ -333,24 +333,18 @@ Deno.serve(async (req) => {
           const src = resolvedInteractiveData.url || resolvedInteractiveData;
           wuzapiPayload = { Phone: wuzapiPhone, Document: await toDataUri(src, "application/pdf"), FileName: resolvedInteractiveData.filename || "documento", Caption: content };
         } else if (message_type === "audio" && resolvedInteractiveData) {
+          // Per WUZAPI docs (/chat/send/audio): Audio accepts a public HTTP URL
+          // directly (no need to base64-encode). Mimetype overrides detection,
+          // PTT=true renders as a voice note in WhatsApp.
+          wuzapiEndpoint = "/chat/send/audio";
           const src = resolvedInteractiveData.url || resolvedInteractiveData;
-          // WhatsApp PTT requires ogg/opus container. If we recorded webm (Chrome default),
-          // fall back to /chat/send/document so WhatsApp delivers it as an audio attachment
-          // instead of silently dropping a malformed PTT.
-          const audioMime = (media_mime_type || "").toLowerCase();
-          const isOggOpus = audioMime.includes("ogg");
-          if (isOggOpus) {
-            wuzapiEndpoint = "/chat/send/audio";
-            wuzapiPayload = { Phone: wuzapiPhone, Audio: await toDataUri(src, "audio/ogg") };
-          } else {
-            wuzapiEndpoint = "/chat/send/document";
-            wuzapiPayload = {
-              Phone: wuzapiPhone,
-              Document: await toDataUri(src, audioMime || "audio/webm"),
-              FileName: file_name || `audio.${audioMime.includes("webm") ? "webm" : "mp3"}`,
-              Caption: "",
-            };
-          }
+          const audioMime = (media_mime_type || "audio/ogg; codecs=opus").toLowerCase();
+          wuzapiPayload = {
+            Phone: wuzapiPhone,
+            Audio: src,
+            Mimetype: audioMime,
+            PTT: true,
+          };
         } else if (message_type === "video" && resolvedInteractiveData) {
           wuzapiEndpoint = "/chat/send/video";
           const src = resolvedInteractiveData.url || resolvedInteractiveData;
