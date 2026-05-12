@@ -92,21 +92,10 @@ export function ChatInput({
         setRecordingTime(0);
 
         const blob = new Blob(chunks, { type: mimeType });
-        const reader = new FileReader();
-        reader.onloadend = () => {
-        const base64 = (reader.result as string).split(",")[1];
-          if (base64) {
-            onSendMedia({
-              type: "audio",
-              base64,
-              // Use the REAL recorded mime (Chrome usually gives webm/opus, not ogg).
-              // Lying about the container makes WhatsApp silently drop the PTT.
-              mimeType,
-              fileName: `audio-${Date.now()}.${mimeType.includes("ogg") ? "ogg" : "webm"}`,
-            });
-          }
-        };
-        reader.readAsDataURL(blob);
+        const url = URL.createObjectURL(blob);
+        setPreviewBlob(blob);
+        setPreviewUrl(url);
+        setPreviewMime(mimeType);
       };
 
       recorder.start();
