@@ -283,6 +283,21 @@ export function ChatPanel({
                   {isAiMode ? "IA" : "Humano"}
                 </Badge>
               </div>
+              {(conversation.contact_phone || conversation.contact_email || conversation.contact_instagram) && (
+                <div className="text-xs text-muted-foreground truncate">
+                  {conversation.contact_phone
+                    ? (() => {
+                        const d = String(conversation.contact_phone).replace(/\D/g, "");
+                        if (d.length === 13 && d.startsWith("55")) return `+55 (${d.slice(2,4)}) ${d.slice(4,9)}-${d.slice(9)}`;
+                        if (d.length === 12 && d.startsWith("55")) return `+55 (${d.slice(2,4)}) ${d.slice(4,8)}-${d.slice(8)}`;
+                        if (d.length === 12 && d.startsWith("351")) return `+351 ${d.slice(3,6)} ${d.slice(6,9)} ${d.slice(9)}`;
+                        return `+${d}`;
+                      })()
+                    : conversation.contact_instagram
+                      ? `@${conversation.contact_instagram}`
+                      : conversation.contact_email}
+                </div>
+              )}
               <Badge
                 variant="outline"
                 className={`text-[10px] h-5 ${
