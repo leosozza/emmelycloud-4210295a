@@ -271,9 +271,9 @@ export function MessageBubble({ msg, conversationId, workspaceId, containerWidth
           </span>
           {isOutgoing && (
             <span className={cn(
-              msg.status === "read" || msg.status === "played" ? "text-sky-500" : "text-muted-foreground"
+              (msg.delivery_status || msg.status) === "read" || (msg.delivery_status || msg.status) === "played" ? "text-sky-500" : "text-muted-foreground"
             )}>
-              {getStatusIcon(msg.status)}
+              {getStatusIcon(msg.delivery_status || msg.status)}
             </span>
           )}
         </div>
