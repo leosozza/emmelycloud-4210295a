@@ -153,10 +153,89 @@ Deno.serve(async (req) => {
         }
       }
 
+      // Fallback 2: search by name (TITLE/NAME) when phone didn't match
+      let matchedByName = false;
+      if (!dealId && !contactId && !leadId && conv.contact_name && conv.contact_name.trim().length >= 3) {
+        const name = conv.contact_name.trim();
+        try {
+          // Search Deals by TITLE
+          const deals: any = await callBitrix(endpoint, token, "crm.deal.list", {
+            filter: { "%TITLE": name },
+            select: ["ID"],
+            order: { ID: "DESC" },
+            start: 0,
+          });
+          if (Array.isArray(deals) && deals.length && deals.length <= 5) {
+            dealId = String(deals[0].ID);
+            matchedByName = true;
+          }
+        } catch (_e) { /* ignore */ }
+
+        if (!dealId) {
+          try {
+            const leads: any = await callBitrix(endpoint, token, "crm.lead.list", {
+              filter: { "%TITLE": name },
+              select: ["ID"],
+              order: { ID: "DESC" },
+              start: 0,
+            });
+            if (Array.isArray(leads) && leads.length && leads.length <= 5) {
+              leadId = String(leads[0].ID);
+              matchedByName = true;
+            }
+          } catch (_e) { /* ignore */ }
+        }
+
+        if (!dealId && !leadId) {
+          try {
+            const contacts: any = await callBitrix(endpoint, token, "crm.contact.list", {
+              filter: { "%NAME": name },
+              select: ["ID"],
+              order: { ID: "DESC" },
+              start: 0,
+            });
+            if (Array.isArray(contacts) && contacts.length && contacts.length <= 5) {
+              contactId = String(contacts[0].ID);
+              matchedByName = true;
+            }
+          } catch (_e) { /* ignore */ }
+        }
+      }
+
       if (!dealId && !contactId && !leadId) {
         unmatched++;
         results.push({ id: conv.id, phone: conv.contact_phone, name: conv.contact_name, matched: false });
         continue;
+      }
+
+      // Write phone back to Bitrix entity when matched by name (so future lookups work)
+      if (matchedByName && conv.contact_phone && !dryRun) {
+        const phoneField = [{ VALUE: conv.contact_phone, VALUE_TYPE: "MOBILE" }];
+        try {
+          if (dealId) {
+            // Deals don't have PHONE directly; attach to its contact instead
+            const deal: any = await callBitrix(endpoint, token, "crm.deal.get", { id: dealId });
+            const cId = deal?.CONTACT_ID;
+            if (cId) {
+              await callBitrix(endpoint, token, "crm.contact.update", {
+                id: cId,
+                fields: { PHONE: phoneField },
+              });
+            }
+          } else if (leadId) {
+            await callBitrix(endpoint, token, "crm.lead.update", {
+              id: leadId,
+              fields: { PHONE: phoneField },
+            });
+          } else if (contactId) {
+            await callBitrix(endpoint, token, "crm.contact.update", {
+              id: contactId,
+              fields: { PHONE: phoneField },
+            });
+          }
+        } catch (e: any) {
+          console.warn(`[BACKFILL-LINK] phone write-back failed:`, e?.message);
+        }
       }
 
       const newBotState = { ...(conv.bot_state || {}) } as any;
@@ -176,6 +255,7 @@ Deno.serve(async (req) => {
         phone: conv.contact_phone,
         name: conv.contact_name,
         matched: true,
+        match_type: matchedVariant ? "phone" : (matchedByName ? "name" : "unknown"),
         variant: matchedVariant,
         deal_id: dealId,
         contact_id: contactId,
