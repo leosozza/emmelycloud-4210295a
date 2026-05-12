@@ -547,10 +547,10 @@ Deno.serve(async (req) => {
             : rawDoc;
           wuzapiPayload = { Phone: wuzapiPhone, Document: docData, FileName: resolvedInteractiveData.filename || "documento", Caption: content };
         } else if (message_type === "audio" && resolvedInteractiveData) {
-          // WUZAPI /chat/send/audio. WhatsApp voice notes (PTT) MUST be ogg/opus —
-          // sending mp3 bytes labeled as ogg/opus results in "áudio indisponível"
-          // on the recipient. Detect actual format from URL/data URI and use the
-          // correct mimetype; only enable PTT for real opus.
+          // WUZAPI /chat/send/audio. Some PowerZap links are named .mp3 and even
+          // served as audio/mpeg, but the bytes are WebM/Opus. WhatsApp iOS shows
+          // "audio unavailable" for that mismatch, so inspect the bytes and remux
+          // WebM/Opus into Ogg/Opus before sending as a voice note.
           wuzapiEndpoint = "/chat/send/audio";
           const src = resolvedInteractiveData.url || resolvedInteractiveData;
           const srcStr = String(src);
@@ -571,15 +571,36 @@ Deno.serve(async (req) => {
             if (m && m !== "application/octet-stream") detectedMime = m;
           }
           const b64 = rawAudio.startsWith("data:") ? (rawAudio.split(",")[1] ?? "") : rawAudio;
+          let audioBytes = base64ToBytes(b64);
+          detectedMime = detectMimeFromBytes(audioBytes, detectedMime);
+          if (detectedMime === "audio/webm") {
+            const oggBytes = remuxWebmOpusToOgg(audioBytes);
+            if (oggBytes) {
+              audioBytes = oggBytes;
+              detectedMime = "audio/ogg";
+              console.log("[MESSAGE-SEND] Remuxed WebM/Opus audio to Ogg/Opus for WhatsApp playback");
+            } else {
+              console.warn("[MESSAGE-SEND] WebM/Opus remux failed; falling back to document send");
+              wuzapiEndpoint = "/chat/send/document";
+              wuzapiPayload = {
+                Phone: wuzapiPhone,
+                Document: `data:application/octet-stream;base64,${bytesToBase64(audioBytes)}`,
+                FileName: resolvedInteractiveData.filename || "audio.webm",
+                Caption: content || "Áudio",
+              };
+            }
+          }
           const isOpus = detectedMime === "audio/ogg" || detectedMime === "audio/opus";
           const finalMime = isOpus ? "audio/ogg" : detectedMime;
-          const audioData = `data:${finalMime};base64,${b64}`;
+          const audioData = `data:${finalMime};base64,${bytesToBase64(audioBytes)}`;
+          if (wuzapiEndpoint === "/chat/send/audio") {
           wuzapiPayload = {
             Phone: wuzapiPhone,
             Audio: audioData,
             Mimetype: isOpus ? "audio/ogg; codecs=opus" : finalMime,
             PTT: isOpus,
           };
+          }
         } else if (message_type === "video" && resolvedInteractiveData) {
           wuzapiEndpoint = "/chat/send/video";
           const src = resolvedInteractiveData.url || resolvedInteractiveData;
