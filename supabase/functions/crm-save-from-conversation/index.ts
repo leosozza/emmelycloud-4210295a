@@ -106,9 +106,8 @@ Deno.serve(async (req) => {
       const fields: any = {
         TITLE: conv.contact_name || "Lead via Atendimento",
         SOURCE_ID: conv.channel === "whatsapp" ? "WHATSAPP" : "OTHER",
-        COMMENTS: conv.last_message_preview || "",
+        COMMENTS: [conv.last_message_preview || "", conv.contact_lid ? `WhatsApp LID: ${conv.contact_lid}` : ""].filter(Boolean).join("\n"),
       };
-      if (conv.contact_lid) fields.IM = [{ VALUE: `imol|emmely_connector|${conv.contact_lid}`, VALUE_TYPE: "OPENLINE" }];
       if (conv.contact_phone) fields.PHONE = [{ VALUE: conv.contact_phone, VALUE_TYPE: "WORK" }];
       if (conv.contact_email) fields.EMAIL = [{ VALUE: conv.contact_email, VALUE_TYPE: "WORK" }];
       entityId = await callBitrix(endpoint, token, "crm.lead.add", { fields });
