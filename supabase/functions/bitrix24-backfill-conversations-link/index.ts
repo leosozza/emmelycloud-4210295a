@@ -234,9 +234,12 @@ Deno.serve(async (req) => {
           return bestId;
         };
 
+        // Channel-suffixed variants first (e.g. "Davi - WhatsApp BR") — high precision
+        const channelSuffixes = ["WhatsApp BR", "WhatsApp PT", "WhatsApp", "Instagram", "Email", "Webchat"];
+        const channelQueries = channelSuffixes.map((s) => `${name} - ${s}`);
         // Try first/last name tokens too (e.g. "Ruth Silva" → also search "Ruth")
         const nameTokens = name.split(/\s+/).filter((t) => t.length >= 3);
-        const nameQueries = Array.from(new Set([name, ...nameTokens]));
+        const nameQueries = Array.from(new Set([...channelQueries, name, ...nameTokens]));
 
         const searchEntity = async (
           method: string, filterKey: string, entity: "deal" | "lead" | "contact"
