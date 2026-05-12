@@ -92,7 +92,9 @@ export function MessageBubble({ msg, conversationId, workspaceId, containerWidth
     if (feedbackGiven) return;
     setFeedbackGiven(rating);
     try {
-      await supabase.from("conversation_feedback" as never).insert({
+      await (supabase as unknown as { from: (table: string) => { insert: (payload: unknown) => Promise<unknown> } })
+        .from("conversation_feedback")
+        .insert({
         conversation_id: conversationId || msg.conversation_id,
         workspace_id: workspaceId,
         message_id: msg.id,
