@@ -549,8 +549,8 @@ async function handleConnectorMessage(supabase: any, integration: any, payload: 
           return "document";
         };
 
-        // 1. If text present, send it first
-        if (cleanText) {
+        // 1. If text present, send it first (unless it was just an audio URL that we already extracted)
+        if (cleanText && !suppressText) {
           const sendRes = await fetch(`${supabaseUrl}/functions/v1/message-send`, {
             method: "POST",
             headers: {
