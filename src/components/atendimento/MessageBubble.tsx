@@ -30,16 +30,25 @@ function getSourceLabel(msg: Message) {
   return null;
 }
 
-function getStatusIcon(status: string) {
-  switch (status) {
-    case "sent":
-      return <Check className="h-3 w-3" />;
+function getStatusIcon(status?: string | null) {
+  const s = (status || "").toLowerCase();
+  switch (s) {
+    case "pending":
+    case "queued":
+    case "sending":
+      return <Clock className="h-3 w-3" />;
     case "delivered":
       return <CheckCheck className="h-3 w-3" />;
     case "read":
-      return <CheckCheck className="h-3 w-3 text-primary" />;
+    case "played":
+      return <CheckCheck className="h-3 w-3 text-sky-500" />;
+    case "failed":
+    case "error":
+      return <Clock className="h-3 w-3 text-destructive" />;
+    case "sent":
     default:
-      return <Clock className="h-3 w-3" />;
+      // Once persisted in DB, treat as sent (single check) by default
+      return <Check className="h-3 w-3" />;
   }
 }
 
@@ -233,7 +242,7 @@ export function MessageBubble({ msg, conversationId, workspaceId, containerWidth
           </span>
           {isOutgoing && (
             <span className={cn(
-              msg.status === "read" ? "text-primary" : "text-muted-foreground"
+              msg.status === "read" || msg.status === "played" ? "text-sky-500" : "text-muted-foreground"
             )}>
               {getStatusIcon(msg.status)}
             </span>
