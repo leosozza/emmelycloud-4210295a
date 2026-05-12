@@ -1056,7 +1056,7 @@ function renderHtml(opts: {
           stream.getTracks().forEach(function(t) { t.stop(); });
           var blob = new Blob(_audioChunks, { type: mime });
           if (blob.size === 0) { setStatus('Áudio vazio', '#f59e0b'); return; }
-          sendMedia(blob, 'audio-' + Date.now() + '.ogg', 'audio/ogg', 'audio');
+          showAudioPreview(blob);
         };
         _mediaRecorder.start();
         if (btn) { btn.classList.add('recording'); btn.innerHTML = '${B24_ICONS.stop}'; btn.title = 'Parar gravação'; }
@@ -1064,6 +1064,33 @@ function renderHtml(opts: {
       }).catch(function(e) {
         setStatus('❌ Microfone negado: ' + e.message, '#ef4444');
       });
+    }
+
+    function showAudioPreview(blob) {
+      var bar = document.getElementById('client-send-bar');
+      if (!bar) { sendMedia(blob, 'audio-' + Date.now() + '.ogg', 'audio/ogg', 'audio'); return; }
+      var existing = document.getElementById('audio-preview-bar');
+      if (existing) { try { URL.revokeObjectURL(existing.dataset.url); } catch(e) {} existing.remove(); }
+      var url = URL.createObjectURL(blob);
+      var wrap = document.createElement('div');
+      wrap.id = 'audio-preview-bar';
+      wrap.dataset.url = url;
+      wrap.style.cssText = 'background:#f4f6f8;border-top:1px solid #dfe0e3;padding:8px 12px;display:flex;gap:8px;align-items:center';
+      wrap.innerHTML = '<audio controls src="' + url + '" style="flex:1;height:36px"></audio>' +
+        '<button class="icon-btn" type="button" id="audio-preview-cancel" title="Descartar">✕</button>' +
+        '<button id="audio-preview-send" style="background:#22c55e;color:#fff;border:none;border-radius:8px;padding:8px 12px;cursor:pointer;font-size:12px;font-weight:600;display:flex;align-items:center;gap:4px">${B24_ICONS.send} Enviar</button>';
+      bar.parentNode.insertBefore(wrap, bar);
+      document.getElementById('audio-preview-cancel').onclick = function() {
+        try { URL.revokeObjectURL(url); } catch(e) {}
+        wrap.remove();
+      };
+      document.getElementById('audio-preview-send').onclick = function() {
+        var sBtn = document.getElementById('audio-preview-send');
+        if (sBtn) { sBtn.disabled = true; sBtn.style.opacity = '0.6'; }
+        sendMedia(blob, 'audio-' + Date.now() + '.ogg', 'audio/ogg', 'audio');
+        try { URL.revokeObjectURL(url); } catch(e) {}
+        wrap.remove();
+      };
     }
 
     function autoResize(el) {
