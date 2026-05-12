@@ -273,7 +273,7 @@ export function MessageBubble({ msg, conversationId, workspaceId, containerWidth
             <span className={cn(
               (msg.delivery_status || msg.status) === "read" || (msg.delivery_status || msg.status) === "played" ? "text-sky-500" : "text-muted-foreground"
             )}>
-              {getStatusIcon(msg.status)}
+              {getStatusIcon(msg.delivery_status || msg.status)}
             </span>
           )}
         </div>
