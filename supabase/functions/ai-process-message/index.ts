@@ -1408,10 +1408,11 @@ async function extractUserMemory(supabase: any, supabaseUrl: string, serviceKey:
   for (const fact of facts) {
     if (!fact.key || !fact.value) continue;
     const { error: upsertErr } = await supabase.rpc("upsert_user_memory", {
-      p_contact_phone: conversation.contact_phone || conversation.contact_lid || null,
-      p_contact_instagram: conversation.contact_instagram || null,
-      p_contact_email: conversation.contact_email || null,
-      p_channel: channel, p_key: fact.key, p_value: String(fact.value), p_source: "auto",
+      p_channel: channel,
+      p_contact_id: contactId,
+      p_key: fact.key,
+      p_value: String(fact.value),
+      p_source: "auto",
     });
     if (upsertErr) console.error(`[AI-PROCESS] Memory upsert error for "${fact.key}":`, upsertErr.message);
   }
