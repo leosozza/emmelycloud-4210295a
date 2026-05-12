@@ -130,6 +130,32 @@ export function ChatInput({
     setRecordingTime(0);
   };
 
+  const discardPreview = () => {
+    if (previewUrl) URL.revokeObjectURL(previewUrl);
+    setPreviewBlob(null);
+    setPreviewUrl(null);
+    setPreviewMime("");
+  };
+
+  const sendPreview = () => {
+    if (!previewBlob || !onSendMedia) return;
+    const mimeType = previewMime;
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      const base64 = (reader.result as string).split(",")[1];
+      if (base64) {
+        onSendMedia({
+          type: "audio",
+          base64,
+          mimeType,
+          fileName: `audio-${Date.now()}.${mimeType.includes("ogg") ? "ogg" : "webm"}`,
+        });
+      }
+      discardPreview();
+    };
+    reader.readAsDataURL(previewBlob);
+  };
+
   // === File Attachment ===
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
