@@ -108,15 +108,23 @@ Deno.serve(async (req) => {
     const endpoint = integration.client_endpoint;
 
     // Pull conversations needing linkage
-    const { data: convs, error: cErr } = await supabase
+    let convsQuery = supabase
       .from("conversations")
       .select("id, contact_phone, contact_name, bot_state")
       .eq("channel", "whatsapp")
-      .not("contact_phone", "is", null)
-      .limit(limit);
+      .not("contact_phone", "is", null);
+    if (conversationId) {
+      convsQuery = convsQuery.eq("id", conversationId);
+    } else {
+      convsQuery = convsQuery.limit(limit);
+    }
+    const { data: convs, error: cErr } = await convsQuery;
     if (cErr) throw cErr;
 
-    const todo = (convs || []).filter((c: any) => !(c.bot_state && c.bot_state.bitrix_deal_id));
+    const todo = (convs || []).filter(
+      (c: any) => force || !(c.bot_state && c.bot_state.bitrix_deal_id)
+    );
+    console.log(`[BACKFILL-LINK] ${todo.length} conversations to process (force=${force})`);
     console.log(`[BACKFILL-LINK] ${todo.length} conversations to process`);
 
     const results: any[] = [];
