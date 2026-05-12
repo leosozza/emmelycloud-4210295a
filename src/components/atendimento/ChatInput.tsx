@@ -195,6 +195,35 @@ export function ChatInput({
     return `${m}:${s.toString().padStart(2, "0")}`;
   };
 
+  // === Audio Preview UI ===
+  if (previewUrl) {
+    return (
+      <div className="chat-input-area p-2.5 md:p-3 flex-shrink-0">
+        <div className="flex items-center gap-3 max-w-3xl mx-auto">
+          <Button
+            size="icon"
+            variant="ghost"
+            className="shrink-0 h-11 w-11 rounded-full text-destructive hover:bg-destructive/10"
+            onClick={discardPreview}
+            aria-label="Descartar áudio"
+          >
+            <X className="h-5 w-5" />
+          </Button>
+          <audio src={previewUrl} controls className="flex-1 h-11" />
+          <Button
+            size="icon"
+            className="shrink-0 h-11 w-11 rounded-full bg-primary hover:bg-primary/90 shadow-md"
+            onClick={sendPreview}
+            disabled={sending}
+            aria-label="Enviar áudio"
+          >
+            {sending ? <Loader2 className="h-5 w-5 animate-spin" /> : <Send className="h-5 w-5" />}
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
   // === Recording UI ===
   if (recording) {
     return (
