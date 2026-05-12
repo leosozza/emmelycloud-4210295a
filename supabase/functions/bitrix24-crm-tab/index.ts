@@ -530,6 +530,10 @@ function renderHtml(opts: {
     #client-send-bar button { background: #2283d8; color: #fff; border: none; border-radius: 8px; padding: 8px 12px; cursor: pointer; transition: background .15s; display: flex; align-items: center; gap: 4px; font-size: 12px; font-weight: 600; white-space: nowrap; }
     #client-send-bar button:hover { background: #1b6cb8; }
     #client-send-bar button:disabled { opacity: .5; cursor: not-allowed; }
+    #client-send-bar .icon-btn { background: #f4f6f8; color: #535c69; padding: 8px; }
+    #client-send-bar .icon-btn:hover { background: #e3e8ed; color: #2283d8; }
+    #client-send-bar .icon-btn.recording { background: #ef4444; color: #fff; animation: pulseRec 1s infinite; }
+    @keyframes pulseRec { 0%,100%{opacity:1} 50%{opacity:.6} }
     #status-msg { font-size: 11px; color: #959ca4; text-align: center; padding: 2px 16px; min-height: 14px; }
 
     /* Tab bar */
