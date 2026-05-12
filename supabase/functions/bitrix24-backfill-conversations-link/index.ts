@@ -255,6 +255,7 @@ Deno.serve(async (req) => {
         phone: conv.contact_phone,
         name: conv.contact_name,
         matched: true,
+        match_type: matchedVariant ? "phone" : (matchedByName ? "name" : "unknown"),
         variant: matchedVariant,
         deal_id: dealId,
         contact_id: contactId,
