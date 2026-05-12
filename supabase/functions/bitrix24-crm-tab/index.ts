@@ -361,6 +361,9 @@ const B24_ICONS = {
   notepad: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>`,
   use: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>`,
   at: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M16 8v5a3 3 0 0 0 6 0v-1a10 10 0 1 0-3.92 7.94"/></svg>`,
+  paperclip: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>`,
+  mic: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="22"/></svg>`,
+  stop: `<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>`,
 };
 
 function renderHtml(opts: {
@@ -527,6 +530,10 @@ function renderHtml(opts: {
     #client-send-bar button { background: #2283d8; color: #fff; border: none; border-radius: 8px; padding: 8px 12px; cursor: pointer; transition: background .15s; display: flex; align-items: center; gap: 4px; font-size: 12px; font-weight: 600; white-space: nowrap; }
     #client-send-bar button:hover { background: #1b6cb8; }
     #client-send-bar button:disabled { opacity: .5; cursor: not-allowed; }
+    #client-send-bar .icon-btn { background: #f4f6f8; color: #535c69; padding: 8px; }
+    #client-send-bar .icon-btn:hover { background: #e3e8ed; color: #2283d8; }
+    #client-send-bar .icon-btn.recording { background: #ef4444; color: #fff; animation: pulseRec 1s infinite; }
+    @keyframes pulseRec { 0%,100%{opacity:1} 50%{opacity:.6} }
     #status-msg { font-size: 11px; color: #959ca4; text-align: center; padding: 2px 16px; min-height: 14px; }
 
     /* Tab bar */
@@ -604,6 +611,9 @@ function renderHtml(opts: {
     
     ${conversationId ? `
     <div id="client-send-bar">
+      <input type="file" id="client-file-input" style="display:none" onchange="onFilePicked(event)" accept="image/*,audio/*,video/*,application/pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.zip" />
+      <button class="icon-btn" type="button" title="Anexar arquivo" onclick="document.getElementById('client-file-input').click()">${B24_ICONS.paperclip}</button>
+      <button class="icon-btn" id="mic-btn" type="button" title="Gravar áudio" onclick="toggleAudioRecording()">${B24_ICONS.mic}</button>
       <textarea id="client-input" rows="1" placeholder="Escreva ao cliente..." oninput="autoResize(this)"></textarea>
       <button onclick="sendClientMessage()" id="send-client-btn">${B24_ICONS.send} Enviar</button>
     </div>
@@ -739,7 +749,10 @@ function renderHtml(opts: {
       if (!existingBar) {
         var bar = document.createElement('div');
         bar.id = 'client-send-bar';
-        bar.innerHTML = '<textarea id="client-input" rows="1" placeholder="Escreva ao cliente..." oninput="autoResize(this)"></textarea>' +
+        bar.innerHTML = '<input type="file" id="client-file-input" style="display:none" onchange="onFilePicked(event)" accept="image/*,audio/*,video/*,application/pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.zip" />' +
+          '<button class="icon-btn" type="button" title="Anexar arquivo" onclick="document.getElementById(\\'client-file-input\\').click()">${B24_ICONS.paperclip}</button>' +
+          '<button class="icon-btn" id="mic-btn" type="button" title="Gravar áudio" onclick="toggleAudioRecording()">${B24_ICONS.mic}</button>' +
+          '<textarea id="client-input" rows="1" placeholder="Escreva ao cliente..." oninput="autoResize(this)"></textarea>' +
           '<button onclick="sendClientMessage()" id="send-client-btn">${B24_ICONS.send} Enviar</button>';
         messagesDiv.parentElement.insertBefore(bar, messagesDiv.nextSibling);
       }
@@ -937,6 +950,120 @@ function renderHtml(opts: {
           if (sendBtn) sendBtn.disabled = false;
         });
       }
+    }
+
+    // ── Media (file / audio) sending ──
+    function blobToBase64(blob) {
+      return new Promise(function(resolve, reject) {
+        var reader = new FileReader();
+        reader.onloadend = function() {
+          var s = String(reader.result || '');
+          var i = s.indexOf(',');
+          resolve(i >= 0 ? s.substring(i + 1) : s);
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(blob);
+      });
+    }
+
+    function ensureConversationThen(cb) {
+      if (CONVERSATION_ID) { cb(CONVERSATION_ID); return; }
+      var phone = PHONES.length > 0 ? PHONES[0] : null;
+      var channel = CHANNEL || (phone ? 'whatsapp' : 'webchat');
+      fetch(SUPABASE_URL + '/rest/v1/conversations', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_KEY, 'Authorization': 'Bearer ' + SUPABASE_KEY, 'Prefer': 'return=representation' },
+        body: JSON.stringify({ channel: channel, contact_name: CONTACT_NAME || 'Cliente Bitrix24', contact_phone: phone || null, status: 'open', unread_count: 0 })
+      })
+        .then(function(r) { return r.json(); })
+        .then(function(rows) {
+          var nc = Array.isArray(rows) ? rows[0] : rows;
+          if (!nc || !nc.id) throw new Error('Falha ao criar conversa');
+          CONVERSATION_ID = nc.id;
+          cb(nc.id);
+        })
+        .catch(function(e) { setStatus('❌ ' + e.message, '#ef4444'); });
+    }
+
+    function sendMedia(blob, fileName, mimeType, messageType) {
+      setStatus('A enviar ' + (messageType === 'audio' ? 'áudio' : (messageType === 'image' ? 'imagem' : 'arquivo')) + '...', '#888');
+      blobToBase64(blob).then(function(b64) {
+        ensureConversationThen(function(convId) {
+          var caption = '';
+          var inp = document.getElementById('client-input');
+          if (inp && messageType !== 'audio') { caption = (inp.value || '').trim(); }
+          fetch(SUPABASE_URL + '/functions/v1/message-send', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_KEY },
+            body: JSON.stringify({
+              conversation_id: convId,
+              content: caption,
+              message_type: messageType,
+              media_base64: b64,
+              media_mime_type: mimeType,
+              file_name: fileName
+            })
+          })
+            .then(function(r) { return r.json(); })
+            .then(function(d) {
+              if (d && d.error) throw new Error(d.error);
+              setStatus('✅ Enviado', '#22c55e');
+              if (inp && messageType !== 'audio') { inp.value = ''; autoResize(inp); }
+              var container = document.getElementById('messages');
+              if (container) {
+                var div = document.createElement('div');
+                div.style.cssText = 'display:flex;justify-content:flex-end;margin-bottom:6px';
+                var label = messageType === 'audio' ? '🎤 Áudio enviado' : (messageType === 'image' ? '🖼️ Imagem: ' + fileName : '📎 ' + fileName);
+                div.innerHTML = '<div style="background:#2283d8;color:#fff;padding:8px 12px;border-radius:12px 12px 2px 12px;max-width:80%;font-size:13px">' + label + '</div>';
+                container.appendChild(div);
+                container.scrollTop = container.scrollHeight;
+              }
+            })
+            .catch(function(e) { setStatus('❌ ' + e.message, '#ef4444'); });
+        });
+      });
+    }
+
+    function onFilePicked(ev) {
+      var f = ev.target.files && ev.target.files[0];
+      ev.target.value = '';
+      if (!f) return;
+      var mime = f.type || 'application/octet-stream';
+      var mt = mime.indexOf('image/') === 0 ? 'image' : (mime.indexOf('audio/') === 0 ? 'audio' : 'document');
+      sendMedia(f, f.name, mime, mt);
+    }
+
+    var _mediaRecorder = null;
+    var _audioChunks = [];
+    function toggleAudioRecording() {
+      var btn = document.getElementById('mic-btn');
+      if (_mediaRecorder && _mediaRecorder.state === 'recording') {
+        _mediaRecorder.stop();
+        return;
+      }
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        setStatus('Navegador não suporta gravação de áudio', '#ef4444'); return;
+      }
+      navigator.mediaDevices.getUserMedia({ audio: true }).then(function(stream) {
+        var mime = 'audio/webm;codecs=opus';
+        try { if (!MediaRecorder.isTypeSupported(mime)) mime = 'audio/ogg;codecs=opus'; } catch(e) {}
+        try { if (!MediaRecorder.isTypeSupported(mime)) mime = 'audio/webm'; } catch(e) {}
+        _audioChunks = [];
+        _mediaRecorder = new MediaRecorder(stream, { mimeType: mime });
+        _mediaRecorder.ondataavailable = function(e) { if (e.data && e.data.size > 0) _audioChunks.push(e.data); };
+        _mediaRecorder.onstop = function() {
+          if (btn) { btn.classList.remove('recording'); btn.innerHTML = '${B24_ICONS.mic}'; btn.title = 'Gravar áudio'; }
+          stream.getTracks().forEach(function(t) { t.stop(); });
+          var blob = new Blob(_audioChunks, { type: mime });
+          if (blob.size === 0) { setStatus('Áudio vazio', '#f59e0b'); return; }
+          sendMedia(blob, 'audio-' + Date.now() + '.ogg', 'audio/ogg', 'audio');
+        };
+        _mediaRecorder.start();
+        if (btn) { btn.classList.add('recording'); btn.innerHTML = '${B24_ICONS.stop}'; btn.title = 'Parar gravação'; }
+        setStatus('🎤 A gravar... clique no botão para parar', '#ef4444');
+      }).catch(function(e) {
+        setStatus('❌ Microfone negado: ' + e.message, '#ef4444');
+      });
     }
 
     function autoResize(el) {
