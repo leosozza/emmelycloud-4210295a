@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react";
+import { useParams, useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient, useInfiniteQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { ConversationList } from "@/components/atendimento/ConversationList";
@@ -9,7 +10,11 @@ import type { MediaPayload } from "@/components/atendimento/ChatInput";
 
 const MESSAGES_PAGE_SIZE = 50;
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export default function AtendimentoPage() {
+  const { convParam } = useParams<{ convParam?: string }>();
+  const navigate = useNavigate();
   const [selectedId, setSelectedId] = useState<string | undefined>();
   const [profileOpen, setProfileOpen] = useState(false);
   const queryClient = useQueryClient();
@@ -208,6 +213,29 @@ export default function AtendimentoPage() {
   const selectedConversation =
     conversations.find((c) => c.id === selectedId) ?? null;
 
+  // Sync URL param → selectedId (accepts conversation UUID or phone digits)
+  useEffect(() => {
+    if (!convParam) return;
+    if (UUID_RE.test(convParam)) {
+      if (convParam !== selectedId) setSelectedId(convParam);
+      return;
+    }
+    if (!conversations.length) return;
+    const digits = convParam.replace(/\D/g, "");
+    const match = conversations.find(
+      (c) => (c.contact_phone || "").replace(/\D/g, "") === digits
+    );
+    if (match && match.id !== selectedId) setSelectedId(match.id);
+  }, [convParam, conversations, selectedId]);
+
+  const selectConversation = useCallback(
+    (id: string | undefined) => {
+      setSelectedId(id);
+      navigate(id ? `/atendimento/${id}` : "/atendimento", { replace: true });
+    },
+    [navigate]
+  );
+
   return (
     <div
       className="-m-3 sm:-m-4 md:-m-6 flex bg-background h-[calc(100vh-3.5rem)] sm:h-[calc(100vh-5.5rem)]"
@@ -217,9 +245,9 @@ export default function AtendimentoPage() {
         <ConversationList
           conversations={conversations}
           selectedId={selectedId}
-          onSelect={setSelectedId}
+          onSelect={selectConversation}
           onDoubleSelect={(id) => {
-            setSelectedId(id);
+            selectConversation(id);
             setProfileOpen(true);
           }}
         />
@@ -231,7 +259,7 @@ export default function AtendimentoPage() {
           conversation={selectedConversation}
           messages={messages}
           quickReplies={quickReplies}
-          onBack={() => setSelectedId(undefined)}
+          onBack={() => selectConversation(undefined)}
           onToggleProfile={() => setProfileOpen((v) => !v)}
           onSendMessage={() => {
             queryClient.invalidateQueries({ queryKey: ["conversations"] });
