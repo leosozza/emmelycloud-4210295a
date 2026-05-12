@@ -3,12 +3,15 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ChannelIcon } from "./ChannelIcon";
-import { Search, Bot, User, BellDot } from "lucide-react";
+import { Search, Bot, User, BellDot, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { format, isToday, isYesterday } from "date-fns";
 import { useLocale } from "@/contexts/LocaleContext";
 import { useState, useMemo, useRef } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
+import { supabase } from "@/integrations/supabase/client";
+import { useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 import type { Conversation, ConversationChannel, ConversationStatus } from "@/types/conversation";
 
 type QuickFilter = "all" | "unread" | "ai" | "human";
