@@ -61,20 +61,46 @@ Deno.serve(async (req) => {
     const info = messageData.Info || messageData.info || {};
     const message = messageData.Message || messageData.message || {};
 
+    const pickIdentifierField = (fieldNames: string[]) => {
+      const visited = new Set<any>();
+      const scan = (value: any): string => {
+        if (!value || typeof value !== "object" || visited.has(value)) return "";
+        visited.add(value);
+        for (const name of fieldNames) {
+          const direct = value[name];
+          if (direct !== undefined && direct !== null && String(direct).trim() !== "") return String(direct).trim();
+        }
+        for (const nested of Object.values(value)) {
+          const found = scan(nested);
+          if (found) return found;
+        }
+        return "";
+      };
+      return scan(messageData) || scan(body);
+    };
+
+    const cleanWhatsappPhone = (value: string) => {
+      const jid = String(value || "").trim();
+      if (!jid || jid.includes("@lid") || jid.includes("@g.us")) return "";
+      return jid.replace(/@.*$/, "").replace(/[^0-9]/g, "");
+    };
+
     // WhatsApp (since 2024) sends TWO identifiers per message:
     //  - Chat:   "196847578665004@lid"           ← Linked ID (anonymous hash, NOT a phone)
     //  - Sender: "5511978659280@s.whatsapp.net"  ← real international phone number
     // We must persist BOTH: phone for Bitrix/CRM matching, LID for sending replies via WUZAPI.
-    const chatRaw   = info.Chat || info.RemoteJid || info.remoteJid || "";
-    const senderRaw = info.Sender || info.sender || info.SenderAlt || "";
+    const chatRaw   = info.Chat || info.chat || info.RemoteJid || info.remoteJid || pickIdentifierField(["Chat", "chat", "RemoteJid", "remoteJid", "JID", "jid"]) || "";
+    const senderRaw = info.Sender || info.sender || info.SenderAlt || info.senderAlt || info.Participant || info.participant || pickIdentifierField(["Sender", "sender", "SenderAlt", "senderAlt", "Participant", "participant"]) || "";
     // WhatsApp LID-system also exposes the real phone via these alt fields when available
-    const senderPnRaw = info.SenderPN || info.SenderPn || info.senderPn || info.sender_pn || "";
-    const participantPnRaw = info.ParticipantPN || info.ParticipantPn || info.participantPn || info.participant_pn || "";
+    const senderPnRaw = info.SenderPN || info.SenderPn || info.senderPn || info.sender_pn || pickIdentifierField(["SenderPN", "SenderPn", "senderPn", "sender_pn", "SenderPhone", "senderPhone"]) || "";
+    const participantPnRaw = info.ParticipantPN || info.ParticipantPn || info.participantPn || info.participant_pn || pickIdentifierField(["ParticipantPN", "ParticipantPn", "participantPn", "participant_pn", "ParticipantPhone", "participantPhone"]) || "";
+    const altPhoneRaw = pickIdentifierField(["Phone", "phone", "PhoneNumber", "phoneNumber", "Number", "number", "User", "user"]);
 
     // Pick a JID that is NOT @lid as the real phone source
     const realPhoneJid =
       (senderPnRaw && !senderPnRaw.includes("@lid") && senderPnRaw) ||
       (participantPnRaw && !participantPnRaw.includes("@lid") && participantPnRaw) ||
+      (altPhoneRaw && !altPhoneRaw.includes("@lid") && altPhoneRaw) ||
       (!senderRaw.includes("@lid") && senderRaw) ||
       (!chatRaw.includes("@lid") && chatRaw) ||
       "";
@@ -85,7 +111,7 @@ Deno.serve(async (req) => {
       (senderRaw.includes("@lid") && senderRaw) ||
       null;
 
-    let phone = realPhoneJid ? realPhoneJid.replace(/@.*$/, "").replace(/[^0-9]/g, "") : "";
+    let phone = realPhoneJid ? cleanWhatsappPhone(realPhoneJid) : "";
     const lidId = lidJid ? lidJid.replace(/@.*$/, "") : null;
 
     if (!phone && !lidId) {
@@ -95,7 +121,7 @@ Deno.serve(async (req) => {
       });
     }
 
-    console.log(`[WUZAPI-WEBHOOK] Identified — phone: ${phone || "(none)"} | lid: ${lidId || "(none)"} | chat: ${chatRaw} | sender: ${senderRaw}`);
+    console.log(`[WUZAPI-WEBHOOK] Identified — phone: ${phone || "(none)"} | lid: ${lidId || "(none)"} | chat: ${chatRaw} | sender: ${senderRaw} | senderPn: ${senderPnRaw || "-"} | participantPn: ${participantPnRaw || "-"}`);
 
     // If we only got a LID, try to resolve the real phone:
     //  1) Look up an existing conversation for this LID that already has contact_phone
@@ -141,8 +167,8 @@ Deno.serve(async (req) => {
               // Response shape: { code, success, data: { Users: { "<jid>": { VerifiedName, ... } } } } or similar
               const usersBlock = infoJson?.data?.Users || infoJson?.Users || {};
               const userInfo: any = usersBlock[`${lidId}@lid`] || Object.values(usersBlock)[0];
-              const candidate = userInfo?.JID || userInfo?.Jid || userInfo?.jid || userInfo?.Phone || userInfo?.PhoneNumber || "";
-              const cleaned = String(candidate).replace(/@.*$/, "").replace(/[^0-9]/g, "");
+              const candidate = userInfo?.JID || userInfo?.Jid || userInfo?.jid || userInfo?.Phone || userInfo?.PhoneNumber || userInfo?.Number || userInfo?.PN || "";
+              const cleaned = cleanWhatsappPhone(String(candidate));
               if (cleaned && cleaned !== lidId) {
                 phone = cleaned;
                 console.log(`[WUZAPI-WEBHOOK] Phone resolved from /user/info: ${phone}`);
