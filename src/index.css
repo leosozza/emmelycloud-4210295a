@@ -315,3 +315,41 @@
 html, body {
   overflow-x: hidden;
 }
+
+/* Chat message bubbles — WhatsApp-like differentiation */
+@layer components {
+  .msg-bubble-client {
+    background: hsl(var(--card));
+    color: hsl(var(--card-foreground));
+    border: 1px solid hsl(var(--border));
+    border-radius: 0.75rem;
+    border-top-left-radius: 0.25rem;
+    box-shadow: 0 1px 1px hsl(var(--foreground) / 0.05);
+  }
+  .msg-bubble-operator {
+    background: hsl(var(--primary) / 0.12);
+    color: hsl(var(--foreground));
+    border: 1px solid hsl(var(--primary) / 0.25);
+    border-radius: 0.75rem;
+    border-top-right-radius: 0.25rem;
+    box-shadow: 0 1px 1px hsl(var(--foreground) / 0.05);
+  }
+  .msg-bubble-ai {
+    background: hsl(var(--accent));
+    color: hsl(var(--accent-foreground));
+    border: 1px solid hsl(var(--accent) / 0.6);
+    border-radius: 0.75rem;
+    border-top-right-radius: 0.25rem;
+    box-shadow: 0 1px 1px hsl(var(--foreground) / 0.05);
+  }
+  .chat-source-label,
+  .chat-source-label-ai,
+  .chat-source-label-operator {
+    color: hsl(var(--muted-foreground));
+  }
+  .chat-source-label-ai { color: hsl(var(--primary)); }
+  .chat-msg-time {
+    font-size: 10px;
+    color: hsl(var(--muted-foreground));
+  }
+}
