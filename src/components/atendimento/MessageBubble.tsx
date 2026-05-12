@@ -183,22 +183,51 @@ export function MessageBubble({ msg, conversationId, workspaceId, containerWidth
             <span>Vídeo recebido — mídia não baixada</span>
           </div>
         ) : mediaKind === "document" && hasHttpUrl ? (
-          <div className="mt-1 mb-2">
-            <a
-              href={msg.media_url!}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-center gap-2 p-2 rounded-md bg-background/50 border border-border/50 text-xs font-medium hover:bg-background/80 transition-colors"
-            >
-              <div className="p-1.5 rounded bg-primary/10 text-primary">
-                <FileText className="h-4 w-4" />
+          (() => {
+            const url = msg.media_url!;
+            const isPdf = /\.pdf(\?|$)/i.test(url) || /pdf/i.test(rawType);
+            const fileName = msg.content?.replace(/^\[(Documento|Áudio|Imagem|Vídeo)\]\s*/i, "") || "Documento";
+            return (
+              <div className="mt-1 mb-2 space-y-1.5">
+                {isPdf && (
+                  <a
+                    href={url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="block rounded-md overflow-hidden border border-border/50 bg-background/50 hover:opacity-95 transition-opacity"
+                    title="Abrir PDF"
+                  >
+                    <object
+                      data={`${url}#toolbar=0&navpanes=0&view=FitH&page=1`}
+                      type="application/pdf"
+                      className="w-[260px] h-[180px] pointer-events-none bg-white"
+                    >
+                      <div className="flex items-center justify-center w-[260px] h-[180px] text-xs text-muted-foreground">
+                        Pré-visualização não disponível
+                      </div>
+                    </object>
+                  </a>
+                )}
+                <a
+                  href={url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  download
+                  className="flex items-center gap-2 p-2 rounded-md bg-background/50 border border-border/50 text-xs font-medium hover:bg-background/80 transition-colors"
+                >
+                  <div className="p-1.5 rounded bg-primary/10 text-primary">
+                    <FileText className="h-4 w-4" />
+                  </div>
+                  <div className="flex flex-col overflow-hidden">
+                    <span className="truncate max-w-[200px]">{fileName}</span>
+                    <span className="text-[10px] text-muted-foreground uppercase">
+                      {isPdf ? "PDF · clique para baixar" : "Documento · clique para baixar"}
+                    </span>
+                  </div>
+                </a>
               </div>
-              <div className="flex flex-col overflow-hidden">
-                <span className="truncate max-w-[180px]">{msg.content || "Documento"}</span>
-                <span className="text-[10px] text-muted-foreground uppercase">Documento</span>
-              </div>
-            </a>
-          </div>
+            );
+          })()
         ) : mediaKind === "document" ? (
           <div className="flex items-center gap-2 text-xs text-muted-foreground py-1.5 px-2 rounded-md bg-background/40 border border-border/40">
             <span>📎</span>
