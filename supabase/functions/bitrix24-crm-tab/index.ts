@@ -949,7 +949,120 @@ function renderHtml(opts: {
       }
     }
 
-    function autoResize(el) {
+    // ── Media (file / audio) sending ──
+    function blobToBase64(blob) {
+      return new Promise(function(resolve, reject) {
+        var reader = new FileReader();
+        reader.onloadend = function() {
+          var s = String(reader.result || '');
+          var i = s.indexOf(',');
+          resolve(i >= 0 ? s.substring(i + 1) : s);
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(blob);
+      });
+    }
+
+    function ensureConversationThen(cb) {
+      if (CONVERSATION_ID) { cb(CONVERSATION_ID); return; }
+      var phone = PHONES.length > 0 ? PHONES[0] : null;
+      var channel = CHANNEL || (phone ? 'whatsapp' : 'webchat');
+      fetch(SUPABASE_URL + '/rest/v1/conversations', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_KEY, 'Authorization': 'Bearer ' + SUPABASE_KEY, 'Prefer': 'return=representation' },
+        body: JSON.stringify({ channel: channel, contact_name: CONTACT_NAME || 'Cliente Bitrix24', contact_phone: phone || null, status: 'open', unread_count: 0 })
+      })
+        .then(function(r) { return r.json(); })
+        .then(function(rows) {
+          var nc = Array.isArray(rows) ? rows[0] : rows;
+          if (!nc || !nc.id) throw new Error('Falha ao criar conversa');
+          CONVERSATION_ID = nc.id;
+          cb(nc.id);
+        })
+        .catch(function(e) { setStatus('❌ ' + e.message, '#ef4444'); });
+    }
+
+    function sendMedia(blob, fileName, mimeType, messageType) {
+      setStatus('A enviar ' + (messageType === 'audio' ? 'áudio' : (messageType === 'image' ? 'imagem' : 'arquivo')) + '...', '#888');
+      blobToBase64(blob).then(function(b64) {
+        ensureConversationThen(function(convId) {
+          var caption = '';
+          var inp = document.getElementById('client-input');
+          if (inp && messageType !== 'audio') { caption = (inp.value || '').trim(); }
+          fetch(SUPABASE_URL + '/functions/v1/message-send', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_KEY },
+            body: JSON.stringify({
+              conversation_id: convId,
+              content: caption,
+              message_type: messageType,
+              media_base64: b64,
+              media_mime_type: mimeType,
+              file_name: fileName
+            })
+          })
+            .then(function(r) { return r.json(); })
+            .then(function(d) {
+              if (d && d.error) throw new Error(d.error);
+              setStatus('✅ Enviado', '#22c55e');
+              if (inp && messageType !== 'audio') { inp.value = ''; autoResize(inp); }
+              var container = document.getElementById('messages');
+              if (container) {
+                var div = document.createElement('div');
+                div.style.cssText = 'display:flex;justify-content:flex-end;margin-bottom:6px';
+                var label = messageType === 'audio' ? '🎤 Áudio enviado' : (messageType === 'image' ? '🖼️ Imagem: ' + fileName : '📎 ' + fileName);
+                div.innerHTML = '<div style="background:#2283d8;color:#fff;padding:8px 12px;border-radius:12px 12px 2px 12px;max-width:80%;font-size:13px">' + label + '</div>';
+                container.appendChild(div);
+                container.scrollTop = container.scrollHeight;
+              }
+            })
+            .catch(function(e) { setStatus('❌ ' + e.message, '#ef4444'); });
+        });
+      });
+    }
+
+    function onFilePicked(ev) {
+      var f = ev.target.files && ev.target.files[0];
+      ev.target.value = '';
+      if (!f) return;
+      var mime = f.type || 'application/octet-stream';
+      var mt = mime.indexOf('image/') === 0 ? 'image' : (mime.indexOf('audio/') === 0 ? 'audio' : 'document');
+      sendMedia(f, f.name, mime, mt);
+    }
+
+    var _mediaRecorder = null;
+    var _audioChunks = [];
+    function toggleAudioRecording() {
+      var btn = document.getElementById('mic-btn');
+      if (_mediaRecorder && _mediaRecorder.state === 'recording') {
+        _mediaRecorder.stop();
+        return;
+      }
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        setStatus('Navegador não suporta gravação de áudio', '#ef4444'); return;
+      }
+      navigator.mediaDevices.getUserMedia({ audio: true }).then(function(stream) {
+        var mime = 'audio/webm;codecs=opus';
+        try { if (!MediaRecorder.isTypeSupported(mime)) mime = 'audio/ogg;codecs=opus'; } catch(e) {}
+        try { if (!MediaRecorder.isTypeSupported(mime)) mime = 'audio/webm'; } catch(e) {}
+        _audioChunks = [];
+        _mediaRecorder = new MediaRecorder(stream, { mimeType: mime });
+        _mediaRecorder.ondataavailable = function(e) { if (e.data && e.data.size > 0) _audioChunks.push(e.data); };
+        _mediaRecorder.onstop = function() {
+          if (btn) { btn.classList.remove('recording'); btn.innerHTML = '${B24_ICONS.mic}'; btn.title = 'Gravar áudio'; }
+          stream.getTracks().forEach(function(t) { t.stop(); });
+          var blob = new Blob(_audioChunks, { type: mime });
+          if (blob.size === 0) { setStatus('Áudio vazio', '#f59e0b'); return; }
+          sendMedia(blob, 'audio-' + Date.now() + '.ogg', 'audio/ogg', 'audio');
+        };
+        _mediaRecorder.start();
+        if (btn) { btn.classList.add('recording'); btn.innerHTML = '${B24_ICONS.stop}'; btn.title = 'Parar gravação'; }
+        setStatus('🎤 A gravar... clique no botão para parar', '#ef4444');
+      }).catch(function(e) {
+        setStatus('❌ Microfone negado: ' + e.message, '#ef4444');
+      });
+    }
+
       if (!el) return;
       el.style.height = 'auto';
       el.style.height = Math.min(el.scrollHeight, 120) + 'px';
