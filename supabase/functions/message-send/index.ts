@@ -338,16 +338,18 @@ Deno.serve(async (req) => {
             : rawDoc;
           wuzapiPayload = { Phone: wuzapiPhone, Document: docData, FileName: resolvedInteractiveData.filename || "documento", Caption: content };
         } else if (message_type === "audio" && resolvedInteractiveData) {
-          // Per WUZAPI docs (/chat/send/audio): Audio accepts a public HTTP URL
-          // directly (no need to base64-encode). Mimetype overrides detection,
-          // PTT=true renders as a voice note in WhatsApp.
+          // WUZAPI requires Audio as a data URI starting with "data:audio/..."
           wuzapiEndpoint = "/chat/send/audio";
           const src = resolvedInteractiveData.url || resolvedInteractiveData;
-          const audioMime = (media_mime_type || "audio/ogg; codecs=opus").toLowerCase();
+          const rawAudio = await toDataUri(src, "audio/ogg");
+          // Force a clean "data:audio/ogg;base64,..." prefix (no codec params)
+          const audioData = rawAudio.startsWith("data:")
+            ? `data:audio/ogg;base64,${rawAudio.split(",")[1] ?? ""}`
+            : rawAudio;
           wuzapiPayload = {
             Phone: wuzapiPhone,
-            Audio: src,
-            Mimetype: audioMime,
+            Audio: audioData,
+            Mimetype: "audio/ogg; codecs=opus",
             PTT: true,
           };
         } else if (message_type === "video" && resolvedInteractiveData) {
