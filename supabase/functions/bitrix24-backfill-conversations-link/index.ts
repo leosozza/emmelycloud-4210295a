@@ -153,20 +153,52 @@ Deno.serve(async (req) => {
         }
       }
 
-      // Fallback 2: search by name (TITLE/NAME) when phone didn't match
+      // Fallback 2: search by name (TITLE/NAME) — disambiguate by message content when many candidates
       let matchedByName = false;
       if (!dealId && !contactId && !leadId && conv.contact_name && conv.contact_name.trim().length >= 3) {
         const name = conv.contact_name.trim();
+
+        // Pull last conversation messages for content-based disambiguation
+        const { data: msgs } = await supabase
+          .from("messages")
+          .select("content")
+          .eq("conversation_id", conv.id)
+          .order("created_at", { ascending: false })
+          .limit(20);
+        const convText = (msgs || []).map((m: any) => String(m.content || "")).join(" ").toLowerCase();
+        const convTokens = new Set(convText.split(/\W+/).filter((w) => w.length >= 4));
+
+        const scoreCandidate = (text: string): number => {
+          if (!convTokens.size || !text) return 0;
+          const cand = new Set(String(text).toLowerCase().split(/\W+/).filter((w) => w.length >= 4));
+          let hits = 0;
+          for (const t of cand) if (convTokens.has(t)) hits++;
+          return hits;
+        };
+
+        const pickBest = async (entity: "deal" | "lead" | "contact", ids: string[]) => {
+          if (ids.length === 1) return ids[0];
+          const getMethod = `crm.${entity}.get`;
+          let bestId = ids[0];
+          let bestScore = -1;
+          for (const id of ids.slice(0, 10)) {
+            try {
+              const e: any = await callBitrix(endpoint, token, getMethod, { id });
+              const blob = [e?.TITLE, e?.NAME, e?.LAST_NAME, e?.COMMENTS, e?.ADDITIONAL_INFO]
+                .filter(Boolean).join(" ");
+              const s = scoreCandidate(blob);
+              if (s > bestScore) { bestScore = s; bestId = id; }
+            } catch (_e) { /* ignore */ }
+          }
+          return bestScore > 0 ? bestId : ids[0];
+        };
+
         try {
-          // Search Deals by TITLE
           const deals: any = await callBitrix(endpoint, token, "crm.deal.list", {
-            filter: { "%TITLE": name },
-            select: ["ID"],
-            order: { ID: "DESC" },
-            start: 0,
+            filter: { "%TITLE": name }, select: ["ID"], order: { ID: "DESC" }, start: 0,
           });
-          if (Array.isArray(deals) && deals.length && deals.length <= 5) {
-            dealId = String(deals[0].ID);
+          if (Array.isArray(deals) && deals.length && deals.length <= 10) {
+            dealId = await pickBest("deal", deals.map((d: any) => String(d.ID)));
             matchedByName = true;
           }
         } catch (_e) { /* ignore */ }
@@ -174,13 +206,10 @@ Deno.serve(async (req) => {
         if (!dealId) {
           try {
             const leads: any = await callBitrix(endpoint, token, "crm.lead.list", {
-              filter: { "%TITLE": name },
-              select: ["ID"],
-              order: { ID: "DESC" },
-              start: 0,
+              filter: { "%TITLE": name }, select: ["ID"], order: { ID: "DESC" }, start: 0,
             });
-            if (Array.isArray(leads) && leads.length && leads.length <= 5) {
-              leadId = String(leads[0].ID);
+            if (Array.isArray(leads) && leads.length && leads.length <= 10) {
+              leadId = await pickBest("lead", leads.map((l: any) => String(l.ID)));
               matchedByName = true;
             }
           } catch (_e) { /* ignore */ }
@@ -189,13 +218,10 @@ Deno.serve(async (req) => {
         if (!dealId && !leadId) {
           try {
             const contacts: any = await callBitrix(endpoint, token, "crm.contact.list", {
-              filter: { "%NAME": name },
-              select: ["ID"],
-              order: { ID: "DESC" },
-              start: 0,
+              filter: { "%NAME": name }, select: ["ID"], order: { ID: "DESC" }, start: 0,
             });
-            if (Array.isArray(contacts) && contacts.length && contacts.length <= 5) {
-              contactId = String(contacts[0].ID);
+            if (Array.isArray(contacts) && contacts.length && contacts.length <= 10) {
+              contactId = await pickBest("contact", contacts.map((c: any) => String(c.ID)));
               matchedByName = true;
             }
           } catch (_e) { /* ignore */ }
