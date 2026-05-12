@@ -16,10 +16,13 @@ interface AudioMessageBubbleProps {
 }
 
 export function AudioMessageBubble({ msg }: AudioMessageBubbleProps) {
-  const initialTranscript = msg.content?.startsWith("🎤") ? msg.content.replace(/^🎤\s*/, "") : null;
+  const initialTranscript = msg.content && !["[Áudio]", "🎤 Áudio", "audio"].includes(msg.content.trim())
+    ? msg.content.replace(/^🎤\s*/, "")
+    : null;
   const [transcribing, setTranscribing] = useState(false);
   const [transcript, setTranscript] = useState<string | null>(initialTranscript);
-  const [showTranscript, setShowTranscript] = useState(Boolean(initialTranscript));
+  const [showTranscript, setShowTranscript] = useState(true);
+  const autoTriedRef = useRef(false);
 
   const handleTranscribe = async () => {
     if (!msg.media_url) return;
