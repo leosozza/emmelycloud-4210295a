@@ -225,7 +225,28 @@ Deno.serve(async (req) => {
         typeof payload === "string" ? payload : undefined,
       ];
       const found = candidates.find((candidate) => typeof candidate === "string" && candidate.trim().length > 0);
-      return found ? found.replace(/^data:[^;]+;base64,/, "") : undefined;
+      return found ? String(found).trim().replace(/^data:[^,]+,/i, "") : undefined;
+    };
+
+    const decodeBase64Bytes = (value: string): Uint8Array => {
+      const raw = String(value || "").trim().replace(/^data:[^,]+,/i, "");
+      const variants = [
+        raw.replace(/\s+/g, ""),
+        raw.replace(/\s+/g, "+"),
+        raw.replace(/-/g, "+").replace(/_/g, "/").replace(/\s+/g, ""),
+      ];
+
+      let lastErr: unknown;
+      for (const candidate of variants) {
+        if (!candidate) continue;
+        const padded = candidate.padEnd(candidate.length + ((4 - (candidate.length % 4)) % 4), "=");
+        try {
+          return Uint8Array.from(atob(padded), (c) => c.charCodeAt(0));
+        } catch (err) {
+          lastErr = err;
+        }
+      }
+      throw lastErr || new Error("Invalid base64 media payload");
     };
 
     const uploadMediaBytes = async (bytes: Uint8Array, kind: string, mime: string | null, filename: string | null) => {
@@ -310,7 +331,7 @@ Deno.serve(async (req) => {
           data: pickField(mediaNode, ["Data", "data", "Base64", "base64", "File", "file", "Body", "body"]),
         });
         if (!mediaUrl && embeddedBase64) {
-          const binary = Uint8Array.from(atob(embeddedBase64), (c) => c.charCodeAt(0));
+          const binary = decodeBase64Bytes(embeddedBase64);
           const uploaded = await uploadMediaBytes(binary, mediaDownloadKind, mediaMime, mediaFilename);
           if (uploaded) {
             mediaUrl = uploaded.publicUrl;
@@ -335,8 +356,8 @@ Deno.serve(async (req) => {
             DirectPath: pickField(mediaNode, ["DirectPath", "directPath"]),
             Mimetype: mediaMime,
             MimeType: mediaMime,
-            FileSHA256: normalizeBase64Field(pickField(mediaNode, ["FileSHA256", "FileSha256", "fileSha256"])),
-            FileEncSHA256: normalizeBase64Field(pickField(mediaNode, ["FileEncSHA256", "FileEncSha256", "fileEncSha256"])),
+            FileSHA256: normalizeBase64Field(pickField(mediaNode, ["FileSHA256", "fileSHA256", "FileSha256", "fileSha256", "file_sha256"])),
+            FileEncSHA256: normalizeBase64Field(pickField(mediaNode, ["FileEncSHA256", "fileEncSHA256", "FileEncSha256", "fileEncSha256", "file_enc_sha256"])),
             FileLength: pickField(mediaNode, ["FileLength", "fileLength"]),
             AudioLength: mediaDownloadKind === "audio" ? pickField(mediaNode, ["Seconds", "seconds", "Duration", "duration", "AudioLength", "audioLength"]) : undefined,
             MediaKey: normalizeBase64Field(pickField(mediaNode, ["MediaKey", "mediaKey"])),
@@ -403,9 +424,8 @@ Deno.serve(async (req) => {
           } else {
             const b64 = extractDownloadedBase64(dlJson);
             if (b64 && typeof b64 === "string") {
-              const cleanB64 = b64.replace(/\s/g, "+");
               try {
-                const binary = Uint8Array.from(atob(cleanB64), (c) => c.charCodeAt(0));
+                const binary = decodeBase64Bytes(b64);
                 const uploaded = await uploadMediaBytes(binary, mediaDownloadKind, mediaMime, mediaFilename);
                 if (uploaded) {
                   mediaUrl = uploaded.publicUrl;
@@ -582,6 +602,15 @@ Deno.serve(async (req) => {
       external_id: externalId,
       media_type: mediaType,
       media_url: mediaUrl,
+      metadata: mediaNode ? {
+        wuzapi_media: {
+          kind: mediaDownloadKind,
+          mime: mediaMime,
+          filename: mediaFilename,
+          downloaded: Boolean(mediaUrl),
+          node: mediaUrl ? undefined : mediaNode,
+        },
+      } : undefined,
       delivery_status: "delivered",
       sync_source: "bitrix24",
     });
