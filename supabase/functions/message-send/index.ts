@@ -338,19 +338,38 @@ Deno.serve(async (req) => {
             : rawDoc;
           wuzapiPayload = { Phone: wuzapiPhone, Document: docData, FileName: resolvedInteractiveData.filename || "documento", Caption: content };
         } else if (message_type === "audio" && resolvedInteractiveData) {
-          // WUZAPI requires Audio as a data URI starting with "data:audio/..."
+          // WUZAPI /chat/send/audio. WhatsApp voice notes (PTT) MUST be ogg/opus —
+          // sending mp3 bytes labeled as ogg/opus results in "áudio indisponível"
+          // on the recipient. Detect actual format from URL/data URI and use the
+          // correct mimetype; only enable PTT for real opus.
           wuzapiEndpoint = "/chat/send/audio";
           const src = resolvedInteractiveData.url || resolvedInteractiveData;
-          const rawAudio = await toDataUri(src, "audio/ogg");
-          // Force a clean "data:audio/ogg;base64,..." prefix (no codec params)
-          const audioData = rawAudio.startsWith("data:")
-            ? `data:audio/ogg;base64,${rawAudio.split(",")[1] ?? ""}`
-            : rawAudio;
+          const srcStr = String(src);
+          const lower = srcStr.toLowerCase();
+          let detectedMime = "audio/ogg";
+          if (lower.startsWith("data:")) {
+            detectedMime = lower.substring(5).split(";")[0] || "audio/ogg";
+          } else if (/\.mp3(\?|$)/.test(lower)) detectedMime = "audio/mpeg";
+          else if (/\.m4a(\?|$)/.test(lower) || /\.aac(\?|$)/.test(lower)) detectedMime = "audio/mp4";
+          else if (/\.wav(\?|$)/.test(lower)) detectedMime = "audio/wav";
+          else if (/\.opus(\?|$)/.test(lower)) detectedMime = "audio/ogg";
+          else if (/\.ogg(\?|$)/.test(lower)) detectedMime = "audio/ogg";
+
+          const rawAudio = await toDataUri(src, detectedMime);
+          // If toDataUri fetched a remote file, it may have set a more accurate mime
+          if (rawAudio.startsWith("data:")) {
+            const m = rawAudio.substring(5).split(";")[0];
+            if (m && m !== "application/octet-stream") detectedMime = m;
+          }
+          const b64 = rawAudio.startsWith("data:") ? (rawAudio.split(",")[1] ?? "") : rawAudio;
+          const isOpus = detectedMime === "audio/ogg" || detectedMime === "audio/opus";
+          const finalMime = isOpus ? "audio/ogg" : detectedMime;
+          const audioData = `data:${finalMime};base64,${b64}`;
           wuzapiPayload = {
             Phone: wuzapiPhone,
             Audio: audioData,
-            Mimetype: "audio/ogg; codecs=opus",
-            PTT: true,
+            Mimetype: isOpus ? "audio/ogg; codecs=opus" : finalMime,
+            PTT: isOpus,
           };
         } else if (message_type === "video" && resolvedInteractiveData) {
           wuzapiEndpoint = "/chat/send/video";
