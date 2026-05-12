@@ -213,6 +213,29 @@ export default function AtendimentoPage() {
   const selectedConversation =
     conversations.find((c) => c.id === selectedId) ?? null;
 
+  // Sync URL param → selectedId (accepts conversation UUID or phone digits)
+  useEffect(() => {
+    if (!convParam) return;
+    if (UUID_RE.test(convParam)) {
+      if (convParam !== selectedId) setSelectedId(convParam);
+      return;
+    }
+    if (!conversations.length) return;
+    const digits = convParam.replace(/\D/g, "");
+    const match = conversations.find(
+      (c) => (c.contact_phone || "").replace(/\D/g, "") === digits
+    );
+    if (match && match.id !== selectedId) setSelectedId(match.id);
+  }, [convParam, conversations, selectedId]);
+
+  const selectConversation = useCallback(
+    (id: string | undefined) => {
+      setSelectedId(id);
+      navigate(id ? `/atendimento/${id}` : "/atendimento", { replace: true });
+    },
+    [navigate]
+  );
+
   return (
     <div
       className="-m-3 sm:-m-4 md:-m-6 flex bg-background h-[calc(100vh-3.5rem)] sm:h-[calc(100vh-5.5rem)]"
