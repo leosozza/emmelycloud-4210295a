@@ -49,6 +49,23 @@ Deno.serve(async (req) => {
       messageData = body.data || body;
     }
 
+    // Handle delivery/read receipts → update outbound message delivery_status
+    if (eventType === "ReadReceipt" || eventType === "Receipt" || eventType === "readreceipt" || eventType === "receipt") {
+      try {
+        const r = messageData || {};
+        const ids: string[] = (r.MessageIDs || r.messageIds || r.Ids || r.IDs || r.ids || (r.MessageID ? [r.MessageID] : (r.id ? [r.id] : []))) as string[];
+        const receiptType = String(r.Type || r.type || r.ReadType || "").toLowerCase();
+        const newStatus = receiptType === "read" || receiptType === "played" ? "read"
+                        : receiptType === "delivery" || receiptType === "delivered" ? "delivered"
+                        : "delivered";
+        if (Array.isArray(ids) && ids.length) {
+          await supabase.from("messages").update({ delivery_status: newStatus, ...(newStatus === "read" ? { read_at: new Date().toISOString() } : {}) }).in("external_id", ids);
+          console.log(`[WUZAPI-WEBHOOK] Receipt updated ${ids.length} message(s) → ${newStatus}`);
+        }
+      } catch (e) { console.warn("[WUZAPI-WEBHOOK] receipt error", e); }
+      return new Response(JSON.stringify({ ok: true, receipt: true }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
+
     // Only process incoming messages
     if (eventType !== "Message" && eventType !== "message") {
       console.log(`[WUZAPI-WEBHOOK] Ignoring event type: ${eventType}`);
@@ -334,8 +351,46 @@ Deno.serve(async (req) => {
     } else if (message.ReactionMessage || message.reactionMessage) {
       const rx = message.ReactionMessage || message.reactionMessage;
       content = `[Reação] ${rx.Text || rx.text || ""}`.trim();
+    } else if (message.PollCreationMessage || message.pollCreationMessage || message.PollCreationMessageV3 || message.pollCreationMessageV3) {
+      const poll = message.PollCreationMessage || message.pollCreationMessage || message.PollCreationMessageV3 || message.pollCreationMessageV3;
+      content = `[Enquete] ${poll.Name || poll.name || ""}`.trim();
+    } else if (message.PollUpdateMessage || message.pollUpdateMessage) {
+      content = "[Voto em enquete]";
+    } else if (message.LiveLocationMessage || message.liveLocationMessage) {
+      content = "[Localização ao vivo]";
+    } else if (message.ButtonsResponseMessage || message.buttonsResponseMessage) {
+      const br = message.ButtonsResponseMessage || message.buttonsResponseMessage;
+      content = br.SelectedDisplayText || br.selectedDisplayText || br.SelectedButtonId || "[Botão selecionado]";
+    } else if (message.ListResponseMessage || message.listResponseMessage) {
+      const lr = message.ListResponseMessage || message.listResponseMessage;
+      content = lr.Title || lr.title || lr.SingleSelectReply?.SelectedRowId || "[Item selecionado]";
+    } else if (message.TemplateButtonReplyMessage || message.templateButtonReplyMessage) {
+      const tr = message.TemplateButtonReplyMessage || message.templateButtonReplyMessage;
+      content = tr.SelectedDisplayText || tr.selectedDisplayText || "[Resposta de template]";
+    } else if (message.InteractiveResponseMessage || message.interactiveResponseMessage) {
+      const ir = message.InteractiveResponseMessage || message.interactiveResponseMessage;
+      content = ir?.Body?.Text || ir?.body?.text || "[Resposta interativa]";
+    } else if (
+      message.SenderKeyDistributionMessage || message.senderKeyDistributionMessage ||
+      message.ProtocolMessage || message.protocolMessage ||
+      message.MessageContextInfo || message.messageContextInfo ||
+      message.KeepInChatMessage || message.keepInChatMessage ||
+      message.PinInChatMessage || message.pinInChatMessage
+    ) {
+      // System / metadata-only messages — silently skip without persisting noise
+      console.log(`[WUZAPI-WEBHOOK] Skipping system message. Keys=${Object.keys(message).join(",")}`);
+      return new Response(JSON.stringify({ ok: true, skipped: "system_message" }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
     } else {
-      console.warn(`[WUZAPI-WEBHOOK] Unsupported message type. Keys=${Object.keys(message).join(",")} payload=${JSON.stringify(message).slice(0, 800)}`);
+      console.warn(`[WUZAPI-WEBHOOK] Unsupported message type. Keys=${Object.keys(message).join(",")} payload=${JSON.stringify(message).slice(0, 1500)}`);
+      try {
+        await supabase.from("bitrix24_debug_logs").insert({
+          event_type: "wuzapi_unsupported_message",
+          direction: "inbound",
+          payload: { keys: Object.keys(message), message, info },
+        });
+      } catch (_e) { /* ignore */ }
       content = "[Mensagem não suportada]";
     }
 
