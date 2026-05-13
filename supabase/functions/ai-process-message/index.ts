@@ -459,9 +459,9 @@ Deno.serve(async (req) => {
     const historySection = compactSummaryContext || compressedHistory;
     // BUG FIX: Inject base_prompt (Persona Trainer) before system_prompt (Manual)
     const combinedPrompt = [(agent.base_prompt || "").trim(), (agent.system_prompt || "").trim()].filter(Boolean).join("\n\n");
-    const systemPrompt = combinedPrompt + personalityPrompt + knowledgeContext + memoryContext + historySection + contactContext + antiRepetitionPrompt + sentimentFlag + autoLangPrompt;
+    const systemPrompt = combinedPrompt + personalityPrompt + activeSkillPrompt + knowledgeContext + memoryContext + historySection + contactContext + antiRepetitionPrompt + sentimentFlag + autoLangPrompt;
 
-    console.log(`[AI-PROCESS] Context: recent=${recentMessages.length}, older=${olderMessages.length}, kb=${linkedDocs?.length || 0}, memory=${memoryContext ? "yes" : "no"}`);
+    console.log(`[AI-PROCESS] Context: recent=${recentMessages.length}, older=${olderMessages.length}, kb=${linkedDocs?.length || 0}, memory=${memoryContext ? "yes" : "no"}, skill=${activeSkillSlug || "-"}`);
 
     // 9. Build tools — combine agent_tools + built-in ReACT tools based on skills
     const allTools: any[] = [];
