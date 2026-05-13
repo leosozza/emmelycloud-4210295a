@@ -395,6 +395,78 @@ export function ContactProfile({ conversation, onClose }: ContactProfileProps) {
           </div>
         </CollapsibleSection>
 
+        <CollapsibleSection title="Estado da Conversa" defaultOpen>
+          <div className="space-y-2">
+            {ledger?.summary ? (
+              <p className="text-xs bg-muted/50 rounded p-2 leading-relaxed">{ledger.summary}</p>
+            ) : (
+              <p className="text-[11px] text-muted-foreground italic">Sem resumo. Clique em atualizar.</p>
+            )}
+
+            {Array.isArray(ledger?.open_intents) && ledger.open_intents.length > 0 && (
+              <div>
+                <p className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1 flex items-center gap-1">
+                  <Target className="h-2.5 w-2.5" /> Intenções abertas
+                </p>
+                <div className="flex flex-wrap gap-1">
+                  {ledger.open_intents.map((i: string, k: number) => (
+                    <Badge key={k} variant="secondary" className="text-[10px]">{i}</Badge>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {ledger?.collected_facts && Object.keys(ledger.collected_facts).length > 0 && (
+              <div>
+                <p className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1 flex items-center gap-1">
+                  <Brain className="h-2.5 w-2.5" /> Factos coletados
+                </p>
+                <div className="space-y-0.5">
+                  {Object.entries(ledger.collected_facts as Record<string, any>)
+                    .filter(([, v]) => v !== null && v !== "" && v !== undefined)
+                    .map(([k, v]) => (
+                      <div key={k} className="text-[11px] flex gap-1">
+                        <span className="text-muted-foreground capitalize">{k.replace(/_/g, " ")}:</span>
+                        <span className="font-medium truncate">{String(v)}</span>
+                      </div>
+                    ))}
+                </div>
+              </div>
+            )}
+
+            {Array.isArray(ledger?.blockers) && ledger.blockers.length > 0 && (
+              <div>
+                <p className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1 flex items-center gap-1">
+                  <AlertTriangle className="h-2.5 w-2.5 text-amber-500" /> Bloqueios
+                </p>
+                <div className="flex flex-wrap gap-1">
+                  {ledger.blockers.map((b: string, k: number) => (
+                    <Badge key={k} variant="outline" className="text-[10px] border-amber-500/40 text-amber-600">{b}</Badge>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {ledger?.next_action && (
+              <div className="text-[11px] bg-primary/5 border border-primary/20 rounded p-1.5">
+                <span className="text-[10px] uppercase tracking-wider text-primary mr-1">Próxima ação:</span>
+                {ledger.next_action}
+              </div>
+            )}
+
+            <Button
+              variant="outline"
+              size="sm"
+              className="w-full text-xs"
+              disabled={refreshingLedger}
+              onClick={handleRefreshLedger}
+            >
+              {refreshingLedger ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <RefreshCw className="h-3 w-3 mr-1" />}
+              {ledger ? "Atualizar agora" : "Gerar estado"}
+            </Button>
+          </div>
+        </CollapsibleSection>
+
         <CollapsibleSection title="IA">
           <div className="space-y-2">
             <Button
