@@ -5,7 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Loader2, Users } from "lucide-react";
 import { toast } from "sonner";
 
-interface BitrixUser { ID: string; NAME?: string; LAST_NAME?: string; EMAIL?: string }
+interface BitrixUser { id: string; name?: string; email?: string | null }
 interface AgentUserRow { id: string; bitrix_user_id: string; bitrix_user_name: string | null }
 
 export function BitrixUserLink({ agentId }: { agentId?: string }) {
@@ -42,15 +42,15 @@ export function BitrixUserLink({ agentId }: { agentId?: string }) {
     if (!agentId) return;
     setSaving(true);
     try {
-      const existing = linked.find(l => l.bitrix_user_id === u.ID);
+      const existing = linked.find(l => l.bitrix_user_id === u.id);
       if (existing) {
         const { error } = await supabase.from("ai_agent_users").delete().eq("id", existing.id);
         if (error) throw error;
         setLinked(prev => prev.filter(l => l.id !== existing.id));
       } else {
-        const name = [u.NAME, u.LAST_NAME].filter(Boolean).join(" ") || u.EMAIL || `User ${u.ID}`;
+        const name = u.name || u.email || `User ${u.id}`;
         const { data, error } = await supabase.from("ai_agent_users")
-          .insert({ agent_id: agentId, bitrix_user_id: u.ID, bitrix_user_name: name } as any)
+          .insert({ agent_id: agentId, bitrix_user_id: u.id, bitrix_user_name: name } as any)
           .select("id, bitrix_user_id, bitrix_user_name").single();
         if (error) throw error;
         setLinked(prev => [...prev, data as AgentUserRow]);
@@ -85,11 +85,11 @@ export function BitrixUserLink({ agentId }: { agentId?: string }) {
       ) : (
         <div className="flex flex-wrap gap-2 max-h-48 overflow-y-auto">
           {users.map(u => {
-            const selected = linked.some(l => l.bitrix_user_id === u.ID);
-            const label = [u.NAME, u.LAST_NAME].filter(Boolean).join(" ") || u.EMAIL || `User ${u.ID}`;
+            const selected = linked.some(l => l.bitrix_user_id === u.id);
+            const label = u.name || u.email || `User ${u.id}`;
             return (
               <Badge
-                key={u.ID}
+                key={u.id}
                 variant={selected ? "default" : "outline"}
                 className={`cursor-pointer text-xs py-1 px-3 ${saving ? "opacity-60" : ""}`}
                 onClick={() => !saving && toggle(u)}
