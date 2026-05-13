@@ -82,7 +82,7 @@ export default function TrainingPage() {
   const [convDateTo, setConvDateTo] = useState("");
   const [convPreview, setConvPreview] = useState<{ count: number; messages: number } | null>(null);
   const [loadingConvPreview, setLoadingConvPreview] = useState(false);
-  const [bitrixUsers, setBitrixUsers] = useState<Array<{ ID: string; NAME?: string; LAST_NAME?: string; EMAIL?: string }>>([]);
+  const [bitrixUsers, setBitrixUsers] = useState<Array<{ id: string; name?: string; email?: string }>>([]);
   const [convSelectedUserId, setConvSelectedUserId] = useState<string>("all");
   const [loadingBitrixUsers, setLoadingBitrixUsers] = useState(false);
 
@@ -636,7 +636,7 @@ export default function TrainingPage() {
       }).join("\n\n");
 
       const userLabel = convSelectedUserId !== "all"
-        ? ` — ${bitrixUsers.find(u => u.ID === convSelectedUserId)?.NAME || "user"} ${bitrixUsers.find(u => u.ID === convSelectedUserId)?.LAST_NAME || ""}`.trim()
+        ? ` — ${bitrixUsers.find(u => u.id === convSelectedUserId)?.name || "user"}`.trim()
         : "";
       const title = `Conversas ${convDateFrom} a ${convDateTo}${userLabel}`;
       await createDocWithChunks(title, fullContent, "conversation");
@@ -999,8 +999,8 @@ export default function TrainingPage() {
                 <SelectContent>
                   <SelectItem value="all">Todos os utilizadores</SelectItem>
                   {bitrixUsers.map(u => (
-                    <SelectItem key={u.ID} value={u.ID}>
-                      {[u.NAME, u.LAST_NAME].filter(Boolean).join(" ") || u.EMAIL || `User ${u.ID}`}
+                    <SelectItem key={u.id} value={u.id}>
+                      {u.name || u.email || `User ${u.id}`}
                     </SelectItem>
                   ))}
                 </SelectContent>
