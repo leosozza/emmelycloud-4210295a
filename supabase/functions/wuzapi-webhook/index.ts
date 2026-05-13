@@ -740,7 +740,6 @@ Deno.serve(async (req) => {
         body: JSON.stringify({
           conversation_id: conversationId,
           message_text: content,
-          message_type: messageType || "text",
           instance_id: instanceId || null,
         }),
       })
