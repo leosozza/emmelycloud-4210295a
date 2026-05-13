@@ -351,8 +351,46 @@ Deno.serve(async (req) => {
     } else if (message.ReactionMessage || message.reactionMessage) {
       const rx = message.ReactionMessage || message.reactionMessage;
       content = `[Reação] ${rx.Text || rx.text || ""}`.trim();
+    } else if (message.PollCreationMessage || message.pollCreationMessage || message.PollCreationMessageV3 || message.pollCreationMessageV3) {
+      const poll = message.PollCreationMessage || message.pollCreationMessage || message.PollCreationMessageV3 || message.pollCreationMessageV3;
+      content = `[Enquete] ${poll.Name || poll.name || ""}`.trim();
+    } else if (message.PollUpdateMessage || message.pollUpdateMessage) {
+      content = "[Voto em enquete]";
+    } else if (message.LiveLocationMessage || message.liveLocationMessage) {
+      content = "[Localização ao vivo]";
+    } else if (message.ButtonsResponseMessage || message.buttonsResponseMessage) {
+      const br = message.ButtonsResponseMessage || message.buttonsResponseMessage;
+      content = br.SelectedDisplayText || br.selectedDisplayText || br.SelectedButtonId || "[Botão selecionado]";
+    } else if (message.ListResponseMessage || message.listResponseMessage) {
+      const lr = message.ListResponseMessage || message.listResponseMessage;
+      content = lr.Title || lr.title || lr.SingleSelectReply?.SelectedRowId || "[Item selecionado]";
+    } else if (message.TemplateButtonReplyMessage || message.templateButtonReplyMessage) {
+      const tr = message.TemplateButtonReplyMessage || message.templateButtonReplyMessage;
+      content = tr.SelectedDisplayText || tr.selectedDisplayText || "[Resposta de template]";
+    } else if (message.InteractiveResponseMessage || message.interactiveResponseMessage) {
+      const ir = message.InteractiveResponseMessage || message.interactiveResponseMessage;
+      content = ir?.Body?.Text || ir?.body?.text || "[Resposta interativa]";
+    } else if (
+      message.SenderKeyDistributionMessage || message.senderKeyDistributionMessage ||
+      message.ProtocolMessage || message.protocolMessage ||
+      message.MessageContextInfo || message.messageContextInfo ||
+      message.KeepInChatMessage || message.keepInChatMessage ||
+      message.PinInChatMessage || message.pinInChatMessage
+    ) {
+      // System / metadata-only messages — silently skip without persisting noise
+      console.log(`[WUZAPI-WEBHOOK] Skipping system message. Keys=${Object.keys(message).join(",")}`);
+      return new Response(JSON.stringify({ ok: true, skipped: "system_message" }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
     } else {
-      console.warn(`[WUZAPI-WEBHOOK] Unsupported message type. Keys=${Object.keys(message).join(",")} payload=${JSON.stringify(message).slice(0, 800)}`);
+      console.warn(`[WUZAPI-WEBHOOK] Unsupported message type. Keys=${Object.keys(message).join(",")} payload=${JSON.stringify(message).slice(0, 1500)}`);
+      try {
+        await supabase.from("bitrix24_debug_logs").insert({
+          event_type: "wuzapi_unsupported_message",
+          direction: "inbound",
+          payload: { keys: Object.keys(message), message, info },
+        });
+      } catch (_e) { /* ignore */ }
       content = "[Mensagem não suportada]";
     }
 
