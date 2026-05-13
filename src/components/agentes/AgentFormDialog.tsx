@@ -21,6 +21,7 @@ import type { AIAgent, AIProvider, FlowOption, DocOption, CollectionOption } fro
 import { cn } from "@/lib/utils";
 import { SyncOllamaModelsButton } from "@/components/agentes/SyncOllamaModelsButton";
 import { BitrixUserLink } from "@/components/agentes/BitrixUserLink";
+import { AgentSkillsLibrary } from "@/components/agentes/AgentSkillsLibrary";
 
 const SKILL_TYPES = [
   { type: "crm", label: "Consultar CRM", description: "Buscar leads, propostas, contratos e casos no CRM", icon: "📊" },
@@ -586,6 +587,19 @@ export function AgentFormDialog({
                   </div>
                 )}
               </div>
+
+              {/* Biblioteca de Skills por Intenção */}
+              {isEditing && editingAgent.id && (
+                <div>
+                  <Label className="text-sm font-medium flex items-center gap-2">
+                    <Sparkles className="h-4 w-4" /> Skills por Intenção
+                  </Label>
+                  <p className="text-xs text-muted-foreground mb-2">
+                    Especialistas reutilizáveis. Quando uma intenção é detetada na mensagem, o agente assume a personalidade da skill e fica restrito às ferramentas permitidas por ela.
+                  </p>
+                  <AgentSkillsLibrary agentId={editingAgent.id as string} />
+                </div>
+              )}
 
               {/* Sub-agents */}
               <div>

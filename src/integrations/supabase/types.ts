@@ -97,6 +97,44 @@ export type Database = {
           },
         ]
       }
+      agent_skill_links: {
+        Row: {
+          agent_id: string
+          config_overrides: Json | null
+          created_at: string
+          id: string
+          is_enabled: boolean
+          priority: number
+          skill_definition_id: string
+        }
+        Insert: {
+          agent_id: string
+          config_overrides?: Json | null
+          created_at?: string
+          id?: string
+          is_enabled?: boolean
+          priority?: number
+          skill_definition_id: string
+        }
+        Update: {
+          agent_id?: string
+          config_overrides?: Json | null
+          created_at?: string
+          id?: string
+          is_enabled?: boolean
+          priority?: number
+          skill_definition_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "agent_skill_links_skill_definition_id_fkey"
+            columns: ["skill_definition_id"]
+            isOneToOne: false
+            referencedRelation: "skill_definitions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       agent_skills: {
         Row: {
           agent_id: string
@@ -3514,6 +3552,63 @@ export type Database = {
           rounds?: number
           scenario_prompt?: string
           status?: string
+        }
+        Relationships: []
+      }
+      skill_definitions: {
+        Row: {
+          allowed_tools: string[]
+          created_at: string
+          created_by: string | null
+          description: string | null
+          id: string
+          intent_description: string | null
+          intent_keywords: string[]
+          is_active: boolean
+          is_global: boolean
+          name: string
+          output_schema: Json | null
+          prompt_fragment: string
+          required_knowledge_collection_ids: string[] | null
+          slug: string
+          updated_at: string
+          vertical: string
+        }
+        Insert: {
+          allowed_tools?: string[]
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          id?: string
+          intent_description?: string | null
+          intent_keywords?: string[]
+          is_active?: boolean
+          is_global?: boolean
+          name: string
+          output_schema?: Json | null
+          prompt_fragment?: string
+          required_knowledge_collection_ids?: string[] | null
+          slug: string
+          updated_at?: string
+          vertical: string
+        }
+        Update: {
+          allowed_tools?: string[]
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          id?: string
+          intent_description?: string | null
+          intent_keywords?: string[]
+          is_active?: boolean
+          is_global?: boolean
+          name?: string
+          output_schema?: Json | null
+          prompt_fragment?: string
+          required_knowledge_collection_ids?: string[] | null
+          slug?: string
+          updated_at?: string
+          vertical?: string
         }
         Relationships: []
       }
