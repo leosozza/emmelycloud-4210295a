@@ -62,6 +62,40 @@ export function ContactProfile({ conversation, onClose }: ContactProfileProps) {
   const [savingCrm, setSavingCrm] = useState<null | "lead" | "deal" | "spa">(null);
   const [manualDealId, setManualDealId] = useState("");
   const [savingManual, setSavingManual] = useState(false);
+  const [refreshingLedger, setRefreshingLedger] = useState(false);
+
+  // Conversation Ledger (estado consolidado por IA)
+  const { data: ledger, refetch: refetchLedger } = useQuery({
+    queryKey: ["conversation-ledger", conversation?.id],
+    enabled: !!conversation?.id,
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("conversation_ledger")
+        .select("summary, open_intents, collected_facts, blockers, next_action, updated_at, message_count_at_summary")
+        .eq("conversation_id", conversation!.id)
+        .maybeSingle();
+      return data;
+    },
+    staleTime: 30_000,
+  });
+
+  const handleRefreshLedger = async () => {
+    if (!conversation) return;
+    setRefreshingLedger(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("ledger-update", {
+        body: { conversation_id: conversation.id, force: true },
+      });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+      await refetchLedger();
+      toast.success("Estado da conversa atualizado");
+    } catch (err: any) {
+      toast.error(err?.message || "Falha ao atualizar ledger");
+    } finally {
+      setRefreshingLedger(false);
+    }
+  };
 
   const handleManualLink = async () => {
     const id = manualDealId.trim();
