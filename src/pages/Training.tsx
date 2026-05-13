@@ -636,7 +636,7 @@ export default function TrainingPage() {
       }).join("\n\n");
 
       const userLabel = convSelectedUserId !== "all"
-        ? ` — ${bitrixUsers.find(u => u.ID === convSelectedUserId)?.NAME || "user"} ${bitrixUsers.find(u => u.ID === convSelectedUserId)?.LAST_NAME || ""}`.trim()
+        ? ` — ${bitrixUsers.find(u => u.id === convSelectedUserId)?.name || "user"}`.trim()
         : "";
       const title = `Conversas ${convDateFrom} a ${convDateTo}${userLabel}`;
       await createDocWithChunks(title, fullContent, "conversation");
