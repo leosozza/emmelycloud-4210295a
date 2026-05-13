@@ -273,6 +273,8 @@ export function AgentFormDialog({
                   placeholder="Ex: Converter leads em clientes, Resolver tickets rapidamente"
                 />
               </div>
+
+              <BitrixUserLink agentId={editingAgent.id} />
             </div>
           )}
 
