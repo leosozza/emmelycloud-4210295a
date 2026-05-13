@@ -486,8 +486,15 @@ Deno.serve(async (req) => {
       }
     }
 
-    // 9b. Add built-in ReACT tools based on agent skills
-    const skillTypes = new Set((agentSkills || []).map((s: any) => s.skill_type));
+    // 9b. Add built-in ReACT tools based on agent skills.
+    // HANDOFF: se uma skill por intenção foi ativada, restringe tools às allowed_tools dela.
+    const baseSkillTypes = new Set<string>((agentSkills || []).map((s: any) => s.skill_type));
+    const skillTypes: Set<string> = activeSkillSlug && skillAllowedTools.size > 0
+      ? new Set<string>([...baseSkillTypes].filter((t) => skillAllowedTools.has(t)))
+      : baseSkillTypes;
+    if (activeSkillSlug && skillAllowedTools.size > 0) {
+      for (const t of skillAllowedTools) skillTypes.add(t);
+    }
 
     // Always available: search_knowledge (if agent has KB docs)
     if (linkedDocs && linkedDocs.length > 0) {
