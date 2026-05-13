@@ -49,6 +49,23 @@ Deno.serve(async (req) => {
       messageData = body.data || body;
     }
 
+    // Handle delivery/read receipts → update outbound message delivery_status
+    if (eventType === "ReadReceipt" || eventType === "Receipt" || eventType === "readreceipt" || eventType === "receipt") {
+      try {
+        const r = messageData || {};
+        const ids: string[] = (r.MessageIDs || r.messageIds || r.Ids || r.IDs || r.ids || (r.MessageID ? [r.MessageID] : (r.id ? [r.id] : []))) as string[];
+        const receiptType = String(r.Type || r.type || r.ReadType || "").toLowerCase();
+        const newStatus = receiptType === "read" || receiptType === "played" ? "read"
+                        : receiptType === "delivery" || receiptType === "delivered" ? "delivered"
+                        : "delivered";
+        if (Array.isArray(ids) && ids.length) {
+          await supabase.from("messages").update({ delivery_status: newStatus, ...(newStatus === "read" ? { read_at: new Date().toISOString() } : {}) }).in("external_id", ids);
+          console.log(`[WUZAPI-WEBHOOK] Receipt updated ${ids.length} message(s) → ${newStatus}`);
+        }
+      } catch (e) { console.warn("[WUZAPI-WEBHOOK] receipt error", e); }
+      return new Response(JSON.stringify({ ok: true, receipt: true }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
+
     // Only process incoming messages
     if (eventType !== "Message" && eventType !== "message") {
       console.log(`[WUZAPI-WEBHOOK] Ignoring event type: ${eventType}`);
