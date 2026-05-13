@@ -588,6 +588,19 @@ export function AgentFormDialog({
                 )}
               </div>
 
+              {/* Biblioteca de Skills por Intenção */}
+              {isEditing && editingAgent.id && (
+                <div>
+                  <Label className="text-sm font-medium flex items-center gap-2">
+                    <Sparkles className="h-4 w-4" /> Skills por Intenção
+                  </Label>
+                  <p className="text-xs text-muted-foreground mb-2">
+                    Especialistas reutilizáveis. Quando uma intenção é detetada na mensagem, o agente assume a personalidade da skill e fica restrito às ferramentas permitidas por ela.
+                  </p>
+                  <AgentSkillsLibrary agentId={editingAgent.id as string} />
+                </div>
+              )}
+
               {/* Sub-agents */}
               <div>
                 <Label className="text-sm font-medium flex items-center gap-2"><Users className="h-4 w-4" /> Sub-agentes</Label>
