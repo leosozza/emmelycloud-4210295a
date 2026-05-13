@@ -59,7 +59,7 @@ Deno.serve(async (req) => {
 
     // Extract message data from WUZAPI payload
     const info = messageData.Info || messageData.info || {};
-    const message = messageData.Message || messageData.message || {};
+    let message = messageData.Message || messageData.message || {};
 
     const pickIdentifierField = (fieldNames: string[]) => {
       const visited = new Set<any>();
@@ -266,6 +266,25 @@ Deno.serve(async (req) => {
       return { publicUrl: pub.publicUrl, filename: safeName };
     };
 
+    // Unwrap WhatsApp/whatsmeow message wrappers (Ephemeral, ViewOnce, Edited, DeviceSent...)
+    // The real message type is nested inside `.Message` of these wrappers.
+    let unwrapDepth = 0;
+    while (unwrapDepth < 4) {
+      const wrapper =
+        message.EphemeralMessage || message.ephemeralMessage ||
+        message.ViewOnceMessage || message.viewOnceMessage ||
+        message.ViewOnceMessageV2 || message.viewOnceMessageV2 ||
+        message.ViewOnceMessageV2Extension || message.viewOnceMessageV2Extension ||
+        message.DeviceSentMessage || message.deviceSentMessage ||
+        message.EditedMessage || message.editedMessage ||
+        (message.ProtocolMessage?.EditedMessage || message.protocolMessage?.editedMessage);
+      const inner = wrapper?.Message || wrapper?.message;
+      if (!inner || typeof inner !== "object") break;
+      console.log(`[WUZAPI-WEBHOOK] Unwrapped message wrapper, depth=${unwrapDepth + 1}`);
+      message = inner;
+      unwrapDepth++;
+    }
+
     if (message.Conversation || message.conversation) {
       content = message.Conversation || message.conversation;
     } else if (message.ExtendedTextMessage || message.extendedTextMessage) {
@@ -286,8 +305,8 @@ Deno.serve(async (req) => {
       mediaNode = doc;
       mediaDownloadKind = "document";
       mediaMime = pickField(doc, ["Mimetype", "mimetype"]) || "application/octet-stream";
-    } else if (message.AudioMessage || message.audioMessage) {
-      const aud = message.AudioMessage || message.audioMessage;
+    } else if (message.AudioMessage || message.audioMessage || message.PttMessage || message.pttMessage) {
+      const aud = message.AudioMessage || message.audioMessage || message.PttMessage || message.pttMessage;
       content = "";
       mediaType = "audio";
       mediaNode = aud;
@@ -312,7 +331,11 @@ Deno.serve(async (req) => {
       content = `[Contato] ${ct.DisplayName || ct.displayName || ""}`;
     } else if (message.LocationMessage || message.locationMessage) {
       content = "[Localização]";
+    } else if (message.ReactionMessage || message.reactionMessage) {
+      const rx = message.ReactionMessage || message.reactionMessage;
+      content = `[Reação] ${rx.Text || rx.text || ""}`.trim();
     } else {
+      console.warn(`[WUZAPI-WEBHOOK] Unsupported message type. Keys=${Object.keys(message).join(",")} payload=${JSON.stringify(message).slice(0, 800)}`);
       content = "[Mensagem não suportada]";
     }
 
