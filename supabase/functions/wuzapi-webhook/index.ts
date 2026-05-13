@@ -266,6 +266,25 @@ Deno.serve(async (req) => {
       return { publicUrl: pub.publicUrl, filename: safeName };
     };
 
+    // Unwrap WhatsApp/whatsmeow message wrappers (Ephemeral, ViewOnce, Edited, DeviceSent...)
+    // The real message type is nested inside `.Message` of these wrappers.
+    let unwrapDepth = 0;
+    while (unwrapDepth < 4) {
+      const wrapper =
+        message.EphemeralMessage || message.ephemeralMessage ||
+        message.ViewOnceMessage || message.viewOnceMessage ||
+        message.ViewOnceMessageV2 || message.viewOnceMessageV2 ||
+        message.ViewOnceMessageV2Extension || message.viewOnceMessageV2Extension ||
+        message.DeviceSentMessage || message.deviceSentMessage ||
+        message.EditedMessage || message.editedMessage ||
+        (message.ProtocolMessage?.EditedMessage || message.protocolMessage?.editedMessage);
+      const inner = wrapper?.Message || wrapper?.message;
+      if (!inner || typeof inner !== "object") break;
+      console.log(`[WUZAPI-WEBHOOK] Unwrapped message wrapper, depth=${unwrapDepth + 1}`);
+      message = inner;
+      unwrapDepth++;
+    }
+
     if (message.Conversation || message.conversation) {
       content = message.Conversation || message.conversation;
     } else if (message.ExtendedTextMessage || message.extendedTextMessage) {
