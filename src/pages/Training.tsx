@@ -549,15 +549,56 @@ export default function TrainingPage() {
   };
 
   // ─── Conversation Training ───
+  const loadBitrixUsers = async () => {
+    if (bitrixUsers.length > 0) return;
+    setLoadingBitrixUsers(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("bitrix24-fetch-users");
+      if (error) throw error;
+      setBitrixUsers((data as any)?.users || []);
+    } catch (e: any) {
+      console.error("Error loading Bitrix users:", e);
+      toast.error("Não foi possível carregar utilizadores Bitrix24");
+    } finally {
+      setLoadingBitrixUsers(false);
+    }
+  };
+
+  useEffect(() => { if (convDialogOpen) loadBitrixUsers(); }, [convDialogOpen]);
+
+  // Returns conversation IDs filtered by date and (optionally) Bitrix user
+  const fetchFilteredConversationIds = async (): Promise<string[] | null> => {
+    let allowedConvIds: Set<string> | null = null;
+    if (convSelectedUserId && convSelectedUserId !== "all") {
+      const { data, error } = await supabase.functions.invoke("bitrix24-deals-by-user", {
+        body: { user_id: convSelectedUserId, date_from: convDateFrom, date_to: convDateTo + "T23:59:59" },
+      });
+      if (error) throw error;
+      const dealIds: string[] = (data as any)?.deal_ids || [];
+      if (dealIds.length === 0) return [];
+      // Map deals -> leads -> conversations
+      const { data: leadsRows } = await supabase
+        .from("leads").select("conversation_id")
+        .in("bitrix24_id", dealIds).not("conversation_id", "is", null);
+      const ids = (leadsRows || []).map((l: any) => l.conversation_id).filter(Boolean);
+      if (ids.length === 0) return [];
+      allowedConvIds = new Set(ids);
+    }
+    const { data: convs, error } = await supabase
+      .from("conversations").select("id")
+      .gte("created_at", convDateFrom).lte("created_at", convDateTo + "T23:59:59");
+    if (error) throw error;
+    let convIds = (convs || []).map((c: any) => c.id);
+    if (allowedConvIds) convIds = convIds.filter(id => allowedConvIds!.has(id));
+    return convIds;
+  };
+
   const previewConversations = async () => {
     if (!convDateFrom || !convDateTo) { toast.error("Selecione as datas"); return; }
     setLoadingConvPreview(true);
     try {
-      const { data: convs, error: convErr } = await supabase
-        .from("conversations").select("id")
-        .gte("created_at", convDateFrom).lte("created_at", convDateTo + "T23:59:59");
-      if (convErr) throw convErr;
-      const convIds = (convs || []).map((c: any) => c.id);
+      const convIds = await fetchFilteredConversationIds();
+      if (!convIds) return;
       let msgCount = 0;
       if (convIds.length > 0) {
         const { count } = await supabase.from("messages").select("id", { count: "exact", head: true }).in("conversation_id", convIds);
@@ -572,11 +613,10 @@ export default function TrainingPage() {
     if (!convDateFrom || !convDateTo) return;
     setSaving(true);
     try {
+      const convIds = await fetchFilteredConversationIds();
+      if (!convIds || convIds.length === 0) { toast.error("Nenhuma conversa encontrada"); setSaving(false); return; }
       const { data: convs } = await supabase.from("conversations")
-        .select("id, contact_name, channel")
-        .gte("created_at", convDateFrom).lte("created_at", convDateTo + "T23:59:59");
-      if (!convs || convs.length === 0) { toast.error("Nenhuma conversa encontrada"); setSaving(false); return; }
-      const convIds = convs.map((c: any) => c.id);
+        .select("id, contact_name, channel").in("id", convIds);
       const { data: msgs } = await supabase.from("messages")
         .select("conversation_id, content, direction, sender_name")
         .in("conversation_id", convIds).order("created_at", { ascending: true });
@@ -590,14 +630,17 @@ export default function TrainingPage() {
       }
 
       const fullContent = Object.entries(grouped).map(([convId, lines]) => {
-        const conv = convs.find((c: any) => c.id === convId);
+        const conv = (convs || []).find((c: any) => c.id === convId);
         return `--- Conversa com ${(conv as any)?.contact_name || "Desconhecido"} (${(conv as any)?.channel || ""}) ---\n${lines.join("\n")}`;
       }).join("\n\n");
 
-      const title = `Conversas ${convDateFrom} a ${convDateTo}`;
+      const userLabel = convSelectedUserId !== "all"
+        ? ` — ${bitrixUsers.find(u => u.ID === convSelectedUserId)?.NAME || "user"} ${bitrixUsers.find(u => u.ID === convSelectedUserId)?.LAST_NAME || ""}`.trim()
+        : "";
+      const title = `Conversas ${convDateFrom} a ${convDateTo}${userLabel}`;
       await createDocWithChunks(title, fullContent, "conversation");
-      toast.success(`${convs.length} conversas importadas como documento de treino`);
-      setConvPreview(null); setConvDateFrom(""); setConvDateTo(""); setConvDialogOpen(false);
+      toast.success(`${convIds.length} conversas importadas como documento de treino`);
+      setConvPreview(null); setConvDateFrom(""); setConvDateTo(""); setConvSelectedUserId("all"); setConvDialogOpen(false);
       loadDocuments();
     } catch (e: any) { toast.error(e.message); }
     finally { setSaving(false); }
