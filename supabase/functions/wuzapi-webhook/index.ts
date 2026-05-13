@@ -727,20 +727,35 @@ Deno.serve(async (req) => {
     }
 
     // Trigger flow-engine if bot is active (unified pipeline)
+    // IMPORTANT: use EdgeRuntime.waitUntil so the request completes even after
+    // we return the HTTP response. Plain fire-and-forget gets cancelled by the
+    // Supabase Edge Runtime when the parent isolate exits.
     if (attendanceMode === "bot") {
+      const flowPromise = fetch(`${supabaseUrl}/functions/v1/flow-engine`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${serviceKey}`,
+        },
+        body: JSON.stringify({
+          conversation_id: conversationId,
+          message_text: content,
+          message_type: messageType || "text",
+          instance_id: instanceId || null,
+        }),
+      })
+        .then(async (r) => {
+          const t = await r.text().catch(() => "");
+          console.log(`[WUZAPI-WEBHOOK] flow-engine status=${r.status} body=${t.slice(0, 200)}`);
+        })
+        .catch((e) => console.error("[WUZAPI-WEBHOOK] flow-engine error:", e));
+
       try {
-        fetch(`${supabaseUrl}/functions/v1/flow-engine`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "Authorization": `Bearer ${serviceKey}`,
-          },
-          body: JSON.stringify({
-            conversation_id: conversationId,
-            message_text: content,
-          }),
-        }).catch((e) => console.error("[WUZAPI-WEBHOOK] flow-engine fire-and-forget error:", e));
-      } catch {}
+        // @ts-ignore — EdgeRuntime is provided by Supabase Edge Runtime
+        EdgeRuntime.waitUntil(flowPromise);
+      } catch {
+        await flowPromise; // fallback when EdgeRuntime is unavailable
+      }
     }
 
     console.log(`[WUZAPI-WEBHOOK] Processed message — phone:${phone || "-"} lid:${lidId || "-"} conv:${conversationId}`);
