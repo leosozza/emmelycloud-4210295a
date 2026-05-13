@@ -9,7 +9,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { ChannelIcon } from "./ChannelIcon";
-import { Phone, Mail, Instagram, Link2, User, ChevronDown, Sparkles, Loader2, FileSearch, ExternalLink, Save, Briefcase, Layers, X, Pencil } from "lucide-react";
+import { Phone, Mail, Instagram, Link2, User, ChevronDown, Sparkles, Loader2, FileSearch, ExternalLink, Save, Briefcase, Layers, X, Pencil, RefreshCw, Brain, AlertTriangle, Target } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { useNavigate } from "react-router-dom";
 import { useState } from "react";
