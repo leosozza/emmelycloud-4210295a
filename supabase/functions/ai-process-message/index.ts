@@ -387,6 +387,44 @@ Deno.serve(async (req) => {
         "\nVarIar respostas.\n";
     }
 
+    // 7b. Intent-based Skills handoff
+    // Carrega skill_definitions vinculadas ao agente, faz matching por palavra-chave
+    // e ativa a skill com maior score: injeta prompt_fragment + restringe tools.
+    let activeSkillPrompt = "";
+    const skillAllowedTools = new Set<string>();
+    let activeSkillSlug: string | null = null;
+    try {
+      const { data: skillLinks } = await supabase
+        .from("agent_skill_links")
+        .select("priority, skill_definition_id, skill_definitions:skill_definition_id(slug,name,vertical,intent_keywords,prompt_fragment,allowed_tools,is_active)")
+        .eq("agent_id", agent.id)
+        .eq("is_enabled", true);
+
+      const candidates = (skillLinks || [])
+        .map((l: any) => l.skill_definitions)
+        .filter((s: any) => s && s.is_active);
+
+      if (candidates.length > 0) {
+        const haystack = (message_text || "").toLowerCase();
+        const scored = candidates.map((s: any) => {
+          const kws: string[] = s.intent_keywords || [];
+          const hits = kws.filter((k) => k && haystack.includes(k.toLowerCase())).length;
+          return { skill: s, hits };
+        }).filter((x) => x.hits > 0)
+          .sort((a, b) => b.hits - a.hits);
+
+        if (scored.length > 0) {
+          const winner = scored[0].skill;
+          activeSkillSlug = winner.slug;
+          activeSkillPrompt = `\n\n--- SKILL ATIVA: ${winner.name} (${winner.vertical}) ---\n${winner.prompt_fragment}\n--- FIM SKILL ---\n`;
+          for (const t of (winner.allowed_tools || [])) skillAllowedTools.add(t);
+          console.log(`[AI-PROCESS] Intent matched skill="${winner.slug}" hits=${scored[0].hits} allowed=[${[...skillAllowedTools].join(",")}]`);
+        }
+      }
+    } catch (e) {
+      console.log("[AI-PROCESS] Skill matching skipped:", (e as any)?.message);
+    }
+
     // 8. Build system prompt
     const contactContext = conversation
       ? `\nContacto: ${conversation.contact_name || "?"} | Canal: ${conversation.channel}\n`
