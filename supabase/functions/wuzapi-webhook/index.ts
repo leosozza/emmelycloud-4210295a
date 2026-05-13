@@ -59,7 +59,7 @@ Deno.serve(async (req) => {
 
     // Extract message data from WUZAPI payload
     const info = messageData.Info || messageData.info || {};
-    const message = messageData.Message || messageData.message || {};
+    let message = messageData.Message || messageData.message || {};
 
     const pickIdentifierField = (fieldNames: string[]) => {
       const visited = new Set<any>();
