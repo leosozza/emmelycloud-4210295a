@@ -21,6 +21,7 @@ import type { AIAgent, AIProvider, FlowOption, DocOption, CollectionOption } fro
 import { cn } from "@/lib/utils";
 import { SyncOllamaModelsButton } from "@/components/agentes/SyncOllamaModelsButton";
 import { BitrixUserLink } from "@/components/agentes/BitrixUserLink";
+import { AgentSkillsLibrary } from "@/components/agentes/AgentSkillsLibrary";
 
 const SKILL_TYPES = [
   { type: "crm", label: "Consultar CRM", description: "Buscar leads, propostas, contratos e casos no CRM", icon: "📊" },
