@@ -259,6 +259,8 @@ serve(async (req) => {
         friendly = `O modelo **${agent.ai_model}** não cabe na memória do servidor Ollama (sem RAM/VRAM suficiente). Escolhe um modelo mais leve no agente, ou peça ao admin para libertar memória / reiniciar o serviço Ollama.`;
       } else if (lower.includes("model") && (lower.includes("not found") || lower.includes("does not exist"))) {
         friendly = `O modelo **${agent.ai_model}** não está instalado neste servidor Ollama. Faz \`ollama pull ${agent.ai_model}\` no servidor ou escolhe outro modelo.`;
+      } else if (aiResponse.status === 524 || lower.includes("timeout occurred") || lower.includes("error code 524")) {
+        friendly = `O servidor Ollama remoto não respondeu dentro do limite (Cloudflare 524 — ~100s). O modelo **${agent.ai_model}** é demasiado pesado para este túnel. Use um modelo mais leve (ex: \`llama3.2:3b\`) ou aumente os recursos do servidor.`;
       }
 
       if (friendly) {

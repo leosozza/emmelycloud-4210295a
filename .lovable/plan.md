@@ -1,60 +1,35 @@
-# Corrigir "[Mensagem não suportada]" no /atendimento
+## Problema
 
-## Diagnóstico
+O painel "Consulta IA" do placement Bitrix24 (`bitrix24-crm-tab`) chama `ai-playground`, que rotea para o Ollama remoto via Cloudflare Tunnel. Os modelos `qwen2.5vl:32b` e `qwen3.6:35b` excedem o limite de ~100s do Cloudflare Free Tunnel e devolvem **HTTP 524**, caindo no `fallback_message` → *"Desculpe, não consegui processar a sua mensagem."*
 
-Investigando o histórico da conversa `555599988750` no banco:
+O modelo `llama3.2:3b` (Qwen Assistant) funciona normalmente nos logs.
 
-```
-inbound  audio   has_url=t  "🎤 Silêncio, por favor."        ← funciona
-inbound  ∅       has_url=f  "[Mensagem não suportada]"      ← falha
-inbound  ∅       has_url=f  "[Mensagem não suportada]"      ← falha (várias)
-```
+## Mudança
 
-A string vem de `supabase/functions/wuzapi-webhook/index.ts:316`, no `else` final do parser de tipos de mensagem. O parser hoje só reconhece o nó **na raiz** de `message`:
+Atualizar via migração SQL o `ai_model` dos 6 agentes pesados para `llama3.2:3b` (já provado funcional no servidor remoto), mantendo `ai_provider = qwen-local`:
 
-`Conversation`, `ExtendedTextMessage`, `ImageMessage`, `DocumentMessage`, `AudioMessage`, `VideoMessage`, `StickerMessage`, `ContactMessage`, `LocationMessage`.
+| Agente | Modelo atual | Novo |
+|---|---|---|
+| Agente Master Jurídico | qwen2.5vl:32b | llama3.2:3b |
+| Assistente de Atendimento Jurídico | qwen3.6:35b | llama3.2:3b |
+| Emmely AI | qwen3.6:35b | llama3.2:3b |
+| Especialista em Planejamento Previdenciário | qwen2.5vl:32b | llama3.2:3b |
+| Especialista em Salário-Maternidade | qwen2.5vl:32b | llama3.2:3b |
+| Especialista em Vendas | qwen2.5vl:32b | llama3.2:3b |
 
-O WhatsApp/whatsmeow (base do WUZAPI) **encapsula** mensagens em wrappers que carregam o conteúdo real dentro de `.Message`:
+## Bónus opcional (UX)
 
-- `EphemeralMessage` (mensagens temporárias) → muito comum em conversas novas no WhatsApp Brasil, que tem "mensagens temporárias" ligadas por padrão em vários celulares.
-- `ViewOnceMessage`, `ViewOnceMessageV2`, `ViewOnceMessageV2Extension` (visualização única).
-- `EditedMessage` / `ProtocolMessage.editedMessage` (edição de mensagem).
-- `DeviceSentMessage` (mensagem enviada por outro dispositivo do mesmo usuário).
-- `PttMessage` em alguns forks (áudio de voz curto), distinto de `AudioMessage`.
+Em `ai-playground`, melhorar a deteção do erro 524 do Cloudflare para devolver mensagem clara em vez do fallback genérico:
 
-Como o cliente desta conversa está enviando áudios (vide as respostas automáticas "Não conseguimos ouvir seu áudio"), o caso mais provável é **EphemeralMessage envolvendo um AudioMessage** que o parser não desembrulha.
+> "O servidor Ollama remoto não respondeu dentro do limite (Cloudflare 524). Use um modelo mais leve ou aumente recursos do servidor."
 
-## Correção
+Assim, se no futuro voltarem a configurar modelo grande, percebem imediatamente a causa.
 
-Editar `supabase/functions/wuzapi-webhook/index.ts` no bloco de extração de tipo (linhas ~269–317) para:
+## Arquivos afetados
 
-1. **Desembrulhar wrappers antes de classificar.** Antes do `if/else` atual, em loop (até 3 níveis para segurança), trocar `message` pelo conteúdo interno quando vier:
-   - `EphemeralMessage.Message` / `ephemeralMessage.message`
-   - `ViewOnceMessage.Message` / `viewOnceMessage.message`
-   - `ViewOnceMessageV2.Message` / `viewOnceMessageV2.message`
-   - `ViewOnceMessageV2Extension.Message` / `viewOnceMessageV2Extension.message`
-   - `DeviceSentMessage.Message` / `deviceSentMessage.message`
-   - `EditedMessage.Message` / `editedMessage.message`
-   - `ProtocolMessage.EditedMessage.Message` (mensagem editada via protocolo)
+- Migração SQL: `UPDATE ai_agents SET ai_model = 'llama3.2:3b' WHERE id IN (...)`
+- `supabase/functions/ai-playground/index.ts` — adicionar deteção `lower.includes("524") || lower.includes("timeout occurred")` no bloco de erros amigáveis (linhas 256-262).
 
-2. **Adicionar `PttMessage` / `pttMessage`** como áudio (mesmo tratamento de `AudioMessage`).
+## Pergunta antes de implementar
 
-3. **Adicionar `ReactionMessage` / `reactionMessage`** com `content = "[Reação] {emoji}"` para não ficar como "não suportada".
-
-4. **Fallback observável.** No `else` final, em vez de só gravar `[Mensagem não suportada]`, logar `Object.keys(message)` para que payloads desconhecidos futuros apareçam em `edge_function_logs` e possam ser adicionados rapidamente.
-
-## Detalhes técnicos
-
-```text
-Antes: message = { EphemeralMessage: { Message: { AudioMessage: {...} } } }
-                                                  ↑ parser nunca chega aqui
-
-Depois: loop while (wrapper detectado) { message = inner } → AudioMessage classificado
-```
-
-Sem mudanças em frontend, RLS, schema ou outras edge functions. A correção é localizada no `wuzapi-webhook` e cobre todos os números, não só `555599988750`.
-
-## Validação
-
-- Após o deploy, mandar uma mensagem temporária / visualização única / áudio PTT no WhatsApp para o número conectado.
-- Conferir em `supabase/functions/wuzapi-webhook` logs: deve aparecer `[WUZAPI-WEBHOOK] Media node detected (audio) ...` e a mensagem chegar em `/atendimento` com bolha de áudio em vez de "[Mensagem não suportada]".
+Confirmas `llama3.2:3b` para todos? Ou preferes outro modelo leve já instalado no Ollama (ex: `qwen2.5:7b`, `phi3:mini`)? Se não souberes o que está instalado, posso ir com `llama3.2:3b` que é o único confirmado pelos logs.
