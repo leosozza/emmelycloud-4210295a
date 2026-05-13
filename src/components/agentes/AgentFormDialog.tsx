@@ -20,6 +20,7 @@ import {
 import type { AIAgent, AIProvider, FlowOption, DocOption, CollectionOption } from "@/pages/Agentes";
 import { cn } from "@/lib/utils";
 import { SyncOllamaModelsButton } from "@/components/agentes/SyncOllamaModelsButton";
+import { BitrixUserLink } from "@/components/agentes/BitrixUserLink";
 
 const SKILL_TYPES = [
   { type: "crm", label: "Consultar CRM", description: "Buscar leads, propostas, contratos e casos no CRM", icon: "📊" },
@@ -272,6 +273,8 @@ export function AgentFormDialog({
                   placeholder="Ex: Converter leads em clientes, Resolver tickets rapidamente"
                 />
               </div>
+
+              <BitrixUserLink agentId={editingAgent.id} />
             </div>
           )}
 
