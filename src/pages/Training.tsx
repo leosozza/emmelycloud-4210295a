@@ -82,7 +82,7 @@ export default function TrainingPage() {
   const [convDateTo, setConvDateTo] = useState("");
   const [convPreview, setConvPreview] = useState<{ count: number; messages: number } | null>(null);
   const [loadingConvPreview, setLoadingConvPreview] = useState(false);
-  const [bitrixUsers, setBitrixUsers] = useState<Array<{ ID: string; NAME?: string; LAST_NAME?: string; EMAIL?: string }>>([]);
+  const [bitrixUsers, setBitrixUsers] = useState<Array<{ id: string; name?: string; email?: string }>>([]);
   const [convSelectedUserId, setConvSelectedUserId] = useState<string>("all");
   const [loadingBitrixUsers, setLoadingBitrixUsers] = useState(false);
 
