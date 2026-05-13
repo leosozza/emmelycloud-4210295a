@@ -990,6 +990,23 @@ export default function TrainingPage() {
             <DialogDescription>Importe conversas de um período para treinar a IA.</DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
+            <div>
+              <Label>Utilizador Bitrix24 (responsável)</Label>
+              <Select value={convSelectedUserId} onValueChange={setConvSelectedUserId} disabled={loadingBitrixUsers}>
+                <SelectTrigger className="mt-1">
+                  <SelectValue placeholder={loadingBitrixUsers ? "A carregar..." : "Todos"} />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todos os utilizadores</SelectItem>
+                  {bitrixUsers.map(u => (
+                    <SelectItem key={u.ID} value={u.ID}>
+                      {[u.NAME, u.LAST_NAME].filter(Boolean).join(" ") || u.EMAIL || `User ${u.ID}`}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground mt-1">Filtra por conversas vinculadas a leads/deals deste responsável.</p>
+            </div>
             <div className="grid grid-cols-2 gap-3">
               <div><Label>Data Início</Label><Input type="date" value={convDateFrom} onChange={(e) => setConvDateFrom(e.target.value)} /></div>
               <div><Label>Data Fim</Label><Input type="date" value={convDateTo} onChange={(e) => setConvDateTo(e.target.value)} /></div>
