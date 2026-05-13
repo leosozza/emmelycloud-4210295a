@@ -217,6 +217,48 @@ export type Database = {
           },
         ]
       }
+      ai_agent_users: {
+        Row: {
+          agent_id: string
+          bitrix_user_id: string
+          bitrix_user_name: string | null
+          created_at: string
+          id: string
+          profile_id: string | null
+        }
+        Insert: {
+          agent_id: string
+          bitrix_user_id: string
+          bitrix_user_name?: string | null
+          created_at?: string
+          id?: string
+          profile_id?: string | null
+        }
+        Update: {
+          agent_id?: string
+          bitrix_user_id?: string
+          bitrix_user_name?: string | null
+          created_at?: string
+          id?: string
+          profile_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ai_agent_users_agent_id_fkey"
+            columns: ["agent_id"]
+            isOneToOne: false
+            referencedRelation: "ai_agents"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ai_agent_users_profile_id_fkey"
+            columns: ["profile_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       ai_agents: {
         Row: {
           agent_type: string
@@ -2314,6 +2356,7 @@ export type Database = {
           ai_viability: string | null
           assigned_attorney_id: string | null
           assigned_commercial_id: string | null
+          bitrix_assigned_user_id: string | null
           bitrix24_id: string | null
           client_id: string | null
           conversation_id: string | null
@@ -2338,6 +2381,7 @@ export type Database = {
           ai_viability?: string | null
           assigned_attorney_id?: string | null
           assigned_commercial_id?: string | null
+          bitrix_assigned_user_id?: string | null
           bitrix24_id?: string | null
           client_id?: string | null
           conversation_id?: string | null
@@ -2362,6 +2406,7 @@ export type Database = {
           ai_viability?: string | null
           assigned_attorney_id?: string | null
           assigned_commercial_id?: string | null
+          bitrix_assigned_user_id?: string | null
           bitrix24_id?: string | null
           client_id?: string | null
           conversation_id?: string | null
