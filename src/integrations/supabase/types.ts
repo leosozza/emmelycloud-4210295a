@@ -1740,6 +1740,98 @@ export type Database = {
           },
         ]
       }
+      conversation_handoffs: {
+        Row: {
+          conversation_id: string
+          created_at: string
+          from_actor: Json
+          id: string
+          reason: string | null
+          snapshot: Json | null
+          to_actor: Json
+        }
+        Insert: {
+          conversation_id: string
+          created_at?: string
+          from_actor: Json
+          id?: string
+          reason?: string | null
+          snapshot?: Json | null
+          to_actor: Json
+        }
+        Update: {
+          conversation_id?: string
+          created_at?: string
+          from_actor?: Json
+          id?: string
+          reason?: string | null
+          snapshot?: Json | null
+          to_actor?: Json
+        }
+        Relationships: [
+          {
+            foreignKeyName: "conversation_handoffs_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: false
+            referencedRelation: "conversations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      conversation_ledger: {
+        Row: {
+          blockers: Json
+          collected_facts: Json
+          conversation_id: string
+          current_agent_id: string | null
+          current_human_id: string | null
+          message_count_at_summary: number
+          next_action: string | null
+          open_intents: Json
+          summary: string | null
+          updated_at: string
+        }
+        Insert: {
+          blockers?: Json
+          collected_facts?: Json
+          conversation_id: string
+          current_agent_id?: string | null
+          current_human_id?: string | null
+          message_count_at_summary?: number
+          next_action?: string | null
+          open_intents?: Json
+          summary?: string | null
+          updated_at?: string
+        }
+        Update: {
+          blockers?: Json
+          collected_facts?: Json
+          conversation_id?: string
+          current_agent_id?: string | null
+          current_human_id?: string | null
+          message_count_at_summary?: number
+          next_action?: string | null
+          open_intents?: Json
+          summary?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "conversation_ledger_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: true
+            referencedRelation: "conversations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "conversation_ledger_current_agent_id_fkey"
+            columns: ["current_agent_id"]
+            isOneToOne: false
+            referencedRelation: "ai_agents"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       conversation_summaries: {
         Row: {
           conversation_id: string
