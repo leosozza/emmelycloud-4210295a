@@ -999,8 +999,8 @@ export default function TrainingPage() {
                 <SelectContent>
                   <SelectItem value="all">Todos os utilizadores</SelectItem>
                   {bitrixUsers.map(u => (
-                    <SelectItem key={u.ID} value={u.ID}>
-                      {[u.NAME, u.LAST_NAME].filter(Boolean).join(" ") || u.EMAIL || `User ${u.ID}`}
+                    <SelectItem key={u.id} value={u.id}>
+                      {u.name || u.email || `User ${u.id}`}
                     </SelectItem>
                   ))}
                 </SelectContent>
