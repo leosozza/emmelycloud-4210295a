@@ -305,8 +305,8 @@ Deno.serve(async (req) => {
       mediaNode = doc;
       mediaDownloadKind = "document";
       mediaMime = pickField(doc, ["Mimetype", "mimetype"]) || "application/octet-stream";
-    } else if (message.AudioMessage || message.audioMessage) {
-      const aud = message.AudioMessage || message.audioMessage;
+    } else if (message.AudioMessage || message.audioMessage || message.PttMessage || message.pttMessage) {
+      const aud = message.AudioMessage || message.audioMessage || message.PttMessage || message.pttMessage;
       content = "";
       mediaType = "audio";
       mediaNode = aud;
@@ -331,7 +331,11 @@ Deno.serve(async (req) => {
       content = `[Contato] ${ct.DisplayName || ct.displayName || ""}`;
     } else if (message.LocationMessage || message.locationMessage) {
       content = "[Localização]";
+    } else if (message.ReactionMessage || message.reactionMessage) {
+      const rx = message.ReactionMessage || message.reactionMessage;
+      content = `[Reação] ${rx.Text || rx.text || ""}`.trim();
     } else {
+      console.warn(`[WUZAPI-WEBHOOK] Unsupported message type. Keys=${Object.keys(message).join(",")} payload=${JSON.stringify(message).slice(0, 800)}`);
       content = "[Mensagem não suportada]";
     }
 
