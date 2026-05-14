@@ -12,6 +12,15 @@ const MESSAGES_PAGE_SIZE = 50;
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+// Sort conversations by last_message_at desc (nulls last) — keeps the list
+// in WhatsApp-like order after realtime updates mutate the cache.
+const sortByLastMessage = (list: Conversation[]): Conversation[] =>
+  [...list].sort((a, b) => {
+    const ta = a.last_message_at ? new Date(a.last_message_at).getTime() : 0;
+    const tb = b.last_message_at ? new Date(b.last_message_at).getTime() : 0;
+    return tb - ta;
+  });
+
 export default function AtendimentoPage() {
   const { convParam } = useParams<{ convParam?: string }>();
   const navigate = useNavigate();
