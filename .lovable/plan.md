@@ -1,22 +1,29 @@
-## Plano de correção
+## Problema
 
-O áudio `audio-1778699036677.webm` está salvo na mensagem como `content`, e o componente de áudio interpreta qualquer `content` que não seja placeholder como transcrição. Por isso o nome do arquivo aparece no bloco de transcrição.
+Quando chega uma mensagem nova, a conversa não sobe para o topo da lista (como acontece no WhatsApp). No banco o `last_message_at` é atualizado corretamente, mas o cache do React Query é mutado in-place sem reordenar.
 
-### 1. Separar legenda/transcrição de nome de arquivo no envio de mídia
-- Ajustar `src/hooks/useSendMessage.ts` para, quando `media.type === "audio"`, enviar `content` como `"🎤 Áudio"` em vez do nome do arquivo.
-- Manter `file_name` separado para upload/storage e envio ao provedor.
+## Causa
 
-### 2. Blindar a UI contra nomes de arquivo falsos como transcrição
-- Ajustar `src/components/atendimento/AudioMessageBubble.tsx` para ignorar `content` que pareça nome de arquivo de áudio (`audio-*.webm`, `.ogg`, `.mp3`, `.m4a`, etc.).
-- Se não houver transcrição real, o botão continuará mostrando `Transcrever` e a transcrição só aparecerá depois do STT.
+`src/pages/Atendimento.tsx` (linhas 117–124) — handler realtime de `UPDATE` em `conversations`:
+```ts
+queryClient.setQueryData(["conversations"], (prev) =>
+  (prev ?? []).map((c) => c.id === payload.new.id ? { ...c, ...payload.new } : c)
+);
+```
+Substitui o item no mesmo índice. O mesmo problema existe no INSERT (sempre prepende, mesmo que o `last_message_at` seja antigo) e no efeito de "marcar como lido".
 
-### 3. Evitar texto duplicado abaixo do player
-- Ajustar `src/components/atendimento/MessageBubble.tsx` para não renderizar, fora do player, nomes de arquivo quando a mídia for áudio.
-- Continuar permitindo texto real/transcrição quando existir.
+## Correção
 
-### 4. Corrigir o registro já afetado
-- Atualizar no banco a mensagem atual cujo `content` é `audio-1778699036677.webm` para `🎤 Áudio`, preservando `media_url` e `media_type`.
+1. Criar helper local `sortByLastMessage(list)` que ordena desc por `last_message_at` (com `nulls last`).
+2. Aplicar o helper em **todos** os `setQueryData(["conversations"], …)`:
+   - INSERT realtime
+   - UPDATE realtime  ← causa principal
+   - Mark-as-read effect
+   - Qualquer outro local que mute o array (`onMessageSent`, etc.)
+3. Não mexer no fetch inicial — já vem ordenado do servidor.
 
-### 5. Validar
-- Conferir no banco que a mensagem afetada deixou de usar o nome do arquivo como conteúdo.
-- Verificar que áudios novos passam a aparecer como áudio sem transcrição falsa e ainda permitem transcrever manualmente.
+## Arquivos
+
+- `src/pages/Atendimento.tsx` — adicionar helper e envolver os 3–4 `setQueryData`.
+
+Sem mudanças de schema, sem edge functions, sem RLS. Mudança puramente de frontend.
