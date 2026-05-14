@@ -121,14 +121,16 @@ export default function AtendimentoPage() {
             queryClient.setQueryData<Conversation[]>(["conversations"], (prev) => {
               const newConv = payload.new as unknown as Conversation;
               if ((prev ?? []).some((c) => c.id === newConv.id)) return prev;
-              return [newConv, ...(prev ?? [])];
+              return sortByLastMessage([newConv, ...(prev ?? [])]);
             });
           } else if (payload.eventType === "UPDATE") {
             queryClient.setQueryData<Conversation[]>(["conversations"], (prev) =>
-              (prev ?? []).map((c) =>
-                c.id === payload.new.id
-                  ? { ...c, ...(payload.new as unknown as Conversation) }
-                  : c
+              sortByLastMessage(
+                (prev ?? []).map((c) =>
+                  c.id === payload.new.id
+                    ? { ...c, ...(payload.new as unknown as Conversation) }
+                    : c
+                )
               )
             );
           } else {
