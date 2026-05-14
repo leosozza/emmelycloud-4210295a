@@ -24,9 +24,13 @@ function formatTime(s: number) {
 }
 
 export function AudioMessageBubble({ msg, isOutgoing = false }: AudioMessageBubbleProps) {
+  const rawContent = (msg.content || "").trim();
+  const isPlaceholder = ["[Áudio]", "🎤 Áudio", "audio", "[Mensagem vazia]"].includes(rawContent);
+  // File-name patterns like "audio-1778699036677.webm" must NOT be treated as transcription.
+  const looksLikeFileName = /^[\w.\- ]+\.(webm|ogg|mp3|m4a|wav|opus|aac|mp4)$/i.test(rawContent);
   const initialTranscript =
-    msg.content && !["[Áudio]", "🎤 Áudio", "audio"].includes(msg.content.trim())
-      ? msg.content.replace(/^🎤\s*/, "")
+    rawContent && !isPlaceholder && !looksLikeFileName
+      ? rawContent.replace(/^🎤\s*/, "")
       : null;
 
   const audioRef = useRef<HTMLAudioElement | null>(null);

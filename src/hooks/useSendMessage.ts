@@ -79,11 +79,20 @@ export function useSendMessage(
       };
       callbacks.onOptimisticAdd(optimisticMsg);
 
+      // For audio, the bubble renders the player; the file name should NOT be
+      // saved as `content` (it would later be shown as a fake transcription).
+      const dbContent =
+        media.type === "audio"
+          ? "🎤 Áudio"
+          : media.type === "image"
+          ? ""
+          : media.fileName || "";
+
       try {
         const { data, error } = await supabase.functions.invoke("message-send", {
           body: {
             conversation_id: params.conversation.id,
-            content: media.fileName || media.type,
+            content: dbContent,
             message_type: media.type,
             media_base64: media.base64,
             media_mime_type: media.mimeType,

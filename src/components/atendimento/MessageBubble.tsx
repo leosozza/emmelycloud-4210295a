@@ -235,8 +235,14 @@ export function MessageBubble({ msg, conversationId, workspaceId, containerWidth
           </div>
         ) : null}
 
-        {/* Text content (skip placeholder labels when we already render a media card) */}
-        {msg.content && !(mediaKind && (/^\[(Áudio|Imagem|Vídeo|Documento)\]/.test(msg.content) || (mediaKind === "audio" && msg.content.startsWith("🎤")))) && (
+        {/* Text content (skip placeholder labels and raw audio file names when we already render a media card) */}
+        {msg.content && !(
+          mediaKind && (
+            /^\[(Áudio|Imagem|Vídeo|Documento)\]/.test(msg.content)
+            || (mediaKind === "audio" && msg.content.startsWith("🎤"))
+            || (mediaKind === "audio" && /^[\w.\- ]+\.(webm|ogg|mp3|m4a|wav|opus|aac|mp4)$/i.test(msg.content.trim()))
+          )
+        ) && (
           <p className="text-[13.5px] leading-[1.4] whitespace-pre-wrap">{msg.content}</p>
         )}
 
