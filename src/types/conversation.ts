@@ -66,7 +66,12 @@ export interface Message {
   created_at: string;
   media_url?: string | null;
   metadata?: MessageMetadata;
+  ai_review_status?: string | null;
+  ai_review_score?: number | null;
+  ai_review_id?: string | null;
+  originated_by_agent_id?: string | null;
 }
+
 
 export interface MessageMetadata {
   source?: "thoth_app" | "emmely_app" | "bitrix24_operator" | "whatsapp_manual" | string;
