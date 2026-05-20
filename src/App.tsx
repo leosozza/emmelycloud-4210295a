@@ -31,6 +31,7 @@ import ApiKeysPage from "./pages/ApiKeys";
 import ManualPage from "./pages/Manual";
 import ChatIAPage from "./pages/ChatIA";
 import ObservabilidadeIAPage from "./pages/ObservabilidadeIA";
+import ChainHealthPage from "./pages/ChainHealth";
 import Privacy from "./pages/Privacy";
 import Terms from "./pages/Terms";
 import DataDeletion from "./pages/DataDeletion";
