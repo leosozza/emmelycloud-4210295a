@@ -778,7 +778,20 @@ Deno.serve(async (req) => {
         sync_source: "emmely",
         media_type: message_type && message_type !== "interactive_buttons" && message_type !== "interactive_list" ? message_type : null,
         media_url: (resolvedInteractiveData as any)?.url ?? null,
+        ai_review_status: aiReviewStatus,
+        ai_review_score: aiReviewScore,
+        ai_review_id: aiReviewId,
+        originated_by_agent_id: bodyAiAgentId ?? null,
       });
+
+      // Marca a revisão como já entregue
+      if (aiReviewId) {
+        await supabase
+          .from("ai_message_reviews")
+          .update({ message_id: undefined, decided_at: new Date().toISOString() })
+          .eq("id", aiReviewId);
+      }
+
 
       // Register in dedup cache to prevent echo from webhooks
       if (externalMessageId) {
