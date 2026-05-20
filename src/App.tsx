@@ -92,6 +92,7 @@ const App = () => (
             <Route path="/manual" element={<ManualPage />} />
             <Route path="/chat" element={<ChatIAPage />} />
             <Route path="/observabilidade-ia" element={<ObservabilidadeIAPage />} />
+            <Route path="/chain-health" element={<ChainHealthPage />} />
             <Route path="/configuracoes" element={<Configuracoes />} />
             <Route path="/simulation" element={<SimulationPage />} />
             <Route path="/swarm-reports" element={<SwarmReportsPage />} />
