@@ -602,6 +602,83 @@ export type Database = {
         }
         Relationships: []
       }
+      ai_message_reviews: {
+        Row: {
+          agent_id: string | null
+          context_snapshot: Json | null
+          conversation_id: string | null
+          cost_usd: number | null
+          created_at: string
+          decided_at: string | null
+          decided_by: string | null
+          decision: string
+          feedback: string | null
+          id: string
+          issues: Json | null
+          latency_ms: number | null
+          message_id: string | null
+          original_content: string
+          passed: boolean
+          reviewer_agent_id: string | null
+          revised_content: string | null
+          score: number
+          threshold: number
+          tokens_used: number | null
+        }
+        Insert: {
+          agent_id?: string | null
+          context_snapshot?: Json | null
+          conversation_id?: string | null
+          cost_usd?: number | null
+          created_at?: string
+          decided_at?: string | null
+          decided_by?: string | null
+          decision?: string
+          feedback?: string | null
+          id?: string
+          issues?: Json | null
+          latency_ms?: number | null
+          message_id?: string | null
+          original_content: string
+          passed?: boolean
+          reviewer_agent_id?: string | null
+          revised_content?: string | null
+          score?: number
+          threshold?: number
+          tokens_used?: number | null
+        }
+        Update: {
+          agent_id?: string | null
+          context_snapshot?: Json | null
+          conversation_id?: string | null
+          cost_usd?: number | null
+          created_at?: string
+          decided_at?: string | null
+          decided_by?: string | null
+          decision?: string
+          feedback?: string | null
+          id?: string
+          issues?: Json | null
+          latency_ms?: number | null
+          message_id?: string | null
+          original_content?: string
+          passed?: boolean
+          reviewer_agent_id?: string | null
+          revised_content?: string | null
+          score?: number
+          threshold?: number
+          tokens_used?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ai_message_reviews_message_id_fkey"
+            columns: ["message_id"]
+            isOneToOne: false
+            referencedRelation: "messages"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       ai_phase_executions: {
         Row: {
           agent_id: string | null
@@ -2869,6 +2946,9 @@ export type Database = {
       }
       messages: {
         Row: {
+          ai_review_id: string | null
+          ai_review_score: number | null
+          ai_review_status: string | null
           content: string
           conversation_id: string
           created_at: string
@@ -2878,11 +2958,15 @@ export type Database = {
           id: string
           media_type: string | null
           media_url: string | null
+          originated_by_agent_id: string | null
           read_at: string | null
           sender_name: string | null
           sync_source: string | null
         }
         Insert: {
+          ai_review_id?: string | null
+          ai_review_score?: number | null
+          ai_review_status?: string | null
           content: string
           conversation_id: string
           created_at?: string
@@ -2892,11 +2976,15 @@ export type Database = {
           id?: string
           media_type?: string | null
           media_url?: string | null
+          originated_by_agent_id?: string | null
           read_at?: string | null
           sender_name?: string | null
           sync_source?: string | null
         }
         Update: {
+          ai_review_id?: string | null
+          ai_review_score?: number | null
+          ai_review_status?: string | null
           content?: string
           conversation_id?: string
           created_at?: string
@@ -2906,6 +2994,7 @@ export type Database = {
           id?: string
           media_type?: string | null
           media_url?: string | null
+          originated_by_agent_id?: string | null
           read_at?: string | null
           sender_name?: string | null
           sync_source?: string | null
