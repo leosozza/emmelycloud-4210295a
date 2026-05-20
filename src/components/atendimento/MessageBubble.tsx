@@ -275,6 +275,21 @@ export function MessageBubble({ msg, conversationId, workspaceId, containerWidth
           <span className="chat-msg-time">
             {new Date(msg.created_at).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
           </span>
+          {msg.ai_review_status && (
+            <span
+              title={`Revisão IA: score ${msg.ai_review_score?.toFixed?.(2) ?? "?"}`}
+              className={cn(
+                "px-1.5 py-0.5 rounded text-[10px] font-medium border",
+                msg.ai_review_status === "pending_review"
+                  ? "bg-amber-500/15 text-amber-700 border-amber-500/30"
+                  : "bg-emerald-500/15 text-emerald-700 border-emerald-500/30"
+              )}
+            >
+              {msg.ai_review_status === "pending_review"
+                ? "🛡 Aguarda revisão"
+                : `🛡 ${(msg.ai_review_score ?? 0).toFixed(2)}`}
+            </span>
+          )}
           {isOutgoing && (
             <span className={cn(
               (msg.delivery_status || msg.status) === "read" || (msg.delivery_status || msg.status) === "played" ? "text-sky-500" : "text-muted-foreground"
@@ -282,6 +297,7 @@ export function MessageBubble({ msg, conversationId, workspaceId, containerWidth
               {getStatusIcon(msg.delivery_status || msg.status)}
             </span>
           )}
+
         </div>
       </div>
     </div>
