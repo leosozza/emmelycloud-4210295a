@@ -316,9 +316,11 @@ export type Database = {
           governance_mode: string
           id: string
           is_active: boolean
+          is_active_version: boolean
           is_default: boolean
           monthly_budget_usd: number | null
           name: string
+          parent_agent_id: string | null
           personality_style: string | null
           routing_mode: string
           routing_rules: Json | null
@@ -328,6 +330,7 @@ export type Database = {
           temperature: number
           training_collection_ids: string[] | null
           updated_at: string
+          version: number
           voice_id: string | null
           voice_model: string | null
           voice_provider: string | null
@@ -351,9 +354,11 @@ export type Database = {
           governance_mode?: string
           id?: string
           is_active?: boolean
+          is_active_version?: boolean
           is_default?: boolean
           monthly_budget_usd?: number | null
           name: string
+          parent_agent_id?: string | null
           personality_style?: string | null
           routing_mode?: string
           routing_rules?: Json | null
@@ -363,6 +368,7 @@ export type Database = {
           temperature?: number
           training_collection_ids?: string[] | null
           updated_at?: string
+          version?: number
           voice_id?: string | null
           voice_model?: string | null
           voice_provider?: string | null
@@ -386,9 +392,11 @@ export type Database = {
           governance_mode?: string
           id?: string
           is_active?: boolean
+          is_active_version?: boolean
           is_default?: boolean
           monthly_budget_usd?: number | null
           name?: string
+          parent_agent_id?: string | null
           personality_style?: string | null
           routing_mode?: string
           routing_rules?: Json | null
@@ -398,6 +406,7 @@ export type Database = {
           temperature?: number
           training_collection_ids?: string[] | null
           updated_at?: string
+          version?: number
           voice_id?: string | null
           voice_model?: string | null
           voice_provider?: string | null
@@ -409,6 +418,13 @@ export type Database = {
             columns: ["default_flow_id"]
             isOneToOne: false
             referencedRelation: "flows"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ai_agents_parent_agent_id_fkey"
+            columns: ["parent_agent_id"]
+            isOneToOne: false
+            referencedRelation: "ai_agents"
             referencedColumns: ["id"]
           },
         ]
@@ -437,6 +453,113 @@ export type Database = {
           overall_status?: string
           report?: Json
           warnings_count?: number
+        }
+        Relationships: []
+      }
+      ai_chain_executions: {
+        Row: {
+          chain_id: string
+          completed_at: string | null
+          conversation_id: string | null
+          current_phase_index: number
+          error: string | null
+          final_output: Json | null
+          final_score: number | null
+          id: string
+          lead_id: string | null
+          metadata: Json
+          started_at: string
+          status: string
+          total_cost_usd: number | null
+          total_tokens: number | null
+          triggered_by: string
+        }
+        Insert: {
+          chain_id: string
+          completed_at?: string | null
+          conversation_id?: string | null
+          current_phase_index?: number
+          error?: string | null
+          final_output?: Json | null
+          final_score?: number | null
+          id?: string
+          lead_id?: string | null
+          metadata?: Json
+          started_at?: string
+          status?: string
+          total_cost_usd?: number | null
+          total_tokens?: number | null
+          triggered_by?: string
+        }
+        Update: {
+          chain_id?: string
+          completed_at?: string | null
+          conversation_id?: string | null
+          current_phase_index?: number
+          error?: string | null
+          final_output?: Json | null
+          final_score?: number | null
+          id?: string
+          lead_id?: string | null
+          metadata?: Json
+          started_at?: string
+          status?: string
+          total_cost_usd?: number | null
+          total_tokens?: number | null
+          triggered_by?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ai_chain_executions_chain_id_fkey"
+            columns: ["chain_id"]
+            isOneToOne: false
+            referencedRelation: "ai_chains"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      ai_chains: {
+        Row: {
+          created_at: string
+          description: string | null
+          id: string
+          is_active: boolean
+          max_retries: number
+          metadata: Json
+          name: string
+          on_failure: string
+          phases: Json
+          quality_threshold: number
+          reviewer_agent_id: string | null
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          description?: string | null
+          id?: string
+          is_active?: boolean
+          max_retries?: number
+          metadata?: Json
+          name: string
+          on_failure?: string
+          phases?: Json
+          quality_threshold?: number
+          reviewer_agent_id?: string | null
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          description?: string | null
+          id?: string
+          is_active?: boolean
+          max_retries?: number
+          metadata?: Json
+          name?: string
+          on_failure?: string
+          phases?: Json
+          quality_threshold?: number
+          reviewer_agent_id?: string | null
+          updated_at?: string
         }
         Relationships: []
       }
@@ -478,6 +601,83 @@ export type Database = {
           updated_at?: string
         }
         Relationships: []
+      }
+      ai_phase_executions: {
+        Row: {
+          agent_id: string | null
+          chain_execution_id: string
+          clarifications_asked: number
+          completed_at: string | null
+          cost_usd: number | null
+          duration_ms: number | null
+          error: string | null
+          hallucination_flags: Json | null
+          id: string
+          input_context: Json | null
+          output_data: Json | null
+          phase_goal: string
+          phase_index: number
+          phase_role: string
+          review_feedback: string | null
+          review_score: number | null
+          started_at: string
+          status: string
+          tokens_used: number | null
+          turns_used: number
+        }
+        Insert: {
+          agent_id?: string | null
+          chain_execution_id: string
+          clarifications_asked?: number
+          completed_at?: string | null
+          cost_usd?: number | null
+          duration_ms?: number | null
+          error?: string | null
+          hallucination_flags?: Json | null
+          id?: string
+          input_context?: Json | null
+          output_data?: Json | null
+          phase_goal: string
+          phase_index: number
+          phase_role: string
+          review_feedback?: string | null
+          review_score?: number | null
+          started_at?: string
+          status?: string
+          tokens_used?: number | null
+          turns_used?: number
+        }
+        Update: {
+          agent_id?: string | null
+          chain_execution_id?: string
+          clarifications_asked?: number
+          completed_at?: string | null
+          cost_usd?: number | null
+          duration_ms?: number | null
+          error?: string | null
+          hallucination_flags?: Json | null
+          id?: string
+          input_context?: Json | null
+          output_data?: Json | null
+          phase_goal?: string
+          phase_index?: number
+          phase_role?: string
+          review_feedback?: string | null
+          review_score?: number | null
+          started_at?: string
+          status?: string
+          tokens_used?: number | null
+          turns_used?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ai_phase_executions_chain_execution_id_fkey"
+            columns: ["chain_execution_id"]
+            isOneToOne: false
+            referencedRelation: "ai_chain_executions"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       ai_providers: {
         Row: {
@@ -717,14 +917,17 @@ export type Database = {
       ai_usage_logs: {
         Row: {
           agent_id: string | null
+          chain_execution_id: string | null
           completion_tokens: number | null
           conversation_id: string | null
           cost_estimate: number | null
           created_at: string | null
           error: string | null
+          hallucination_score: number | null
           id: string
           latency_ms: number | null
           model: string | null
+          phase_execution_id: string | null
           prompt_tokens: number | null
           provider: string | null
           session_id: string | null
@@ -734,14 +937,17 @@ export type Database = {
         }
         Insert: {
           agent_id?: string | null
+          chain_execution_id?: string | null
           completion_tokens?: number | null
           conversation_id?: string | null
           cost_estimate?: number | null
           created_at?: string | null
           error?: string | null
+          hallucination_score?: number | null
           id?: string
           latency_ms?: number | null
           model?: string | null
+          phase_execution_id?: string | null
           prompt_tokens?: number | null
           provider?: string | null
           session_id?: string | null
@@ -751,14 +957,17 @@ export type Database = {
         }
         Update: {
           agent_id?: string | null
+          chain_execution_id?: string | null
           completion_tokens?: number | null
           conversation_id?: string | null
           cost_estimate?: number | null
           created_at?: string | null
           error?: string | null
+          hallucination_score?: number | null
           id?: string
           latency_ms?: number | null
           model?: string | null
+          phase_execution_id?: string | null
           prompt_tokens?: number | null
           provider?: string | null
           session_id?: string | null
