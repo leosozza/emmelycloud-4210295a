@@ -31,6 +31,7 @@ import ApiKeysPage from "./pages/ApiKeys";
 import ManualPage from "./pages/Manual";
 import ChatIAPage from "./pages/ChatIA";
 import ObservabilidadeIAPage from "./pages/ObservabilidadeIA";
+import ChainHealthPage from "./pages/ChainHealth";
 import Privacy from "./pages/Privacy";
 import Terms from "./pages/Terms";
 import DataDeletion from "./pages/DataDeletion";
@@ -91,6 +92,7 @@ const App = () => (
             <Route path="/manual" element={<ManualPage />} />
             <Route path="/chat" element={<ChatIAPage />} />
             <Route path="/observabilidade-ia" element={<ObservabilidadeIAPage />} />
+            <Route path="/chain-health" element={<ChainHealthPage />} />
             <Route path="/configuracoes" element={<Configuracoes />} />
             <Route path="/simulation" element={<SimulationPage />} />
             <Route path="/swarm-reports" element={<SwarmReportsPage />} />
