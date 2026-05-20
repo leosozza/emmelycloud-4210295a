@@ -333,7 +333,70 @@ Deno.serve(async (req) => {
 
   try {
     const body = await req.json();
-    const { conversation_id, content, message_type, resolvedInteractiveData: bodyInteractiveData, skip_db_save, instance_id, bitrix_entity_id, bitrix_entity_type_id, sender_name: bodySenderName } = body;
+    const { conversation_id, content, message_type, resolvedInteractiveData: bodyInteractiveData, skip_db_save, instance_id, bitrix_entity_id, bitrix_entity_type_id, sender_name: bodySenderName, source: bodySource, ai_agent_id: bodyAiAgentId, review_context: bodyReviewContext, skip_review: bodySkipReview } = body;
+    // Fase C — Quality Gate: revisa mensagens originadas por IA antes do envio
+    let aiReviewId: string | null = null;
+    let aiReviewScore: number | null = null;
+    let aiReviewStatus: string | null = null;
+    if (bodySource === "ai" && content && !bodySkipReview && (message_type === undefined || message_type === "text")) {
+      try {
+        const reviewResp = await fetch(
+          `${Deno.env.get("SUPABASE_URL")}/functions/v1/ai-review-message`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")}`,
+            },
+            body: JSON.stringify({
+              conversation_id,
+              agent_id: bodyAiAgentId ?? null,
+              content,
+              context: bodyReviewContext ?? {},
+            }),
+          }
+        );
+        const reviewData = await reviewResp.json().catch(() => ({}));
+        aiReviewId = reviewData?.review_id ?? null;
+        aiReviewScore = typeof reviewData?.score === "number" ? reviewData.score : null;
+        if (reviewData?.blocked === true) {
+          // Não envia — grava registro pendente de revisão humana
+          aiReviewStatus = "pending_review";
+          const supabaseBlock = createClient(
+            Deno.env.get("SUPABASE_URL")!,
+            Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
+          );
+          await supabaseBlock.from("messages").insert({
+            conversation_id,
+            direction: "outbound",
+            content,
+            sender_name: bodySenderName || "IA (aguarda revisão)",
+            delivery_status: "pending_review",
+            sync_source: "emmely",
+            ai_review_status: "pending_review",
+            ai_review_score: aiReviewScore,
+            ai_review_id: aiReviewId,
+            originated_by_agent_id: bodyAiAgentId ?? null,
+          });
+          return new Response(
+            JSON.stringify({
+              blocked: true,
+              review_id: aiReviewId,
+              score: aiReviewScore,
+              feedback: reviewData?.feedback,
+              issues: reviewData?.issues,
+              suggested_rewrite: reviewData?.suggested_rewrite,
+              message: "Mensagem retida para revisão humana (quality gate).",
+            }),
+            { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+        aiReviewStatus = "auto_approved";
+      } catch (revErr) {
+        console.error("[MESSAGE-SEND] ai-review-message failed (fail-open):", (revErr as Error).message);
+      }
+    }
+
     const media_base64: string | undefined = body.media_base64;
     const media_mime_type: string | undefined = body.media_mime_type;
     const file_name: string | undefined = body.file_name;
