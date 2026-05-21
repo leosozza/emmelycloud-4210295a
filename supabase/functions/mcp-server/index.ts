@@ -287,6 +287,63 @@ async function executeTool(name: string, args: any, ctx: AuthCtx) {
       if (error) throw error;
       return data;
     }
+    case "execute_ai_chain": {
+      const r = await fetch(`${Deno.env.get("SUPABASE_URL")}/functions/v1/ai-chain-executor`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")}`,
+        },
+        body: JSON.stringify({
+          chain_name: args.chain_name,
+          chain_id: args.chain_id,
+          conversation_id: args.conversation_id ?? null,
+          lead_id: args.lead_id ?? null,
+          input: args.input ?? {},
+          triggered_by: args.triggered_by ?? "mcp",
+        }),
+      });
+      return await r.json();
+    }
+    case "list_ai_chains": {
+      const { data, error } = await admin
+        .from("ai_chains")
+        .select("id, name, description, phases, quality_threshold, max_retries, on_failure, reviewer_agent_id, is_active")
+        .eq("is_active", true)
+        .limit(Math.min(args.limit || 20, 100));
+      if (error) throw error;
+      return data;
+    }
+    case "get_chain_execution": {
+      const { data: exec, error: e1 } = await admin
+        .from("ai_chain_executions")
+        .select("*")
+        .eq("id", args.execution_id)
+        .maybeSingle();
+      if (e1) throw e1;
+      const { data: phases, error: e2 } = await admin
+        .from("ai_phase_executions")
+        .select("phase_index, phase_role, phase_goal, status, turns_used, review_score, review_feedback, hallucination_flags, tokens_used, cost_usd, duration_ms, completed_at")
+        .eq("chain_execution_id", args.execution_id)
+        .order("phase_index", { ascending: true });
+      if (e2) throw e2;
+      return { execution: exec, phases };
+    }
+    case "review_message": {
+      const r = await fetch(`${Deno.env.get("SUPABASE_URL")}/functions/v1/ai-review-message`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")}`,
+        },
+        body: JSON.stringify({
+          content: args.content,
+          message_id: args.message_id,
+          context: args.context ?? {},
+        }),
+      });
+      return await r.json();
+    }
     default:
       throw new Error(`Unknown tool: ${name}`);
   }
