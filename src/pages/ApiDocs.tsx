@@ -459,11 +459,11 @@ export default function ApiDocsPage() {
             <code className="font-mono bg-background px-2 py-1 rounded">X-API-Key: emk_live_…</code>
             <span className="text-[10px] text-muted-foreground">(ou Authorization: Bearer / ApiKey)</span>
           </div>
-          <div className="flex items-center gap-2">
-            <Badge variant="outline" className="text-[10px] w-16 justify-center">Tools</Badge>
+          <div className="flex items-start gap-2">
+            <Badge variant="outline" className="text-[10px] w-16 justify-center shrink-0 mt-0.5">Tools</Badge>
             <span className="text-muted-foreground">
-              list_leads · get_lead · create_lead · send_whatsapp · list_conversations ·
-              list_financial_records · create_payment_link · search_knowledge · get_dashboard
+              <strong className="text-foreground">CRM/Atendimento:</strong> list_leads · get_lead · create_lead · send_whatsapp · list_conversations · list_financial_records · create_payment_link · search_knowledge · get_dashboard<br/>
+              <strong className="text-foreground">IA (novo):</strong> execute_ai_chain · list_ai_chains · get_chain_execution · review_message
             </span>
           </div>
         </CardContent>
@@ -476,7 +476,7 @@ export default function ApiDocsPage() {
           { label: "Omnichannel", value: endpoints.filter((e) => e.category === "omnichannel").length },
           { label: "Pagamentos", value: endpoints.filter((e) => e.category === "payments").length },
           { label: "Bitrix24", value: endpoints.filter((e) => e.category === "bitrix24").length },
-          { label: "MCP Tools", value: 9 },
+          { label: "MCP Tools", value: 13 },
         ].map((s) => (
           <Card key={s.label}>
             <CardContent className="p-4 text-center">
