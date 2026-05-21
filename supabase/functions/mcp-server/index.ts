@@ -165,6 +165,52 @@ const TOOLS = [
     description: "Obtém os KPIs principais do dashboard (leads, receita, conversões).",
     inputSchema: { type: "object", properties: {} },
   },
+  // ── Emmely Chat Chain (multi-fase ChatDev-style) ──
+  {
+    name: "execute_ai_chain",
+    description: "Executa uma Emmely Chat Chain multi-fase (instrutor↔assistente com revisor e quality gate). Use chain_name (ex.: 'atendimento_juridico_padrao') ou chain_id.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        chain_name: { type: "string", description: "Nome único da chain em ai_chains" },
+        chain_id: { type: "string", description: "UUID da chain (alternativa a chain_name)" },
+        conversation_id: { type: "string" },
+        lead_id: { type: "string" },
+        input: { type: "object", description: "Contexto inicial passado à primeira fase" },
+        triggered_by: { type: "string", default: "mcp" },
+      },
+    },
+  },
+  {
+    name: "list_ai_chains",
+    description: "Lista as Emmely Chat Chains disponíveis (ai_chains ativas), com fases, threshold de qualidade e política de falha.",
+    inputSchema: {
+      type: "object",
+      properties: { limit: { type: "number", default: 20, maximum: 100 } },
+    },
+  },
+  {
+    name: "get_chain_execution",
+    description: "Detalha uma execução de chain: status final, custo, tokens e fases (ai_phase_executions) com scores de revisão e flags de alucinação.",
+    inputSchema: {
+      type: "object",
+      properties: { execution_id: { type: "string", description: "UUID em ai_chain_executions" } },
+      required: ["execution_id"],
+    },
+  },
+  {
+    name: "review_message",
+    description: "Submete um texto ao Quality Gate (Revisor Jurídico). Retorna score 0-1, decisão (approved | pending_review), feedback e lista de issues.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        content: { type: "string" },
+        message_id: { type: "string" },
+        context: { type: "object", description: "Contexto livre: conversation_id, agent_id, dados de cliente, etc." },
+      },
+      required: ["content"],
+    },
+  },
 ];
 
 async function executeTool(name: string, args: any, ctx: AuthCtx) {
