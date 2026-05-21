@@ -95,6 +95,41 @@ const endpoints: Endpoint[] = [
   { category: "ai", name: "Executor de Crew Multi-Agente", method: "POST", path: "/ai-crew-executor", auth: "Bearer JWT",
     description: "Executa tarefas distribuídas entre múltiplos agentes com delegate_to_agent." },
 
+  // ─────────── EMMELY CHAT CHAIN (multi-fase ChatDev-style) ───────────
+  { category: "ai", name: "Chain Executor (Multi-Fase)", method: "POST", path: "/ai-chain-executor", auth: "Service Role",
+    description: "Motor 'Emmely Chat Chain' inspirado em ChatDev. Executa uma ai_chain sequencialmente (fases instrutor↔assistente), com protocolo anti-alucinação, revisor por fase e quality gate global. Tudo auditado em ai_chain_executions + ai_phase_executions.",
+    request: `{
+  "chain_name": "atendimento_juridico_padrao",
+  "conversation_id": "uuid",
+  "lead_id": "uuid",
+  "input": { "user_message": "..." },
+  "triggered_by": "system"
+}`,
+    response: `{
+  "success": true,
+  "execution_id": "uuid",
+  "status": "completed | failed | escalated",
+  "chain": "atendimento_juridico_padrao",
+  "final_output": "...",
+  "total_cost_usd": 0.0123,
+  "total_tokens": 4210
+}`,
+    notes: "Cada fase pode exigir review (requires_review:true). Score < quality_threshold dispara retry (max_retries) e depois on_failure: abort | escalate. Pedidos de clarificação retornados pelo agente em JSON {needs_clarification:true,...} escalam automaticamente." },
+  { category: "ai", name: "Reviewer / Quality Gate", method: "POST", path: "/ai-review-message", auth: "Service Role",
+    description: "Avalia uma mensagem AI antes do envio (coerência factual, compliance LGPD/RGPD, tom, ausência de alucinações). Usado pelo hook em message-send: score < 0.75 bloqueia e marca delivery_status='pending_review'.",
+    request: `{
+  "message_id": "uuid",
+  "content": "Texto a revisar",
+  "context": { "conversation_id": "uuid", "agent_id": "uuid" }
+}`,
+    response: `{
+  "score": 0.87,
+  "decision": "approved | pending_review",
+  "feedback": "...",
+  "issues": ["..."],
+  "review_id": "uuid"
+}` },
+
   // ─────────── AGENTES ───────────
   { category: "agents", name: "Builder de Agente", method: "POST", path: "/agent-builder", auth: "Bearer JWT",
     description: "Cria/atualiza agentes IA com prompts, modelos, ferramentas e personalidade." },
@@ -226,25 +261,29 @@ const endpoints: Endpoint[] = [
 
   // ─────────── MCP ───────────
   { category: "mcp", name: "MCP Server (JSON-RPC)", method: "GET/POST", path: "/mcp-server", auth: "API Key",
-    description: "Servidor MCP (Model Context Protocol) — Streamable HTTP. Compatível com OpenClaw, Claude Desktop, Cursor.",
+    description: "Servidor MCP (Model Context Protocol) — Streamable HTTP. Compatível com OpenClaw, Claude Desktop, Cursor. Expõe 13 ferramentas: CRM, omnichannel, pagamentos, conhecimento + nova suite de IA (chains, reviewer, fases).",
     request: `{
   "jsonrpc": "2.0",
   "id": 1,
   "method": "tools/call",
   "params": {
-    "name": "list_leads",
-    "arguments": { "limit": 10 }
+    "name": "execute_ai_chain",
+    "arguments": {
+      "chain_name": "atendimento_juridico_padrao",
+      "conversation_id": "uuid",
+      "input": { "user_message": "..." }
+    }
   }
 }`,
     response: `{
   "jsonrpc": "2.0",
   "id": 1,
   "result": {
-    "content": [{ "type": "text", "text": "[...leads...]" }],
+    "content": [{ "type": "text", "text": "{...execution_id, status, final_output...}" }],
     "isError": false
   }
 }`,
-    notes: "Métodos suportados: initialize, tools/list, tools/call, ping. Autentique com header X-API-Key: emk_live_... (também aceita Authorization: Bearer ou ApiKey)." },
+    notes: "Métodos: initialize, tools/list, tools/call, ping. Ferramentas IA: execute_ai_chain, list_ai_chains, get_chain_execution, review_message. Headers: X-API-Key: emk_live_... + Accept: application/json, text/event-stream." },
   { category: "mcp", name: "Criar Chave de API", method: "POST", path: "/api-key-create", auth: "Bearer JWT",
     description: "Gera nova chave API (mostrada apenas uma vez).",
     request: `{ "name": "OpenClaw Production", "scopes": ["read", "write"] }`,
@@ -420,11 +459,11 @@ export default function ApiDocsPage() {
             <code className="font-mono bg-background px-2 py-1 rounded">X-API-Key: emk_live_…</code>
             <span className="text-[10px] text-muted-foreground">(ou Authorization: Bearer / ApiKey)</span>
           </div>
-          <div className="flex items-center gap-2">
-            <Badge variant="outline" className="text-[10px] w-16 justify-center">Tools</Badge>
+          <div className="flex items-start gap-2">
+            <Badge variant="outline" className="text-[10px] w-16 justify-center shrink-0 mt-0.5">Tools</Badge>
             <span className="text-muted-foreground">
-              list_leads · get_lead · create_lead · send_whatsapp · list_conversations ·
-              list_financial_records · create_payment_link · search_knowledge · get_dashboard
+              <strong className="text-foreground">CRM/Atendimento:</strong> list_leads · get_lead · create_lead · send_whatsapp · list_conversations · list_financial_records · create_payment_link · search_knowledge · get_dashboard<br/>
+              <strong className="text-foreground">IA (novo):</strong> execute_ai_chain · list_ai_chains · get_chain_execution · review_message
             </span>
           </div>
         </CardContent>
@@ -437,7 +476,7 @@ export default function ApiDocsPage() {
           { label: "Omnichannel", value: endpoints.filter((e) => e.category === "omnichannel").length },
           { label: "Pagamentos", value: endpoints.filter((e) => e.category === "payments").length },
           { label: "Bitrix24", value: endpoints.filter((e) => e.category === "bitrix24").length },
-          { label: "MCP Tools", value: 9 },
+          { label: "MCP Tools", value: 13 },
         ].map((s) => (
           <Card key={s.label}>
             <CardContent className="p-4 text-center">
