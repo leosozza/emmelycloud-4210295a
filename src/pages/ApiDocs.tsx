@@ -261,25 +261,29 @@ const endpoints: Endpoint[] = [
 
   // ─────────── MCP ───────────
   { category: "mcp", name: "MCP Server (JSON-RPC)", method: "GET/POST", path: "/mcp-server", auth: "API Key",
-    description: "Servidor MCP (Model Context Protocol) — Streamable HTTP. Compatível com OpenClaw, Claude Desktop, Cursor.",
+    description: "Servidor MCP (Model Context Protocol) — Streamable HTTP. Compatível com OpenClaw, Claude Desktop, Cursor. Expõe 13 ferramentas: CRM, omnichannel, pagamentos, conhecimento + nova suite de IA (chains, reviewer, fases).",
     request: `{
   "jsonrpc": "2.0",
   "id": 1,
   "method": "tools/call",
   "params": {
-    "name": "list_leads",
-    "arguments": { "limit": 10 }
+    "name": "execute_ai_chain",
+    "arguments": {
+      "chain_name": "atendimento_juridico_padrao",
+      "conversation_id": "uuid",
+      "input": { "user_message": "..." }
+    }
   }
 }`,
     response: `{
   "jsonrpc": "2.0",
   "id": 1,
   "result": {
-    "content": [{ "type": "text", "text": "[...leads...]" }],
+    "content": [{ "type": "text", "text": "{...execution_id, status, final_output...}" }],
     "isError": false
   }
 }`,
-    notes: "Métodos suportados: initialize, tools/list, tools/call, ping. Autentique com header X-API-Key: emk_live_... (também aceita Authorization: Bearer ou ApiKey)." },
+    notes: "Métodos: initialize, tools/list, tools/call, ping. Ferramentas IA: execute_ai_chain, list_ai_chains, get_chain_execution, review_message. Headers: X-API-Key: emk_live_... + Accept: application/json, text/event-stream." },
   { category: "mcp", name: "Criar Chave de API", method: "POST", path: "/api-key-create", auth: "Bearer JWT",
     description: "Gera nova chave API (mostrada apenas uma vez).",
     request: `{ "name": "OpenClaw Production", "scopes": ["read", "write"] }`,
