@@ -1,52 +1,76 @@
-## Próximos passos — Fases C, D, E, F, G da Emmely Chat Chain
+## Integração Gupshup — WhatsApp Oficial (BSP)
 
-Já implementado (Fase A+B): tabelas `ai_chains`, `ai_chain_executions`, `ai_phase_executions`, versionamento de agentes, edge `ai-chain-executor` com dehallucination prompt + reviewer loop, dashboard `/chain-health`.
+Adicionar Gupshup como novo provider de WhatsApp Business API (alternativa ao Meta Cloud API direto), mantendo WUZAPI e Meta funcionando em paralelo.
 
-Agora vou seguir na ordem de maior ROI imediato.
+### Arquitetura
 
-### Fase C — Reviewer Agent + Quality Gate no envio (sprint atual)
+```text
+Cliente WhatsApp
+      │
+      ▼
+Gupshup BSP ──(webhook)──► gupshup-webhook ──► conversations/messages
+                                              │
+                                              ├─► flow-engine
+                                              └─► bitrix24-send
 
-1. **Seed do agente "Revisor Jurídico"** em `ai_agents` (persona dedicada, modelo `google/gemini-3.5-flash` para custo baixo, tools read-only de consulta a `clients`, `proposals`, `financial_records`).
-2. **Vincular** `reviewer_agent_id` na chain `atendimento_juridico_padrao`.
-3. **Hook obrigatório no `message-send`**: quando `source = 'ai'`, chama edge nova `ai-review-message` antes do envio:
-   - Score < 0.75 → bloqueia envio, marca mensagem como `pending_review`, notifica operador (HITL).
-   - Score ≥ 0.75 → libera envio normalmente.
-4. **Nova tabela `ai_message_reviews`** (audit: message_id, score, feedback, issues, decided_by, decided_at).
-5. **UI**: badge "🛡 Revisado IA (score)" na bolha de mensagem em `Atendimento.tsx`; aba "Pendentes de Revisão" para o operador aprovar/reescrever.
+UI / flow-engine ──► message-send ──► gupshup-send ──► Gupshup API ──► Cliente
+```
 
-### Fase D — Orquestrador (CEO virtual)
+### Banco de dados
 
-6. **Agente "Orquestrador"** que, ao abrir nova conversa/lead, monta dinamicamente uma chain (Triagem → Especialista X → Cálculo → Proposta → Revisor) gravada em `ai_chain_executions` com `chain_id = null` + `phases_override jsonb`.
-7. Toggle por conversa (`use_orchestrator boolean`) — opt-in, mantendo roteamento atual como fallback.
+- `channel_instances`: novo `provider_type = 'gupshup'` (channel_type = 'whatsapp').
+  - `config`: `{ app_name, app_id, source_number, api_key_secret_ref, webhook_secret_ref }`
+- Nenhuma migration estrutural — usa schema existente.
 
-### Fase E — Nó "AI Chain" no Flow Editor
+### Edge Functions (novas)
 
-8. Novo tipo de nó `ai_chain` em `FlowNodeTypes.ts` + `CustomFlowNode.tsx` com seletor de `ai_chain` ativa, threshold override, e saídas `on_pass` / `on_fail` / `on_escalate`.
-9. `NodeConfigPanel.tsx` ganha o painel de config.
-10. Rollback semântico: se chain falha, restaura `ledger` e `bot_state` ao snapshot pré-execução.
+1. **`gupshup-webhook`** (público, `verify_jwt = false`)
+   - Valida HMAC-SHA256 do header `X-Gupshup-Signature` com `GUPSHUP_WEBHOOK_SECRET`.
+   - Resolve `channel_instance` por `app` no payload.
+   - Eventos suportados: `message` (text/image/audio/video/document/location/button_reply/list_reply), `message-event` (sent/delivered/read/failed).
+   - Cria/atualiza `conversations` + `messages` com `external_id` = `gsId`.
+   - Dispara `flow-engine` e `bitrix24-send` (fire-and-forget).
+   - Anti-duplicação via `external_id`.
 
-### Fase F — Memória episódica de casos
+2. **`gupshup-send`** (service role)
+   - Endpoint: `POST https://api.gupshup.io/wa/api/v1/msg`
+   - Header `apikey: GUPSHUP_API_KEY`.
+   - Suporta: text, image, video, document, audio, sticker, template (HSM com `template` + `params`).
+   - Retorna `messageId` → grava em `messages.external_id`.
+   - Trata erro 401/403/429 com toast amigável.
 
-11. Tabela `case_episodes` (case_id, area, outcome, resolution_steps, tags, fts_vector, tenant_id) + índice GIN FTS.
-12. Trigger ao fechar caso → resume via IA e grava episódio.
-13. Tool `recall_similar_case(query, area)` exposta aos especialistas via `ai-process-message`.
+### Edge Functions (alteradas)
 
-### Fase G — Governança e observabilidade avançada
+3. **`message-send`**: roteia para `gupshup-send` quando `channel_instances.provider_type = 'gupshup'` (além do Meta/WUZAPI já existentes).
+4. **`flow-engine`**: sem mudanças — usa `message-send` como abstração.
 
-14. UI de **versionamento de agentes**: diff de prompt, ativar versão, A/B test por hash de `conversation_id`.
-15. **Chain Health** ganha: dehallucination flags, custo/fase, latência p95, taxa de escalonamento, drill-down por execução.
-16. **Replay**: botão "Reexecutar com versão X" na Observabilidade IA para regression test.
+### Frontend
 
-### Roll-out
+5. **`src/pages/Integracoes.tsx`** (ou aba WhatsApp existente): novo card "Gupshup (WhatsApp Oficial)" com formulário:
+   - Nome da instância
+   - App Name (Gupshup)
+   - App ID
+   - Source Number (E.164)
+   - Botão para registar `GUPSHUP_API_KEY` e `GUPSHUP_WEBHOOK_SECRET` (via secrets).
+   - Mostra URL do webhook a colar no painel Gupshup: `https://qohnsluvhyziovfynzlu.supabase.co/functions/v1/gupshup-webhook`.
 
-- **Agora**: Fase C completa (maior impacto visível — bloqueia alucinações antes de chegar ao cliente).
-- **Próxima iteração**: D + E juntas (orquestração visual).
-- **Depois**: F + G.
+6. **`ChannelIcon` / badges**: rotular `provider_type='gupshup'` como "Gupshup Oficial".
 
-### Arquivos afetados
+### Segredos necessários
 
-- DB: migrations para `ai_message_reviews`, `case_episodes`, seed Revisor + Orquestrador, colunas `use_orchestrator`.
-- Edge functions: `ai-review-message` (novo), `message-send` (hook), `ai-chain-executor` (suporte a `phases_override`), `ai-process-message` (tool `recall_similar_case`).
-- Front: `Atendimento.tsx` (badge + aba revisão), `Flows.tsx` + `CustomFlowNode.tsx` + `NodeConfigPanel.tsx` (nó AI Chain), `ChainHealth.tsx` (métricas extras), nova `AgentVersions.tsx`.
+- `GUPSHUP_API_KEY` — apikey da conta Gupshup (Settings → API Key).
+- `GUPSHUP_WEBHOOK_SECRET` — usado para HMAC do callback (configurado no painel Gupshup).
 
-Posso começar pela **Fase C** já?
+### API Docs / MCP
+
+7. Atualizar `src/pages/ApiDocs.tsx` e `supabase/functions/mcp-server/index.ts` adicionando provider `gupshup` à descrição de `message-send` e listando `gupshup-webhook` / `gupshup-send`.
+
+### Ordem de execução
+
+1. Pedir secrets (`GUPSHUP_API_KEY`, `GUPSHUP_WEBHOOK_SECRET`).
+2. Criar `gupshup-webhook` + `gupshup-send` + config.toml entry (`verify_jwt=false` no webhook).
+3. Alterar `message-send` para incluir routing Gupshup.
+4. UI de configuração da instância em Integrações.
+5. Atualizar ApiDocs + MCP.
+
+Confirma para eu começar pedindo os secrets do Gupshup?
