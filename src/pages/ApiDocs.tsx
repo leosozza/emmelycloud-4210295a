@@ -95,6 +95,41 @@ const endpoints: Endpoint[] = [
   { category: "ai", name: "Executor de Crew Multi-Agente", method: "POST", path: "/ai-crew-executor", auth: "Bearer JWT",
     description: "Executa tarefas distribuídas entre múltiplos agentes com delegate_to_agent." },
 
+  // ─────────── EMMELY CHAT CHAIN (multi-fase ChatDev-style) ───────────
+  { category: "ai", name: "Chain Executor (Multi-Fase)", method: "POST", path: "/ai-chain-executor", auth: "Service Role",
+    description: "Motor 'Emmely Chat Chain' inspirado em ChatDev. Executa uma ai_chain sequencialmente (fases instrutor↔assistente), com protocolo anti-alucinação, revisor por fase e quality gate global. Tudo auditado em ai_chain_executions + ai_phase_executions.",
+    request: `{
+  "chain_name": "atendimento_juridico_padrao",
+  "conversation_id": "uuid",
+  "lead_id": "uuid",
+  "input": { "user_message": "..." },
+  "triggered_by": "system"
+}`,
+    response: `{
+  "success": true,
+  "execution_id": "uuid",
+  "status": "completed | failed | escalated",
+  "chain": "atendimento_juridico_padrao",
+  "final_output": "...",
+  "total_cost_usd": 0.0123,
+  "total_tokens": 4210
+}`,
+    notes: "Cada fase pode exigir review (requires_review:true). Score < quality_threshold dispara retry (max_retries) e depois on_failure: abort | escalate. Pedidos de clarificação retornados pelo agente em JSON {needs_clarification:true,...} escalam automaticamente." },
+  { category: "ai", name: "Reviewer / Quality Gate", method: "POST", path: "/ai-review-message", auth: "Service Role",
+    description: "Avalia uma mensagem AI antes do envio (coerência factual, compliance LGPD/RGPD, tom, ausência de alucinações). Usado pelo hook em message-send: score < 0.75 bloqueia e marca delivery_status='pending_review'.",
+    request: `{
+  "message_id": "uuid",
+  "content": "Texto a revisar",
+  "context": { "conversation_id": "uuid", "agent_id": "uuid" }
+}`,
+    response: `{
+  "score": 0.87,
+  "decision": "approved | pending_review",
+  "feedback": "...",
+  "issues": ["..."],
+  "review_id": "uuid"
+}` },
+
   // ─────────── AGENTES ───────────
   { category: "agents", name: "Builder de Agente", method: "POST", path: "/agent-builder", auth: "Bearer JWT",
     description: "Cria/atualiza agentes IA com prompts, modelos, ferramentas e personalidade." },
