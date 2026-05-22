@@ -844,6 +844,9 @@ function OmniChannelTab() {
       {/* WhatsApp QRCode */}
       <WhatsAppQRCodeCard credProps={credProps} />
 
+      {/* Gupshup — WhatsApp Oficial (BSP) */}
+      <GupshupCard credProps={credProps} />
+
       {/* Instagram — Direct Meta API */}
       <Card>
         <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-2">
