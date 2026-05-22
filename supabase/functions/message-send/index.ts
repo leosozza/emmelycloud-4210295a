@@ -453,27 +453,26 @@ Deno.serve(async (req) => {
     // ── Resolve instance for WhatsApp to check provider ──
     let resolvedProvider = "meta"; // default
     if (conv.channel === "whatsapp" && !instance_id) {
-      // Check if there's a wuzapi instance active
-      const { data: wuzapiInstances } = await supabase
+      const { data: waInstances } = await supabase
         .from("channel_instances")
         .select("id, config")
         .eq("channel_type", "whatsapp")
         .eq("status", "active")
         .order("created_at", { ascending: false });
-      
-      const wuzapiInst = wuzapiInstances?.find((i: any) => (i.config as any)?.provider === "wuzapi");
-      if (wuzapiInst) {
-        resolvedProvider = "wuzapi";
-      }
+
+      const gupshupInst = waInstances?.find((i: any) => (i.config as any)?.provider === "gupshup");
+      const wuzapiInst = waInstances?.find((i: any) => (i.config as any)?.provider === "wuzapi");
+      if (gupshupInst) resolvedProvider = "gupshup";
+      else if (wuzapiInst) resolvedProvider = "wuzapi";
     } else if (instance_id) {
       const { data: inst } = await supabase
         .from("channel_instances")
         .select("config")
         .eq("id", instance_id)
         .single();
-      if (inst?.config && (inst.config as any)?.provider === "wuzapi") {
-        resolvedProvider = "wuzapi";
-      }
+      const prov = (inst?.config as any)?.provider;
+      if (prov === "gupshup") resolvedProvider = "gupshup";
+      else if (prov === "wuzapi") resolvedProvider = "wuzapi";
     }
 
     // ── Instagram: send via Meta Graph API ──
