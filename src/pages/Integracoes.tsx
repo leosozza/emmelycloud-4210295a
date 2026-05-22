@@ -728,7 +728,88 @@ function WhatsAppQRCodeCard({ credProps }: { credProps: any }) {
   );
 }
 
+// ─── Gupshup (WhatsApp Oficial BSP) Card ────────────────────────────────────
+
+function GupshupCard({ credProps }: { credProps: any }) {
+  const [saving, setSaving] = useState(false);
+  const webhookUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/gupshup-webhook`;
+
+  const handleActivate = async () => {
+    setSaving(true);
+    try {
+      const { data: existing } = await supabase
+        .from("channel_instances")
+        .select("id")
+        .eq("channel_type", "whatsapp")
+        .eq("name", "WhatsApp Gupshup")
+        .maybeSingle();
+
+      if (existing) {
+        await supabase.from("channel_instances").update({
+          status: "active",
+          config: { provider: "gupshup" },
+          updated_at: new Date().toISOString(),
+        }).eq("id", existing.id);
+      } else {
+        await supabase.from("channel_instances").insert({
+          channel_type: "whatsapp",
+          name: "WhatsApp Gupshup",
+          status: "active",
+          config: { provider: "gupshup" },
+        });
+      }
+      toast.success("Instância Gupshup ativada como provider WhatsApp ativo!");
+    } catch {
+      toast.error("Erro ao ativar instância Gupshup");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Card>
+      <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-2">
+        <div className="flex items-center gap-3">
+          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-emerald-100">
+            <Phone className="h-5 w-5 text-emerald-600" />
+          </div>
+          <div>
+            <CardTitle className="text-base">Gupshup — WhatsApp Oficial</CardTitle>
+            <CardDescription>WhatsApp Business via BSP Gupshup</CardDescription>
+          </div>
+        </div>
+        <StatusBadge status="active" />
+      </CardHeader>
+      <CardContent className="space-y-3 text-sm">
+        <div className="space-y-2">
+          <p className="font-medium text-xs uppercase text-muted-foreground tracking-wide">Credenciais Gupshup</p>
+          <CredentialInput provider="gupshup" credentialKey="GUPSHUP_API_KEY" label="API Key" {...credProps} />
+          <CredentialInput provider="gupshup" credentialKey="GUPSHUP_APP_NAME" label="App Name" {...credProps} />
+          <CredentialInput provider="gupshup" credentialKey="GUPSHUP_SOURCE_NUMBER" label="Source Number (E.164, sem +)" {...credProps} />
+          <CredentialInput provider="gupshup" credentialKey="GUPSHUP_WEBHOOK_SECRET" label="Webhook Secret (opcional, HMAC SHA-256)" {...credProps} />
+        </div>
+
+        <WebhookUrlDisplay
+          label="Webhook URL (colar no painel Gupshup)"
+          url={webhookUrl}
+          hint="Settings → Webhook Configuration → URL"
+        />
+
+        <Button size="sm" variant="default" className="w-full" onClick={handleActivate} disabled={saving}>
+          <Save className="h-3.5 w-3.5 mr-1.5" />
+          {saving ? "A ativar…" : "Ativar Gupshup como Provider WhatsApp"}
+        </Button>
+
+        <p className="text-xs text-muted-foreground">
+          Encontre as credenciais em <code>console.gupshup.io</code> → App selecionada → API Key. O App Name é o slug da app criada.
+        </p>
+      </CardContent>
+    </Card>
+  );
+}
+
 // ─── Omni Channel Tab ────────────────────────────────────────────────────────
+
 
 function OmniChannelTab() {
   const [conversations, setConversations] = useState<{ channel: string; count: number }[]>([]);
