@@ -542,8 +542,46 @@ Deno.serve(async (req) => {
       const lid = rawLid || legacyLidInPhone || "";
       const isLidContact = !phone && !!lid;
 
+      // ── Gupshup (WhatsApp Oficial BSP) ──
+      if (resolvedProvider === "gupshup") {
+        if (!phone) {
+          return new Response(JSON.stringify({ error: "Gupshup requer número E.164 (sem LID)" }), {
+            status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+        const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+        const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+        const gsContent = bodySenderName ? `*${bodySenderName}:*\n${content}` : content;
+        const gsBody: any = { to: phone, content: gsContent, message_type: "text" };
+        const mt = message_type as string | undefined;
+        if (mt === "image" || mt === "video" || mt === "audio" || mt === "document" || mt === "sticker") {
+          gsBody.message_type = mt;
+          gsBody.media_url = (resolvedInteractiveData as any)?.url || (resolvedInteractiveData as any);
+          gsBody.filename = (resolvedInteractiveData as any)?.filename;
+          gsBody.content = content;
+        } else if (mt === "template" && resolvedInteractiveData) {
+          gsBody.message_type = "template";
+          gsBody.template = {
+            id: (resolvedInteractiveData as any).id || (resolvedInteractiveData as any).name,
+            params: (resolvedInteractiveData as any).params || [],
+          };
+        }
+        const gsRes = await fetch(`${supabaseUrl}/functions/v1/gupshup-send`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${serviceKey}` },
+          body: JSON.stringify(gsBody),
+        });
+        const gsResult = await gsRes.json().catch(() => ({}));
+        if (!gsRes.ok || gsResult.error) {
+          console.error("[MESSAGE-SEND] Gupshup error:", gsResult);
+          return new Response(JSON.stringify({ error: "Falha ao enviar via Gupshup", details: gsResult }), {
+            status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+        externalMessageId = gsResult.message_id || null;
+
       // ── WUZAPI (WhatsApp QRCode) ──
-      if (resolvedProvider === "wuzapi") {
+      } else if (resolvedProvider === "wuzapi") {
         // WUZAPI accepts either a phone number or a LID-suffixed JID.
         // Prefer LID when present (some BR contacts only deliver via LID).
         const wuzapiPhone = lid ? `${lid}@lid` : phone;
