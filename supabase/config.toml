@@ -163,3 +163,10 @@ verify_jwt = false
 
 [functions.mcp-server]
 verify_jwt = false
+
+[functions.gupshup-webhook]
+verify_jwt = false
+
+[functions.gupshup-send]
+verify_jwt = false
+
