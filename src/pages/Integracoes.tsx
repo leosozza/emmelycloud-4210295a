@@ -296,7 +296,7 @@ function CredentialInput({
   credentials: Record<string, { has_value: boolean; masked: string }>;
   drafts: Record<string, string>;
   setDrafts: React.Dispatch<React.SetStateAction<Record<string, string>>>;
-  onSave: (provider: string, key: string, value: string) => Promise<void>;
+  onSave: (provider: string, key: string, value: string) => Promise<boolean | void>;
   saving: string | null;
 }) {
   const fullKey = `${provider}::${credentialKey}`;
@@ -740,18 +740,45 @@ function GupshupCard({ credProps }: { credProps: any }) {
     hasSecret?: boolean;
   } | null>(null);
   const webhookUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/gupshup-webhook`;
+  const gupshupFields = [
+    { key: "GUPSHUP_API_KEY", label: "API Key", required: true },
+    { key: "GUPSHUP_APP_NAME", label: "App Name", required: true },
+    { key: "GUPSHUP_SOURCE_NUMBER", label: "Source Number (E.164, sem +)", required: true },
+    { key: "GUPSHUP_WEBHOOK_SECRET", label: "Webhook Secret (opcional, HMAC SHA-256)", required: false },
+  ];
 
   const credentials = credProps?.credentials || {};
-  const hasRequired =
-    credentials?.GUPSHUP_API_KEY?.has_value &&
-    credentials?.GUPSHUP_APP_NAME?.has_value &&
-    credentials?.GUPSHUP_SOURCE_NUMBER?.has_value;
+  const drafts = credProps?.drafts || {};
+  const hasCredentialValue = (key: string) =>
+    Boolean(credentials?.[`gupshup::${key}`]?.has_value || drafts?.[`gupshup::${key}`]?.trim());
+  const hasRequired = gupshupFields.filter((f) => f.required).every((f) => hasCredentialValue(f.key));
+  const hasDrafts = gupshupFields.some((f) => Boolean(drafts?.[`gupshup::${f.key}`]?.trim()));
   const canActivate = testResult?.ok === true;
+
+  const savePendingGupshupCredentials = async () => {
+    const pending = gupshupFields
+      .map((field) => ({ ...field, value: drafts?.[`gupshup::${field.key}`]?.trim() || "" }))
+      .filter((field) => field.value);
+
+    for (const field of pending) {
+      const ok = await credProps.onSave("gupshup", field.key, field.value);
+      if (ok === false) return false;
+    }
+
+    return true;
+  };
 
   const handleTest = async () => {
     setTesting(true);
     setTestResult(null);
     try {
+      if (hasDrafts) {
+        const saved = await savePendingGupshupCredentials();
+        if (!saved) {
+          setTestResult({ ok: false, checks: [{ id: "save", label: "Credenciais", status: "fail", message: "Não foi possível guardar os dados Gupshup antes do teste." }] });
+          return;
+        }
+      }
       const { data, error } = await supabase.functions.invoke("gupshup-webhook-test", { body: {} });
       if (error) {
         toast.error("Falha ao testar webhook");
@@ -772,6 +799,13 @@ function GupshupCard({ credProps }: { credProps: any }) {
   const handleActivate = async () => {
     setSaving(true);
     try {
+      if (hasDrafts) {
+        const saved = await savePendingGupshupCredentials();
+        if (!saved) {
+          toast.error("Corrija e guarde as credenciais Gupshup antes de ativar");
+          return;
+        }
+      }
       const { data: existing } = await supabase
         .from("channel_instances")
         .select("id")
