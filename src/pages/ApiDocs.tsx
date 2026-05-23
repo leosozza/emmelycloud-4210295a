@@ -22,7 +22,7 @@ const MCP_URL = `${BASE_URL}/mcp-server`;
 type AuthType = "Bearer JWT" | "API Key" | "Webhook Secret" | "Public" | "Service Role";
 type Category =
   | "omnichannel" | "payments" | "ai" | "agents" | "voice"
-  | "bitrix24" | "knowledge" | "flows" | "admin" | "mcp";
+  | "bitrix24" | "knowledge" | "flows" | "admin" | "mcp" | "integracoes";
 
 interface Endpoint {
   name: string;
