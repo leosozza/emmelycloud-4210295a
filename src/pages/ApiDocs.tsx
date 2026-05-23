@@ -323,6 +323,7 @@ const endpoints: Endpoint[] = [
 const categories: { id: Category | "all"; label: string; icon: any }[] = [
   { id: "all", label: "Todos", icon: FileText },
   { id: "mcp", label: "MCP", icon: Server },
+  { id: "integracoes", label: "Integrações", icon: Zap },
   { id: "omnichannel", label: "Omnichannel", icon: MessageCircle },
   { id: "payments", label: "Pagamentos", icon: CreditCard },
   { id: "ai", label: "IA", icon: Bot },
