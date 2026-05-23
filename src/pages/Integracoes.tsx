@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback, lazy, Suspense } from "react";
 import { PageHeader } from "@/components/PageHeader";
+import { OpenClawTab } from "@/components/integracoes/OpenClawTab";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -3110,7 +3111,7 @@ export default function IntegracoesPage() {
 
       <Tabs defaultValue="instancias" className="w-full">
         {/* Mobile: scroll horizontal; Desktop: grid 7 colunas */}
-        <TabsList className="flex w-full overflow-x-auto scrollbar-none justify-start md:grid md:grid-cols-7 h-auto p-1">
+        <TabsList className="flex w-full overflow-x-auto scrollbar-none justify-start md:grid md:grid-cols-8 h-auto p-1">
           <TabsTrigger value="instancias" className="flex items-center gap-1.5 sm:gap-2 shrink-0 text-xs sm:text-sm whitespace-nowrap">
             <Server className="h-4 w-4" />
             Instâncias
@@ -3140,6 +3141,10 @@ export default function IntegracoesPage() {
             <Bot className="h-4 w-4" />
             IA
           </TabsTrigger>
+          <TabsTrigger value="openclaw" className="flex items-center gap-1.5 sm:gap-2 shrink-0 text-xs sm:text-sm whitespace-nowrap">
+            <Zap className="h-4 w-4" />
+            OpenClaw
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="instancias"><InstancesTab /></TabsContent>
@@ -3149,6 +3154,7 @@ export default function IntegracoesPage() {
         <TabsContent value="chatbot"><ChatbotTab /></TabsContent>
         <TabsContent value="pagamentos"><PagamentosTab /></TabsContent>
         <TabsContent value="ia"><IATab /></TabsContent>
+        <TabsContent value="openclaw"><OpenClawTab /></TabsContent>
       </Tabs>
     </div>
   );
