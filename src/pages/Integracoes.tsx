@@ -753,7 +753,7 @@ function GupshupCard({ credProps }: { credProps: any }) {
     Boolean(credentials?.[`gupshup::${key}`]?.has_value || drafts?.[`gupshup::${key}`]?.trim());
   const hasRequired = gupshupFields.filter((f) => f.required).every((f) => hasCredentialValue(f.key));
   const hasDrafts = gupshupFields.some((f) => Boolean(drafts?.[`gupshup::${f.key}`]?.trim()));
-  const canActivate = testResult?.ok === true;
+  const canActivate = testResult?.ok === true && !hasDrafts;
 
   const savePendingGupshupCredentials = async () => {
     const pending = gupshupFields
