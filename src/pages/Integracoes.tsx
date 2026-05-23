@@ -958,8 +958,14 @@ function OmniChannelTab() {
   const [igTesting, setIgTesting] = useState(false);
   const [igResult, setIgResult] = useState<any>(null);
   const [credentials, setCredentials] = useState<Record<string, { has_value: boolean; masked: string }>>({});
-  const [drafts, setDrafts] = useState<Record<string, string>>({});
+  const [drafts, setDrafts] = useState<Record<string, string>>(() => {
+    try { return JSON.parse(localStorage.getItem("integracoes::drafts") || "{}"); } catch { return {}; }
+  });
+  useEffect(() => {
+    try { localStorage.setItem("integracoes::drafts", JSON.stringify(drafts)); } catch { /* ignore */ }
+  }, [drafts]);
   const [saving, setSaving] = useState<string | null>(null);
+
 
   // Provider selection removed - always direct Meta API
 
