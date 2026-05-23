@@ -733,7 +733,41 @@ function WhatsAppQRCodeCard({ credProps }: { credProps: any }) {
 
 function GupshupCard({ credProps }: { credProps: any }) {
   const [saving, setSaving] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState<{
+    ok: boolean;
+    checks: Array<{ id: string; label: string; status: "ok" | "warn" | "fail"; message: string; detail?: string }>;
+    hasSecret?: boolean;
+  } | null>(null);
   const webhookUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/gupshup-webhook`;
+
+  const credentials = credProps?.credentials || {};
+  const hasRequired =
+    credentials?.GUPSHUP_API_KEY?.has_value &&
+    credentials?.GUPSHUP_APP_NAME?.has_value &&
+    credentials?.GUPSHUP_SOURCE_NUMBER?.has_value;
+  const canActivate = testResult?.ok === true;
+
+  const handleTest = async () => {
+    setTesting(true);
+    setTestResult(null);
+    try {
+      const { data, error } = await supabase.functions.invoke("gupshup-webhook-test", { body: {} });
+      if (error) {
+        toast.error("Falha ao testar webhook");
+        setTestResult({ ok: false, checks: [{ id: "err", label: "Erro", status: "fail", message: error.message || "Erro desconhecido" }] });
+      } else {
+        setTestResult(data);
+        if (data?.ok) toast.success("Webhook validado com sucesso");
+        else toast.error("Algum check falhou — veja detalhes");
+      }
+    } catch (e: any) {
+      toast.error("Erro ao chamar teste");
+      setTestResult({ ok: false, checks: [{ id: "err", label: "Erro", status: "fail", message: String(e?.message || e) }] });
+    } finally {
+      setTesting(false);
+    }
+  };
 
   const handleActivate = async () => {
     setSaving(true);
@@ -767,6 +801,9 @@ function GupshupCard({ credProps }: { credProps: any }) {
     }
   };
 
+  const statusIcon = (s: "ok" | "warn" | "fail") =>
+    s === "ok" ? "✅" : s === "warn" ? "⚠️" : "❌";
+
   return (
     <Card>
       <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-2">
@@ -796,10 +833,61 @@ function GupshupCard({ credProps }: { credProps: any }) {
           hint="Settings → Webhook Configuration → URL"
         />
 
-        <Button size="sm" variant="default" className="w-full" onClick={handleActivate} disabled={saving}>
+        <Button
+          size="sm"
+          variant="outline"
+          className="w-full"
+          onClick={handleTest}
+          disabled={testing || !hasRequired}
+        >
+          {testing ? "A testar…" : "Testar webhook e validar assinatura"}
+        </Button>
+
+        {!hasRequired && (
+          <p className="text-xs text-muted-foreground">
+            Preencha API Key, App Name e Source Number para habilitar o teste.
+          </p>
+        )}
+
+        {testResult && (
+          <div className="rounded-md border bg-muted/30 p-2 space-y-1.5">
+            {testResult.checks.map((c) => (
+              <div key={c.id} className="text-xs">
+                <div className="flex items-start gap-2">
+                  <span>{statusIcon(c.status)}</span>
+                  <div className="flex-1">
+                    <div className="font-medium">{c.label}</div>
+                    <div className="text-muted-foreground">{c.message}</div>
+                    {c.detail && (
+                      <details className="mt-1">
+                        <summary className="cursor-pointer text-muted-foreground/70">detalhe</summary>
+                        <pre className="mt-1 whitespace-pre-wrap text-[10px] bg-background/50 p-1 rounded">{c.detail}</pre>
+                      </details>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <Button
+          size="sm"
+          variant="default"
+          className="w-full"
+          onClick={handleActivate}
+          disabled={saving || !canActivate}
+          title={!canActivate ? "Execute o teste do webhook com sucesso antes de ativar" : ""}
+        >
           <Save className="h-3.5 w-3.5 mr-1.5" />
           {saving ? "A ativar…" : "Ativar Gupshup como Provider WhatsApp"}
         </Button>
+
+        {!canActivate && (
+          <p className="text-xs text-muted-foreground">
+            Execute o teste acima e obtenha resultado ✅ antes de ativar.
+          </p>
+        )}
 
         <p className="text-xs text-muted-foreground">
           Encontre as credenciais em <code>console.gupshup.io</code> → App selecionada → API Key. O App Name é o slug da app criada.
