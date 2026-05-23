@@ -2257,6 +2257,7 @@ function InstancesTab() {
           const drafts = configDrafts[inst.id] || {};
           const isWhatsapp = inst.channel_type === "whatsapp";
           const isWuzapi = isWhatsapp && inst.config?.provider === "wuzapi";
+          const isGupshup = isWhatsapp && inst.config?.provider === "gupshup";
           const showVal = showValues[inst.id] ?? false;
 
           return (
@@ -2269,7 +2270,7 @@ function InstancesTab() {
                   <div>
                     <CardTitle className="text-base">{inst.name}</CardTitle>
                     <CardDescription>
-                      {isWuzapi ? "WhatsApp QR Code" : isWhatsapp ? "WhatsApp Business API" : "Instagram Graph API"}
+                      {isWuzapi ? "WhatsApp QR Code" : isGupshup ? "WhatsApp Oficial via Gupshup" : isWhatsapp ? "WhatsApp Business API" : "Instagram Graph API"}
                       {inst.config.bitrix24_mapping_id && bitrixMappings.length > 0 && (
                         <span className="text-[10px] text-blue-600 flex items-center gap-0.5 mt-0.5">
                           <Plug className="h-2.5 w-2.5" />
