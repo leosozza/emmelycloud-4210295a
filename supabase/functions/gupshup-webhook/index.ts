@@ -195,27 +195,30 @@ Deno.serve(async (req) => {
         unread_count: 1,
       }).eq("id", conversationId);
 
-      // Fire-and-forget downstream
-      fetch(`${supabaseUrl}/functions/v1/flow-engine`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${serviceKey}` },
-        body: JSON.stringify({
-          conversation_id: conversationId,
-          message_text: text,
-          message_type: p.type,
-          interactive_response: interactiveResponse,
-          instance_id: instance?.id || null,
-        }),
-      }).catch((e) => console.error("[GUPSHUP-WEBHOOK] flow-engine:", e));
+      // Skip downstream (flow-engine / bitrix24) for test payloads
+      const isTest = p?.context?.test === true;
+      if (!isTest) {
+        fetch(`${supabaseUrl}/functions/v1/flow-engine`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${serviceKey}` },
+          body: JSON.stringify({
+            conversation_id: conversationId,
+            message_text: text,
+            message_type: p.type,
+            interactive_response: interactiveResponse,
+            instance_id: instance?.id || null,
+          }),
+        }).catch((e) => console.error("[GUPSHUP-WEBHOOK] flow-engine:", e));
 
-      fetch(`${supabaseUrl}/functions/v1/bitrix24-send`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${serviceKey}` },
-        body: JSON.stringify({
-          message: text, contactName: senderName, contactId: from,
-          channel: "whatsapp", conversationId, instanceId: instance?.id || null,
-        }),
-      }).catch((e) => console.error("[GUPSHUP-WEBHOOK] bitrix24-send:", e));
+        fetch(`${supabaseUrl}/functions/v1/bitrix24-send`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${serviceKey}` },
+          body: JSON.stringify({
+            message: text, contactName: senderName, contactId: from,
+            channel: "whatsapp", conversationId, instanceId: instance?.id || null,
+          }),
+        }).catch((e) => console.error("[GUPSHUP-WEBHOOK] bitrix24-send:", e));
+      }
     }
 
     return new Response(JSON.stringify({ ok: true }), {

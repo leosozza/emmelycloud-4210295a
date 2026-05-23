@@ -1,40 +1,41 @@
-## Atualizar /api-docs com OpenClaw e GitHub
+# Testar webhook do Gupshup antes de ativar
 
-Adicionar à página `/api-docs` documentação visível das duas integrações que estavam em falta.
+Adicionar um botão "Testar webhook" no card Gupshup em `/integracoes` que valida conectividade e assinatura HMAC SHA-256 antes da ativação.
 
-### 1. Nova categoria "Integrações" (na barra de tabs)
+## UX no card Gupshup (`src/pages/Integracoes.tsx`)
 
-Adicionar `integracoes` ao array de categories (ícone `Plug` ou `Zap`), com 4 entradas novas:
+Logo abaixo do campo `GUPSHUP_WEBHOOK_SECRET` e da URL do webhook, adicionar:
 
-- **`openclaw-send`** (POST, Bearer JWT) — Reenviar uma mensagem recebida para o agente OpenClaw configurado e devolver a resposta. Inclui exemplo de request `{ integration_id, message, conversation_id, contact, test }` e response.
-- **OpenClaw via MCP** — entrada informativa apontando para `/mcp-server` (link/anchor) explicando que o agente OpenClaw usa o MCP do Emmely com `X-API-Key: emk_live_...` para executar ferramentas no CRM.
-- **`api-key-create` / `api-key-revoke`** já existem na categoria MCP — adicionar referência cruzada na nova categoria.
-- **GitHub Sync (bidirecional)** — entrada informativa (sem endpoint, `auth: Public`) descrevendo como o projeto está ligado ao GitHub via Lovable (sync automático nos dois sentidos, branch principal, sem webhooks adicionais).
+- Botão **"Testar webhook"** (variant outline). Desativado se faltar `GUPSHUP_API_KEY`, `GUPSHUP_APP_NAME` ou `GUPSHUP_SOURCE_NUMBER`.
+- Bloco de resultado expansível com 3 checks em formato de checklist:
+  1. **Endpoint acessível** — GET ao webhook retorna 200 OK
+  2. **Assinatura HMAC válida** — POST simulado com header `x-gupshup-signature` assinado com o secret salvo é aceito (200); POST com assinatura inválida é rejeitado (401). Se nenhum secret configurado: aviso amarelo "Webhook desprotegido — recomendado configurar `GUPSHUP_WEBHOOK_SECRET`".
+  3. **Persistência** — confirma que o evento de teste foi gravado em `messages` (lookup por `external_id` único do teste) e depois removido.
+- Cada item mostra status (ok/warn/fail) + mensagem curta + detalhe técnico em `<details>`.
+- Botão **"Ativar Gupshup"** existente só fica habilitado depois do teste passar (ou usuário clicar "Ativar mesmo assim" caso queira ignorar warn de secret ausente).
 
-### 2. Cartão destacado "Integrar OpenClaw"
+## Backend: nova edge function `gupshup-webhook-test`
 
-Acima do cartão MCP existente (ou logo abaixo), adicionar um Card com:
-- Passo 1: gerar chave API em `/api-docs/keys`
-- Passo 2: colar `https://emmelycloud.lovable.app/mcp-server` + header `X-API-Key` no OpenClaw
-- Passo 3: registar endpoint do agente OpenClaw em `/integracoes` → aba OpenClaw para o Emmely poder pedir respostas
-- Botão direto para `/integracoes`
+`supabase/functions/gupshup-webhook-test/index.ts` — invocada pelo botão via `supabase.functions.invoke`.
 
-### 3. Cartão destacado "GitHub"
+Fluxo:
+1. Lê `GUPSHUP_WEBHOOK_SECRET` de `integration_credentials`.
+2. Faz `GET` ao próprio `gupshup-webhook` → registra check #1.
+3. Monta payload sintético tipo `message` Gupshup com `external_id = "test-<uuid>"`, assina com HMAC SHA-256 do secret e faz `POST` ao `gupshup-webhook` com header `x-gupshup-signature: sha256=<hex>` → espera 200.
+4. Se secret existe: refaz `POST` com assinatura inválida → espera 401 (confirma rejeição).
+5. Aguarda ~500ms e busca em `messages` por `external_id` para confirmar persistência; em seguida apaga o registro (service role).
+6. Retorna JSON `{ checks: [{ id, status, message, detail }] }`.
 
-Cartão informativo com:
-- Estado: sincronização bidirecional ativa via Lovable + GitHub App
-- Como conectar: Plus (+) → GitHub → Connect project
-- Como exportar código: Code Editor → Download codebase, ou GitHub → Code → Download ZIP
-- Nota de que a base de dados é exportada separadamente em Cloud → Database
+Config: deploy padrão com `verify_jwt = true` (chamada autenticada do app).
 
-### 4. Atualizar contador de stats
+## Pequeno ajuste em `gupshup-webhook`
 
-Adicionar uma stat "Integrações" no grid de estatísticas (passa de 5 para 6 cards) e atualizar o total no header.
+Marcar mensagens de teste para não disparar fluxos/IA: se `payload.payload?.context?.test === true`, salva em `messages` e retorna 200 sem invocar `ai-automation-agent` / `flow-engine`. Mantém todo o caminho de validação HMAC real.
 
-### Ficheiros tocados
+## Arquivos
 
-- `src/pages/ApiDocs.tsx` — adicionar entradas, categoria, 2 cards informativos, contador.
+- novo: `supabase/functions/gupshup-webhook-test/index.ts`
+- editar: `supabase/functions/gupshup-webhook/index.ts` (early-return em payload de teste)
+- editar: `src/pages/Integracoes.tsx` (botão + bloco de resultado + gating do "Ativar")
 
-### Fora do âmbito
-
-Nada a alterar em backend nem migrações — `openclaw-send` e tabela `openclaw_integrations` já existem da implementação anterior.
+Sem migrações de DB.
