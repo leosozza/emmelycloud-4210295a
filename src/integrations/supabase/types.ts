@@ -3132,6 +3132,45 @@ export type Database = {
         }
         Relationships: []
       }
+      openclaw_integrations: {
+        Row: {
+          agent_endpoint: string
+          auth_header_name: string
+          auth_token: string | null
+          created_at: string
+          created_by: string | null
+          id: string
+          is_active: boolean
+          name: string
+          payload_template: Json
+          updated_at: string
+        }
+        Insert: {
+          agent_endpoint: string
+          auth_header_name?: string
+          auth_token?: string | null
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          is_active?: boolean
+          name: string
+          payload_template?: Json
+          updated_at?: string
+        }
+        Update: {
+          agent_endpoint?: string
+          auth_header_name?: string
+          auth_token?: string | null
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          is_active?: boolean
+          name?: string
+          payload_template?: Json
+          updated_at?: string
+        }
+        Relationships: []
+      }
       payment_gateway_config: {
         Row: {
           config: Json | null
