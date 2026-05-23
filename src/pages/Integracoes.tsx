@@ -296,7 +296,7 @@ function CredentialInput({
   credentials: Record<string, { has_value: boolean; masked: string }>;
   drafts: Record<string, string>;
   setDrafts: React.Dispatch<React.SetStateAction<Record<string, string>>>;
-  onSave: (provider: string, key: string, value: string) => Promise<void>;
+  onSave: (provider: string, key: string, value: string) => Promise<boolean | void>;
   saving: string | null;
 }) {
   const fullKey = `${provider}::${credentialKey}`;
@@ -740,18 +740,45 @@ function GupshupCard({ credProps }: { credProps: any }) {
     hasSecret?: boolean;
   } | null>(null);
   const webhookUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/gupshup-webhook`;
+  const gupshupFields = [
+    { key: "GUPSHUP_API_KEY", label: "API Key", required: true },
+    { key: "GUPSHUP_APP_NAME", label: "App Name", required: true },
+    { key: "GUPSHUP_SOURCE_NUMBER", label: "Source Number (E.164, sem +)", required: true },
+    { key: "GUPSHUP_WEBHOOK_SECRET", label: "Webhook Secret (opcional, HMAC SHA-256)", required: false },
+  ];
 
   const credentials = credProps?.credentials || {};
-  const hasRequired =
-    credentials?.GUPSHUP_API_KEY?.has_value &&
-    credentials?.GUPSHUP_APP_NAME?.has_value &&
-    credentials?.GUPSHUP_SOURCE_NUMBER?.has_value;
-  const canActivate = testResult?.ok === true;
+  const drafts = credProps?.drafts || {};
+  const hasCredentialValue = (key: string) =>
+    Boolean(credentials?.[`gupshup::${key}`]?.has_value || drafts?.[`gupshup::${key}`]?.trim());
+  const hasRequired = gupshupFields.filter((f) => f.required).every((f) => hasCredentialValue(f.key));
+  const hasDrafts = gupshupFields.some((f) => Boolean(drafts?.[`gupshup::${f.key}`]?.trim()));
+  const canActivate = testResult?.ok === true && !hasDrafts;
+
+  const savePendingGupshupCredentials = async () => {
+    const pending = gupshupFields
+      .map((field) => ({ ...field, value: drafts?.[`gupshup::${field.key}`]?.trim() || "" }))
+      .filter((field) => field.value);
+
+    for (const field of pending) {
+      const ok = await credProps.onSave("gupshup", field.key, field.value);
+      if (ok === false) return false;
+    }
+
+    return true;
+  };
 
   const handleTest = async () => {
     setTesting(true);
     setTestResult(null);
     try {
+      if (hasDrafts) {
+        const saved = await savePendingGupshupCredentials();
+        if (!saved) {
+          setTestResult({ ok: false, checks: [{ id: "save", label: "Credenciais", status: "fail", message: "Não foi possível guardar os dados Gupshup antes do teste." }] });
+          return;
+        }
+      }
       const { data, error } = await supabase.functions.invoke("gupshup-webhook-test", { body: {} });
       if (error) {
         toast.error("Falha ao testar webhook");
@@ -772,9 +799,16 @@ function GupshupCard({ credProps }: { credProps: any }) {
   const handleActivate = async () => {
     setSaving(true);
     try {
+      if (hasDrafts) {
+        const saved = await savePendingGupshupCredentials();
+        if (!saved) {
+          toast.error("Corrija e guarde as credenciais Gupshup antes de ativar");
+          return;
+        }
+      }
       const { data: existing } = await supabase
         .from("channel_instances")
-        .select("id")
+        .select("id, config")
         .eq("channel_type", "whatsapp")
         .eq("name", "WhatsApp Gupshup")
         .maybeSingle();
@@ -782,7 +816,7 @@ function GupshupCard({ credProps }: { credProps: any }) {
       if (existing) {
         await supabase.from("channel_instances").update({
           status: "active",
-          config: { provider: "gupshup" },
+          config: { ...((existing.config as Record<string, any>) || {}), provider: "gupshup" },
           updated_at: new Date().toISOString(),
         }).eq("id", existing.id);
       } else {
@@ -821,10 +855,19 @@ function GupshupCard({ credProps }: { credProps: any }) {
       <CardContent className="space-y-3 text-sm">
         <div className="space-y-2">
           <p className="font-medium text-xs uppercase text-muted-foreground tracking-wide">Credenciais Gupshup</p>
-          <CredentialInput provider="gupshup" credentialKey="GUPSHUP_API_KEY" label="API Key" {...credProps} />
-          <CredentialInput provider="gupshup" credentialKey="GUPSHUP_APP_NAME" label="App Name" {...credProps} />
-          <CredentialInput provider="gupshup" credentialKey="GUPSHUP_SOURCE_NUMBER" label="Source Number (E.164, sem +)" {...credProps} />
-          <CredentialInput provider="gupshup" credentialKey="GUPSHUP_WEBHOOK_SECRET" label="Webhook Secret (opcional, HMAC SHA-256)" {...credProps} />
+          {gupshupFields.map((field) => (
+            <CredentialInput key={field.key} provider="gupshup" credentialKey={field.key} label={field.label} {...credProps} />
+          ))}
+          <Button
+            size="sm"
+            variant="outline"
+            className="w-full"
+            onClick={savePendingGupshupCredentials}
+            disabled={saving || testing || !hasDrafts}
+          >
+            <Save className="h-3.5 w-3.5 mr-1.5" />
+            Guardar credenciais Gupshup
+          </Button>
         </div>
 
         <WebhookUrlDisplay
@@ -931,7 +974,7 @@ function OmniChannelTab() {
     // Validação prévia no frontend: rejeitar Publishable Keys do Stripe
     if (key.toUpperCase().includes("STRIPE") && value.trim().startsWith("pk_")) {
       toast.error("A chave Stripe configurada é uma Publishable Key (pk_). Configure a Secret Key (sk_) em Integrações.");
-      return;
+      return false;
     }
     setSaving(fullKey);
     try {
@@ -942,15 +985,19 @@ function OmniChannelTab() {
       // Verificar erro retornado pelo backend no corpo da resposta (status 400)
       if (error || data?.error) {
         toast.error(data?.error || "Erro ao guardar credencial");
+        return false;
       } else {
         toast.success(`${key} guardado com sucesso`);
         setDrafts((prev) => ({ ...prev, [fullKey]: "" }));
         await loadCredentials();
+        return true;
       }
     } catch {
       toast.error("Erro de rede");
+      return false;
+    } finally {
+      setSaving(null);
     }
-    setSaving(null);
   };
 
   useEffect(() => {
@@ -2220,6 +2267,7 @@ function InstancesTab() {
           const drafts = configDrafts[inst.id] || {};
           const isWhatsapp = inst.channel_type === "whatsapp";
           const isWuzapi = isWhatsapp && inst.config?.provider === "wuzapi";
+          const isGupshup = isWhatsapp && inst.config?.provider === "gupshup";
           const showVal = showValues[inst.id] ?? false;
 
           return (
@@ -2232,7 +2280,7 @@ function InstancesTab() {
                   <div>
                     <CardTitle className="text-base">{inst.name}</CardTitle>
                     <CardDescription>
-                      {isWuzapi ? "WhatsApp QR Code" : isWhatsapp ? "WhatsApp Business API" : "Instagram Graph API"}
+                      {isWuzapi ? "WhatsApp QR Code" : isGupshup ? "WhatsApp Oficial via Gupshup" : isWhatsapp ? "WhatsApp Business API" : "Instagram Graph API"}
                       {inst.config.bitrix24_mapping_id && bitrixMappings.length > 0 && (
                         <span className="text-[10px] text-blue-600 flex items-center gap-0.5 mt-0.5">
                           <Plug className="h-2.5 w-2.5" />
