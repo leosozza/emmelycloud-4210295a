@@ -292,6 +292,32 @@ const endpoints: Endpoint[] = [
   { category: "mcp", name: "Revogar Chave de API", method: "POST", path: "/api-key-revoke", auth: "Bearer JWT",
     description: "Revoga uma chave existente. Definitivo.",
     request: `{ "id": "uuid-da-chave" }` },
+
+  // ─────────── INTEGRAÇÕES EXTERNAS (OpenClaw, GitHub) ───────────
+  { category: "integracoes", name: "OpenClaw → Emmely (via MCP)", method: "GET/POST", path: "/mcp-server", auth: "API Key",
+    description: "O agente OpenClaw conecta-se ao MCP Server do Emmely com X-API-Key para executar ferramentas no CRM (criar leads, enviar WhatsApp, gerar pagamentos, pesquisar conhecimento, executar chains de IA).",
+    notes: "Configure no OpenClaw: URL https://qohnsluvhyziovfynzlu.supabase.co/functions/v1/mcp-server · Header X-API-Key: emk_live_... · Accept: application/json, text/event-stream. Gere a chave em /api-docs/keys." },
+  { category: "integracoes", name: "Emmely → OpenClaw (resposta do agente)", method: "POST", path: "/openclaw-send", auth: "Bearer JWT",
+    description: "Proxy interno que envia uma mensagem (do cliente) para o endpoint HTTP de um agente OpenClaw previamente registado em /integracoes → aba OpenClaw, e devolve a resposta gerada. Faz placeholder replacement em {{message}}, {{conversation_id}}, {{contact}} sobre o payload_template configurado.",
+    request: `{
+  "integration_id": "uuid-do-agente-openclaw",
+  "message": "Olá, preciso de informação sobre o meu processo",
+  "conversation_id": "uuid",
+  "contact": { "name": "João", "phone": "+351..." },
+  "test": false
+}`,
+    response: `{
+  "success": true,
+  "reply": "Resposta gerada pelo OpenClaw...",
+  "raw": { /* payload original devolvido pelo OpenClaw */ }
+}`,
+    notes: "Auth header e token usados no fetch para o OpenClaw são lidos da configuração armazenada em openclaw_integrations (encriptados). Use test:true para validar conectividade sem afetar conversas." },
+  { category: "integracoes", name: "Gerar chave API para OpenClaw", method: "POST", path: "/api-key-create", auth: "Bearer JWT",
+    description: "Mesma rota da categoria MCP — gera chave emk_live_... a colar no campo X-API-Key do conector OpenClaw.",
+    request: `{ "name": "OpenClaw Production", "scopes": ["read", "write"] }` },
+  { category: "integracoes", name: "GitHub Sync (bidirecional)", method: "GET/POST", path: "(gerido pela Lovable GitHub App)", auth: "Public",
+    description: "O projeto está conectado ao GitHub via Lovable GitHub App. Sincronização bidirecional em tempo real: alterações feitas em Lovable são push automaticamente, e commits feitos no GitHub são pull automaticamente. Não há webhook a configurar.",
+    notes: "Conectar: Plus (+) no chat → GitHub → Connect project. Exportar código: Code Editor → Download codebase, ou diretamente no GitHub → Code → Download ZIP. A base de dados é exportada separadamente em Cloud → Database → Tables (CSV)." },
 ];
 
 const categories: { id: Category | "all"; label: string; icon: any }[] = [
