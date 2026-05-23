@@ -70,18 +70,27 @@ Deno.serve(async (req) => {
       instance = (instances || []).find((i: any) => (i.config as any)?.provider === "gupshup") || null;
     }
 
-    // Delivery / status events
+    // ── Delivery / status events ───────────────────────────────────────────
     if (payload.type === "message-event") {
       const evt = payload.payload || {};
       const gsId = evt.gsId || evt.id;
       const statusMap: Record<string, string> = {
-        enqueued: "sent", sent: "sent", delivered: "delivered", read: "read", failed: "failed",
+        enqueued: "sent", sent: "sent", delivered: "delivered", read: "read",
+        failed: "failed", mo_message: "received",
       };
       const status = statusMap[evt.type] || evt.type;
       if (gsId && status) {
         await supabase.from("messages").update({ delivery_status: status }).eq("external_id", gsId);
       }
       return new Response(JSON.stringify({ ok: true }), {
+        status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // ── Eventos meta (opt-in/out, billing, template, system, account) ──────
+    if (["user-event", "billing-event", "template-event", "account-event", "system-event"].includes(payload.type)) {
+      console.log("[GUPSHUP-WEBHOOK] meta-event:", payload.type, JSON.stringify(payload.payload || {}).slice(0, 300));
+      return new Response(JSON.stringify({ ok: true, acknowledged: payload.type }), {
         status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
