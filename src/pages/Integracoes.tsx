@@ -2100,7 +2100,7 @@ function InstancesTab() {
   };
 
   const getConfigFields = (type: string, config?: Record<string, any>): { key: string; label: string }[] => {
-    if (type === "whatsapp" && config?.provider === "wuzapi") {
+    if (type === "whatsapp" && (config?.provider === "wuzapi" || config?.provider === "gupshup")) {
       return [];
     }
     if (type === "whatsapp") {
