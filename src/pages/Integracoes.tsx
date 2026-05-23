@@ -964,7 +964,7 @@ function OmniChannelTab() {
     // Validação prévia no frontend: rejeitar Publishable Keys do Stripe
     if (key.toUpperCase().includes("STRIPE") && value.trim().startsWith("pk_")) {
       toast.error("A chave Stripe configurada é uma Publishable Key (pk_). Configure a Secret Key (sk_) em Integrações.");
-      return;
+      return false;
     }
     setSaving(fullKey);
     try {
@@ -975,15 +975,19 @@ function OmniChannelTab() {
       // Verificar erro retornado pelo backend no corpo da resposta (status 400)
       if (error || data?.error) {
         toast.error(data?.error || "Erro ao guardar credencial");
+        return false;
       } else {
         toast.success(`${key} guardado com sucesso`);
         setDrafts((prev) => ({ ...prev, [fullKey]: "" }));
         await loadCredentials();
+        return true;
       }
     } catch {
       toast.error("Erro de rede");
+      return false;
+    } finally {
+      setSaving(null);
     }
-    setSaving(null);
   };
 
   useEffect(() => {
