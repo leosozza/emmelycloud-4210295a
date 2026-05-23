@@ -816,7 +816,7 @@ function GupshupCard({ credProps }: { credProps: any }) {
       if (existing) {
         await supabase.from("channel_instances").update({
           status: "active",
-          config: { ...(existing.config || {}), provider: "gupshup" },
+          config: { ...((existing.config as Record<string, any>) || {}), provider: "gupshup" },
           updated_at: new Date().toISOString(),
         }).eq("id", existing.id);
       } else {
