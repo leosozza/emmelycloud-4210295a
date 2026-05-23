@@ -497,10 +497,54 @@ export default function ApiDocsPage() {
         </CardContent>
       </Card>
 
+      {/* Integração OpenClaw + GitHub (lado a lado) */}
+      <div className="grid md:grid-cols-2 gap-3 mb-6">
+        <Card className="border-accent/30 bg-accent/5">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm flex items-center gap-2">
+              <Zap className="h-4 w-4 text-accent-foreground" /> Integrar com OpenClaw
+            </CardTitle>
+            <CardDescription className="text-xs">
+              Liga um agente OpenClaw ao Emmely nos dois sentidos.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-2 text-xs">
+            <p><strong>1.</strong> Gera uma chave em <Link to="/api-docs/keys" className="text-primary underline">/api-docs/keys</Link>.</p>
+            <p><strong>2.</strong> No OpenClaw, adiciona o MCP Server: cola <code className="font-mono bg-background px-1 rounded">{MCP_URL}</code> e o header <code className="font-mono bg-background px-1 rounded">X-API-Key: emk_live_…</code>. Já passa a executar ferramentas do CRM, pagamentos e IA do Emmely.</p>
+            <p><strong>3.</strong> Para o Emmely <em>chamar</em> o teu agente OpenClaw (e.g. responder clientes), regista o endpoint HTTP do agente em <Link to="/integracoes" className="text-primary underline">/integracoes → aba OpenClaw</Link>.</p>
+            <div className="pt-2">
+              <Link to="/integracoes">
+                <Button variant="outline" size="sm" className="text-xs">
+                  Configurar OpenClaw <ExternalLink className="h-3 w-3 ml-1.5" />
+                </Button>
+              </Link>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm flex items-center gap-2">
+              <Github className="h-4 w-4" /> GitHub (sincronização bidirecional)
+            </CardTitle>
+            <CardDescription className="text-xs">
+              Código-fonte sincronizado em tempo real com o GitHub via Lovable App.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-2 text-xs text-muted-foreground">
+            <p><strong className="text-foreground">Estado:</strong> alterações em Lovable fazem push automático; commits no GitHub fazem pull automático. Sem webhooks manuais.</p>
+            <p><strong className="text-foreground">Conectar:</strong> botão <code>+</code> no chat → GitHub → Connect project.</p>
+            <p><strong className="text-foreground">Exportar código:</strong> Code Editor → <em>Download codebase</em>, ou GitHub → <em>Code → Download ZIP</em>.</p>
+            <p><strong className="text-foreground">Exportar dados:</strong> Cloud → Database → Tables → Export CSV (separado do código).</p>
+          </CardContent>
+        </Card>
+      </div>
+
       {/* Stats */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-6">
+      <div className="grid grid-cols-2 md:grid-cols-6 gap-3 mb-6">
         {[
           { label: "Endpoints", value: endpoints.length },
+          { label: "Integrações", value: endpoints.filter((e) => e.category === "integracoes").length },
           { label: "Omnichannel", value: endpoints.filter((e) => e.category === "omnichannel").length },
           { label: "Pagamentos", value: endpoints.filter((e) => e.category === "payments").length },
           { label: "Bitrix24", value: endpoints.filter((e) => e.category === "bitrix24").length },
