@@ -808,7 +808,7 @@ function GupshupCard({ credProps }: { credProps: any }) {
       }
       const { data: existing } = await supabase
         .from("channel_instances")
-        .select("id")
+        .select("id, config")
         .eq("channel_type", "whatsapp")
         .eq("name", "WhatsApp Gupshup")
         .maybeSingle();
@@ -816,7 +816,7 @@ function GupshupCard({ credProps }: { credProps: any }) {
       if (existing) {
         await supabase.from("channel_instances").update({
           status: "active",
-          config: { provider: "gupshup" },
+          config: { ...(existing.config || {}), provider: "gupshup" },
           updated_at: new Date().toISOString(),
         }).eq("id", existing.id);
       } else {
@@ -855,10 +855,9 @@ function GupshupCard({ credProps }: { credProps: any }) {
       <CardContent className="space-y-3 text-sm">
         <div className="space-y-2">
           <p className="font-medium text-xs uppercase text-muted-foreground tracking-wide">Credenciais Gupshup</p>
-          <CredentialInput provider="gupshup" credentialKey="GUPSHUP_API_KEY" label="API Key" {...credProps} />
-          <CredentialInput provider="gupshup" credentialKey="GUPSHUP_APP_NAME" label="App Name" {...credProps} />
-          <CredentialInput provider="gupshup" credentialKey="GUPSHUP_SOURCE_NUMBER" label="Source Number (E.164, sem +)" {...credProps} />
-          <CredentialInput provider="gupshup" credentialKey="GUPSHUP_WEBHOOK_SECRET" label="Webhook Secret (opcional, HMAC SHA-256)" {...credProps} />
+          {gupshupFields.map((field) => (
+            <CredentialInput key={field.key} provider="gupshup" credentialKey={field.key} label={field.label} {...credProps} />
+          ))}
         </div>
 
         <WebhookUrlDisplay
