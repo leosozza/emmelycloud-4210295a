@@ -1,76 +1,46 @@
-## Integração Gupshup — WhatsApp Oficial (BSP)
+## Adicionar integração OpenClaw em /integracoes
 
-Adicionar Gupshup como novo provider de WhatsApp Business API (alternativa ao Meta Cloud API direto), mantendo WUZAPI e Meta funcionando em paralelo.
+Adicionar uma nova aba **"OpenClaw"** na página `/integracoes` para o utilizador conectar o seu agente OpenClaw ao Emmely.
 
-### Arquitetura
+### O que vai ser criado
 
-```text
-Cliente WhatsApp
-      │
-      ▼
-Gupshup BSP ──(webhook)──► gupshup-webhook ──► conversations/messages
-                                              │
-                                              ├─► flow-engine
-                                              └─► bitrix24-send
+**1. Nova aba "OpenClaw"** em `src/pages/Integracoes.tsx` (junto a IA, Chatbot, etc.)
 
-UI / flow-engine ──► message-send ──► gupshup-send ──► Gupshup API ──► Cliente
-```
+**2. Componente `OpenClawTab`** com 2 secções:
 
-### Banco de dados
+**A) Emmely → OpenClaw (MCP Server)**
+Mostrar ao utilizador, pronto a copiar, os dados que ele precisa de colar dentro do OpenClaw para o agente OpenClaw conseguir executar funções no Emmely (criar pagamentos, consultar leads, enviar mensagens, etc.):
+- URL do MCP: `https://emmelycloud.lovable.app/mcp-server`
+- Header de auth: `X-API-Key: emk_live_...`
+- Botão "Gerar chave API" → abre `/api-docs` (ou cria diretamente uma chave `emk_live_` via fluxo existente)
+- Lista resumida das ferramentas disponíveis (CRM, pagamentos, mensagens)
 
-- `channel_instances`: novo `provider_type = 'gupshup'` (channel_type = 'whatsapp').
-  - `config`: `{ app_name, app_id, source_number, api_key_secret_ref, webhook_secret_ref }`
-- Nenhuma migration estrutural — usa schema existente.
+**B) OpenClaw → Emmely (Agente que responde clientes)**
+Formulário para guardar a configuração do agente OpenClaw que vai responder a mensagens recebidas:
+- Nome do agente
+- Endpoint HTTP do agente OpenClaw (URL onde o Emmely envia a mensagem do cliente)
+- Método (POST), formato de payload (preset: `{ message, conversation_id, contact }`)
+- Header de autenticação (Bearer token / API key) — guardado encriptado
+- Toggle "Ativo"
+- Botão "Testar conexão" (envia um ping ao endpoint e mostra resposta)
 
-### Edge Functions (novas)
+### Onde os dados ficam guardados
 
-1. **`gupshup-webhook`** (público, `verify_jwt = false`)
-   - Valida HMAC-SHA256 do header `X-Gupshup-Signature` com `GUPSHUP_WEBHOOK_SECRET`.
-   - Resolve `channel_instance` por `app` no payload.
-   - Eventos suportados: `message` (text/image/audio/video/document/location/button_reply/list_reply), `message-event` (sent/delivered/read/failed).
-   - Cria/atualiza `conversations` + `messages` com `external_id` = `gsId`.
-   - Dispara `flow-engine` e `bitrix24-send` (fire-and-forget).
-   - Anti-duplicação via `external_id`.
+Nova tabela `openclaw_integrations`:
+- `name`, `agent_endpoint`, `auth_header_name`, `auth_token` (texto), `payload_template` (jsonb), `is_active`, `created_by`, timestamps
+- RLS: só `admin` pode ler/escrever (consistente com `bitrix24_integrations`)
 
-2. **`gupshup-send`** (service role)
-   - Endpoint: `POST https://api.gupshup.io/wa/api/v1/msg`
-   - Header `apikey: GUPSHUP_API_KEY`.
-   - Suporta: text, image, video, document, audio, sticker, template (HSM com `template` + `params`).
-   - Retorna `messageId` → grava em `messages.external_id`.
-   - Trata erro 401/403/429 com toast amigável.
+### Edge function
 
-### Edge Functions (alteradas)
+`supabase/functions/openclaw-send/index.ts` — envia uma mensagem ao endpoint OpenClaw configurado e devolve a resposta. Vai ser usada depois pelo pipeline de chat (não faz parte desta tarefa ligar ao pipeline — só criar a integração e o transporte).
 
-3. **`message-send`**: roteia para `gupshup-send` quando `channel_instances.provider_type = 'gupshup'` (além do Meta/WUZAPI já existentes).
-4. **`flow-engine`**: sem mudanças — usa `message-send` como abstração.
+### Ficheiros tocados
 
-### Frontend
+- `src/pages/Integracoes.tsx` — adicionar `TabsTrigger`/`TabsContent` "openclaw" + componente `OpenClawTab`
+- `supabase/migrations/...` — tabela `openclaw_integrations` + RLS
+- `supabase/functions/openclaw-send/index.ts` — proxy de envio + teste
+- `supabase/config.toml` — registar a função
 
-5. **`src/pages/Integracoes.tsx`** (ou aba WhatsApp existente): novo card "Gupshup (WhatsApp Oficial)" com formulário:
-   - Nome da instância
-   - App Name (Gupshup)
-   - App ID
-   - Source Number (E.164)
-   - Botão para registar `GUPSHUP_API_KEY` e `GUPSHUP_WEBHOOK_SECRET` (via secrets).
-   - Mostra URL do webhook a colar no painel Gupshup: `https://qohnsluvhyziovfynzlu.supabase.co/functions/v1/gupshup-webhook`.
+### Fora do âmbito (próximo passo)
 
-6. **`ChannelIcon` / badges**: rotular `provider_type='gupshup'` como "Gupshup Oficial".
-
-### Segredos necessários
-
-- `GUPSHUP_API_KEY` — apikey da conta Gupshup (Settings → API Key).
-- `GUPSHUP_WEBHOOK_SECRET` — usado para HMAC do callback (configurado no painel Gupshup).
-
-### API Docs / MCP
-
-7. Atualizar `src/pages/ApiDocs.tsx` e `supabase/functions/mcp-server/index.ts` adicionando provider `gupshup` à descrição de `message-send` e listando `gupshup-webhook` / `gupshup-send`.
-
-### Ordem de execução
-
-1. Pedir secrets (`GUPSHUP_API_KEY`, `GUPSHUP_WEBHOOK_SECRET`).
-2. Criar `gupshup-webhook` + `gupshup-send` + config.toml entry (`verify_jwt=false` no webhook).
-3. Alterar `message-send` para incluir routing Gupshup.
-4. UI de configuração da instância em Integrações.
-5. Atualizar ApiDocs + MCP.
-
-Confirma para eu começar pedindo os secrets do Gupshup?
+Ligar o `openclaw-send` ao motor de chatbot para responder automaticamente em WhatsApp/Instagram. Fica para depois de validares a aba e a conexão.
