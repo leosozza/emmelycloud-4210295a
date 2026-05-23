@@ -858,6 +858,16 @@ function GupshupCard({ credProps }: { credProps: any }) {
           {gupshupFields.map((field) => (
             <CredentialInput key={field.key} provider="gupshup" credentialKey={field.key} label={field.label} {...credProps} />
           ))}
+          <Button
+            size="sm"
+            variant="outline"
+            className="w-full"
+            onClick={savePendingGupshupCredentials}
+            disabled={saving || testing || !hasDrafts}
+          >
+            <Save className="h-3.5 w-3.5 mr-1.5" />
+            Guardar credenciais Gupshup
+          </Button>
         </div>
 
         <WebhookUrlDisplay
