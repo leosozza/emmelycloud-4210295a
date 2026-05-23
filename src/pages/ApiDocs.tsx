@@ -12,6 +12,7 @@ import { useAuthContext } from "@/contexts/AuthContext";
 import {
   Copy, ChevronDown, Search, MessageCircle, CreditCard, Bot, FileText,
   Shield, Plug, Workflow, Database, Key, Server, Volume2, Brain, Mic, Layers, ArrowLeft,
+  Github, Zap, ExternalLink,
 } from "lucide-react";
 
 const PROJECT_ID = import.meta.env.VITE_SUPABASE_PROJECT_ID;
