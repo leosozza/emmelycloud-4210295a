@@ -12,6 +12,7 @@ import { useAuthContext } from "@/contexts/AuthContext";
 import {
   Copy, ChevronDown, Search, MessageCircle, CreditCard, Bot, FileText,
   Shield, Plug, Workflow, Database, Key, Server, Volume2, Brain, Mic, Layers, ArrowLeft,
+  Github, Zap, ExternalLink,
 } from "lucide-react";
 
 const PROJECT_ID = import.meta.env.VITE_SUPABASE_PROJECT_ID;
@@ -21,7 +22,7 @@ const MCP_URL = `${BASE_URL}/mcp-server`;
 type AuthType = "Bearer JWT" | "API Key" | "Webhook Secret" | "Public" | "Service Role";
 type Category =
   | "omnichannel" | "payments" | "ai" | "agents" | "voice"
-  | "bitrix24" | "knowledge" | "flows" | "admin" | "mcp";
+  | "bitrix24" | "knowledge" | "flows" | "admin" | "mcp" | "integracoes";
 
 interface Endpoint {
   name: string;
@@ -291,11 +292,38 @@ const endpoints: Endpoint[] = [
   { category: "mcp", name: "Revogar Chave de API", method: "POST", path: "/api-key-revoke", auth: "Bearer JWT",
     description: "Revoga uma chave existente. Definitivo.",
     request: `{ "id": "uuid-da-chave" }` },
+
+  // ─────────── INTEGRAÇÕES EXTERNAS (OpenClaw, GitHub) ───────────
+  { category: "integracoes", name: "OpenClaw → Emmely (via MCP)", method: "GET/POST", path: "/mcp-server", auth: "API Key",
+    description: "O agente OpenClaw conecta-se ao MCP Server do Emmely com X-API-Key para executar ferramentas no CRM (criar leads, enviar WhatsApp, gerar pagamentos, pesquisar conhecimento, executar chains de IA).",
+    notes: "Configure no OpenClaw: URL https://qohnsluvhyziovfynzlu.supabase.co/functions/v1/mcp-server · Header X-API-Key: emk_live_... · Accept: application/json, text/event-stream. Gere a chave em /api-docs/keys." },
+  { category: "integracoes", name: "Emmely → OpenClaw (resposta do agente)", method: "POST", path: "/openclaw-send", auth: "Bearer JWT",
+    description: "Proxy interno que envia uma mensagem (do cliente) para o endpoint HTTP de um agente OpenClaw previamente registado em /integracoes → aba OpenClaw, e devolve a resposta gerada. Faz placeholder replacement em {{message}}, {{conversation_id}}, {{contact}} sobre o payload_template configurado.",
+    request: `{
+  "integration_id": "uuid-do-agente-openclaw",
+  "message": "Olá, preciso de informação sobre o meu processo",
+  "conversation_id": "uuid",
+  "contact": { "name": "João", "phone": "+351..." },
+  "test": false
+}`,
+    response: `{
+  "success": true,
+  "reply": "Resposta gerada pelo OpenClaw...",
+  "raw": { /* payload original devolvido pelo OpenClaw */ }
+}`,
+    notes: "Auth header e token usados no fetch para o OpenClaw são lidos da configuração armazenada em openclaw_integrations (encriptados). Use test:true para validar conectividade sem afetar conversas." },
+  { category: "integracoes", name: "Gerar chave API para OpenClaw", method: "POST", path: "/api-key-create", auth: "Bearer JWT",
+    description: "Mesma rota da categoria MCP — gera chave emk_live_... a colar no campo X-API-Key do conector OpenClaw.",
+    request: `{ "name": "OpenClaw Production", "scopes": ["read", "write"] }` },
+  { category: "integracoes", name: "GitHub Sync (bidirecional)", method: "GET/POST", path: "(gerido pela Lovable GitHub App)", auth: "Public",
+    description: "O projeto está conectado ao GitHub via Lovable GitHub App. Sincronização bidirecional em tempo real: alterações feitas em Lovable são push automaticamente, e commits feitos no GitHub são pull automaticamente. Não há webhook a configurar.",
+    notes: "Conectar: Plus (+) no chat → GitHub → Connect project. Exportar código: Code Editor → Download codebase, ou diretamente no GitHub → Code → Download ZIP. A base de dados é exportada separadamente em Cloud → Database → Tables (CSV)." },
 ];
 
 const categories: { id: Category | "all"; label: string; icon: any }[] = [
   { id: "all", label: "Todos", icon: FileText },
   { id: "mcp", label: "MCP", icon: Server },
+  { id: "integracoes", label: "Integrações", icon: Zap },
   { id: "omnichannel", label: "Omnichannel", icon: MessageCircle },
   { id: "payments", label: "Pagamentos", icon: CreditCard },
   { id: "ai", label: "IA", icon: Bot },
@@ -469,10 +497,54 @@ export default function ApiDocsPage() {
         </CardContent>
       </Card>
 
+      {/* Integração OpenClaw + GitHub (lado a lado) */}
+      <div className="grid md:grid-cols-2 gap-3 mb-6">
+        <Card className="border-accent/30 bg-accent/5">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm flex items-center gap-2">
+              <Zap className="h-4 w-4 text-accent-foreground" /> Integrar com OpenClaw
+            </CardTitle>
+            <CardDescription className="text-xs">
+              Liga um agente OpenClaw ao Emmely nos dois sentidos.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-2 text-xs">
+            <p><strong>1.</strong> Gera uma chave em <Link to="/api-docs/keys" className="text-primary underline">/api-docs/keys</Link>.</p>
+            <p><strong>2.</strong> No OpenClaw, adiciona o MCP Server: cola <code className="font-mono bg-background px-1 rounded">{MCP_URL}</code> e o header <code className="font-mono bg-background px-1 rounded">X-API-Key: emk_live_…</code>. Já passa a executar ferramentas do CRM, pagamentos e IA do Emmely.</p>
+            <p><strong>3.</strong> Para o Emmely <em>chamar</em> o teu agente OpenClaw (e.g. responder clientes), regista o endpoint HTTP do agente em <Link to="/integracoes" className="text-primary underline">/integracoes → aba OpenClaw</Link>.</p>
+            <div className="pt-2">
+              <Link to="/integracoes">
+                <Button variant="outline" size="sm" className="text-xs">
+                  Configurar OpenClaw <ExternalLink className="h-3 w-3 ml-1.5" />
+                </Button>
+              </Link>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm flex items-center gap-2">
+              <Github className="h-4 w-4" /> GitHub (sincronização bidirecional)
+            </CardTitle>
+            <CardDescription className="text-xs">
+              Código-fonte sincronizado em tempo real com o GitHub via Lovable App.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-2 text-xs text-muted-foreground">
+            <p><strong className="text-foreground">Estado:</strong> alterações em Lovable fazem push automático; commits no GitHub fazem pull automático. Sem webhooks manuais.</p>
+            <p><strong className="text-foreground">Conectar:</strong> botão <code>+</code> no chat → GitHub → Connect project.</p>
+            <p><strong className="text-foreground">Exportar código:</strong> Code Editor → <em>Download codebase</em>, ou GitHub → <em>Code → Download ZIP</em>.</p>
+            <p><strong className="text-foreground">Exportar dados:</strong> Cloud → Database → Tables → Export CSV (separado do código).</p>
+          </CardContent>
+        </Card>
+      </div>
+
       {/* Stats */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-6">
+      <div className="grid grid-cols-2 md:grid-cols-6 gap-3 mb-6">
         {[
           { label: "Endpoints", value: endpoints.length },
+          { label: "Integrações", value: endpoints.filter((e) => e.category === "integracoes").length },
           { label: "Omnichannel", value: endpoints.filter((e) => e.category === "omnichannel").length },
           { label: "Pagamentos", value: endpoints.filter((e) => e.category === "payments").length },
           { label: "Bitrix24", value: endpoints.filter((e) => e.category === "bitrix24").length },
