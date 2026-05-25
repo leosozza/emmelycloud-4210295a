@@ -201,6 +201,8 @@ export function ContactProfile({ conversation, onClose }: ContactProfileProps) {
   if (!bitrixDeepPath && existingLead?.bitrix24_id) {
     bitrixEntityLabel = bitrixEntityLabel || `Lead #${existingLead.bitrix24_id}`;
     bitrixDeepPath = `crm/lead/details/${existingLead.bitrix24_id}/`;
+  }
+
 
   const isLinkedToCrm = !!(bitrixDealId || bitrixLeadId || bitrixEntityId) || !!existingLead?.bitrix24_id;
 
