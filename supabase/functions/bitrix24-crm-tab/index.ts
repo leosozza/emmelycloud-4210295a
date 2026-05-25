@@ -1312,8 +1312,12 @@ function renderHtml(opts: {
           if (sendBtn) sendBtn.disabled = false;
         });
       } catch(e) { if (sendBtn) sendBtn.disabled = false; }
+      // Lazy-load HSM templates when the start-conversation card is on screen
+      try { if (document.getElementById('hsm-template-select')) loadHsmTemplates(); } catch(e) {}
     });
-  } catch(e) {}
+  } catch(e) {
+    try { if (document.getElementById('hsm-template-select')) loadHsmTemplates(); } catch(_) {}
+  }
 </script>
 </body>
 </html>`;
