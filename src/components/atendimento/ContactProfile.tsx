@@ -137,6 +137,24 @@ export function ContactProfile({ conversation, onClose }: ContactProfileProps) {
     staleTime: 60_000,
   });
 
+  // Fetch Bitrix24 portal base URL to build deep links on demand
+  const { data: bitrixPortalBase } = useQuery({
+    queryKey: ["bitrix24-portal-base"],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("bitrix24_integrations")
+        .select("client_endpoint, domain")
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (!data) return null;
+      if (data.domain) return `https://${data.domain}/`;
+      if (data.client_endpoint) return data.client_endpoint.replace(/\/rest\/?$/, "/");
+      return null;
+    },
+    staleTime: 5 * 60_000,
+  });
+
   if (!conversation) {
     return (
       <div className="w-72 xl:w-80 border-l bg-card hidden lg:flex items-center justify-center shrink-0">
@@ -179,6 +197,12 @@ export function ContactProfile({ conversation, onClose }: ContactProfileProps) {
       bitrixEntityLabel = `#${bitrixEntityId}`;
     }
   }
+  // Fallback: lead saved locally with bitrix24_id but no bot_state
+  if (!bitrixDeepPath && existingLead?.bitrix24_id) {
+    bitrixEntityLabel = bitrixEntityLabel || `Lead #${existingLead.bitrix24_id}`;
+    bitrixDeepPath = `crm/lead/details/${existingLead.bitrix24_id}/`;
+  }
+
 
   const isLinkedToCrm = !!(bitrixDealId || bitrixLeadId || bitrixEntityId) || !!existingLead?.bitrix24_id;
 
@@ -318,8 +342,11 @@ export function ContactProfile({ conversation, onClose }: ContactProfileProps) {
                   size="sm"
                   className="w-full text-xs"
                   onClick={() => {
-                    // Best-effort: extract portal from any known integration via window? Just rely on backend deep_link previously returned. As fallback, open Bitrix24 search.
-                    toast.info("Use o botão 'Salvar no CRM' para receber o link directo na próxima criação.");
+                    if (bitrixPortalBase) {
+                      window.open(`${bitrixPortalBase}${bitrixDeepPath}`, "_blank", "noopener,noreferrer");
+                    } else {
+                      toast.error("Portal Bitrix24 não configurado.");
+                    }
                   }}
                 >
                   <ExternalLink className="h-3 w-3 mr-1" /> Abrir no Bitrix24
