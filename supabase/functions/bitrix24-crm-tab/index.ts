@@ -432,8 +432,11 @@ function renderHtml(opts: {
 
   // Build "Start Conversation" UI with template selector
   const primaryPhone = phones[0] || "";
-  const canStartWhatsApp = whatsappEnabled && primaryPhone.length >= 8;
+  // Sempre permitimos iniciar pelo WhatsApp se o canal estiver habilitado.
+  // Se não houver telefone no CRM, o utilizador insere manualmente.
+  const canStartWhatsApp = whatsappEnabled;
   const canStartInstagram = instagramEnabled;
+  const needsManualPhone = whatsappEnabled && !primaryPhone;
 
   const startConvHtml = !conversationId ? `
     <div style="text-align:center;padding:24px 16px">
@@ -444,6 +447,14 @@ function renderHtml(opts: {
       </p>
       ${phones.length ? `<p style="color:#333840;font-size:12px;margin:0 0 4px;display:flex;align-items:center;justify-content:center;gap:4px">${B24_ICONS.phone} ${phones.map(p => "+" + p).join(", ")}</p>` : ""}
       ${emails.length ? `<p style="color:#333840;font-size:12px;margin:0 0 12px;display:flex;align-items:center;justify-content:center;gap:4px">${B24_ICONS.mail} ${emails.join(", ")}</p>` : ""}
+
+      ${needsManualPhone ? `
+        <div style="margin:12px 0;text-align:left;padding:10px;background:#fef3c7;border:1px solid #fde68a;border-radius:8px">
+          <label style="font-size:11px;color:#92400e;display:block;margin-bottom:4px;font-weight:600">⚠ Nenhum telefone no CRM — insira manualmente</label>
+          <input id="manual-phone-input" type="tel" inputmode="numeric" placeholder="Ex: 351912345678 ou 5511987654321" style="width:100%;padding:8px 10px;border:1px solid #fcd34d;border-radius:6px;font-size:13px;color:#333840;background:#fff;outline:none" />
+          <p style="font-size:10.5px;color:#92400e;margin:4px 0 0">Inclua o código do país (351 PT, 55 BR), apenas dígitos.</p>
+        </div>
+      ` : ""}
 
       ${canStartWhatsApp ? `
         <div style="margin:12px 0;text-align:left">
@@ -1236,6 +1247,18 @@ function renderHtml(opts: {
       var hsmSel = document.getElementById('hsm-template-select');
       var hsmId = hsmSel ? hsmSel.value : '';
       var isHsm = !!hsmId && !!SELECTED_HSM;
+
+      // Se for WhatsApp e não houver telefone no CRM, ler do input manual
+      if (channel === 'whatsapp' && !phone) {
+        var manualInp = document.getElementById('manual-phone-input');
+        var manual = manualInp ? (manualInp.value || '').replace(/\\D/g, '') : '';
+        if (!manual || manual.length < 8) {
+          setStatus('Informe o telefone (com indicativo, apenas dígitos)', '#f59e0b');
+          if (manualInp) manualInp.focus();
+          return;
+        }
+        phone = manual;
+      }
 
       var message = '';
       var params = [];
