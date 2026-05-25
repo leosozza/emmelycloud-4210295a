@@ -1136,10 +1136,127 @@ function renderHtml(opts: {
       .catch(function(e) { setStatus('❌ Erro: ' + e.message, '#ef4444'); });
     }
 
+    // ── HSM Templates (Gupshup) ──
+    var HSM_TEMPLATES = [];
+    var SELECTED_HSM = null;
+
+    function loadHsmTemplates() {
+      var sel = document.getElementById('hsm-template-select');
+      if (!sel) return;
+      fetch(SUPABASE_URL + '/functions/v1/gupshup-templates', {
+        headers: { 'apikey': SUPABASE_KEY, 'Authorization': 'Bearer ' + SUPABASE_KEY }
+      })
+      .then(function(r) { return r.json(); })
+      .then(function(d) {
+        HSM_TEMPLATES = (d && d.templates) || [];
+        sel.innerHTML = '';
+        var opt0 = document.createElement('option');
+        opt0.value = '';
+        opt0.textContent = HSM_TEMPLATES.length
+          ? '— Nenhum (usar texto livre, só dentro de 24h) —'
+          : (d && d.reason === 'missing_app_id'
+              ? '⚠ Configure GUPSHUP_APP_ID em Integrações'
+              : (d && d.reason === 'missing_api_key'
+                  ? '⚠ Configure GUPSHUP_API_KEY em Integrações'
+                  : '— Sem templates aprovados —'));
+        sel.appendChild(opt0);
+        HSM_TEMPLATES.forEach(function(t) {
+          var o = document.createElement('option');
+          o.value = t.id;
+          o.textContent = (t.elementName || t.id) + (t.language ? ' [' + t.language + ']' : '') +
+                          (t.paramCount ? ' • ' + t.paramCount + ' var' : '');
+          sel.appendChild(o);
+        });
+      })
+      .catch(function(e) {
+        sel.innerHTML = '<option value="">Erro ao carregar: ' + (e.message || e) + '</option>';
+      });
+    }
+
+    function renderHsmPreview() {
+      var preview = document.getElementById('hsm-preview');
+      if (!preview || !SELECTED_HSM) return;
+      var body = SELECTED_HSM.body || '';
+      for (var i = 1; i <= SELECTED_HSM.paramCount; i++) {
+        var inp = document.getElementById('hsm-param-' + i);
+        var v = inp ? (inp.value || '').trim() : '';
+        body = body.split('{{' + i + '}}').join(v ? v : '{{' + i + '}}');
+      }
+      preview.textContent = body;
+    }
+
+    function onHsmTemplateChange() {
+      var sel = document.getElementById('hsm-template-select');
+      var container = document.getElementById('hsm-params-container');
+      var preview = document.getElementById('hsm-preview');
+      var freeWrap = document.getElementById('free-text-wrap');
+      var quickWrap = document.getElementById('quick-reply-wrap');
+      var id = sel ? sel.value : '';
+      SELECTED_HSM = null;
+      if (!id) {
+        if (container) { container.style.display = 'none'; container.innerHTML = ''; }
+        if (preview) { preview.style.display = 'none'; preview.textContent = ''; }
+        if (freeWrap) freeWrap.style.display = '';
+        if (quickWrap) quickWrap.style.display = '';
+        return;
+      }
+      SELECTED_HSM = HSM_TEMPLATES.find(function(t) { return String(t.id) === String(id); });
+      if (!SELECTED_HSM) return;
+      // Hide free text & quick replies — HSM is the only valid path
+      if (freeWrap) freeWrap.style.display = 'none';
+      if (quickWrap) quickWrap.style.display = 'none';
+      if (container) {
+        container.innerHTML = '';
+        for (var i = 1; i <= SELECTED_HSM.paramCount; i++) {
+          var label = document.createElement('label');
+          label.style.cssText = 'font-size:11px;color:#959ca4;display:block;margin:6px 0 2px';
+          label.textContent = 'Parâmetro {{' + i + '}}';
+          var input = document.createElement('input');
+          input.type = 'text';
+          input.id = 'hsm-param-' + i;
+          input.placeholder = 'Valor para {{' + i + '}}';
+          input.style.cssText = 'width:100%;padding:7px 10px;border:1px solid #dfe0e3;border-radius:8px;font-size:13px;color:#333840;outline:none';
+          input.oninput = renderHsmPreview;
+          container.appendChild(label);
+          container.appendChild(input);
+        }
+        container.style.display = SELECTED_HSM.paramCount > 0 ? 'block' : 'none';
+      }
+      if (preview) { preview.style.display = 'block'; }
+      renderHsmPreview();
+    }
+
+    function onQuickReplyChange() {
+      var sel = document.getElementById('template-select');
+      var ta = document.getElementById('start-msg-input');
+      if (sel && ta && sel.value) ta.value = sel.value;
+    }
+
     function startConversation(channel, phone) {
-      var msgInput = document.getElementById('start-msg-input');
-      var message = msgInput ? msgInput.value.trim() : 'Olá! Em que posso ajudar?';
-      if (!message) { setStatus('Escreva uma mensagem', '#f59e0b'); return; }
+      var hsmSel = document.getElementById('hsm-template-select');
+      var hsmId = hsmSel ? hsmSel.value : '';
+      var isHsm = !!hsmId && !!SELECTED_HSM;
+
+      var message = '';
+      var params = [];
+
+      if (isHsm) {
+        for (var i = 1; i <= SELECTED_HSM.paramCount; i++) {
+          var inp = document.getElementById('hsm-param-' + i);
+          var v = inp ? (inp.value || '').trim() : '';
+          if (!v) { setStatus('Preencha o parâmetro {{' + i + '}}', '#f59e0b'); if (inp) inp.focus(); return; }
+          params.push(v);
+        }
+        message = SELECTED_HSM.body || '';
+        for (var j = 1; j <= params.length; j++) {
+          message = message.split('{{' + j + '}}').join(params[j - 1]);
+        }
+      } else {
+        var msgInput = document.getElementById('start-msg-input');
+        message = msgInput ? msgInput.value.trim() : 'Olá! Em que posso ajudar?';
+        if (!message) { setStatus('Escreva uma mensagem', '#f59e0b'); return; }
+      }
+
       setStatus('A iniciar conversa...', '#888');
       var convPayload = {
         channel: channel || 'whatsapp',
@@ -1163,18 +1280,24 @@ function renderHtml(opts: {
         var newConv = Array.isArray(rows) ? rows[0] : rows;
         if (!newConv || !newConv.id) throw new Error('Falha ao criar conversa');
         CONVERSATION_ID = newConv.id;
-        // Now send the message
+
+        var sendBody = { conversation_id: newConv.id, content: message };
+        if (isHsm) {
+          sendBody.message_type = 'template';
+          sendBody.resolvedInteractiveData = { id: SELECTED_HSM.id, params: params };
+        }
+
         return fetch(SUPABASE_URL + '/functions/v1/message-send', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_KEY },
-          body: JSON.stringify({ conversation_id: newConv.id, content: message })
+          headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_KEY, 'Authorization': 'Bearer ' + SUPABASE_KEY },
+          body: JSON.stringify(sendBody)
         }).then(function(r) { return r.json(); });
       })
       .then(function(d) {
-        if (d && d.error) throw new Error(d.error);
+        if (d && d.error) throw new Error(typeof d.error === 'string' ? d.error : JSON.stringify(d.error));
         setStatus('✅ Conversa iniciada!', '#22c55e');
       })
-      .catch(function(e) { setStatus('❌ ' + e.message, '#ef4444'); });
+      .catch(function(e) { setStatus('❌ ' + (e.message || e), '#ef4444'); });
     }
 
   try {
