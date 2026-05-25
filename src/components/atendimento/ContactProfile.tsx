@@ -197,6 +197,10 @@ export function ContactProfile({ conversation, onClose }: ContactProfileProps) {
       bitrixEntityLabel = `#${bitrixEntityId}`;
     }
   }
+  // Fallback: lead saved locally with bitrix24_id but no bot_state
+  if (!bitrixDeepPath && existingLead?.bitrix24_id) {
+    bitrixEntityLabel = bitrixEntityLabel || `Lead #${existingLead.bitrix24_id}`;
+    bitrixDeepPath = `crm/lead/details/${existingLead.bitrix24_id}/`;
 
   const isLinkedToCrm = !!(bitrixDealId || bitrixLeadId || bitrixEntityId) || !!existingLead?.bitrix24_id;
 
