@@ -1,43 +1,36 @@
-# Plano para fazer as conversas do Gupshup aparecerem no Emmely Cloud
+# Auto-resolver telefone do Deal/Lead no placement Bitrix24
 
-## Objetivo
-Garantir que mensagens recebidas via Gupshup criem/atualizem conversas visíveis em `/atendimento` e eliminar os registros órfãos que hoje indicam evento processado sem conversa persistida.
+## Problema
+Hoje o `bitrix24-crm-tab` só extrai telefone de:
+- A entidade do placement (Deal/Lead/Contact/Company) via `PHONE`
+- Para Deals: apenas do `CONTACT_ID` principal
 
-## O que vou implementar
+Quando o Deal não tem `CONTACT_ID` principal preenchido (mas tem contatos vinculados via `crm.deal.contact.items.get`), ou quando vem de um Lead convertido, o telefone não aparece e o campo manual é exigido — apesar do telefone existir no CRM.
 
-1. **Auditar e corrigir o fluxo do webhook do Gupshup**
-   - Revisar o caminho completo de entrada da mensagem até a gravação em `conversations` e `messages`.
-   - Adicionar logs objetivos no webhook para identificar criação de conversa, deduplicação, falha de insert e atualização de unread.
-   - Corrigir qualquer ponto que permita retornar sucesso sem persistir a conversa/mensagem.
+## Solução
+Tornar a resolução de telefone determinística e exaustiva no backend, eliminando o input manual sempre que houver qualquer telefone rastreável.
 
-2. **Corrigir o fluxo de teste que hoje gera notificação órfã**
-   - Ajustar `gupshup-webhook-test` para validar persistência de ponta a ponta sem deixar `notifications` apontando para `conversation_id` inexistente.
-   - Garantir limpeza completa dos registros sintéticos criados pelo teste.
+### Mudanças em `supabase/functions/bitrix24-crm-tab/index.ts`
 
-3. **Blindar a exibição no atendimento**
-   - Verificar se a listagem em `Atendimento.tsx`/`ConversationList.tsx` depende de algum campo que o fluxo Gupshup não está preenchendo.
-   - Ajustar o frontend apenas se houver filtro/estado impedindo a renderização de conversas válidas.
+1. **Deal (entityTypeNum === 2)**: além de `CONTACT_ID`, chamar:
+   - `crm.deal.contact.items.get` → iterar todos os contatos vinculados, fazer `crm.contact.get` em cada e juntar `PHONE`
+   - Se `deal.LEAD_ID` existir, fazer `crm.lead.get` e extrair `PHONE` do lead de origem
+   - Se a empresa do deal (`COMPANY_ID`) existir e ainda não houver phone, fazer `crm.company.get` como último recurso
 
-4. **Validar com teste real do backend**
-   - Executar chamadas diretas às funções para confirmar:
-     - criação da conversa,
-     - criação da mensagem,
-     - atualização de `last_message_at`/`last_message_preview`,
-     - visibilidade na query que abastece a tela.
+2. **Lead (entityTypeNum === 1)**: já funciona, mas adicionar fallback — se vazio e o lead tiver `CONTACT_ID`, buscar do contato vinculado.
 
-## Diagnóstico atual
-- A tela de atendimento está carregando `conversations` com sucesso.
-- Existem notificações para a conversa `89e922df-efac-4506-868a-b56c576a49a2`, mas essa conversa **não existe** na tabela `conversations` e também não há mensagens ligadas a ela.
-- Isso indica um problema de integridade no fluxo de entrada/teste, não um bloqueio simples de RLS na tela.
-- As políticas de `conversations` e `messages` para utilizadores autenticados estão presentes e, pelo que vi, não explicam sozinhas o desaparecimento.
+3. **Contact (entityTypeNum === 3)**: se vazio, buscar deals vinculados via `crm.contact.deal.items.get` e tentar extrair phone dos deals.
 
-## Detalhes técnicos
-- Arquivos principais a ajustar:
-  - `supabase/functions/gupshup-webhook/index.ts`
-  - `supabase/functions/gupshup-webhook-test/index.ts`
-  - possivelmente `src/pages/Atendimento.tsx` ou `src/components/atendimento/ConversationList.tsx` se houver filtro inconsistente
-- Não pretendo alterar autenticação nem expandir escopo para outras integrações.
-- Se eu identificar problema estrutural no banco (ex.: trigger/função ausente ou inconsistência de dados), proponho a migração mínima necessária antes do restante.
+4. **SPA / entidades dinâmicas (entityTypeNum >= 128)**: usar `crm.item.get` com `entityTypeId`, ler campos `contactIds`/`contactId` e iterar `crm.contact.get`.
+
+5. **Logging**: registrar em `[CRM-TAB] phone resolution` quais fontes deram hit (deal, contact, linked-contacts, lead, spa) para diagnóstico futuro.
+
+6. **UI**: manter o input manual apenas como fallback verdadeiro (quando `allPhones.length === 0` após todas as tentativas). Quando há phone resolvido, esconder completamente o bloco amarelo e usar `phones[0]` automaticamente no `startConversation`.
+
+### Não muda
+- Lógica do frontend já usa `PHONES[0]` quando disponível — basta o backend popular corretamente.
+- Seleção de template HSM e demais fluxos permanecem iguais.
+- Sem mudanças de schema.
 
 ## Resultado esperado
-Depois disso, uma mensagem recebida pelo Gupshup deve aparecer como conversa normal no atendimento do Emmely Cloud, com preview, contador de não lidas e histórico consistente.
+Ao abrir a aba no Bitrix24 em qualquer Deal/Lead/SPA que tenha telefone em si ou em qualquer entidade relacionada (contato principal, contatos vinculados, lead de origem, empresa), o telefone aparece automaticamente e o botão "Iniciar no WhatsApp" dispara sem pedir digitação.

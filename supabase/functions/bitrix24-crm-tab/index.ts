@@ -1478,46 +1478,112 @@ Deno.serve(async (req) => {
 
     if (entityId) {
       const entityTypeNum = parseInt(entityTypeId);
+      const isSpa = entityTypeNum >= 128;
       let crmMethod = "crm.lead.get";
       if (entityTypeNum === 2) crmMethod = "crm.deal.get";
       else if (entityTypeNum === 3) crmMethod = "crm.contact.get";
       else if (entityTypeNum === 4) crmMethod = "crm.company.get";
 
+      const phoneSources: string[] = [];
+      const addPhones = (src: string, arr: string[]) => {
+        if (!arr || arr.length === 0) return;
+        const before = allPhones.length;
+        allPhones = [...new Set([...allPhones, ...arr])];
+        if (allPhones.length > before) phoneSources.push(`${src}(${arr.length})`);
+      };
+
+      const fetchContactPhones = async (contactId: string | number) => {
+        try {
+          const d = await callBitrix(endpoint, accessToken, "crm.contact.get", { ID: contactId });
+          const c = d.result;
+          if (c) {
+            addPhones(`contact#${contactId}`, extractPhones(c));
+            allEmails = [...new Set([...allEmails, ...extractEmails(c)])];
+            const cName = [c.NAME, c.LAST_NAME].filter(Boolean).join(" ");
+            if (!contactName && cName) contactName = cName;
+          }
+        } catch (e) { console.warn("[CRM-TAB] contact.get fail", contactId, e); }
+      };
+
       try {
-        const crmData = await callBitrix(endpoint, accessToken, crmMethod, { ID: entityId });
-        const entity = crmData.result;
-
-        if (entityTypeNum === 3) {
-          contactName = [entity?.NAME, entity?.LAST_NAME].filter(Boolean).join(" ");
-        } else {
-          contactName = entity?.NAME || entity?.TITLE || "";
-        }
-
-        allPhones = extractPhones(entity);
-        allEmails = extractEmails(entity);
-
-        // For Deal: also fetch linked Contact
-        let linkedContactName = "";
-        if (entityTypeNum === 2 && entity?.CONTACT_ID) {
-          try {
-            const contactData = await callBitrix(endpoint, accessToken, "crm.contact.get", { ID: entity.CONTACT_ID });
-            const contact = contactData.result;
-            if (contact) {
-              const contactPhones = extractPhones(contact);
-              const contactEmails = extractEmails(contact);
-              linkedContactName = [contact.NAME, contact.LAST_NAME].filter(Boolean).join(" ");
-              if (!contactName && linkedContactName) contactName = linkedContactName;
-              allPhones = [...new Set([...allPhones, ...contactPhones])];
-              allEmails = [...new Set([...allEmails, ...contactEmails])];
+        let entity: any = null;
+        if (isSpa) {
+          const r = await callBitrix(endpoint, accessToken, "crm.item.get", { entityTypeId: entityTypeNum, id: entityId });
+          entity = r.result?.item || null;
+          if (entity) {
+            contactName = entity.title || "";
+            const cids: any[] = [].concat(entity.contactIds || [], entity.contactId ? [entity.contactId] : []);
+            for (const cid of [...new Set(cids.filter(Boolean))]) {
+              await fetchContactPhones(cid);
             }
-          } catch (e) {
-            console.warn("[CRM-TAB] Failed to fetch linked contact:", e);
+          }
+        } else {
+          const crmData = await callBitrix(endpoint, accessToken, crmMethod, { ID: entityId });
+          entity = crmData.result;
+
+          if (entity) {
+            if (entityTypeNum === 3) {
+              contactName = [entity?.NAME, entity?.LAST_NAME].filter(Boolean).join(" ");
+            } else {
+              contactName = entity?.NAME || entity?.TITLE || "";
+            }
+            addPhones("entity", extractPhones(entity));
+            allEmails = [...new Set([...allEmails, ...extractEmails(entity)])];
           }
         }
 
-        console.log("[CRM-TAB] Lookup context:", {
-          entityId, entityTypeNum, contactName, linkedContactName,
+        // Deal: pull from all linked contacts + linked lead + company
+        if (entityTypeNum === 2 && entity) {
+          const linkedContactIds = new Set<string>();
+          if (entity.CONTACT_ID) linkedContactIds.add(String(entity.CONTACT_ID));
+          try {
+            const items = await callBitrix(endpoint, accessToken, "crm.deal.contact.items.get", { id: entityId });
+            for (const it of (items.result || [])) {
+              if (it.CONTACT_ID) linkedContactIds.add(String(it.CONTACT_ID));
+            }
+          } catch (e) { console.warn("[CRM-TAB] deal.contact.items.get fail", e); }
+
+          for (const cid of linkedContactIds) await fetchContactPhones(cid);
+
+          if (allPhones.length === 0 && entity.LEAD_ID) {
+            try {
+              const r = await callBitrix(endpoint, accessToken, "crm.lead.get", { ID: entity.LEAD_ID });
+              if (r.result) addPhones(`lead#${entity.LEAD_ID}`, extractPhones(r.result));
+            } catch (e) { console.warn("[CRM-TAB] linked lead.get fail", e); }
+          }
+
+          if (allPhones.length === 0 && entity.COMPANY_ID) {
+            try {
+              const r = await callBitrix(endpoint, accessToken, "crm.company.get", { ID: entity.COMPANY_ID });
+              if (r.result) addPhones(`company#${entity.COMPANY_ID}`, extractPhones(r.result));
+            } catch (e) { console.warn("[CRM-TAB] linked company.get fail", e); }
+          }
+        }
+
+        // Lead: fallback to linked contact
+        if (entityTypeNum === 1 && entity && allPhones.length === 0 && entity.CONTACT_ID) {
+          await fetchContactPhones(entity.CONTACT_ID);
+        }
+
+        // Contact: if empty, pull from linked deals
+        if (entityTypeNum === 3 && entity && allPhones.length === 0) {
+          try {
+            const items = await callBitrix(endpoint, accessToken, "crm.contact.deal.items.get", { id: entityId });
+            for (const it of (items.result || [])) {
+              if (!it.DEAL_ID) continue;
+              try {
+                const dr = await callBitrix(endpoint, accessToken, "crm.deal.get", { ID: it.DEAL_ID });
+                if (dr.result) addPhones(`deal#${it.DEAL_ID}`, extractPhones(dr.result));
+                if (allPhones.length > 0) break;
+              } catch {}
+            }
+          } catch (e) { console.warn("[CRM-TAB] contact.deal.items.get fail", e); }
+        }
+
+        console.log("[CRM-TAB] phone resolution:", {
+          entityId, entityTypeNum, contactName,
           phones: allPhones, emails: allEmails,
+          sources: phoneSources,
           leadId: entity?.LEAD_ID || null, contactId: entity?.CONTACT_ID || null,
         });
 
