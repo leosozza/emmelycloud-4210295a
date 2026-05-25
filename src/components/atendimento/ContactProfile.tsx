@@ -336,8 +336,11 @@ export function ContactProfile({ conversation, onClose }: ContactProfileProps) {
                   size="sm"
                   className="w-full text-xs"
                   onClick={() => {
-                    // Best-effort: extract portal from any known integration via window? Just rely on backend deep_link previously returned. As fallback, open Bitrix24 search.
-                    toast.info("Use o botão 'Salvar no CRM' para receber o link directo na próxima criação.");
+                    if (bitrixPortalBase) {
+                      window.open(`${bitrixPortalBase}${bitrixDeepPath}`, "_blank", "noopener,noreferrer");
+                    } else {
+                      toast.error("Portal Bitrix24 não configurado.");
+                    }
                   }}
                 >
                   <ExternalLink className="h-3 w-3 mr-1" /> Abrir no Bitrix24
