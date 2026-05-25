@@ -1256,6 +1256,66 @@ function renderHtml(opts: {
       if (sel && ta && sel.value) ta.value = sel.value;
     }
 
+    var HSM_TEMPLATES_LOADED = false;
+    function toggleHsmPanel(forceState) {
+      var panel = document.getElementById('hsm-panel');
+      if (!panel) return;
+      var willOpen = typeof forceState === 'boolean' ? forceState : (panel.style.display === 'none');
+      panel.style.display = willOpen ? 'block' : 'none';
+      if (willOpen && !HSM_TEMPLATES_LOADED) {
+        HSM_TEMPLATES_LOADED = true;
+        loadHsmTemplates();
+      }
+    }
+
+    function sendHsmFromPanel() {
+      if (!SELECTED_HSM) { setStatus('Selecione um template', '#f59e0b'); return; }
+      var params = [];
+      for (var i = 1; i <= SELECTED_HSM.paramCount; i++) {
+        var inp = document.getElementById('hsm-param-' + i);
+        var v = inp ? (inp.value || '').trim() : '';
+        if (!v) { setStatus('Preencha o parâmetro {{' + i + '}}', '#f59e0b'); if (inp) inp.focus(); return; }
+        params.push(v);
+      }
+      var message = SELECTED_HSM.body || '';
+      for (var j = 1; j <= params.length; j++) {
+        message = message.split('{{' + j + '}}').join(params[j - 1]);
+      }
+      var btn = document.getElementById('hsm-send-btn');
+      if (btn) btn.disabled = true;
+      setStatus('A enviar template...', '#888');
+      var sendBody = {
+        conversation_id: CONVERSATION_ID,
+        content: message,
+        message_type: 'template',
+        resolvedInteractiveData: { id: SELECTED_HSM.id, params: params }
+      };
+      fetch(SUPABASE_URL + '/functions/v1/message-send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_KEY, 'Authorization': 'Bearer ' + SUPABASE_KEY },
+        body: JSON.stringify(sendBody)
+      })
+      .then(function(r) { return r.json(); })
+      .then(function(d) {
+        if (d && d.error) throw new Error(typeof d.error === 'string' ? d.error : JSON.stringify(d.error));
+        setStatus('✅ Template enviado', '#22c55e');
+        if (btn) btn.disabled = false;
+        toggleHsmPanel(false);
+        var container = document.getElementById('messages');
+        if (container) {
+          var div = document.createElement('div');
+          div.style.cssText = 'display:flex;justify-content:flex-end;margin-bottom:6px';
+          div.innerHTML = '<div style="background:#25D366;color:#fff;padding:8px 12px;border-radius:12px 12px 2px 12px;max-width:80%;font-size:13px;white-space:pre-wrap">' + message.replace(/</g,'&lt;') + '</div>';
+          container.appendChild(div);
+          container.scrollTop = container.scrollHeight;
+        }
+      })
+      .catch(function(e) {
+        setStatus('❌ ' + (e.message || e), '#ef4444');
+        if (btn) btn.disabled = false;
+      });
+    }
+
     function startConversation(channel, phone) {
       var hsmSel = document.getElementById('hsm-template-select');
       var hsmId = hsmSel ? hsmSel.value : '';
