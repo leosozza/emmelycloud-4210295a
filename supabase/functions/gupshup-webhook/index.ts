@@ -187,7 +187,7 @@ Deno.serve(async (req) => {
         });
       }
 
-      await supabase.from("messages").insert({
+      const { error: msgErr } = await supabase.from("messages").insert({
         conversation_id: conversationId,
         direction: "inbound",
         content: text,
@@ -197,12 +197,22 @@ Deno.serve(async (req) => {
         media_url: mediaUrl || null,
         sync_source: "gupshup",
       });
+      if (msgErr) {
+        console.error("[GUPSHUP-WEBHOOK] insert message failed:", msgErr, { conversationId, gsId });
+        return new Response(JSON.stringify({ ok: false, error: "insert_message_failed", detail: msgErr.message }), {
+          status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      console.log("[GUPSHUP-WEBHOOK] message persisted", { conversationId, gsId });
 
-      await supabase.from("conversations").update({
+      const { error: convUpdErr } = await supabase.from("conversations").update({
         last_message_at: new Date().toISOString(),
         last_message_preview: text.slice(0, 100),
         unread_count: 1,
       }).eq("id", conversationId);
+      if (convUpdErr) {
+        console.error("[GUPSHUP-WEBHOOK] update conversation failed:", convUpdErr, { conversationId });
+      }
 
       // Skip downstream (flow-engine / bitrix24) for test payloads
       const isTest = p?.context?.test === true;
