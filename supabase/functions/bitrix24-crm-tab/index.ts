@@ -444,18 +444,32 @@ function renderHtml(opts: {
       </p>
       ${phones.length ? `<p style="color:#333840;font-size:12px;margin:0 0 4px;display:flex;align-items:center;justify-content:center;gap:4px">${B24_ICONS.phone} ${phones.map(p => "+" + p).join(", ")}</p>` : ""}
       ${emails.length ? `<p style="color:#333840;font-size:12px;margin:0 0 12px;display:flex;align-items:center;justify-content:center;gap:4px">${B24_ICONS.mail} ${emails.join(", ")}</p>` : ""}
-      
-      ${templateOptionsHtml ? `
+
+      ${canStartWhatsApp ? `
         <div style="margin:12px 0;text-align:left">
-          <label style="font-size:11px;color:#959ca4;display:block;margin-bottom:4px">Template de mensagem</label>
-          <select id="template-select" style="width:100%;padding:8px 10px;border:1px solid #dfe0e3;border-radius:8px;font-size:13px;color:#333840;background:#fff;outline:none;cursor:pointer">
+          <label style="font-size:11px;color:#959ca4;display:block;margin-bottom:4px">Template WhatsApp Oficial (HSM)</label>
+          <select id="hsm-template-select" onchange="onHsmTemplateChange()" style="width:100%;padding:8px 10px;border:1px solid #dfe0e3;border-radius:8px;font-size:13px;color:#333840;background:#fff;outline:none;cursor:pointer">
+            <option value="">— A carregar templates… —</option>
+          </select>
+          <p id="hsm-warning" style="font-size:10.5px;color:#b45309;margin:4px 0 0;background:#fef3c7;border:1px solid #fde68a;border-radius:6px;padding:6px 8px">
+            Fora da janela de 24h, apenas templates HSM aprovados podem iniciar a conversa.
+          </p>
+        </div>
+        <div id="hsm-params-container" style="display:none;text-align:left;margin:8px 0"></div>
+        <div id="hsm-preview" style="display:none;text-align:left;margin:8px 0;padding:8px 10px;background:#f0f7ff;border:1px solid #c4dff0;border-radius:8px;font-size:12px;color:#333840;white-space:pre-wrap"></div>
+      ` : ""}
+
+      ${templateOptionsHtml ? `
+        <div id="quick-reply-wrap" style="margin:12px 0;text-align:left">
+          <label style="font-size:11px;color:#959ca4;display:block;margin-bottom:4px">Resposta rápida (texto livre)</label>
+          <select id="template-select" onchange="onQuickReplyChange()" style="width:100%;padding:8px 10px;border:1px solid #dfe0e3;border-radius:8px;font-size:13px;color:#333840;background:#fff;outline:none;cursor:pointer">
             <option value="">Mensagem personalizada...</option>
             ${templateOptionsHtml}
           </select>
         </div>
       ` : ""}
-      
-      <div style="margin:8px 0">
+
+      <div id="free-text-wrap" style="margin:8px 0">
         <textarea id="start-msg-input" placeholder="Escreva a mensagem inicial..." style="width:100%;padding:8px 12px;border:1px solid #dfe0e3;border-radius:8px;font-size:13px;color:#333840;resize:none;height:60px;outline:none;font-family:inherit">Olá! Em que posso ajudar?</textarea>
       </div>
 
