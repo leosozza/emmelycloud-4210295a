@@ -158,6 +158,7 @@ Deno.serve(async (req) => {
 
     // Cleanup
     if (msg) {
+      await supabase.from("notifications").delete().eq("entity_id", msg.conversation_id);
       await supabase.from("messages").delete().eq("id", msg.id);
       // delete the synthetic conversation if it has no other messages
       const { data: remaining } = await supabase
