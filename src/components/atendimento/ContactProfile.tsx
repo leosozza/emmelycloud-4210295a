@@ -137,6 +137,24 @@ export function ContactProfile({ conversation, onClose }: ContactProfileProps) {
     staleTime: 60_000,
   });
 
+  // Fetch Bitrix24 portal base URL to build deep links on demand
+  const { data: bitrixPortalBase } = useQuery({
+    queryKey: ["bitrix24-portal-base"],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("bitrix24_integrations")
+        .select("client_endpoint, domain")
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (!data) return null;
+      if (data.domain) return `https://${data.domain}/`;
+      if (data.client_endpoint) return data.client_endpoint.replace(/\/rest\/?$/, "/");
+      return null;
+    },
+    staleTime: 5 * 60_000,
+  });
+
   if (!conversation) {
     return (
       <div className="w-72 xl:w-80 border-l bg-card hidden lg:flex items-center justify-center shrink-0">
