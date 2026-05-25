@@ -635,9 +635,22 @@ function renderHtml(opts: {
     </div>
     
     ${conversationId ? `
+    <div id="hsm-panel" style="display:none;background:#fff;border-top:1px solid #dfe0e3;padding:10px 12px">
+      <label style="font-size:11px;color:#959ca4;display:block;margin-bottom:4px">Template WhatsApp Oficial (HSM)</label>
+      <select id="hsm-template-select" onchange="onHsmTemplateChange()" style="width:100%;padding:8px 10px;border:1px solid #dfe0e3;border-radius:8px;font-size:13px;color:#333840;background:#fff;outline:none;cursor:pointer">
+        <option value="">— A carregar templates… —</option>
+      </select>
+      <div id="hsm-params-container" style="display:none;margin-top:6px"></div>
+      <div id="hsm-preview" style="display:none;margin-top:6px;padding:8px 10px;background:#f0f7ff;border:1px solid #c4dff0;border-radius:8px;font-size:12px;color:#333840;white-space:pre-wrap"></div>
+      <div style="display:flex;gap:6px;margin-top:8px">
+        <button onclick="toggleHsmPanel(false)" style="flex:1;background:#f4f6f8;color:#535c69;border:none;padding:8px 10px;border-radius:8px;cursor:pointer;font-size:12px;font-weight:600">Cancelar</button>
+        <button onclick="sendHsmFromPanel()" id="hsm-send-btn" style="flex:2;background:#25D366;color:#fff;border:none;padding:8px 10px;border-radius:8px;cursor:pointer;font-size:12px;font-weight:600">${B24_ICONS.send} Enviar Template</button>
+      </div>
+    </div>
     <div id="client-send-bar">
       <input type="file" id="client-file-input" style="display:none" onchange="onFilePicked(event)" accept="image/*,audio/*,video/*,application/pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.zip" />
       <button class="icon-btn" type="button" title="Anexar arquivo" onclick="document.getElementById('client-file-input').click()">${B24_ICONS.paperclip}</button>
+      <button class="icon-btn" type="button" title="Template HSM" onclick="toggleHsmPanel()">${B24_ICONS.clipboard}</button>
       <button class="icon-btn" id="mic-btn" type="button" title="Gravar áudio" onclick="toggleAudioRecording()">${B24_ICONS.mic}</button>
       <textarea id="client-input" rows="1" placeholder="Escreva ao cliente..." oninput="autoResize(this)"></textarea>
       <button onclick="sendClientMessage()" id="send-client-btn">${B24_ICONS.send} Enviar</button>
