@@ -1248,6 +1248,18 @@ function renderHtml(opts: {
       var hsmId = hsmSel ? hsmSel.value : '';
       var isHsm = !!hsmId && !!SELECTED_HSM;
 
+      // Se for WhatsApp e não houver telefone no CRM, ler do input manual
+      if (channel === 'whatsapp' && !phone) {
+        var manualInp = document.getElementById('manual-phone-input');
+        var manual = manualInp ? (manualInp.value || '').replace(/\\D/g, '') : '';
+        if (!manual || manual.length < 8) {
+          setStatus('Informe o telefone (com indicativo, apenas dígitos)', '#f59e0b');
+          if (manualInp) manualInp.focus();
+          return;
+        }
+        phone = manual;
+      }
+
       var message = '';
       var params = [];
 
