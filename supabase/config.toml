@@ -170,3 +170,6 @@ verify_jwt = false
 [functions.gupshup-send]
 verify_jwt = false
 
+
+[functions.bitrix24-messageservice-send]
+verify_jwt = false
