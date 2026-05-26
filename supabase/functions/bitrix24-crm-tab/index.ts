@@ -1624,6 +1624,7 @@ Deno.serve(async (req) => {
         if (isSpa) {
           const r = await callBitrix(endpoint, accessToken, "crm.item.get", { entityTypeId: entityTypeNum, id: entityId });
           entity = r.result?.item || null;
+          if (!entity) console.warn(`[CRM-TAB] crm.item.get(spa ${entityTypeNum}) empty for ID ${entityId}`, JSON.stringify(r).slice(0, 300));
           if (entity) {
             contactName = entity.title || "";
             const cids: any[] = [].concat(entity.contactIds || [], entity.contactId ? [entity.contactId] : []);
@@ -1644,15 +1645,52 @@ Deno.serve(async (req) => {
             addPhones("entity", extractPhones(entity));
             allEmails = [...new Set([...allEmails, ...extractEmails(entity)])];
           } else {
-            console.warn(`[CRM-TAB] ${crmMethod} returned empty result for ID ${entityId}`);
+            console.warn(`[CRM-TAB] ${crmMethod} returned empty for ID ${entityId}`, JSON.stringify({ error: crmData?.error, error_description: crmData?.error_description }).slice(0, 400));
+
+            // Fallback A: universal crm.item.get
+            try {
+              const r2 = await callBitrix(endpoint, accessToken, "crm.item.get", { entityTypeId: entityTypeNum, id: entityId });
+              const it = r2.result?.item;
+              if (it) {
+                console.log(`[CRM-TAB] fallback crm.item.get OK for ${entityTypeNum}:${entityId}`);
+                entity = {
+                  ID: it.id,
+                  TITLE: it.title,
+                  CONTACT_ID: it.contactId,
+                  COMPANY_ID: it.companyId,
+                  LEAD_ID: it.leadId,
+                  CATEGORY_ID: it.categoryId,
+                };
+                contactName = it.title || "";
+              } else {
+                console.warn("[CRM-TAB] fallback item.get also empty", JSON.stringify(r2).slice(0, 300));
+              }
+            } catch (e) { console.warn("[CRM-TAB] fallback item.get fail", e); }
+
+            // Fallback B: crm.deal.list (only for deals)
+            if (!entity && entityTypeNum === 2) {
+              try {
+                const r3 = await callBitrix(endpoint, accessToken, "crm.deal.list", {
+                  filter: { ID: entityId },
+                  select: ["ID", "TITLE", "CONTACT_ID", "COMPANY_ID", "LEAD_ID", "CATEGORY_ID"],
+                });
+                const row = (r3.result || [])[0];
+                if (row) {
+                  console.log(`[CRM-TAB] fallback crm.deal.list OK for ${entityId}`);
+                  entity = row;
+                  contactName = row.TITLE || "";
+                }
+              } catch (e) { console.warn("[CRM-TAB] fallback deal.list fail", e); }
+            }
           }
         }
 
 
         // Deal: pull from all linked contacts + linked lead + company
-        if (entityTypeNum === 2 && entity) {
+        // Run independently of `entity` so we still find phones when crm.deal.get is blocked.
+        if (entityTypeNum === 2) {
           const linkedContactIds = new Set<string>();
-          if (entity.CONTACT_ID) linkedContactIds.add(String(entity.CONTACT_ID));
+          if (entity?.CONTACT_ID) linkedContactIds.add(String(entity.CONTACT_ID));
           try {
             const items = await callBitrix(endpoint, accessToken, "crm.deal.contact.items.get", { id: entityId });
             for (const it of (items.result || [])) {
@@ -1662,19 +1700,29 @@ Deno.serve(async (req) => {
 
           for (const cid of linkedContactIds) await fetchContactPhones(cid);
 
-          if (allPhones.length === 0 && entity.LEAD_ID) {
+          if (allPhones.length === 0 && entity?.LEAD_ID) {
             try {
               const r = await callBitrix(endpoint, accessToken, "crm.lead.get", { ID: entity.LEAD_ID });
               if (r.result) addPhones(`lead#${entity.LEAD_ID}`, extractPhones(r.result));
             } catch (e) { console.warn("[CRM-TAB] linked lead.get fail", e); }
           }
 
-          if (allPhones.length === 0 && entity.COMPANY_ID) {
+          if (allPhones.length === 0 && entity?.COMPANY_ID) {
             try {
               const r = await callBitrix(endpoint, accessToken, "crm.company.get", { ID: entity.COMPANY_ID });
               if (r.result) addPhones(`company#${entity.COMPANY_ID}`, extractPhones(r.result));
             } catch (e) { console.warn("[CRM-TAB] linked company.get fail", e); }
           }
+        }
+
+        // Last-resort title from PLACEMENT_OPTIONS sent by Bitrix24
+        if (!contactName) {
+          try {
+            const po = typeof body?.PLACEMENT_OPTIONS === "string"
+              ? JSON.parse(body.PLACEMENT_OPTIONS)
+              : (body?.PLACEMENT_OPTIONS || {});
+            if (po?.TITLE) contactName = String(po.TITLE);
+          } catch { /* ignore */ }
         }
 
         // Lead: fallback to linked contact
