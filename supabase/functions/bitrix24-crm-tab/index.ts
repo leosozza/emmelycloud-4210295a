@@ -1531,9 +1531,11 @@ Deno.serve(async (req) => {
     // --- Lookup conversation ---
     let conversation: any = null;
     let contactName = "";
+    let linkedContactName = "";
     let allPhones: string[] = [];
     let allEmails: string[] = [];
     let conversationCandidates: any[] = [];
+
 
     // If user explicitly chose a conversation from the switcher, load it directly
     if (selectedConvOverride) {
