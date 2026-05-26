@@ -642,7 +642,7 @@ function renderHtml(opts: {
         <div id="contact-name">${(contactName || "Cliente").replace(/</g, "&lt;")}</div>
         <div id="contact-meta">${conversationId ? channelLabel : (phones.length ? phones[0] : "sem contacto")}</div>
       </div>
-      ${conversationId ? `<span id="mode-badge">${modeIcon} ${modeLabel}</span>` : ""}
+      ${conversationId ? `<span id="mode-badge">${modeIcon} ${modeLabel}</span>${windowBadgeHtml}` : ""}
     </div>
   </div>
 
