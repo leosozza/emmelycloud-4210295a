@@ -1575,10 +1575,12 @@ Deno.serve(async (req) => {
             addPhones(`contact#${contactId}`, extractPhones(c));
             allEmails = [...new Set([...allEmails, ...extractEmails(c)])];
             const cName = [c.NAME, c.LAST_NAME].filter(Boolean).join(" ");
+            if (cName && !linkedContactName) linkedContactName = cName;
             if (!contactName && cName) contactName = cName;
           }
         } catch (e) { console.warn("[CRM-TAB] contact.get fail", contactId, e); }
       };
+
 
       try {
         let entity: any = null;
