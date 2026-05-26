@@ -1047,6 +1047,70 @@ Deno.serve(async (req) => {
         eventsBound: events.length,
       });
 
+      // --- Register Emmely as an SMS / Messageservice sender ---
+      // Makes "Emmely Messages" appear in the CRM Message tab → "Connect messaging providers"
+      try {
+        const msSenderResult = await callBitrix(clientEndpoint, accessToken, "messageservice.sender.add", {
+          CODE: "emmely_messages",
+          TYPE: "SMS",
+          NAME: "Emmely Messages",
+          DESCRIPTION: "WhatsApp / Instagram / SMS via Emmely",
+          HANDLER: `${supabaseUrl}/functions/v1/bitrix24-messageservice-send`,
+        });
+        const msErr = String(msSenderResult.error || "");
+        if (msErr && !msErr.toLowerCase().includes("already") && msErr !== "SENDER_ALREADY_EXISTS") {
+          console.error("[INSTALL] messageservice.sender.add error:", msSenderResult.error, msSenderResult.error_description);
+        } else {
+          console.log("[INSTALL] messageservice.sender.add: OK");
+        }
+        await debugLog(supabase, integrationId, "messageservice_register", "outbound", { result: msSenderResult });
+      } catch (msErr) {
+        console.error("[INSTALL] messageservice.sender.add exception:", msErr);
+      }
+
+      // --- Auto-activate connector on the first Open Line (best-effort) ---
+      try {
+        const cfgList = await callBitrix(clientEndpoint, accessToken, "imopenlines.config.list.get", {
+          params: { select: ["LINE_NAME", "ID"] },
+        });
+        const linesRaw = cfgList.result || {};
+        const linesArr: any[] = Array.isArray(linesRaw) ? linesRaw : Object.values(linesRaw);
+        const firstLine = linesArr[0];
+        const firstLineId = firstLine ? parseInt(firstLine.ID, 10) : 0;
+        if (firstLineId > 0) {
+          const actRes = await callBitrix(clientEndpoint, accessToken, "imconnector.activate", {
+            CONNECTOR: CONNECTOR_ID,
+            LINE: firstLineId,
+            ACTIVE: 1,
+          });
+          const dataRes = await callBitrix(clientEndpoint, accessToken, "imconnector.connector.data.set", {
+            CONNECTOR: CONNECTOR_ID,
+            LINE: firstLineId,
+            DATA: {
+              ID: CONNECTOR_ID,
+              NAME: "Emmely Messages",
+              URL: `${supabaseUrl}/functions/v1/bitrix24-events`,
+              URL_IM: `${supabaseUrl}/functions/v1/bitrix24-events`,
+            },
+          });
+          console.log(`[INSTALL] imconnector.activate LINE=${firstLineId}:`, JSON.stringify(actRes).slice(0, 200));
+          await supabase.from("bitrix24_integrations").update({ connector_active: true }).eq("id", integrationId);
+          await supabase.from("bitrix24_channel_mappings").upsert({
+            integration_id: integrationId,
+            line_id: firstLineId,
+            line_name: firstLine?.LINE_NAME || `Open Line ${firstLineId}`,
+            channel: "whatsapp",
+            is_active: true,
+            connector_id: CONNECTOR_ID,
+          }, { onConflict: "integration_id,line_id" });
+          await debugLog(supabase, integrationId, "connector_auto_activate", "outbound", { lineId: firstLineId, actRes, dataRes });
+        } else {
+          console.log("[INSTALL] No Open Lines found — skipping auto-activate");
+        }
+      } catch (actErr) {
+        console.error("[INSTALL] connector auto-activate failed:", actErr);
+      }
+
       // Register IM Bot for Contact Center chatbot
       try {
         const eventsUrl = `${supabaseUrl}/functions/v1/bitrix24-events`;
