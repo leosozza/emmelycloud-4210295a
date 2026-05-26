@@ -1,36 +1,53 @@
-# Auto-resolver telefone do Deal/Lead no placement Bitrix24
+## Diagnóstico (a partir dos logs do edge function)
 
-## Problema
-Hoje o `bitrix24-crm-tab` só extrai telefone de:
-- A entidade do placement (Deal/Lead/Contact/Company) via `PHONE`
-- Para Deals: apenas do `CONTACT_ID` principal
+Ao abrir o deal 35241, a função `bitrix24-crm-tab` lança:
 
-Quando o Deal não tem `CONTACT_ID` principal preenchido (mas tem contatos vinculados via `crm.deal.contact.items.get`), ou quando vem de um Lead convertido, o telefone não aparece e o campo manual é exigido — apesar do telefone existir no CRM.
+```
+ERROR [CRM-TAB] CRM lookup error: ReferenceError: linkedContactName is not defined
+    at index.ts:1842:13
+```
 
-## Solução
-Tornar a resolução de telefone determinística e exaustiva no backend, eliminando o input manual sempre que houver qualquer telefone rastreável.
+Esse crash interrompe todo o pipeline depois da resolução de telefone. Por isso o frame mostra apenas "Cliente / sem contacto" e "Nenhuma conversa ativa", sem o seletor de templates nem dados do deal — o handler nunca chega a montar o HTML correto.
 
-### Mudanças em `supabase/functions/bitrix24-crm-tab/index.ts`
+Adicionalmente, o log mostra:
 
-1. **Deal (entityTypeNum === 2)**: além de `CONTACT_ID`, chamar:
-   - `crm.deal.contact.items.get` → iterar todos os contatos vinculados, fazer `crm.contact.get` em cada e juntar `PHONE`
-   - Se `deal.LEAD_ID` existir, fazer `crm.lead.get` e extrair `PHONE` do lead de origem
-   - Se a empresa do deal (`COMPANY_ID`) existir e ainda não houver phone, fazer `crm.company.get` como último recurso
+```
+phone resolution: { entityId: "35241", contactName: "", phones: [], sources: [], leadId: null, contactId: null }
+```
 
-2. **Lead (entityTypeNum === 1)**: já funciona, mas adicionar fallback — se vazio e o lead tiver `CONTACT_ID`, buscar do contato vinculado.
+ou seja, o `crm.deal.get` voltou sem `TITLE` populado (entity provavelmente `null`) e o deal não tem contacto/lead/empresa ligados. Mesmo após corrigir o crash, este deal não tem telefone no Bitrix → temos de cair na entrada manual.
 
-3. **Contact (entityTypeNum === 3)**: se vazio, buscar deals vinculados via `crm.contact.deal.items.get` e tentar extrair phone dos deals.
+## Correções
 
-4. **SPA / entidades dinâmicas (entityTypeNum >= 128)**: usar `crm.item.get` com `entityTypeId`, ler campos `contactIds`/`contactId` e iterar `crm.contact.get`.
+### 1. Corrigir o `ReferenceError`
 
-5. **Logging**: registrar em `[CRM-TAB] phone resolution` quais fontes deram hit (deal, contact, linked-contacts, lead, spa) para diagnóstico futuro.
+`supabase/functions/bitrix24-crm-tab/index.ts` linha ~1929 referencia `linkedContactName` que nunca foi declarado (resíduo de refactor anterior). Substituir por uma variável local recolhida na resolução de contactos:
 
-6. **UI**: manter o input manual apenas como fallback verdadeiro (quando `allPhones.length === 0` após todas as tentativas). Quando há phone resolvido, esconder completamente o bloco amarelo e usar `phones[0]` automaticamente no `startConversation`.
+- Declarar `let linkedContactName = ""` no topo do bloco (junto de `contactName` e `allPhones`).
+- Dentro de `fetchContactPhones`, quando obtemos `cName`, também guardar em `linkedContactName` (primeira ocorrência).
+- Manter o fallback existente: `[linkedContactName, contactName].filter(Boolean)`.
 
-### Não muda
-- Lógica do frontend já usa `PHONES[0]` quando disponível — basta o backend popular corretamente.
-- Seleção de template HSM e demais fluxos permanecem iguais.
-- Sem mudanças de schema.
+### 2. Logar e diagnosticar o `entity` vazio do deal
 
-## Resultado esperado
-Ao abrir a aba no Bitrix24 em qualquer Deal/Lead/SPA que tenha telefone em si ou em qualquer entidade relacionada (contato principal, contatos vinculados, lead de origem, empresa), o telefone aparece automaticamente e o botão "Iniciar no WhatsApp" dispara sem pedir digitação.
+Adicionar `console.warn` se `crm.deal.get` devolver `result` falso, para detectar mais facilmente quando o portal nega leitura do deal. Não muda comportamento.
+
+### 3. Templates HSM acessíveis sem conversa ativa
+
+O bloco `startConvHtml` já renderiza um `<select id="hsm-template-select">` mas o carregamento depende do `DOMContentLoaded` (`loadHsmTemplates`). Após corrigir o crash o selector aparecerá. Garantir também:
+
+- Quando `needsManualPhone` é verdadeiro, o botão "Enviar Template" continua activo (o utilizador escreve o número manualmente).
+- Atualizar o label do bloco amarelo para mencionar que se pode enviar template HSM imediatamente.
+
+### 4. Capturar o título do deal mesmo sem contacto
+
+Se `entity` for null ou sem `TITLE`, ler `PLACEMENT_OPTIONS` (já temos no body) e usar `options?.title` quando existir, para o header passar de "Cliente" para o nome do deal. Pequeno polish, melhora a UX.
+
+## Ficheiros a editar
+
+- `supabase/functions/bitrix24-crm-tab/index.ts` (todas as correções acima).
+
+## Validação
+
+1. Reabrir o iframe no deal 35241 e confirmar nos logs ausência de `ReferenceError`.
+2. Confirmar que o header mostra o título do deal e que o `<select>` de templates HSM carrega.
+3. Selecionar um template, inserir telefone manual e enviar — deve disparar `message-send` com `message_type: 'template'`.
