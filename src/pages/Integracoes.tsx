@@ -156,6 +156,35 @@ function CRMTab() {
     setTesting(false);
   };
 
+  const handleResync = async () => {
+    setResyncing(true);
+    setTestResult(null);
+    try {
+      const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/bitrix24-install?action=resync`;
+      const res = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+          Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+        },
+        body: "{}",
+      });
+      const data = await res.json();
+      if (!res.ok || data?.error) {
+        toast({ title: "Falha ao atualizar", description: data?.error || `HTTP ${res.status}`, variant: "destructive" });
+      } else {
+        toast({ title: "App atualizada", description: "Conector, campos, robôs e placements re-registados." });
+        // refresh integration row
+        const { data: intRes } = await supabase.from("bitrix24_integrations").select("id, domain, connector_registered, connector_active, updated_at").limit(1).single();
+        if (intRes) setIntegration(intRes);
+      }
+    } catch (e: any) {
+      toast({ title: "Erro de rede", description: e?.message || "Tente novamente.", variant: "destructive" });
+    }
+    setResyncing(false);
+  };
+
   const bitrixStatus = integration ? (integration.connector_active ? "active" : integration.connector_registered ? "pending" : "inactive") : "inactive";
   const effectiveStatus = testResult?.details ? (testResult.details.connector_active ? "active" : testResult.details.connector_registered ? "pending" : "inactive") : bitrixStatus;
   const activeChannels = channels.filter((c) => c.is_active);
