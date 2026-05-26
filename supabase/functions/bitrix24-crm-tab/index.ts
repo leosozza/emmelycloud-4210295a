@@ -1606,8 +1606,11 @@ Deno.serve(async (req) => {
             }
             addPhones("entity", extractPhones(entity));
             allEmails = [...new Set([...allEmails, ...extractEmails(entity)])];
+          } else {
+            console.warn(`[CRM-TAB] ${crmMethod} returned empty result for ID ${entityId}`);
           }
         }
+
 
         // Deal: pull from all linked contacts + linked lead + company
         if (entityTypeNum === 2 && entity) {
