@@ -1531,9 +1531,11 @@ Deno.serve(async (req) => {
     // --- Lookup conversation ---
     let conversation: any = null;
     let contactName = "";
+    let linkedContactName = "";
     let allPhones: string[] = [];
     let allEmails: string[] = [];
     let conversationCandidates: any[] = [];
+
 
     // If user explicitly chose a conversation from the switcher, load it directly
     if (selectedConvOverride) {
@@ -1573,10 +1575,12 @@ Deno.serve(async (req) => {
             addPhones(`contact#${contactId}`, extractPhones(c));
             allEmails = [...new Set([...allEmails, ...extractEmails(c)])];
             const cName = [c.NAME, c.LAST_NAME].filter(Boolean).join(" ");
+            if (cName && !linkedContactName) linkedContactName = cName;
             if (!contactName && cName) contactName = cName;
           }
         } catch (e) { console.warn("[CRM-TAB] contact.get fail", contactId, e); }
       };
+
 
       try {
         let entity: any = null;
@@ -1602,8 +1606,11 @@ Deno.serve(async (req) => {
             }
             addPhones("entity", extractPhones(entity));
             allEmails = [...new Set([...allEmails, ...extractEmails(entity)])];
+          } else {
+            console.warn(`[CRM-TAB] ${crmMethod} returned empty result for ID ${entityId}`);
           }
         }
+
 
         // Deal: pull from all linked contacts + linked lead + company
         if (entityTypeNum === 2 && entity) {
