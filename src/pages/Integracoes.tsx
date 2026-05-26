@@ -215,10 +215,16 @@ function CRMTab() {
                 <div className="flex justify-between"><span className="text-muted-foreground">Linhas ativas</span><span className="font-medium">{testResult.details.active_lines.length}</span></div>
               )}
               <div className="flex justify-between"><span className="text-muted-foreground">Última atualização</span><span>{new Date(integration.updated_at).toLocaleDateString("pt-PT")}</span></div>
-              <Button size="sm" variant="outline" className="w-full mt-1" onClick={handleTestConnection} disabled={testing}>
-                {testing ? <RefreshCw className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <Activity className="h-3.5 w-3.5 mr-1.5" />}
-                {testing ? "A testar…" : "Testar Conexão"}
-              </Button>
+              <div className="grid grid-cols-2 gap-2 mt-1">
+                <Button size="sm" variant="outline" onClick={handleTestConnection} disabled={testing || resyncing}>
+                  {testing ? <RefreshCw className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <Activity className="h-3.5 w-3.5 mr-1.5" />}
+                  {testing ? "A testar…" : "Testar Conexão"}
+                </Button>
+                <Button size="sm" variant="default" onClick={handleResync} disabled={testing || resyncing} title="Re-registar conector, campos, robôs e placements sem reinstalar a app">
+                  <RefreshCw className={`h-3.5 w-3.5 mr-1.5 ${resyncing ? "animate-spin" : ""}`} />
+                  {resyncing ? "A atualizar…" : "Atualizar App"}
+                </Button>
+              </div>
               {testResult && (
                 <div className={`flex items-center gap-2 rounded-md px-3 py-2 ${testResult.ok ? "bg-green-50 text-green-800" : "bg-red-50 text-red-800"}`}>
                   {testResult.ok ? <CheckCircle2 className="h-4 w-4 shrink-0" /> : <AlertCircle className="h-4 w-4 shrink-0" />}
