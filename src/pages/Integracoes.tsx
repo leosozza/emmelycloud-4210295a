@@ -172,15 +172,14 @@ function CRMTab() {
       });
       const data = await res.json();
       if (!res.ok || data?.error) {
-        toast({ title: "Falha ao atualizar", description: data?.error || `HTTP ${res.status}`, variant: "destructive" });
+        toast.error(data?.error || `Falha HTTP ${res.status}`);
       } else {
-        toast({ title: "App atualizada", description: "Conector, campos, robôs e placements re-registados." });
-        // refresh integration row
+        toast.success("App atualizada — conector, campos, robôs e placements re-registados.");
         const { data: intRes } = await supabase.from("bitrix24_integrations").select("id, domain, connector_registered, connector_active, updated_at").limit(1).single();
         if (intRes) setIntegration(intRes);
       }
     } catch (e: any) {
-      toast({ title: "Erro de rede", description: e?.message || "Tente novamente.", variant: "destructive" });
+      toast.error(e?.message || "Erro de rede.");
     }
     setResyncing(false);
   };
