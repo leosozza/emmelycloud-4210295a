@@ -223,6 +223,72 @@ Deno.serve(async (req) => {
     }), { headers: jsonHeaders });
   }
 
+  // --- resync action: re-run full install pipeline using stored credentials ---
+  if (reqUrl.searchParams.get("action") === "resync") {
+    const supabase = createClient(
+      Deno.env.get("SUPABASE_URL")!,
+      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
+    );
+    try {
+      const { data: integration } = await supabase
+        .from("bitrix24_integrations")
+        .select("*")
+        .order("updated_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (!integration?.member_id || !integration?.access_token) {
+        return new Response(JSON.stringify({ error: "Nenhuma integração encontrada. Instale a app no Bitrix24 primeiro." }), { status: 400, headers: jsonHeaders });
+      }
+
+      // Try to refresh token first to ensure it's valid
+      let accessToken = integration.access_token;
+      let refreshToken = integration.refresh_token;
+      let expiresIn = 3600;
+      try {
+        const clientId = Deno.env.get("BITRIX24_CLIENT_ID");
+        const clientSecret = Deno.env.get("BITRIX24_CLIENT_SECRET");
+        if (clientId && clientSecret && refreshToken) {
+          const refRes = await fetch(`https://oauth.bitrix.info/oauth/token/?grant_type=refresh_token&client_id=${clientId}&client_secret=${clientSecret}&refresh_token=${refreshToken}`);
+          const refData = await refRes.json();
+          if (refData.access_token) {
+            accessToken = refData.access_token;
+            refreshToken = refData.refresh_token || refreshToken;
+            expiresIn = refData.expires_in || 3600;
+          }
+        }
+      } catch (_) { /* ignore, use stored token */ }
+
+      // Re-invoke this same function with a synthesized install payload
+      const selfUrl = `${Deno.env.get("SUPABASE_URL")}/functions/v1/bitrix24-install`;
+      const payload = {
+        auth: {
+          member_id: integration.member_id,
+          access_token: accessToken,
+          refresh_token: refreshToken,
+          application_token: integration.application_token || "",
+          client_endpoint: integration.client_endpoint,
+          expires_in: String(expiresIn),
+        },
+        domain: integration.domain,
+      };
+      const innerRes = await fetch(selfUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const innerText = await innerRes.text();
+      let innerJson: any;
+      try { innerJson = JSON.parse(innerText); } catch { innerJson = { raw: innerText }; }
+      return new Response(JSON.stringify({ ok: innerRes.ok, status: innerRes.status, result: innerJson }), {
+        status: 200,
+        headers: jsonHeaders,
+      });
+    } catch (e) {
+      return new Response(JSON.stringify({ error: String(e) }), { status: 500, headers: jsonHeaders });
+    }
+  }
+
   // --- repair_fields action: delete and recreate all UF_CRM_EMMELY_* fields ---
   if (reqUrl.searchParams.get("action") === "repair_token_pay") {
     const supabase = createClient(
