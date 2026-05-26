@@ -1501,8 +1501,20 @@ Deno.serve(async (req) => {
 
     const agents = agentsRes.data || [];
     const quickReplies = qrRes.data || [];
-    const whatsappEnabled = (channelSettingsRes.data || []).some((s: any) => s.channel === "whatsapp");
-    const instagramEnabled = (channelSettingsRes.data || []).some((s: any) => s.channel === "instagram");
+    // No iframe do Bitrix24, permitimos iniciar conversa pelo WhatsApp sempre que
+    // existirem credenciais Gupshup configuradas (independentemente do toggle
+    // de bot em chatbot_channel_settings, que é só para automação).
+    const [{ data: gupshupCreds }, { data: metaCreds }] = await Promise.all([
+      supabase.from("integration_credentials").select("credential_key").eq("provider", "gupshup").limit(1),
+      supabase.from("integration_credentials").select("credential_key").eq("provider", "instagram").limit(1),
+    ]);
+    const channelEnabledList = channelSettingsRes.data || [];
+    const whatsappEnabled =
+      (gupshupCreds && gupshupCreds.length > 0) ||
+      channelEnabledList.some((s: any) => s.channel === "whatsapp");
+    const instagramEnabled =
+      (metaCreds && metaCreds.length > 0) ||
+      channelEnabledList.some((s: any) => s.channel === "instagram");
 
     if (!integration) {
       return new Response(renderHtml({
