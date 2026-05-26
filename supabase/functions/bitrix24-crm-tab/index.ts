@@ -432,11 +432,36 @@ function renderHtml(opts: {
 
   // Build "Start Conversation" UI with template selector
   const primaryPhone = phones[0] || "";
-  // Sempre permitimos iniciar pelo WhatsApp se o canal estiver habilitado.
-  // Se não houver telefone no CRM, o utilizador insere manualmente.
-  const canStartWhatsApp = whatsappEnabled;
+  // No iframe do Bitrix24 (tab Emmely AI), o canal WhatsApp deve estar
+  // SEMPRE disponível — o utilizador precisa de poder iniciar conversas
+  // por HSM mesmo que os toggles de bot estejam desligados.
+  const canStartWhatsApp = true;
   const canStartInstagram = instagramEnabled;
-  const needsManualPhone = whatsappEnabled && !primaryPhone;
+  const needsManualPhone = !primaryPhone;
+
+  // 24h WhatsApp session window: time since last inbound message
+  const lastInboundAt = (() => {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i].direction === "inbound") return messages[i].created_at;
+    }
+    return null;
+  })();
+  let windowBadgeHtml = "";
+  if (conversationId) {
+    if (lastInboundAt) {
+      const msSince = Date.now() - new Date(lastInboundAt).getTime();
+      const hoursLeft = 24 - msSince / 3600000;
+      if (hoursLeft > 0) {
+        const h = Math.floor(hoursLeft);
+        const m = Math.floor((hoursLeft - h) * 60);
+        windowBadgeHtml = `<span style="display:inline-flex;align-items:center;gap:4px;background:#dcfce7;color:#166534;border:1px solid #86efac;border-radius:999px;padding:2px 8px;font-size:10.5px;font-weight:600" title="Janela de 24h do WhatsApp ainda aberta">🟢 Janela 24h: ${h}h ${m}m</span>`;
+      } else {
+        windowBadgeHtml = `<span style="display:inline-flex;align-items:center;gap:4px;background:#fef3c7;color:#92400e;border:1px solid #fde68a;border-radius:999px;padding:2px 8px;font-size:10.5px;font-weight:600" title="Fora da janela de 24h — só HSM">🟡 Janela fechada — só HSM</span>`;
+      }
+    } else {
+      windowBadgeHtml = `<span style="display:inline-flex;align-items:center;gap:4px;background:#f3f4f6;color:#535c69;border:1px solid #dfe0e3;border-radius:999px;padding:2px 8px;font-size:10.5px;font-weight:600" title="Sem mensagens recebidas">⚪ Sem inbound</span>`;
+    }
+  }
 
   const startConvHtml = !conversationId ? `
     <div style="text-align:center;padding:24px 16px">
@@ -617,7 +642,7 @@ function renderHtml(opts: {
         <div id="contact-name">${(contactName || "Cliente").replace(/</g, "&lt;")}</div>
         <div id="contact-meta">${conversationId ? channelLabel : (phones.length ? phones[0] : "sem contacto")}</div>
       </div>
-      ${conversationId ? `<span id="mode-badge">${modeIcon} ${modeLabel}</span>` : ""}
+      ${conversationId ? `<span id="mode-badge">${modeIcon} ${modeLabel}</span>${windowBadgeHtml}` : ""}
     </div>
   </div>
 
