@@ -1120,7 +1120,7 @@ Deno.serve(async (req) => {
           CODE: "emmely_messages",
           TYPE: "SMS",
           NAME: "Emmely Messages",
-          DESCRIPTION: "WhatsApp / Instagram / SMS via Emmely",
+          DESCRIPTION: "WhatsApp via Emmely. Template: 'template: nome | var1 | var2'. Texto livre só na janela de 24h.",
           HANDLER: `${supabaseUrl}/functions/v1/bitrix24-messageservice-send`,
         });
         const msErr = String(msSenderResult.error || "");
