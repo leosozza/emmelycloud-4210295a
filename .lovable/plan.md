@@ -1,75 +1,84 @@
+## Objetivo
 
-## Diagnóstico
+Permitir que, ao escolher o provedor **Emmely Messages** na aba "Mensagem" do Bitrix24, o utilizador escreva uma sintaxe simples para disparar um template HSM aprovado (Gupshup/WhatsApp), com variáveis.
 
-**Logs do edge `bitrix24-crm-tab` para o deal 35873:**
+## Sintaxe suportada no campo de texto do Bitrix
+
+**Disparar template:**
 ```
-[CRM-TAB] crm.deal.get returned empty result for ID 35873
-phone resolution: { contactName: "", phones: [], contactId: null, leadId: null }
+template: nome_do_template
+var1: João Silva
+var2: 2025-01-15
+var3: https://emmelycloud.com/p/abc
 ```
 
-O Bitrix24 está a devolver `result: null` (sem erro) ao chamar `crm.deal.get` mesmo o deal existindo (URL `/crm/deal/details/35873/` mostra €90 + contacto JORGE LUEMBA). Isto acontece tipicamente quando:
-1. O token OAuth pertence a um utilizador sem permissão de leitura naquele pipeline/categoria
-2. O método `crm.deal.get` no portal está a usar a v2 e o ID vem como string (a API às vezes ignora silenciosamente)
-3. A resposta tem `error` que estamos a descartar — o nosso `callBitrix` não loga falhas
+Aceita variantes equivalentes (parser tolerante):
+- `template:nome_do_template` (sem espaço)
+- `Template: nome_do_template` (case-insensitive)
+- Separador `|` numa linha: `template: saudacao | João | 15/01 | link`
+- Variáveis podem ser `var1`, `1`, `{{1}}`, ou aparecer na ordem após `|`
 
-Como o `entity` fica `null`, todo o resto (procurar contactos vinculados, ler telefone) nunca corre — daí "Cliente / sem contacto" e "Nenhum telefone no CRM".
+**Texto livre (sem `template:`):**
+- Se a janela de 24h estiver aberta → envia como mensagem normal
+- Se fechada → retorna erro visível no log Bitrix com instrução para usar `template:`
 
-Sobre "não está configurado como conector e provedor de mensagens": o app já regista `imconnector.register` no install, mas:
-- O connector não está activo na Open Line por defeito (precisa ser activado em Contact Center → Connect messaging providers, ou o nosso install pode fazê-lo automaticamente para a 1ª linha).
-- O app **não** está registado como **SMS Sender** via `messageservice.sender.add`, por isso não aparece no botão "Connect messaging providers" do widget de Message do CRM.
+## O que muda
 
-## Correções
+### 1. `bitrix24-messageservice-send/index.ts`
+Adicionar um parser do `MESSAGE_BODY`:
 
-### 1. Diagnóstico defensivo em `callBitrix`
-`supabase/functions/bitrix24-crm-tab/index.ts`:
-- Logar `console.warn` com `method`, `entityId` e `data.error/error_description` sempre que `result` venha falso. Hoje só logamos "returned empty result".
-- Permite-nos confirmar se é `ACCESS_DENIED`, `INSUFFICIENT_SCOPE` ou apenas `result: null`.
+```text
+parseEmmelyMessage(body) →
+  { mode: "template", templateName, variables: string[] }
+  ou
+  { mode: "text", text }
+```
 
-### 2. Fallbacks robustos para resolver o deal
-Quando `crm.deal.get` falhar (entity null) para `entityTypeNum === 2`:
-- **Fallback A**: tentar `crm.item.get { entityTypeId: 2, id: entityId }` (endpoint universal, às vezes funciona quando o clássico falha por permissões de leitura).
-- **Fallback B**: tentar `crm.deal.list { filter: { ID: entityId }, select: ["ID","TITLE","CONTACT_ID","COMPANY_ID","LEAD_ID","CATEGORY_ID"] }` — `list` usa permissões diferentes em alguns portais.
-- **Fallback C** (sempre, independentemente do entity): chamar `crm.deal.contact.items.get { id: entityId }` mesmo quando `entity` é null, e iterar `fetchContactPhones` para cada contacto retornado. Hoje só corremos esta linha se `entity` não for null, mas o método aceita o ID directamente.
-- Se ainda assim não houver dados, ler `PLACEMENT_OPTIONS.TITLE` para preencher o cabeçalho do iframe ("JORGE LUEMBA - WhatsApp" em vez de "Cliente").
+Regras do parser:
+- Procurar linha que começa por `template:` (case-insensitive)
+- Capturar nome do template (tudo até nova linha ou `|`)
+- Capturar variáveis: linhas `varN:` OU segmentos após `|` na mesma linha
+- Ordenar variáveis por índice numérico
 
-### 3. Registar Emmely como SMS Sender (`messageservice.sender.add`)
-Em `supabase/functions/bitrix24-install/index.ts`, logo após o bloco `imconnector.register`:
-- Chamar `messageservice.sender.add` com:
-  - `CODE: "emmely_messages"`
-  - `TYPE: "SMS"` (necessário para aparecer em "Connect messaging providers")
-  - `NAME: "Emmely Messages"`
-  - `DESCRIPTION: "WhatsApp / Instagram / SMS via Emmely"`
-  - `HANDLER: <edge bitrix24-messageservice-send>` (novo handler, ver passo 4)
-- Logar resultado em `bitrix24_debug_logs`.
+### 2. Encaminhamento para `message-send`
+- **Modo template**: chamar `message-send` com `message_type: "template"`, `template_name`, `template_params: [...]`, `channel: "whatsapp"`
+- **Modo texto**: comportamento atual (texto livre)
 
-### 4. Novo edge function `bitrix24-messageservice-send`
-Criar `supabase/functions/bitrix24-messageservice-send/index.ts`:
-- Recebe POSTs do Bitrix24 quando um utilizador envia uma mensagem pela UI de Message do CRM via "Emmely Messages".
-- Lê `MESSAGE_TO` (número), `MESSAGE_BODY`, `MESSAGE_FROM`, `auth.member_id`.
-- Resolve a `integration_credentials` da Gupshup e reencaminha como template/sessão para `message-send` interno (a mesma função usada pelo widget CRM Tab).
-- Devolve `{result: { STATUS: "delivered", EXTERNAL_ID: ... }}` no formato esperado pelo `messageservice`.
+Verificar se `message-send` já suporta `message_type: "template"`. Se não, adicionar branch que chame diretamente `gupshup-send` com payload de template HSM.
 
-### 5. Activar connector na 1ª Open Line se ainda não estiver activo
-No `bitrix24-install/index.ts` após `imconnector.register`:
-- Chamar `imopenlines.config.list.get` → escolher a primeira linha.
-- Chamar `imconnector.activate { CONNECTOR: "emmely_connector", LINE: <id>, ACTIVE: 1 }` e `imconnector.connector.data.set` (já existe lógica em `bitrix24-connector-settings`, basta extrair para helper partilhado e correr no install).
-- Faz com que o botão "Connect messaging providers" mostre "Emmely Messages" como activo sem precisar de configuração manual.
+### 3. Log e feedback no Bitrix
+- Toda chamada grava em `bitrix24_debug_logs` com `event_type: "messageservice_send"` mostrando: modo detectado, template, variáveis, resposta da Gupshup
+- Resposta ao Bitrix usa `STATUS: "delivered"` em sucesso ou `STATUS: "error", ERROR: "mensagem clara"` em falha (aparece no Bitrix junto à mensagem)
 
-### 6. Validação
-1. Reinstalar a app (ou disparar `bitrix24-install` manualmente) — confirmar logs:
-   - `messageservice.sender.add: OK`
-   - `imconnector.activate LINE=X: OK`
-2. Abrir deal 35873 → log deve mostrar `crm.deal.get error:` ou `fallback crm.item.get OK contactId=...` e o iframe deve listar o telefone do JORGE LUEMBA + template HSM.
-3. No widget nativo de Message do CRM, clicar "Connect messaging providers" → "Emmely Messages" deve aparecer como opção.
+### 4. Documentação inline
+Atualizar o `DESCRIPTION` do sender no `bitrix24-install`:
+```
+"WhatsApp via Emmely. Para template: 'template: nome | var1 | var2'. Texto livre só dentro da janela de 24h."
+```
+Reaparece automaticamente quando o utilizador clicar "Atualizar App" em `/integracoes`.
 
-## Ficheiros
+## Como o utilizador usa, passo a passo
 
-- `supabase/functions/bitrix24-crm-tab/index.ts` — diagnóstico + fallbacks A/B/C + PLACEMENT_OPTIONS title.
-- `supabase/functions/bitrix24-install/index.ts` — `messageservice.sender.add` + activação automática do connector.
-- `supabase/functions/bitrix24-messageservice-send/index.ts` — novo handler para o SMS sender.
-- `supabase/config.toml` — registar nova função (`verify_jwt = false`).
+1. Abre Negócio/Contacto no Bitrix → aba **Mensagem**
+2. Seletor de provedor → **Emmely Messages**
+3. No campo de texto escreve, por exemplo:
+   ```
+   template: convite_reuniao
+   var1: João Silva
+   var2: 28/05/2026 às 15h
+   var3: https://meet.emmelycloud.com/abc
+   ```
+4. Clica enviar → Bitrix POST → edge function parseia → Gupshup envia HSM
+5. Status volta para o Bitrix ("delivered" ou erro explícito)
 
-## Não incluído
+## Fora deste plano (próximos passos possíveis)
 
-- Migração de dados / mudanças de UI no front. Tudo backend/edge.
-- Não vamos forçar reset de Token OAuth — se o `crm.deal.get` der ACCESS_DENIED nos logs, isso fica visível para o utilizador decidir reinstalar com o utilizador admin.
+- Widget próprio com dropdown dos templates aprovados (UX melhor que sintaxe textual)
+- Auto-detecção de janela 24h e fallback automático texto→template
+- Sincronização automática da lista de templates Gupshup para o Bitrix
+
+## Arquivos afetados
+
+- `supabase/functions/bitrix24-messageservice-send/index.ts` — parser + roteamento template/texto
+- `supabase/functions/bitrix24-install/index.ts` — atualizar `DESCRIPTION` do sender (1 linha)
+- (verificar) `supabase/functions/message-send/index.ts` ou `gupshup-send/index.ts` — confirmar suporte a `message_type: "template"`
