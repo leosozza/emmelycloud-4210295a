@@ -408,6 +408,7 @@ const Bitrix24App = () => {
             {view === "integracoes" && <IntegracoesViewBitrix />}
             {view === "automacoes" && <AutomacoesViewBitrix />}
             {view === "observabilidade" && <ObservabilidadeViewBitrix />}
+            {view === "manual" && <ManualViewBitrix />}
             {view === "configuracoes" && (
               <ConfiguracoesWrapper
                 integration={integration}
