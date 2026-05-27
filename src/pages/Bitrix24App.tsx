@@ -107,7 +107,7 @@ const Bitrix24App = () => {
       if (appRestricted && !hasAppAccess) return "chatia";
       return "dashboard";
     }
-    const validViews: AppView[] = ["dashboard", "agentes", "training", "flows", "playground", "chatia", "pagamentos", "relatorios", "baixa", "carteira", "configuracoes", "propostas", "integracoes", "automacoes", "observabilidade"];
+    const validViews: AppView[] = ["dashboard", "agentes", "training", "flows", "playground", "chatia", "pagamentos", "relatorios", "baixa", "carteira", "configuracoes", "propostas", "integracoes", "automacoes", "observabilidade", "manual"];
     const matched = validViews.includes(sub as AppView) ? (sub as AppView) : "dashboard";
     // If restricted and no access, only allow chatia
     if (appRestricted && !hasAppAccess && matched !== "chatia") return "chatia";
