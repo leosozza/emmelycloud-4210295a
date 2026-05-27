@@ -86,7 +86,7 @@ const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
 
 const customNodeTypes = { custom: CustomFlowNode };
 
-type AppView = "loading" | "dashboard" | "agentes" | "training" | "flows" | "playground" | "chatia" | "pagamentos" | "relatorios" | "baixa" | "carteira" | "configuracoes" | "propostas" | "integracoes" | "automacoes" | "observabilidade";
+type AppView = "loading" | "dashboard" | "agentes" | "training" | "flows" | "playground" | "chatia" | "pagamentos" | "relatorios" | "baixa" | "carteira" | "configuracoes" | "propostas" | "integracoes" | "automacoes" | "observabilidade" | "manual";
 
 // ==================== MAIN COMPONENT ====================
 const Bitrix24App = () => {
@@ -107,7 +107,7 @@ const Bitrix24App = () => {
       if (appRestricted && !hasAppAccess) return "chatia";
       return "dashboard";
     }
-    const validViews: AppView[] = ["dashboard", "agentes", "training", "flows", "playground", "chatia", "pagamentos", "relatorios", "baixa", "carteira", "configuracoes", "propostas", "integracoes", "automacoes", "observabilidade"];
+    const validViews: AppView[] = ["dashboard", "agentes", "training", "flows", "playground", "chatia", "pagamentos", "relatorios", "baixa", "carteira", "configuracoes", "propostas", "integracoes", "automacoes", "observabilidade", "manual"];
     const matched = validViews.includes(sub as AppView) ? (sub as AppView) : "dashboard";
     // If restricted and no access, only allow chatia
     if (appRestricted && !hasAppAccess && matched !== "chatia") return "chatia";
@@ -295,6 +295,7 @@ const Bitrix24App = () => {
         { id: "integracoes", label: "Integrações", icon: Plug },
         { id: "configuracoes", label: "Configurações", icon: Settings },
         { id: "observabilidade", label: "Observabilidade", icon: Activity },
+        { id: "manual", label: "Manual", icon: BookOpen },
       ],
     },
   ];
@@ -407,6 +408,7 @@ const Bitrix24App = () => {
             {view === "integracoes" && <IntegracoesViewBitrix />}
             {view === "automacoes" && <AutomacoesViewBitrix />}
             {view === "observabilidade" && <ObservabilidadeViewBitrix />}
+            {view === "manual" && <ManualViewBitrix />}
             {view === "configuracoes" && (
               <ConfiguracoesWrapper
                 integration={integration}
@@ -8530,6 +8532,183 @@ function IntegracoesViewBitrix() {
     <Suspense fallback={<div className="flex items-center justify-center p-12"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>}>
       <IntegracoesPage />
     </Suspense>
+  );
+}
+
+// ==================== MANUAL VIEW (BITRIX24) ====================
+function ManualViewBitrix() {
+  const { toast } = useToast();
+  const [templates, setTemplates] = useState<any[]>([]);
+  const [loadingTpl, setLoadingTpl] = useState(false);
+  const [tplError, setTplError] = useState<string | null>(null);
+
+  const loadTemplates = useCallback(async (refresh = false) => {
+    setLoadingTpl(true);
+    setTplError(null);
+    try {
+      const res = await fetch(`${SUPABASE_URL}/functions/v1/gupshup-templates${refresh ? "?refresh=1" : ""}`, {
+        headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` },
+      });
+      const data = await res.json();
+      if (data?.reason) setTplError(data.hint || data.reason);
+      setTemplates(data?.templates || []);
+    } catch (e: any) {
+      setTplError(e?.message || "Falha ao carregar templates");
+    } finally {
+      setLoadingTpl(false);
+    }
+  }, []);
+
+  useEffect(() => { loadTemplates(false); }, [loadTemplates]);
+
+  const copy = (text: string) => {
+    navigator.clipboard.writeText(text);
+    toast({ title: "Copiado", description: "Sintaxe copiada para o clipboard" });
+  };
+
+  const exampleBasic = `template: nome_do_template
+var1: João Silva
+var2: 28/05/2026 às 15h
+var3: https://meet.emmelycloud.com/abc`;
+
+  const exampleInline = `template: convite_reuniao | João Silva | 28/05 | https://link.com`;
+
+  return (
+    <div className="p-6 space-y-6 max-w-4xl">
+      <div className="b24-view-header">
+        <h1 className="text-xl font-bold text-white flex items-center gap-2">
+          <BookOpen className="h-5 w-5" /> Manual — Envio de Templates WhatsApp
+        </h1>
+        <p className="text-white/60 text-sm mt-0.5">
+          Como usar o provedor <strong>Emmely Messages</strong> na aba "Mensagem" do CRM
+        </p>
+      </div>
+
+      <Card className="b24-card">
+        <CardHeader>
+          <CardTitle className="text-base">Passo a passo</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3 text-sm text-foreground/90">
+          <ol className="list-decimal pl-5 space-y-2">
+            <li>Abra um <strong>Negócio</strong> ou <strong>Contacto</strong> no Bitrix24.</li>
+            <li>Vá à aba <strong>Mensagem</strong> (ou "SMS").</li>
+            <li>No seletor de provedor, escolha <strong>Emmely Messages</strong>.</li>
+            <li>Confirme que o número de telefone do contacto está correcto.</li>
+            <li>No campo de texto, escreva a sintaxe do template (ver abaixo) e envie.</li>
+          </ol>
+          <Alert>
+            <AlertCircle className="h-4 w-4" />
+            <AlertTitle>Janela de 24 horas</AlertTitle>
+            <AlertDescription>
+              Para iniciar conversa (sem mensagem do cliente nas últimas 24h) é <strong>obrigatório</strong> usar um template HSM aprovado pela Meta. Texto livre só funciona dentro da janela de 24h.
+            </AlertDescription>
+          </Alert>
+        </CardContent>
+      </Card>
+
+      <Card className="b24-card">
+        <CardHeader>
+          <CardTitle className="text-base">Sintaxe — Formato linha-a-linha</CardTitle>
+          <CardDescription>Recomendado quando há muitas variáveis ou texto longo</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <pre className="rounded-md bg-muted p-3 text-xs font-mono whitespace-pre-wrap text-foreground">{exampleBasic}</pre>
+          <Button size="sm" variant="outline" onClick={() => copy(exampleBasic)}>
+            <Copy className="h-3.5 w-3.5 mr-1.5" /> Copiar exemplo
+          </Button>
+          <ul className="text-xs text-muted-foreground space-y-1 pl-4 list-disc">
+            <li>A primeira linha tem que começar por <code className="px-1 rounded bg-muted">template:</code> (não diferencia maiúsculas).</li>
+            <li>Cada variável numa linha separada como <code className="px-1 rounded bg-muted">var1:</code>, <code className="px-1 rounded bg-muted">var2:</code>, ...</li>
+            <li>Aceita também <code className="px-1 rounded bg-muted">1:</code>, <code className="px-1 rounded bg-muted">{`{{1}}:`}</code> como alternativas.</li>
+            <li>A ordem dos números define a ordem das variáveis (não a ordem das linhas).</li>
+          </ul>
+        </CardContent>
+      </Card>
+
+      <Card className="b24-card">
+        <CardHeader>
+          <CardTitle className="text-base">Sintaxe — Formato em linha única</CardTitle>
+          <CardDescription>Mais rápido para templates simples</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <pre className="rounded-md bg-muted p-3 text-xs font-mono whitespace-pre-wrap text-foreground">{exampleInline}</pre>
+          <Button size="sm" variant="outline" onClick={() => copy(exampleInline)}>
+            <Copy className="h-3.5 w-3.5 mr-1.5" /> Copiar exemplo
+          </Button>
+          <p className="text-xs text-muted-foreground">
+            Separe o nome do template e cada variável com o caractere <code className="px-1 rounded bg-muted">|</code>. A ordem após o nome do template é var1, var2, var3, ...
+          </p>
+        </CardContent>
+      </Card>
+
+      <Card className="b24-card">
+        <CardHeader className="flex flex-row items-center justify-between space-y-0">
+          <div>
+            <CardTitle className="text-base">Templates aprovados</CardTitle>
+            <CardDescription>Lista actual da Gupshup — copie o nome para usar</CardDescription>
+          </div>
+          <Button size="sm" variant="outline" onClick={() => loadTemplates(true)} disabled={loadingTpl}>
+            {loadingTpl ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5 mr-1.5" />}
+            Atualizar
+          </Button>
+        </CardHeader>
+        <CardContent>
+          {tplError && (
+            <Alert variant="destructive" className="mb-3">
+              <AlertCircle className="h-4 w-4" />
+              <AlertDescription className="text-xs">{tplError}</AlertDescription>
+            </Alert>
+          )}
+          {loadingTpl ? (
+            <div className="flex items-center justify-center py-8"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>
+          ) : templates.length === 0 ? (
+            <p className="text-xs text-muted-foreground">Nenhum template aprovado encontrado. Configure GUPSHUP_API_KEY e GUPSHUP_APP_ID em Integrações.</p>
+          ) : (
+            <div className="space-y-2 max-h-[420px] overflow-auto">
+              {templates.map((t) => (
+                <div key={t.id} className="border border-border rounded-md p-3 hover:bg-muted/50 transition-colors">
+                  <div className="flex items-start justify-between gap-2 mb-1.5">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <code className="text-xs font-mono font-semibold text-foreground">{t.elementName}</code>
+                        <Badge variant="secondary" className="text-[10px]">{t.language}</Badge>
+                        <Badge variant="outline" className="text-[10px]">{t.paramCount} var(s)</Badge>
+                        {t.category && <Badge variant="outline" className="text-[10px]">{t.category}</Badge>}
+                      </div>
+                      {t.body && <p className="text-[11px] text-muted-foreground mt-1.5 whitespace-pre-wrap line-clamp-3">{t.body}</p>}
+                    </div>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-7 px-2 shrink-0"
+                      onClick={() => {
+                        const vars = Array.from({ length: t.paramCount }, (_, i) => `var${i + 1}: `).join("\n");
+                        copy(`template: ${t.elementName}${vars ? "\n" + vars : ""}`);
+                      }}
+                      title="Copiar sintaxe pronta a colar"
+                    >
+                      <Copy className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card className="b24-card">
+        <CardHeader>
+          <CardTitle className="text-base">Erros comuns</CardTitle>
+        </CardHeader>
+        <CardContent className="text-xs text-muted-foreground space-y-2">
+          <p><strong className="text-foreground">"Template não aprovado"</strong> — verifique o nome exacto na lista acima. Templates novos precisam aprovação da Meta (24-48h).</p>
+          <p><strong className="text-foreground">"Número de variáveis incorrecto"</strong> — preencha exactamente o número de var(s) indicado em cada template.</p>
+          <p><strong className="text-foreground">"Sem número de telefone"</strong> — o contacto/negócio precisa ter o campo telefone preenchido.</p>
+          <p><strong className="text-foreground">Mensagem não chega</strong> — confira em <em>Observabilidade</em> ou <em>Integrações → Logs Bitrix24</em>.</p>
+        </CardContent>
+      </Card>
+    </div>
   );
 }
 
