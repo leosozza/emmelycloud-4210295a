@@ -14,6 +14,24 @@ interface UseSendMessageCallbacks {
   onOptimisticConfirm: (id: string, content: string) => void;
 }
 
+async function getInvokeErrorMessage(error: unknown, fallback: string) {
+  const maybeContext = (error as { context?: Response })?.context;
+
+  if (maybeContext) {
+    try {
+      const payload = await maybeContext.clone().json();
+      const message = payload?.error || payload?.details?.error || payload?.message;
+      const hint = payload?.hint || payload?.details?.hint;
+      if (message && hint) return `${message} ${hint}`;
+      if (message) return message;
+    } catch {
+      // fall back to the SDK error message below
+    }
+  }
+
+  return error instanceof Error ? error.message : fallback;
+}
+
 export function useSendMessage(
   params: UseSendMessageParams,
   callbacks: UseSendMessageCallbacks
@@ -43,7 +61,11 @@ export function useSendMessage(
         const { data, error } = await supabase.functions.invoke("message-send", {
           body: { conversation_id: params.conversation.id, content, sender_name: "Atendente" },
         });
-        if (error) throw error;
+        if (error) {
+          callbacks.onOptimisticRemove(optimisticMsg.id);
+          toast.error(await getInvokeErrorMessage(error, "Erro ao enviar mensagem"));
+          return;
+        }
         if (data?.error) throw new Error(data.error);
 
         setTimeout(() => {
@@ -99,7 +121,11 @@ export function useSendMessage(
             file_name: media.fileName,
           },
         });
-        if (error) throw error;
+        if (error) {
+          callbacks.onOptimisticRemove(optimisticMsg.id);
+          toast.error(await getInvokeErrorMessage(error, "Erro ao enviar mídia"));
+          return;
+        }
         if (data?.success === false) {
           callbacks.onOptimisticRemove(optimisticMsg.id);
           toast.error(data.error || "Erro ao enviar mídia");
