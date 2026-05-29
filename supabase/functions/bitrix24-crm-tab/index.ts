@@ -1849,6 +1849,37 @@ Deno.serve(async (req) => {
           } catch (e) { console.warn("[CRM-TAB] contact.deal.items.get fail", e); }
         }
 
+        // Fallback final: extrair telefone do título do negócio / item / PLACEMENT_OPTIONS.TITLE
+        // (caso o CRM não tenha telefone estruturado mas o título contenha o número, ex.: "+5581986748436 - WhatsApp")
+        if (allPhones.length === 0) {
+          const titleSources: string[] = [];
+          if (entity?.TITLE) titleSources.push(String(entity.TITLE));
+          if (entity?.title) titleSources.push(String(entity.title));
+          if (contactName) titleSources.push(String(contactName));
+          try {
+            const po = typeof body?.PLACEMENT_OPTIONS === "string"
+              ? JSON.parse(body.PLACEMENT_OPTIONS)
+              : (body?.PLACEMENT_OPTIONS || {});
+            if (po?.TITLE) titleSources.push(String(po.TITLE));
+          } catch { /* ignore */ }
+
+          const combined = titleSources.join(" | ");
+          // Captura sequências de dígitos com separadores comuns (+, -, espaços, parênteses)
+          const matches = combined.match(/\+?\d[\d\s\-().]{6,}\d/g) || [];
+          const extracted: string[] = [];
+          for (const m of matches) {
+            const digits = m.replace(/\D/g, "");
+            if (digits.length < 8 || digits.length > 15) continue;
+            // Aceitar se tem ≥10 dígitos (típico de telefone) ou começa com prefixo internacional conhecido
+            const hasIntlPrefix = /^(55|351|1|34|44|49|33|39|31|32|41|43|46|47|48|52|54|56|57|58|61|81|82|86|91|212|213|244|351|352|353|354|358|359|420|421)/.test(digits);
+            if (digits.length >= 10 || hasIntlPrefix) {
+              if (!extracted.includes(digits)) extracted.push(digits);
+            }
+          }
+          if (extracted.length > 0) addPhones("title", extracted);
+        }
+
+
         console.log("[CRM-TAB] phone resolution:", {
           entityId, entityTypeNum, contactName,
           phones: allPhones, emails: allEmails,
