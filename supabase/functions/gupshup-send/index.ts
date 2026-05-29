@@ -66,6 +66,7 @@ function extractCanonicalAppDetails(payload: any) {
 async function fetchCanonicalAppDetails(apiKey: string, appId: string) {
   if (!apiKey || !appId) return null;
   const urls = [
+    `https://api.gupshup.io/wa/app/${encodeURIComponent(appId)}`,
     `https://api.gupshup.io/wa/app/${encodeURIComponent(appId)}/business/profile`,
     `https://api.gupshup.io/wa/app/${encodeURIComponent(appId)}/business`,
   ];
