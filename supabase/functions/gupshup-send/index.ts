@@ -51,13 +51,13 @@ function normalizePhone(value: string) {
 }
 
 function extractCanonicalAppDetails(payload: any) {
-  const roots = [payload, payload?.profile, payload?.business, payload?.data, payload?.app].filter(Boolean);
+  const roots = [payload, payload?.app, payload?.profile, payload?.business, payload?.data].filter(Boolean);
   const appName = roots
-    .map((item: any) => item?.wabaName || item?.appName || item?.srcName)
+    .map((item: any) => item?.name || item?.wabaName || item?.appName || item?.srcName)
     .find((value: any) => typeof value === "string" && value.trim())?.trim() || "";
   const source = normalizePhone(
     roots
-      .map((item: any) => item?.phoneNumber || item?.phone || item?.source || item?.contactNumber)
+      .map((item: any) => item?.phone || item?.phoneNumber || item?.source || item?.contactNumber)
       .find((value: any) => typeof value === "string" && value.trim()) || ""
   );
   return { appName, source };
