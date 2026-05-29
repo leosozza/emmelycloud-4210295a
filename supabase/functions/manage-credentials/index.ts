@@ -6,6 +6,40 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type",
 };
 
+function normalizePhone(value: string) {
+  return (value || "").replace(/[^0-9]/g, "");
+}
+
+function extractGupshupAppDetails(payload: any) {
+  const roots = [payload, payload?.profile, payload?.business, payload?.data, payload?.app].filter(Boolean);
+  const appName = roots
+    .map((item: any) => item?.wabaName || item?.appName || item?.srcName)
+    .find((value: any) => typeof value === "string" && value.trim())?.trim() || "";
+  const source = normalizePhone(
+    roots
+      .map((item: any) => item?.phoneNumber || item?.phone || item?.source || item?.contactNumber)
+      .find((value: any) => typeof value === "string" && value.trim()) || ""
+  );
+  return { appName, source };
+}
+
+async function fetchGupshupAppDetails(apiKey: string, appId: string) {
+  const urls = [
+    `https://api.gupshup.io/wa/app/${encodeURIComponent(appId)}/business/profile`,
+    `https://api.gupshup.io/wa/app/${encodeURIComponent(appId)}/business`,
+  ];
+  for (const url of urls) {
+    const response = await fetch(url, { headers: { apikey: apiKey, accept: "application/json" } });
+    const rawText = await response.text();
+    let payload: any = {};
+    try { payload = JSON.parse(rawText); } catch { payload = { raw: rawText }; }
+    if (!response.ok) continue;
+    const details = extractGupshupAppDetails(payload);
+    if (details.appName || details.source) return details;
+  }
+  return null;
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
