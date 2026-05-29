@@ -218,13 +218,12 @@ Deno.serve(async (req) => {
       });
 
       const apiKey = map.GUPSHUP_API_KEY || "";
-      const appName = map.GUPSHUP_APP_NAME || "";
-      const source = (map.GUPSHUP_SOURCE_NUMBER || "").replace(/[^0-9]/g, "");
+      let appName = map.GUPSHUP_APP_NAME || "";
+      let source = (map.GUPSHUP_SOURCE_NUMBER || "").replace(/[^0-9]/g, "");
       const appId = map.GUPSHUP_APP_ID || "";
       const missing = [
         !apiKey ? "API Key" : null,
-        !appName ? "App Name" : null,
-        !source ? "Source Number" : null,
+        !appId ? "App ID" : null,
       ].filter(Boolean);
 
       if (missing.length) {
@@ -234,14 +233,24 @@ Deno.serve(async (req) => {
         }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
       }
 
-      if (!appId) {
-        return new Response(JSON.stringify({
-          ok: false,
-          error: "Configure também o GUPSHUP_APP_ID para validar a API Key contra a app correta antes de ativar.",
-        }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
-      }
-
       try {
+        const appDetails = await fetchGupshupAppDetails(apiKey, appId);
+        if (appDetails?.appName || appDetails?.source) {
+          appName = appDetails.appName || appName;
+          source = appDetails.source || source;
+          const rows = [];
+          if (appDetails.appName && appDetails.appName !== map.GUPSHUP_APP_NAME) rows.push({ provider: "gupshup", credential_key: "GUPSHUP_APP_NAME", credential_value: appDetails.appName });
+          if (appDetails.source && appDetails.source !== (map.GUPSHUP_SOURCE_NUMBER || "")) rows.push({ provider: "gupshup", credential_key: "GUPSHUP_SOURCE_NUMBER", credential_value: appDetails.source });
+          if (rows.length) await serviceClient.from("integration_credentials").upsert(rows, { onConflict: "provider,credential_key" });
+        }
+
+        if (!appName || !source) {
+          return new Response(JSON.stringify({
+            ok: false,
+            error: "Não foi possível obter App Name e Source Number pela API da Gupshup. Preencha esses campos manualmente ou confirme se o App ID pertence a uma app WhatsApp ativa.",
+          }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        }
+
         const callGupshup = async (url: string) => {
           const response = await fetch(url, {
             headers: { apikey: apiKey, accept: "application/json" },
