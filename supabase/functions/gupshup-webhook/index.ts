@@ -235,6 +235,9 @@ Deno.serve(async (req) => {
           body: JSON.stringify({
             message: text, contactName: senderName, contactId: from,
             channel: "whatsapp", conversationId, instanceId: instance?.id || null,
+            mediaUrl: mediaUrl || undefined,
+            mediaType: mediaType || undefined,
+            mediaFilename: (p.type === "file" ? inner.filename : undefined) || undefined,
           }),
         }).catch((e) => console.error("[GUPSHUP-WEBHOOK] bitrix24-send:", e));
       }
