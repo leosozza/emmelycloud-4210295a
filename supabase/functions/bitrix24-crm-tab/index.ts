@@ -1260,16 +1260,36 @@ function renderHtml(opts: {
           var label = document.createElement('label');
           label.style.cssText = 'font-size:11px;color:#959ca4;display:block;margin:6px 0 2px';
           label.textContent = 'Parâmetro {{' + i + '}}';
+          var row = document.createElement('div');
+          row.style.cssText = 'display:flex;gap:4px;align-items:center';
           var input = document.createElement('input');
           input.type = 'text';
           input.id = 'hsm-param-' + i;
           input.placeholder = 'Valor para {{' + i + '}}';
-          input.style.cssText = 'width:100%;padding:7px 10px;border:1px solid #dfe0e3;border-radius:8px;font-size:13px;color:#333840;outline:none';
+          input.style.cssText = 'flex:1;padding:7px 10px;border:1px solid #dfe0e3;border-radius:8px;font-size:13px;color:#333840;outline:none';
           input.oninput = renderHsmPreview;
+          var picker = document.createElement('select');
+          picker.id = 'hsm-param-picker-' + i;
+          picker.title = 'Inserir campo do CRM';
+          picker.style.cssText = 'max-width:120px;padding:7px 4px;border:1px solid #dfe0e3;border-radius:8px;font-size:11px;color:#5a6470;background:#f7f8fa;cursor:pointer';
+          picker.innerHTML = '<option value="">📋 Campo CRM…</option>';
+          (function(idx, sel){
+            sel.onchange = function() {
+              var key = sel.value;
+              if (!key) return;
+              var v = getCrmFieldValue(key);
+              var inp = document.getElementById('hsm-param-' + idx);
+              if (inp) { inp.value = v || ''; renderHsmPreview(); }
+              sel.value = '';
+            };
+          })(i, picker);
+          row.appendChild(input);
+          row.appendChild(picker);
           container.appendChild(label);
-          container.appendChild(input);
+          container.appendChild(row);
         }
         container.style.display = SELECTED_HSM.paramCount > 0 ? 'block' : 'none';
+        loadCrmFieldsIntoPickers();
       }
       if (preview) { preview.style.display = 'block'; }
       renderHsmPreview();
