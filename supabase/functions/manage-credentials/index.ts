@@ -172,6 +172,72 @@ Deno.serve(async (req) => {
       }
     }
 
+    if (body.action === "test_gupshup") {
+      const { data: rows } = await serviceClient
+        .from("integration_credentials")
+        .select("credential_key, credential_value")
+        .eq("provider", "gupshup");
+
+      const map: Record<string, string> = {};
+      (rows || []).forEach((row: any) => {
+        map[row.credential_key] = (row.credential_value || "").trim();
+      });
+
+      const apiKey = map.GUPSHUP_API_KEY || "";
+      const appName = map.GUPSHUP_APP_NAME || "";
+      const source = (map.GUPSHUP_SOURCE_NUMBER || "").replace(/[^0-9]/g, "");
+      const appId = map.GUPSHUP_APP_ID || "";
+      const missing = [
+        !apiKey ? "API Key" : null,
+        !appName ? "App Name" : null,
+        !source ? "Source Number" : null,
+      ].filter(Boolean);
+
+      if (missing.length) {
+        return new Response(JSON.stringify({
+          ok: false,
+          error: `Credenciais Gupshup incompletas: ${missing.join(", ")}`,
+        }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+
+      if (!appId) {
+        return new Response(JSON.stringify({
+          ok: false,
+          error: "Configure também o GUPSHUP_APP_ID para validar a API Key contra a app correta antes de ativar.",
+        }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+
+      try {
+        const res = await fetch(`https://api.gupshup.io/sm/api/v1/template/list/${encodeURIComponent(appId)}`, {
+          headers: { apikey: apiKey, accept: "application/json" },
+        });
+        const raw = await res.text();
+        let parsed: any = {};
+        try { parsed = JSON.parse(raw); } catch { parsed = { raw }; }
+
+        if (!res.ok) {
+          const providerMessage = parsed?.message || parsed?.error || parsed?.raw || "API Key, App ID ou conta Gupshup inválida";
+          return new Response(JSON.stringify({
+            ok: false,
+            error: providerMessage,
+            http_status: res.status,
+            gupshup: parsed,
+          }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        }
+
+        return new Response(JSON.stringify({
+          ok: true,
+          message: "API Key e App ID Gupshup válidos. Confirme que App Name e Source Number pertencem a esta mesma app.",
+          appName,
+          source,
+        }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      } catch (e: unknown) {
+        return new Response(JSON.stringify({ error: `Erro de rede: ${e instanceof Error ? e.message : "unknown"}` }), {
+          status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+    }
+
     // ─── Default: upsert credential ──────────────────────────────────
     const { provider, credential_key, credential_value } = body;
 

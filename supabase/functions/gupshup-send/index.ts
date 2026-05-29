@@ -152,6 +152,28 @@ function validate(body: SendBody): string | null {
   return null;
 }
 
+function describeGupshupFailure(httpStatus: number, result: any) {
+  const rawMessage = String(result?.message || result?.error || result?.raw || "");
+  const invalidAppDetails = /invalid app details|portal user not found|apikey/i.test(rawMessage);
+
+  if (invalidAppDetails) {
+    return {
+      error: "Credenciais Gupshup inválidas: confirme API Key, App Name e Source Number da mesma app Gupshup.",
+      error_code: "GUPSHUP_INVALID_APP_DETAILS",
+      hint: "No painel Gupshup, copie novamente a API Key da conta correta e confirme que o App Name é exatamente igual ao nome da app e que o Source Number pertence a essa app.",
+      http_status: httpStatus,
+      gupshup: result,
+    };
+  }
+
+  return {
+    error: "Falha ao enviar via Gupshup",
+    error_code: "GUPSHUP_SEND_FAILED",
+    http_status: httpStatus,
+    gupshup: result,
+  };
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
   if (req.method !== "POST") {
@@ -214,11 +236,10 @@ Deno.serve(async (req) => {
     const submitted = res.ok && result?.status === "submitted";
     if (!submitted) {
       console.error("[GUPSHUP-SEND] error", res.status, result);
-      return new Response(JSON.stringify({
-        error: "Falha ao enviar via Gupshup",
-        http_status: res.status,
-        gupshup: result,
-      }), { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      return new Response(JSON.stringify(describeGupshupFailure(res.status, result)), {
+        status: 502,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
     }
 
     return new Response(JSON.stringify({
