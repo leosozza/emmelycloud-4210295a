@@ -66,6 +66,11 @@ export function useSendMessage(
           toast.error(await getInvokeErrorMessage(error, "Erro ao enviar mensagem"));
           return;
         }
+        if (data?.success === false) {
+          callbacks.onOptimisticRemove(optimisticMsg.id);
+          toast.error(data.error || "Erro ao enviar mensagem");
+          return;
+        }
         if (data?.error) throw new Error(data.error);
 
         setTimeout(() => {
