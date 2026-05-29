@@ -35,6 +35,28 @@ function detectMimeFromBytes(bytes: Uint8Array, fallbackMime: string): string {
   return fallbackMime;
 }
 
+function friendlyProviderError(provider: string, result: any) {
+  const detail = result?.details || result;
+  const rawMessage = String(detail?.error || detail?.message || detail?.gupshup?.message || result?.error || "");
+  const isGupshupInvalidApp = provider === "gupshup" && (
+    detail?.error_code === "GUPSHUP_INVALID_APP_DETAILS" || /invalid app details|portal user not found|apikey/i.test(rawMessage)
+  );
+
+  if (isGupshupInvalidApp) {
+    return {
+      error: "Credenciais Gupshup inválidas. Atualize API Key, App Name e Source Number em Integrações → Gupshup.",
+      error_code: "GUPSHUP_INVALID_APP_DETAILS",
+      hint: detail?.hint || "Os três campos precisam pertencer à mesma app Gupshup e o App Name é sensível a maiúsculas/minúsculas.",
+      details: detail,
+    };
+  }
+
+  return {
+    error: provider === "gupshup" ? "Falha ao enviar via Gupshup" : "Falha ao enviar mensagem",
+    details: detail,
+  };
+}
+
 function readVint(data: Uint8Array, pos: number, stripMarker: boolean): { value: number; length: number } | null {
   if (pos >= data.length) return null;
   const first = data[pos];
@@ -574,8 +596,10 @@ Deno.serve(async (req) => {
         const gsResult = await gsRes.json().catch(() => ({}));
         if (!gsRes.ok || gsResult.error) {
           console.error("[MESSAGE-SEND] Gupshup error:", gsResult);
-          return new Response(JSON.stringify({ error: "Falha ao enviar via Gupshup", details: gsResult }), {
-            status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" },
+          const providerError = friendlyProviderError("gupshup", gsResult);
+          return new Response(JSON.stringify({ success: false, ...providerError }), {
+            status: providerError.error_code === "GUPSHUP_INVALID_APP_DETAILS" ? 200 : 502,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
           });
         }
         externalMessageId = gsResult.message_id || null;

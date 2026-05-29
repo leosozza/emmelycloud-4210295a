@@ -317,7 +317,7 @@ Deno.serve(async (req) => {
         }
       }
       if (!resolvedLineId) {
-        console.log(`[SEND] Instance ${instanceId} has no active Bitrix24 mapping — will try fallback by channel`);
+        console.log(`[SEND] Instance ${instanceId} has no direct Bitrix24 mapping — falling back to channel mapping`);
       }
     }
 

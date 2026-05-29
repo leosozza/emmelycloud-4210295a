@@ -152,6 +152,28 @@ function validate(body: SendBody): string | null {
   return null;
 }
 
+function describeGupshupFailure(httpStatus: number, result: any) {
+  const rawMessage = String(result?.message || result?.error || result?.raw || "");
+  const invalidAppDetails = /invalid app details|portal user not found|apikey/i.test(rawMessage);
+
+  if (invalidAppDetails) {
+    return {
+      error: "Credenciais Gupshup inválidas: confirme API Key, App Name e Source Number da mesma app Gupshup.",
+      error_code: "GUPSHUP_INVALID_APP_DETAILS",
+      hint: "No painel Gupshup, copie novamente a API Key da conta correta e confirme que o App Name é exatamente igual ao nome da app e que o Source Number pertence a essa app.",
+      http_status: httpStatus,
+      gupshup: result,
+    };
+  }
+
+  return {
+    error: "Falha ao enviar via Gupshup",
+    error_code: "GUPSHUP_SEND_FAILED",
+    http_status: httpStatus,
+    gupshup: result,
+  };
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
   if (req.method !== "POST") {
@@ -214,29 +236,10 @@ Deno.serve(async (req) => {
     const submitted = res.ok && result?.status === "submitted";
     if (!submitted) {
       console.error("[GUPSHUP-SEND] error", res.status, result);
-
-      let enrichedError = "Falha ao enviar via Gupshup";
-      let diagnosticHint = undefined;
-
-      const isInvalidAppDetails = 
-        result?.message === "Invalid App Details" || 
-        result?.gupshup?.message === "Invalid App Details" ||
-        rawText.includes("Invalid App Details");
-
-      if (isInvalidAppDetails) {
-        enrichedError = "Falha ao enviar via Gupshup: App Name ou Source Number inválido/divergente";
-        diagnosticHint = "O Gupshup retornou o erro 'Invalid App Details'. Isso indica que a combinação do 'App Name' e do 'Source Number' configurada em Integrações -> Gupshup não corresponde exatamente à aplicação associada à sua API Key no console do Gupshup. Certifique-se também de que não há espaços extras ou letras maiúsculas/minúsculas divergentes.";
-      } else if (res.status === 401) {
-        enrichedError = "Falha ao enviar via Gupshup: API Key inválida ou expirada";
-        diagnosticHint = "O Gupshup recusou a autenticação (401 Unauthorized). Verifique se a sua GUPSHUP_API_KEY está correta na aba de Integrações.";
-      }
-
-      return new Response(JSON.stringify({
-        error: enrichedError,
-        http_status: res.status,
-        gupshup: result,
-        ...(diagnosticHint ? { hint: diagnosticHint } : {}),
-      }), { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      return new Response(JSON.stringify(describeGupshupFailure(res.status, result)), {
+        status: 502,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
     }
 
     return new Response(JSON.stringify({
