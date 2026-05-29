@@ -118,13 +118,33 @@ Deno.serve(async (req) => {
         let parsed: any = {};
         try { parsed = JSON.parse(rawText); } catch { parsed = { raw: rawText }; }
 
+        // Adicionalmente, busca os detalhes da aplicação para apoiar o diagnóstico de erros de digitação/DDI/9º dígito.
+        let businessDetails = "";
+        try {
+          const bizUrl = `https://api.gupshup.io/wa/app/${encodeURIComponent(appId)}/business`;
+          const bizRes = await fetch(bizUrl, {
+            method: "GET",
+            headers: {
+              "apikey": apiKey,
+              "accept": "application/json",
+            }
+          });
+          if (bizRes.ok) {
+            businessDetails = await bizRes.text();
+          } else {
+            businessDetails = `HTTP ${bizRes.status}: ${await bizRes.text()}`;
+          }
+        } catch (bizErr) {
+          businessDetails = `Erro ao buscar perfil de negócios: ${bizErr instanceof Error ? bizErr.message : String(bizErr)}`;
+        }
+
         if (res.ok) {
           checks.push({
             id: "gupshup_api_connection",
             label: "Validação Gupshup API",
             status: "ok",
             message: "Conexão com a API do Gupshup estabelecida com sucesso. Credenciais e App ID válidos!",
-            detail: `Gupshup Status: ${res.status}\nResponse: ${JSON.stringify(parsed).slice(0, 300)}`
+            detail: `Gupshup Status: ${res.status}\n\n[Perfil de Negócio no Gupshup]:\n${businessDetails}\n\n[Resposta Templates]:\n${JSON.stringify(parsed).slice(0, 300)}`
           });
         } else {
           const gMsg = parsed?.message || parsed?.error?.message || rawText;
@@ -133,7 +153,7 @@ Deno.serve(async (req) => {
             label: "Validação Gupshup API",
             status: "fail",
             message: `Gupshup rejeitou as credenciais (status ${res.status}): ${gMsg}`,
-            detail: `Response:\n${rawText}`
+            detail: `Response:\n${rawText}\n\n[Perfil de Negócio no Gupshup]:\n${businessDetails}`
           });
         }
       } catch (e) {
