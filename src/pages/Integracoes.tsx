@@ -825,13 +825,29 @@ function GupshupCard({ credProps }: { credProps: any }) {
           return;
         }
       }
+      const { data: credentialData, error: credentialError } = await supabase.functions.invoke("manage-credentials", {
+        body: { action: "test_gupshup" },
+      });
+      if (credentialError || credentialData?.error || credentialData?.ok === false) {
+        const message = credentialData?.error || credentialError?.message || "API Key, App ID, App Name ou Source Number inválidos";
+        toast.error("Credenciais Gupshup inválidas");
+        setTestResult({ ok: false, checks: [{ id: "credentials", label: "Credenciais Gupshup", status: "fail", message }] });
+        return;
+      }
+
       const { data, error } = await supabase.functions.invoke("gupshup-webhook-test", { body: {} });
       if (error) {
         toast.error("Falha ao testar webhook");
         setTestResult({ ok: false, checks: [{ id: "err", label: "Erro", status: "fail", message: error.message || "Erro desconhecido" }] });
       } else {
-        setTestResult(data);
-        if (data?.ok) toast.success("Webhook validado com sucesso");
+        const credentialCheck = {
+          id: "credentials",
+          label: "Credenciais Gupshup",
+          status: "ok" as const,
+          message: credentialData?.message || "API Key e App ID validados com sucesso.",
+        };
+        setTestResult({ ...data, ok: data?.ok === true, checks: [credentialCheck, ...(data?.checks || [])] });
+        if (data?.ok) toast.success("Gupshup e webhook validados com sucesso");
         else toast.error("Algum check falhou — veja detalhes");
       }
     } catch (e: any) {
