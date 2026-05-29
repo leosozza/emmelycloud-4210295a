@@ -214,10 +214,28 @@ Deno.serve(async (req) => {
     const submitted = res.ok && result?.status === "submitted";
     if (!submitted) {
       console.error("[GUPSHUP-SEND] error", res.status, result);
+
+      let enrichedError = "Falha ao enviar via Gupshup";
+      let diagnosticHint = undefined;
+
+      const isInvalidAppDetails = 
+        result?.message === "Invalid App Details" || 
+        result?.gupshup?.message === "Invalid App Details" ||
+        rawText.includes("Invalid App Details");
+
+      if (isInvalidAppDetails) {
+        enrichedError = "Falha ao enviar via Gupshup: App Name ou Source Number inválido/divergente";
+        diagnosticHint = "O Gupshup retornou o erro 'Invalid App Details'. Isso indica que a combinação do 'App Name' e do 'Source Number' configurada em Integrações -> Gupshup não corresponde exatamente à aplicação associada à sua API Key no console do Gupshup. Certifique-se também de que não há espaços extras ou letras maiúsculas/minúsculas divergentes.";
+      } else if (res.status === 401) {
+        enrichedError = "Falha ao enviar via Gupshup: API Key inválida ou expirada";
+        diagnosticHint = "O Gupshup recusou a autenticação (401 Unauthorized). Verifique se a sua GUPSHUP_API_KEY está correta na aba de Integrações.";
+      }
+
       return new Response(JSON.stringify({
-        error: "Falha ao enviar via Gupshup",
+        error: enrichedError,
         http_status: res.status,
         gupshup: result,
+        ...(diagnosticHint ? { hint: diagnosticHint } : {}),
       }), { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 

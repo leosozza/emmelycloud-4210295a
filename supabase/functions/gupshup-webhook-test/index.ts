@@ -47,6 +47,107 @@ Deno.serve(async (req) => {
 
   const checks: Array<{ id: string; label: string; status: "ok" | "warn" | "fail"; message: string; detail?: string }> = [];
 
+  // Load all Gupshup credentials
+  const { data: credRows } = await supabase
+    .from("integration_credentials")
+    .select("credential_key, credential_value")
+    .eq("provider", "gupshup");
+  const credsMap: Record<string, string> = {};
+  (credRows || []).forEach((c: any) => {
+    if (c.credential_key) credsMap[c.credential_key] = (c.credential_value || "").trim();
+  });
+
+  const apiKey = credsMap.GUPSHUP_API_KEY || "";
+  const appName = credsMap.GUPSHUP_APP_NAME || "";
+  const sourceNumber = (credsMap.GUPSHUP_SOURCE_NUMBER || "").replace(/[^0-9]/g, "");
+  const appId = credsMap.GUPSHUP_APP_ID || "";
+
+  // Check 1: Configuração das credenciais no banco de dados
+  const missing = [];
+  if (!apiKey) missing.push("API Key (GUPSHUP_API_KEY)");
+  if (!appName) missing.push("App Name (GUPSHUP_APP_NAME)");
+  if (!sourceNumber) missing.push("Source Number (GUPSHUP_SOURCE_NUMBER)");
+
+  if (missing.length > 0) {
+    checks.push({
+      id: "creds_configured",
+      label: "Credenciais Gupshup configuradas",
+      status: "fail",
+      message: `Faltam credenciais obrigatórias no banco: ${missing.join(", ")}.`,
+    });
+  } else {
+    const isNumeric = /^[0-9]+$/.test(sourceNumber);
+    if (!isNumeric || sourceNumber.length < 8) {
+      checks.push({
+        id: "creds_configured",
+        label: "Credenciais Gupshup configuradas",
+        status: "fail",
+        message: `Source Number inválido (${sourceNumber || "vazio"}). Deve conter apenas dígitos no formato E.164 (ex: 5511999999999).`,
+      });
+    } else {
+      checks.push({
+        id: "creds_configured",
+        label: "Credenciais Gupshup configuradas",
+        status: "ok",
+        message: `Credenciais estruturadas corretamente. App Name: "${appName}", Source Number: ${sourceNumber}.`,
+      });
+    }
+  }
+
+  // Check 2: Validação com a API oficial do Gupshup
+  if (apiKey && appName) {
+    if (!appId) {
+      checks.push({
+        id: "gupshup_api_connection",
+        label: "Validação Gupshup API",
+        status: "warn",
+        message: "O App ID não está configurado. A validação direta de credenciais e listagem de templates HSM foram ignoradas. (Para ativar, adicione o App ID UUID na aba Integrações).",
+      });
+    } else {
+      try {
+        const gsUrl = `https://api.gupshup.io/wa/app/${encodeURIComponent(appId)}/template`;
+        const res = await fetch(gsUrl, {
+          method: "GET",
+          headers: {
+            "apikey": apiKey,
+            "accept": "application/json",
+          }
+        });
+
+        const rawText = await res.text();
+        let parsed: any = {};
+        try { parsed = JSON.parse(rawText); } catch { parsed = { raw: rawText }; }
+
+        if (res.ok) {
+          checks.push({
+            id: "gupshup_api_connection",
+            label: "Validação Gupshup API",
+            status: "ok",
+            message: "Conexão com a API do Gupshup estabelecida com sucesso. Credenciais e App ID válidos!",
+            detail: `Gupshup Status: ${res.status}\nResponse: ${JSON.stringify(parsed).slice(0, 300)}`
+          });
+        } else {
+          const gMsg = parsed?.message || parsed?.error?.message || rawText;
+          checks.push({
+            id: "gupshup_api_connection",
+            label: "Validação Gupshup API",
+            status: "fail",
+            message: `Gupshup rejeitou as credenciais (status ${res.status}): ${gMsg}`,
+            detail: `Response:\n${rawText}`
+          });
+        }
+      } catch (e) {
+        checks.push({
+          id: "gupshup_api_connection",
+          label: "Validação Gupshup API",
+          status: "fail",
+          message: `Erro ao conectar com a API do Gupshup: ${e instanceof Error ? e.message : String(e)}`,
+          detail: String(e)
+        });
+      }
+    }
+  }
+
   const webhookUrl = `${supabaseUrl}/functions/v1/gupshup-webhook`;
 
   // 1. Endpoint accessível (GET)

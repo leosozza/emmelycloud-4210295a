@@ -100,15 +100,40 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Endpoint v1 oficial — requer App ID.
-    const gsUrl = `https://api.gupshup.io/sm/api/v1/template/list/${encodeURIComponent(appId)}`;
-    const res = await fetch(gsUrl, { headers: { apikey: apiKey, accept: "application/json" } });
-    const raw = await res.text();
+    // Tenta primeiro o endpoint oficial v2 do Gupshup.
+    let gsUrl = `https://api.gupshup.io/wa/app/${encodeURIComponent(appId)}/template`;
+    console.log(`[GUPSHUP-TEMPLATES] Fetching templates via official endpoint: ${gsUrl}`);
+    let res = await fetch(gsUrl, { headers: { apikey: apiKey, accept: "application/json" } });
+    let raw = await res.text();
     let parsed: any = {};
     try { parsed = JSON.parse(raw); } catch { parsed = { raw }; }
 
+    // Fallback para o endpoint legado se o primeiro falhar (ex: status não 2xx ou sem templates/data)
+    const hasTemplates = res.ok && (Array.isArray(parsed?.templates) || Array.isArray(parsed?.data));
+    if (!hasTemplates) {
+      const legacyUrl = `https://api.gupshup.io/sm/api/v1/template/list/${encodeURIComponent(appId)}`;
+      console.log(`[GUPSHUP-TEMPLATES] Official v2 endpoint returned status ${res.status}. Falling back to legacy endpoint: ${legacyUrl}`);
+      try {
+        const legacyRes = await fetch(legacyUrl, { headers: { apikey: apiKey, accept: "application/json" } });
+        const legacyRaw = await legacyRes.text();
+        let legacyParsed: any = {};
+        try { legacyParsed = JSON.parse(legacyRaw); } catch { legacyParsed = { raw: legacyRaw }; }
+        
+        if (legacyRes.ok && (Array.isArray(legacyParsed?.templates) || Array.isArray(legacyParsed?.data))) {
+          res = legacyRes;
+          raw = legacyRaw;
+          parsed = legacyParsed;
+          console.log("[GUPSHUP-TEMPLATES] Legacy fallback succeeded!");
+        } else {
+          console.error("[GUPSHUP-TEMPLATES] Legacy fallback also failed:", legacyRes.status, legacyParsed);
+        }
+      } catch (fallbackErr) {
+        console.error("[GUPSHUP-TEMPLATES] Exception during legacy fallback:", fallbackErr);
+      }
+    }
+
     if (!res.ok) {
-      console.error("[GUPSHUP-TEMPLATES] HTTP error", res.status, parsed);
+      console.error("[GUPSHUP-TEMPLATES] Both endpoints failed. Main error:", res.status, parsed);
       return new Response(JSON.stringify({
         templates: [],
         reason: "gupshup_error",
