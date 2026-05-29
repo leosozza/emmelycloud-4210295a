@@ -1656,23 +1656,29 @@ Deno.serve(async (req) => {
     }
 
     const bodyAuthToken = body.AUTH_ID || body.auth_id || "";
-    const bodyServerEndpoint = body.SERVER_ENDPOINT
+    const rawServerEndpoint = body.SERVER_ENDPOINT
       ? decodeURIComponent(body.SERVER_ENDPOINT)
       : (body.server_endpoint ? decodeURIComponent(body.server_endpoint) : "");
-
-    // Prefer the stored app token (full app scope incl. crm).
-    // The per-user AUTH_ID from the placement may be missing 'crm' scope
-    // for some users → crm.deal.get returns ERROR_METHOD_NOT_FOUND.
+    // Bitrix24 sends SERVER_ENDPOINT pointing to oauth.bitrix.info — that host
+    // only accepts the per-user AUTH_ID token. Mixing it with our stored app
+    // token causes ERROR_METHOD_NOT_FOUND on crm.deal.get / crm.item.get.
+    // Therefore: token and endpoint MUST come as a pair.
     let accessToken = "";
-    let endpoint = bodyServerEndpoint || integration.client_endpoint;
+    let endpoint = "";
 
     try {
       accessToken = await ensureValidToken(supabase, integration);
+      endpoint = integration.client_endpoint;
+      console.log("[CRM-TAB] Using stored app token + client_endpoint:", endpoint);
     } catch (e) {
       console.warn("[CRM-TAB] ensureValidToken failed, falling back to placement AUTH_ID", e);
       accessToken = bodyAuthToken;
+      endpoint = rawServerEndpoint || integration.client_endpoint;
     }
-    if (!accessToken) accessToken = bodyAuthToken;
+    if (!accessToken) {
+      accessToken = bodyAuthToken;
+      if (!endpoint) endpoint = rawServerEndpoint || integration.client_endpoint;
+    }
 
     // Permission check removed — CRM placements are accessible to all users
 
