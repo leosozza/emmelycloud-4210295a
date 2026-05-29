@@ -42,7 +42,64 @@ async function getCreds(supabase: any) {
     apiKey: map.GUPSHUP_API_KEY || "",
     appName: map.GUPSHUP_APP_NAME || "",
     source: (map.GUPSHUP_SOURCE_NUMBER || "").replace(/[^0-9]/g, ""),
+    appId: map.GUPSHUP_APP_ID || "",
   };
+}
+
+function normalizePhone(value: string) {
+  return (value || "").replace(/[^0-9]/g, "");
+}
+
+function extractCanonicalAppDetails(payload: any) {
+  const roots = [payload, payload?.profile, payload?.business, payload?.data, payload?.app].filter(Boolean);
+  const appName = roots
+    .map((item: any) => item?.wabaName || item?.appName || item?.srcName)
+    .find((value: any) => typeof value === "string" && value.trim())?.trim() || "";
+  const source = normalizePhone(
+    roots
+      .map((item: any) => item?.phoneNumber || item?.phone || item?.source || item?.contactNumber)
+      .find((value: any) => typeof value === "string" && value.trim()) || ""
+  );
+  return { appName, source };
+}
+
+async function fetchCanonicalAppDetails(apiKey: string, appId: string) {
+  if (!apiKey || !appId) return null;
+  const urls = [
+    `https://api.gupshup.io/wa/app/${encodeURIComponent(appId)}/business/profile`,
+    `https://api.gupshup.io/wa/app/${encodeURIComponent(appId)}/business`,
+  ];
+
+  for (const url of urls) {
+    try {
+      const response = await fetch(url, { headers: { apikey: apiKey, accept: "application/json" } });
+      const rawText = await response.text();
+      let payload: any = {};
+      try { payload = JSON.parse(rawText); } catch { payload = { raw: rawText }; }
+      if (!response.ok) continue;
+
+      const canonical = extractCanonicalAppDetails(payload);
+      if (canonical.appName || canonical.source) return canonical;
+    } catch (error) {
+      console.warn("[GUPSHUP-SEND] canonical app lookup failed", error);
+    }
+  }
+
+  return null;
+}
+
+async function persistCanonicalCreds(supabase: any, canonical: { appName?: string; source?: string }) {
+  const rows = [];
+  if (canonical.appName) rows.push({ provider: "gupshup", credential_key: "GUPSHUP_APP_NAME", credential_value: canonical.appName });
+  if (canonical.source) rows.push({ provider: "gupshup", credential_key: "GUPSHUP_SOURCE_NUMBER", credential_value: canonical.source });
+  if (!rows.length) return;
+  const { error } = await supabase.from("integration_credentials").upsert(rows, { onConflict: "provider,credential_key" });
+  if (error) console.warn("[GUPSHUP-SEND] could not persist canonical Gupshup details", error.message);
+}
+
+function isInvalidAppDetails(result: any) {
+  const rawMessage = String(result?.message || result?.error || result?.raw || "");
+  return /invalid app details|portal user not found|apikey/i.test(rawMessage);
 }
 
 function buildMessageObject(body: SendBody): { messageObj: any; isTemplate: boolean } {
@@ -196,11 +253,35 @@ Deno.serve(async (req) => {
       });
     }
 
-    const { apiKey, appName, source } = await getCreds(supabase);
+    let { apiKey, appName, source, appId } = await getCreds(supabase);
+    if (apiKey && appId && (!appName || !source)) {
+      const bootstrapCanonical = await fetchCanonicalAppDetails(apiKey, appId);
+      if (bootstrapCanonical?.appName || bootstrapCanonical?.source) {
+        await persistCanonicalCreds(supabase, { appName: bootstrapCanonical.appName, source: bootstrapCanonical.source });
+        appName = bootstrapCanonical.appName || appName;
+        source = bootstrapCanonical.source || source;
+      }
+    }
+
     if (!apiKey || !appName || !source) {
       return new Response(JSON.stringify({
         error: "Credenciais Gupshup não configuradas (GUPSHUP_API_KEY, GUPSHUP_APP_NAME, GUPSHUP_SOURCE_NUMBER).",
       }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
+
+    const canonical = await fetchCanonicalAppDetails(apiKey, appId);
+    if (canonical?.appName || canonical?.source) {
+      const nextAppName = canonical.appName || appName;
+      const nextSource = canonical.source || source;
+      if (nextAppName !== appName || nextSource !== source) {
+        console.log("[GUPSHUP-SEND] using canonical app details", {
+          appNameChanged: nextAppName !== appName,
+          sourceChanged: nextSource !== source,
+        });
+        await persistCanonicalCreds(supabase, { appName: canonical.appName, source: canonical.source });
+        appName = nextAppName;
+        source = nextSource;
+      }
     }
 
     const destination = body.to.replace(/[^0-9]/g, "");
@@ -222,15 +303,31 @@ Deno.serve(async (req) => {
       form.set("disablePreview", "true");
     }
 
-    const res = await fetch(GUPSHUP_URL, {
-      method: "POST",
-      headers: { apikey: apiKey, "Content-Type": "application/x-www-form-urlencoded" },
-      body: form.toString(),
-    });
+    const sendToGupshup = async () => {
+      const res = await fetch(GUPSHUP_URL, {
+        method: "POST",
+        headers: { apikey: apiKey, "Content-Type": "application/x-www-form-urlencoded" },
+        body: form.toString(),
+      });
+      const rawText = await res.text();
+      let result: any = {};
+      try { result = JSON.parse(rawText); } catch { result = { raw: rawText }; }
+      return { res, result };
+    };
 
-    const rawText = await res.text();
-    let result: any = {};
-    try { result = JSON.parse(rawText); } catch { result = { raw: rawText }; }
+    let { res, result } = await sendToGupshup();
+
+    if (!res.ok && isInvalidAppDetails(result) && !canonical && appId) {
+      const lateCanonical = await fetchCanonicalAppDetails(apiKey, appId);
+      if (lateCanonical?.appName || lateCanonical?.source) {
+        appName = lateCanonical.appName || appName;
+        source = lateCanonical.source || source;
+        form.set("source", source);
+        form.set("src.name", appName);
+        await persistCanonicalCreds(supabase, { appName: lateCanonical.appName, source: lateCanonical.source });
+        ({ res, result } = await sendToGupshup());
+      }
+    }
 
     // Per Gupshup docs, qualquer 2XX é aceite — checar status === "submitted"
     const submitted = res.ok && result?.status === "submitted";
