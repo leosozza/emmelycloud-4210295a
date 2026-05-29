@@ -1189,6 +1189,90 @@ function renderHtml(opts: {
     var HSM_TEMPLATES = [];
     var SELECTED_HSM = null;
 
+    // ── CRM fields cache for HSM param picker ──
+    var CRM_FIELDS_LIST = [];   // [{key, title}]
+    var CRM_ENTITY_DATA = {};   // { key: value }
+    var CRM_FIELDS_LOADED = false;
+    var CRM_FIELDS_LOADING = null;
+
+    function crmMethodFor(typeId) {
+      var t = String(typeId || '');
+      if (t === '1') return { fields: 'crm.lead.fields', get: 'crm.lead.get' };
+      if (t === '2') return { fields: 'crm.deal.fields', get: 'crm.deal.get' };
+      if (t === '3') return { fields: 'crm.contact.fields', get: 'crm.contact.get' };
+      if (t === '4') return { fields: 'crm.company.fields', get: 'crm.company.get' };
+      return null;
+    }
+
+    function ensureCrmFieldsLoaded() {
+      if (CRM_FIELDS_LOADED) return Promise.resolve();
+      if (CRM_FIELDS_LOADING) return CRM_FIELDS_LOADING;
+      var m = crmMethodFor(ENTITY_TYPE_ID);
+      if (!m || !ENTITY_ID || typeof BX24 === 'undefined') {
+        CRM_FIELDS_LOADED = true;
+        return Promise.resolve();
+      }
+      CRM_FIELDS_LOADING = new Promise(function(resolve) {
+        var done = 0;
+        function maybeDone() { if (++done >= 2) { CRM_FIELDS_LOADED = true; resolve(); } }
+        try {
+          BX24.callMethod(m.fields, {}, function(res) {
+            var data = (res && res.data && res.data()) || {};
+            var list = [];
+            for (var k in data) {
+              if (!Object.prototype.hasOwnProperty.call(data, k)) continue;
+              var f = data[k] || {};
+              if (f.isReadOnly && (k === 'ID')) {/* keep ID */}
+              var title = f.title || f.formLabel || k;
+              list.push({ key: k, title: title });
+            }
+            list.sort(function(a, b) { return a.title.localeCompare(b.title); });
+            CRM_FIELDS_LIST = list;
+            maybeDone();
+          });
+          BX24.callMethod(m.get, { ID: ENTITY_ID }, function(res) {
+            CRM_ENTITY_DATA = (res && res.data && res.data()) || {};
+            maybeDone();
+          });
+        } catch (e) {
+          CRM_FIELDS_LOADED = true;
+          resolve();
+        }
+      });
+      return CRM_FIELDS_LOADING;
+    }
+
+    function loadCrmFieldsIntoPickers() {
+      ensureCrmFieldsLoaded().then(function() {
+        if (!CRM_FIELDS_LIST.length) return;
+        var pickers = document.querySelectorAll('select[id^="hsm-param-picker-"]');
+        pickers.forEach(function(sel) {
+          if (sel.dataset.loaded === '1') return;
+          sel.dataset.loaded = '1';
+          CRM_FIELDS_LIST.forEach(function(f) {
+            var o = document.createElement('option');
+            o.value = f.key;
+            o.textContent = f.title;
+            sel.appendChild(o);
+          });
+        });
+      });
+    }
+
+    function getCrmFieldValue(key) {
+      var v = CRM_ENTITY_DATA ? CRM_ENTITY_DATA[key] : '';
+      if (v == null) return '';
+      if (Array.isArray(v)) {
+        // multi-field (PHONE/EMAIL) → first .VALUE
+        var first = v[0];
+        if (first && typeof first === 'object' && 'VALUE' in first) return String(first.VALUE || '');
+        return v.map(function(x){ return typeof x === 'object' ? (x.VALUE || '') : String(x); }).filter(Boolean).join(', ');
+      }
+      if (typeof v === 'object') return String(v.VALUE || v.value || '');
+      return String(v);
+    }
+
+
     function loadHsmTemplates() {
       var sel = document.getElementById('hsm-template-select');
       if (!sel) return;
@@ -1260,16 +1344,36 @@ function renderHtml(opts: {
           var label = document.createElement('label');
           label.style.cssText = 'font-size:11px;color:#959ca4;display:block;margin:6px 0 2px';
           label.textContent = 'Parâmetro {{' + i + '}}';
+          var row = document.createElement('div');
+          row.style.cssText = 'display:flex;gap:4px;align-items:center';
           var input = document.createElement('input');
           input.type = 'text';
           input.id = 'hsm-param-' + i;
           input.placeholder = 'Valor para {{' + i + '}}';
-          input.style.cssText = 'width:100%;padding:7px 10px;border:1px solid #dfe0e3;border-radius:8px;font-size:13px;color:#333840;outline:none';
+          input.style.cssText = 'flex:1;padding:7px 10px;border:1px solid #dfe0e3;border-radius:8px;font-size:13px;color:#333840;outline:none';
           input.oninput = renderHsmPreview;
+          var picker = document.createElement('select');
+          picker.id = 'hsm-param-picker-' + i;
+          picker.title = 'Inserir campo do CRM';
+          picker.style.cssText = 'max-width:120px;padding:7px 4px;border:1px solid #dfe0e3;border-radius:8px;font-size:11px;color:#5a6470;background:#f7f8fa;cursor:pointer';
+          picker.innerHTML = '<option value="">📋 Campo CRM…</option>';
+          (function(idx, sel){
+            sel.onchange = function() {
+              var key = sel.value;
+              if (!key) return;
+              var v = getCrmFieldValue(key);
+              var inp = document.getElementById('hsm-param-' + idx);
+              if (inp) { inp.value = v || ''; renderHsmPreview(); }
+              sel.value = '';
+            };
+          })(i, picker);
+          row.appendChild(input);
+          row.appendChild(picker);
           container.appendChild(label);
-          container.appendChild(input);
+          container.appendChild(row);
         }
         container.style.display = SELECTED_HSM.paramCount > 0 ? 'block' : 'none';
+        loadCrmFieldsIntoPickers();
       }
       if (preview) { preview.style.display = 'block'; }
       renderHsmPreview();
