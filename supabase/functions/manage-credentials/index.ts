@@ -104,15 +104,25 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Mask values for frontend display
+    // Mask values for frontend display - ONLY sensitive keys (like api keys, secrets, tokens) are masked.
     const masked = (data || []).map((row: any) => {
       const val = row.credential_value || "";
-      const isStripePk = row.credential_key?.toUpperCase().includes("STRIPE") && val.startsWith("pk_");
+      const keyUpper = (row.credential_key || "").toUpperCase();
+      const isSensitive = 
+        keyUpper.includes("API_KEY") || 
+        keyUpper.includes("SECRET") || 
+        keyUpper.includes("TOKEN") || 
+        keyUpper.includes("PASSWORD") || 
+        keyUpper.includes("PRIVATE") || 
+        (keyUpper.includes("KEY") && !keyUpper.includes("APP_NAME") && !keyUpper.includes("SOURCE_NUMBER") && !keyUpper.includes("APP_ID"));
+      
+      const shouldMask = isSensitive;
+      const isStripePk = keyUpper.includes("STRIPE") && val.startsWith("pk_");
       return {
         ...row,
-        credential_value_masked: val
-          ? val.slice(0, 4) + "••••" + val.slice(-4)
-          : "",
+        credential_value_masked: shouldMask
+          ? (val ? val.slice(0, 4) + "••••" + val.slice(-4) : "")
+          : val,
         has_value: !!val,
         ...(isStripePk ? { warning: "Publishable Key (pk_) detectada. Utilize a Secret Key (sk_)." } : {}),
       };

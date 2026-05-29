@@ -346,6 +346,17 @@ function CredentialInput({
   const isPublishableKey = isStripeField && draftValue.trim().startsWith("pk_");
   const isValidSecretKey = isStripeField && draftValue.trim().startsWith("sk_");
 
+  const keyUpper = credentialKey.toUpperCase();
+  const isSensitiveField = 
+    keyUpper.includes("API_KEY") || 
+    keyUpper.includes("SECRET") || 
+    keyUpper.includes("TOKEN") || 
+    keyUpper.includes("PASSWORD") || 
+    keyUpper.includes("PRIVATE") || 
+    (keyUpper.includes("KEY") && !keyUpper.includes("APP_NAME") && !keyUpper.includes("SOURCE_NUMBER") && !keyUpper.includes("APP_ID"));
+
+  const inputType = isSensitiveField ? (showValue ? "text" : "password") : "text";
+
   const handleBlurAutoSave = () => {
     const v = draftValue.trim();
     if (!v) return;
@@ -360,12 +371,12 @@ function CredentialInput({
       <div className="flex gap-1.5">
         <div className="relative flex-1">
           <Input
-            type={showValue ? "text" : "password"}
+            type={inputType}
             placeholder={existing?.has_value ? existing.masked : "Não configurado"}
             value={draftValue}
             onChange={(e) => setDrafts((prev) => ({ ...prev, [fullKey]: e.target.value }))}
             onBlur={handleBlurAutoSave}
-            className={`h-8 text-xs pr-8 ${
+            className={`h-8 text-xs ${isSensitiveField ? "pr-8" : ""} ${
               isPublishableKey
                 ? "border-red-400 focus-visible:ring-red-400"
                 : isValidSecretKey
@@ -373,13 +384,15 @@ function CredentialInput({
                 : ""
             }`}
           />
-          <button
-            type="button"
-            onClick={() => setShowValue(!showValue)}
-            className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-          >
-            {showValue ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
-          </button>
+          {isSensitiveField && (
+            <button
+              type="button"
+              onClick={() => setShowValue(!showValue)}
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+            >
+              {showValue ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+            </button>
+          )}
         </div>
         <Button
           size="sm"
