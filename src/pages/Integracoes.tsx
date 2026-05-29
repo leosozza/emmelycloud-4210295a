@@ -1383,15 +1383,19 @@ function PagamentosTab() {
       // Verificar erro retornado pelo backend no corpo da resposta (status 400)
       if (error || data?.error) {
         toast.error(data?.error || "Erro ao guardar credencial");
+        return false;
       } else {
         toast.success(`${key} guardado com sucesso`);
         setDrafts((prev) => ({ ...prev, [fullKey]: "" }));
         await loadCredentials();
+        return true;
       }
     } catch {
       toast.error("Erro de rede");
+      return false;
+    } finally {
+      setSaving(null);
     }
-    setSaving(null);
   };
 
   useEffect(() => {
