@@ -804,7 +804,7 @@ function GupshupCard({ credProps }: { credProps: any }) {
     { key: "GUPSHUP_APP_NAME", label: "App Name", required: true },
     { key: "GUPSHUP_SOURCE_NUMBER", label: "Source Number (E.164, sem +)", required: true },
     { key: "GUPSHUP_APP_ID", label: "App ID (UUID — necessário para listar templates HSM)", required: false },
-    { key: "GUPSHUP_WEBHOOK_SECRET", label: "Webhook Secret (opcional, HMAC SHA-256)", required: false },
+    
   ];
 
   const credentials = credProps?.credentials || {};
