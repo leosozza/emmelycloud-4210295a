@@ -254,6 +254,15 @@ Deno.serve(async (req) => {
     }
 
     let { apiKey, appName, source, appId } = await getCreds(supabase);
+    if (apiKey && appId && (!appName || !source)) {
+      const bootstrapCanonical = await fetchCanonicalAppDetails(apiKey, appId);
+      if (bootstrapCanonical?.appName || bootstrapCanonical?.source) {
+        await persistCanonicalCreds(supabase, { appName: bootstrapCanonical.appName, source: bootstrapCanonical.source });
+        appName = bootstrapCanonical.appName || appName;
+        source = bootstrapCanonical.source || source;
+      }
+    }
+
     if (!apiKey || !appName || !source) {
       return new Response(JSON.stringify({
         error: "Credenciais Gupshup não configuradas (GUPSHUP_API_KEY, GUPSHUP_APP_NAME, GUPSHUP_SOURCE_NUMBER).",
