@@ -208,18 +208,39 @@ Deno.serve(async (req) => {
       }
 
       try {
-        const res = await fetch(`https://api.gupshup.io/sm/api/v1/template/list/${encodeURIComponent(appId)}`, {
-          headers: { apikey: apiKey, accept: "application/json" },
-        });
-        const raw = await res.text();
-        let parsed: any = {};
-        try { parsed = JSON.parse(raw); } catch { parsed = { raw }; }
+        const callGupshup = async (url: string) => {
+          const response = await fetch(url, {
+            headers: { apikey: apiKey, accept: "application/json" },
+          });
+          const rawText = await response.text();
+          let payload: any = {};
+          try { payload = JSON.parse(rawText); } catch { payload = { raw: rawText }; }
+          return { response, payload };
+        };
+
+        const officialUrl = `https://api.gupshup.io/wa/app/${encodeURIComponent(appId)}/template`;
+        let { response: res, payload: parsed } = await callGupshup(officialUrl);
+
+        if (!res.ok) {
+          const firstMessage = String(parsed?.message || parsed?.error || parsed?.raw || "");
+          const shouldTryLegacy = !/portal user not found|apikey|unauthorized/i.test(firstMessage);
+          if (shouldTryLegacy) {
+            const legacyUrl = `https://api.gupshup.io/sm/api/v1/template/list/${encodeURIComponent(appId)}`;
+            const legacy = await callGupshup(legacyUrl);
+            if (legacy.response.ok) {
+              res = legacy.response;
+              parsed = legacy.payload;
+            }
+          }
+        }
 
         if (!res.ok) {
           const providerMessage = parsed?.message || parsed?.error || parsed?.raw || "API Key, App ID ou conta Gupshup inválida";
           return new Response(JSON.stringify({
             ok: false,
-            error: providerMessage,
+            error: /portal user not found|apikey/i.test(String(providerMessage))
+              ? "A API Key guardada foi rejeitada pela Gupshup. Verifique se o campo API Key não contém a chave mascarada antiga e se pertence à mesma conta do App ID."
+              : providerMessage,
             http_status: res.status,
             gupshup: parsed,
           }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
