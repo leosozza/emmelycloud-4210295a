@@ -253,11 +253,26 @@ Deno.serve(async (req) => {
       });
     }
 
-    const { apiKey, appName, source } = await getCreds(supabase);
+    let { apiKey, appName, source, appId } = await getCreds(supabase);
     if (!apiKey || !appName || !source) {
       return new Response(JSON.stringify({
         error: "Credenciais Gupshup não configuradas (GUPSHUP_API_KEY, GUPSHUP_APP_NAME, GUPSHUP_SOURCE_NUMBER).",
       }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
+
+    const canonical = await fetchCanonicalAppDetails(apiKey, appId);
+    if (canonical?.appName || canonical?.source) {
+      const nextAppName = canonical.appName || appName;
+      const nextSource = canonical.source || source;
+      if (nextAppName !== appName || nextSource !== source) {
+        console.log("[GUPSHUP-SEND] using canonical app details", {
+          appNameChanged: nextAppName !== appName,
+          sourceChanged: nextSource !== source,
+        });
+        await persistCanonicalCreds(supabase, { appName: canonical.appName, source: canonical.source });
+        appName = nextAppName;
+        source = nextSource;
+      }
     }
 
     const destination = body.to.replace(/[^0-9]/g, "");
@@ -279,15 +294,31 @@ Deno.serve(async (req) => {
       form.set("disablePreview", "true");
     }
 
-    const res = await fetch(GUPSHUP_URL, {
-      method: "POST",
-      headers: { apikey: apiKey, "Content-Type": "application/x-www-form-urlencoded" },
-      body: form.toString(),
-    });
+    const sendToGupshup = async () => {
+      const res = await fetch(GUPSHUP_URL, {
+        method: "POST",
+        headers: { apikey: apiKey, "Content-Type": "application/x-www-form-urlencoded" },
+        body: form.toString(),
+      });
+      const rawText = await res.text();
+      let result: any = {};
+      try { result = JSON.parse(rawText); } catch { result = { raw: rawText }; }
+      return { res, result };
+    };
 
-    const rawText = await res.text();
-    let result: any = {};
-    try { result = JSON.parse(rawText); } catch { result = { raw: rawText }; }
+    let { res, result } = await sendToGupshup();
+
+    if (!res.ok && isInvalidAppDetails(result) && !canonical && appId) {
+      const lateCanonical = await fetchCanonicalAppDetails(apiKey, appId);
+      if (lateCanonical?.appName || lateCanonical?.source) {
+        appName = lateCanonical.appName || appName;
+        source = lateCanonical.source || source;
+        form.set("source", source);
+        form.set("src.name", appName);
+        await persistCanonicalCreds(supabase, { appName: lateCanonical.appName, source: lateCanonical.source });
+        ({ res, result } = await sendToGupshup());
+      }
+    }
 
     // Per Gupshup docs, qualquer 2XX é aceite — checar status === "submitted"
     const submitted = res.ok && result?.status === "submitted";
