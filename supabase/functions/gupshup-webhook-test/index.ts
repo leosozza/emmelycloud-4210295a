@@ -189,16 +189,8 @@ Deno.serve(async (req) => {
     });
   }
 
-  // Load secret
-  const { data: secretRow } = await supabase
-    .from("integration_credentials")
-    .select("credential_value")
-    .eq("provider", "gupshup")
-    .eq("credential_key", "GUPSHUP_WEBHOOK_SECRET")
-    .maybeSingle();
-  const secret = (secretRow?.credential_value || "").trim();
-
-  // 2. Assinatura HMAC
+  // Build test payload (HMAC signature removed — not used)
+  const secret = "";
   const testId = `test-${crypto.randomUUID()}`;
   const testPayload = {
     app: "test",
@@ -213,47 +205,6 @@ Deno.serve(async (req) => {
     },
   };
   const rawBody = JSON.stringify(testPayload);
-
-  if (!secret) {
-    checks.push({
-      id: "signature", label: "Assinatura HMAC",
-      status: "warn",
-      message: "Webhook desprotegido — defina GUPSHUP_WEBHOOK_SECRET para validar HMAC SHA-256.",
-    });
-  } else {
-    try {
-      const goodSig = await hmacHex(rawBody, secret);
-      const okRes = await fetch(webhookUrl, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "x-gupshup-signature": `sha256=${goodSig}` },
-        body: rawBody,
-      });
-      const okText = await okRes.text();
-
-      const badRes = await fetch(webhookUrl, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "x-gupshup-signature": "sha256=deadbeef" },
-        body: rawBody,
-      });
-      const badText = await badRes.text();
-
-      const passed = okRes.ok && badRes.status === 401;
-      checks.push({
-        id: "signature", label: "Assinatura HMAC",
-        status: passed ? "ok" : "fail",
-        message: passed
-          ? "Assinatura válida aceita (200) e inválida rejeitada (401)."
-          : `Comportamento inesperado: válida=${okRes.status}, inválida=${badRes.status}`,
-        detail: `POST válido → ${okRes.status} ${okText.slice(0, 120)}\nPOST inválido → ${badRes.status} ${badText.slice(0, 120)}`,
-      });
-    } catch (e) {
-      checks.push({
-        id: "signature", label: "Assinatura HMAC", status: "fail",
-        message: "Falha ao testar assinatura",
-        detail: String(e),
-      });
-    }
-  }
 
   // If no secret, still send the test payload (unsigned) to verify persistence
   if (!secret) {
