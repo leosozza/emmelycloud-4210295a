@@ -197,14 +197,14 @@ Deno.serve(async (req) => {
         return new Response(JSON.stringify({
           ok: false,
           error: `Credenciais Gupshup incompletas: ${missing.join(", ")}`,
-        }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
       }
 
       if (!appId) {
         return new Response(JSON.stringify({
           ok: false,
           error: "Configure também o GUPSHUP_APP_ID para validar a API Key contra a app correta antes de ativar.",
-        }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
       }
 
       try {
@@ -222,7 +222,7 @@ Deno.serve(async (req) => {
             error: providerMessage,
             http_status: res.status,
             gupshup: parsed,
-          }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+          }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
         }
 
         return new Response(JSON.stringify({
@@ -232,8 +232,8 @@ Deno.serve(async (req) => {
           source,
         }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
       } catch (e: unknown) {
-        return new Response(JSON.stringify({ error: `Erro de rede: ${e instanceof Error ? e.message : "unknown"}` }), {
-          status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        return new Response(JSON.stringify({ ok: false, error: `Erro de rede: ${e instanceof Error ? e.message : "unknown"}` }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
     }
