@@ -596,8 +596,10 @@ Deno.serve(async (req) => {
         const gsResult = await gsRes.json().catch(() => ({}));
         if (!gsRes.ok || gsResult.error) {
           console.error("[MESSAGE-SEND] Gupshup error:", gsResult);
-          return new Response(JSON.stringify(friendlyProviderError("gupshup", gsResult)), {
-            status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" },
+          const providerError = friendlyProviderError("gupshup", gsResult);
+          return new Response(JSON.stringify({ success: false, ...providerError }), {
+            status: providerError.error_code === "GUPSHUP_INVALID_APP_DETAILS" ? 200 : 502,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
           });
         }
         externalMessageId = gsResult.message_id || null;
