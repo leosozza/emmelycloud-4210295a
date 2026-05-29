@@ -339,6 +339,7 @@ function CredentialInput({
   const draftValue = drafts[fullKey] ?? "";
   const [showValue, setShowValue] = useState(false);
   const isSaving = saving === fullKey;
+  const isMaskedExistingValue = existing?.has_value && draftValue === existing.masked;
 
   // Validação visual em tempo real: detectar Publishable Key do Stripe
   const isStripeField = credentialKey.toUpperCase().includes("STRIPE");
@@ -349,7 +350,7 @@ function CredentialInput({
     const v = draftValue.trim();
     if (!v) return;
     if (isPublishableKey) return;
-    if (existing?.has_value && v === existing.masked) return;
+    if (isMaskedExistingValue) return;
     onSave(provider, credentialKey, v);
   };
 
@@ -384,7 +385,7 @@ function CredentialInput({
           size="sm"
           variant="outline"
           className="h-8 px-2"
-          disabled={!draftValue || isSaving || isPublishableKey}
+          disabled={!draftValue || isSaving || isPublishableKey || isMaskedExistingValue}
           onClick={() => onSave(provider, credentialKey, draftValue)}
         >
           {isSaving ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
