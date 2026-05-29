@@ -53,7 +53,7 @@ function normalizePhone(value: string) {
 function extractCanonicalAppDetails(payload: any) {
   const roots = [payload, payload?.profile, payload?.business, payload?.data, payload?.app].filter(Boolean);
   const appName = roots
-    .map((item: any) => item?.wabaName || item?.appName || item?.name || item?.srcName)
+    .map((item: any) => item?.wabaName || item?.appName || item?.srcName)
     .find((value: any) => typeof value === "string" && value.trim())?.trim() || "";
   const source = normalizePhone(
     roots
