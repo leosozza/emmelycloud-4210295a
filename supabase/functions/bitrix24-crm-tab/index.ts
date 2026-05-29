@@ -1660,12 +1660,19 @@ Deno.serve(async (req) => {
       ? decodeURIComponent(body.SERVER_ENDPOINT)
       : (body.server_endpoint ? decodeURIComponent(body.server_endpoint) : "");
 
-    let accessToken = bodyAuthToken;
+    // Prefer the stored app token (full app scope incl. crm).
+    // The per-user AUTH_ID from the placement may be missing 'crm' scope
+    // for some users → crm.deal.get returns ERROR_METHOD_NOT_FOUND.
+    let accessToken = "";
     let endpoint = bodyServerEndpoint || integration.client_endpoint;
 
-    if (!accessToken) {
+    try {
       accessToken = await ensureValidToken(supabase, integration);
+    } catch (e) {
+      console.warn("[CRM-TAB] ensureValidToken failed, falling back to placement AUTH_ID", e);
+      accessToken = bodyAuthToken;
     }
+    if (!accessToken) accessToken = bodyAuthToken;
 
     // Permission check removed — CRM placements are accessible to all users
 
