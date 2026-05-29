@@ -317,10 +317,7 @@ Deno.serve(async (req) => {
         }
       }
       if (!resolvedLineId) {
-        console.log(`[SEND] Instance ${instanceId} has no active Bitrix24 mapping — skipping`);
-        return new Response(JSON.stringify({ ok: true, skipped: "instance_not_linked_to_open_line", instanceId }), {
-          headers: jsonHeaders,
-        });
+        console.log(`[SEND] Instance ${instanceId} has no direct Bitrix24 mapping — falling back to channel mapping`);
       }
     }
 
