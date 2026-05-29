@@ -1,41 +1,56 @@
-## Problema
+## Diagnóstico
 
-Na aba "Emmely AI" dentro de Negócios do Bitrix24, alguns clientes mostram **"sem contacto"** e o campo de envio de template HSM aparece como **"⚠ Nenhum telefone no CRM — insira manualmente"**, mesmo quando o **título do negócio já contém o número** (ex.: `+5581986748436 - WhatsApp`).
+O erro não está no `PLACEMENT_OPTIONS`: a documentação confirma que, em `CRM_DEAL_DETAIL_TAB`, o Bitrix24 envia corretamente `PLACEMENT_OPTIONS: {"ID":"..."}` como ID do negócio.
 
-Isto acontece porque o `bitrix24-crm-tab` só procura telefone em campos estruturados (`PHONE`) do Deal, Contact, Lead e Company. Quando o negócio é criado automaticamente a partir de uma mensagem de WhatsApp recebida e ainda não tem Contacto vinculado (ou o Contacto vinculado não tem o telefone preenchido), nenhum número é encontrado — apesar de estar visível no título.
+A causa provável está no backend do tab:
 
-## Solução
+- O código passou a preferir o token salvo do app, mas continuou a usar `SERVER_ENDPOINT` vindo do placement quando ele existe.
+- Nos logs reais do negócio `36517`, quando o request veio do Bitrix com `SERVER_ENDPOINT`, `crm.deal.get` e `crm.item.get` retornaram `ERROR_METHOD_NOT_FOUND`.
+- Quando testei o mesmo deal usando o endpoint salvo da integração (`client_endpoint`), o contacto foi encontrado: `Luis Montes`, contacto `123027`, telefone `351967972905`.
+- Depois disso, o problema restante é que não existe conversa local de WhatsApp correspondente a esse telefone/LID, então o tab mostra início de conversa, não uma conversa existente.
 
-Adicionar **um fallback final** em `supabase/functions/bitrix24-crm-tab/index.ts` que, quando `allPhones.length === 0` após todas as procuras atuais, extrai dígitos do título do negócio / item SPA / `PLACEMENT_OPTIONS.TITLE`.
+## Plano de correção
 
-### Lógica de extração
+1. **Separar endpoint por tipo de token**
+   - Quando usar o token salvo da integração, usar sempre `integration.client_endpoint`.
+   - Só usar `SERVER_ENDPOINT` se realmente cair para o `AUTH_ID` do placement.
+   - Isto evita a mistura incorreta `token salvo + endpoint do placement` que gera `ERROR_METHOD_NOT_FOUND`.
 
-1. Concatenar fontes de texto disponíveis:
-   - `entity.TITLE` (Deal clássico)
-   - `entity.title` (SPA, via `crm.item.get`)
-   - `PLACEMENT_OPTIONS.TITLE` (enviado pelo Bitrix no `body`)
-   - `contactName` resolvido
+2. **Criar um wrapper resiliente para chamadas Bitrix24**
+   - Tentar primeiro `integration.client_endpoint + token salvo`.
+   - Se a resposta vier com `expired_token`, renovar token e repetir.
+   - Se vier `ERROR_METHOD_NOT_FOUND`/erro de endpoint, repetir com endpoint alternativo apenas como fallback controlado.
+   - Registar logs seguros com método, endpoint host e erro, sem expor tokens.
 
-2. Procurar padrão de telefone E.164/livre: capturar **sequências de 8–15 dígitos** (aceitando `+`, espaços, `-`, `()` entre eles), limpar para apenas dígitos.
+3. **Corrigir lookup do negócio/contacto**
+   - Garantir que `crm.deal.get` usa o parâmetro conforme documentação (`ID` e fallback `id` quando necessário).
+   - Manter `crm.deal.contact.items.get` com `{ id: dealId }`, conforme MCP Bitrix.
+   - Para deals, buscar contactos vinculados mesmo quando `crm.deal.get` falhar parcialmente.
+   - Persistir no `bot_state` o `bitrix_deal_id` e `bitrix_contact_id` quando o contacto for resolvido.
 
-3. Validar: comprimento entre 8 e 15, e descartar valores que parecem IDs/CEP/data (heurística simples: rejeitar se for exatamente 5–7 dígitos puros sem prefixo internacional reconhecível; aceitar se começa por `+`, `55`, `351`, `1`, `34`, `44`, etc., **OU** se tem ≥10 dígitos).
+4. **Melhorar matching local da conversa**
+   - Procurar por telefone normalizado com variações: completo, sem `+`, últimos 11, 10, 9 e 8 dígitos.
+   - Procurar também em `contact_lid`, `bitrix_chat_id`, `bot_state.bitrix_contact_id` e `bot_state.bitrix_deal_id`.
+   - Se houver contacto Bitrix resolvido mas nenhuma conversa local, exibir claramente “contacto encontrado, sem conversa WhatsApp local” em vez de “sem contacto”.
 
-4. Adicionar via `addPhones("title", [...])` para que apareça também no debug `phoneSources`.
+5. **Corrigir criação de conversa a partir do tab**
+   - Substituir criação direta via REST anónimo por uma chamada backend segura, para evitar falhas de RLS/permissão.
+   - Ao criar conversa pelo tab, já gravar `contact_phone`, `contact_name`, `bot_state.bitrix_deal_id` e `bot_state.bitrix_contact_id`.
 
-### Onde inserir
+6. **Validar com o caso real `36517`**
+   - Testar a edge function com payload igual ao Bitrix24 (`CRM_DEAL_DETAIL_TAB`, `PLACEMENT_OPTIONS: {"ID":"36517"}`).
+   - Confirmar nos logs:
+     - negócio carregado sem `ERROR_METHOD_NOT_FOUND`;
+     - contacto `123027` encontrado;
+     - telefone `351967972905` resolvido;
+     - UI deixa de mostrar “sem contacto”.
 
-Logo após o bloco do "Last-resort title from PLACEMENT_OPTIONS" (linha ~1830) e antes do próximo passo da pipeline, ainda dentro do `try` do resolvedor de entidade.
+## Arquivos a alterar
 
-### Efeito UX
+- `supabase/functions/bitrix24-crm-tab/index.ts`
+  - token/endpoint;
+  - wrapper de chamadas Bitrix24;
+  - resolução de contacto/conversa;
+  - UI do estado “sem conversa”.
 
-- O cabeçalho passa a mostrar o número em vez de "sem contacto".
-- O painel HSM deixa de exigir digitação manual; o select de template e o botão "Iniciar no WhatsApp" usam o número detectado.
-- Nenhuma alteração noutros pontos do fluxo — `PHONES` continua a ser preenchido pela mesma variável `allPhones`.
-
-## Risco
-
-Baixo. Só atua quando `allPhones` está vazio (não sobrepõe dados reais do CRM). Se o título não contiver telefone válido, o comportamento atual (input manual) é preservado.
-
-## Ficheiro
-
-- `supabase/functions/bitrix24-crm-tab/index.ts` — adicionar bloco de fallback (~15 linhas) e deploy da função.
+Possivelmente, se já existir função adequada para criação de conversa/mensagem, reutilizar essa função em vez de criar uma nova.
