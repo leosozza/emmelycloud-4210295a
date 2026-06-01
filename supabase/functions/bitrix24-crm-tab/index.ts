@@ -1197,11 +1197,26 @@ function renderHtml(opts: {
 
     function crmMethodFor(typeId) {
       var t = String(typeId || '');
-      if (t === '1') return { fields: 'crm.lead.fields', get: 'crm.lead.get' };
-      if (t === '2') return { fields: 'crm.deal.fields', get: 'crm.deal.get' };
-      if (t === '3') return { fields: 'crm.contact.fields', get: 'crm.contact.get' };
-      if (t === '4') return { fields: 'crm.company.fields', get: 'crm.company.get' };
+      if (t === '1') return { fields: 'crm.lead.fields',    get: 'crm.lead.get',    uf: 'crm.lead.userfield.list' };
+      if (t === '2') return { fields: 'crm.deal.fields',    get: 'crm.deal.get',    uf: 'crm.deal.userfield.list' };
+      if (t === '3') return { fields: 'crm.contact.fields', get: 'crm.contact.get', uf: 'crm.contact.userfield.list' };
+      if (t === '4') return { fields: 'crm.company.fields', get: 'crm.company.get', uf: 'crm.company.userfield.list' };
       return null;
+    }
+
+    function pickUserfieldLabel(uf) {
+      var lang = 'en';
+      try { if (typeof BX24 !== 'undefined' && BX24.getLang) lang = BX24.getLang() || 'en'; } catch (_) {}
+      function fromObj(o) {
+        if (!o) return '';
+        if (typeof o === 'string') return o;
+        if (typeof o !== 'object') return '';
+        return o[lang] || o['en'] || o['br'] || o['pt'] || o['ru'] ||
+               (Object.values(o).find(function(v){ return !!v; }) || '');
+      }
+      return fromObj(uf.LIST_COLUMN_LABEL) || fromObj(uf.EDIT_FORM_LABEL) ||
+             fromObj(uf.LIST_FILTER_LABEL) || fromObj(uf.SEARCH_LABEL) ||
+             uf.FIELD_NAME || '';
     }
 
     function ensureCrmFieldsLoaded() {
@@ -1214,24 +1229,40 @@ function renderHtml(opts: {
       }
       CRM_FIELDS_LOADING = new Promise(function(resolve) {
         var done = 0;
-        function maybeDone() { if (++done >= 2) { CRM_FIELDS_LOADED = true; resolve(); } }
+        var fieldsMap = {};
+        var ufLabels = {};
+        function finalize() {
+          var list = [];
+          for (var k in fieldsMap) {
+            if (!Object.prototype.hasOwnProperty.call(fieldsMap, k)) continue;
+            var f = fieldsMap[k] || {};
+            var title = f.title || f.formLabel || '';
+            if ((!title || title === k) && ufLabels[k]) title = ufLabels[k];
+            if (!title) title = k;
+            list.push({ key: k, title: title });
+          }
+          list.sort(function(a, b) { return a.title.localeCompare(b.title); });
+          CRM_FIELDS_LIST = list;
+          CRM_FIELDS_LOADED = true;
+          resolve();
+        }
+        function maybeDone() { if (++done >= 3) finalize(); }
         try {
           BX24.callMethod(m.fields, {}, function(res) {
-            var data = (res && res.data && res.data()) || {};
-            var list = [];
-            for (var k in data) {
-              if (!Object.prototype.hasOwnProperty.call(data, k)) continue;
-              var f = data[k] || {};
-              if (f.isReadOnly && (k === 'ID')) {/* keep ID */}
-              var title = f.title || f.formLabel || k;
-              list.push({ key: k, title: title });
-            }
-            list.sort(function(a, b) { return a.title.localeCompare(b.title); });
-            CRM_FIELDS_LIST = list;
+            fieldsMap = (res && res.data && res.data()) || {};
             maybeDone();
           });
           BX24.callMethod(m.get, { ID: ENTITY_ID }, function(res) {
             CRM_ENTITY_DATA = (res && res.data && res.data()) || {};
+            maybeDone();
+          });
+          BX24.callMethod(m.uf, { order: { SORT: 'ASC' } }, function(res) {
+            var arr = (res && res.data && res.data()) || [];
+            try {
+              (arr || []).forEach(function(uf) {
+                if (uf && uf.FIELD_NAME) ufLabels[uf.FIELD_NAME] = pickUserfieldLabel(uf);
+              });
+            } catch (_) {}
             maybeDone();
           });
         } catch (e) {
@@ -1240,6 +1271,27 @@ function renderHtml(opts: {
         }
       });
       return CRM_FIELDS_LOADING;
+    }
+
+    // ── HSM template→param→CRM-field bindings (persisted in localStorage) ──
+    var HSM_BIND_STORAGE_KEY = 'emmely.hsmBindings.v1';
+    function readAllBindings() {
+      try { return JSON.parse(localStorage.getItem(HSM_BIND_STORAGE_KEY) || '{}') || {}; }
+      catch (_) { return {}; }
+    }
+    function writeAllBindings(obj) {
+      try { localStorage.setItem(HSM_BIND_STORAGE_KEY, JSON.stringify(obj || {})); } catch (_) {}
+    }
+    function loadBindings(templateId) {
+      var all = readAllBindings();
+      return (all && all[String(templateId)]) || {};
+    }
+    function saveBinding(templateId, idx, key) {
+      var all = readAllBindings();
+      var t = all[String(templateId)] || {};
+      if (key) t[String(idx)] = key; else delete t[String(idx)];
+      all[String(templateId)] = t;
+      writeAllBindings(all);
     }
 
     function loadCrmFieldsIntoPickers() {
@@ -1253,9 +1305,30 @@ function renderHtml(opts: {
             var o = document.createElement('option');
             o.value = f.key;
             o.textContent = f.title;
+            o.title = f.key;
             sel.appendChild(o);
           });
+          if (SELECTED_HSM) {
+            var idx = sel.id.replace('hsm-param-picker-', '');
+            var bindings = loadBindings(SELECTED_HSM.id);
+            var savedKey = bindings[idx];
+            if (savedKey) {
+              var exists = Array.prototype.some.call(sel.options, function(o){ return o.value === savedKey; });
+              if (!exists) {
+                var o2 = document.createElement('option');
+                o2.value = savedKey; o2.textContent = savedKey; o2.title = savedKey;
+                sel.appendChild(o2);
+              }
+              sel.value = savedKey;
+              var inp = document.getElementById('hsm-param-' + idx);
+              if (inp) {
+                var v = getCrmFieldValue(savedKey);
+                if (v) { inp.value = v; inp.dataset.boundKey = savedKey; }
+              }
+            }
+          }
         });
+        renderHsmPreview();
       });
     }
 
