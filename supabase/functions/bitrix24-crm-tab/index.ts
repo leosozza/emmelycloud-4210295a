@@ -1423,25 +1423,59 @@ function renderHtml(opts: {
           input.type = 'text';
           input.id = 'hsm-param-' + i;
           input.placeholder = 'Valor para {{' + i + '}}';
-          input.style.cssText = 'flex:1;padding:7px 10px;border:1px solid #dfe0e3;border-radius:8px;font-size:13px;color:#333840;outline:none';
-          input.oninput = renderHsmPreview;
+          input.style.cssText = 'flex:1;min-width:0;padding:7px 10px;border:1px solid #dfe0e3;border-radius:8px;font-size:13px;color:#333840;outline:none';
+          (function(idx){
+            input.oninput = function() {
+              var inp = document.getElementById('hsm-param-' + idx);
+              if (inp && inp.dataset.boundKey) {
+                // user edited manually → drop binding
+                delete inp.dataset.boundKey;
+                var pk = document.getElementById('hsm-param-picker-' + idx);
+                if (pk) pk.value = '';
+                if (SELECTED_HSM) saveBinding(SELECTED_HSM.id, idx, '');
+              }
+              renderHsmPreview();
+            };
+          })(i);
           var picker = document.createElement('select');
           picker.id = 'hsm-param-picker-' + i;
-          picker.title = 'Inserir campo do CRM';
-          picker.style.cssText = 'max-width:120px;padding:7px 4px;border:1px solid #dfe0e3;border-radius:8px;font-size:11px;color:#5a6470;background:#f7f8fa;cursor:pointer';
+          picker.title = 'Vincular ao campo do CRM';
+          picker.style.cssText = 'max-width:180px;padding:7px 4px;border:1px solid #dfe0e3;border-radius:8px;font-size:11px;color:#5a6470;background:#f7f8fa;cursor:pointer';
           picker.innerHTML = '<option value="">📋 Campo CRM…</option>';
           (function(idx, sel){
             sel.onchange = function() {
               var key = sel.value;
-              if (!key) return;
-              var v = getCrmFieldValue(key);
               var inp = document.getElementById('hsm-param-' + idx);
-              if (inp) { inp.value = v || ''; renderHsmPreview(); }
-              sel.value = '';
+              if (!key) {
+                if (inp) { delete inp.dataset.boundKey; inp.value = ''; }
+                if (SELECTED_HSM) saveBinding(SELECTED_HSM.id, idx, '');
+                renderHsmPreview();
+                return;
+              }
+              var v = getCrmFieldValue(key);
+              if (inp) { inp.value = v || ''; inp.dataset.boundKey = key; }
+              if (SELECTED_HSM) saveBinding(SELECTED_HSM.id, idx, key);
+              renderHsmPreview();
             };
           })(i, picker);
+          var clearBtn = document.createElement('button');
+          clearBtn.type = 'button';
+          clearBtn.textContent = '×';
+          clearBtn.title = 'Limpar vínculo';
+          clearBtn.style.cssText = 'width:24px;height:30px;border:1px solid #dfe0e3;border-radius:8px;background:#fff;color:#959ca4;cursor:pointer;font-size:14px;line-height:1;padding:0';
+          (function(idx){
+            clearBtn.onclick = function() {
+              var inp = document.getElementById('hsm-param-' + idx);
+              var pk = document.getElementById('hsm-param-picker-' + idx);
+              if (inp) { delete inp.dataset.boundKey; inp.value = ''; }
+              if (pk) pk.value = '';
+              if (SELECTED_HSM) saveBinding(SELECTED_HSM.id, idx, '');
+              renderHsmPreview();
+            };
+          })(i);
           row.appendChild(input);
           row.appendChild(picker);
+          row.appendChild(clearBtn);
           container.appendChild(label);
           container.appendChild(row);
         }
