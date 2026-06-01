@@ -1,56 +1,36 @@
-## Diagnóstico
+## Resumo
+Adicionar uma segunda variante do botão de microfone com `context: "ALL"` no placement `IM_TEXTAREA`, mantendo a variante existente em `LINES`. Assim o operador vê o ícone em qualquer chat (não só Open Channels).
 
-O erro não está no `PLACEMENT_OPTIONS`: a documentação confirma que, em `CRM_DEAL_DETAIL_TAB`, o Bitrix24 envia corretamente `PLACEMENT_OPTIONS: {"ID":"..."}` como ID do negócio.
+## Mudanças
 
-A causa provável está no backend do tab:
+### 1. `supabase/functions/bitrix24-rebind-events/index.ts`
+Logo após o bloco atual de "Send Audio (WhatsApp) — LINES", acrescentar um novo bloco que registra o mesmo handler com sufixo `?ctx=all` para que o Bitrix24 aceite o segundo bind (a chave única é `PLACEMENT + HANDLER`):
 
-- O código passou a preferir o token salvo do app, mas continuou a usar `SERVER_ENDPOINT` vindo do placement quando ele existe.
-- Nos logs reais do negócio `36517`, quando o request veio do Bitrix com `SERVER_ENDPOINT`, `crm.deal.get` e `crm.item.get` retornaram `ERROR_METHOD_NOT_FOUND`.
-- Quando testei o mesmo deal usando o endpoint salvo da integração (`client_endpoint`), o contacto foi encontrado: `Luis Montes`, contacto `123027`, telefone `351967972905`.
-- Depois disso, o problema restante é que não existe conversa local de WhatsApp correspondente a esse telefone/LID, então o tab mostra início de conversa, não uma conversa existente.
+```ts
+// IM_TEXTAREA — Send Audio (WhatsApp) — ALL context variant
+const sendAudioAllUrl = `${supabaseUrl}/functions/v1/bitrix24-im-send-audio?ctx=all`;
+await callBitrix(... "placement.unbind", { PLACEMENT: "IM_TEXTAREA", HANDLER: sendAudioAllUrl });
+const r = await callBitrix(... "placement.bind", {
+  PLACEMENT: "IM_TEXTAREA",
+  HANDLER: sendAudioAllUrl,
+  TITLE: "Áudio WhatsApp (todos)",
+  LANG_ALL: { pt: {...}, en: {...} },
+  OPTIONS: { iconName: "fa-microphone", context: "ALL", color: "GREEN",
+             role: "USER", width: "360", height: "220", extranet: "N" },
+});
+results["placement_IM_TEXTAREA_AUDIO_ALL"] = r.error ? `ERROR: ${r.error}` : "OK";
+```
 
-## Plano de correção
+### 2. `supabase/functions/bitrix24-install/index.ts`
+Mesmo bloco adicional logo após o registro do áudio LINES (linhas 2060–2093), para que portais novos já fiquem com as duas variantes.
 
-1. **Separar endpoint por tipo de token**
-   - Quando usar o token salvo da integração, usar sempre `integration.client_endpoint`.
-   - Só usar `SERVER_ENDPOINT` se realmente cair para o `AUTH_ID` do placement.
-   - Isto evita a mistura incorreta `token salvo + endpoint do placement` que gera `ERROR_METHOD_NOT_FOUND`.
+### 3. Deploy + rebind
+- Fazer deploy de `bitrix24-rebind-events` e `bitrix24-install`.
+- Invocar `bitrix24-rebind-events` para o portal ativo e validar no JSON de retorno os campos `placement_IM_TEXTAREA_AUDIO = OK` e `placement_IM_TEXTAREA_AUDIO_ALL = OK`.
 
-2. **Criar um wrapper resiliente para chamadas Bitrix24**
-   - Tentar primeiro `integration.client_endpoint + token salvo`.
-   - Se a resposta vier com `expired_token`, renovar token e repetir.
-   - Se vier `ERROR_METHOD_NOT_FOUND`/erro de endpoint, repetir com endpoint alternativo apenas como fallback controlado.
-   - Registar logs seguros com método, endpoint host e erro, sem expor tokens.
+## Observações
+- O handler `bitrix24-im-send-audio` não precisa de alteração — o query string `?ctx=all` é ignorado pela função (ela só serve o HTML do iframe).
+- Quando o usuário abrir a variante "todos" num chat que não seja Open Channel, o widget ainda carrega; só o envio para WhatsApp pode falhar (igual ao comportamento esperado descrito por você).
+- Sem mudanças de UI no app Lovable, sem mudanças de schema.
 
-3. **Corrigir lookup do negócio/contacto**
-   - Garantir que `crm.deal.get` usa o parâmetro conforme documentação (`ID` e fallback `id` quando necessário).
-   - Manter `crm.deal.contact.items.get` com `{ id: dealId }`, conforme MCP Bitrix.
-   - Para deals, buscar contactos vinculados mesmo quando `crm.deal.get` falhar parcialmente.
-   - Persistir no `bot_state` o `bitrix_deal_id` e `bitrix_contact_id` quando o contacto for resolvido.
-
-4. **Melhorar matching local da conversa**
-   - Procurar por telefone normalizado com variações: completo, sem `+`, últimos 11, 10, 9 e 8 dígitos.
-   - Procurar também em `contact_lid`, `bitrix_chat_id`, `bot_state.bitrix_contact_id` e `bot_state.bitrix_deal_id`.
-   - Se houver contacto Bitrix resolvido mas nenhuma conversa local, exibir claramente “contacto encontrado, sem conversa WhatsApp local” em vez de “sem contacto”.
-
-5. **Corrigir criação de conversa a partir do tab**
-   - Substituir criação direta via REST anónimo por uma chamada backend segura, para evitar falhas de RLS/permissão.
-   - Ao criar conversa pelo tab, já gravar `contact_phone`, `contact_name`, `bot_state.bitrix_deal_id` e `bot_state.bitrix_contact_id`.
-
-6. **Validar com o caso real `36517`**
-   - Testar a edge function com payload igual ao Bitrix24 (`CRM_DEAL_DETAIL_TAB`, `PLACEMENT_OPTIONS: {"ID":"36517"}`).
-   - Confirmar nos logs:
-     - negócio carregado sem `ERROR_METHOD_NOT_FOUND`;
-     - contacto `123027` encontrado;
-     - telefone `351967972905` resolvido;
-     - UI deixa de mostrar “sem contacto”.
-
-## Arquivos a alterar
-
-- `supabase/functions/bitrix24-crm-tab/index.ts`
-  - token/endpoint;
-  - wrapper de chamadas Bitrix24;
-  - resolução de contacto/conversa;
-  - UI do estado “sem conversa”.
-
-Possivelmente, se já existir função adequada para criação de conversa/mensagem, reutilizar essa função em vez de criar uma nova.
+Pronto para aplicar?
