@@ -1145,14 +1145,13 @@ Deno.serve(async (req) => {
 
       // --- Auto-activate connector on the first Open Line (best-effort) ---
       try {
-        const cfgList = await callBitrix(clientEndpoint, accessToken, "imopenlines.config.list.get", {
-          params: { select: ["LINE_NAME", "ID"] },
-        });
+        const cfgList = await callBitrix(clientEndpoint, accessToken, "imopenlines.config.list.get", {});
         const linesRaw = cfgList.result || {};
         const linesArr: any[] = Array.isArray(linesRaw) ? linesRaw : Object.values(linesRaw);
         const firstLine = linesArr[0];
         const firstLineId = firstLine ? parseInt(firstLine.ID, 10) : 0;
         if (firstLineId > 0) {
+          const settingsHandlerUrl = `${supabaseUrl}/functions/v1/bitrix24-connector-settings`;
           const actRes = await callBitrix(clientEndpoint, accessToken, "imconnector.activate", {
             CONNECTOR: CONNECTOR_ID,
             LINE: firstLineId,
@@ -1164,8 +1163,8 @@ Deno.serve(async (req) => {
             DATA: {
               ID: CONNECTOR_ID,
               NAME: "Emmely Messages",
-              URL: `${supabaseUrl}/functions/v1/bitrix24-events`,
-              URL_IM: `${supabaseUrl}/functions/v1/bitrix24-events`,
+              URL: Deno.env.get("FRONTEND_URL") || settingsHandlerUrl,
+              URL_IM: settingsHandlerUrl,
             },
           });
           console.log(`[INSTALL] imconnector.activate LINE=${firstLineId}:`, JSON.stringify(actRes).slice(0, 200));
