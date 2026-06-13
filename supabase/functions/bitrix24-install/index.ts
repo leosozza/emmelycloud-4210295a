@@ -2060,9 +2060,14 @@ Deno.serve(async (req) => {
     // --- Register IM_TEXTAREA placement (Send Audio to WhatsApp) ---
     try {
       const sendAudioUrl = `${supabaseUrl}/functions/v1/bitrix24-im-send-audio`;
+      const legacySendAudioAllUrl = `${supabaseUrl}/functions/v1/bitrix24-im-send-audio?ctx=all`;
       await callBitrix(clientEndpoint, accessToken, "placement.unbind", {
         PLACEMENT: "IM_TEXTAREA",
         HANDLER: sendAudioUrl,
+      });
+      await callBitrix(clientEndpoint, accessToken, "placement.unbind", {
+        PLACEMENT: "IM_TEXTAREA",
+        HANDLER: legacySendAudioAllUrl,
       });
       const audioRes = await callBitrix(clientEndpoint, accessToken, "placement.bind", {
         PLACEMENT: "IM_TEXTAREA",
@@ -2091,41 +2096,6 @@ Deno.serve(async (req) => {
         console.error("[INSTALL] placement.bind audio error:", audioRes.error, audioRes.error_description);
       }
     } catch (e) { console.error("[INSTALL] audio placement error:", e); }
-
-    // --- Register IM_TEXTAREA placement (Send Audio to WhatsApp) — ALL context variant ---
-    try {
-      const sendAudioAllUrl = `${supabaseUrl}/functions/v1/bitrix24-im-send-audio?ctx=all`;
-      await callBitrix(clientEndpoint, accessToken, "placement.unbind", {
-        PLACEMENT: "IM_TEXTAREA",
-        HANDLER: sendAudioAllUrl,
-      });
-      const audioAllRes = await callBitrix(clientEndpoint, accessToken, "placement.bind", {
-        PLACEMENT: "IM_TEXTAREA",
-        HANDLER: sendAudioAllUrl,
-        TITLE: "Áudio WhatsApp (todos)",
-        DESCRIPTION: "Gravar e enviar áudio (visível em todos os chats)",
-        LANG_ALL: {
-          pt: { TITLE: "Áudio WhatsApp (todos)", DESCRIPTION: "Gravar e enviar áudio (visível em todos os chats)" },
-          en: { TITLE: "WhatsApp Audio (all)", DESCRIPTION: "Record and send audio (visible in all chats)" },
-          es: { TITLE: "Audio WhatsApp (todos)", DESCRIPTION: "Grabar y enviar audio (visible en todos los chats)" },
-        },
-        OPTIONS: {
-          iconName: "fa-microphone",
-          context: "ALL",
-          color: "GREEN",
-          role: "USER",
-          width: "360",
-          height: "220",
-          extranet: "N",
-        },
-      });
-      if (!audioAllRes.error || String(audioAllRes.error).toLowerCase().includes("already")) {
-        console.log("[INSTALL] placement.bind IM_TEXTAREA (audio ALL): OK");
-        installSummary.placements_registered.push("IM_TEXTAREA_AUDIO_ALL");
-      } else {
-        console.error("[INSTALL] placement.bind audio ALL error:", audioAllRes.error, audioAllRes.error_description);
-      }
-    } catch (e) { console.error("[INSTALL] audio ALL placement error:", e); }
 
 
 
