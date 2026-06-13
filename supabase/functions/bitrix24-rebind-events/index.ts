@@ -78,6 +78,37 @@ Deno.serve(async (req) => {
     const accessToken = await ensureValidToken(supabase, integration);
     const eventsUrl = `${supabaseUrl}/functions/v1/bitrix24-events`;
 
+    const results: Record<string, any> = {};
+
+    // ── Re-register imconnector (atualiza ICON / PLACEMENT_HANDLER / flags do Contact Center) ──
+    try {
+      const CONNECTOR_ID = "emmely_messages";
+      const settingsHandlerUrl = `${supabaseUrl}/functions/v1/bitrix24-connector-settings`;
+      const iconEnabled = encodeURI('data:image/svg+xml,<svg width="48" height="48" viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg"><rect width="48" height="48" rx="12" fill="#2067b0"/><text x="24" y="31" font-size="22" font-weight="bold" text-anchor="middle" fill="white" font-family="Arial">E</text></svg>');
+      const iconDisabled = encodeURI('data:image/svg+xml,<svg width="48" height="48" viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg"><rect width="48" height="48" rx="12" fill="#999"/><text x="24" y="31" font-size="22" font-weight="bold" text-anchor="middle" fill="white" font-family="Arial">E</text></svg>');
+      const reg = await callBitrix(integration.client_endpoint, accessToken, "imconnector.register", {
+        ID: CONNECTOR_ID,
+        NAME: "Emmely Messages",
+        ICON: { DATA_IMAGE: iconEnabled, COLOR: "#2067b0", SIZE: "90%", POSITION: "center" },
+        ICON_DISABLED: { DATA_IMAGE: iconDisabled, COLOR: "#99adb3" },
+        PLACEMENT_HANDLER: settingsHandlerUrl,
+        DEL_EXTERNAL_MESSAGES: true,
+        EDIT_INTERNAL_MESSAGES: true,
+        DEL_INTERNAL_MESSAGES: true,
+        NEWSLETTER: true,
+        NEED_SYSTEM_MESSAGES: true,
+        NEED_SIGNATURE: true,
+        CHAT_GROUP: false,
+      });
+      results["imconnector_register"] = reg.error
+        ? (String(reg.error).toUpperCase().includes("ALREADY") ? "OK (already exists, updated)" : `ERROR: ${reg.error}`)
+        : "OK";
+      console.log("[REBIND] imconnector.register:", JSON.stringify(reg).slice(0, 300));
+    } catch (re) {
+      results["imconnector_register"] = `ERROR: ${re}`;
+      console.error("[REBIND] imconnector.register error:", re);
+    }
+
     const events = [
       "OnImConnectorMessageAdd",
       "OnImConnectorDialogStart",
@@ -88,8 +119,6 @@ Deno.serve(async (req) => {
       "OnCrmDynamicItemUpdate", // Smart Invoice stage changes (entityTypeId=31 filtered in worker)
       // NOTA: OnImbotWelcomeMessage e OnImbotJoinOpen NÃO existem como event.bind — são parâmetros do imbot.register
     ];
-
-    const results: Record<string, any> = {};
 
     // First unbind all to ensure clean state
     for (const event of events) {
