@@ -1123,6 +1123,127 @@ Deno.serve(async (req) => {
           });
         }
 
+        // ─── Connector audit (Contact Center diagnostic) ───
+        if (parsedBody._connectorAudit) {
+          console.log("[WORKER] Processing connector audit");
+          const { data: integrations } = await supabase
+            .from("bitrix24_integrations")
+            .select("*")
+            .eq("is_active", true);
+
+          const report: any[] = [];
+          for (const integ of integrations || []) {
+            const entry: any = {
+              integration_id: integ.id,
+              domain: integ.domain,
+              connectors: [],
+              lines: [],
+              checks: [],
+              errors: [],
+            };
+            try {
+              const ep = integ.client_endpoint?.endsWith("/") ? integ.client_endpoint : integ.client_endpoint + "/";
+              const token = await ensureValidToken(supabase, integ);
+
+              const [connList, lineList] = await Promise.all([
+                callBitrix(ep, token, "imconnector.list", {}),
+                callBitrix(ep, token, "imopenlines.config.list.get", {}),
+              ]);
+
+              const BUILTIN = new Set([
+                "livechat","whatsappbytwilio","viber","telegrambot","imessage","facebook",
+                "facebookcomments","fbinstagramdirect","network","notifications",
+                "whatsappbyedna","whatsapp","avito","vkgroup","ok","olx","yandex",
+              ]);
+              const rawConn = connList.result;
+              const customConnectors: { id: string; name: string }[] = [];
+              if (rawConn && typeof rawConn === "object" && !Array.isArray(rawConn)) {
+                for (const [id, name] of Object.entries(rawConn)) {
+                  if (!BUILTIN.has(id)) customConnectors.push({ id, name: String(name) });
+                }
+              }
+              entry.connectors = customConnectors;
+              entry.checks.push({
+                name: "imconnector.list",
+                status: customConnectors.length > 0 ? "ok" : "warning",
+                message: `${customConnectors.length} custom connector(s) registered`,
+              });
+
+              const rawLines = lineList.result;
+              const lines: any[] = Array.isArray(rawLines)
+                ? rawLines
+                : (rawLines && typeof rawLines === "object" ? Object.values(rawLines) : []);
+              const activeLines = lines.filter((l: any) => l.ACTIVE === "Y");
+              entry.checks.push({
+                name: "imopenlines.config.list.get",
+                status: activeLines.length > 0 ? "ok" : "warning",
+                message: `${activeLines.length} active Open Line(s)`,
+              });
+
+              // Per connector × line status
+              for (const conn of customConnectors) {
+                for (const line of activeLines) {
+                  const lineId = parseInt(line.ID || line.id || "0");
+                  const lineName = line.LINE_NAME || line.line_name || `Linha ${lineId}`;
+                  try {
+                    const st = await callBitrix(ep, token, "imconnector.status", {
+                      CONNECTOR: conn.id,
+                      LINE: lineId,
+                    });
+                    const r = st.result || {};
+                    const active = r.STATUS === true || r.active_status === true || r.CONFIGURED === true;
+                    entry.lines.push({
+                      connectorId: conn.id,
+                      connectorName: conn.name,
+                      lineId,
+                      lineName,
+                      active,
+                      registered: r.REGISTER === true || r.register === true,
+                      connected: r.CONNECTOR === true || r.connector === true,
+                      raw: r,
+                    });
+                  } catch (e: any) {
+                    entry.errors.push(`status ${conn.id}/${lineId}: ${e?.message || e}`);
+                  }
+                }
+              }
+
+              // Reconciliation against DB
+              const { data: dbMaps } = await supabase
+                .from("bitrix24_channel_mappings")
+                .select("*")
+                .eq("integration_id", integ.id);
+              for (const map of dbMaps || []) {
+                const realLine = entry.lines.find(
+                  (l: any) => String(l.lineId) === String(map.line_id) && l.connectorId === map.connector_id,
+                );
+                if (realLine && typeof map.connector_active === "boolean" && map.connector_active !== realLine.active) {
+                  entry.checks.push({
+                    name: `mismatch_${map.connector_id}_${map.line_id}`,
+                    status: "warning",
+                    message: `DB says ${map.connector_active} but Bitrix says ${realLine.active} — auto-correcting`,
+                  });
+                  await supabase
+                    .from("bitrix24_channel_mappings")
+                    .update({ connector_active: realLine.active })
+                    .eq("id", map.id);
+                }
+              }
+            } catch (e: any) {
+              entry.errors.push(`fatal: ${e?.message || e}`);
+            }
+            report.push(entry);
+          }
+
+          const overall = report.every((r) => r.errors.length === 0 && r.lines.some((l: any) => l.active))
+            ? "healthy"
+            : report.some((r) => r.errors.length > 0) ? "critical" : "degraded";
+
+          return new Response(JSON.stringify({ overall_status: overall, integrations: report, generated_at: new Date().toISOString() }), {
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+
         // ─── Badge request ───
         if (parsedBody._badgeRequest) {
           console.log("[WORKER] Processing badge request:", parsedBody.badgeCode);
