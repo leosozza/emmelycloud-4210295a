@@ -181,7 +181,7 @@ async function sendWithFallbacks(
   // Build user object — include phone (E.164) when available so Bitrix24 can match
   // existing CRM Contact + Deal automatically (skip_phone_validate avoids format errors).
   const userObj: Record<string, any> = {
-    id: contactId,
+    id: String(contactId),
     name: contactName,
   };
   if (options.contactPhone) {
