@@ -1129,7 +1129,7 @@ Deno.serve(async (req) => {
           const { data: integrations } = await supabase
             .from("bitrix24_integrations")
             .select("*")
-            .eq("is_active", true);
+            .not("client_endpoint", "is", null);
 
           const report: any[] = [];
           for (const integ of integrations || []) {
