@@ -150,11 +150,15 @@ Deno.serve(async (req) => {
       console.error("[REBIND] placement.bind error:", pe);
     }
 
-    // ── IM_TEXTAREA — Send Audio (WhatsApp) — LINES context ──
+    // ── IM_TEXTAREA — Send Audio (WhatsApp) — single LINES context ──
     try {
       const sendAudioUrl = `${supabaseUrl}/functions/v1/bitrix24-im-send-audio`;
+      const legacySendAudioAllUrl = `${supabaseUrl}/functions/v1/bitrix24-im-send-audio?ctx=all`;
       await callBitrix(integration.client_endpoint, accessToken, "placement.unbind", {
         PLACEMENT: "IM_TEXTAREA", HANDLER: sendAudioUrl,
+      });
+      await callBitrix(integration.client_endpoint, accessToken, "placement.unbind", {
+        PLACEMENT: "IM_TEXTAREA", HANDLER: legacySendAudioAllUrl,
       });
       const r = await callBitrix(integration.client_endpoint, accessToken, "placement.bind", {
         PLACEMENT: "IM_TEXTAREA",
@@ -169,26 +173,6 @@ Deno.serve(async (req) => {
       });
       results["placement_IM_TEXTAREA_AUDIO"] = r.error ? `ERROR: ${r.error}` : "OK";
     } catch (e) { results["placement_IM_TEXTAREA_AUDIO"] = `ERROR: ${e}`; }
-
-    // ── IM_TEXTAREA — Send Audio (WhatsApp) — ALL context variant ──
-    try {
-      const sendAudioAllUrl = `${supabaseUrl}/functions/v1/bitrix24-im-send-audio?ctx=all`;
-      await callBitrix(integration.client_endpoint, accessToken, "placement.unbind", {
-        PLACEMENT: "IM_TEXTAREA", HANDLER: sendAudioAllUrl,
-      });
-      const r = await callBitrix(integration.client_endpoint, accessToken, "placement.bind", {
-        PLACEMENT: "IM_TEXTAREA",
-        HANDLER: sendAudioAllUrl,
-        TITLE: "Áudio WhatsApp (todos)",
-        DESCRIPTION: "Gravar e enviar áudio (visível em todos os chats)",
-        LANG_ALL: {
-          pt: { TITLE: "Áudio WhatsApp (todos)", DESCRIPTION: "Gravar e enviar áudio (visível em todos os chats)" },
-          en: { TITLE: "WhatsApp Audio (all)", DESCRIPTION: "Record and send audio (visible in all chats)" },
-        },
-        OPTIONS: { iconName: "fa-microphone", context: "ALL", color: "GREEN", role: "USER", width: "360", height: "220", extranet: "N" },
-      });
-      results["placement_IM_TEXTAREA_AUDIO_ALL"] = r.error ? `ERROR: ${r.error}` : "OK";
-    } catch (e) { results["placement_IM_TEXTAREA_AUDIO_ALL"] = `ERROR: ${e}`; }
 
 
     // ── IM_TEXTAREA — Send File (WhatsApp) ──
