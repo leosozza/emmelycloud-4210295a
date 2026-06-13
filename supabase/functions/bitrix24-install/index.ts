@@ -1031,26 +1031,35 @@ Deno.serve(async (req) => {
 
     // --- Register Connector ---
     try {
-      // 1. Register connector
+      // 1. Register connector (spec atualizada do Contact Center: COLOR/SIZE/POSITION como strings,
+      //    DATA_IMAGE como SVG URL-encoded, e flags explícitas de comportamento)
+      const iconSvgEnabled = encodeURI('data:image/svg+xml,<svg width="48" height="48" viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg"><rect width="48" height="48" rx="12" fill="#2067b0"/><text x="24" y="31" font-size="22" font-weight="bold" text-anchor="middle" fill="white" font-family="Arial">E</text></svg>');
+      const iconSvgDisabled = encodeURI('data:image/svg+xml,<svg width="48" height="48" viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg"><rect width="48" height="48" rx="12" fill="#999"/><text x="24" y="31" font-size="22" font-weight="bold" text-anchor="middle" fill="white" font-family="Arial">E</text></svg>');
       const regResult = await callBitrix(clientEndpoint, accessToken, "imconnector.register", {
         ID: CONNECTOR_ID,
         NAME: "Emmely Messages",
         ICON: {
-          DATA_IMAGE: "data:image/svg+xml;base64," + btoa('<svg width="48" height="48" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg"><rect width="48" height="48" rx="12" fill="#2067b0"/><text x="24" y="31" font-size="22" font-weight="bold" text-anchor="middle" fill="white" font-family="Arial">E</text></svg>'),
-          COLOR: { BACKGROUND: "#2067b0", BORDER: "#1a5690" },
-          SIZE: { WIDTH: 48, HEIGHT: 48 },
-          POSITION: { TOP: 0, LEFT: 0 },
+          DATA_IMAGE: iconSvgEnabled,
+          COLOR: "#2067b0",
+          SIZE: "90%",
+          POSITION: "center",
         },
         ICON_DISABLED: {
-          DATA_IMAGE: "data:image/svg+xml;base64," + btoa('<svg width="48" height="48" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg"><rect width="48" height="48" rx="12" fill="#999"/><text x="24" y="31" font-size="22" font-weight="bold" text-anchor="middle" fill="white" font-family="Arial">E</text></svg>'),
-          COLOR: { BACKGROUND: "#999", BORDER: "#666" },
-          SIZE: { WIDTH: 48, HEIGHT: 48 },
-          POSITION: { TOP: 0, LEFT: 0 },
+          DATA_IMAGE: iconSvgDisabled,
+          COLOR: "#99adb3",
         },
         PLACEMENT_HANDLER: `${supabaseUrl}/functions/v1/bitrix24-connector-settings`,
+        DEL_EXTERNAL_MESSAGES: true,
+        EDIT_INTERNAL_MESSAGES: true,
+        DEL_INTERNAL_MESSAGES: true,
+        NEWSLETTER: true,
+        NEED_SYSTEM_MESSAGES: true,
+        NEED_SIGNATURE: true,
+        CHAT_GROUP: false,
       });
 
       console.log("[INSTALL] Register connector result:", JSON.stringify(regResult));
+      await debugLog(supabase, integrationId, "connector_register", "outbound", { request: { id: CONNECTOR_ID }, response: regResult });
 
       const connectorRegistered = !regResult.error || regResult.error === "CONNECTOR_ALREADY_EXISTS";
       installSummary.connector_registered = connectorRegistered;
@@ -1136,14 +1145,13 @@ Deno.serve(async (req) => {
 
       // --- Auto-activate connector on the first Open Line (best-effort) ---
       try {
-        const cfgList = await callBitrix(clientEndpoint, accessToken, "imopenlines.config.list.get", {
-          params: { select: ["LINE_NAME", "ID"] },
-        });
+        const cfgList = await callBitrix(clientEndpoint, accessToken, "imopenlines.config.list.get", {});
         const linesRaw = cfgList.result || {};
         const linesArr: any[] = Array.isArray(linesRaw) ? linesRaw : Object.values(linesRaw);
         const firstLine = linesArr[0];
         const firstLineId = firstLine ? parseInt(firstLine.ID, 10) : 0;
         if (firstLineId > 0) {
+          const settingsHandlerUrl = `${supabaseUrl}/functions/v1/bitrix24-connector-settings`;
           const actRes = await callBitrix(clientEndpoint, accessToken, "imconnector.activate", {
             CONNECTOR: CONNECTOR_ID,
             LINE: firstLineId,
@@ -1155,8 +1163,8 @@ Deno.serve(async (req) => {
             DATA: {
               ID: CONNECTOR_ID,
               NAME: "Emmely Messages",
-              URL: `${supabaseUrl}/functions/v1/bitrix24-events`,
-              URL_IM: `${supabaseUrl}/functions/v1/bitrix24-events`,
+              URL: Deno.env.get("FRONTEND_URL") || settingsHandlerUrl,
+              URL_IM: settingsHandlerUrl,
             },
           });
           console.log(`[INSTALL] imconnector.activate LINE=${firstLineId}:`, JSON.stringify(actRes).slice(0, 200));
