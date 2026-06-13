@@ -17,8 +17,9 @@ const corsHeaders = {
   "Content-Security-Policy": "frame-ancestors *",
 };
 
-function htmlPage(): string {
+function htmlPage(initialPlacementOptions: Record<string, any> = {}, initialMeta: Record<string, any> = {}): string {
   const endpoint = `${SUPABASE_URL}/functions/v1/bitrix24-im-send-audio`;
+  const initialPayload = { options: initialPlacementOptions, meta: initialMeta };
   return `<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
@@ -124,6 +125,7 @@ function htmlPage(): string {
 
 <script>
 const ENDPOINT = ${JSON.stringify(endpoint)};
+const INITIAL_PLACEMENT = ${JSON.stringify(initialPayload)};
 let mediaRecorder = null;
 let chunks = [];
 let blob = null;
@@ -259,9 +261,11 @@ function init() {
     if (typeof BX24 !== "undefined") {
       BX24.init(() => {
         try { placementInfo = BX24.placement.info(); } catch(_) { placementInfo = null; }
+        if (!placementInfo || !placementInfo.options || Object.keys(placementInfo.options).length === 0) placementInfo = INITIAL_PLACEMENT;
         renderIdle();
       });
     } else {
+      placementInfo = INITIAL_PLACEMENT;
       renderIdle();
     }
   } catch (e) {
