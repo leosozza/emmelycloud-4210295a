@@ -1217,15 +1217,15 @@ Deno.serve(async (req) => {
                 const realLine = entry.lines.find(
                   (l: any) => String(l.lineId) === String(map.line_id) && l.connectorId === map.connector_id,
                 );
-                if (realLine && typeof map.connector_active === "boolean" && map.connector_active !== realLine.active) {
+                if (realLine && map.is_active !== realLine.active) {
                   entry.checks.push({
                     name: `mismatch_${map.connector_id}_${map.line_id}`,
                     status: "warning",
-                    message: `DB says ${map.connector_active} but Bitrix says ${realLine.active} — auto-correcting`,
+                    message: `DB says ${map.is_active} but Bitrix says ${realLine.active} — auto-correcting`,
                   });
                   await supabase
                     .from("bitrix24_channel_mappings")
-                    .update({ connector_active: realLine.active })
+                    .update({ is_active: realLine.active })
                     .eq("id", map.id);
                 }
               }
