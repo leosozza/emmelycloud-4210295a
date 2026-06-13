@@ -299,13 +299,38 @@ async function resolveConversation(supabase: any, dialogId: string, chatId: stri
   return null;
 }
 
+function parsePlacementForm(bodyText: string) {
+  const body: Record<string, any> = {};
+  const params = new URLSearchParams(bodyText || "");
+  for (const [key, value] of params.entries()) body[key] = value;
+  let placementOptions: Record<string, any> = {};
+  if (body.PLACEMENT_OPTIONS) {
+    try {
+      placementOptions = typeof body.PLACEMENT_OPTIONS === "string"
+        ? JSON.parse(body.PLACEMENT_OPTIONS)
+        : body.PLACEMENT_OPTIONS;
+    } catch {
+      placementOptions = {};
+    }
+  }
+  return { body, placementOptions };
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
 
   const contentType = req.headers.get("content-type") || "";
 
-  if (req.method === "GET" || (req.method === "POST" && contentType.includes("application/x-www-form-urlencoded"))) {
+  if (req.method === "GET") {
     return new Response(htmlPage(), {
+      headers: { ...corsHeaders, "Content-Type": "text/html; charset=utf-8" },
+    });
+  }
+
+  if (req.method === "POST" && contentType.includes("application/x-www-form-urlencoded")) {
+    const { body, placementOptions } = parsePlacementForm(await req.text());
+    console.log("[IM-AUDIO] placement open", { memberId: body.member_id || body.MEMBER_ID || null, placementOptions });
+    return new Response(htmlPage(placementOptions, { member_id: body.member_id || body.MEMBER_ID || null }), {
       headers: { ...corsHeaders, "Content-Type": "text/html; charset=utf-8" },
     });
   }
