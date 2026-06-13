@@ -224,7 +224,7 @@ async function sendWithFallbacks(
         user: userObj,
         message: messageObj,
         chat: {
-          id: contactId,
+          id: String(contactId),
         },
         date: new Date().toISOString(),
       },
