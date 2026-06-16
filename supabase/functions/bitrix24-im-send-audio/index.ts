@@ -1,9 +1,13 @@
 // Edge Function: bitrix24-im-send-audio
 // Iframe handler for the IM_TEXTAREA placement. Lets a Bitrix24 operator
 // record an audio message inside the Open Channel chat and forward it to
-// WhatsApp via WUZAPI using the existing `message-send` pipeline.
+// WhatsApp (Gupshup / WUZAPI / Meta) via the existing `message-send` pipeline.
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import {
+  detectMimeFromBytes,
+  remuxWebmOpusToOgg,
+} from "../_shared/audio-remux.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
