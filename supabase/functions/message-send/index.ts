@@ -355,7 +355,8 @@ Deno.serve(async (req) => {
 
   try {
     const body = await req.json();
-    const { conversation_id, content, message_type, resolvedInteractiveData: bodyInteractiveData, skip_db_save, instance_id, bitrix_entity_id, bitrix_entity_type_id, sender_name: bodySenderName, source: bodySource, ai_agent_id: bodyAiAgentId, review_context: bodyReviewContext, skip_review: bodySkipReview } = body;
+   const { conversation_id, content, message_type, resolvedInteractiveData: bodyInteractiveData, skip_db_save, instance_id, bitrix_entity_id, bitrix_entity_type_id, sender_name: bodySenderName, source: bodySource, ai_agent_id: bodyAiAgentId, review_context: bodyReviewContext, skip_review: bodySkipReview, force_ptt: bodyForcePtt } = body;
+   const forcePtt = bodyForcePtt === true || bodyForcePtt === "true";
     // Fase C — Quality Gate: revisa mensagens originadas por IA antes do envio
     let aiReviewId: string | null = null;
     let aiReviewScore: number | null = null;
