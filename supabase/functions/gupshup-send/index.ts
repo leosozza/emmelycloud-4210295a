@@ -222,7 +222,7 @@ async function sendGupshupVoiceNote(apiKey: string, appId: string, destination: 
     recipient_type: "individual",
     to: destination,
     type: "audio",
-    audio: { id: mediaId, voice: true },
+    audio: { id: mediaId, voice: "true" },
   };
 
   const res = await fetch(`${GUPSHUP_PARTNER_URL}/partner/app/${encodeURIComponent(appId)}/v3/message`, {
