@@ -268,6 +268,24 @@ async function sendBlob() {
       throw new Error(detail || ("Falha no envio (HTTP " + (res ? res.status : "?") + ")"));
     }
 
+    // Posta o áudio também dentro do chat do Open Channel para o operador
+    // ver no histórico do Bitrix24 (o envio direto ao WhatsApp não cria
+    // mensagem no chat). Usamos a sessão BX24 já autenticada no iframe.
+    try {
+      if (typeof BX24 !== "undefined" && json.mediaUrl && dialogId) {
+        await new Promise((resolve) => {
+          BX24.callMethod("im.message.add", {
+            DIALOG_ID: dialogId,
+            MESSAGE: "[B]🎤 Áudio enviado pelo atendente[/B]\\n[URL=" + json.mediaUrl + "]Ouvir áudio[/URL]",
+            ATTACH: [{
+              DESCRIPTION: "Áudio enviado ao WhatsApp",
+              LINK: { NAME: "Ouvir áudio (.ogg)", LINK: json.mediaUrl }
+            }],
+          }, () => resolve(null));
+        });
+      }
+    } catch(_) {}
+
     setStatus("Áudio enviado ao WhatsApp ✔", "ok");
     blob = null;
     setTimeout(() => { try { BX24.closeApplication(); } catch(_) { renderIdle(); } }, 900);
