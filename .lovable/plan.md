@@ -1,34 +1,39 @@
-## Problema
+## Diagnóstico
 
-Ao abrir o slider de configuração do conector Emmely no Contact Center (ou ao receber qualquer chamada `SETTING_CONNECTOR` sem `ACTIVE_STATUS`), o backend reativa a linha automaticamente — mesmo que o utilizador a tenha acabado de desativar.
+A tela branca acontece porque o `bitrix24-im-send-audio.html` é servido pelo Cloudflare Pages (`emmelycloud.pages.dev`) sem os cabeçalhos que autorizam o Bitrix24 a embutir a página num iframe. Verifiquei a resposta HTTP do ficheiro:
 
-## Causa
+- Não há `X-Frame-Options: ALLOWALL`
+- Não há `Content-Security-Policy: frame-ancestors *`
 
-Em `supabase/functions/bitrix24-connector-settings/index.ts` há este default explícito:
+Sem isso, alguns browsers (e o próprio modal do Bitrix24) bloqueiam o render → modal abre vazio/branco e o botão "gravar áudio" nunca aparece. Esta é exatamente a regra registada em memória do projeto:
+> "Bitrix24 iframes MUST include `X-Frame-Options: ALLOWALL` and `Content-Security-Policy: frame-ancestors *`."
 
-```ts
-const rawStatus = String(activeStatus ?? "").toUpperCase();
-const shouldActivate = !(rawStatus === "N" || rawStatus === "0" || rawStatus === "FALSE");
-// "Default to active when omitted because the legacy slider opens with the intent to enable."
-```
-
-Quando o Bitrix24 reabre o slider de uma linha já configurada (ex.: a linha "Facebook"), `PLACEMENT_OPTIONS.ACTIVE_STATUS` chega vazio. O código interpreta como "ativar" e chama `imconnector.activate ACTIVE=1`, revertendo a desativação anterior.
+Não existe ficheiro `public/_headers` no projeto, por isso o Cloudflare Pages serve sem qualquer header de framing.
 
 ## Correção
 
-Tornar a ação idempotente em relação ao estado real, em vez de assumir intent:
+Criar `public/_headers` (formato Cloudflare Pages) liberando o framing para as páginas que o Bitrix24 carrega em iframe — em particular `bitrix24-im-send-audio.html`, mas estendendo a regra a todo o site (a app inteira já é embebida pelo Bitrix24):
 
-1. Quando `ACTIVE_STATUS` **não vier no payload**:
-   - Procurar o mapping atual em `bitrix24_channel_mappings` para `(integration_id, line_id)`.
-   - Se existir, usar `is_active` atual como `shouldActivate` (preserva o estado escolhido pelo utilizador).
-   - Se não existir, **não** chamar `imconnector.activate` nem criar mapping — apenas devolver o HTML de `installFinish()` para o slider abrir.
-2. Quando `ACTIVE_STATUS` vier (`Y`/`N`/`1`/`0`): manter o comportamento atual (respeitar a escolha explícita do utilizador).
-3. Log adicional indicando se o estado foi "explicit" vs "preserved from DB" vs "no-op (no mapping)" em `bitrix24_debug_logs` para diagnóstico futuro.
+```text
+/*
+  X-Frame-Options: ALLOWALL
+  Content-Security-Policy: frame-ancestors *
+  Referrer-Policy: strict-origin-when-cross-origin
 
-Nenhuma outra função é tocada. O frontend não muda.
+/bitrix24-im-send-audio.html
+  X-Frame-Options: ALLOWALL
+  Content-Security-Policy: frame-ancestors *
+  Cache-Control: no-store
+```
 
-## Validação
+Notas:
+- `X-Frame-Options: ALLOWALL` não é padrão, mas browsers ignoram silenciosamente — o que efetivamente autoriza o iframe é o `frame-ancestors *` da CSP.
+- O `Cache-Control: no-store` específico do HTML do áudio evita que uma versão antiga em cache continue a aparecer ao usuário depois do deploy.
 
-- Desativar canal Facebook no Contact Center → mapping fica `is_active=false`.
-- Reabrir o slider sem clicar em ativar → log mostra "preserved from DB: inactive", `imconnector.activate` **não** é chamado, linha continua desativada.
-- Ativar explicitamente → `ACTIVE_STATUS=Y` chega, fluxo normal de ativação roda.
+Após o deploy do frontend (Cloudflare Pages), reabrir o botão de áudio no Bitrix24 — o modal deve renderizar o microfone normalmente.
+
+## Ficheiros alterados
+
+- `public/_headers` (novo)
+
+Nenhuma edge function precisa ser tocada.
