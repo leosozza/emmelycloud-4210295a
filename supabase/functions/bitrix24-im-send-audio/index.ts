@@ -379,7 +379,19 @@ Deno.serve(async (req) => {
   }
 
   if (req.method === "POST" && contentType.includes("multipart/form-data")) {
+    const steps: Array<{ step: string; status: "ok" | "fail" | "skip"; detail?: string; ms?: number }> = [];
+    const t0 = Date.now();
+    const mark = (step: string, status: "ok" | "fail" | "skip", detail?: string, started?: number) => {
+      steps.push({ step, status, detail, ms: started != null ? Date.now() - started : undefined });
+    };
+    const respond = (ok: boolean, payload: Record<string, any>, httpStatus = 200) =>
+      new Response(JSON.stringify({ ok, steps, ...payload }), {
+        status: httpStatus,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+
     try {
+      const tParse = Date.now();
       const form = await req.formData();
       const file = form.get("file");
       const dialogId = String(form.get("dialog_id") || "");
@@ -389,40 +401,45 @@ Deno.serve(async (req) => {
       console.log("[IM-AUDIO] upload", { dialogId, chatId, mime, hasFile: file instanceof File, size: file instanceof File ? file.size : 0 });
 
       if (!(file instanceof File)) {
-        return new Response(JSON.stringify({ error: "file missing" }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        mark("Receber áudio", "fail", "Arquivo ausente no formulário", tParse);
+        return respond(false, { error: "file missing" }, 400);
       }
       if (!dialogId && !chatId) {
-        return new Response(JSON.stringify({ error: "dialog_id/chat_id missing" }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        mark("Receber áudio", "fail", "dialog_id/chat_id ausentes", tParse);
+        return respond(false, { error: "dialog_id/chat_id missing" }, 400);
       }
+      mark("Receber áudio", "ok", `${(file.size / 1024).toFixed(1)} KB · ${mime}`, tParse);
 
+      const tConv = Date.now();
       const supabase = createClient(SUPABASE_URL, SERVICE_ROLE);
       const conv = await resolveConversation(supabase, dialogId, chatId);
       if (!conv) {
         console.warn("[IM-AUDIO] conversation not found", { dialogId, chatId });
-        return new Response(JSON.stringify({ error: "Conversa não vinculada para esse chat (" + (dialogId || chatId) + "). Abra o chat pelo painel Emmely." }), { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        mark("Vincular conversa", "fail", `Sem conversa para chat ${dialogId || chatId}`, tConv);
+        return respond(false, { error: "Conversa não vinculada para esse chat (" + (dialogId || chatId) + "). Abra o chat pelo painel Emmely." }, 404);
       }
+      mark("Vincular conversa", "ok", `${conv.channel} · ${conv.contact_phone || conv.id.slice(0, 8)}`, tConv);
 
       const rawBuf = new Uint8Array(await file.arrayBuffer());
-
-      // Detect actual format from magic bytes (ignore declared mime, which
-      // may be "audio/webm;codecs=opus" even when the browser produced ogg).
       let detectedMime = detectMimeFromBytes(rawBuf, mime.split(";")[0] || "audio/webm");
       let finalBuf = rawBuf;
       let finalMime = detectedMime;
       let finalExt = "bin";
 
-      // Gupshup / Meta Cloud API / WUZAPI do not accept WebM voice notes.
-      // Remux WebM/Opus to Ogg/Opus so the file plays as a normal WhatsApp
-      // voice note across every provider.
+      const tRemux = Date.now();
       if (detectedMime === "audio/webm") {
         const ogg = remuxWebmOpusToOgg(rawBuf);
         if (ogg) {
           finalBuf = ogg;
           finalMime = "audio/ogg";
           console.log("[IM-AUDIO] remuxed WebM/Opus to Ogg/Opus", { from: rawBuf.length, to: ogg.length });
+          mark("Converter para Ogg/Opus", "ok", `${rawBuf.length} → ${ogg.length} bytes`, tRemux);
         } else {
           console.warn("[IM-AUDIO] WebM/Opus remux failed; provider will likely reject the file");
+          mark("Converter para Ogg/Opus", "fail", "Remux falhou; provedor pode rejeitar", tRemux);
         }
+      } else {
+        mark("Converter para Ogg/Opus", "skip", `Já em ${detectedMime}`);
       }
 
       finalExt = finalMime === "audio/ogg" ? "ogg"
@@ -432,21 +449,22 @@ Deno.serve(async (req) => {
         : finalMime === "audio/webm" ? "webm"
         : "bin";
 
+      const tUpload = Date.now();
       const path = `bitrix-audio/${conv.id}/${Date.now()}-${crypto.randomUUID().slice(0, 8)}.${finalExt}`;
       const { error: upErr } = await supabase.storage.from("media").upload(path, finalBuf, {
         contentType: finalMime, upsert: false,
       });
       if (upErr) {
         console.error("[IM-AUDIO] upload error", upErr);
-        return new Response(JSON.stringify({ ok: false, error: "upload failed: " + upErr.message }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        mark("Upload no storage", "fail", upErr.message, tUpload);
+        return respond(false, { error: "upload failed: " + upErr.message }, 500);
       }
       const { data: pub } = supabase.storage.from("media").getPublicUrl(path);
-      // Cache-buster: Gupshup/Meta reaproveitam media_id quando a URL repete e
-      // o WhatsApp passa a renderizar com selo "Encaminhada". Forçando um
-      // querystring único garantimos que o provedor trata como mídia nova.
       const mediaUrl = `${pub.publicUrl}?v=${Date.now()}`;
       console.log("[IM-AUDIO] uploaded", { convId: conv.id, channel: conv.channel, path, mediaUrl, finalMime, bytes: finalBuf.length });
+      mark("Upload no storage", "ok", `${finalBuf.length} bytes · ${finalMime}`, tUpload);
 
+      const tSend = Date.now();
       const sendRes = await fetch(`${SUPABASE_URL}/functions/v1/message-send`, {
         method: "POST",
         headers: { "Content-Type": "application/json", "Authorization": `Bearer ${SERVICE_ROLE}` },
@@ -460,30 +478,28 @@ Deno.serve(async (req) => {
       });
       const sendJson = await sendRes.json().catch(() => ({} as any));
 
-      // message-send can return HTTP 200 with `{ success: false, error }` when
-      // the provider rejected the message. Treat that as failure too — the
-      // iframe must not show a green "enviado" badge in that case.
       const providerOk = sendRes.ok && sendJson && sendJson.success !== false && !sendJson.error;
       if (!providerOk) {
         console.error("[IM-AUDIO] message-send failed", { status: sendRes.status, sendJson });
-        return new Response(JSON.stringify({
-          ok: false,
-          error: (sendJson && (sendJson.error || sendJson.message)) || `message-send falhou (HTTP ${sendRes.status})`,
+        const reason = (sendJson && (sendJson.error || sendJson.message)) || `HTTP ${sendRes.status}`;
+        mark("Envio ao WhatsApp", "fail", String(reason), tSend);
+        return respond(false, {
+          error: reason,
           detail: sendJson,
-        }), { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        }, 502);
       }
+      mark("Envio ao WhatsApp", "ok", sendJson?.message_id ? `id ${String(sendJson.message_id).slice(0, 18)}…` : "confirmado pelo provedor", tSend);
 
-      return new Response(JSON.stringify({
-        ok: true,
+      return respond(true, {
         mediaUrl,
         conversationId: conv.id,
         externalMessageId: sendJson?.message_id ?? null,
-      }), {
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        totalMs: Date.now() - t0,
       });
     } catch (e) {
       console.error("[IM-AUDIO] error", e);
-      return new Response(JSON.stringify({ ok: false, error: String(e) }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      mark("Erro inesperado", "fail", String(e?.message || e));
+      return respond(false, { error: String(e?.message || e) }, 500);
     }
   }
 
