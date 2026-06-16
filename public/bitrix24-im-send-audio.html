@@ -315,7 +315,7 @@ async function sendBlob() {
         const bxResult = await new Promise((resolve) => {
           BX24.callMethod("im.message.add", {
             DIALOG_ID: dialogId,
-            MESSAGE: "[B]🎤 Áudio enviado pelo atendente[/B]\\n[URL=" + json.mediaUrl + "]Ouvir áudio[/URL]",
+            MESSAGE: "[B]🎤 Áudio enviado pelo atendente[/B]\n[URL=" + json.mediaUrl + "]Ouvir áudio[/URL]",
             ATTACH: [{
               DESCRIPTION: "Áudio enviado ao WhatsApp",
               LINK: { NAME: "Ouvir áudio (.ogg)", LINK: json.mediaUrl }
