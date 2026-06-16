@@ -406,6 +406,14 @@ async function handleConnectorMessage(supabase: any, integration: any, payload: 
       console.log(`[WORKER] Detected ${detectedFiles.length} file(s) in message ${messageId}`);
     }
 
+    // Skip our own outbound audio (posted by bitrix24-im-send-audio iframe).
+    // The iframe already delivered the audio to WhatsApp via message-send;
+    // re-forwarding here would duplicate the message on the customer's phone.
+    if (messageText && /🎤\s*Áudio enviado pelo atendente/i.test(messageText)) {
+      console.log(`[WORKER] Skipping own outbound audio echo (message ${messageId})`);
+      continue;
+    }
+
     // Skip empty messages with neither text nor files
     if (!messageText && detectedFiles.length === 0) continue;
 
