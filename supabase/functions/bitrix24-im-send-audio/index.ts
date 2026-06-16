@@ -175,7 +175,25 @@ let elapsedSec = 0;
 
 const stage = document.getElementById("stage");
 const statusEl = document.getElementById("status");
+const logsEl = document.getElementById("logs");
+const logsList = document.getElementById("logsList");
 const setStatus = (t, kind = "") => { statusEl.textContent = t || ""; statusEl.className = "status " + kind; };
+
+const STEP_ICON = { ok: "✓", fail: "✕", skip: "–", pending: "…" };
+function setSteps(steps) {
+  if (!Array.isArray(steps) || steps.length === 0) { logsEl.classList.remove("visible"); return; }
+  logsEl.classList.add("visible");
+  logsList.innerHTML = steps.map(s => {
+    const kind = s.status || "pending";
+    const ms = (typeof s.ms === "number") ? (s.ms + " ms") : "";
+    const detail = s.detail ? '<span class="detail">' + String(s.detail).replace(/[<>&]/g, c => ({"<":"&lt;",">":"&gt;","&":"&amp;"}[c])) + '</span>' : "";
+    return '<li class="' + kind + '"><span class="ic">' + (STEP_ICON[kind] || "•") + '</span>' +
+           '<span class="name">' + (s.step || "etapa") + detail + '</span>' +
+           '<span class="ms">' + ms + '</span></li>';
+  }).join("");
+  fit();
+}
+document.getElementById("clearLogs").onclick = () => { setSteps([]); };
 
 const ICON_MIC = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="22"/></svg>';
 const ICON_STOP = '<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="1"/></svg>';
