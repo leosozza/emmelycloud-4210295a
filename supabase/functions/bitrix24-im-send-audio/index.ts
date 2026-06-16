@@ -268,6 +268,24 @@ async function sendBlob() {
       throw new Error(detail || ("Falha no envio (HTTP " + (res ? res.status : "?") + ")"));
     }
 
+    // Posta o áudio também dentro do chat do Open Channel para o operador
+    // ver no histórico do Bitrix24 (o envio direto ao WhatsApp não cria
+    // mensagem no chat). Usamos a sessão BX24 já autenticada no iframe.
+    try {
+      if (typeof BX24 !== "undefined" && json.mediaUrl && dialogId) {
+        await new Promise((resolve) => {
+          BX24.callMethod("im.message.add", {
+            DIALOG_ID: dialogId,
+            MESSAGE: "[B]🎤 Áudio enviado pelo atendente[/B]\\n[URL=" + json.mediaUrl + "]Ouvir áudio[/URL]",
+            ATTACH: [{
+              DESCRIPTION: "Áudio enviado ao WhatsApp",
+              LINK: { NAME: "Ouvir áudio (.ogg)", LINK: json.mediaUrl }
+            }],
+          }, () => resolve(null));
+        });
+      }
+    } catch(_) {}
+
     setStatus("Áudio enviado ao WhatsApp ✔", "ok");
     blob = null;
     setTimeout(() => { try { BX24.closeApplication(); } catch(_) { renderIdle(); } }, 900);
@@ -423,7 +441,10 @@ Deno.serve(async (req) => {
         return new Response(JSON.stringify({ ok: false, error: "upload failed: " + upErr.message }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
       }
       const { data: pub } = supabase.storage.from("media").getPublicUrl(path);
-      const mediaUrl = pub.publicUrl;
+      // Cache-buster: Gupshup/Meta reaproveitam media_id quando a URL repete e
+      // o WhatsApp passa a renderizar com selo "Encaminhada". Forçando um
+      // querystring único garantimos que o provedor trata como mídia nova.
+      const mediaUrl = `${pub.publicUrl}?v=${Date.now()}`;
       console.log("[IM-AUDIO] uploaded", { convId: conv.id, channel: conv.channel, path, mediaUrl, finalMime, bytes: finalBuf.length });
 
       const sendRes = await fetch(`${SUPABASE_URL}/functions/v1/message-send`, {
