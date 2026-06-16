@@ -123,6 +123,63 @@ function CRMTab() {
   const [testing, setTesting] = useState(false);
   const [resyncing, setResyncing] = useState(false);
   const [testResult, setTestResult] = useState<{ ok: boolean; message?: string; error?: string; details?: any } | null>(null);
+  const [auditing, setAuditing] = useState(false);
+  const [rebinding, setRebinding] = useState(false);
+  const [auditReport, setAuditReport] = useState<any>(null);
+
+  const handleAudit = async () => {
+    setAuditing(true);
+    try {
+      const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/bitrix24-worker?action=connector_audit`;
+      const res = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+          Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+        },
+        body: JSON.stringify({ _connectorAudit: true }),
+      });
+      const data = await res.json();
+      if (!res.ok || data?.error) {
+        toast.error(data?.error || `Falha HTTP ${res.status}`);
+      } else {
+        setAuditReport(data);
+        toast.success(`Auditoria concluída — estado: ${data.overall_status}`);
+        const { data: chRes } = await supabase.from("bitrix24_channel_mappings").select("id, channel, line_name, is_active");
+        if (chRes) setChannels(chRes);
+      }
+    } catch (e: any) {
+      toast.error(e?.message || "Erro de rede.");
+    }
+    setAuditing(false);
+  };
+
+  const handleRebind = async () => {
+    setRebinding(true);
+    try {
+      const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/bitrix24-rebind-events`;
+      const res = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+          Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+        },
+        body: "{}",
+      });
+      const data = await res.json();
+      if (!res.ok || data?.error) {
+        toast.error(data?.error || `Falha HTTP ${res.status}`);
+      } else {
+        toast.success("Registro do conector reaplicado (ícone e handler atualizados).");
+      }
+    } catch (e: any) {
+      toast.error(e?.message || "Erro de rede.");
+    }
+    setRebinding(false);
+  };
+
 
   useEffect(() => {
     async function load() {
