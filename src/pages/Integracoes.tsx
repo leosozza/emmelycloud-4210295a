@@ -309,7 +309,7 @@ function CRMTab() {
           </div>
           <StatusBadge status={activeChannels.length > 0 ? "active" : "inactive"} />
         </CardHeader>
-        <CardContent className="space-y-2 text-sm">
+        <CardContent className="space-y-3 text-sm">
           <div className="flex justify-between"><span className="text-muted-foreground">Canais ativos</span><span className="font-medium">{activeChannels.length}</span></div>
           {activeChannels.map((ch) => (
             <div key={ch.id} className="flex items-center justify-between rounded-md bg-muted/50 px-3 py-1.5">
@@ -318,7 +318,35 @@ function CRMTab() {
             </div>
           ))}
           {activeChannels.length === 0 && <p className="text-muted-foreground">Nenhum canal ativo no Contact Center.</p>}
+
+          {auditReport?.integrations?.[0]?.lines?.length > 0 && (
+            <div className="space-y-1 rounded-md border p-2">
+              <p className="text-xs font-medium text-muted-foreground">Estado por linha (Bitrix)</p>
+              {auditReport.integrations[0].lines.map((l: any) => (
+                <div key={`${l.connectorId}-${l.lineId}`} className="flex items-center justify-between text-xs">
+                  <span className="truncate">{l.lineName}</span>
+                  <span className={`inline-flex h-2 w-2 rounded-full ${l.active ? "bg-emerald-500" : "bg-muted-foreground/40"}`} title={l.active ? "Ativo no Contact Center" : "Disponível mas não ativado"} />
+                </div>
+              ))}
+            </div>
+          )}
+
+          <p className="text-xs text-muted-foreground">
+            A ativação por linha é feita pelo utilizador no <strong>Contact Center</strong> do Bitrix24. Os botões abaixo apenas auditam e reaplicam o registro do conector (ícone/handler) sem alterar ativações.
+          </p>
+
+          <div className="flex gap-2">
+            <Button size="sm" variant="outline" onClick={handleAudit} disabled={auditing} className="flex-1">
+              {auditing ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : <Activity className="mr-1 h-3 w-3" />}
+              Auditar
+            </Button>
+            <Button size="sm" variant="outline" onClick={handleRebind} disabled={rebinding} className="flex-1">
+              {rebinding ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : <RefreshCw className="mr-1 h-3 w-3" />}
+              Reaplicar registro
+            </Button>
+          </div>
         </CardContent>
+
       </Card>
 
       {/* Emmely Pay */}
