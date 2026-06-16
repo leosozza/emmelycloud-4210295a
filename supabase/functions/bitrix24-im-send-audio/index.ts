@@ -287,6 +287,14 @@ async function sendBlob() {
   if (!blob) return;
   renderSending();
   setStatus("");
+  // Mostra etapas em "pending" antes mesmo da resposta para feedback imediato.
+  setSteps([
+    { step: "Enviar para servidor", status: "pending" },
+    { step: "Upload no storage", status: "pending" },
+    { step: "Envio ao WhatsApp", status: "pending" },
+    { step: "Postar no chat Bitrix24", status: "pending" },
+  ]);
+  const tClient = Date.now();
   try {
     const opts = (placementInfo && placementInfo.options) || {};
     const dialogId = String(opts.DIALOG_ID || opts.dialogId || opts.CHAT_ID || opts.chatId || "");
@@ -300,9 +308,6 @@ async function sendBlob() {
     fd.append("chat_id", chatId);
     fd.append("mime", blob.type || ("audio/" + ext));
 
-    // Timeout defensivo: a chamada toda (remux + upload + envio ao provedor)
-    // costuma terminar em <15s. Acima disso é problema (rede ou provider) e
-    // queremos mostrar erro em vez de spinner infinito.
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 60000);
 
@@ -314,19 +319,26 @@ async function sendBlob() {
       clearTimeout(timeoutId);
     }
 
-    // O servidor só retorna ok:true quando o provedor (Gupshup/WUZAPI/Meta)
-    // confirmou o envio. Qualquer outra coisa é falha real.
+    // Servidor devolve etapas detalhadas no campo `steps`. Acrescentamos a
+    // etapa do POST (round-trip do cliente) e, abaixo, a etapa do Bitrix.
+    const serverSteps = Array.isArray(json && json.steps) ? json.steps : [];
+    const allSteps = [
+      { step: "Enviar para servidor", status: res && res.ok ? "ok" : "fail", detail: "HTTP " + (res ? res.status : "?"), ms: Date.now() - tClient },
+      ...serverSteps,
+    ];
+    setSteps(allSteps);
+
     if (!res.ok || !json || json.ok !== true) {
       const detail = json && (json.error || (json.detail && (json.detail.error || json.detail.message)));
       throw new Error(detail || ("Falha no envio (HTTP " + (res ? res.status : "?") + ")"));
     }
 
-    // Posta o áudio também dentro do chat do Open Channel para o operador
-    // ver no histórico do Bitrix24 (o envio direto ao WhatsApp não cria
-    // mensagem no chat). Usamos a sessão BX24 já autenticada no iframe.
+    // Posta o áudio no chat do Open Channel via BX24 SDK.
+    const tBx = Date.now();
+    let bxStep = { step: "Postar no chat Bitrix24", status: "skip", detail: "BX24 indisponível" };
     try {
       if (typeof BX24 !== "undefined" && json.mediaUrl && dialogId) {
-        await new Promise((resolve) => {
+        const bxResult = await new Promise((resolve) => {
           BX24.callMethod("im.message.add", {
             DIALOG_ID: dialogId,
             MESSAGE: "[B]🎤 Áudio enviado pelo atendente[/B]\\n[URL=" + json.mediaUrl + "]Ouvir áudio[/URL]",
@@ -334,14 +346,29 @@ async function sendBlob() {
               DESCRIPTION: "Áudio enviado ao WhatsApp",
               LINK: { NAME: "Ouvir áudio (.ogg)", LINK: json.mediaUrl }
             }],
-          }, () => resolve(null));
+          }, (r) => resolve(r));
         });
+        const err = bxResult && bxResult.error && bxResult.error();
+        if (err) {
+          bxStep = { step: "Postar no chat Bitrix24", status: "fail", detail: (err.ex && err.ex.error_description) || err.ex || String(err), ms: Date.now() - tBx };
+        } else {
+          const msgId = bxResult && bxResult.data && bxResult.data();
+          bxStep = { step: "Postar no chat Bitrix24", status: "ok", detail: msgId ? ("msg id " + msgId) : "publicado", ms: Date.now() - tBx };
+        }
       }
-    } catch(_) {}
+    } catch (e) {
+      bxStep = { step: "Postar no chat Bitrix24", status: "fail", detail: (e && e.message) || String(e), ms: Date.now() - tBx };
+    }
+    setSteps([...allSteps, bxStep]);
 
-    setStatus("Áudio enviado ao WhatsApp ✔", "ok");
+    setStatus(bxStep.status === "ok" ? "Áudio enviado e publicado no chat ✔" : "Áudio enviado, mas falhou ao postar no chat do Bitrix", bxStep.status === "ok" ? "ok" : "err");
     blob = null;
-    setTimeout(() => { try { BX24.closeApplication(); } catch(_) { renderIdle(); } }, 900);
+    // Mantém o painel aberto se houve falha parcial; só fecha em sucesso pleno.
+    if (bxStep.status === "ok") {
+      setTimeout(() => { try { BX24.closeApplication(); } catch(_) { renderIdle(); } }, 1400);
+    } else {
+      renderIdle();
+    }
   } catch (e) {
     const msg = (e && e.name === "AbortError")
       ? "Tempo esgotado ao enviar o áudio. Tente novamente."
