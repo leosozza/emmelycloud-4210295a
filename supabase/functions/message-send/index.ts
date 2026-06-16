@@ -581,6 +581,8 @@ Deno.serve(async (req) => {
           gsBody.message_type = mt;
           gsBody.media_url = (resolvedInteractiveData as any)?.url || (resolvedInteractiveData as any);
           gsBody.filename = (resolvedInteractiveData as any)?.filename;
+          gsBody.media_mime = (resolvedInteractiveData as any)?.mime;
+          if (mt === "audio" && forcePtt) gsBody.force_ptt = true;
           gsBody.content = content;
         } else if (mt === "template" && resolvedInteractiveData) {
           gsBody.message_type = "template";

@@ -7,6 +7,7 @@ const corsHeaders = {
 };
 
 const GUPSHUP_URL = "https://api.gupshup.io/wa/api/v1/msg";
+const GUPSHUP_PARTNER_URL = "https://partner.gupshup.io";
 
 type MessageType =
   | "text" | "image" | "video" | "audio" | "document" | "sticker"
@@ -20,6 +21,8 @@ interface SendBody {
   preview_url?: string;              // imagem: thumbnail
   filename?: string;                 // documento
   caption?: string;                  // override de legenda
+  media_mime?: string;               // mídia: mime real do arquivo
+  force_ptt?: boolean | string;       // áudio: enviar como nota de voz/PTT nativa
   disable_preview?: boolean;         // text: desativa link preview
   // interactive / location / contact / reaction
   interactive?: any;                 // objeto pronto (list/quick_reply)
@@ -190,6 +193,57 @@ function buildMessageObject(body: SendBody): { messageObj: any; isTemplate: bool
   }
 }
 
+function wantsPtt(body: SendBody) {
+  return body.force_ptt === true || body.force_ptt === "true";
+}
+
+async function uploadGupshupMediaByUrl(apiKey: string, appId: string, mediaUrl: string, fileType: string) {
+  const form = new FormData();
+  form.append("file_type", fileType);
+  form.append("file", mediaUrl);
+
+  const res = await fetch(`${GUPSHUP_PARTNER_URL}/partner/app/${encodeURIComponent(appId)}/media`, {
+    method: "POST",
+    headers: { Authorization: apiKey, token: apiKey, accept: "application/json" },
+    body: form,
+  });
+  const rawText = await res.text();
+  let result: any = {};
+  try { result = JSON.parse(rawText); } catch { result = { raw: rawText }; }
+  if (!res.ok || result?.status === "error" || !result?.mediaId) {
+    throw new Error(`upload media PTT failed (${res.status}): ${result?.message || result?.error || rawText}`);
+  }
+  return String(result.mediaId);
+}
+
+async function sendGupshupVoiceNote(apiKey: string, appId: string, destination: string, mediaId: string) {
+  const payload = {
+    messaging_product: "whatsapp",
+    recipient_type: "individual",
+    to: destination,
+    type: "audio",
+    audio: { id: mediaId, voice: "true" },
+  };
+
+  const res = await fetch(`${GUPSHUP_PARTNER_URL}/partner/app/${encodeURIComponent(appId)}/v3/message`, {
+    method: "POST",
+    headers: {
+      Authorization: apiKey,
+      token: apiKey,
+      accept: "application/json",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+  const rawText = await res.text();
+  let result: any = {};
+  try { result = JSON.parse(rawText); } catch { result = { raw: rawText }; }
+  if (!res.ok || result?.status === "error") {
+    throw new Error(`send voice note failed (${res.status}): ${result?.message || result?.error || rawText}`);
+  }
+  return { result, messageId: result?.messages?.[0]?.id || null };
+}
+
 function validate(body: SendBody): string | null {
   if (!body.to) return "Missing 'to'";
   const t = body.message_type || "text";
@@ -290,6 +344,40 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ error: "'to' inválido (precisa de dígitos E.164 sem +)" }), {
         status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
+    }
+
+    if ((body.message_type || "text") === "audio" && wantsPtt(body)) {
+      if (!appId) {
+        return new Response(JSON.stringify({
+          error: "GUPSHUP_APP_ID obrigatório para enviar áudio como PTT nativo.",
+          hint: "Configure o App ID da Gupshup para usar a API oficial de voice notes.",
+        }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+      const audioUrl = body.media_url || "";
+      const audioMime = (body.media_mime || "audio/ogg; codecs=opus").replace(";codecs=", "; codecs=");
+      if (!/audio\/ogg/i.test(audioMime)) {
+        return new Response(JSON.stringify({
+          error: "PTT nativo requer áudio Ogg/Opus.",
+          details: { media_mime: audioMime },
+        }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+      try {
+        const mediaId = await uploadGupshupMediaByUrl(apiKey, appId, audioUrl, "audio/ogg; codecs=opus");
+        const { result, messageId } = await sendGupshupVoiceNote(apiKey, appId, destination, mediaId);
+        return new Response(JSON.stringify({
+          success: true,
+          message_id: messageId,
+          media_id: mediaId,
+          ptt: true,
+          raw: result,
+        }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      } catch (error) {
+        console.error("[GUPSHUP-SEND] voice note error", error);
+        return new Response(JSON.stringify({
+          error: "Falha ao enviar áudio como PTT nativo via Gupshup",
+          details: error instanceof Error ? error.message : String(error),
+        }), { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
     }
 
     const { messageObj, isTemplate } = buildMessageObject(body);
