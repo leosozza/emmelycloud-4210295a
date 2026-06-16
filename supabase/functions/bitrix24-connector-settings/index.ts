@@ -214,53 +214,56 @@ Deno.serve(async (req) => {
       });
     } catch (_) { /* ignore log errors */ }
 
-    // If this is a SETTING_CONNECTOR placement or has LINE info, activate the connector
+    // If this is a SETTING_CONNECTOR placement or has LINE info, sync the connector
+    // state to whatever the user picked in the Bitrix Contact Center slider.
     if (placement === "SETTING_CONNECTOR" || lineId > 0) {
       const accessToken = await ensureValidToken(supabase, integration);
 
-      // Step 1: Activate the connector on the Open Line
-      console.log("[SETTINGS] Activating connector on LINE:", lineId);
+      // Determine user intent from ACTIVE_STATUS sent by the slider.
+      // Bitrix sends "Y"/"N" (or 1/0). Default to active when omitted because
+      // the legacy slider opens with the intent to enable.
+      const rawStatus = String(activeStatus ?? "").toUpperCase();
+      const shouldActivate = !(rawStatus === "N" || rawStatus === "0" || rawStatus === "FALSE");
+
+      console.log("[SETTINGS] User intent for LINE", lineId, ":", shouldActivate ? "ACTIVATE" : "DEACTIVATE");
       const activateResult = await callBitrix(integration.client_endpoint, accessToken, "imconnector.activate", {
         CONNECTOR: connectorId,
         LINE: lineId,
-        ACTIVE: 1,
+        ACTIVE: shouldActivate ? 1 : 0,
       });
       console.log("[SETTINGS] imconnector.activate result:", JSON.stringify(activateResult));
 
-      // Step 2: Set connector data using official Bitrix API format (uppercase keys)
-      const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-      const handlerUrl = `${supabaseUrl}/functions/v1/bitrix24-events`;
+      // Only push connector data when activating (deactivation doesn't need it).
+      let dataSetResult: any = null;
+      if (shouldActivate) {
+        const frontendUrl = Deno.env.get("FRONTEND_URL") || `${Deno.env.get("SUPABASE_URL")}/functions/v1/bitrix24-connector-settings`;
+        dataSetResult = await callBitrix(integration.client_endpoint, accessToken, "imconnector.connector.data.set", {
+          CONNECTOR: connectorId,
+          LINE: lineId,
+          DATA: {
+            ID: connectorId,
+            NAME: "Emmely Messages",
+            URL: frontendUrl,
+            URL_IM: frontendUrl,
+          },
+        });
+        console.log("[SETTINGS] imconnector.connector.data.set result:", JSON.stringify(dataSetResult));
+      }
 
-      const dataSetResult = await callBitrix(integration.client_endpoint, accessToken, "imconnector.connector.data.set", {
-        CONNECTOR: connectorId,
-        LINE: lineId,
-        DATA: {
-          ID: connectorId,
-          NAME: "Emmely Messages",
-          URL: handlerUrl,
-          URL_IM: handlerUrl,
-        },
-      });
-      console.log("[SETTINGS] imconnector.connector.data.set result:", JSON.stringify(dataSetResult));
-
-      // Step 3: Get Open Line config to confirm and find line name
+      // Resolve line name for the mapping.
       let lineName = `Open Line ${lineId}`;
       try {
-        const configResult = await callBitrix(integration.client_endpoint, accessToken, "imopenlines.config.list.get", {
-          params: { select: ["LINE_NAME", "ID"] },
-        });
+        const configResult = await callBitrix(integration.client_endpoint, accessToken, "imopenlines.config.list.get", {});
         if (configResult.result) {
           const lines = Array.isArray(configResult.result) ? configResult.result : Object.values(configResult.result);
           const matchedLine = lines.find((l: any) => parseInt(l.ID, 10) === lineId);
-          if (matchedLine) {
-            lineName = matchedLine.LINE_NAME || lineName;
-          }
+          if (matchedLine) lineName = matchedLine.LINE_NAME || lineName;
         }
       } catch (e) {
         console.log("[SETTINGS] Could not fetch line name:", e);
       }
 
-      // Step 4: Upsert channel mapping
+      // Upsert channel mapping reflecting user intent.
       const { data: existingMapping } = await supabase
         .from("bitrix24_channel_mappings")
         .select("id")
@@ -270,12 +273,12 @@ Deno.serve(async (req) => {
 
       if (existingMapping) {
         await supabase.from("bitrix24_channel_mappings").update({
-          is_active: true,
+          is_active: shouldActivate,
           line_name: lineName,
           channel: "whatsapp",
           connector_id: connectorId,
         }).eq("id", existingMapping.id);
-      } else {
+      } else if (shouldActivate) {
         await supabase.from("bitrix24_channel_mappings").insert({
           integration_id: integration.id,
           line_id: lineId,
@@ -286,23 +289,21 @@ Deno.serve(async (req) => {
         });
       }
 
-      // Step 5: Mark integration as active AND registered (connector is working)
-      await supabase.from("bitrix24_integrations").update({
-        connector_active: true,
-        connector_registered: true,
-      }).eq("id", integration.id);
+      // Mark integration registered (only flip connector_active true when activating).
+      const integUpdate: Record<string, any> = { connector_registered: true };
+      if (shouldActivate) integUpdate.connector_active = true;
+      await supabase.from("bitrix24_integrations").update(integUpdate).eq("id", integration.id);
 
-      // Log success
       try {
         await supabase.from("bitrix24_debug_logs").insert({
           integration_id: integration.id,
-          event_type: "connector_activated",
+          event_type: shouldActivate ? "connector_activated" : "connector_deactivated",
           direction: "outbound",
-          payload: { lineId, lineName, connectorId, activateResult, dataSetResult },
+          payload: { lineId, lineName, connectorId, shouldActivate, activateResult, dataSetResult },
         });
       } catch (_) { /* ignore log errors */ }
 
-      console.log("[SETTINGS] Connector activated successfully on LINE:", lineId);
+      console.log("[SETTINGS] Connector", shouldActivate ? "activated" : "deactivated", "on LINE:", lineId);
     }
 
     // If JSON format requested (frontend call), return integration data + permissions
