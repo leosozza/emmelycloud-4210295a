@@ -2070,13 +2070,18 @@ Deno.serve(async (req) => {
     // otherwise the slider ends up bound twice (legacy edge function URL
     // from this install + frontend URL from rebind) and renders 2 buttons.
     try {
-      const frontendBase = (Deno.env.get("FRONTEND_URL") || "https://emmelycloud.pages.dev").replace(/\/+$/, "");
-      const sendAudioUrl = `${frontendBase}/bitrix24-im-send-audio.html`;
+      // Canonical handler MUST respond to POST with the recorder HTML.
+      // Cloudflare Pages (emmelycloud.pages.dev) returns 405 on POST for static
+      // .html assets, so the Bitrix24 placement modal renders blank. The
+      // Lovable-hosted publish (.lovable.app) serves the file on GET and POST.
+      const sendAudioUrl = "https://emmelycloud.lovable.app/bitrix24-im-send-audio.html";
       const legacyEdgeUrl = `${supabaseUrl}/functions/v1/bitrix24-im-send-audio`;
       const legacyEdgeAllUrl = `${supabaseUrl}/functions/v1/bitrix24-im-send-audio?ctx=all`;
+      const legacyPagesUrl = "https://emmelycloud.pages.dev/bitrix24-im-send-audio.html";
       // Remove every previous variant before binding the canonical one.
       await callBitrix(clientEndpoint, accessToken, "placement.unbind", { PLACEMENT: "IM_TEXTAREA", HANDLER: legacyEdgeUrl });
       await callBitrix(clientEndpoint, accessToken, "placement.unbind", { PLACEMENT: "IM_TEXTAREA", HANDLER: legacyEdgeAllUrl });
+      await callBitrix(clientEndpoint, accessToken, "placement.unbind", { PLACEMENT: "IM_TEXTAREA", HANDLER: legacyPagesUrl });
       await callBitrix(clientEndpoint, accessToken, "placement.unbind", { PLACEMENT: "IM_TEXTAREA", HANDLER: sendAudioUrl });
       const audioRes = await callBitrix(clientEndpoint, accessToken, "placement.bind", {
         PLACEMENT: "IM_TEXTAREA",
