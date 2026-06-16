@@ -217,15 +217,64 @@ Deno.serve(async (req) => {
     // If this is a SETTING_CONNECTOR placement or has LINE info, sync the connector
     // state to whatever the user picked in the Bitrix Contact Center slider.
     if (placement === "SETTING_CONNECTOR" || lineId > 0) {
+      // Determine user intent. Bitrix sends ACTIVE_STATUS only when the user
+      // explicitly toggled the connector. When absent (slider just opened),
+      // we must preserve the existing state — NEVER default to activate, or
+      // we'll reactivate channels the user just disabled.
+      const rawStatus = String(activeStatus ?? "").toUpperCase();
+      const hasExplicitStatus = rawStatus === "Y" || rawStatus === "N" || rawStatus === "1" || rawStatus === "0" || rawStatus === "TRUE" || rawStatus === "FALSE";
+
+      let shouldActivate: boolean;
+      let intentSource: "explicit" | "preserved" | "noop" = "explicit";
+
+      if (hasExplicitStatus) {
+        shouldActivate = !(rawStatus === "N" || rawStatus === "0" || rawStatus === "FALSE");
+      } else {
+        // No explicit status — look up current mapping and preserve it.
+        const { data: currentMapping } = await supabase
+          .from("bitrix24_channel_mappings")
+          .select("is_active")
+          .eq("integration_id", integration.id)
+          .eq("line_id", lineId)
+          .maybeSingle();
+
+        if (currentMapping) {
+          shouldActivate = currentMapping.is_active === true;
+          intentSource = "preserved";
+        } else {
+          // No mapping and no explicit intent — do nothing (no-op).
+          intentSource = "noop";
+          shouldActivate = false;
+        }
+      }
+
+      console.log("[SETTINGS] LINE", lineId, "intent:", intentSource, shouldActivate ? "ACTIVE" : "INACTIVE", "rawStatus=", JSON.stringify(rawStatus));
+
+      try {
+        await supabase.from("bitrix24_debug_logs").insert({
+          integration_id: integration.id,
+          event_type: "connector_intent_resolved",
+          direction: "inbound",
+          payload: { lineId, rawStatus, hasExplicitStatus, intentSource, shouldActivate },
+        });
+      } catch (_) { /* ignore */ }
+
+      // No-op path: don't touch Bitrix or DB — just return slider HTML below.
+      if (intentSource === "noop") {
+        return new Response(`<!DOCTYPE html>
+<html>
+<head>
+  <script src="//api.bitrix24.com/api/v1/"></script>
+  <script>BX24.init(function() { BX24.installFinish(); });</script>
+</head>
+<body><p>Emmely Messages</p></body>
+</html>`, {
+          headers: { ...corsHeaders, "Content-Type": "text/html; charset=utf-8" },
+        });
+      }
+
       const accessToken = await ensureValidToken(supabase, integration);
 
-      // Determine user intent from ACTIVE_STATUS sent by the slider.
-      // Bitrix sends "Y"/"N" (or 1/0). Default to active when omitted because
-      // the legacy slider opens with the intent to enable.
-      const rawStatus = String(activeStatus ?? "").toUpperCase();
-      const shouldActivate = !(rawStatus === "N" || rawStatus === "0" || rawStatus === "FALSE");
-
-      console.log("[SETTINGS] User intent for LINE", lineId, ":", shouldActivate ? "ACTIVATE" : "DEACTIVATE");
       const activateResult = await callBitrix(integration.client_endpoint, accessToken, "imconnector.activate", {
         CONNECTOR: connectorId,
         LINE: lineId,
