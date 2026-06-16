@@ -299,34 +299,16 @@ Deno.serve(async (req) => {
     }
 
     if ((body.message_type || "text") === "audio" && wantsPtt(body)) {
-      const partnerToken = (Deno.env.get("GUPSHUP_PARTNER_TOKEN") || "").trim();
-      const audioUrl = body.media_url || "";
       const audioMime = (body.media_mime || "audio/ogg; codecs=opus").replace(";codecs=", "; codecs=");
-      const canTryPtt = partnerToken && appId && /audio\/ogg/i.test(audioMime);
-
-      if (canTryPtt) {
-        try {
-          const mediaId = await uploadGupshupMediaByUrl(partnerToken, appId, audioUrl, "audio/ogg; codecs=opus");
-          const { result, messageId } = await sendGupshupVoiceNote(partnerToken, appId, destination, mediaId);
-          return new Response(JSON.stringify({
-            success: true,
-            message_id: messageId,
-            media_id: mediaId,
-            ptt: true,
-            raw: result,
-          }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
-        } catch (error) {
-          console.warn("[GUPSHUP-SEND] PTT partner failed, falling back to standard audio", error);
-        }
+      // O endpoint público /wa/api/v1/msg renderiza como nota de voz (PTT)
+      // automaticamente quando o ficheiro servido na URL é Ogg/Opus.
+      if (!/audio\/ogg/i.test(audioMime)) {
+        console.warn("[GUPSHUP-SEND] PTT requested but mime is not audio/ogg; WhatsApp may render as regular audio", { mime: audioMime });
       } else {
-        console.log("[GUPSHUP-SEND] PTT not attempted (missing partner token, app id, or non-ogg mime); using standard audio", {
-          hasPartnerToken: !!partnerToken,
-          hasAppId: !!appId,
-          mime: audioMime,
-        });
+        console.log("[GUPSHUP-SEND] sending audio as PTT via standard /msg endpoint (Ogg/Opus)");
       }
-      // fallthrough → standard /msg send below
     }
+
 
     const { messageObj, isTemplate } = buildMessageObject(body);
 
