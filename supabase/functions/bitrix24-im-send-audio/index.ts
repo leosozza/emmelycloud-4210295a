@@ -247,16 +247,37 @@ async function sendBlob() {
     fd.append("chat_id", chatId);
     fd.append("mime", blob.type || ("audio/" + ext));
 
-    const res = await fetch(ENDPOINT, { method: "POST", body: fd });
-    const json = await res.json().catch(() => ({}));
-    if (!res.ok || !json.ok) throw new Error(json.error || ("Falha (HTTP " + res.status + ")"));
+    // Timeout defensivo: a chamada toda (remux + upload + envio ao provedor)
+    // costuma terminar em <15s. Acima disso é problema (rede ou provider) e
+    // queremos mostrar erro em vez de spinner infinito.
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 60000);
 
-    setStatus("Áudio enviado ✔", "ok");
+    let res, json;
+    try {
+      res = await fetch(ENDPOINT, { method: "POST", body: fd, signal: controller.signal });
+      json = await res.json().catch(() => ({}));
+    } finally {
+      clearTimeout(timeoutId);
+    }
+
+    // O servidor só retorna ok:true quando o provedor (Gupshup/WUZAPI/Meta)
+    // confirmou o envio. Qualquer outra coisa é falha real.
+    if (!res.ok || !json || json.ok !== true) {
+      const detail = json && (json.error || (json.detail && (json.detail.error || json.detail.message)));
+      throw new Error(detail || ("Falha no envio (HTTP " + (res ? res.status : "?") + ")"));
+    }
+
+    setStatus("Áudio enviado ao WhatsApp ✔", "ok");
     blob = null;
-    setTimeout(() => { try { BX24.closeApplication(); } catch(_) { renderIdle(); } }, 700);
+    setTimeout(() => { try { BX24.closeApplication(); } catch(_) { renderIdle(); } }, 900);
   } catch (e) {
-    setStatus("Erro: " + (e && e.message ? e.message : e), "err");
-    renderPreview(URL.createObjectURL(blob));
+    const msg = (e && e.name === "AbortError")
+      ? "Tempo esgotado ao enviar o áudio. Tente novamente."
+      : ("Erro: " + (e && e.message ? e.message : e));
+    setStatus(msg, "err");
+    if (blob) renderPreview(URL.createObjectURL(blob));
+    else renderIdle();
   }
 }
 
