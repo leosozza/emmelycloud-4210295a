@@ -361,7 +361,7 @@ async function sendBlob() {
     }
     setSteps([...allSteps, bxStep]);
 
-    setStatus(bxStep.status === "ok" ? "Áudio enviado e publicado no chat ✔" : "Áudio enviado, mas falhou ao postar no chat do Bitrix", bxStep.status === "ok" ? "ok" : "err");
+    setStatus(bxStep.status === "ok" ? "Áudio publicado no chat; aguardando confirmação no WhatsApp ✔" : "Áudio enviado, mas falhou ao postar no chat do Bitrix", bxStep.status === "ok" ? "ok" : "err");
     blob = null;
     // Mantém o painel aberto se houve falha parcial; só fecha em sucesso pleno.
     if (bxStep.status === "ok") {
@@ -511,7 +511,7 @@ Deno.serve(async (req) => {
         const ogg = remuxWebmOpusToOgg(rawBuf);
         if (ogg) {
           finalBuf = ogg;
-          finalMime = "audio/ogg; codecs=opus";
+          finalMime = "audio/ogg";
           console.log("[IM-AUDIO] remuxed WebM/Opus to Ogg/Opus", { from: rawBuf.length, to: ogg.length });
           mark("Converter para Ogg/Opus", "ok", `${rawBuf.length} → ${ogg.length} bytes`, tRemux);
         } else {
@@ -519,8 +519,8 @@ Deno.serve(async (req) => {
           mark("Converter para Ogg/Opus", "fail", "Remux falhou; provedor pode rejeitar", tRemux);
         }
       } else if (detectedMime === "audio/ogg") {
-        finalMime = "audio/ogg; codecs=opus";
-        mark("Converter para Ogg/Opus", "skip", "Já em audio/ogg; codecs=opus");
+        finalMime = "audio/ogg";
+        mark("Converter para Ogg/Opus", "skip", "Já em audio/ogg");
       } else {
         mark("Converter para Ogg/Opus", "skip", `Já em ${detectedMime}`);
       }
