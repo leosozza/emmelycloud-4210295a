@@ -1,28 +1,40 @@
 ## Objetivo
+Corrigir o envio de áudio pelo botão/placement do Bitrix24 para que:
+- o carregamento não fique girando indefinidamente;
+- a interface só mostre sucesso quando o provedor confirmar o envio;
+- falhas reais apareçam como erro claro, sem fechar/enganar o operador;
+- o histórico local não marque como enviado algo que falhou no WhatsApp.
 
-O conector `emmely_connector` deve refletir **exatamente** o que o utilizador configurou no Contact Center de cada Open Line — nunca ativar em massa. A auditoria apenas reporta o estado real; a UI permite reaplicar registro (ícone/handler) sem mexer em ativação por linha.
+## Diagnóstico confirmado
+- O áudio está chegando ao backend e sendo salvo no storage.
+- A conversa está sendo resolvida corretamente pelo `dialogId/chatId`.
+- Os registros recentes de áudio foram gravados na tabela `messages` com `delivery_status = failed`, apesar do iframe exibir “Áudio enviado”.
+- O problema está no contrato entre `bitrix24-im-send-audio` e `message-send`: a UI considera a etapa como concluída mesmo quando o envio externo fica pendente/falha, e não há timeout/feedback robusto.
 
-## Mudanças
+## Plano de implementação
 
-### 1. `bitrix24-worker/index.ts` — endpoint `connector_audit`
-- Manter retorno por linha com `STATUS` real (`imconnector.status`) + `is_active` no DB.
-- **Remover** qualquer auto-correção que ative conector em linhas onde o utilizador não ativou. A reconciliação passa a ser unidirecional: se Bitrix diz `STATUS:false`, marcar `bitrix24_channel_mappings.is_active=false` (DB segue Bitrix, nunca o contrário).
-- Se uma linha tem `STATUS:true` no Bitrix mas não existe mapping no DB, criar o mapping com `is_active=true` (apenas registar o que já existe lá).
-- Nunca chamar `imconnector.activate` a partir do worker.
+1. **Endurecer `bitrix24-im-send-audio`**
+   - Adicionar timeout no `fetch` para `message-send`, evitando spinner infinito.
+   - Tratar explicitamente respostas `{ success: false }`, `{ error }`, HTTP 4xx/5xx e resposta vazia.
+   - Só retornar `{ ok: true }` ao iframe se `message-send` confirmar sucesso real.
+   - Em falha, retornar erro detalhado e manter o iframe aberto para nova tentativa.
 
-### 2. `bitrix24-connector-settings/index.ts`
-- Já está correto: só ativa quando o Bitrix faz POST com `PLACEMENT=SETTING_CONNECTOR` e `ACTIVE_STATUS` vindo do slider do utilizador.
-- Ajuste pequeno: respeitar `ACTIVE_STATUS` recebido — se vier `"N"` / `false`, chamar `imconnector.activate` com `ACTIVE: 0` e marcar mapping `is_active=false`, em vez de sempre forçar `ACTIVE: 1`.
+2. **Corrigir feedback visual do iframe**
+   - Remover o “Áudio enviado ✔” prematuro.
+   - Mostrar “Enviado para o WhatsApp” apenas depois de confirmação real.
+   - Mostrar mensagem de erro quando o backend indicar falha, com botão para tentar novamente.
+   - Evitar estado simultâneo de spinner + sucesso.
 
-### 3. UI `src/pages/Integracoes.tsx` — card "Contact Center"
-- Lista por linha: nome, status (verde = ativo no Bitrix, cinza = disponível mas inativo, vermelho = erro/conector não encontrado).
-- Botão **"Auditar"** (chama `connector_audit`, só leitura).
-- Botão **"Reaplicar registro"** (chama `bitrix24-rebind-events` — atualiza ícone/handler do conector, **não** mexe em ativação por linha).
-- **Sem** botão "Ativar em todas as linhas". Texto explicativo: "A ativação por linha é feita pelo utilizador no Contact Center do Bitrix24."
+3. **Alinhar persistência do `message-send`**
+   - Garantir que áudio só seja salvo como `sent` quando o provedor retorna sucesso.
+   - Se o provedor retorna erro, não gravar como enviado; se já houver lógica de auditoria que grava `failed`, preservar esse comportamento e expor o motivo.
+   - Melhorar logs para diferenciar: upload OK, conversão OK, provedor chamado, resposta do provedor, persistência local.
 
-## Critérios de aceitação
+4. **Validar o caso real**
+   - Revisar logs das funções após a correção.
+   - Testar o endpoint do iframe/áudio com retorno simulado quando possível.
+   - Confirmar que em falha o operador vê erro; em sucesso o modal fecha após confirmação; e a tabela `messages` não mostra falso positivo.
 
-1. Hoje no portal de teste: WhatsApp BR continua ativo; Facebook/Instagram/WhatsApp/Aplicação Emmely cloud continuam disponíveis mas inativas até o utilizador ativar manualmente no Contact Center.
-2. Rodar "Reaplicar registro" não altera a ativação de nenhuma linha.
-3. Se o utilizador desativar uma linha no Contact Center, a próxima auditoria marca `is_active=false` no DB.
-4. UI mostra estado real por linha sem oferecer ativação em massa.
+## Arquivos previstos
+- `supabase/functions/bitrix24-im-send-audio/index.ts`
+- `supabase/functions/message-send/index.ts`

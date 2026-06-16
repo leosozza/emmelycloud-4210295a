@@ -1,9 +1,13 @@
 // Edge Function: bitrix24-im-send-audio
 // Iframe handler for the IM_TEXTAREA placement. Lets a Bitrix24 operator
 // record an audio message inside the Open Channel chat and forward it to
-// WhatsApp via WUZAPI using the existing `message-send` pipeline.
+// WhatsApp (Gupshup / WUZAPI / Meta) via the existing `message-send` pipeline.
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import {
+  detectMimeFromBytes,
+  remuxWebmOpusToOgg,
+} from "../_shared/audio-remux.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -243,16 +247,37 @@ async function sendBlob() {
     fd.append("chat_id", chatId);
     fd.append("mime", blob.type || ("audio/" + ext));
 
-    const res = await fetch(ENDPOINT, { method: "POST", body: fd });
-    const json = await res.json().catch(() => ({}));
-    if (!res.ok || !json.ok) throw new Error(json.error || ("Falha (HTTP " + res.status + ")"));
+    // Timeout defensivo: a chamada toda (remux + upload + envio ao provedor)
+    // costuma terminar em <15s. Acima disso é problema (rede ou provider) e
+    // queremos mostrar erro em vez de spinner infinito.
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 60000);
 
-    setStatus("Áudio enviado ✔", "ok");
+    let res, json;
+    try {
+      res = await fetch(ENDPOINT, { method: "POST", body: fd, signal: controller.signal });
+      json = await res.json().catch(() => ({}));
+    } finally {
+      clearTimeout(timeoutId);
+    }
+
+    // O servidor só retorna ok:true quando o provedor (Gupshup/WUZAPI/Meta)
+    // confirmou o envio. Qualquer outra coisa é falha real.
+    if (!res.ok || !json || json.ok !== true) {
+      const detail = json && (json.error || (json.detail && (json.detail.error || json.detail.message)));
+      throw new Error(detail || ("Falha no envio (HTTP " + (res ? res.status : "?") + ")"));
+    }
+
+    setStatus("Áudio enviado ao WhatsApp ✔", "ok");
     blob = null;
-    setTimeout(() => { try { BX24.closeApplication(); } catch(_) { renderIdle(); } }, 700);
+    setTimeout(() => { try { BX24.closeApplication(); } catch(_) { renderIdle(); } }, 900);
   } catch (e) {
-    setStatus("Erro: " + (e && e.message ? e.message : e), "err");
-    renderPreview(URL.createObjectURL(blob));
+    const msg = (e && e.name === "AbortError")
+      ? "Tempo esgotado ao enviar o áudio. Tente novamente."
+      : ("Erro: " + (e && e.message ? e.message : e));
+    setStatus(msg, "err");
+    if (blob) renderPreview(URL.createObjectURL(blob));
+    else renderIdle();
   }
 }
 
@@ -359,19 +384,47 @@ Deno.serve(async (req) => {
         return new Response(JSON.stringify({ error: "Conversa não vinculada para esse chat (" + (dialogId || chatId) + "). Abra o chat pelo painel Emmely." }), { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } });
       }
 
-      const ext = mime.includes("ogg") ? "ogg" : (mime.includes("webm") ? "webm" : "bin");
-      const path = `bitrix-audio/${conv.id}/${Date.now()}-${crypto.randomUUID().slice(0, 8)}.${ext}`;
-      const buf = new Uint8Array(await file.arrayBuffer());
-      const { error: upErr } = await supabase.storage.from("media").upload(path, buf, {
-        contentType: mime, upsert: false,
+      const rawBuf = new Uint8Array(await file.arrayBuffer());
+
+      // Detect actual format from magic bytes (ignore declared mime, which
+      // may be "audio/webm;codecs=opus" even when the browser produced ogg).
+      let detectedMime = detectMimeFromBytes(rawBuf, mime.split(";")[0] || "audio/webm");
+      let finalBuf = rawBuf;
+      let finalMime = detectedMime;
+      let finalExt = "bin";
+
+      // Gupshup / Meta Cloud API / WUZAPI do not accept WebM voice notes.
+      // Remux WebM/Opus to Ogg/Opus so the file plays as a normal WhatsApp
+      // voice note across every provider.
+      if (detectedMime === "audio/webm") {
+        const ogg = remuxWebmOpusToOgg(rawBuf);
+        if (ogg) {
+          finalBuf = ogg;
+          finalMime = "audio/ogg";
+          console.log("[IM-AUDIO] remuxed WebM/Opus to Ogg/Opus", { from: rawBuf.length, to: ogg.length });
+        } else {
+          console.warn("[IM-AUDIO] WebM/Opus remux failed; provider will likely reject the file");
+        }
+      }
+
+      finalExt = finalMime === "audio/ogg" ? "ogg"
+        : finalMime === "audio/mpeg" ? "mp3"
+        : finalMime === "audio/mp4" ? "m4a"
+        : finalMime === "audio/wav" ? "wav"
+        : finalMime === "audio/webm" ? "webm"
+        : "bin";
+
+      const path = `bitrix-audio/${conv.id}/${Date.now()}-${crypto.randomUUID().slice(0, 8)}.${finalExt}`;
+      const { error: upErr } = await supabase.storage.from("media").upload(path, finalBuf, {
+        contentType: finalMime, upsert: false,
       });
       if (upErr) {
         console.error("[IM-AUDIO] upload error", upErr);
-        return new Response(JSON.stringify({ error: "upload failed: " + upErr.message }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        return new Response(JSON.stringify({ ok: false, error: "upload failed: " + upErr.message }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
       }
       const { data: pub } = supabase.storage.from("media").getPublicUrl(path);
       const mediaUrl = pub.publicUrl;
-      console.log("[IM-AUDIO] uploaded", { convId: conv.id, path, mediaUrl, bytes: buf.length });
+      console.log("[IM-AUDIO] uploaded", { convId: conv.id, channel: conv.channel, path, mediaUrl, finalMime, bytes: finalBuf.length });
 
       const sendRes = await fetch(`${SUPABASE_URL}/functions/v1/message-send`, {
         method: "POST",
@@ -380,21 +433,36 @@ Deno.serve(async (req) => {
           conversation_id: conv.id,
           content: "",
           message_type: "audio",
-          resolvedInteractiveData: { url: mediaUrl, filename: `audio.${ext}`, mime },
+          sender_name: "Atendente",
+          resolvedInteractiveData: { url: mediaUrl, filename: `audio.${finalExt}`, mime: finalMime },
         }),
       });
-      const sendJson = await sendRes.json().catch(() => ({}));
-      if (!sendRes.ok) {
-        console.error("[IM-AUDIO] message-send failed", sendRes.status, sendJson);
-        return new Response(JSON.stringify({ error: "message-send failed", detail: sendJson }), { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      const sendJson = await sendRes.json().catch(() => ({} as any));
+
+      // message-send can return HTTP 200 with `{ success: false, error }` when
+      // the provider rejected the message. Treat that as failure too — the
+      // iframe must not show a green "enviado" badge in that case.
+      const providerOk = sendRes.ok && sendJson && sendJson.success !== false && !sendJson.error;
+      if (!providerOk) {
+        console.error("[IM-AUDIO] message-send failed", { status: sendRes.status, sendJson });
+        return new Response(JSON.stringify({
+          ok: false,
+          error: (sendJson && (sendJson.error || sendJson.message)) || `message-send falhou (HTTP ${sendRes.status})`,
+          detail: sendJson,
+        }), { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } });
       }
 
-      return new Response(JSON.stringify({ ok: true, mediaUrl, conversationId: conv.id }), {
+      return new Response(JSON.stringify({
+        ok: true,
+        mediaUrl,
+        conversationId: conv.id,
+        externalMessageId: sendJson?.message_id ?? null,
+      }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     } catch (e) {
       console.error("[IM-AUDIO] error", e);
-      return new Response(JSON.stringify({ error: String(e) }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      return new Response(JSON.stringify({ ok: false, error: String(e) }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
   }
 
