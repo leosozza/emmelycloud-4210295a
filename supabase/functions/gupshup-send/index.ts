@@ -347,37 +347,33 @@ Deno.serve(async (req) => {
     }
 
     if ((body.message_type || "text") === "audio" && wantsPtt(body)) {
-      if (!appId) {
-        return new Response(JSON.stringify({
-          error: "GUPSHUP_APP_ID obrigatório para enviar áudio como PTT nativo.",
-          hint: "Configure o App ID da Gupshup para usar a API oficial de voice notes.",
-        }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
-      }
+      const partnerToken = (Deno.env.get("GUPSHUP_PARTNER_TOKEN") || "").trim();
       const audioUrl = body.media_url || "";
       const audioMime = (body.media_mime || "audio/ogg; codecs=opus").replace(";codecs=", "; codecs=");
-      if (!/audio\/ogg/i.test(audioMime)) {
-        return new Response(JSON.stringify({
-          error: "PTT nativo requer áudio Ogg/Opus.",
-          details: { media_mime: audioMime },
-        }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      const canTryPtt = partnerToken && appId && /audio\/ogg/i.test(audioMime);
+
+      if (canTryPtt) {
+        try {
+          const mediaId = await uploadGupshupMediaByUrl(partnerToken, appId, audioUrl, "audio/ogg; codecs=opus");
+          const { result, messageId } = await sendGupshupVoiceNote(partnerToken, appId, destination, mediaId);
+          return new Response(JSON.stringify({
+            success: true,
+            message_id: messageId,
+            media_id: mediaId,
+            ptt: true,
+            raw: result,
+          }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        } catch (error) {
+          console.warn("[GUPSHUP-SEND] PTT partner failed, falling back to standard audio", error);
+        }
+      } else {
+        console.log("[GUPSHUP-SEND] PTT not attempted (missing partner token, app id, or non-ogg mime); using standard audio", {
+          hasPartnerToken: !!partnerToken,
+          hasAppId: !!appId,
+          mime: audioMime,
+        });
       }
-      try {
-        const mediaId = await uploadGupshupMediaByUrl(apiKey, appId, audioUrl, "audio/ogg; codecs=opus");
-        const { result, messageId } = await sendGupshupVoiceNote(apiKey, appId, destination, mediaId);
-        return new Response(JSON.stringify({
-          success: true,
-          message_id: messageId,
-          media_id: mediaId,
-          ptt: true,
-          raw: result,
-        }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
-      } catch (error) {
-        console.error("[GUPSHUP-SEND] voice note error", error);
-        return new Response(JSON.stringify({
-          error: "Falha ao enviar áudio como PTT nativo via Gupshup",
-          details: error instanceof Error ? error.message : String(error),
-        }), { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } });
-      }
+      // fallthrough → standard /msg send below
     }
 
     const { messageObj, isTemplate } = buildMessageObject(body);
