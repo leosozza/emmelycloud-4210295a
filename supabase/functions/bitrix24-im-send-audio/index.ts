@@ -119,12 +119,47 @@ function htmlPage(initialPlacementOptions: Record<string, any> = {}, initialMeta
     border-radius: 50%; animation: spin .7s linear infinite;
   }
   @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* Painel de logs por envio */
+  .logs {
+    margin-top: 12px; padding: 10px 12px;
+    background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+    font-size: 12px; display: none;
+  }
+  .logs.visible { display: block; }
+  .logs h4 {
+    margin: 0 0 8px; font-size: 11px; font-weight: 600; letter-spacing: .03em;
+    text-transform: uppercase; color: var(--muted);
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .logs ul { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 4px; }
+  .logs li {
+    display: grid; grid-template-columns: 16px 1fr auto; gap: 8px; align-items: start;
+    padding: 4px 0; line-height: 1.35;
+  }
+  .logs li .ic { font-size: 13px; line-height: 1; padding-top: 1px; }
+  .logs li .name { color: var(--text); font-weight: 500; }
+  .logs li .name .detail { display: block; color: var(--muted); font-weight: 400; font-size: 11px; word-break: break-word; }
+  .logs li .ms { color: var(--muted); font-variant-numeric: tabular-nums; font-size: 11px; }
+  .logs li.ok .ic { color: var(--success); }
+  .logs li.fail .ic { color: var(--danger); }
+  .logs li.skip .ic { color: var(--muted); }
+  .logs li.pending .ic { color: var(--primary); }
+  .logs .clear-btn {
+    background: transparent; border: 0; padding: 0; cursor: pointer;
+    color: var(--muted); font-size: 11px; font-weight: 500;
+  }
+  .logs .clear-btn:hover { color: var(--text); }
 </style>
 </head>
 <body>
   <div class="wrap">
     <div id="stage" class="stage"></div>
     <div id="status" class="status"></div>
+    <div id="logs" class="logs" aria-live="polite">
+      <h4><span>Etapas do envio</span><button class="clear-btn" id="clearLogs" type="button">Limpar</button></h4>
+      <ul id="logsList"></ul>
+    </div>
   </div>
 
 <script>
@@ -140,7 +175,25 @@ let elapsedSec = 0;
 
 const stage = document.getElementById("stage");
 const statusEl = document.getElementById("status");
+const logsEl = document.getElementById("logs");
+const logsList = document.getElementById("logsList");
 const setStatus = (t, kind = "") => { statusEl.textContent = t || ""; statusEl.className = "status " + kind; };
+
+const STEP_ICON = { ok: "✓", fail: "✕", skip: "–", pending: "…" };
+function setSteps(steps) {
+  if (!Array.isArray(steps) || steps.length === 0) { logsEl.classList.remove("visible"); return; }
+  logsEl.classList.add("visible");
+  logsList.innerHTML = steps.map(s => {
+    const kind = s.status || "pending";
+    const ms = (typeof s.ms === "number") ? (s.ms + " ms") : "";
+    const detail = s.detail ? '<span class="detail">' + String(s.detail).replace(/[<>&]/g, c => ({"<":"&lt;",">":"&gt;","&":"&amp;"}[c])) + '</span>' : "";
+    return '<li class="' + kind + '"><span class="ic">' + (STEP_ICON[kind] || "•") + '</span>' +
+           '<span class="name">' + (s.step || "etapa") + detail + '</span>' +
+           '<span class="ms">' + ms + '</span></li>';
+  }).join("");
+  fit();
+}
+document.getElementById("clearLogs").onclick = () => { setSteps([]); };
 
 const ICON_MIC = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="22"/></svg>';
 const ICON_STOP = '<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="1"/></svg>';
@@ -234,6 +287,14 @@ async function sendBlob() {
   if (!blob) return;
   renderSending();
   setStatus("");
+  // Mostra etapas em "pending" antes mesmo da resposta para feedback imediato.
+  setSteps([
+    { step: "Enviar para servidor", status: "pending" },
+    { step: "Upload no storage", status: "pending" },
+    { step: "Envio ao WhatsApp", status: "pending" },
+    { step: "Postar no chat Bitrix24", status: "pending" },
+  ]);
+  const tClient = Date.now();
   try {
     const opts = (placementInfo && placementInfo.options) || {};
     const dialogId = String(opts.DIALOG_ID || opts.dialogId || opts.CHAT_ID || opts.chatId || "");
@@ -247,9 +308,6 @@ async function sendBlob() {
     fd.append("chat_id", chatId);
     fd.append("mime", blob.type || ("audio/" + ext));
 
-    // Timeout defensivo: a chamada toda (remux + upload + envio ao provedor)
-    // costuma terminar em <15s. Acima disso é problema (rede ou provider) e
-    // queremos mostrar erro em vez de spinner infinito.
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 60000);
 
@@ -261,19 +319,26 @@ async function sendBlob() {
       clearTimeout(timeoutId);
     }
 
-    // O servidor só retorna ok:true quando o provedor (Gupshup/WUZAPI/Meta)
-    // confirmou o envio. Qualquer outra coisa é falha real.
+    // Servidor devolve etapas detalhadas no campo "steps". Acrescentamos a
+    // etapa do POST (round-trip do cliente) e, abaixo, a etapa do Bitrix.
+    const serverSteps = Array.isArray(json && json.steps) ? json.steps : [];
+    const allSteps = [
+      { step: "Enviar para servidor", status: res && res.ok ? "ok" : "fail", detail: "HTTP " + (res ? res.status : "?"), ms: Date.now() - tClient },
+      ...serverSteps,
+    ];
+    setSteps(allSteps);
+
     if (!res.ok || !json || json.ok !== true) {
       const detail = json && (json.error || (json.detail && (json.detail.error || json.detail.message)));
       throw new Error(detail || ("Falha no envio (HTTP " + (res ? res.status : "?") + ")"));
     }
 
-    // Posta o áudio também dentro do chat do Open Channel para o operador
-    // ver no histórico do Bitrix24 (o envio direto ao WhatsApp não cria
-    // mensagem no chat). Usamos a sessão BX24 já autenticada no iframe.
+    // Posta o áudio no chat do Open Channel via BX24 SDK.
+    const tBx = Date.now();
+    let bxStep = { step: "Postar no chat Bitrix24", status: "skip", detail: "BX24 indisponível" };
     try {
       if (typeof BX24 !== "undefined" && json.mediaUrl && dialogId) {
-        await new Promise((resolve) => {
+        const bxResult = await new Promise((resolve) => {
           BX24.callMethod("im.message.add", {
             DIALOG_ID: dialogId,
             MESSAGE: "[B]🎤 Áudio enviado pelo atendente[/B]\\n[URL=" + json.mediaUrl + "]Ouvir áudio[/URL]",
@@ -281,14 +346,29 @@ async function sendBlob() {
               DESCRIPTION: "Áudio enviado ao WhatsApp",
               LINK: { NAME: "Ouvir áudio (.ogg)", LINK: json.mediaUrl }
             }],
-          }, () => resolve(null));
+          }, (r) => resolve(r));
         });
+        const err = bxResult && bxResult.error && bxResult.error();
+        if (err) {
+          bxStep = { step: "Postar no chat Bitrix24", status: "fail", detail: (err.ex && err.ex.error_description) || err.ex || String(err), ms: Date.now() - tBx };
+        } else {
+          const msgId = bxResult && bxResult.data && bxResult.data();
+          bxStep = { step: "Postar no chat Bitrix24", status: "ok", detail: msgId ? ("msg id " + msgId) : "publicado", ms: Date.now() - tBx };
+        }
       }
-    } catch(_) {}
+    } catch (e) {
+      bxStep = { step: "Postar no chat Bitrix24", status: "fail", detail: (e && e.message) || String(e), ms: Date.now() - tBx };
+    }
+    setSteps([...allSteps, bxStep]);
 
-    setStatus("Áudio enviado ao WhatsApp ✔", "ok");
+    setStatus(bxStep.status === "ok" ? "Áudio enviado e publicado no chat ✔" : "Áudio enviado, mas falhou ao postar no chat do Bitrix", bxStep.status === "ok" ? "ok" : "err");
     blob = null;
-    setTimeout(() => { try { BX24.closeApplication(); } catch(_) { renderIdle(); } }, 900);
+    // Mantém o painel aberto se houve falha parcial; só fecha em sucesso pleno.
+    if (bxStep.status === "ok") {
+      setTimeout(() => { try { BX24.closeApplication(); } catch(_) { renderIdle(); } }, 1400);
+    } else {
+      renderIdle();
+    }
   } catch (e) {
     const msg = (e && e.name === "AbortError")
       ? "Tempo esgotado ao enviar o áudio. Tente novamente."
@@ -379,7 +459,19 @@ Deno.serve(async (req) => {
   }
 
   if (req.method === "POST" && contentType.includes("multipart/form-data")) {
+    const steps: Array<{ step: string; status: "ok" | "fail" | "skip"; detail?: string; ms?: number }> = [];
+    const t0 = Date.now();
+    const mark = (step: string, status: "ok" | "fail" | "skip", detail?: string, started?: number) => {
+      steps.push({ step, status, detail, ms: started != null ? Date.now() - started : undefined });
+    };
+    const respond = (ok: boolean, payload: Record<string, any>, httpStatus = 200) =>
+      new Response(JSON.stringify({ ok, steps, ...payload }), {
+        status: httpStatus,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+
     try {
+      const tParse = Date.now();
       const form = await req.formData();
       const file = form.get("file");
       const dialogId = String(form.get("dialog_id") || "");
@@ -389,40 +481,45 @@ Deno.serve(async (req) => {
       console.log("[IM-AUDIO] upload", { dialogId, chatId, mime, hasFile: file instanceof File, size: file instanceof File ? file.size : 0 });
 
       if (!(file instanceof File)) {
-        return new Response(JSON.stringify({ error: "file missing" }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        mark("Receber áudio", "fail", "Arquivo ausente no formulário", tParse);
+        return respond(false, { error: "file missing" }, 400);
       }
       if (!dialogId && !chatId) {
-        return new Response(JSON.stringify({ error: "dialog_id/chat_id missing" }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        mark("Receber áudio", "fail", "dialog_id/chat_id ausentes", tParse);
+        return respond(false, { error: "dialog_id/chat_id missing" }, 400);
       }
+      mark("Receber áudio", "ok", `${(file.size / 1024).toFixed(1)} KB · ${mime}`, tParse);
 
+      const tConv = Date.now();
       const supabase = createClient(SUPABASE_URL, SERVICE_ROLE);
       const conv = await resolveConversation(supabase, dialogId, chatId);
       if (!conv) {
         console.warn("[IM-AUDIO] conversation not found", { dialogId, chatId });
-        return new Response(JSON.stringify({ error: "Conversa não vinculada para esse chat (" + (dialogId || chatId) + "). Abra o chat pelo painel Emmely." }), { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        mark("Vincular conversa", "fail", `Sem conversa para chat ${dialogId || chatId}`, tConv);
+        return respond(false, { error: "Conversa não vinculada para esse chat (" + (dialogId || chatId) + "). Abra o chat pelo painel Emmely." }, 404);
       }
+      mark("Vincular conversa", "ok", `${conv.channel} · ${conv.contact_phone || conv.id.slice(0, 8)}`, tConv);
 
       const rawBuf = new Uint8Array(await file.arrayBuffer());
-
-      // Detect actual format from magic bytes (ignore declared mime, which
-      // may be "audio/webm;codecs=opus" even when the browser produced ogg).
       let detectedMime = detectMimeFromBytes(rawBuf, mime.split(";")[0] || "audio/webm");
       let finalBuf = rawBuf;
       let finalMime = detectedMime;
       let finalExt = "bin";
 
-      // Gupshup / Meta Cloud API / WUZAPI do not accept WebM voice notes.
-      // Remux WebM/Opus to Ogg/Opus so the file plays as a normal WhatsApp
-      // voice note across every provider.
+      const tRemux = Date.now();
       if (detectedMime === "audio/webm") {
         const ogg = remuxWebmOpusToOgg(rawBuf);
         if (ogg) {
           finalBuf = ogg;
           finalMime = "audio/ogg";
           console.log("[IM-AUDIO] remuxed WebM/Opus to Ogg/Opus", { from: rawBuf.length, to: ogg.length });
+          mark("Converter para Ogg/Opus", "ok", `${rawBuf.length} → ${ogg.length} bytes`, tRemux);
         } else {
           console.warn("[IM-AUDIO] WebM/Opus remux failed; provider will likely reject the file");
+          mark("Converter para Ogg/Opus", "fail", "Remux falhou; provedor pode rejeitar", tRemux);
         }
+      } else {
+        mark("Converter para Ogg/Opus", "skip", `Já em ${detectedMime}`);
       }
 
       finalExt = finalMime === "audio/ogg" ? "ogg"
@@ -432,21 +529,22 @@ Deno.serve(async (req) => {
         : finalMime === "audio/webm" ? "webm"
         : "bin";
 
+      const tUpload = Date.now();
       const path = `bitrix-audio/${conv.id}/${Date.now()}-${crypto.randomUUID().slice(0, 8)}.${finalExt}`;
       const { error: upErr } = await supabase.storage.from("media").upload(path, finalBuf, {
         contentType: finalMime, upsert: false,
       });
       if (upErr) {
         console.error("[IM-AUDIO] upload error", upErr);
-        return new Response(JSON.stringify({ ok: false, error: "upload failed: " + upErr.message }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        mark("Upload no storage", "fail", upErr.message, tUpload);
+        return respond(false, { error: "upload failed: " + upErr.message }, 500);
       }
       const { data: pub } = supabase.storage.from("media").getPublicUrl(path);
-      // Cache-buster: Gupshup/Meta reaproveitam media_id quando a URL repete e
-      // o WhatsApp passa a renderizar com selo "Encaminhada". Forçando um
-      // querystring único garantimos que o provedor trata como mídia nova.
       const mediaUrl = `${pub.publicUrl}?v=${Date.now()}`;
       console.log("[IM-AUDIO] uploaded", { convId: conv.id, channel: conv.channel, path, mediaUrl, finalMime, bytes: finalBuf.length });
+      mark("Upload no storage", "ok", `${finalBuf.length} bytes · ${finalMime}`, tUpload);
 
+      const tSend = Date.now();
       const sendRes = await fetch(`${SUPABASE_URL}/functions/v1/message-send`, {
         method: "POST",
         headers: { "Content-Type": "application/json", "Authorization": `Bearer ${SERVICE_ROLE}` },
@@ -460,30 +558,28 @@ Deno.serve(async (req) => {
       });
       const sendJson = await sendRes.json().catch(() => ({} as any));
 
-      // message-send can return HTTP 200 with `{ success: false, error }` when
-      // the provider rejected the message. Treat that as failure too — the
-      // iframe must not show a green "enviado" badge in that case.
       const providerOk = sendRes.ok && sendJson && sendJson.success !== false && !sendJson.error;
       if (!providerOk) {
         console.error("[IM-AUDIO] message-send failed", { status: sendRes.status, sendJson });
-        return new Response(JSON.stringify({
-          ok: false,
-          error: (sendJson && (sendJson.error || sendJson.message)) || `message-send falhou (HTTP ${sendRes.status})`,
+        const reason = (sendJson && (sendJson.error || sendJson.message)) || `HTTP ${sendRes.status}`;
+        mark("Envio ao WhatsApp", "fail", String(reason), tSend);
+        return respond(false, {
+          error: reason,
           detail: sendJson,
-        }), { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        }, 502);
       }
+      mark("Envio ao WhatsApp", "ok", sendJson?.message_id ? `id ${String(sendJson.message_id).slice(0, 18)}…` : "confirmado pelo provedor", tSend);
 
-      return new Response(JSON.stringify({
-        ok: true,
+      return respond(true, {
         mediaUrl,
         conversationId: conv.id,
         externalMessageId: sendJson?.message_id ?? null,
-      }), {
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        totalMs: Date.now() - t0,
       });
     } catch (e) {
       console.error("[IM-AUDIO] error", e);
-      return new Response(JSON.stringify({ ok: false, error: String(e) }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      mark("Erro inesperado", "fail", String(e?.message || e));
+      return respond(false, { error: String(e?.message || e) }, 500);
     }
   }
 
