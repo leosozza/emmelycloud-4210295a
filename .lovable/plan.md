@@ -1,84 +1,28 @@
 ## Objetivo
 
-Mapear todos os pontos do app que tocam o Contact Center / Open Lines do Bitrix24, comparar com a especificação atual da REST API (`imconnector.*`, `imopenlines.*`, `placement.*`) e corrigir divergências que podem causar o conector "Emmely Messages" a não aparecer, aparecer sem ícone, recusar mensagens ou falhar ao ativar em novos portais.
+O conector `emmely_connector` deve refletir **exatamente** o que o utilizador configurou no Contact Center de cada Open Line — nunca ativar em massa. A auditoria apenas reporta o estado real; a UI permite reaplicar registro (ícone/handler) sem mexer em ativação por linha.
 
-## Pontos do código identificados
+## Mudanças
 
-```text
-Registro / instalação
-  supabase/functions/bitrix24-install/index.ts        (linhas ~1010-1180)
-  supabase/functions/bitrix24-rebind-events/index.ts
-Tela de configuração (slider do Contact Center)
-  supabase/functions/bitrix24-connector-settings/index.ts
-Envio para o cliente final (Bitrix → externo)
-  supabase/functions/bitrix24-worker/index.ts         (status.delivery, list, status)
-  supabase/functions/bitrix24-send/index.ts           (send.messages, activate, chat.name.set)
-Eventos vindos do Bitrix
-  supabase/functions/bitrix24-events/index.ts         (OnImConnector*, OnImbot*)
-Placements do operador (textarea / sidebar / menu / abas)
-  supabase/functions/bitrix24-im-send-audio/index.ts
-  supabase/functions/bitrix24-im-send-file/index.ts
-  supabase/functions/bitrix24-im-context-menu/index.ts
-  supabase/functions/bitrix24-im-sidebar/index.ts
-  supabase/functions/bitrix24-crm-tab/index.ts
-  supabase/functions/bitrix24-payment-tab/index.ts
-  supabase/functions/bitrix24-booking-tab/index.ts
-```
+### 1. `bitrix24-worker/index.ts` — endpoint `connector_audit`
+- Manter retorno por linha com `STATUS` real (`imconnector.status`) + `is_active` no DB.
+- **Remover** qualquer auto-correção que ative conector em linhas onde o utilizador não ativou. A reconciliação passa a ser unidirecional: se Bitrix diz `STATUS:false`, marcar `bitrix24_channel_mappings.is_active=false` (DB segue Bitrix, nunca o contrário).
+- Se uma linha tem `STATUS:true` no Bitrix mas não existe mapping no DB, criar o mapping com `is_active=true` (apenas registar o que já existe lá).
+- Nunca chamar `imconnector.activate` a partir do worker.
 
-## Divergências encontradas vs. spec atual
+### 2. `bitrix24-connector-settings/index.ts`
+- Já está correto: só ativa quando o Bitrix faz POST com `PLACEMENT=SETTING_CONNECTOR` e `ACTIVE_STATUS` vindo do slider do utilizador.
+- Ajuste pequeno: respeitar `ACTIVE_STATUS` recebido — se vier `"N"` / `false`, chamar `imconnector.activate` com `ACTIVE: 0` e marcar mapping `is_active=false`, em vez de sempre forçar `ACTIVE: 1`.
 
-1. **`imconnector.register` — formato de `ICON` desatualizado.** Hoje passamos objetos aninhados (`COLOR.BACKGROUND/BORDER`, `SIZE.WIDTH/HEIGHT`, `POSITION.TOP/LEFT`) e `DATA_IMAGE` em base64. A spec corrente pede `COLOR` como string `#hex`, `SIZE` como string (`"90%"`), `POSITION` como string (`"center"`) e `DATA_IMAGE` como SVG URL-encoded. Isso explica conector aparecendo sem ícone / com cor errada no Contact Center após a atualização.
-2. **Flags novas não enviadas.** `DEL_EXTERNAL_MESSAGES`, `EDIT_INTERNAL_MESSAGES`, `DEL_INTERNAL_MESSAGES`, `NEWSLETTER`, `NEED_SYSTEM_MESSAGES`, `NEED_SIGNATURE`, `CHAT_GROUP` — definir explicitamente o comportamento (especialmente `NEWSLETTER=true` para o conector aparecer em campanhas CRM, e `CHAT_GROUP=false` para 1-a-1).
-3. **`imconnector.connector.data.set` — payload `URL`/`URL_IM` apontando para `bitrix24-events`** (endpoint de eventos), o correto é deixar como página de gestão do canal externo. Reapontar para `FRONTEND_URL` ou para o handler de settings.
-4. **`imopenlines.config.list.get`** — chamada com `params.select` que não é parâmetro suportado; pode estar voltando vazio em portais novos e bloqueando o auto-activate.
-5. **Falta `placement.unbind`/re-registro do PLACEMENT_HANDLER do conector.** Após mudança do Contact Center, portais antigos podem ter handler "morto"; precisamos forçar re-`imconnector.register` no rebind para atualizar URL e ícone.
-6. **Sem diagnóstico exposto.** Não há endpoint que liste, por integração, `imconnector.list` + `imconnector.status` por LINE, dificultando suporte.
-
-## Mudanças a implementar
-
-### 1. `bitrix24-install/index.ts`
-- Reescrever o payload de `imconnector.register` no novo formato:
-  ```ts
-  ICON: { DATA_IMAGE: encodeURI('data:image/svg+xml,<svg…/>'), COLOR: '#2067b0', SIZE: '90%', POSITION: 'center' }
-  ICON_DISABLED: { DATA_IMAGE: …, COLOR: '#99adb3' }
-  ```
-- Adicionar flags `DEL_EXTERNAL_MESSAGES: true`, `EDIT_INTERNAL_MESSAGES: true`, `DEL_INTERNAL_MESSAGES: true`, `NEWSLETTER: true`, `NEED_SYSTEM_MESSAGES: true`, `NEED_SIGNATURE: true`, `CHAT_GROUP: false`.
-- Trocar `URL`/`URL_IM` do `connector.data.set` para `FRONTEND_URL` da app (ou para o `bitrix24-connector-settings`), não para o webhook de eventos.
-- Remover `params.select` da chamada `imopenlines.config.list.get`.
-- Logar resposta completa de `imconnector.register` em `bitrix24_debug_logs` para auditoria.
-
-### 2. `bitrix24-rebind-events/index.ts`
-- Forçar re-execução de `imconnector.register` com o novo payload (idempotente: erro `CONNECTOR_ALREADY_EXISTS` é OK, mas a chamada atualiza ícone/handler na maioria dos portais).
-- Garantir `placement.unbind` dos handlers antigos do Contact Center antes do rebind.
-
-### 3. `bitrix24-connector-settings/index.ts`
-- Manter compat com novo POST do slider (Bitrix passa `PLACEMENT_OPTIONS` como `application/x-www-form-urlencoded` — já usamos esse parser no `bitrix24-im-send-audio`; reaproveitar).
-- Após salvar, chamar `imconnector.connector.data.set` com `URL` correto (página de gestão da app) e revalidar com `imconnector.status`.
-
-### 4. `bitrix24-send/index.ts`
-- Antes de `imconnector.send.messages`, validar que `LINE` está ativa via `imconnector.status` (já existe) e que retornou `STATUS: true`; se não, ativar e re-tentar 1×.
-- Garantir `user.id` como string (a spec exige string; hoje algumas chamadas mandam número).
-
-### 5. `bitrix24-worker/index.ts`
-- Endpoint diagnóstico novo (`?action=connector_audit`) que retorna, por integração:
-  - `imconnector.list`
-  - para cada LINE em `imopenlines.config.list.get`: `imconnector.status` do `CONNECTOR_ID`
-  - mismatch entre `connector_active` no banco e `STATUS` real → loga e auto-corrige.
-
-### 6. UI — `src/pages/Integracoes.tsx` (e/ou `Bitrix24App.tsx`)
-- Card "Contact Center" com: status do conector por linha (ativo / inativo / não encontrado), botão "Reaplicar registro" (chama `bitrix24-rebind-events`) e "Auditar" (chama o novo endpoint do worker).
-
-## Detalhes técnicos
-
-- Após qualquer alteração em `bitrix24-install` ou `bitrix24-rebind-events`, gatilhar manualmente o rebind em cada portal já instalado para propagar o novo formato de ícone — incluir um botão dedicado na UI.
-- Memory `mem://integracoes/bitrix24/sistema-badges-e-atividades-timeline` e relacionados não são afetados; nenhuma mudança em RLS, schema ou tabelas.
-- Sem migrações de banco. Sem mudanças em `proposals` / `financial_records`.
-- Não tocar em outros placements (CRM_DEAL, Emmely Pay, Agenda) — fora de escopo.
+### 3. UI `src/pages/Integracoes.tsx` — card "Contact Center"
+- Lista por linha: nome, status (verde = ativo no Bitrix, cinza = disponível mas inativo, vermelho = erro/conector não encontrado).
+- Botão **"Auditar"** (chama `connector_audit`, só leitura).
+- Botão **"Reaplicar registro"** (chama `bitrix24-rebind-events` — atualiza ícone/handler do conector, **não** mexe em ativação por linha).
+- **Sem** botão "Ativar em todas as linhas". Texto explicativo: "A ativação por linha é feita pelo utilizador no Contact Center do Bitrix24."
 
 ## Critérios de aceitação
 
-1. Em portal de teste, depois do rebind, o conector "Emmely Messages" aparece no Contact Center com ícone correto e cor azul.
-2. Ao ativá-lo em uma Open Line, `imconnector.status` retorna `STATUS: true` e o banco reflete `connector_active=true`.
-3. Mensagem enviada do app chega no chat da Open Line; `imconnector.send.messages` retorna `SUCCESS:true`.
-4. Endpoint de auditoria lista cada LINE com seu status real e marca divergências.
-5. UI mostra estado verde/amarelo/vermelho por linha e permite reaplicar com 1 clique.
+1. Hoje no portal de teste: WhatsApp BR continua ativo; Facebook/Instagram/WhatsApp/Aplicação Emmely cloud continuam disponíveis mas inativas até o utilizador ativar manualmente no Contact Center.
+2. Rodar "Reaplicar registro" não altera a ativação de nenhuma linha.
+3. Se o utilizador desativar uma linha no Contact Center, a próxima auditoria marca `is_active=false` no DB.
+4. UI mostra estado real por linha sem oferecer ativação em massa.
