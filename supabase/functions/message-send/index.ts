@@ -355,7 +355,8 @@ Deno.serve(async (req) => {
 
   try {
     const body = await req.json();
-    const { conversation_id, content, message_type, resolvedInteractiveData: bodyInteractiveData, skip_db_save, instance_id, bitrix_entity_id, bitrix_entity_type_id, sender_name: bodySenderName, source: bodySource, ai_agent_id: bodyAiAgentId, review_context: bodyReviewContext, skip_review: bodySkipReview } = body;
+   const { conversation_id, content, message_type, resolvedInteractiveData: bodyInteractiveData, skip_db_save, instance_id, bitrix_entity_id, bitrix_entity_type_id, sender_name: bodySenderName, source: bodySource, ai_agent_id: bodyAiAgentId, review_context: bodyReviewContext, skip_review: bodySkipReview, force_ptt: bodyForcePtt } = body;
+   const forcePtt = bodyForcePtt === true || bodyForcePtt === "true";
     // Fase C — Quality Gate: revisa mensagens originadas por IA antes do envio
     let aiReviewId: string | null = null;
     let aiReviewScore: number | null = null;
@@ -715,14 +716,18 @@ Deno.serve(async (req) => {
             }
           }
           const isOpus = detectedMime === "audio/ogg" || detectedMime === "audio/opus";
-          const finalMime = isOpus ? "audio/ogg" : detectedMime;
+          // Force PTT (push-to-talk / voice note) when caller requested it,
+          // or whenever the bytes are Ogg/Opus. WhatsApp only renders the
+          // bubble as a voice note when Mimetype is audio/ogg; codecs=opus.
+          const sendAsPtt = forcePtt || isOpus;
+          const finalMime = sendAsPtt ? "audio/ogg" : detectedMime;
           const audioData = `data:${finalMime};base64,${bytesToBase64(audioBytes)}`;
           if (wuzapiEndpoint === "/chat/send/audio") {
           wuzapiPayload = {
             Phone: wuzapiPhone,
             Audio: audioData,
-            Mimetype: isOpus ? "audio/ogg; codecs=opus" : finalMime,
-            PTT: isOpus,
+            Mimetype: sendAsPtt ? "audio/ogg; codecs=opus" : finalMime,
+            PTT: sendAsPtt,
           };
           }
         } else if (message_type === "video" && resolvedInteractiveData) {

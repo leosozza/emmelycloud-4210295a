@@ -553,6 +553,7 @@ Deno.serve(async (req) => {
           content: "",
           message_type: "audio",
           sender_name: "Atendente",
+          force_ptt: true,
           resolvedInteractiveData: { url: mediaUrl, filename: `audio.${finalExt}`, mime: finalMime },
         }),
       });
