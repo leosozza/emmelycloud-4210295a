@@ -180,14 +180,22 @@ Deno.serve(async (req) => {
     }
 
     // ── IM_TEXTAREA — Send Audio (WhatsApp) — single LINES context ──
+    // HTML iframe served from the frontend (Cloudflare Pages) because
+    // Supabase Edge gateway sandboxes HTML responses (CSP default-src 'none').
+    // The frontend page POSTs the audio blob back to the edge function endpoint.
     try {
-      const sendAudioUrl = `${supabaseUrl}/functions/v1/bitrix24-im-send-audio`;
+      const frontendBase = (Deno.env.get("FRONTEND_URL") || "https://emmelycloud.pages.dev").replace(/\/+$/, "");
+      const sendAudioUrl = `${frontendBase}/bitrix24-im-send-audio.html`;
+      const legacySupabaseUrl = `${supabaseUrl}/functions/v1/bitrix24-im-send-audio`;
       const legacySendAudioAllUrl = `${supabaseUrl}/functions/v1/bitrix24-im-send-audio?ctx=all`;
       await callBitrix(integration.client_endpoint, accessToken, "placement.unbind", {
-        PLACEMENT: "IM_TEXTAREA", HANDLER: sendAudioUrl,
+        PLACEMENT: "IM_TEXTAREA", HANDLER: legacySupabaseUrl,
       });
       await callBitrix(integration.client_endpoint, accessToken, "placement.unbind", {
         PLACEMENT: "IM_TEXTAREA", HANDLER: legacySendAudioAllUrl,
+      });
+      await callBitrix(integration.client_endpoint, accessToken, "placement.unbind", {
+        PLACEMENT: "IM_TEXTAREA", HANDLER: sendAudioUrl,
       });
       const r = await callBitrix(integration.client_endpoint, accessToken, "placement.bind", {
         PLACEMENT: "IM_TEXTAREA",
