@@ -423,7 +423,10 @@ Deno.serve(async (req) => {
         return new Response(JSON.stringify({ ok: false, error: "upload failed: " + upErr.message }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
       }
       const { data: pub } = supabase.storage.from("media").getPublicUrl(path);
-      const mediaUrl = pub.publicUrl;
+      // Cache-buster: Gupshup/Meta reaproveitam media_id quando a URL repete e
+      // o WhatsApp passa a renderizar com selo "Encaminhada". Forçando um
+      // querystring único garantimos que o provedor trata como mídia nova.
+      const mediaUrl = `${pub.publicUrl}?v=${Date.now()}`;
       console.log("[IM-AUDIO] uploaded", { convId: conv.id, channel: conv.channel, path, mediaUrl, finalMime, bytes: finalBuf.length });
 
       const sendRes = await fetch(`${SUPABASE_URL}/functions/v1/message-send`, {
