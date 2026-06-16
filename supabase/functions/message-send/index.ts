@@ -716,14 +716,18 @@ Deno.serve(async (req) => {
             }
           }
           const isOpus = detectedMime === "audio/ogg" || detectedMime === "audio/opus";
-          const finalMime = isOpus ? "audio/ogg" : detectedMime;
+          // Force PTT (push-to-talk / voice note) when caller requested it,
+          // or whenever the bytes are Ogg/Opus. WhatsApp only renders the
+          // bubble as a voice note when Mimetype is audio/ogg; codecs=opus.
+          const sendAsPtt = forcePtt || isOpus;
+          const finalMime = sendAsPtt ? "audio/ogg" : detectedMime;
           const audioData = `data:${finalMime};base64,${bytesToBase64(audioBytes)}`;
           if (wuzapiEndpoint === "/chat/send/audio") {
           wuzapiPayload = {
             Phone: wuzapiPhone,
             Audio: audioData,
-            Mimetype: isOpus ? "audio/ogg; codecs=opus" : finalMime,
-            PTT: isOpus,
+            Mimetype: sendAsPtt ? "audio/ogg; codecs=opus" : finalMime,
+            PTT: sendAsPtt,
           };
           }
         } else if (message_type === "video" && resolvedInteractiveData) {
