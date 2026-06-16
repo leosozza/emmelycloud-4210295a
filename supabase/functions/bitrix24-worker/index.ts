@@ -1208,26 +1208,51 @@ Deno.serve(async (req) => {
                 }
               }
 
-              // Reconciliation against DB
+              // Reconciliation against DB (DB follows Bitrix, never the inverse).
+              // Never call imconnector.activate from the audit — activation is
+              // controlled by the user in the Contact Center UI per line.
               const { data: dbMaps } = await supabase
                 .from("bitrix24_channel_mappings")
                 .select("*")
                 .eq("integration_id", integ.id);
+              const seen = new Set<string>();
               for (const map of dbMaps || []) {
                 const realLine = entry.lines.find(
                   (l: any) => String(l.lineId) === String(map.line_id) && l.connectorId === map.connector_id,
                 );
-                if (realLine && map.is_active !== realLine.active) {
-                  entry.checks.push({
-                    name: `mismatch_${map.connector_id}_${map.line_id}`,
-                    status: "warning",
-                    message: `DB says ${map.is_active} but Bitrix says ${realLine.active} — auto-correcting`,
-                  });
-                  await supabase
-                    .from("bitrix24_channel_mappings")
-                    .update({ is_active: realLine.active })
-                    .eq("id", map.id);
+                if (realLine) {
+                  seen.add(`${realLine.connectorId}|${realLine.lineId}`);
+                  if (map.is_active !== realLine.active) {
+                    entry.checks.push({
+                      name: `mismatch_${map.connector_id}_${map.line_id}`,
+                      status: "warning",
+                      message: `DB says ${map.is_active} but Bitrix says ${realLine.active} — DB updated to match Bitrix`,
+                    });
+                    await supabase
+                      .from("bitrix24_channel_mappings")
+                      .update({ is_active: realLine.active })
+                      .eq("id", map.id);
+                  }
                 }
+              }
+              // Register mappings for lines the user activated in Bitrix but
+              // that we don't yet track in DB. Only insert when active=true.
+              for (const l of entry.lines) {
+                const key = `${l.connectorId}|${l.lineId}`;
+                if (seen.has(key) || !l.active) continue;
+                await supabase.from("bitrix24_channel_mappings").insert({
+                  integration_id: integ.id,
+                  line_id: l.lineId,
+                  line_name: l.lineName,
+                  channel: "whatsapp",
+                  is_active: true,
+                  connector_id: l.connectorId,
+                });
+                entry.checks.push({
+                  name: `imported_${l.connectorId}_${l.lineId}`,
+                  status: "ok",
+                  message: `Imported active line ${l.lineName} from Bitrix into DB`,
+                });
               }
             } catch (e: any) {
               entry.errors.push(`fatal: ${e?.message || e}`);
