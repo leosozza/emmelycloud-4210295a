@@ -2066,17 +2066,18 @@ Deno.serve(async (req) => {
     }
 
     // --- Register IM_TEXTAREA placement (Send Audio to WhatsApp) ---
+    // IMPORTANT: handler URL must match bitrix24-rebind-events exactly,
+    // otherwise the slider ends up bound twice (legacy edge function URL
+    // from this install + frontend URL from rebind) and renders 2 buttons.
     try {
-      const sendAudioUrl = `${supabaseUrl}/functions/v1/bitrix24-im-send-audio`;
-      const legacySendAudioAllUrl = `${supabaseUrl}/functions/v1/bitrix24-im-send-audio?ctx=all`;
-      await callBitrix(clientEndpoint, accessToken, "placement.unbind", {
-        PLACEMENT: "IM_TEXTAREA",
-        HANDLER: sendAudioUrl,
-      });
-      await callBitrix(clientEndpoint, accessToken, "placement.unbind", {
-        PLACEMENT: "IM_TEXTAREA",
-        HANDLER: legacySendAudioAllUrl,
-      });
+      const frontendBase = (Deno.env.get("FRONTEND_URL") || "https://emmelycloud.pages.dev").replace(/\/+$/, "");
+      const sendAudioUrl = `${frontendBase}/bitrix24-im-send-audio.html`;
+      const legacyEdgeUrl = `${supabaseUrl}/functions/v1/bitrix24-im-send-audio`;
+      const legacyEdgeAllUrl = `${supabaseUrl}/functions/v1/bitrix24-im-send-audio?ctx=all`;
+      // Remove every previous variant before binding the canonical one.
+      await callBitrix(clientEndpoint, accessToken, "placement.unbind", { PLACEMENT: "IM_TEXTAREA", HANDLER: legacyEdgeUrl });
+      await callBitrix(clientEndpoint, accessToken, "placement.unbind", { PLACEMENT: "IM_TEXTAREA", HANDLER: legacyEdgeAllUrl });
+      await callBitrix(clientEndpoint, accessToken, "placement.unbind", { PLACEMENT: "IM_TEXTAREA", HANDLER: sendAudioUrl });
       const audioRes = await callBitrix(clientEndpoint, accessToken, "placement.bind", {
         PLACEMENT: "IM_TEXTAREA",
         HANDLER: sendAudioUrl,
@@ -2098,7 +2099,7 @@ Deno.serve(async (req) => {
         },
       });
       if (!audioRes.error || String(audioRes.error).toLowerCase().includes("already")) {
-        console.log("[INSTALL] placement.bind IM_TEXTAREA (audio): OK");
+        console.log("[INSTALL] placement.bind IM_TEXTAREA (audio): OK -> ", sendAudioUrl);
         installSummary.placements_registered.push("IM_TEXTAREA_AUDIO");
       } else {
         console.error("[INSTALL] placement.bind audio error:", audioRes.error, audioRes.error_description);
