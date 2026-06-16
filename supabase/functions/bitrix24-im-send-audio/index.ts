@@ -119,12 +119,47 @@ function htmlPage(initialPlacementOptions: Record<string, any> = {}, initialMeta
     border-radius: 50%; animation: spin .7s linear infinite;
   }
   @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* Painel de logs por envio */
+  .logs {
+    margin-top: 12px; padding: 10px 12px;
+    background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+    font-size: 12px; display: none;
+  }
+  .logs.visible { display: block; }
+  .logs h4 {
+    margin: 0 0 8px; font-size: 11px; font-weight: 600; letter-spacing: .03em;
+    text-transform: uppercase; color: var(--muted);
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .logs ul { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 4px; }
+  .logs li {
+    display: grid; grid-template-columns: 16px 1fr auto; gap: 8px; align-items: start;
+    padding: 4px 0; line-height: 1.35;
+  }
+  .logs li .ic { font-size: 13px; line-height: 1; padding-top: 1px; }
+  .logs li .name { color: var(--text); font-weight: 500; }
+  .logs li .name .detail { display: block; color: var(--muted); font-weight: 400; font-size: 11px; word-break: break-word; }
+  .logs li .ms { color: var(--muted); font-variant-numeric: tabular-nums; font-size: 11px; }
+  .logs li.ok .ic { color: var(--success); }
+  .logs li.fail .ic { color: var(--danger); }
+  .logs li.skip .ic { color: var(--muted); }
+  .logs li.pending .ic { color: var(--primary); }
+  .logs .clear-btn {
+    background: transparent; border: 0; padding: 0; cursor: pointer;
+    color: var(--muted); font-size: 11px; font-weight: 500;
+  }
+  .logs .clear-btn:hover { color: var(--text); }
 </style>
 </head>
 <body>
   <div class="wrap">
     <div id="stage" class="stage"></div>
     <div id="status" class="status"></div>
+    <div id="logs" class="logs" aria-live="polite">
+      <h4><span>Etapas do envio</span><button class="clear-btn" id="clearLogs" type="button">Limpar</button></h4>
+      <ul id="logsList"></ul>
+    </div>
   </div>
 
 <script>
