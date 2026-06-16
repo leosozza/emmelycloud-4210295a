@@ -319,7 +319,7 @@ async function sendBlob() {
       clearTimeout(timeoutId);
     }
 
-    // Servidor devolve etapas detalhadas no campo `steps`. Acrescentamos a
+    // Servidor devolve etapas detalhadas no campo "steps". Acrescentamos a
     // etapa do POST (round-trip do cliente) e, abaixo, a etapa do Bitrix.
     const serverSteps = Array.isArray(json && json.steps) ? json.steps : [];
     const allSteps = [
