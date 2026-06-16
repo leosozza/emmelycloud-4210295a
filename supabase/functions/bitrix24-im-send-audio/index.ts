@@ -57,20 +57,20 @@ function htmlPage(initialPlacementOptions: Record<string, any> = {}, initialMeta
     }
   }
   * { box-sizing: border-box; }
-  html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text); }
+  html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text); overflow: auto; }
   body {
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, sans-serif;
-    padding: 20px 18px;
+    padding: 12px;
     min-height: 100vh;
     -webkit-font-smoothing: antialiased;
   }
-  .wrap { max-width: 380px; margin: 0 auto; }
+  .wrap { width: min(100%, 440px); margin: 0 auto; }
   .stage {
     display: flex; flex-direction: column; align-items: center; gap: 14px;
-    padding: 18px 16px;
+    padding: 14px 12px;
     background: var(--surface);
     border: 1px solid var(--border);
-    border-radius: 16px;
+    border-radius: 12px;
     box-shadow: var(--shadow);
     animation: fadein .18s ease;
   }
@@ -124,7 +124,7 @@ function htmlPage(initialPlacementOptions: Record<string, any> = {}, initialMeta
   .logs {
     margin-top: 12px; padding: 10px 12px;
     background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
-    font-size: 12px; display: none;
+    font-size: 12px; display: none; max-height: 190px; overflow-y: auto;
   }
   .logs.visible { display: block; }
   .logs h4 {
@@ -134,7 +134,7 @@ function htmlPage(initialPlacementOptions: Record<string, any> = {}, initialMeta
   }
   .logs ul { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 4px; }
   .logs li {
-    display: grid; grid-template-columns: 16px 1fr auto; gap: 8px; align-items: start;
+    display: grid; grid-template-columns: 16px minmax(0, 1fr) auto; gap: 8px; align-items: start;
     padding: 4px 0; line-height: 1.35;
   }
   .logs li .ic { font-size: 13px; line-height: 1; padding-top: 1px; }
