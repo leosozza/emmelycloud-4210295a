@@ -511,22 +511,26 @@ Deno.serve(async (req) => {
         const ogg = remuxWebmOpusToOgg(rawBuf);
         if (ogg) {
           finalBuf = ogg;
-          finalMime = "audio/ogg";
+          finalMime = "audio/ogg; codecs=opus";
           console.log("[IM-AUDIO] remuxed WebM/Opus to Ogg/Opus", { from: rawBuf.length, to: ogg.length });
           mark("Converter para Ogg/Opus", "ok", `${rawBuf.length} → ${ogg.length} bytes`, tRemux);
         } else {
           console.warn("[IM-AUDIO] WebM/Opus remux failed; provider will likely reject the file");
           mark("Converter para Ogg/Opus", "fail", "Remux falhou; provedor pode rejeitar", tRemux);
         }
+      } else if (detectedMime === "audio/ogg") {
+        finalMime = "audio/ogg; codecs=opus";
+        mark("Converter para Ogg/Opus", "skip", "Já em audio/ogg; codecs=opus");
       } else {
         mark("Converter para Ogg/Opus", "skip", `Já em ${detectedMime}`);
       }
 
-      finalExt = finalMime === "audio/ogg" ? "ogg"
-        : finalMime === "audio/mpeg" ? "mp3"
-        : finalMime === "audio/mp4" ? "m4a"
-        : finalMime === "audio/wav" ? "wav"
-        : finalMime === "audio/webm" ? "webm"
+      const finalMimeBase = finalMime.split(";")[0].trim();
+      finalExt = finalMimeBase === "audio/ogg" ? "ogg"
+        : finalMimeBase === "audio/mpeg" ? "mp3"
+        : finalMimeBase === "audio/mp4" ? "m4a"
+        : finalMimeBase === "audio/wav" ? "wav"
+        : finalMimeBase === "audio/webm" ? "webm"
         : "bin";
 
       const tUpload = Date.now();
