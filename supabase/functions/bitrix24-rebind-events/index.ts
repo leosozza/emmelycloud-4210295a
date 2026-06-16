@@ -184,15 +184,21 @@ Deno.serve(async (req) => {
     // Supabase Edge gateway sandboxes HTML responses (CSP default-src 'none').
     // The frontend page POSTs the audio blob back to the edge function endpoint.
     try {
-      const frontendBase = (Deno.env.get("FRONTEND_URL") || "https://emmelycloud.pages.dev").replace(/\/+$/, "");
-      const sendAudioUrl = `${frontendBase}/bitrix24-im-send-audio.html`;
+      // Cloudflare Pages devolve 405 ao POST de placement.bind, deixando o
+      // modal em branco. Servimos o HTML pelo publish .lovable.app que
+      // responde GET e POST com o mesmo HTML.
+      const sendAudioUrl = "https://emmelycloud.lovable.app/bitrix24-im-send-audio.html";
       const legacySupabaseUrl = `${supabaseUrl}/functions/v1/bitrix24-im-send-audio`;
       const legacySendAudioAllUrl = `${supabaseUrl}/functions/v1/bitrix24-im-send-audio?ctx=all`;
+      const legacyPagesUrl = "https://emmelycloud.pages.dev/bitrix24-im-send-audio.html";
       await callBitrix(integration.client_endpoint, accessToken, "placement.unbind", {
         PLACEMENT: "IM_TEXTAREA", HANDLER: legacySupabaseUrl,
       });
       await callBitrix(integration.client_endpoint, accessToken, "placement.unbind", {
         PLACEMENT: "IM_TEXTAREA", HANDLER: legacySendAudioAllUrl,
+      });
+      await callBitrix(integration.client_endpoint, accessToken, "placement.unbind", {
+        PLACEMENT: "IM_TEXTAREA", HANDLER: legacyPagesUrl,
       });
       await callBitrix(integration.client_endpoint, accessToken, "placement.unbind", {
         PLACEMENT: "IM_TEXTAREA", HANDLER: sendAudioUrl,

@@ -1,39 +1,30 @@
-## Diagnóstico
+## Plano
 
-A tela branca acontece porque o `bitrix24-im-send-audio.html` é servido pelo Cloudflare Pages (`emmelycloud.pages.dev`) sem os cabeçalhos que autorizam o Bitrix24 a embutir a página num iframe. Verifiquei a resposta HTTP do ficheiro:
+O botão aparece, mas o modal abre branco porque o Bitrix24 abre o `HANDLER` do placement por **POST**. O domínio atualmente registrado (`emmelycloud.pages.dev/bitrix24-im-send-audio.html`) responde **405** nesse POST e, no GET, ainda cai no `index.html` em vez do HTML do áudio. Por isso o iframe fica vazio.
 
-- Não há `X-Frame-Options: ALLOWALL`
-- Não há `Content-Security-Policy: frame-ancestors *`
+## O que vou alterar
 
-Sem isso, alguns browsers (e o próprio modal do Bitrix24) bloqueiam o render → modal abre vazio/branco e o botão "gravar áudio" nunca aparece. Esta é exatamente a regra registada em memória do projeto:
-> "Bitrix24 iframes MUST include `X-Frame-Options: ALLOWALL` and `Content-Security-Policy: frame-ancestors *`."
+1. **Trocar o handler canônico do botão de áudio**
+   - Em `bitrix24-install` e `bitrix24-rebind-events`, registrar o botão de áudio apontando para:
+     - `https://emmelycloud.lovable.app/bitrix24-im-send-audio.html`
+   - Esse domínio já responde ao POST do Bitrix24 com o HTML correto do gravador.
 
-Não existe ficheiro `public/_headers` no projeto, por isso o Cloudflare Pages serve sem qualquer header de framing.
+2. **Limpar todos os handlers antigos antes de registrar de novo**
+   - Remover do placement as variantes antigas:
+     - edge function `/functions/v1/bitrix24-im-send-audio`
+     - edge function `?ctx=all`
+     - `https://emmelycloud.pages.dev/bitrix24-im-send-audio.html`
+     - `https://emmelycloud.lovable.app/bitrix24-im-send-audio.html`
+   - Depois registrar apenas uma vez o handler correto, evitando botões duplicados.
 
-## Correção
+3. **Manter o envio do áudio pela função atual**
+   - A página HTML continuará usando a função `bitrix24-im-send-audio` apenas para o upload/envio do áudio.
+   - Não vou mexer no fluxo de envio/WhatsApp agora, só no carregamento do botão/modal.
 
-Criar `public/_headers` (formato Cloudflare Pages) liberando o framing para as páginas que o Bitrix24 carrega em iframe — em particular `bitrix24-im-send-audio.html`, mas estendendo a regra a todo o site (a app inteira já é embebida pelo Bitrix24):
+4. **Atualizar o diagnóstico interno**
+   - Ajustar `.lovable/plan.md` para refletir a causa real: POST 405 no Cloudflare Pages para o handler estático, não apenas falta de headers.
 
-```text
-/*
-  X-Frame-Options: ALLOWALL
-  Content-Security-Policy: frame-ancestors *
-  Referrer-Policy: strict-origin-when-cross-origin
+## Validação
 
-/bitrix24-im-send-audio.html
-  X-Frame-Options: ALLOWALL
-  Content-Security-Policy: frame-ancestors *
-  Cache-Control: no-store
-```
-
-Notas:
-- `X-Frame-Options: ALLOWALL` não é padrão, mas browsers ignoram silenciosamente — o que efetivamente autoriza o iframe é o `frame-ancestors *` da CSP.
-- O `Cache-Control: no-store` específico do HTML do áudio evita que uma versão antiga em cache continue a aparecer ao usuário depois do deploy.
-
-Após o deploy do frontend (Cloudflare Pages), reabrir o botão de áudio no Bitrix24 — o modal deve renderizar o microfone normalmente.
-
-## Ficheiros alterados
-
-- `public/_headers` (novo)
-
-Nenhuma edge function precisa ser tocada.
+- Confirmar via HTTP que o handler escolhido responde ao POST com o HTML do gravador.
+- Depois de aprovar, será necessário executar o rebind/reinstalação para o Bitrix24 trocar o handler antigo pelo novo.
