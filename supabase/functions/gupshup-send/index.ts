@@ -7,6 +7,7 @@ const corsHeaders = {
 };
 
 const GUPSHUP_URL = "https://api.gupshup.io/wa/api/v1/msg";
+const GUPSHUP_PARTNER_URL = "https://partner.gupshup.io";
 
 type MessageType =
   | "text" | "image" | "video" | "audio" | "document" | "sticker"
@@ -20,6 +21,8 @@ interface SendBody {
   preview_url?: string;              // imagem: thumbnail
   filename?: string;                 // documento
   caption?: string;                  // override de legenda
+  media_mime?: string;               // mídia: mime real do arquivo
+  force_ptt?: boolean | string;       // áudio: enviar como nota de voz/PTT nativa
   disable_preview?: boolean;         // text: desativa link preview
   // interactive / location / contact / reaction
   interactive?: any;                 // objeto pronto (list/quick_reply)
@@ -188,6 +191,57 @@ function buildMessageObject(body: SendBody): { messageObj: any; isTemplate: bool
     default:
       return { messageObj: { type: "text", text: body.content || "" }, isTemplate: false };
   }
+}
+
+function wantsPtt(body: SendBody) {
+  return body.force_ptt === true || body.force_ptt === "true";
+}
+
+async function uploadGupshupMediaByUrl(apiKey: string, appId: string, mediaUrl: string, fileType: string) {
+  const form = new FormData();
+  form.append("file_type", fileType);
+  form.append("file", mediaUrl);
+
+  const res = await fetch(`${GUPSHUP_PARTNER_URL}/partner/app/${encodeURIComponent(appId)}/media`, {
+    method: "POST",
+    headers: { Authorization: apiKey, token: apiKey, accept: "application/json" },
+    body: form,
+  });
+  const rawText = await res.text();
+  let result: any = {};
+  try { result = JSON.parse(rawText); } catch { result = { raw: rawText }; }
+  if (!res.ok || result?.status === "error" || !result?.mediaId) {
+    throw new Error(`upload media PTT failed (${res.status}): ${result?.message || result?.error || rawText}`);
+  }
+  return String(result.mediaId);
+}
+
+async function sendGupshupVoiceNote(apiKey: string, appId: string, destination: string, mediaId: string) {
+  const payload = {
+    messaging_product: "whatsapp",
+    recipient_type: "individual",
+    to: destination,
+    type: "audio",
+    audio: { id: mediaId, voice: true },
+  };
+
+  const res = await fetch(`${GUPSHUP_PARTNER_URL}/partner/app/${encodeURIComponent(appId)}/v3/message`, {
+    method: "POST",
+    headers: {
+      Authorization: apiKey,
+      token: apiKey,
+      accept: "application/json",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+  const rawText = await res.text();
+  let result: any = {};
+  try { result = JSON.parse(rawText); } catch { result = { raw: rawText }; }
+  if (!res.ok || result?.status === "error") {
+    throw new Error(`send voice note failed (${res.status}): ${result?.message || result?.error || rawText}`);
+  }
+  return { result, messageId: result?.messages?.[0]?.id || null };
 }
 
 function validate(body: SendBody): string | null {
