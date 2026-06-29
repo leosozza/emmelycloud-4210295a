@@ -371,22 +371,27 @@ Deno.serve(async (req) => {
       { provider: "stripe", key: "stripe_secret" },
     ];
     let stripeKey: string | null = null;
+    const isValidSecret = (v: string | null | undefined) => !!v && !v.startsWith("pk_") && !v.startsWith("rk_") && (v.startsWith("sk_") || v.length > 30);
     for (const c of candidates) {
-      stripeKey = await getCredential(supabase, c.provider, c.key);
-      if (stripeKey) break;
+      const v = await getCredential(supabase, c.provider, c.key);
+      if (isValidSecret(v)) { stripeKey = v; break; }
     }
-    // Case-insensitive fallback: scan any stripe* provider for a key containing "stripe_secret"
+    // Case-insensitive fallback: scan any stripe* provider for a valid sk_ key
     if (!stripeKey) {
-      const { data: anyCred } = await supabase
+      const { data: rows } = await supabase
         .from("integration_credentials")
         .select("credential_value, credential_key, provider")
         .ilike("provider", "stripe%")
-        .ilike("credential_key", "%stripe_secret%")
-        .limit(1)
-        .maybeSingle();
-      if (anyCred?.credential_value) stripeKey = String(anyCred.credential_value).trim();
+        .ilike("credential_key", "%stripe_secret%");
+      for (const r of rows || []) {
+        const v = String(r.credential_value || "").trim();
+        if (isValidSecret(v)) { stripeKey = v; break; }
+      }
     }
-    if (!stripeKey) stripeKey = Deno.env.get("STRIPE_SECRET_KEY") || null;
+    if (!stripeKey) {
+      const envKey = Deno.env.get("STRIPE_SECRET_KEY") || null;
+      if (isValidSecret(envKey)) stripeKey = envKey;
+    }
 
     if (!stripeKey) {
       return new Response(JSON.stringify({ error: "Stripe não configurado" }), {
