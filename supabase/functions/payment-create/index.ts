@@ -820,9 +820,10 @@ Deno.serve(async (req) => {
       console.error("[PAYMENT-CREATE] Badge error:", badgeErr);
     }
 
-    return new Response(JSON.stringify({ ok: true, transaction: tx }), {
+    return new Response(JSON.stringify({ ok: true, transaction: tx, payment_url: tx?.payment_url || result.payment_url || null }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
+
   } catch (err: unknown) {
     return new Response(JSON.stringify({ error: err instanceof Error ? err.message : "Unknown error" }), {
       status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
