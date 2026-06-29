@@ -180,6 +180,9 @@ function renderPaymentTab(opts: {
   memberId: string;
   flows: { id: string; name: string }[];
   contactPhone: string;
+  contactName?: string;
+  contactEmail?: string;
+  contactCpfCnpj?: string;
   noData: boolean;
   gateway?: string;
   rawGateway?: string;
@@ -190,7 +193,7 @@ function renderPaymentTab(opts: {
   gatewayOptions?: { id: string; label: string }[];
   methodOptions?: { id: string; label: string }[];
 }): string {
-  const { dealTitle, totalValue, paidValue, openValue, currency, installments, supabaseUrl, memberId, flows, contactPhone, noData } = opts;
+  const { dealTitle, totalValue, paidValue, openValue, currency, installments, supabaseUrl, memberId, flows, contactPhone, contactName, contactEmail, contactCpfCnpj, noData } = opts;
   const EUR_TO_BRL = 6.10;
 
   const paidPct = totalValue > 0 ? Math.round((paidValue / totalValue) * 100) : 0;
@@ -653,15 +656,15 @@ function renderPaymentTab(opts: {
     </div>
     <div class="b24-form-group">
       <label class="b24-form-label">Nome do cliente</label>
-      <input type="text" id="pay-name" class="b24-input" placeholder="Nome">
+      <input type="text" id="pay-name" class="b24-input" placeholder="Nome" value="${(contactName || "").replace(/"/g, "&quot;")}">
     </div>
     <div class="b24-form-group">
       <label class="b24-form-label">Email</label>
-      <input type="email" id="pay-email" class="b24-input" placeholder="email@exemplo.com">
+      <input type="email" id="pay-email" class="b24-input" placeholder="email@exemplo.com" value="${(contactEmail || "").replace(/"/g, "&quot;")}">
     </div>
     <div id="cpf-group" class="b24-form-group" style="display:none">
       <label class="b24-form-label">CPF/CNPJ</label>
-      <input type="text" id="pay-cpf" class="b24-input" placeholder="000.000.000-00">
+      <input type="text" id="pay-cpf" class="b24-input" placeholder="000.000.000-00" value="${(contactCpfCnpj || "").replace(/"/g, "&quot;")}">
       <div class="b24-form-hint">Obrigatório para cobranças em BRL</div>
     </div>
     <div class="b24-form-actions">
@@ -2194,6 +2197,9 @@ Deno.serve(async (req) => {
     let dealAmount = 0;
     let dealCurrency = "EUR";
     let contactPhone = "";
+    let contactName = "";
+    let contactEmail = "";
+    let contactCpfCnpj = "";
     let contactId = "";
     let dealGateway = "";
     let dealPaymentMethod = "";
@@ -2253,6 +2259,23 @@ Deno.serve(async (req) => {
         const phones = contact.PHONE || [];
         if (Array.isArray(phones) && phones.length > 0) {
           contactPhone = (phones[0].VALUE || "").replace(/\D/g, "");
+        }
+        contactName = [contact.NAME, contact.SECOND_NAME, contact.LAST_NAME].filter(Boolean).join(" ").trim();
+        const emails = contact.EMAIL || [];
+        if (Array.isArray(emails) && emails.length > 0) {
+          contactEmail = String(emails[0].VALUE || "").trim();
+        }
+        // CPF/CNPJ commonly stored in UF_CRM_CPF or UF_CRM_CNPJ or NIF
+        contactCpfCnpj =
+          String(contact.UF_CRM_CPF || contact.UF_CRM_CNPJ || contact.UF_CRM_CPF_CNPJ || contact.UF_CRM_NIF || "").trim();
+        // Fallback to Company NIF/CNPJ if contact has none and deal has a company
+        if (!contactCpfCnpj && deal && deal.COMPANY_ID) {
+          try {
+            const companyRes = await callBitrix(endpoint, accessToken, "crm.company.get", { ID: deal.COMPANY_ID });
+            const comp = companyRes.result || {};
+            contactCpfCnpj = String(comp.UF_CRM_CNPJ || comp.UF_CRM_NIF || comp.UF_CRM_CPF_CNPJ || "").trim();
+            if (!contactName) contactName = comp.TITLE || "";
+          } catch (e) { console.error("[PAYMENT-TAB] company.get error:", e); }
         }
       }
     } catch (e) {
@@ -2425,6 +2448,7 @@ Deno.serve(async (req) => {
     return new Response(renderPaymentTab({
       entityId, dealTitle, totalValue, paidValue, openValue, currency,
       installments, supabaseUrl, memberId, flows, contactPhone,
+      contactName, contactEmail, contactCpfCnpj,
       noData: installments.length === 0,
       gateway: gwNames[displayGateway] || displayGateway,
       rawGateway: rawGatewayValue || displayGateway,
