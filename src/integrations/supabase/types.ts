@@ -1118,6 +1118,227 @@ export type Database = {
         }
         Relationships: []
       }
+      asaas_invoices: {
+        Row: {
+          asaas_invoice_id: string
+          asaas_payment_id: string | null
+          asaas_subscription_id: string | null
+          company_id: string | null
+          created_at: string
+          effective_date: string | null
+          id: string
+          last_error: string | null
+          metadata: Json
+          municipal_service_code: string | null
+          number: string | null
+          payment_transaction_id: string | null
+          pdf_url: string | null
+          service_description: string | null
+          status: string
+          updated_at: string
+          value: number
+          xml_url: string | null
+        }
+        Insert: {
+          asaas_invoice_id: string
+          asaas_payment_id?: string | null
+          asaas_subscription_id?: string | null
+          company_id?: string | null
+          created_at?: string
+          effective_date?: string | null
+          id?: string
+          last_error?: string | null
+          metadata?: Json
+          municipal_service_code?: string | null
+          number?: string | null
+          payment_transaction_id?: string | null
+          pdf_url?: string | null
+          service_description?: string | null
+          status?: string
+          updated_at?: string
+          value: number
+          xml_url?: string | null
+        }
+        Update: {
+          asaas_invoice_id?: string
+          asaas_payment_id?: string | null
+          asaas_subscription_id?: string | null
+          company_id?: string | null
+          created_at?: string
+          effective_date?: string | null
+          id?: string
+          last_error?: string | null
+          metadata?: Json
+          municipal_service_code?: string | null
+          number?: string | null
+          payment_transaction_id?: string | null
+          pdf_url?: string | null
+          service_description?: string | null
+          status?: string
+          updated_at?: string
+          value?: number
+          xml_url?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "asaas_invoices_asaas_subscription_id_fkey"
+            columns: ["asaas_subscription_id"]
+            isOneToOne: false
+            referencedRelation: "asaas_subscriptions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "asaas_invoices_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "asaas_invoices_payment_transaction_id_fkey"
+            columns: ["payment_transaction_id"]
+            isOneToOne: false
+            referencedRelation: "payment_transactions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      asaas_robot_registrations: {
+        Row: {
+          client_endpoint: string
+          id: string
+          installed_at: string
+          metadata: Json
+          robot_code: string
+        }
+        Insert: {
+          client_endpoint: string
+          id?: string
+          installed_at?: string
+          metadata?: Json
+          robot_code: string
+        }
+        Update: {
+          client_endpoint?: string
+          id?: string
+          installed_at?: string
+          metadata?: Json
+          robot_code?: string
+        }
+        Relationships: []
+      }
+      asaas_subscriptions: {
+        Row: {
+          asaas_customer_id: string
+          asaas_subscription_id: string
+          billing_type: string
+          bitrix24_deal_id: string | null
+          client_id: string | null
+          company_id: string | null
+          created_at: string
+          cycle: string
+          description: string | null
+          end_date: string | null
+          id: string
+          metadata: Json
+          next_due_date: string | null
+          proposal_id: string | null
+          status: string
+          updated_at: string
+          value: number
+        }
+        Insert: {
+          asaas_customer_id: string
+          asaas_subscription_id: string
+          billing_type: string
+          bitrix24_deal_id?: string | null
+          client_id?: string | null
+          company_id?: string | null
+          created_at?: string
+          cycle: string
+          description?: string | null
+          end_date?: string | null
+          id?: string
+          metadata?: Json
+          next_due_date?: string | null
+          proposal_id?: string | null
+          status?: string
+          updated_at?: string
+          value: number
+        }
+        Update: {
+          asaas_customer_id?: string
+          asaas_subscription_id?: string
+          billing_type?: string
+          bitrix24_deal_id?: string | null
+          client_id?: string | null
+          company_id?: string | null
+          created_at?: string
+          cycle?: string
+          description?: string | null
+          end_date?: string | null
+          id?: string
+          metadata?: Json
+          next_due_date?: string | null
+          proposal_id?: string | null
+          status?: string
+          updated_at?: string
+          value?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "asaas_subscriptions_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "asaas_subscriptions_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "asaas_subscriptions_proposal_id_fkey"
+            columns: ["proposal_id"]
+            isOneToOne: false
+            referencedRelation: "proposals"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      asaas_webhook_events: {
+        Row: {
+          created_at: string
+          event_id: string
+          event_type: string
+          id: string
+          payload: Json
+          processed_at: string | null
+          processing_error: string | null
+        }
+        Insert: {
+          created_at?: string
+          event_id: string
+          event_type: string
+          id?: string
+          payload: Json
+          processed_at?: string | null
+          processing_error?: string | null
+        }
+        Update: {
+          created_at?: string
+          event_id?: string
+          event_type?: string
+          id?: string
+          payload?: Json
+          processed_at?: string | null
+          processing_error?: string | null
+        }
+        Relationships: []
+      }
       automation_runs: {
         Row: {
           automation_type: string
