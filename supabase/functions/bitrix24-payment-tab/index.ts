@@ -980,7 +980,9 @@ function renderPaymentTab(opts: {
     });
   }
 
+  var submitInFlight = false;
   async function submitInstallments() {
+    if (submitInFlight) { console.log('[pay] submit already in flight, ignoring'); return; }
     var totalAmount = parseFloat(document.getElementById('pay-amount').value);
     if (!totalAmount || totalAmount <= 0) { showPayResult('Informe um valor válido.', true); return; }
     var downPayment = parseFloat(document.getElementById('pay-down').value) || 0;
@@ -999,6 +1001,7 @@ function renderPaymentTab(opts: {
     var instValue = numInstallments > 0 ? Math.floor(remaining * 100 / numInstallments) / 100 : 0;
     var lastInstValue = remaining - (instValue * (numInstallments - 1));
     var groupId = generateUUID();
+    var submitKey = ENTITY_ID + ':' + Date.now() + ':' + Math.random().toString(36).slice(2);
     var hasDown = downPayment > 0;
     var totalCount = (hasDown ? 1 : 0) + numInstallments;
     var parcels = [];
@@ -1015,10 +1018,12 @@ function renderPaymentTab(opts: {
         if (parcels[p].amount < 5) { showPayResult('Cada parcela deve ter no mínimo R$ 5,00. Parcela ' + (p+1) + ' tem R$ ' + parcels[p].amount.toFixed(2), true); return; }
       }
     }
+    submitInFlight = true;
     var btn = document.getElementById('pay-submit');
     btn.disabled = true;
     var errors = [];
     var createdTxIds = [];
+    var createdResults = []; // { parcel, payment_url, tx_id, method }
     for (var j = 0; j < parcels.length; j++) {
       var parcel = parcels[j];
       btn.textContent = 'A criar ' + (j+1) + '/' + parcels.length + '...';
@@ -1034,12 +1039,20 @@ function renderPaymentTab(opts: {
             customer_data: { name: name, email: email, cpf_cnpj: cpf || undefined },
             due_date: parcel.due_date, installment_number: parcel.installment_number,
             total_installments: totalCount, installment_group_id: groupId, is_down_payment: parcel.is_down_payment,
-            metadata: { bitrix_deal_id: ENTITY_ID, source: 'bitrix24_payment_tab' }
+            metadata: { bitrix_deal_id: ENTITY_ID, source: 'bitrix24_payment_tab', client_submit_key: submitKey + ':' + j }
           })
         });
         var data = await res.json();
         if (data.error) { errors.push('Fatura ' + (j+1) + ': ' + data.error); }
-        else if (data.transaction) { createdTxIds.push({ txId: data.transaction.id, parcel: parcel, index: j }); }
+        else if (data.transaction) {
+          createdTxIds.push({ txId: data.transaction.id, parcel: parcel, index: j });
+          createdResults.push({
+            parcel: parcel,
+            tx_id: data.transaction.id,
+            payment_url: data.payment_url || data.transaction.payment_url || null,
+            method: method
+          });
+        }
       } catch (e) { errors.push('Fatura ' + (j+1) + ': ' + e.message); }
     }
     if (createdTxIds.length > 0 && typeof BX24 !== 'undefined') {
@@ -1067,11 +1080,60 @@ function renderPaymentTab(opts: {
         }
       } catch (e) { console.error('Smart Invoice creation error:', e); }
     }
-    btn.disabled = false;
-    btn.textContent = 'Criar Cobrança';
-    if (errors.length > 0) { showPayResult('Erros: ' + errors.join('; '), true); }
-    else { showPayResult(parcels.length + ' fatura(s) criada(s) com sucesso!', false); setTimeout(function() { location.reload(); }, 2000); }
+    if (errors.length > 0) {
+      btn.disabled = false;
+      btn.textContent = 'Criar Cobrança';
+      submitInFlight = false;
+      showPayResult('Erros: ' + errors.join('; '), true);
+    } else {
+      btn.textContent = createdResults.length + ' fatura(s) criada(s)';
+      renderPaymentLinks(createdResults, numInstallments);
+    }
   }
+
+  function renderPaymentLinks(results, numInstallments) {
+    var el = document.getElementById('pay-result');
+    var isDirect = function(m) { return m === 'direto' || m === 'parcelado_direto'; };
+    var rows = results.map(function(r, idx) {
+      var label = r.parcel.is_down_payment ? 'Entrada' : ('Parcela ' + r.parcel.installment_number + '/' + numInstallments);
+      var amountStr = r.parcel.amount.toFixed(2);
+      if (isDirect(r.method) || !r.payment_url) {
+        return '<div style="margin:8px 0;padding:8px;border:1px solid var(--border-color);border-radius:4px"><div style="font-weight:600;font-size:12px">' + label + ' — ' + amountStr + '</div><div style="font-size:11px;color:var(--text-secondary);margin-top:4px">' + (isDirect(r.method) ? 'Recebimento direto — sem link de pagamento.' : 'Sem link disponível.') + '</div></div>';
+      }
+      var inputId = 'pay-link-' + idx;
+      return '<div style="margin:8px 0;padding:8px;border:1px solid var(--border-color);border-radius:4px">' +
+        '<div style="font-weight:600;font-size:12px;margin-bottom:6px">' + label + ' — ' + amountStr + '</div>' +
+        '<div style="display:flex;gap:4px;align-items:center">' +
+          '<input id="' + inputId + '" type="text" readonly value="' + r.payment_url.replace(/"/g,'&quot;') + '" style="flex:1;min-width:0;padding:4px 6px;border:1px solid var(--border-color);border-radius:3px;font-size:11px;background:var(--bg-page)" onclick="this.select()">' +
+          '<button class="b24-btn-outline" style="padding:4px 8px;font-size:11px" onclick="copyPayLink(\\'' + inputId + '\\', this)">Copiar</button>' +
+          '<button class="b24-btn-outline" style="padding:4px 8px;font-size:11px" onclick="window.open(\\'' + r.payment_url.replace(/'/g, "\\\\'") + '\\', \\'_blank\\')">Abrir</button>' +
+        '</div>' +
+      '</div>';
+    }).join('');
+    el.innerHTML = '<div style="color:var(--value-paid);font-weight:600;margin-bottom:4px">Cobrança criada com sucesso</div>' + rows +
+      '<div style="margin-top:10px;display:flex;justify-content:flex-end">' +
+      '<button class="b24-btn-primary" onclick="location.reload()">Fechar e atualizar</button>' +
+      '</div>';
+    el.style.display = 'block';
+    el.style.color = '';
+  }
+
+  function copyPayLink(inputId, btn) {
+    var inp = document.getElementById(inputId);
+    if (!inp) return;
+    inp.select();
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(inp.value);
+      } else {
+        document.execCommand('copy');
+      }
+      var orig = btn.textContent;
+      btn.textContent = 'Copiado!';
+      setTimeout(function() { btn.textContent = orig; }, 1500);
+    } catch (e) { console.error('copy failed', e); }
+  }
+
 
   function showPayResult(msg, isError) {
     var el = document.getElementById('pay-result');

@@ -724,6 +724,25 @@ Deno.serve(async (req) => {
     let tx: any;
     let txError: any;
 
+    // Idempotency: if frontend sent client_submit_key, reuse existing transaction created in the last 60s
+    const clientSubmitKey = extraMetadata?.client_submit_key;
+    if (!existingTransactionId && clientSubmitKey) {
+      const { data: existingByKey } = await supabase
+        .from("payment_transactions")
+        .select("*")
+        .eq("metadata->>client_submit_key", clientSubmitKey)
+        .gte("created_at", new Date(Date.now() - 60_000).toISOString())
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (existingByKey) {
+        console.log(`[PAYMENT-CREATE] Idempotent hit for client_submit_key=${clientSubmitKey}, returning existing tx ${existingByKey.id}`);
+        return new Response(JSON.stringify({ ok: true, idempotent: true, transaction: existingByKey, payment_url: existingByKey.payment_url || null }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+    }
+
     // If an existing transaction_id was provided, update it instead of creating a new one
     if (existingTransactionId) {
       const res = await supabase.from("payment_transactions").update(txPayload).eq("id", existingTransactionId).select().maybeSingle();
@@ -743,6 +762,7 @@ Deno.serve(async (req) => {
     }
 
     if (txError) throw new Error(txError.message);
+
 
     // Immediate webhook/robot sync: create/reuse TOKEN_PAY and write it to the Bitrix24 deal as soon as the report can be generated.
     try {
@@ -800,9 +820,10 @@ Deno.serve(async (req) => {
       console.error("[PAYMENT-CREATE] Badge error:", badgeErr);
     }
 
-    return new Response(JSON.stringify({ ok: true, transaction: tx }), {
+    return new Response(JSON.stringify({ ok: true, transaction: tx, payment_url: tx?.payment_url || result.payment_url || null }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
+
   } catch (err: unknown) {
     return new Response(JSON.stringify({ error: err instanceof Error ? err.message : "Unknown error" }), {
       status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
