@@ -522,6 +522,7 @@ Deno.serve(async (req) => {
       }
     }
 
+    await markProcessed();
     return new Response(JSON.stringify({ ok: true, status: newStatus }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
