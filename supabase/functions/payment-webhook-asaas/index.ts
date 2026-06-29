@@ -336,9 +336,87 @@ Deno.serve(async (req) => {
     }
 
     const body = await req.json();
-    const { event, payment } = body;
+    const { event, payment, subscription, invoice } = body as any;
+
+    // Idempotency log: try to claim event_id
+    const eventId: string =
+      body.id ||
+      body.eventId ||
+      `${event}:${payment?.id || subscription?.id || invoice?.id || crypto.randomUUID()}`;
+    const { error: dedupErr } = await supabase
+      .from("asaas_webhook_events")
+      .insert({ event_id: eventId, event_type: event, payload: body });
+    if (dedupErr && (dedupErr as any).code === "23505") {
+      return new Response(JSON.stringify({ ok: true, dedup: true }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const markProcessed = async (err?: string) => {
+      await supabase
+        .from("asaas_webhook_events")
+        .update({ processed_at: new Date().toISOString(), processing_error: err || null })
+        .eq("event_id", eventId);
+    };
+
+    // ---- Subscription events ----
+    if (event && event.startsWith("SUBSCRIPTION_") && subscription?.id) {
+      const subStatusMap: Record<string, string> = {
+        SUBSCRIPTION_CREATED: "ACTIVE",
+        SUBSCRIPTION_UPDATED: "ACTIVE",
+        SUBSCRIPTION_INACTIVATED: "INACTIVE",
+        SUBSCRIPTION_DELETED: "CANCELED",
+      };
+      const newSubStatus = subStatusMap[event];
+      if (newSubStatus) {
+        await supabase
+          .from("asaas_subscriptions")
+          .update({
+            status: newSubStatus,
+            next_due_date: subscription.nextDueDate || undefined,
+            metadata: { last_event: event, last_payload: subscription },
+          })
+          .eq("asaas_subscription_id", subscription.id);
+      }
+      await markProcessed();
+      return new Response(JSON.stringify({ ok: true, subscription: subscription.id, status: newSubStatus }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // ---- Invoice / NFSe events ----
+    if (event && event.startsWith("INVOICE_") && invoice?.id) {
+      const invStatusMap: Record<string, string> = {
+        INVOICE_CREATED: "SCHEDULED",
+        INVOICE_UPDATED: "SCHEDULED",
+        INVOICE_SYNCHRONIZED: "SYNCHRONIZED",
+        INVOICE_AUTHORIZED: "AUTHORIZED",
+        INVOICE_PROCESSING_CANCELLATION: "PROCESSING_CANCELLATION",
+        INVOICE_CANCELED: "CANCELED",
+        INVOICE_CANCELLATION_DENIED: "CANCELLATION_DENIED",
+        INVOICE_ERROR: "ERROR",
+      };
+      const newInvStatus = invStatusMap[event] || "SCHEDULED";
+      await supabase
+        .from("asaas_invoices")
+        .update({
+          status: newInvStatus,
+          pdf_url: invoice.pdfUrl || undefined,
+          xml_url: invoice.xmlUrl || undefined,
+          number: invoice.number || undefined,
+          effective_date: invoice.effectiveDate || undefined,
+          last_error: invoice.lastError || null,
+          metadata: { last_event: event, last_payload: invoice },
+        })
+        .eq("asaas_invoice_id", invoice.id);
+      await markProcessed();
+      return new Response(JSON.stringify({ ok: true, invoice: invoice.id, status: newInvStatus }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
 
     if (!payment?.id) {
+      await markProcessed("no payment");
       return new Response(JSON.stringify({ ok: true, message: "No payment data" }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
@@ -358,6 +436,7 @@ Deno.serve(async (req) => {
 
     const newStatus = statusMap[event];
     if (!newStatus) {
+      await markProcessed("event not tracked");
       return new Response(JSON.stringify({ ok: true, message: "Event not tracked" }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
