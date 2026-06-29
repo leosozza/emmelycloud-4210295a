@@ -1940,7 +1940,18 @@ Deno.serve(async (req) => {
     }
 
     const bodyAuthToken = body.AUTH_ID || body.auth_id || "";
-    let accessToken = bodyAuthToken || await ensureValidToken(supabase, integration);
+    let accessToken = bodyAuthToken;
+    if (!accessToken) {
+      try { accessToken = await ensureValidToken(supabase, integration); }
+      catch (tokErr) {
+        console.error("[PAYMENT-TAB] Token refresh failed:", tokErr);
+        return new Response(renderPaymentTab({
+          entityId, dealTitle: "Negócio", totalValue: 0, paidValue: 0, openValue: 0,
+          currency: "EUR", installments: [], supabaseUrl, memberId,
+          flows: [], contactPhone: "", noData: true,
+        } as any), { headers: htmlHeaders });
+      }
+    }
     const endpoint = integration.client_endpoint;
 
     // Permission check removed — CRM placements are accessible to all users
