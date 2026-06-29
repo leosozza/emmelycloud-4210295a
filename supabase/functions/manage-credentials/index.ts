@@ -322,12 +322,18 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Block Stripe publishable keys from being saved as secret keys
-    if (credential_key?.toUpperCase().includes("STRIPE") && credential_value?.trim().startsWith("pk_")) {
-      return new Response(
-        JSON.stringify({ error: "Esta é uma Publishable Key (pk_). Utilize a Secret Key (sk_) do Stripe." }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+    // Block Stripe publishable / restricted keys from being saved as secret keys
+    {
+      const keyU = (credential_key || "").toUpperCase();
+      const provU = (provider || "").toLowerCase();
+      const val = (credential_value || "").trim();
+      const looksLikeSecretField = keyU.includes("SECRET") || provU.startsWith("stripe");
+      if (looksLikeSecretField && (val.startsWith("pk_") || val.startsWith("rk_"))) {
+        return new Response(
+          JSON.stringify({ error: "Esta é uma Publishable/Restricted Key. Utilize a Secret Key (sk_) do Stripe." }),
+          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
     }
 
     // Upsert credential
