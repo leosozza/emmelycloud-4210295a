@@ -2365,8 +2365,8 @@ Deno.serve(async (req) => {
 
   } catch (err) {
     console.error("[PAYMENT-TAB] Fatal error:", err);
-    return new Response(`<html><body><p style="color:red;padding:20px">Erro: ${String(err)}</p></body></html>`, {
-      headers: htmlHeaders,
-    });
+    const safeMsg = String((err as any)?.message || err).replace(/[<>&]/g, "");
+    const fallback = `<!DOCTYPE html><html lang="pt"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Emmely Pay</title><script src="https://api.bitrix24.com/api/v1/"></script><style>body{margin:0;font-family:'Open Sans',system-ui,sans-serif;background:#f4f6f8;color:#374151;padding:32px}.card{background:#fff;border-radius:12px;border:1px solid #e5e7eb;padding:24px;max-width:560px;margin:40px auto;text-align:center}h1{font-size:18px;color:#111827;margin:0 0 8px}p{font-size:13px;color:#6b7280;margin:6px 0}code{background:#f3f4f6;padding:2px 6px;border-radius:4px;font-size:11px}button{margin-top:14px;background:#3b82f6;color:#fff;border:0;border-radius:8px;padding:8px 14px;font-size:13px;cursor:pointer}</style></head><body><div class="card"><h1>Não foi possível carregar o Emmely Pay</h1><p>Ocorreu um erro temporário ao preparar este separador.</p><p><code>${safeMsg}</code></p><button onclick="location.reload()">Tentar de novo</button></div><script>try{BX24&&BX24.init(function(){BX24.fitWindow&&BX24.fitWindow();});}catch(e){}</script></body></html>`;
+    return new Response(fallback, { status: 200, headers: htmlHeaders });
   }
 });
