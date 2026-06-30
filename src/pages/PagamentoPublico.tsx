@@ -209,18 +209,18 @@ export default function PagamentoPublico() {
 
   if (loading) {
     return (
-      <div style={{ minHeight: "100vh", display: "grid", placeItems: "center", background: "#f8fafc", fontFamily: "Segoe UI, Arial, sans-serif" }}>
-        <div style={{ color: "#64748b" }}>A carregar relatório de pagamentos...</div>
+      <div className="min-h-screen grid place-items-center bg-[#f7f8fa] dark:bg-[#0b0f17] text-slate-500 dark:text-slate-400" style={{ fontFamily: "Inter, system-ui, sans-serif" }}>
+        <div>A carregar relatório de pagamentos...</div>
       </div>
     );
   }
 
   if (error || !data || !computed) {
     return (
-      <div style={{ minHeight: "100vh", display: "grid", placeItems: "center", background: "#f8fafc", fontFamily: "Segoe UI, Arial, sans-serif", padding: 20 }}>
-        <div style={{ background: "#fff", padding: 32, borderRadius: 12, maxWidth: 480, textAlign: "center", boxShadow: "0 1px 3px rgba(0,0,0,0.1)" }}>
-          <h1 style={{ fontSize: 18, color: "#dc2626", marginBottom: 8 }}>Relatório indisponível</h1>
-          <p style={{ color: "#64748b", fontSize: 14 }}>{error || "Não foi possível encontrar este relatório."}</p>
+      <div className="min-h-screen grid place-items-center bg-[#f7f8fa] dark:bg-[#0b0f17] p-5" style={{ fontFamily: "Inter, system-ui, sans-serif" }}>
+        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-8 rounded-xl max-w-[480px] text-center shadow-sm">
+          <h1 className="text-lg text-red-600 mb-2 font-semibold">Relatório indisponível</h1>
+          <p className="text-slate-500 dark:text-slate-400 text-sm">{error || "Não foi possível encontrar este relatório."}</p>
         </div>
       </div>
     );
@@ -232,44 +232,48 @@ export default function PagamentoPublico() {
   const productName = data.deal_title || "Serviço Jurídico";
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-800" style={{ fontFamily: "Segoe UI, Arial, sans-serif" }}>
+    <div className="min-h-screen bg-[#f7f8fa] dark:bg-[#0b0f17] text-slate-800 dark:text-slate-100" style={{ fontFamily: "Inter, system-ui, sans-serif" }}>
       <style>{`
         @media print { .no-print { display: none !important; } }
       `}</style>
 
-      <div className="max-w-3xl mx-auto bg-white min-h-screen md:shadow-xl">
+      <div className="max-w-3xl mx-auto bg-white dark:bg-slate-900 min-h-screen md:shadow-sm md:border-x md:border-slate-200 md:dark:border-slate-800">
         {/* HEADER */}
-        <div className="bg-gradient-to-br from-slate-800 to-slate-900 text-white px-5 py-6 md:px-10 md:py-8">
-          <h1 className="text-base md:text-xl font-extrabold tracking-[0.15em] md:tracking-[0.2em] m-0">EMMELY FERNANDES</h1>
-          <p className="m-0 mt-1 text-[10px] md:text-[11px] tracking-[0.3em] md:tracking-[0.4em] text-slate-400 uppercase">Advocacia Internacional</p>
+        <div className="px-5 py-6 md:px-10 md:py-7 border-b border-slate-100 dark:border-slate-800 flex items-center gap-3">
+          <div className="w-9 h-9 rounded-lg bg-[#1b6ef3] grid place-items-center text-white font-bold text-sm">E</div>
+          <div>
+            <h1 className="text-sm md:text-base font-bold tracking-wide text-slate-900 dark:text-slate-50 m-0">Emmely Fernandes</h1>
+            <p className="m-0 mt-0.5 text-[10px] md:text-[11px] tracking-[0.25em] text-slate-500 dark:text-slate-400 uppercase">Advocacia Internacional</p>
+          </div>
         </div>
 
         {/* CONTENT */}
         <div className="px-4 py-5 md:px-10 md:py-8">
 
           {/* PRODUCT/SERVICE HERO CARD */}
-          <div className="bg-gradient-to-br from-blue-50 to-indigo-50 border border-blue-100 rounded-xl p-4 md:p-5 mb-5">
-            <div className="text-[10px] uppercase tracking-widest text-blue-700 font-bold mb-1">Serviço Contratado</div>
-            <div className="text-lg md:text-2xl font-extrabold text-slate-900 leading-tight break-words">{productName}</div>
+          <div className="bg-[#eff5ff] dark:bg-[#1b6ef3]/10 border border-[#dbeafe] dark:border-[#1b6ef3]/30 rounded-xl p-4 md:p-5 mb-5">
+            <div className="text-[10px] uppercase tracking-widest text-[#1b6ef3] dark:text-[#60a5fa] font-semibold mb-1">Serviço Contratado</div>
+            <div className="text-lg md:text-2xl font-bold text-slate-900 dark:text-slate-50 leading-tight break-words">{productName}</div>
             {data.client_name && (
-              <div className="text-xs md:text-sm text-slate-600 mt-2">
-                Cliente: <strong className="text-slate-800">{data.client_name}</strong>
+              <div className="text-xs md:text-sm text-slate-600 dark:text-slate-400 mt-2">
+                Cliente: <strong className="text-slate-800 dark:text-slate-200">{data.client_name}</strong>
               </div>
             )}
           </div>
 
           {/* PRINT BUTTON */}
-          <button onClick={() => window.print()} className="no-print bg-slate-800 text-white border-none py-2.5 px-5 rounded-lg text-xs font-semibold cursor-pointer mb-5 hover:bg-slate-700 transition">
+          <button onClick={() => window.print()} className="no-print bg-slate-900 dark:bg-slate-700 text-white border-none py-2.5 px-5 rounded-lg text-xs font-semibold cursor-pointer mb-5 hover:opacity-90 transition">
             📥 Baixar / Imprimir PDF
           </button>
 
           {/* STATUS BANNERS */}
           {paymentStatus === "success" && (
-            <div className="bg-gradient-to-br from-green-100 to-green-200 border-l-4 border-green-600 text-green-900 px-4 py-3 rounded-lg mb-4 text-xs md:text-sm">
+            <div className="bg-emerald-50 dark:bg-emerald-900/20 border-l-4 border-emerald-600 text-emerald-900 dark:text-emerald-200 px-4 py-3 rounded-lg mb-4 text-xs md:text-sm">
               <strong>✅ Pagamento recebido com sucesso!</strong> A confirmação pode levar alguns segundos.
             </div>
           )}
           {paymentStatus === "cancelled" && (
+
             <div className="bg-gradient-to-br from-amber-100 to-amber-200 border-l-4 border-amber-500 text-amber-900 px-4 py-3 rounded-lg mb-4 text-xs md:text-sm">
               <strong>⚠️ Pagamento cancelado.</strong> Pode tentar novamente abaixo.
             </div>
