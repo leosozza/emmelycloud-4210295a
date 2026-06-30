@@ -137,6 +137,7 @@ interface RowMapping {
   syncDirection: string;
   isActive: boolean;
   dbId?: string; // existing DB row id
+  isSystem?: boolean; // mapeamento criado pela aplicação
 }
 
 interface FieldMappingManagerProps {
