@@ -614,39 +614,11 @@ function renderPaymentTab(opts: {
 <div class="b24-form-overlay" id="create-overlay">
   <div class="b24-form-card">
     <div class="b24-form-title">Criar Cobrança</div>
-    <div class="b24-form-group">
-      <label class="b24-form-label">Valor Total</label>
-      <input type="number" id="pay-amount" class="b24-input" step="0.01" min="0.01" placeholder="0.00" oninput="calcInstallments()">
-    </div>
     <div class="b24-form-row">
       <div class="b24-form-group">
-        <label class="b24-form-label">Entrada</label>
-        <input type="number" id="pay-down" class="b24-input" step="0.01" min="0" value="0" placeholder="0.00" oninput="calcInstallments()">
+        <label class="b24-form-label">Valor Total</label>
+        <input type="number" id="pay-amount" class="b24-input" step="0.01" min="0.01" placeholder="0.00" oninput="calcInstallments()">
       </div>
-      <div class="b24-form-group">
-        <label class="b24-form-label">Nº Parcelas</label>
-        <select id="pay-installments" class="b24-input" style="height:32px" onchange="calcInstallments()">
-          ${[1,2,3,4,5,6,7,8,9,10,11,12].map(n => `<option value="${n}">${n}</option>`).join("")}
-        </select>
-      </div>
-    </div>
-    <div class="b24-form-row">
-      <div class="b24-form-group">
-        <label class="b24-form-label">Intervalo (dias)</label>
-        <select id="pay-interval" class="b24-input" style="height:32px" onchange="calcInstallments()">
-          <option value="30">30 dias</option>
-          <option value="60">60 dias</option>
-          <option value="90">90 dias</option>
-        </select>
-      </div>
-      <div class="b24-form-group">
-        <label class="b24-form-label">1º Vencimento</label>
-        <input type="date" id="pay-first-due" class="b24-input" onchange="calcInstallments()">
-      </div>
-    </div>
-    <div id="installment-preview" style="background:var(--bg-page);border:1px solid var(--border-color);border-radius:4px;padding:10px 12px;margin-bottom:12px;font-size:12px;display:none">
-    </div>
-    <div class="b24-form-row">
       <div class="b24-form-group">
         <label class="b24-form-label">Moeda</label>
         <select id="pay-currency" class="b24-input" style="height:32px">
@@ -654,15 +626,86 @@ function renderPaymentTab(opts: {
           <option value="BRL" ${currency === "BRL" ? "selected" : ""}>BRL</option>
         </select>
       </div>
+    </div>
+
+    <!-- Bloco Entrada -->
+    <div style="border:1px solid var(--border-color);border-radius:6px;padding:10px 12px;margin-bottom:12px;background:var(--bg-page)">
+      <div style="font-weight:600;font-size:12px;color:var(--text-primary);margin-bottom:8px">Entrada</div>
+      <div class="b24-form-row">
+        <div class="b24-form-group">
+          <label class="b24-form-label">Valor da Entrada</label>
+          <input type="number" id="pay-down" class="b24-input" step="0.01" min="0" value="0" placeholder="0.00" oninput="calcInstallments()">
+        </div>
+        <div class="b24-form-group">
+          <label class="b24-form-label">Nº Parcelas da Entrada</label>
+          <select id="pay-down-installments" class="b24-input" style="height:32px" onchange="calcInstallments()">
+            ${[1,2,3,4,5,6].map(n => `<option value="${n}">${n}</option>`).join("")}
+          </select>
+        </div>
+      </div>
+      <div class="b24-form-row" id="pay-down-extra" style="display:none">
+        <div class="b24-form-group">
+          <label class="b24-form-label">Método da Entrada</label>
+          <select id="pay-down-method" class="b24-input" style="height:32px">
+            <option value="card">Cartão</option>
+            <option value="pix">PIX</option>
+            <option value="boleto">Boleto</option>
+            <option value="multibanco">Multibanco</option>
+            <option value="mb_way">MB Way</option>
+            <option value="direto">Recebimento Direto</option>
+          </select>
+        </div>
+        <div class="b24-form-group">
+          <label class="b24-form-label">1º Vencimento Entrada</label>
+          <input type="date" id="pay-down-first-due" class="b24-input" onchange="calcInstallments()">
+        </div>
+        <div class="b24-form-group">
+          <label class="b24-form-label">Intervalo Entrada</label>
+          <select id="pay-down-interval" class="b24-input" style="height:32px" onchange="calcInstallments()">
+            <option value="15">15 dias</option>
+            <option value="30" selected>30 dias</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <!-- Bloco Parcelas (Saldo) -->
+    <div style="border:1px solid var(--border-color);border-radius:6px;padding:10px 12px;margin-bottom:12px;background:var(--bg-page)">
+      <div style="font-weight:600;font-size:12px;color:var(--text-primary);margin-bottom:8px">Parcelas (Saldo)</div>
+      <div class="b24-form-row">
+        <div class="b24-form-group">
+          <label class="b24-form-label">Nº Parcelas</label>
+          <select id="pay-installments" class="b24-input" style="height:32px" onchange="calcInstallments()">
+            ${[1,2,3,4,5,6,7,8,9,10,11,12].map(n => `<option value="${n}">${n}</option>`).join("")}
+          </select>
+        </div>
+        <div class="b24-form-group">
+          <label class="b24-form-label">Intervalo (dias)</label>
+          <select id="pay-interval" class="b24-input" style="height:32px" onchange="calcInstallments()">
+            <option value="30">30 dias</option>
+            <option value="60">60 dias</option>
+            <option value="90">90 dias</option>
+          </select>
+        </div>
+        <div class="b24-form-group">
+          <label class="b24-form-label">1º Vencimento</label>
+          <input type="date" id="pay-first-due" class="b24-input" onchange="calcInstallments()">
+        </div>
+      </div>
       <div class="b24-form-group">
-        <label class="b24-form-label">Método</label>
+        <label class="b24-form-label">Método do Saldo</label>
         <select id="pay-method" class="b24-input" style="height:32px" onchange="toggleMethodFields()">
           <option value="card">Cartão</option>
           <option value="pix">PIX</option>
           <option value="boleto">Boleto</option>
+          <option value="multibanco">Multibanco</option>
+          <option value="mb_way">MB Way</option>
           <option value="direto">Recebimento Direto</option>
         </select>
       </div>
+    </div>
+
+    <div id="installment-preview" style="background:var(--bg-page);border:1px solid var(--border-color);border-radius:4px;padding:10px 12px;margin-bottom:12px;font-size:12px;display:none">
     </div>
     <div class="b24-form-group">
       <label class="b24-form-label">Descrição</label>
