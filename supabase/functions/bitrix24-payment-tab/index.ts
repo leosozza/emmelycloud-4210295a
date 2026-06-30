@@ -428,26 +428,20 @@ function renderPaymentTab(opts: {
     .b24-summary-title { font-size: 14px; font-weight: 700; color: var(--text-primary); margin-bottom: 16px; display: flex; align-items: center; gap: 8px; letter-spacing: -0.01em; }
     .b24-summary-title svg { opacity: 0.7; }
     .b24-summary-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 16px; }
-    .b24-summary-item { background: var(--stat-total-bg); border-radius: var(--radius); padding: 14px 16px; transition: box-shadow 0.2s, transform 0.15s; position: relative; overflow: hidden; }
-    .b24-summary-item::before { content: ''; position: absolute; top: 0; right: 0; width: 60px; height: 60px; border-radius: 50%; opacity: 0.07; transform: translate(15px, -15px); }
-    .b24-summary-item:hover { box-shadow: var(--shadow-md); transform: translateY(-1px); }
+    .b24-summary-item { background: var(--stat-total-bg); border: 1px solid var(--border-light); border-radius: var(--radius); padding: 14px 16px; transition: box-shadow 0.2s; position: relative; overflow: hidden; }
+    .b24-summary-item:hover { box-shadow: var(--shadow-sm); }
     .b24-summary-item.stat-paid { background: var(--stat-paid-bg); }
     .b24-summary-item.stat-open { background: var(--stat-open-bg); }
-    .b24-summary-item::before { background: var(--stat-total-icon); }
-    .b24-summary-item.stat-paid::before { background: var(--stat-paid-icon); }
-    .b24-summary-item.stat-open::before { background: var(--stat-open-icon); }
-    .b24-summary-icon { width: 28px; height: 28px; border-radius: 8px; display: flex; align-items: center; justify-content: center; margin-bottom: 8px; background: rgba(59,130,246,0.1); color: var(--stat-total-icon); }
-    .stat-paid .b24-summary-icon { background: rgba(16,185,129,0.1); color: var(--stat-paid-icon); }
-    .stat-open .b24-summary-icon { background: rgba(239,68,68,0.1); color: var(--stat-open-icon); }
-    .b24-summary-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.6px; color: var(--text-tertiary); margin-bottom: 4px; }
-    .b24-summary-value { font-size: 18px; font-weight: 800; letter-spacing: -0.02em; line-height: 1.2; }
+    .b24-summary-icon { width: 28px; height: 28px; border-radius: 8px; display: flex; align-items: center; justify-content: center; margin-bottom: 8px; background: rgba(27,110,243,0.10); color: var(--stat-total-icon); }
+    .stat-paid .b24-summary-icon { background: rgba(16,185,129,0.12); color: var(--stat-paid-icon); }
+    .stat-open .b24-summary-icon { background: rgba(239,68,68,0.10); color: var(--stat-open-icon); }
+    .b24-summary-label { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.6px; color: var(--text-tertiary); margin-bottom: 4px; }
+    .b24-summary-value { font-size: 18px; font-weight: 700; letter-spacing: -0.02em; line-height: 1.2; font-variant-numeric: tabular-nums; }
     .b24-summary-value .b24-dual-currency { margin-left: 4px; }
     .b24-progress-wrap { display: flex; align-items: center; gap: 10px; margin-top: 2px; }
-    .b24-progress { flex: 1; height: 8px; background: var(--progress-bg); border-radius: 4px; overflow: hidden; }
-    .b24-progress-fill { height: 100%; background: var(--progress-fill); border-radius: 4px; transition: width 0.8s cubic-bezier(0.22,1,0.36,1); position: relative; }
-    .b24-progress-fill::after { content: ''; position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: linear-gradient(90deg, rgba(255,255,255,0) 0%, rgba(255,255,255,0.2) 50%, rgba(255,255,255,0) 100%); animation: shimmer 2s infinite; }
-    @keyframes shimmer { 0% { transform: translateX(-100%); } 100% { transform: translateX(100%); } }
-    .b24-progress-label { font-size: 12px; font-weight: 800; color: var(--text-primary); white-space: nowrap; min-width: 36px; text-align: right; }
+    .b24-progress { flex: 1; height: 6px; background: var(--progress-bg); border-radius: 999px; overflow: hidden; }
+    .b24-progress-fill { height: 100%; background: var(--progress-fill); border-radius: 999px; transition: width 0.6s cubic-bezier(0.22,1,0.36,1); }
+    .b24-progress-label { font-size: 12px; font-weight: 700; color: var(--text-primary); white-space: nowrap; min-width: 36px; text-align: right; font-variant-numeric: tabular-nums; }
 
     /* ── Summary info pills ── */
     .b24-summary-info { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border-light); }
