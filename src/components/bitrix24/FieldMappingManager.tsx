@@ -102,6 +102,25 @@ const SUPABASE_TABLES: Record<string, { label: string; columns: { key: string; t
   },
 };
 
+// Mapeamentos criados/mantidos automaticamente pela aplicação
+// (campos UF_CRM_EMMELY_* que o sistema cria via bitrix24-ensure-asaas-fields
+// e bitrix24-spa-create-fields). São exibidos como pré-mapeados e não editáveis.
+const SYSTEM_MAPPINGS: Record<string, Record<string, { bitrixField: string; direction: string }>> = {
+  // entity "deal" -> tabelas
+  deal: {
+    // proposals
+    "proposals::bitrix_payment_id": { bitrixField: "UF_CRM_EMMELY_ASAAS_PAYMENT_ID", direction: "supabase_to_bitrix" },
+    "proposals::asaas_subscription_id": { bitrixField: "UF_CRM_EMMELY_ASAAS_SUB_ID", direction: "supabase_to_bitrix" },
+    "proposals::asaas_customer_id": { bitrixField: "UF_CRM_EMMELY_ASAAS_CUSTOMER_ID", direction: "supabase_to_bitrix" },
+    // financial_records / faturas
+    "financial_records::nfse_url": { bitrixField: "UF_CRM_EMMELY_NFSE_URL", direction: "supabase_to_bitrix" },
+    "financial_records::nfse_number": { bitrixField: "UF_CRM_EMMELY_NFSE_NUMBER", direction: "supabase_to_bitrix" },
+    "financial_records::nfse_status": { bitrixField: "UF_CRM_EMMELY_NFSE_STATUS", direction: "supabase_to_bitrix" },
+  },
+  // lead
+  lead: {},
+};
+
 interface BitrixField {
   key: string;
   title: string;
