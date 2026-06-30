@@ -485,14 +485,16 @@ export default function FieldMappingManager({ integrationId, compact, memberId }
                 ) : (
                   filteredRows.map((row) => {
                     const isMapped = row.bitrixFieldKey !== "";
+                    const isSystem = !!row.isSystem;
                     return (
                       <TableRow
                         key={row.supabaseColumn}
-                        className={isMapped ? "bg-primary/[0.03]" : ""}
+                        className={isSystem ? "bg-emerald-500/[0.04]" : isMapped ? "bg-primary/[0.03]" : ""}
                       >
                         {/* Checkbox */}
                         <TableCell className="py-1.5">
                           <Checkbox
+                            disabled={isSystem}
                             checked={selectedRows.has(row.supabaseColumn)}
                             onCheckedChange={(checked) => {
                               setSelectedRows((prev) => {
@@ -522,56 +524,72 @@ export default function FieldMappingManager({ integrationId, compact, memberId }
                           <ArrowRight className="h-3.5 w-3.5 text-muted-foreground" />
                         </TableCell>
 
-                        {/* Bitrix field dropdown */}
+                        {/* Bitrix field dropdown / system label */}
                         <TableCell className="py-1.5">
-                          <Select
-                            value={row.bitrixFieldKey || "__none__"}
-                            onValueChange={(v) =>
-                              updateRow(row.supabaseColumn, {
-                                bitrixFieldKey: v === "__none__" ? "" : v,
-                              })
-                            }
-                          >
-                            <SelectTrigger className="h-7 text-xs w-full max-w-[280px]">
-                              <SelectValue placeholder="Nenhum" />
-                            </SelectTrigger>
-                            <SelectContent className="max-h-[300px]">
-                              <SelectItem value="__none__" className="text-xs text-muted-foreground">
-                                Nenhum
-                              </SelectItem>
-                              {bitrixFields.map((f) => (
-                                <SelectItem key={f.key} value={f.key} className="text-xs">
-                                  <span className="font-medium">{f.title}</span>
-                                  <span className="text-muted-foreground ml-1">— {f.key}</span>
-                                  <span className="text-muted-foreground ml-1 text-[10px]">({f.type})</span>
+                          {isSystem ? (
+                            <div className="text-xs font-mono text-emerald-700 dark:text-emerald-400 truncate max-w-[280px]" title={row.bitrixFieldKey}>
+                              {row.bitrixFieldKey}
+                            </div>
+                          ) : (
+                            <Select
+                              value={row.bitrixFieldKey || "__none__"}
+                              onValueChange={(v) =>
+                                updateRow(row.supabaseColumn, {
+                                  bitrixFieldKey: v === "__none__" ? "" : v,
+                                })
+                              }
+                            >
+                              <SelectTrigger className="h-7 text-xs w-full max-w-[280px]">
+                                <SelectValue placeholder="Nenhum" />
+                              </SelectTrigger>
+                              <SelectContent className="max-h-[300px]">
+                                <SelectItem value="__none__" className="text-xs text-muted-foreground">
+                                  Nenhum
                                 </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
+                                {bitrixFields.map((f) => (
+                                  <SelectItem key={f.key} value={f.key} className="text-xs">
+                                    <span className="font-medium">{f.title}</span>
+                                    <span className="text-muted-foreground ml-1">— {f.key}</span>
+                                    <span className="text-muted-foreground ml-1 text-[10px]">({f.type})</span>
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          )}
                         </TableCell>
 
                         {/* Sync direction */}
                         <TableCell className="py-1.5">
-                          <Select
-                            value={row.syncDirection}
-                            onValueChange={(v) =>
-                              updateRow(row.supabaseColumn, { syncDirection: v })
-                            }
-                          >
-                            <SelectTrigger className="h-7 text-[10px] w-[68px]">
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="bitrix_to_supabase" className="text-xs">B→S</SelectItem>
-                              <SelectItem value="supabase_to_bitrix" className="text-xs">S→B</SelectItem>
-                              <SelectItem value="bidirectional" className="text-xs">⇆</SelectItem>
-                            </SelectContent>
-                          </Select>
+                          {isSystem ? (
+                            <Badge variant="outline" className="text-[10px] h-5 px-1.5">
+                              {row.syncDirection === "bidirectional" ? "⇆" : row.syncDirection === "supabase_to_bitrix" ? "S→B" : "B→S"}
+                            </Badge>
+                          ) : (
+                            <Select
+                              value={row.syncDirection}
+                              onValueChange={(v) =>
+                                updateRow(row.supabaseColumn, { syncDirection: v })
+                              }
+                            >
+                              <SelectTrigger className="h-7 text-[10px] w-[68px]">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="bitrix_to_supabase" className="text-xs">B→S</SelectItem>
+                                <SelectItem value="supabase_to_bitrix" className="text-xs">S→B</SelectItem>
+                                <SelectItem value="bidirectional" className="text-xs">⇆</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          )}
                         </TableCell>
 
                         {/* Status */}
                         <TableCell className="py-1.5">
-                          {isMapped ? (
+                          {isSystem ? (
+                            <Badge className="text-[10px] h-5 px-1.5 bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border-emerald-500/20">
+                              Auto (sistema)
+                            </Badge>
+                          ) : isMapped ? (
                             <Badge className="text-[10px] h-5 px-1.5 bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border-emerald-500/20">
                               Mapeado
                             </Badge>
@@ -584,7 +602,7 @@ export default function FieldMappingManager({ integrationId, compact, memberId }
 
                         {/* Remove */}
                         <TableCell className="py-1.5">
-                          {isMapped && (
+                          {isMapped && !isSystem && (
                             <Button
                               variant="ghost"
                               size="icon"
