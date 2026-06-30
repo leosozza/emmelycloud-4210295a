@@ -130,6 +130,16 @@ Deno.serve(async (req) => {
       });
     }
 
+    // Métodos de cobrança direta (não-gateway) — não geram link Stripe.
+    const directMethods = ["direto", "parcelado_direto", "transferencia", "n"];
+    if (payment_method && directMethods.includes(String(payment_method).toLowerCase())) {
+      return new Response(JSON.stringify({
+        error: `Método "${payment_method}" é de cobrança direta — não gera link de pagamento. Edite a parcela e escolha Cartão, Multibanco, MB Way, PIX ou Boleto para gerar um link.`,
+      }), {
+        status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     const supabase = createClient(
       Deno.env.get("SUPABASE_URL")!,
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
