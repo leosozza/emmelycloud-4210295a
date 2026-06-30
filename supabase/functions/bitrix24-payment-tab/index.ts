@@ -1072,6 +1072,10 @@ function renderPaymentTab(opts: {
     var totalAmount = parseFloat(document.getElementById('pay-amount').value);
     if (!totalAmount || totalAmount <= 0) { showPayResult('Informe um valor válido.', true); return; }
     var downPayment = parseFloat(document.getElementById('pay-down').value) || 0;
+    var downN = parseInt(document.getElementById('pay-down-installments').value) || 1;
+    var downInterval = parseInt(document.getElementById('pay-down-interval').value) || 30;
+    var downFirstDue = document.getElementById('pay-down-first-due').value || new Date().toISOString().split('T')[0];
+    var downMethod = (document.getElementById('pay-down-method') || {}).value || 'pix';
     var numInstallments = parseInt(document.getElementById('pay-installments').value) || 1;
     var interval = parseInt(document.getElementById('pay-interval').value) || 30;
     var firstDue = document.getElementById('pay-first-due').value;
@@ -1086,18 +1090,34 @@ function renderPaymentTab(opts: {
     var remaining = totalAmount - downPayment;
     var instValue = numInstallments > 0 ? Math.floor(remaining * 100 / numInstallments) / 100 : 0;
     var lastInstValue = remaining - (instValue * (numInstallments - 1));
+    var downInstValue = downN > 0 ? Math.floor(downPayment * 100 / downN) / 100 : 0;
+    var lastDownValue = downPayment - (downInstValue * (downN - 1));
     var groupId = generateUUID();
     var submitKey = ENTITY_ID + ':' + Date.now() + ':' + Math.random().toString(36).slice(2);
     var hasDown = downPayment > 0;
-    var totalCount = (hasDown ? 1 : 0) + numInstallments;
+    var totalCount = (hasDown ? downN : 0) + (remaining > 0 ? numInstallments : 0);
     var parcels = [];
     if (hasDown) {
-      parcels.push({ amount: downPayment, due_date: new Date().toISOString().split('T')[0], installment_number: 0, is_down_payment: true });
+      for (var di = 0; di < downN; di++) {
+        var dDue = new Date(downFirstDue); dDue.setDate(dDue.getDate() + (downInterval * di));
+        var dVal = (di === downN - 1) ? lastDownValue : downInstValue;
+        parcels.push({
+          amount: dVal, due_date: dDue.toISOString().split('T')[0],
+          installment_number: di + 1, total_in_group: downN,
+          is_down_payment: true, method: downMethod
+        });
+      }
     }
-    for (var i = 0; i < numInstallments; i++) {
-      var dueDate = new Date(firstDue); dueDate.setDate(dueDate.getDate() + (interval * i));
-      var val = (i === numInstallments - 1) ? lastInstValue : instValue;
-      parcels.push({ amount: val, due_date: dueDate.toISOString().split('T')[0], installment_number: i + 1, is_down_payment: false });
+    if (remaining > 0) {
+      for (var i = 0; i < numInstallments; i++) {
+        var dueDate = new Date(firstDue); dueDate.setDate(dueDate.getDate() + (interval * i));
+        var val = (i === numInstallments - 1) ? lastInstValue : instValue;
+        parcels.push({
+          amount: val, due_date: dueDate.toISOString().split('T')[0],
+          installment_number: i + 1, total_in_group: numInstallments,
+          is_down_payment: false, method: method
+        });
+      }
     }
     if (currency === 'BRL') {
       for (var p = 0; p < parcels.length; p++) {
@@ -1114,18 +1134,27 @@ function renderPaymentTab(opts: {
       var parcel = parcels[j];
       btn.textContent = 'A criar ' + (j+1) + '/' + parcels.length + '...';
       showPayResult('A criar fatura ' + (j+1) + ' de ' + parcels.length + '...', false);
+      var parcelLabel = parcel.is_down_payment
+        ? (parcel.total_in_group > 1 ? ' (Entrada ' + parcel.installment_number + '/' + parcel.total_in_group + ')' : ' (Entrada)')
+        : ' (Parcela ' + parcel.installment_number + '/' + parcel.total_in_group + ')';
       try {
         var res = await fetch(SUPABASE_URL + '/functions/v1/payment-create', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_KEY },
           body: JSON.stringify({
-            amount: parcel.amount, currency: currency, payment_method: method,
+            amount: parcel.amount, currency: currency, payment_method: parcel.method,
             force_gateway: DEAL_RAW_GATEWAY || undefined,
-            description: desc + (parcels.length > 1 ? (parcel.is_down_payment ? ' (Entrada)' : ' (Parcela ' + parcel.installment_number + '/' + numInstallments + ')') : ''),
+            description: desc + parcelLabel,
             customer_data: { name: name, email: email, cpf_cnpj: cpf || undefined },
-            due_date: parcel.due_date, installment_number: parcel.installment_number,
+            due_date: parcel.due_date,
+            installment_number: parcel.is_down_payment ? 0 : parcel.installment_number,
             total_installments: totalCount, installment_group_id: groupId, is_down_payment: parcel.is_down_payment,
-            metadata: { bitrix_deal_id: ENTITY_ID, source: 'bitrix24_payment_tab', client_submit_key: submitKey + ':' + j }
+            metadata: {
+              bitrix_deal_id: ENTITY_ID, source: 'bitrix24_payment_tab',
+              client_submit_key: submitKey + ':' + j,
+              down_payment_index: parcel.is_down_payment ? parcel.installment_number : undefined,
+              down_payment_total: parcel.is_down_payment ? parcel.total_in_group : undefined
+            }
           })
         });
         var data = await res.json();
