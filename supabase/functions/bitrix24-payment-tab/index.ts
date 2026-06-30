@@ -1165,7 +1165,7 @@ function renderPaymentTab(opts: {
             parcel: parcel,
             tx_id: data.transaction.id,
             payment_url: data.payment_url || data.transaction.payment_url || null,
-            method: method
+            method: parcel.method
           });
         }
       } catch (e) { errors.push('Fatura ' + (j+1) + ': ' + e.message); }
