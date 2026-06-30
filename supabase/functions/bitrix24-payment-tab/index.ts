@@ -331,74 +331,93 @@ function renderPaymentTab(opts: {
   <script src="https://api.bitrix24.com/api/v1/"></script>
   <style>
     :root {
-      --bg-page: #f4f6f8;
+      color-scheme: light dark;
+      --bg-page: #f7f8fa;
       --bg-card: #ffffff;
-      --text-primary: #111827;
-      --text-secondary: #6b7280;
-      --text-tertiary: #9ca3af;
+      --text-primary: #0f172a;
+      --text-secondary: #4b5563;
+      --text-tertiary: #6b7280;
       --border-color: #e5e7eb;
-      --border-light: #f3f4f6;
-      --progress-bg: #e5e7eb;
-      --progress-fill: linear-gradient(90deg, #3b82f6, #06b6d4);
-      --progress-fill-flat: #3b82f6;
-      --link-color: #2563eb;
-      --value-paid: #059669;
+      --border-light: #eef0f3;
+      --progress-bg: #eef0f3;
+      --progress-fill: #1b6ef3;
+      --progress-fill-flat: #1b6ef3;
+      --link-color: #1b6ef3;
+      --primary: #1b6ef3;
+      --primary-hover: #155fd7;
+      --value-paid: #16a34a;
       --value-open: #dc2626;
       --accent-paid: #10b981;
       --accent-pending: #f59e0b;
       --accent-overdue: #ef4444;
       --accent-default: #cbd5e1;
-      --shadow-xs: 0 1px 2px rgba(0,0,0,0.04);
-      --shadow-sm: 0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
-      --shadow-md: 0 4px 12px rgba(0,0,0,0.08);
-      --shadow-lg: 0 8px 24px rgba(0,0,0,0.1);
-      --radius: 10px;
-      --radius-sm: 6px;
-      --stat-total-bg: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%);
-      --stat-total-icon: #3b82f6;
-      --stat-paid-bg: linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%);
+      --shadow-xs: 0 1px 2px rgba(15,23,42,0.04);
+      --shadow-sm: 0 1px 2px rgba(15,23,42,0.06);
+      --shadow-md: 0 4px 12px rgba(15,23,42,0.08);
+      --shadow-lg: 0 10px 30px rgba(15,23,42,0.10);
+      --radius: 12px;
+      --radius-sm: 8px;
+      --stat-total-bg: #eff5ff;
+      --stat-total-icon: #1b6ef3;
+      --stat-paid-bg: #ecfdf5;
       --stat-paid-icon: #10b981;
-      --stat-open-bg: linear-gradient(135deg, #fef2f2 0%, #fecaca 100%);
+      --stat-open-bg: #fef2f2;
       --stat-open-icon: #ef4444;
-      --stat-total-bg-flat: #eff6ff;
+      --stat-total-bg-flat: #eff5ff;
       --stat-paid-bg-flat: #ecfdf5;
       --stat-open-bg-flat: #fef2f2;
     }
-    body.dark {
-      --bg-page: #0f172a;
-      --bg-card: #1e293b;
-      --text-primary: #f1f5f9;
-      --text-secondary: #94a3b8;
-      --text-tertiary: #64748b;
-      --border-color: #334155;
-      --border-light: #1e293b;
-      --progress-bg: #334155;
-      --progress-fill: linear-gradient(90deg, #60a5fa, #22d3ee);
-      --progress-fill-flat: #60a5fa;
-      --link-color: #60a5fa;
-      --value-paid: #34d399;
-      --value-open: #f87171;
-      --accent-paid: #34d399;
-      --accent-pending: #fbbf24;
-      --accent-overdue: #f87171;
-      --accent-default: #475569;
-      --shadow-xs: 0 1px 2px rgba(0,0,0,0.2);
-      --shadow-sm: 0 1px 3px rgba(0,0,0,0.2);
-      --shadow-md: 0 4px 12px rgba(0,0,0,0.3);
-      --shadow-lg: 0 8px 24px rgba(0,0,0,0.4);
-      --stat-total-bg: linear-gradient(135deg, #1e293b 0%, #1e3a5f 100%);
-      --stat-total-icon: #60a5fa;
-      --stat-paid-bg: linear-gradient(135deg, #1e293b 0%, #064e3b 100%);
-      --stat-paid-icon: #34d399;
-      --stat-open-bg: linear-gradient(135deg, #1e293b 0%, #7f1d1d 100%);
-      --stat-open-icon: #f87171;
-      --stat-total-bg-flat: #1e293b;
-      --stat-paid-bg-flat: #1e293b;
-      --stat-open-bg-flat: #1e293b;
+    @media (prefers-color-scheme: dark) {
+      :root:not([data-theme="light"]) {
+        --bg-page: #0b0f17;
+        --bg-card: #111827;
+        --text-primary: #f1f5f9;
+        --text-secondary: #94a3b8;
+        --text-tertiary: #64748b;
+        --border-color: #1f2937;
+        --border-light: #1a2230;
+        --progress-bg: #1f2937;
+        --progress-fill: #3b82f6;
+        --progress-fill-flat: #3b82f6;
+        --link-color: #60a5fa;
+        --primary: #3b82f6;
+        --primary-hover: #2563eb;
+        --value-paid: #34d399;
+        --value-open: #f87171;
+        --accent-paid: #34d399;
+        --accent-pending: #fbbf24;
+        --accent-overdue: #f87171;
+        --accent-default: #334155;
+        --shadow-xs: 0 1px 2px rgba(0,0,0,0.25);
+        --shadow-sm: 0 1px 2px rgba(0,0,0,0.35);
+        --shadow-md: 0 4px 12px rgba(0,0,0,0.45);
+        --shadow-lg: 0 10px 30px rgba(0,0,0,0.5);
+        --stat-total-bg: rgba(59,130,246,0.10);
+        --stat-paid-bg: rgba(52,211,153,0.10);
+        --stat-open-bg: rgba(248,113,113,0.10);
+        --stat-total-bg-flat: rgba(59,130,246,0.10);
+        --stat-paid-bg-flat: rgba(52,211,153,0.10);
+        --stat-open-bg-flat: rgba(248,113,113,0.10);
+      }
     }
+    [data-theme="dark"] {
+      --bg-page: #0b0f17; --bg-card: #111827; --text-primary: #f1f5f9; --text-secondary: #94a3b8;
+      --text-tertiary: #64748b; --border-color: #1f2937; --border-light: #1a2230;
+      --progress-bg: #1f2937; --progress-fill: #3b82f6; --progress-fill-flat: #3b82f6;
+      --link-color: #60a5fa; --primary: #3b82f6; --primary-hover: #2563eb;
+      --value-paid: #34d399; --value-open: #f87171;
+      --accent-paid: #34d399; --accent-pending: #fbbf24; --accent-overdue: #f87171; --accent-default: #334155;
+      --shadow-xs: 0 1px 2px rgba(0,0,0,0.25); --shadow-sm: 0 1px 2px rgba(0,0,0,0.35);
+      --shadow-md: 0 4px 12px rgba(0,0,0,0.45); --shadow-lg: 0 10px 30px rgba(0,0,0,0.5);
+      --stat-total-bg: rgba(59,130,246,0.10); --stat-paid-bg: rgba(52,211,153,0.10); --stat-open-bg: rgba(248,113,113,0.10);
+      --stat-total-bg-flat: rgba(59,130,246,0.10); --stat-paid-bg-flat: rgba(52,211,153,0.10); --stat-open-bg-flat: rgba(248,113,113,0.10);
+    }
+    /* Back-compat: any leftover body.dark toggles still work */
+    body.dark { color-scheme: dark; }
+    body.dark, html:has(body.dark) { --bg-page: #0b0f17; --bg-card: #111827; --text-primary: #f1f5f9; --text-secondary: #94a3b8; --text-tertiary: #64748b; --border-color: #1f2937; --border-light: #1a2230; --progress-bg: #1f2937; --progress-fill: #3b82f6; --progress-fill-flat: #3b82f6; --link-color: #60a5fa; --primary: #3b82f6; --primary-hover: #2563eb; --value-paid: #34d399; --value-open: #f87171; --accent-paid: #34d399; --accent-pending: #fbbf24; --accent-overdue: #f87171; --accent-default: #334155; --shadow-xs: 0 1px 2px rgba(0,0,0,0.25); --shadow-sm: 0 1px 2px rgba(0,0,0,0.35); --shadow-md: 0 4px 12px rgba(0,0,0,0.45); --shadow-lg: 0 10px 30px rgba(0,0,0,0.5); --stat-total-bg: rgba(59,130,246,0.10); --stat-paid-bg: rgba(52,211,153,0.10); --stat-open-bg: rgba(248,113,113,0.10); --stat-total-bg-flat: rgba(59,130,246,0.10); --stat-paid-bg-flat: rgba(52,211,153,0.10); --stat-open-bg-flat: rgba(248,113,113,0.10); }
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
-      font-family: "Open Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+      font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
       font-size: 13px; background: var(--bg-page); color: var(--text-primary); line-height: 1.5;
       -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale;
     }
