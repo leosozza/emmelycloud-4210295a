@@ -321,6 +321,7 @@ export default function FieldMappingManager({ integrationId, compact, memberId }
     setSaving(true);
     try {
       for (const r of rows) {
+        if (r.isSystem) continue; // mapeamentos automáticos não vão para a tabela
         if (!r.bitrixFieldKey) continue;
         const bitrixField = bitrixFields.find((f) => f.key === r.bitrixFieldKey);
         const payload: any = {
