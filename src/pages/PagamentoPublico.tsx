@@ -78,6 +78,18 @@ export default function PagamentoPublico() {
   const [payError, setPayError] = useState<{ title: string; message: string; missing?: string[]; details?: string; recordId?: string } | null>(null);
   const [methodChooser, setMethodChooser] = useState<{ recordId: string } | null>(null);
 
+  // Theme follows OS — no toggle, no persistence
+  useEffect(() => {
+    const root = document.documentElement;
+    const mq = window.matchMedia("(prefers-color-scheme: dark)");
+    const apply = (dark: boolean) => root.classList.toggle("dark", dark);
+    apply(mq.matches);
+    const onChange = (e: MediaQueryListEvent) => apply(e.matches);
+    mq.addEventListener("change", onChange);
+    return () => { mq.removeEventListener("change", onChange); root.classList.remove("dark"); };
+  }, []);
+
+
   async function load() {
     const normalizedToken = token?.trim();
     setLoading(true);
