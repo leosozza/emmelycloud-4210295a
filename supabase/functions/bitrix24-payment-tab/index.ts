@@ -457,23 +457,23 @@ function renderPaymentTab(opts: {
 
     /* ── List ── */
     .b24-list { padding: 16px 24px; display: flex; flex-direction: column; gap: 12px; }
-    .b24-item { background: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--radius); padding: 16px 18px; border-left: 5px solid var(--accent-default); box-shadow: var(--shadow-xs); transition: box-shadow 0.2s, transform 0.15s, border-color 0.2s; }
-    .b24-item:hover { box-shadow: var(--shadow-sm); transform: translateY(-1px); }
+    .b24-item { background: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--radius); padding: 16px 18px; border-left: 3px solid var(--accent-default); box-shadow: var(--shadow-xs); transition: box-shadow 0.2s, border-color 0.2s; }
+    .b24-item:hover { box-shadow: var(--shadow-sm); }
     .b24-item.status-paga { border-left-color: var(--accent-paid); }
     .b24-item.status-atrasada { border-left-color: var(--accent-overdue); }
     .b24-item.status-vencendo { border-left-color: var(--accent-pending); }
     .b24-item.status-pendente { border-left-color: var(--accent-default); }
-    .b24-item.has-missing { border-left-color: var(--accent-pending); background: linear-gradient(135deg, var(--bg-card) 95%, rgba(245,158,11,0.05) 100%); }
+    .b24-item.has-missing { border-left-color: var(--accent-pending); }
     .b24-item-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
     .b24-item-left { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
-    .b24-item-title { font-size: 13px; font-weight: 700; color: var(--text-primary); letter-spacing: -0.01em; }
-    .b24-item-value { font-size: 16px; font-weight: 800; color: var(--text-primary); letter-spacing: -0.02em; }
-    .b24-missing-icon { color: #f59e0b; font-size: 11px; cursor: help; display: inline-flex; align-items: center; gap: 3px; background: rgba(245,158,11,0.08); padding: 2px 8px; border-radius: 12px; }
-    .b24-badge { display: inline-flex; align-items: center; background: var(--badge-bg); color: var(--badge-text); border-radius: 20px; padding: 4px 14px; font-size: 11px; font-weight: 700; white-space: nowrap; letter-spacing: 0.3px; text-transform: uppercase; }
+    .b24-item-title { font-size: 13px; font-weight: 600; color: var(--text-primary); letter-spacing: -0.01em; }
+    .b24-item-value { font-size: 16px; font-weight: 700; color: var(--text-primary); letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+    .b24-missing-icon { color: #b45309; font-size: 11px; cursor: help; display: inline-flex; align-items: center; gap: 3px; background: rgba(245,158,11,0.10); padding: 2px 8px; border-radius: 999px; }
+    .b24-badge { display: inline-flex; align-items: center; background: var(--badge-bg); color: var(--badge-text); border-radius: 999px; padding: 3px 10px; font-size: 11px; font-weight: 600; white-space: nowrap; letter-spacing: 0.2px; }
     body.dark .b24-badge { background: var(--badge-bg-dark); color: var(--badge-text-dark); }
     .b24-item-meta { display: flex; gap: 12px; font-size: 12px; color: var(--text-secondary); margin-bottom: 6px; flex-wrap: wrap; align-items: center; }
     .b24-item-meta span { display: inline-flex; align-items: center; gap: 4px; padding: 2px 0; }
-    .b24-item-meta .b24-missing { color: #f59e0b; font-weight: 600; }
+    .b24-item-meta .b24-missing { color: #b45309; font-weight: 600; }
     .b24-item-total { font-weight: 600; color: var(--text-primary); font-size: 11px; }
     .b24-item-desc { font-size: 11px; color: var(--text-tertiary); font-style: italic; margin-top: 6px; padding-top: 6px; border-top: 1px dashed var(--border-light); }
     .b24-link-row { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; margin-top: 6px; }
@@ -485,15 +485,15 @@ function renderPaymentTab(opts: {
 
     /* ── Action buttons ── */
     .b24-item-actions { display: flex; gap: 8px; align-items: center; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border-light); }
-    .b24-select { flex: 1; height: 34px; font-size: 13px; font-family: inherit; border: 1px solid var(--border-color); border-radius: var(--radius-sm); padding: 0 10px; background: var(--bg-card); color: var(--text-primary); outline: none; transition: all 0.15s; }
-    .b24-select:focus { border-color: var(--progress-fill-flat); box-shadow: 0 0 0 3px rgba(59,130,246,0.12); }
-    .b24-btn-emmely { background: #2563eb; color: #fff; border: none; padding: 0 16px; height: 34px; border-radius: var(--radius-sm); font-size: 12px; font-weight: 700; font-family: inherit; cursor: pointer; white-space: nowrap; transition: all 0.15s; }
-    .b24-btn-emmely:hover { background: #1d4ed8; box-shadow: 0 2px 8px rgba(37,99,235,0.3); }
-    .b24-btn-primary { background: linear-gradient(135deg, #3b82f6, #2563eb); color: #fff; border: none; padding: 0 20px; height: 36px; border-radius: var(--radius-sm); font-size: 12px; font-weight: 700; font-family: inherit; cursor: pointer; white-space: nowrap; transition: all 0.2s; display: inline-flex; align-items: center; gap: 6px; box-shadow: 0 1px 3px rgba(37,99,235,0.2); }
-    .b24-btn-primary:hover { background: linear-gradient(135deg, #2563eb, #1d4ed8); box-shadow: 0 4px 12px rgba(37,99,235,0.3); transform: translateY(-1px); }
-    .b24-btn-primary:active { transform: translateY(0); }
-    .b24-btn-primary:disabled { opacity: 0.5; cursor: not-allowed; transform: none; box-shadow: none; }
-    .b24-btn-outline { background: var(--bg-card); color: var(--text-primary); border: 1px solid var(--border-color); padding: 0 16px; height: 36px; border-radius: var(--radius-sm); font-size: 12px; font-weight: 600; font-family: inherit; cursor: pointer; transition: all 0.15s; }
+    .b24-select { flex: 1; height: 36px; font-size: 13px; font-family: inherit; border: 1px solid var(--border-color); border-radius: var(--radius-sm); padding: 0 10px; background: var(--bg-card); color: var(--text-primary); outline: none; transition: all 0.15s; }
+    .b24-select:focus { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(27,110,243,0.15); }
+    .b24-btn-emmely { background: var(--primary); color: #fff; border: none; padding: 0 16px; height: 36px; border-radius: var(--radius-sm); font-size: 12px; font-weight: 600; font-family: inherit; cursor: pointer; white-space: nowrap; transition: background 0.15s; }
+    .b24-btn-emmely:hover { background: var(--primary-hover); }
+    .b24-btn-primary { background: var(--primary); color: #fff; border: none; padding: 0 18px; height: 38px; border-radius: var(--radius-sm); font-size: 13px; font-weight: 600; font-family: inherit; cursor: pointer; white-space: nowrap; transition: background 0.15s; display: inline-flex; align-items: center; gap: 6px; }
+    .b24-btn-primary:hover { background: var(--primary-hover); }
+    .b24-btn-primary:active { transform: translateY(1px); }
+    .b24-btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+    .b24-btn-outline { background: var(--bg-card); color: var(--text-primary); border: 1px solid var(--border-color); padding: 0 16px; height: 38px; border-radius: var(--radius-sm); font-size: 13px; font-weight: 500; font-family: inherit; cursor: pointer; transition: all 0.15s; }
     .b24-btn-outline:hover { background: var(--bg-page); border-color: var(--text-secondary); }
 
     .b24-create-bar { background: var(--bg-card); border-bottom: 1px solid var(--border-color); padding: 12px 24px; display: flex; justify-content: flex-end; }
