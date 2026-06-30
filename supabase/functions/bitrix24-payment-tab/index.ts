@@ -994,6 +994,8 @@ function renderPaymentTab(opts: {
     var d = new Date();
     d.setDate(d.getDate() + interval);
     document.getElementById('pay-first-due').value = d.toISOString().split('T')[0];
+    var dEntry = new Date();
+    document.getElementById('pay-down-first-due').value = dEntry.toISOString().split('T')[0];
     calcInstallments();
   }
   initForm();
@@ -1001,19 +1003,42 @@ function renderPaymentTab(opts: {
   function calcInstallments() {
     var total = parseFloat(document.getElementById('pay-amount').value) || 0;
     var down = parseFloat(document.getElementById('pay-down').value) || 0;
+    var downN = parseInt(document.getElementById('pay-down-installments').value) || 1;
+    var downInterval = parseInt(document.getElementById('pay-down-interval').value) || 30;
+    var downFirstDue = document.getElementById('pay-down-first-due').value;
     var numInst = parseInt(document.getElementById('pay-installments').value) || 1;
     var interval = parseInt(document.getElementById('pay-interval').value) || 30;
     var firstDue = document.getElementById('pay-first-due').value;
     var preview = document.getElementById('installment-preview');
+    var extra = document.getElementById('pay-down-extra');
+    if (extra) extra.style.display = down > 0 ? '' : 'none';
     if (total <= 0) { preview.style.display = 'none'; return; }
     if (down > total) down = total;
     var remaining = total - down;
     var instValue = numInst > 0 ? Math.floor(remaining * 100 / numInst) / 100 : 0;
     var lastInst = remaining - (instValue * (numInst - 1));
+    var downInstValue = downN > 0 ? Math.floor(down * 100 / downN) / 100 : 0;
+    var lastDown = down - (downInstValue * (downN - 1));
     var lines = [];
     lines.push('<div style="font-weight:600;margin-bottom:6px;color:var(--text-primary)">Resumo do parcelamento</div>');
     lines.push('<div>Total: <strong>' + total.toFixed(2) + '</strong></div>');
-    if (down > 0) lines.push('<div>Entrada: <strong>' + down.toFixed(2) + '</strong> (vence hoje)</div>');
+    if (down > 0) {
+      if (downN > 1) {
+        lines.push('<div>Entrada: <strong>' + downN + 'x de ' + downInstValue.toFixed(2) + '</strong> (total ' + down.toFixed(2) + ')</div>');
+        if (Math.abs(lastDown - downInstValue) > 0.001) lines.push('<div style="font-size:11px;color:var(--text-secondary)">Última parcela da entrada: ' + lastDown.toFixed(2) + '</div>');
+      } else {
+        lines.push('<div>Entrada: <strong>' + down.toFixed(2) + '</strong></div>');
+      }
+      if (downFirstDue) {
+        var ed = [];
+        for (var ei = 0; ei < downN && ei < 6; ei++) {
+          var de = new Date(downFirstDue); de.setDate(de.getDate() + (downInterval * ei));
+          ed.push(de.toLocaleDateString('pt-PT', { day: '2-digit', month: '2-digit' }));
+        }
+        if (downN > 6) ed.push('...');
+        lines.push('<div style="font-size:11px;color:var(--text-secondary)">Vencimentos entrada: ' + ed.join(', ') + '</div>');
+      }
+    }
     if (numInst > 0 && remaining > 0) {
       lines.push('<div>Parcelas: <strong>' + numInst + 'x de ' + instValue.toFixed(2) + '</strong></div>');
       if (Math.abs(lastInst - instValue) > 0.001) lines.push('<div style="font-size:11px;color:var(--text-secondary)">Última parcela: ' + lastInst.toFixed(2) + ' (ajuste)</div>');
@@ -1024,14 +1049,15 @@ function renderPaymentTab(opts: {
           dates.push(d.toLocaleDateString('pt-PT', { day: '2-digit', month: '2-digit' }));
         }
         if (numInst > 6) dates.push('...');
-        lines.push('<div style="margin-top:4px;font-size:11px;color:var(--text-secondary)">Vencimentos: ' + dates.join(', ') + '</div>');
+        lines.push('<div style="margin-top:4px;font-size:11px;color:var(--text-secondary)">Vencimentos parcelas: ' + dates.join(', ') + '</div>');
       }
     }
-    var totalParcelas = (down > 0 ? 1 : 0) + numInst;
+    var totalParcelas = (down > 0 ? downN : 0) + (remaining > 0 ? numInst : 0);
     lines.push('<div style="margin-top:4px;font-size:11px;color:var(--text-secondary)">Total de faturas: ' + totalParcelas + '</div>');
     preview.innerHTML = lines.join('');
     preview.style.display = 'block';
   }
+
 
   function generateUUID() {
     return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
