@@ -100,6 +100,16 @@ const SUPABASE_TABLES: Record<string, { label: string; columns: { key: string; t
       { key: "department", type: "text" },
     ],
   },
+  financial_records: {
+    label: "Faturas / Financeiro",
+    columns: [
+      { key: "installment_value", type: "numeric" },
+      { key: "total_value", type: "numeric" },
+      { key: "due_date", type: "date" },
+      { key: "paid_at", type: "timestamp" },
+      { key: "status", type: "enum" },
+    ],
+  },
 };
 
 // Mapeamentos criados/mantidos automaticamente pela aplicação
