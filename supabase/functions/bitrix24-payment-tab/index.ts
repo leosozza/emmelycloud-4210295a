@@ -1210,7 +1210,7 @@ function renderPaymentTab(opts: {
     var el = document.getElementById('pay-result');
     var isDirect = function(m) { return m === 'direto' || m === 'parcelado_direto'; };
     var rows = results.map(function(r, idx) {
-      var label = r.parcel.is_down_payment ? 'Entrada' : ('Parcela ' + r.parcel.installment_number + '/' + numInstallments);
+      var label = r.parcel.is_down_payment ? ('Entrada ' + r.parcel.installment_number + '/' + r.parcel.total_in_group) : ('Parcela ' + r.parcel.installment_number + '/' + r.parcel.total_in_group);
       var amountStr = r.parcel.amount.toFixed(2);
       if (isDirect(r.method) || !r.payment_url) {
         return '<div style="margin:8px 0;padding:8px;border:1px solid var(--border-color);border-radius:4px"><div style="font-weight:600;font-size:12px">' + label + ' — ' + amountStr + '</div><div style="font-size:11px;color:var(--text-secondary);margin-top:4px">' + (isDirect(r.method) ? 'Recebimento direto — sem link de pagamento.' : 'Sem link disponível.') + '</div></div>';
