@@ -1176,7 +1176,7 @@ function renderPaymentTab(opts: {
       try {
         for (var k = 0; k < createdTxIds.length; k++) {
           var item = createdTxIds[k];
-          var invoiceLabel = item.parcel.is_down_payment ? 'Entrada' : ('Parcela ' + item.parcel.installment_number + '/' + numInstallments);
+          var invoiceLabel = item.parcel.is_down_payment ? ('Entrada ' + item.parcel.installment_number + '/' + item.parcel.total_in_group) : ('Parcela ' + item.parcel.installment_number + '/' + item.parcel.total_in_group);
           var invoiceTitle = invoiceLabel + ' - ' + (desc || 'Negócio');
           await new Promise(function(resolve) {
             BX24.callMethod('crm.item.add', {
