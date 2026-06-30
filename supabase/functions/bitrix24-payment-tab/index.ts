@@ -614,39 +614,11 @@ function renderPaymentTab(opts: {
 <div class="b24-form-overlay" id="create-overlay">
   <div class="b24-form-card">
     <div class="b24-form-title">Criar Cobrança</div>
-    <div class="b24-form-group">
-      <label class="b24-form-label">Valor Total</label>
-      <input type="number" id="pay-amount" class="b24-input" step="0.01" min="0.01" placeholder="0.00" oninput="calcInstallments()">
-    </div>
     <div class="b24-form-row">
       <div class="b24-form-group">
-        <label class="b24-form-label">Entrada</label>
-        <input type="number" id="pay-down" class="b24-input" step="0.01" min="0" value="0" placeholder="0.00" oninput="calcInstallments()">
+        <label class="b24-form-label">Valor Total</label>
+        <input type="number" id="pay-amount" class="b24-input" step="0.01" min="0.01" placeholder="0.00" oninput="calcInstallments()">
       </div>
-      <div class="b24-form-group">
-        <label class="b24-form-label">Nº Parcelas</label>
-        <select id="pay-installments" class="b24-input" style="height:32px" onchange="calcInstallments()">
-          ${[1,2,3,4,5,6,7,8,9,10,11,12].map(n => `<option value="${n}">${n}</option>`).join("")}
-        </select>
-      </div>
-    </div>
-    <div class="b24-form-row">
-      <div class="b24-form-group">
-        <label class="b24-form-label">Intervalo (dias)</label>
-        <select id="pay-interval" class="b24-input" style="height:32px" onchange="calcInstallments()">
-          <option value="30">30 dias</option>
-          <option value="60">60 dias</option>
-          <option value="90">90 dias</option>
-        </select>
-      </div>
-      <div class="b24-form-group">
-        <label class="b24-form-label">1º Vencimento</label>
-        <input type="date" id="pay-first-due" class="b24-input" onchange="calcInstallments()">
-      </div>
-    </div>
-    <div id="installment-preview" style="background:var(--bg-page);border:1px solid var(--border-color);border-radius:4px;padding:10px 12px;margin-bottom:12px;font-size:12px;display:none">
-    </div>
-    <div class="b24-form-row">
       <div class="b24-form-group">
         <label class="b24-form-label">Moeda</label>
         <select id="pay-currency" class="b24-input" style="height:32px">
@@ -654,15 +626,86 @@ function renderPaymentTab(opts: {
           <option value="BRL" ${currency === "BRL" ? "selected" : ""}>BRL</option>
         </select>
       </div>
+    </div>
+
+    <!-- Bloco Entrada -->
+    <div style="border:1px solid var(--border-color);border-radius:6px;padding:10px 12px;margin-bottom:12px;background:var(--bg-page)">
+      <div style="font-weight:600;font-size:12px;color:var(--text-primary);margin-bottom:8px">Entrada</div>
+      <div class="b24-form-row">
+        <div class="b24-form-group">
+          <label class="b24-form-label">Valor da Entrada</label>
+          <input type="number" id="pay-down" class="b24-input" step="0.01" min="0" value="0" placeholder="0.00" oninput="calcInstallments()">
+        </div>
+        <div class="b24-form-group">
+          <label class="b24-form-label">Nº Parcelas da Entrada</label>
+          <select id="pay-down-installments" class="b24-input" style="height:32px" onchange="calcInstallments()">
+            ${[1,2,3,4,5,6].map(n => `<option value="${n}">${n}</option>`).join("")}
+          </select>
+        </div>
+      </div>
+      <div class="b24-form-row" id="pay-down-extra" style="display:none">
+        <div class="b24-form-group">
+          <label class="b24-form-label">Método da Entrada</label>
+          <select id="pay-down-method" class="b24-input" style="height:32px">
+            <option value="card">Cartão</option>
+            <option value="pix">PIX</option>
+            <option value="boleto">Boleto</option>
+            <option value="multibanco">Multibanco</option>
+            <option value="mb_way">MB Way</option>
+            <option value="direto">Recebimento Direto</option>
+          </select>
+        </div>
+        <div class="b24-form-group">
+          <label class="b24-form-label">1º Vencimento Entrada</label>
+          <input type="date" id="pay-down-first-due" class="b24-input" onchange="calcInstallments()">
+        </div>
+        <div class="b24-form-group">
+          <label class="b24-form-label">Intervalo Entrada</label>
+          <select id="pay-down-interval" class="b24-input" style="height:32px" onchange="calcInstallments()">
+            <option value="15">15 dias</option>
+            <option value="30" selected>30 dias</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <!-- Bloco Parcelas (Saldo) -->
+    <div style="border:1px solid var(--border-color);border-radius:6px;padding:10px 12px;margin-bottom:12px;background:var(--bg-page)">
+      <div style="font-weight:600;font-size:12px;color:var(--text-primary);margin-bottom:8px">Parcelas (Saldo)</div>
+      <div class="b24-form-row">
+        <div class="b24-form-group">
+          <label class="b24-form-label">Nº Parcelas</label>
+          <select id="pay-installments" class="b24-input" style="height:32px" onchange="calcInstallments()">
+            ${[1,2,3,4,5,6,7,8,9,10,11,12].map(n => `<option value="${n}">${n}</option>`).join("")}
+          </select>
+        </div>
+        <div class="b24-form-group">
+          <label class="b24-form-label">Intervalo (dias)</label>
+          <select id="pay-interval" class="b24-input" style="height:32px" onchange="calcInstallments()">
+            <option value="30">30 dias</option>
+            <option value="60">60 dias</option>
+            <option value="90">90 dias</option>
+          </select>
+        </div>
+        <div class="b24-form-group">
+          <label class="b24-form-label">1º Vencimento</label>
+          <input type="date" id="pay-first-due" class="b24-input" onchange="calcInstallments()">
+        </div>
+      </div>
       <div class="b24-form-group">
-        <label class="b24-form-label">Método</label>
+        <label class="b24-form-label">Método do Saldo</label>
         <select id="pay-method" class="b24-input" style="height:32px" onchange="toggleMethodFields()">
           <option value="card">Cartão</option>
           <option value="pix">PIX</option>
           <option value="boleto">Boleto</option>
+          <option value="multibanco">Multibanco</option>
+          <option value="mb_way">MB Way</option>
           <option value="direto">Recebimento Direto</option>
         </select>
       </div>
+    </div>
+
+    <div id="installment-preview" style="background:var(--bg-page);border:1px solid var(--border-color);border-radius:4px;padding:10px 12px;margin-bottom:12px;font-size:12px;display:none">
     </div>
     <div class="b24-form-group">
       <label class="b24-form-label">Descrição</label>
@@ -951,6 +994,8 @@ function renderPaymentTab(opts: {
     var d = new Date();
     d.setDate(d.getDate() + interval);
     document.getElementById('pay-first-due').value = d.toISOString().split('T')[0];
+    var dEntry = new Date();
+    document.getElementById('pay-down-first-due').value = dEntry.toISOString().split('T')[0];
     calcInstallments();
   }
   initForm();
@@ -958,19 +1003,42 @@ function renderPaymentTab(opts: {
   function calcInstallments() {
     var total = parseFloat(document.getElementById('pay-amount').value) || 0;
     var down = parseFloat(document.getElementById('pay-down').value) || 0;
+    var downN = parseInt(document.getElementById('pay-down-installments').value) || 1;
+    var downInterval = parseInt(document.getElementById('pay-down-interval').value) || 30;
+    var downFirstDue = document.getElementById('pay-down-first-due').value;
     var numInst = parseInt(document.getElementById('pay-installments').value) || 1;
     var interval = parseInt(document.getElementById('pay-interval').value) || 30;
     var firstDue = document.getElementById('pay-first-due').value;
     var preview = document.getElementById('installment-preview');
+    var extra = document.getElementById('pay-down-extra');
+    if (extra) extra.style.display = down > 0 ? '' : 'none';
     if (total <= 0) { preview.style.display = 'none'; return; }
     if (down > total) down = total;
     var remaining = total - down;
     var instValue = numInst > 0 ? Math.floor(remaining * 100 / numInst) / 100 : 0;
     var lastInst = remaining - (instValue * (numInst - 1));
+    var downInstValue = downN > 0 ? Math.floor(down * 100 / downN) / 100 : 0;
+    var lastDown = down - (downInstValue * (downN - 1));
     var lines = [];
     lines.push('<div style="font-weight:600;margin-bottom:6px;color:var(--text-primary)">Resumo do parcelamento</div>');
     lines.push('<div>Total: <strong>' + total.toFixed(2) + '</strong></div>');
-    if (down > 0) lines.push('<div>Entrada: <strong>' + down.toFixed(2) + '</strong> (vence hoje)</div>');
+    if (down > 0) {
+      if (downN > 1) {
+        lines.push('<div>Entrada: <strong>' + downN + 'x de ' + downInstValue.toFixed(2) + '</strong> (total ' + down.toFixed(2) + ')</div>');
+        if (Math.abs(lastDown - downInstValue) > 0.001) lines.push('<div style="font-size:11px;color:var(--text-secondary)">Última parcela da entrada: ' + lastDown.toFixed(2) + '</div>');
+      } else {
+        lines.push('<div>Entrada: <strong>' + down.toFixed(2) + '</strong></div>');
+      }
+      if (downFirstDue) {
+        var ed = [];
+        for (var ei = 0; ei < downN && ei < 6; ei++) {
+          var de = new Date(downFirstDue); de.setDate(de.getDate() + (downInterval * ei));
+          ed.push(de.toLocaleDateString('pt-PT', { day: '2-digit', month: '2-digit' }));
+        }
+        if (downN > 6) ed.push('...');
+        lines.push('<div style="font-size:11px;color:var(--text-secondary)">Vencimentos entrada: ' + ed.join(', ') + '</div>');
+      }
+    }
     if (numInst > 0 && remaining > 0) {
       lines.push('<div>Parcelas: <strong>' + numInst + 'x de ' + instValue.toFixed(2) + '</strong></div>');
       if (Math.abs(lastInst - instValue) > 0.001) lines.push('<div style="font-size:11px;color:var(--text-secondary)">Última parcela: ' + lastInst.toFixed(2) + ' (ajuste)</div>');
@@ -981,14 +1049,15 @@ function renderPaymentTab(opts: {
           dates.push(d.toLocaleDateString('pt-PT', { day: '2-digit', month: '2-digit' }));
         }
         if (numInst > 6) dates.push('...');
-        lines.push('<div style="margin-top:4px;font-size:11px;color:var(--text-secondary)">Vencimentos: ' + dates.join(', ') + '</div>');
+        lines.push('<div style="margin-top:4px;font-size:11px;color:var(--text-secondary)">Vencimentos parcelas: ' + dates.join(', ') + '</div>');
       }
     }
-    var totalParcelas = (down > 0 ? 1 : 0) + numInst;
+    var totalParcelas = (down > 0 ? downN : 0) + (remaining > 0 ? numInst : 0);
     lines.push('<div style="margin-top:4px;font-size:11px;color:var(--text-secondary)">Total de faturas: ' + totalParcelas + '</div>');
     preview.innerHTML = lines.join('');
     preview.style.display = 'block';
   }
+
 
   function generateUUID() {
     return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
@@ -1003,6 +1072,10 @@ function renderPaymentTab(opts: {
     var totalAmount = parseFloat(document.getElementById('pay-amount').value);
     if (!totalAmount || totalAmount <= 0) { showPayResult('Informe um valor válido.', true); return; }
     var downPayment = parseFloat(document.getElementById('pay-down').value) || 0;
+    var downN = parseInt(document.getElementById('pay-down-installments').value) || 1;
+    var downInterval = parseInt(document.getElementById('pay-down-interval').value) || 30;
+    var downFirstDue = document.getElementById('pay-down-first-due').value || new Date().toISOString().split('T')[0];
+    var downMethod = (document.getElementById('pay-down-method') || {}).value || 'pix';
     var numInstallments = parseInt(document.getElementById('pay-installments').value) || 1;
     var interval = parseInt(document.getElementById('pay-interval').value) || 30;
     var firstDue = document.getElementById('pay-first-due').value;
@@ -1017,18 +1090,34 @@ function renderPaymentTab(opts: {
     var remaining = totalAmount - downPayment;
     var instValue = numInstallments > 0 ? Math.floor(remaining * 100 / numInstallments) / 100 : 0;
     var lastInstValue = remaining - (instValue * (numInstallments - 1));
+    var downInstValue = downN > 0 ? Math.floor(downPayment * 100 / downN) / 100 : 0;
+    var lastDownValue = downPayment - (downInstValue * (downN - 1));
     var groupId = generateUUID();
     var submitKey = ENTITY_ID + ':' + Date.now() + ':' + Math.random().toString(36).slice(2);
     var hasDown = downPayment > 0;
-    var totalCount = (hasDown ? 1 : 0) + numInstallments;
+    var totalCount = (hasDown ? downN : 0) + (remaining > 0 ? numInstallments : 0);
     var parcels = [];
     if (hasDown) {
-      parcels.push({ amount: downPayment, due_date: new Date().toISOString().split('T')[0], installment_number: 0, is_down_payment: true });
+      for (var di = 0; di < downN; di++) {
+        var dDue = new Date(downFirstDue); dDue.setDate(dDue.getDate() + (downInterval * di));
+        var dVal = (di === downN - 1) ? lastDownValue : downInstValue;
+        parcels.push({
+          amount: dVal, due_date: dDue.toISOString().split('T')[0],
+          installment_number: di + 1, total_in_group: downN,
+          is_down_payment: true, method: downMethod
+        });
+      }
     }
-    for (var i = 0; i < numInstallments; i++) {
-      var dueDate = new Date(firstDue); dueDate.setDate(dueDate.getDate() + (interval * i));
-      var val = (i === numInstallments - 1) ? lastInstValue : instValue;
-      parcels.push({ amount: val, due_date: dueDate.toISOString().split('T')[0], installment_number: i + 1, is_down_payment: false });
+    if (remaining > 0) {
+      for (var i = 0; i < numInstallments; i++) {
+        var dueDate = new Date(firstDue); dueDate.setDate(dueDate.getDate() + (interval * i));
+        var val = (i === numInstallments - 1) ? lastInstValue : instValue;
+        parcels.push({
+          amount: val, due_date: dueDate.toISOString().split('T')[0],
+          installment_number: i + 1, total_in_group: numInstallments,
+          is_down_payment: false, method: method
+        });
+      }
     }
     if (currency === 'BRL') {
       for (var p = 0; p < parcels.length; p++) {
@@ -1045,18 +1134,27 @@ function renderPaymentTab(opts: {
       var parcel = parcels[j];
       btn.textContent = 'A criar ' + (j+1) + '/' + parcels.length + '...';
       showPayResult('A criar fatura ' + (j+1) + ' de ' + parcels.length + '...', false);
+      var parcelLabel = parcel.is_down_payment
+        ? (parcel.total_in_group > 1 ? ' (Entrada ' + parcel.installment_number + '/' + parcel.total_in_group + ')' : ' (Entrada)')
+        : ' (Parcela ' + parcel.installment_number + '/' + parcel.total_in_group + ')';
       try {
         var res = await fetch(SUPABASE_URL + '/functions/v1/payment-create', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_KEY },
           body: JSON.stringify({
-            amount: parcel.amount, currency: currency, payment_method: method,
+            amount: parcel.amount, currency: currency, payment_method: parcel.method,
             force_gateway: DEAL_RAW_GATEWAY || undefined,
-            description: desc + (parcels.length > 1 ? (parcel.is_down_payment ? ' (Entrada)' : ' (Parcela ' + parcel.installment_number + '/' + numInstallments + ')') : ''),
+            description: desc + parcelLabel,
             customer_data: { name: name, email: email, cpf_cnpj: cpf || undefined },
-            due_date: parcel.due_date, installment_number: parcel.installment_number,
+            due_date: parcel.due_date,
+            installment_number: parcel.is_down_payment ? 0 : parcel.installment_number,
             total_installments: totalCount, installment_group_id: groupId, is_down_payment: parcel.is_down_payment,
-            metadata: { bitrix_deal_id: ENTITY_ID, source: 'bitrix24_payment_tab', client_submit_key: submitKey + ':' + j }
+            metadata: {
+              bitrix_deal_id: ENTITY_ID, source: 'bitrix24_payment_tab',
+              client_submit_key: submitKey + ':' + j,
+              down_payment_index: parcel.is_down_payment ? parcel.installment_number : undefined,
+              down_payment_total: parcel.is_down_payment ? parcel.total_in_group : undefined
+            }
           })
         });
         var data = await res.json();
@@ -1067,7 +1165,7 @@ function renderPaymentTab(opts: {
             parcel: parcel,
             tx_id: data.transaction.id,
             payment_url: data.payment_url || data.transaction.payment_url || null,
-            method: method
+            method: parcel.method
           });
         }
       } catch (e) { errors.push('Fatura ' + (j+1) + ': ' + e.message); }
@@ -1078,7 +1176,7 @@ function renderPaymentTab(opts: {
       try {
         for (var k = 0; k < createdTxIds.length; k++) {
           var item = createdTxIds[k];
-          var invoiceLabel = item.parcel.is_down_payment ? 'Entrada' : ('Parcela ' + item.parcel.installment_number + '/' + numInstallments);
+          var invoiceLabel = item.parcel.is_down_payment ? ('Entrada ' + item.parcel.installment_number + '/' + item.parcel.total_in_group) : ('Parcela ' + item.parcel.installment_number + '/' + item.parcel.total_in_group);
           var invoiceTitle = invoiceLabel + ' - ' + (desc || 'Negócio');
           await new Promise(function(resolve) {
             BX24.callMethod('crm.item.add', {
@@ -1112,7 +1210,7 @@ function renderPaymentTab(opts: {
     var el = document.getElementById('pay-result');
     var isDirect = function(m) { return m === 'direto' || m === 'parcelado_direto'; };
     var rows = results.map(function(r, idx) {
-      var label = r.parcel.is_down_payment ? 'Entrada' : ('Parcela ' + r.parcel.installment_number + '/' + numInstallments);
+      var label = r.parcel.is_down_payment ? ('Entrada ' + r.parcel.installment_number + '/' + r.parcel.total_in_group) : ('Parcela ' + r.parcel.installment_number + '/' + r.parcel.total_in_group);
       var amountStr = r.parcel.amount.toFixed(2);
       if (isDirect(r.method) || !r.payment_url) {
         return '<div style="margin:8px 0;padding:8px;border:1px solid var(--border-color);border-radius:4px"><div style="font-weight:600;font-size:12px">' + label + ' — ' + amountStr + '</div><div style="font-size:11px;color:var(--text-secondary);margin-top:4px">' + (isDirect(r.method) ? 'Recebimento direto — sem link de pagamento.' : 'Sem link disponível.') + '</div></div>';

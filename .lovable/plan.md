@@ -1,48 +1,45 @@
-## Problema
+# Plano
 
-A aba **Pagamentos** em `/integracoes` mostra Stripe PT/BR e Asaas como **Inativo** quando aberta dentro do iframe do Bitrix24, mesmo com as chaves configuradas (que aparecem como **Ativo** quando acedida diretamente no navegador).
+Duas correções no placement Bitrix24, sem mexer em lógica de negócio fora do necessário.
 
-## Causa raiz
+## 1) Mapeamento de Campos não reflete campos auto-criados
 
-`PagamentosTab` chama a edge function `manage-credentials` (GET) para descobrir o estado das credenciais. Essa função exige `Authorization: Bearer <jwt do utilizador>` e faz `supabase.auth.getUser()` para identificar o operador.
+Hoje `bitrix24-ensure-asaas-fields` e `bitrix24-spa-create-fields` criam campos `UF_CRM_EMMELY_*` no Bitrix automaticamente, mas a tela **Mapeamento** mostra tudo como "Não mapeado" porque depende de o usuário criar manualmente registros em `bitrix24_field_mappings`.
 
-Dentro do iframe do Bitrix24, a sessão Supabase **não está disponível** (o utilizador normalmente não fez login na app Lovable a partir do portal Bitrix, e o navegador bloqueia o `localStorage`/cookies de terceiros do domínio Lovable embutido). Resultado: a chamada volta sem `credentials` → todos os cards caem para `has_value = false` → badge "Inativo" e botão "Testar Conexão" desativado.
+**Solução:** sugerir mapeamentos automáticos quando o sistema reconhece um campo Bitrix `UF_CRM_EMMELY_*` que tem coluna equivalente no Supabase, exibindo-os como "Auto (sistema)" e bloqueando edição/remoção.
 
-Não há problema nas chaves nem no backend de pagamentos — é exclusivamente o leitor de estado que falha sem auth.
+- Em `src/components/bitrix24/FieldMappingManager.tsx`:
+  - Adicionar tabela interna `SYSTEM_MAPPINGS` com a correspondência conhecida (ex.: deal → `UF_CRM_EMMELY_ASAAS_PAYMENT_ID` ↔ `proposals.bitrix_payment_id`, `UF_CRM_EMMELY_NFSE_URL` ↔ `financial_records.nfse_url`, etc.; lead → nada por enquanto).
+  - Em `buildRows`, marcar linhas com `isSystem: true` quando o `bitrix_field_key` correspondente existir em `bitrixFields`. Pré-preencher `bitrixFieldKey` e `syncDirection` com base no `SYSTEM_MAPPINGS`.
+  - Linhas `isSystem` mostram badge "Auto (sistema)" em verde, dropdown desabilitado e botão de remover oculto.
+  - Contador "Mapeados" inclui os `isSystem`. `saveAll` ignora linhas `isSystem` (não grava em `bitrix24_field_mappings`).
+- Sem mudança de schema, sem mudança em edge functions.
 
-## Solução
+## 2) Criação de cobrança sem opções de entrada parcelada / método da entrada
 
-Criar um endpoint **público e read-only** que devolva apenas flags booleanas de presença das credenciais (nunca o valor, nem mascarado), e usá-lo como fallback no `PagamentosTab` quando não há sessão.
+A modal "Criar Cobrança" no placement (em `supabase/functions/bitrix24-payment-tab/index.ts`) hoje tem só **Entrada (valor)** + **Nº Parcelas** + **Intervalo** + **Método** único para tudo. A aplicação de referência (`bitrix24-asaas-link`) tem: valor de entrada, nº de parcelas da entrada, método da entrada, 1º vencimento da entrada; e depois saldo com nº parcelas, intervalo, vencimento e método próprios.
 
-### 1. Nova edge function `payment-providers-status` (pública)
+**Solução:** ampliar o modal e o submit no `bitrix24-payment-tab`:
 
-- `verify_jwt = false`, sem `auth.getUser()`.
-- Usa `SERVICE_ROLE_KEY` apenas para ler `integration_credentials` e devolver:
-  ```json
-  {
-    "stripe_pt": { "secret": true, "webhook": true },
-    "stripe_br": { "secret": true, "webhook": false },
-    "asaas":     { "api_key": true, "webhook_token": true, "environment": "production" }
-  }
-  ```
-- Devolve **só booleanos** + `environment` (`sandbox`/`production`) para o Asaas, que já é um valor não-sensível.
-- Sem mascaramento, sem totais por gateway, sem listagem — minimiza a superfície pública.
+- UI (HTML inline na função):
+  - Seção **Entrada** (aparece quando `Entrada > 0`):
+    - Nº de parcelas da entrada (1–12)
+    - Método da entrada (card, pix, boleto, multibanco, mb_way, direto)
+    - 1º vencimento da entrada
+    - Intervalo entre parcelas da entrada (15/30 dias)
+  - Seção **Saldo / Parcelas** mantém os campos atuais (nº parcelas, intervalo, 1º vencimento, método).
+  - Atualizar `calcInstallments()` (já existe) para gerar preview com linhas `Entrada i/N` e `Parcela i/N`, validando que a soma das entradas == valor de entrada e total bate.
+- Submit (`submitInstallments` no script da página):
+  - Construir array unificado de parcelas com flag `is_down_payment` para as entradas (campo já existe em `InstallmentData`).
+  - Continuar chamando os endpoints atuais (`payment-create` por item), passando `is_down_payment`, `payment_method` correto por linha, e `installment_number/total_installments` segmentados por grupo (entrada vs saldo).
+- Renderização (`installmentRows` já trata `inst.is_down_payment` mostrando "Entrada"). Garantir que parcelas de entrada saiam ordenadas antes das de saldo.
 
-### 2. Ajuste em `src/pages/Integracoes.tsx` (`PagamentosTab`)
+Sem mudança em `payment-create`/webhooks (já aceita `is_down_payment` no payload). Sem mudança de schema.
 
-- Em `loadCredentials`, depois da chamada a `manage-credentials`:
-  - Se a resposta veio vazia / sem auth, fazer fallback para `payment-providers-status` e popular `credentials` apenas com `has_value` (sem `masked`).
-- Quando o estado vier do endpoint público:
-  - Inputs de Secret/Webhook ficam **desativados** com placeholder "Configurado (abra fora do Bitrix24 para editar)".
-  - Botões "Testar Conexão" permanecem ativos — a função `manage-credentials` action `test_*` continua a precisar de auth, então mantemos o botão ativo apenas quando há sessão; caso contrário mostramos tooltip "Faça login na app para testar".
-- Badge "Ativo/Inativo" e o seletor Sandbox/Produção do Asaas passam a refletir o estado real mesmo no iframe.
+## Fora de escopo
+- Não mexer em `manage-credentials`, `payment-providers-status`, robots BizProc, sincronização Bitrix.
+- Sem novos secrets, sem migrações, sem alteração da arquitetura existente.
 
-### 3. Sem mudanças noutros componentes
-
-- `manage-credentials` permanece intocada (ainda exige auth para leitura mascarada, escrita e teste).
-- Sem alterações em `payment-webhook-*`, `asaas-client`, `Webhook URL`, etc.
-- Sem migrações de DB nem novos secrets.
-
-## Resultado
-
-Dentro do iframe Bitrix24 a aba Pagamentos mostra corretamente os badges **Ativo** para Stripe PT, Stripe BR e Asaas (e o ambiente do Asaas), igual à vista fora do iframe. Edição continua restrita a sessão autenticada.
+## Resumo de arquivos a editar
+- `src/components/bitrix24/FieldMappingManager.tsx` — mapeamentos automáticos do sistema.
+- `supabase/functions/bitrix24-payment-tab/index.ts` — campos de entrada parcelada + método da entrada na modal e no submit.

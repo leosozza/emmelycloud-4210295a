@@ -100,6 +100,35 @@ const SUPABASE_TABLES: Record<string, { label: string; columns: { key: string; t
       { key: "department", type: "text" },
     ],
   },
+  financial_records: {
+    label: "Faturas / Financeiro",
+    columns: [
+      { key: "installment_value", type: "numeric" },
+      { key: "total_value", type: "numeric" },
+      { key: "due_date", type: "date" },
+      { key: "paid_at", type: "timestamp" },
+      { key: "status", type: "enum" },
+    ],
+  },
+};
+
+// Mapeamentos criados/mantidos automaticamente pela aplicação
+// (campos UF_CRM_EMMELY_* que o sistema cria via bitrix24-ensure-asaas-fields
+// e bitrix24-spa-create-fields). São exibidos como pré-mapeados e não editáveis.
+const SYSTEM_MAPPINGS: Record<string, Record<string, { bitrixField: string; direction: string }>> = {
+  // entity "deal" -> tabelas
+  deal: {
+    // proposals
+    "proposals::bitrix_payment_id": { bitrixField: "UF_CRM_EMMELY_ASAAS_PAYMENT_ID", direction: "supabase_to_bitrix" },
+    "proposals::asaas_subscription_id": { bitrixField: "UF_CRM_EMMELY_ASAAS_SUB_ID", direction: "supabase_to_bitrix" },
+    "proposals::asaas_customer_id": { bitrixField: "UF_CRM_EMMELY_ASAAS_CUSTOMER_ID", direction: "supabase_to_bitrix" },
+    // financial_records / faturas
+    "financial_records::nfse_url": { bitrixField: "UF_CRM_EMMELY_NFSE_URL", direction: "supabase_to_bitrix" },
+    "financial_records::nfse_number": { bitrixField: "UF_CRM_EMMELY_NFSE_NUMBER", direction: "supabase_to_bitrix" },
+    "financial_records::nfse_status": { bitrixField: "UF_CRM_EMMELY_NFSE_STATUS", direction: "supabase_to_bitrix" },
+  },
+  // lead
+  lead: {},
 };
 
 interface BitrixField {
@@ -118,6 +147,7 @@ interface RowMapping {
   syncDirection: string;
   isActive: boolean;
   dbId?: string; // existing DB row id
+  isSystem?: boolean; // mapeamento criado pela aplicação
 }
 
 interface FieldMappingManagerProps {
@@ -188,8 +218,27 @@ export default function FieldMappingManager({ integrationId, compact, memberId }
       }
 
       const tableColumns = SUPABASE_TABLES[supabaseTable]?.columns || [];
-      const newRows: RowMapping[] = tableColumns.map((col) => {
+      const systemForEntity = SYSTEM_MAPPINGS[bitrixEntity] || {};
+      const systemColumns = new Set(
+        Object.keys(systemForEntity)
+          .filter((k) => k.startsWith(`${supabaseTable}::`))
+          .map((k) => k.split("::")[1]),
+      );
+
+      const baseRows: RowMapping[] = tableColumns.map((col) => {
         const saved = savedByColumn.get(col.key);
+        const sysKey = `${supabaseTable}::${col.key}`;
+        const sys = systemForEntity[sysKey];
+        if (sys) {
+          return {
+            supabaseColumn: col.key,
+            supabaseType: col.type,
+            bitrixFieldKey: sys.bitrixField,
+            syncDirection: sys.direction,
+            isActive: true,
+            isSystem: true,
+          };
+        }
         return {
           supabaseColumn: col.key,
           supabaseType: col.type,
@@ -200,7 +249,22 @@ export default function FieldMappingManager({ integrationId, compact, memberId }
         };
       });
 
-      setRows(newRows);
+      // Acrescenta rows de sistema que não existem nas columns padrão
+      const extraSystemRows: RowMapping[] = Array.from(systemColumns)
+        .filter((col) => !tableColumns.some((c) => c.key === col))
+        .map((col) => {
+          const sys = systemForEntity[`${supabaseTable}::${col}`];
+          return {
+            supabaseColumn: col,
+            supabaseType: "auto",
+            bitrixFieldKey: sys.bitrixField,
+            syncDirection: sys.direction,
+            isActive: true,
+            isSystem: true,
+          };
+        });
+
+      setRows([...extraSystemRows, ...baseRows]);
     } catch (e) {
       console.error("Error building rows:", e);
       setRows([]);
@@ -257,6 +321,7 @@ export default function FieldMappingManager({ integrationId, compact, memberId }
     setSaving(true);
     try {
       for (const r of rows) {
+        if (r.isSystem) continue; // mapeamentos automáticos não vão para a tabela
         if (!r.bitrixFieldKey) continue;
         const bitrixField = bitrixFields.find((f) => f.key === r.bitrixFieldKey);
         const payload: any = {
@@ -420,14 +485,16 @@ export default function FieldMappingManager({ integrationId, compact, memberId }
                 ) : (
                   filteredRows.map((row) => {
                     const isMapped = row.bitrixFieldKey !== "";
+                    const isSystem = !!row.isSystem;
                     return (
                       <TableRow
                         key={row.supabaseColumn}
-                        className={isMapped ? "bg-primary/[0.03]" : ""}
+                        className={isSystem ? "bg-emerald-500/[0.04]" : isMapped ? "bg-primary/[0.03]" : ""}
                       >
                         {/* Checkbox */}
                         <TableCell className="py-1.5">
                           <Checkbox
+                            disabled={isSystem}
                             checked={selectedRows.has(row.supabaseColumn)}
                             onCheckedChange={(checked) => {
                               setSelectedRows((prev) => {
@@ -457,56 +524,72 @@ export default function FieldMappingManager({ integrationId, compact, memberId }
                           <ArrowRight className="h-3.5 w-3.5 text-muted-foreground" />
                         </TableCell>
 
-                        {/* Bitrix field dropdown */}
+                        {/* Bitrix field dropdown / system label */}
                         <TableCell className="py-1.5">
-                          <Select
-                            value={row.bitrixFieldKey || "__none__"}
-                            onValueChange={(v) =>
-                              updateRow(row.supabaseColumn, {
-                                bitrixFieldKey: v === "__none__" ? "" : v,
-                              })
-                            }
-                          >
-                            <SelectTrigger className="h-7 text-xs w-full max-w-[280px]">
-                              <SelectValue placeholder="Nenhum" />
-                            </SelectTrigger>
-                            <SelectContent className="max-h-[300px]">
-                              <SelectItem value="__none__" className="text-xs text-muted-foreground">
-                                Nenhum
-                              </SelectItem>
-                              {bitrixFields.map((f) => (
-                                <SelectItem key={f.key} value={f.key} className="text-xs">
-                                  <span className="font-medium">{f.title}</span>
-                                  <span className="text-muted-foreground ml-1">— {f.key}</span>
-                                  <span className="text-muted-foreground ml-1 text-[10px]">({f.type})</span>
+                          {isSystem ? (
+                            <div className="text-xs font-mono text-emerald-700 dark:text-emerald-400 truncate max-w-[280px]" title={row.bitrixFieldKey}>
+                              {row.bitrixFieldKey}
+                            </div>
+                          ) : (
+                            <Select
+                              value={row.bitrixFieldKey || "__none__"}
+                              onValueChange={(v) =>
+                                updateRow(row.supabaseColumn, {
+                                  bitrixFieldKey: v === "__none__" ? "" : v,
+                                })
+                              }
+                            >
+                              <SelectTrigger className="h-7 text-xs w-full max-w-[280px]">
+                                <SelectValue placeholder="Nenhum" />
+                              </SelectTrigger>
+                              <SelectContent className="max-h-[300px]">
+                                <SelectItem value="__none__" className="text-xs text-muted-foreground">
+                                  Nenhum
                                 </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
+                                {bitrixFields.map((f) => (
+                                  <SelectItem key={f.key} value={f.key} className="text-xs">
+                                    <span className="font-medium">{f.title}</span>
+                                    <span className="text-muted-foreground ml-1">— {f.key}</span>
+                                    <span className="text-muted-foreground ml-1 text-[10px]">({f.type})</span>
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          )}
                         </TableCell>
 
                         {/* Sync direction */}
                         <TableCell className="py-1.5">
-                          <Select
-                            value={row.syncDirection}
-                            onValueChange={(v) =>
-                              updateRow(row.supabaseColumn, { syncDirection: v })
-                            }
-                          >
-                            <SelectTrigger className="h-7 text-[10px] w-[68px]">
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="bitrix_to_supabase" className="text-xs">B→S</SelectItem>
-                              <SelectItem value="supabase_to_bitrix" className="text-xs">S→B</SelectItem>
-                              <SelectItem value="bidirectional" className="text-xs">⇆</SelectItem>
-                            </SelectContent>
-                          </Select>
+                          {isSystem ? (
+                            <Badge variant="outline" className="text-[10px] h-5 px-1.5">
+                              {row.syncDirection === "bidirectional" ? "⇆" : row.syncDirection === "supabase_to_bitrix" ? "S→B" : "B→S"}
+                            </Badge>
+                          ) : (
+                            <Select
+                              value={row.syncDirection}
+                              onValueChange={(v) =>
+                                updateRow(row.supabaseColumn, { syncDirection: v })
+                              }
+                            >
+                              <SelectTrigger className="h-7 text-[10px] w-[68px]">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="bitrix_to_supabase" className="text-xs">B→S</SelectItem>
+                                <SelectItem value="supabase_to_bitrix" className="text-xs">S→B</SelectItem>
+                                <SelectItem value="bidirectional" className="text-xs">⇆</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          )}
                         </TableCell>
 
                         {/* Status */}
                         <TableCell className="py-1.5">
-                          {isMapped ? (
+                          {isSystem ? (
+                            <Badge className="text-[10px] h-5 px-1.5 bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border-emerald-500/20">
+                              Auto (sistema)
+                            </Badge>
+                          ) : isMapped ? (
                             <Badge className="text-[10px] h-5 px-1.5 bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border-emerald-500/20">
                               Mapeado
                             </Badge>
@@ -519,7 +602,7 @@ export default function FieldMappingManager({ integrationId, compact, memberId }
 
                         {/* Remove */}
                         <TableCell className="py-1.5">
-                          {isMapped && (
+                          {isMapped && !isSystem && (
                             <Button
                               variant="ghost"
                               size="icon"
