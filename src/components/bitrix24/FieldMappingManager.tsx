@@ -218,8 +218,27 @@ export default function FieldMappingManager({ integrationId, compact, memberId }
       }
 
       const tableColumns = SUPABASE_TABLES[supabaseTable]?.columns || [];
-      const newRows: RowMapping[] = tableColumns.map((col) => {
+      const systemForEntity = SYSTEM_MAPPINGS[bitrixEntity] || {};
+      const systemColumns = new Set(
+        Object.keys(systemForEntity)
+          .filter((k) => k.startsWith(`${supabaseTable}::`))
+          .map((k) => k.split("::")[1]),
+      );
+
+      const baseRows: RowMapping[] = tableColumns.map((col) => {
         const saved = savedByColumn.get(col.key);
+        const sysKey = `${supabaseTable}::${col.key}`;
+        const sys = systemForEntity[sysKey];
+        if (sys) {
+          return {
+            supabaseColumn: col.key,
+            supabaseType: col.type,
+            bitrixFieldKey: sys.bitrixField,
+            syncDirection: sys.direction,
+            isActive: true,
+            isSystem: true,
+          };
+        }
         return {
           supabaseColumn: col.key,
           supabaseType: col.type,
@@ -230,7 +249,22 @@ export default function FieldMappingManager({ integrationId, compact, memberId }
         };
       });
 
-      setRows(newRows);
+      // Acrescenta rows de sistema que não existem nas columns padrão
+      const extraSystemRows: RowMapping[] = Array.from(systemColumns)
+        .filter((col) => !tableColumns.some((c) => c.key === col))
+        .map((col) => {
+          const sys = systemForEntity[`${supabaseTable}::${col}`];
+          return {
+            supabaseColumn: col,
+            supabaseType: "auto",
+            bitrixFieldKey: sys.bitrixField,
+            syncDirection: sys.direction,
+            isActive: true,
+            isSystem: true,
+          };
+        });
+
+      setRows([...extraSystemRows, ...baseRows]);
     } catch (e) {
       console.error("Error building rows:", e);
       setRows([]);
