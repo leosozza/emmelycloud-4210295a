@@ -1468,7 +1468,7 @@ function PagamentosTab() {
   const loadCredentials = useCallback(async () => {
     try {
       const { data, error } = await supabase.functions.invoke("manage-credentials", { method: "GET" });
-      if (!error && data?.credentials) {
+      if (!error && data?.credentials && data.credentials.length > 0) {
         const map: Record<string, { has_value: boolean; masked: string; warning?: string }> = {};
         for (const c of data.credentials) {
           map[`${c.provider}::${c.credential_key}`] = {
@@ -1478,8 +1478,34 @@ function PagamentosTab() {
           };
         }
         setCredentials(map);
+        return;
       }
-    } catch (e) { console.error("[Credenciais] Falha ao carregar:", e); }
+      throw new Error("no_auth_credentials");
+    } catch (e) {
+      // Fallback público (iframe Bitrix24 sem sessão): mostra apenas estado Ativo/Inativo.
+      try {
+        const { data: status } = await supabase.functions.invoke("payment-providers-status", { method: "GET" });
+        if (status) {
+          const map: Record<string, { has_value: boolean; masked: string; warning?: string }> = {};
+          const mark = (provider: string, key: string, has: boolean) => {
+            map[`${provider}::${key}`] = { has_value: !!has, masked: has ? "••••" : "" };
+          };
+          mark("stripe_pt", "STRIPE_SECRET_KEY_PT", status.stripe_pt?.secret);
+          mark("stripe_pt", "STRIPE_WEBHOOK_SECRET_PT", status.stripe_pt?.webhook);
+          mark("stripe_br", "STRIPE_SECRET_KEY_BR", status.stripe_br?.secret);
+          mark("stripe_br", "STRIPE_WEBHOOK_SECRET_BR", status.stripe_br?.webhook);
+          mark("asaas", "ASAAS_API_KEY", status.asaas?.api_key);
+          mark("asaas", "ASAAS_WEBHOOK_TOKEN", status.asaas?.webhook_token);
+          map["asaas::ASAAS_ENVIRONMENT"] = {
+            has_value: true,
+            masked: status.asaas?.environment === "production" ? "production" : "sandbox",
+          };
+          setCredentials(map);
+        }
+      } catch (e2) {
+        console.error("[Credenciais] Falha no fallback público:", e2);
+      }
+    }
   }, []);
 
   const handleSaveCredential = async (provider: string, key: string, value: string) => {
