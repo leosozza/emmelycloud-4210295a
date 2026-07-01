@@ -482,6 +482,12 @@ export default function FieldMappingManager({ integrationId, compact, memberId }
         </Button>
       </div>
 
+      {emmelyFieldsInBitrix === 0 && bitrixEntity === "lead" && !loadingFields && (
+        <div className="text-xs text-muted-foreground border rounded-md p-2 bg-muted/30">
+          Nenhum campo <code>UF_CRM_EMMELY_*</code> encontrado em <strong>Lead</strong>. Os campos criados automaticamente pela aplicação vivem na entidade <strong>Deal</strong> (negócios) — troque o seletor acima para visualizá-los.
+        </div>
+      )}
+
       {/* Main Table */}
       <div className="border rounded-lg overflow-hidden">
         <ScrollArea className="h-[460px]">
