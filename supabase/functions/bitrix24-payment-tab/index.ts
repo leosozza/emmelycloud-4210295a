@@ -276,7 +276,7 @@ function renderPaymentTab(opts: {
     const notGeneratedBadge = notGenerated ? `<span class="b24-not-generated" title="Esta cobrança ainda não foi gerada no gateway. Clique em Gerar cobrança.">${icon("file-plus", 12)} Não gerada</span>` : "";
     const canGenerate = notGenerated && !hasMissing;
     const generateBtn = notGenerated
-      ? `<button onclick='${canGenerate ? `openEditModal(${instJson})` : "void(0)"}' class="b24-btn-generate${canGenerate ? "" : " b24-btn-disabled"}" ${canGenerate ? "" : "disabled"} title="${canGenerate ? "Gerar cobrança agora" : "Preencha Vencimento e Método primeiro"}">${icon("file-plus", 13)} Gerar cobrança</button>`
+      ? `<button onclick='${canGenerate ? `openEditFullModal(${instJson})` : "void(0)"}' class="b24-btn-generate${canGenerate ? "" : " b24-btn-disabled"}" ${canGenerate ? "" : "disabled"} title="${canGenerate ? "Gerar cobrança agora" : "Preencha Vencimento e Método primeiro"}">${icon("file-plus", 13)} Gerar cobrança</button>`
       : "";
 
     return `
@@ -295,11 +295,11 @@ function renderPaymentTab(opts: {
         <div class="b24-item-meta">
           ${inst.due_date
             ? `<span>${icon("calendar", 13)} Vence: ${formatDate(inst.due_date)}</span>`
-            : `<span onclick='openEditModal(${instJson})' class="b24-missing b24-clickable" title="Clique para definir">${icon("calendar", 13)} Vencimento: ${icon("alert-triangle", 11)} Definir</span>`}
+            : `<span onclick='openEditFullModal(${instJson})' class="b24-missing b24-clickable" title="Clique para definir">${icon("calendar", 13)} Vencimento: ${icon("alert-triangle", 11)} Definir</span>`}
           ${inst.paid_at ? `<span>${icon("check-circle", 13)} Pago: ${formatDate(inst.paid_at)}</span>` : ""}
           ${inst.payment_method
             ? `<span>${icon("credit-card", 13)} ${inst.payment_method}</span>`
-            : `<span onclick='openEditModal(${instJson})' class="b24-missing b24-clickable" title="Clique para definir">${icon("credit-card", 13)} Método: ${icon("alert-triangle", 11)} Definir</span>`}
+            : `<span onclick='openEditFullModal(${instJson})' class="b24-missing b24-clickable" title="Clique para definir">${icon("credit-card", 13)} Método: ${icon("alert-triangle", 11)} Definir</span>`}
           ${totalLabel}
         </div>
         ${lateFeeHtml}
@@ -311,7 +311,7 @@ function renderPaymentTab(opts: {
         ${inst.status !== "paga" ? `
           <div class="b24-item-actions">
             ${generateBtn}
-            <button onclick='openEditModal(${instJson})' class="b24-btn-action" title="Editar Parcela">${icon("pencil", 13)} Editar</button>
+            <button onclick='openEditFullModal(${instJson})' class="b24-btn-action" title="Editar Parcela">${icon("pencil", 13)} Editar</button>
             ${notGenerated || ["direto","parcelado_direto","transferencia","n"].includes(String(inst.payment_method || "").toLowerCase()) ? "" : `<button onclick='generatePaymentLink(${instJson})' class="b24-btn-action" title="Gerar Link de Pagamento">${icon("link", 13)} Link</button>`}
             <button onclick='openBaixaModal(${instJson})' class="b24-btn-action b24-btn-baixa" title="Dar Baixa">${icon("check", 13)} Baixa</button>
             ${contactPhone && flows.length > 0 ? `<button onclick='toggleFlowRow("${inst.id}")' class="b24-btn-action b24-btn-fluxo" title="Enviar Fluxo">${icon("send", 13)} Fluxo</button>` : ""}
