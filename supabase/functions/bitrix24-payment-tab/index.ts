@@ -1183,13 +1183,26 @@ function renderPaymentTab(opts: {
     var preview = document.getElementById('installment-preview');
     var extra = document.getElementById('pay-down-extra');
     if (extra) extra.style.display = down > 0 ? '' : 'none';
-    if (total <= 0) { preview.style.display = 'none'; return; }
+    var curCode = (document.getElementById('pay-currency')||{}).value || 'EUR';
+    var curSym = curCode === 'BRL' ? 'R$ ' : (curCode === 'EUR' ? '€ ' : '');
+    var remainEl = document.getElementById('pay-remaining-display');
+    var instValEl = document.getElementById('pay-installment-value-display');
+    if (total <= 0) {
+      preview.style.display = 'none';
+      if (remainEl) remainEl.textContent = '—';
+      if (instValEl) instValEl.textContent = '—';
+      return;
+    }
     if (down > total) down = total;
     var remaining = total - down;
     var instValue = numInst > 0 ? Math.floor(remaining * 100 / numInst) / 100 : 0;
     var lastInst = remaining - (instValue * (numInst - 1));
     var downInstValue = downN > 0 ? Math.floor(down * 100 / downN) / 100 : 0;
     var lastDown = down - (downInstValue * (downN - 1));
+    if (remainEl) remainEl.textContent = curSym + remaining.toFixed(2);
+    if (instValEl) instValEl.textContent = numInst > 0 && remaining > 0
+      ? (numInst + 'x de ' + curSym + instValue.toFixed(2))
+      : '—';
     var lines = [];
     lines.push('<div style="font-weight:600;margin-bottom:6px;color:var(--text-primary)">Resumo do parcelamento</div>');
     lines.push('<div>Total: <strong>' + total.toFixed(2) + '</strong></div>');
