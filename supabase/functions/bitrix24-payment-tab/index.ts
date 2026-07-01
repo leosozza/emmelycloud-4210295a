@@ -276,7 +276,7 @@ function renderPaymentTab(opts: {
     const notGeneratedBadge = notGenerated ? `<span class="b24-not-generated" title="Esta cobrança ainda não foi gerada no gateway. Clique em Gerar cobrança.">${icon("file-plus", 12)} Não gerada</span>` : "";
     const canGenerate = notGenerated && !hasMissing;
     const generateBtn = notGenerated
-      ? `<button onclick='${canGenerate ? `openEditFullModal(${instJson})` : "void(0)"}' class="b24-btn-generate${canGenerate ? "" : " b24-btn-disabled"}" ${canGenerate ? "" : "disabled"} title="${canGenerate ? "Gerar cobrança agora" : "Preencha Vencimento e Método primeiro"}">${icon("file-plus", 13)} Gerar cobrança</button>`
+      ? `<button onclick='${canGenerate ? `openEditParcelaModal(${instJson})` : "void(0)"}' class="b24-btn-generate${canGenerate ? "" : " b24-btn-disabled"}" ${canGenerate ? "" : "disabled"} title="${canGenerate ? "Gerar cobrança agora" : "Preencha Vencimento e Método primeiro"}">${icon("file-plus", 13)} Gerar cobrança</button>`
       : "";
 
     return `
