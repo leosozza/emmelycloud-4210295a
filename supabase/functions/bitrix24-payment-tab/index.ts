@@ -644,10 +644,10 @@ function renderPaymentTab(opts: {
 <!-- Create Payment Modal -->
 <div class="b24-form-overlay" id="create-overlay">
   <div class="b24-form-card">
-    <div class="b24-form-title">Criar Cobrança</div>
+    <div class="b24-form-title" id="pay-form-title">Criar Cobrança</div>
     <div class="b24-form-row">
       <div class="b24-form-group">
-        <label class="b24-form-label">Valor Total</label>
+        <label class="b24-form-label" id="label-pay-amount">Valor Total</label>
         <input type="number" id="pay-amount" class="b24-input" step="0.01" min="0.01" placeholder="0.00" oninput="calcInstallments()">
       </div>
       <div class="b24-form-group">
