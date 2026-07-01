@@ -35,14 +35,18 @@ function handlerUrl(code: string): string {
 
 const ROBOTS = [
   {
+    // Reads the Emmely Pay plan (UF_CRM_EMMELY_TOTAL_AMOUNT, DOWN_PAYMENT,
+    // TOTAL_INSTALLMENTS, PAYMENT_METHOD, FIRST_DUE_DATE, GATEWAY, ...) directly
+    // from the deal — same fields the manual calculator writes.
+    // All properties below are OPTIONAL overrides.
     CODE: "ASAAS_CHARGE",
-    NAME: "Asaas: gerar cobrança",
+    NAME: "Emmely Pay: gerar cobrança (usa campos do negócio)",
     HANDLER: handlerUrl("ASAAS_CHARGE"),
     USE_SUBSCRIPTION: "N",
     PROPERTIES: {
-      value: { Name: "Valor", Type: "double", Required: "Y" },
-      billing_type: { Name: "Forma (PIX/BOLETO/CREDIT_CARD)", Type: "string", Default: "PIX" },
-      description: { Name: "Descrição", Type: "string" },
+      value: { Name: "Valor (override — normalmente vazio)", Type: "double" },
+      billing_type: { Name: "Forma override (PIX/BOLETO/CREDIT_CARD)", Type: "string" },
+      description: { Name: "Descrição override", Type: "string" },
     },
     RETURN_PROPERTIES: {
       status: { Name: "Status", Type: "string" },
