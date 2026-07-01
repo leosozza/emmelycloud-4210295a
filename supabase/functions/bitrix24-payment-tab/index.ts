@@ -735,7 +735,7 @@ function renderPaymentTab(opts: {
         </div>
       </div>
       <div class="b24-form-group">
-        <label class="b24-form-label">Método do Saldo</label>
+        <label class="b24-form-label" id="label-pay-method">Método do Saldo</label>
         <select id="pay-method" class="b24-input" style="height:32px" onchange="toggleMethodFields()">
           <option value="card">Cartão</option>
           <option value="customer_choice">Cliente escolhe (Stripe)</option>
