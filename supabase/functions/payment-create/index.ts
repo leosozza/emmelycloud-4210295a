@@ -35,6 +35,11 @@ function getStripePaymentMethods(region?: "pt" | "br" | null, requestedMethod?: 
     return ["card"];
   }
 
+  // "customer_choice" = deixar o cliente escolher no checkout Stripe → leque completo.
+  if (requestedMethod === "customer_choice") {
+    requestedMethod = null;
+  }
+
   // Outro método específico pedido → apenas esse.
   if (requestedMethod && validStripeMethods.includes(requestedMethod)) {
     return [requestedMethod];
