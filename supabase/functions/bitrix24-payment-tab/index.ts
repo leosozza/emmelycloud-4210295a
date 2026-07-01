@@ -1194,6 +1194,7 @@ function renderPaymentTab(opts: {
   function closeCreateForm() {
     document.getElementById('create-overlay').classList.remove('active');
     document.getElementById('pay-result').style.display = 'none';
+    if (_editMode) { _editMode = null; setEditModeUI(false); }
   }
   function toggleCustomerSection() {
     var body = document.getElementById('customer-body');
