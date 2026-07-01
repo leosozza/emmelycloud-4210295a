@@ -1070,6 +1070,8 @@ function renderPaymentTab(opts: {
   }
 
   // === Create form ===
+  var _editMode = null; // { txId, invoiceId, currency, description, entityId, instLabel }
+
   function openCreateForm() {
     document.getElementById('create-overlay').classList.add('active');
     try { if (typeof BX24 !== 'undefined') { BX24.resizeWindow && BX24.resizeWindow(1200, 900); BX24.fitWindow && BX24.fitWindow(); } } catch(e){}
@@ -1077,6 +1079,77 @@ function renderPaymentTab(opts: {
     autoCollapseCustomerIfComplete();
     autoFillTotalFromProducts();
   }
+
+  function setEditModeUI(on, opts) {
+    opts = opts || {};
+    var title = document.getElementById('pay-form-title');
+    var btn = document.getElementById('pay-submit');
+    var entrada = document.getElementById('block-entrada');
+    var gNum = document.getElementById('group-num-installments');
+    var gInt = document.getElementById('group-interval');
+    var displays = document.getElementById('row-installment-displays');
+    var lblFirstDue = document.getElementById('label-first-due');
+    var lblAmount = document.getElementById('label-pay-amount');
+    var lblMethod = document.getElementById('label-pay-method');
+    var preview = document.getElementById('installment-preview');
+    if (on) {
+      title.textContent = 'Editar Cobrança' + (opts.instLabel ? ' — ' + opts.instLabel : '');
+      btn.textContent = 'Guardar Alterações';
+      if (entrada) entrada.style.display = 'none';
+      if (gNum) gNum.style.display = 'none';
+      if (gInt) gInt.style.display = 'none';
+      if (displays) displays.style.display = 'none';
+      if (lblFirstDue) lblFirstDue.textContent = 'Vencimento';
+      if (lblAmount) lblAmount.textContent = 'Valor da Parcela';
+      if (lblMethod) lblMethod.textContent = 'Método de Pagamento';
+      if (preview) preview.style.display = 'none';
+    } else {
+      title.textContent = 'Criar Cobrança';
+      btn.textContent = 'Criar Cobrança';
+      if (entrada) entrada.style.display = '';
+      if (gNum) gNum.style.display = '';
+      if (gInt) gInt.style.display = '';
+      if (displays) displays.style.display = '';
+      if (lblFirstDue) lblFirstDue.textContent = '1º Vencimento';
+      if (lblAmount) lblAmount.textContent = 'Valor Total';
+      if (lblMethod) lblMethod.textContent = 'Método do Saldo';
+    }
+  }
+
+  function openEditFullModal(inst) {
+    _editMode = {
+      txId: inst.transaction_id || inst.id,
+      invoiceId: inst.invoice_id || '',
+      currency: inst.currency || 'EUR',
+      description: inst.description || '',
+      entityId: inst.entity_id || ENTITY_ID,
+      instLabel: (inst.installment_number && inst.total_installments) ? ('Parcela ' + inst.installment_number + '/' + inst.total_installments) : ''
+    };
+    document.getElementById('create-overlay').classList.add('active');
+    try { if (typeof BX24 !== 'undefined') { BX24.resizeWindow && BX24.resizeWindow(1200, 900); BX24.fitWindow && BX24.fitWindow(); } } catch(e){}
+    setEditModeUI(true, { instLabel: _editMode.instLabel });
+    // Prefill fields
+    var amt = document.getElementById('pay-amount');
+    var cur = document.getElementById('pay-currency');
+    var due = document.getElementById('pay-first-due');
+    var met = document.getElementById('pay-method');
+    var dwn = document.getElementById('pay-down');
+    var dwnN = document.getElementById('pay-down-installments');
+    var nInst = document.getElementById('pay-installments');
+    var desc = document.getElementById('pay-desc');
+    if (amt) amt.value = (inst.value != null ? Number(inst.value).toFixed(2) : '');
+    if (cur && inst.currency) cur.value = inst.currency;
+    if (due) due.value = inst.due_date ? String(inst.due_date).split('T')[0] : '';
+    if (met) met.value = inst.payment_method || 'card';
+    if (dwn) dwn.value = 0;
+    if (dwnN) dwnN.value = 1;
+    if (nInst) nInst.value = 1;
+    if (desc && inst.description) desc.value = inst.description;
+    toggleMethodFields();
+    autoCollapseCustomerIfComplete();
+    var pr = document.getElementById('pay-result'); if (pr) pr.style.display='none';
+  }
+
 
   function autoFillTotalFromProducts() {
     var amountEl = document.getElementById('pay-amount');
