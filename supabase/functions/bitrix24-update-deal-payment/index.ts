@@ -223,6 +223,7 @@ serve(async (req) => {
         invoicesCreated.push({ action: "created", result: createData });
       }
     }
+    } // end if (!skipInvoiceSync)
 
     // ── 4. Badge ──
     // ownerTypeId: 1=Lead, 2=Deal, SPA=entityTypeId
