@@ -660,7 +660,7 @@ function renderPaymentTab(opts: {
       <div class="b24-form-row" id="pay-down-extra" style="display:none">
         <div class="b24-form-group">
           <label class="b24-form-label">Método da Entrada</label>
-          <select id="pay-down-method" class="b24-input" style="height:32px">
+          <select id="pay-down-method" class="b24-input" style="height:32px" onchange="toggleMethodFields()">
             <option value="card">Cartão</option>
             <option value="pix">PIX</option>
             <option value="boleto">Boleto</option>
