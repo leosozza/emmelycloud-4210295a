@@ -1075,6 +1075,48 @@ function renderPaymentTab(opts: {
     try { if (typeof BX24 !== 'undefined') { BX24.resizeWindow && BX24.resizeWindow(1200, 900); BX24.fitWindow && BX24.fitWindow(); } } catch(e){}
     toggleMethodFields();
     autoCollapseCustomerIfComplete();
+    autoFillTotalFromProducts();
+  }
+
+  function autoFillTotalFromProducts() {
+    var amountEl = document.getElementById('pay-amount');
+    if (!amountEl) return;
+    var current = parseFloat(amountEl.value) || 0;
+    if (current > 0) { calcInstallments(); return; }
+    var fallback = ${JSON.stringify(totalValue || 0)};
+    function applyTotal(v) {
+      if (v > 0) { amountEl.value = v.toFixed(2); }
+      else if (fallback > 0) { amountEl.value = Number(fallback).toFixed(2); }
+      calcInstallments();
+    }
+    if (typeof BX24 === 'undefined') { applyTotal(0); return; }
+    try {
+      if (ENTITY_TYPE_ID === '2') {
+        BX24.callMethod('crm.deal.productrows.get', { id: ENTITY_ID }, function(res) {
+          if (res.error()) { applyTotal(0); return; }
+          var rows = res.data() || [];
+          var sum = 0;
+          for (var i=0;i<rows.length;i++) {
+            var p = parseFloat(rows[i].PRICE) || 0;
+            var q = parseFloat(rows[i].QUANTITY) || 0;
+            sum += p * q;
+          }
+          applyTotal(sum);
+        });
+      } else {
+        BX24.callMethod('crm.item.productrow.list', { filter: { '=ownerType': ENTITY_TYPE_ID === '1' ? 'L' : 'T' + ENTITY_TYPE_ID, '=ownerId': parseInt(ENTITY_ID) } }, function(res) {
+          if (res.error()) { applyTotal(0); return; }
+          var rows = (res.data() && res.data().productRows) || [];
+          var sum = 0;
+          for (var i=0;i<rows.length;i++) {
+            var p = parseFloat(rows[i].price) || 0;
+            var q = parseFloat(rows[i].quantity) || 0;
+            sum += p * q;
+          }
+          applyTotal(sum);
+        });
+      }
+    } catch(e) { applyTotal(0); }
   }
   function closeCreateForm() {
     document.getElementById('create-overlay').classList.remove('active');
