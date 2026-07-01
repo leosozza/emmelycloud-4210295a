@@ -724,6 +724,16 @@ function renderPaymentTab(opts: {
           <input type="date" id="pay-first-due" class="b24-input" onchange="calcInstallments()">
         </div>
       </div>
+      <div class="b24-form-row">
+        <div class="b24-form-group">
+          <label class="b24-form-label">Saldo a Parcelar</label>
+          <div class="b24-readonly" id="pay-remaining-display">—</div>
+        </div>
+        <div class="b24-form-group">
+          <label class="b24-form-label">Valor de cada Parcela</label>
+          <div class="b24-readonly" id="pay-installment-value-display">—</div>
+        </div>
+      </div>
       <div class="b24-form-group">
         <label class="b24-form-label">Método do Saldo</label>
         <select id="pay-method" class="b24-input" style="height:32px" onchange="toggleMethodFields()">
