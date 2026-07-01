@@ -725,19 +725,73 @@ function renderPaymentTab(opts: {
       <label class="b24-form-label">Descrição</label>
       <input type="text" id="pay-desc" class="b24-input" placeholder="${(dealTitle || "Negócio").replace(/"/g, "&quot;")}" value="${(dealTitle || "").replace(/"/g, "&quot;")}">
     </div>
-    <div class="b24-form-group">
-      <label class="b24-form-label">Nome do cliente</label>
-      <input type="text" id="pay-name" class="b24-input" placeholder="Nome" value="${(contactName || "").replace(/"/g, "&quot;")}">
+
+    <!-- Bloco Dados do Cliente -->
+    <div class="b24-form-section" id="customer-section">
+      <div class="b24-form-section-title">
+        <span>Dados do Cliente</span>
+        <button type="button" onclick="toggleCustomerSection()" style="background:none;border:0;color:var(--link-color);font-size:11px;cursor:pointer;font-weight:600" id="customer-toggle-btn">Recolher</button>
+      </div>
+      <div id="customer-body">
+        <div class="b24-form-row">
+          <div class="b24-form-group">
+            <label class="b24-form-label">Nome *</label>
+            <input type="text" id="pay-name" class="b24-input" placeholder="Nome completo" value="${(contactName || "").replace(/"/g, "&quot;")}">
+          </div>
+          <div class="b24-form-group">
+            <label class="b24-form-label">Email *</label>
+            <input type="email" id="pay-email" class="b24-input" placeholder="email@exemplo.com" value="${(contactEmail || "").replace(/"/g, "&quot;")}">
+          </div>
+        </div>
+        <div class="b24-form-row">
+          <div class="b24-form-group">
+            <label class="b24-form-label">Telefone</label>
+            <input type="text" id="pay-phone" class="b24-input" placeholder="+351 900 000 000" value="${(contactPhone || "").replace(/"/g, "&quot;")}">
+          </div>
+          <div class="b24-form-group" id="cpf-group">
+            <label class="b24-form-label">CPF / CNPJ / NIF</label>
+            <input type="text" id="pay-cpf" class="b24-input" placeholder="000.000.000-00" value="${(contactCpfCnpj || "").replace(/"/g, "&quot;")}">
+            <div class="b24-form-hint" id="cpf-hint">Obrigatório para BRL, Pix e Boleto</div>
+          </div>
+        </div>
+        <div id="address-block">
+          <div class="b24-form-row">
+            <div class="b24-form-group" style="flex:0 0 140px">
+              <label class="b24-form-label">CEP / Cód. Postal</label>
+              <input type="text" id="pay-postal" class="b24-input" placeholder="00000-000" value="${(addr.postal_code || "").replace(/"/g, "&quot;")}">
+            </div>
+            <div class="b24-form-group" style="flex:2">
+              <label class="b24-form-label">Endereço</label>
+              <input type="text" id="pay-street" class="b24-input" placeholder="Rua / Avenida" value="${(addr.street || "").replace(/"/g, "&quot;")}">
+            </div>
+            <div class="b24-form-group" style="flex:0 0 90px">
+              <label class="b24-form-label">Número</label>
+              <input type="text" id="pay-number" class="b24-input" placeholder="123" value="${(addr.number || "").replace(/"/g, "&quot;")}">
+            </div>
+          </div>
+          <div class="b24-form-row">
+            <div class="b24-form-group">
+              <label class="b24-form-label">Bairro</label>
+              <input type="text" id="pay-district" class="b24-input" placeholder="Bairro" value="${(addr.district || "").replace(/"/g, "&quot;")}">
+            </div>
+            <div class="b24-form-group">
+              <label class="b24-form-label">Cidade</label>
+              <input type="text" id="pay-city" class="b24-input" placeholder="Cidade" value="${(addr.city || "").replace(/"/g, "&quot;")}">
+            </div>
+            <div class="b24-form-group" style="flex:0 0 90px">
+              <label class="b24-form-label">UF</label>
+              <input type="text" id="pay-state" class="b24-input" placeholder="SP" maxlength="4" value="${(addr.state || "").replace(/"/g, "&quot;")}">
+            </div>
+            <div class="b24-form-group" style="flex:0 0 90px">
+              <label class="b24-form-label">País</label>
+              <input type="text" id="pay-country" class="b24-input" placeholder="BR" maxlength="2" value="${(addr.country || (currency === "BRL" ? "BR" : "PT")).replace(/"/g, "&quot;")}">
+            </div>
+          </div>
+          <div class="b24-form-hint" id="address-hint" style="display:none">Endereço completo é obrigatório para Boleto.</div>
+        </div>
+      </div>
     </div>
-    <div class="b24-form-group">
-      <label class="b24-form-label">Email</label>
-      <input type="email" id="pay-email" class="b24-input" placeholder="email@exemplo.com" value="${(contactEmail || "").replace(/"/g, "&quot;")}">
-    </div>
-    <div id="cpf-group" class="b24-form-group" style="display:none">
-      <label class="b24-form-label">CPF/CNPJ</label>
-      <input type="text" id="pay-cpf" class="b24-input" placeholder="000.000.000-00" value="${(contactCpfCnpj || "").replace(/"/g, "&quot;")}">
-      <div class="b24-form-hint">Obrigatório para cobranças em BRL</div>
-    </div>
+
     <div class="b24-form-actions">
       <button class="b24-btn-outline" onclick="closeCreateForm()">Cancelar</button>
       <button class="b24-btn-primary" id="pay-submit" onclick="submitInstallments()">Criar Cobrança</button>
