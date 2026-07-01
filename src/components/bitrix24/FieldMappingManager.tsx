@@ -166,8 +166,8 @@ interface FieldMappingManagerProps {
 }
 
 export default function FieldMappingManager({ integrationId, compact, memberId }: FieldMappingManagerProps & { memberId?: string }) {
-  const [bitrixEntity, setBitrixEntity] = useState<"lead" | "deal">("lead");
-  const [supabaseTable, setSupabaseTable] = useState("leads");
+  const [bitrixEntity, setBitrixEntity] = useState<"lead" | "deal">("deal");
+  const [supabaseTable, setSupabaseTable] = useState("financial_records");
   const [bitrixFields, setBitrixFields] = useState<BitrixField[]>([]);
   const [loadingFields, setLoadingFields] = useState(false);
   const [rows, setRows] = useState<RowMapping[]>([]);
@@ -325,6 +325,8 @@ export default function FieldMappingManager({ integrationId, compact, memberId }
   // ── Stats ──
   const totalFields = rows.length;
   const mappedCount = rows.filter((r) => r.bitrixFieldKey !== "").length;
+  const systemCount = rows.filter((r) => r.isSystem).length;
+  const emmelyFieldsInBitrix = bitrixFields.filter((f) => isEmmelySystemBitrixField(f.key)).length;
 
   // ── Update a row ──
   const updateRow = (colKey: string, patch: Partial<RowMapping>) => {
@@ -462,7 +464,13 @@ export default function FieldMappingManager({ integrationId, compact, memberId }
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
           <span>Total: <strong className="text-foreground">{totalFields}</strong></span>
           <span>Mapeados: <strong className="text-primary">{mappedCount}</strong></span>
+          {emmelyFieldsInBitrix > 0 && (
+            <span title="Campos UF_CRM_EMMELY_* criados e atualizados pela aplicação">
+              Auto (sistema): <strong className="text-emerald-600">{emmelyFieldsInBitrix}</strong>
+            </span>
+          )}
         </div>
+
 
         {/* Actions */}
         <Button variant="outline" size="sm" className="h-8" onClick={() => fetchBitrixFields(bitrixEntity)} disabled={loadingFields}>
@@ -473,6 +481,12 @@ export default function FieldMappingManager({ integrationId, compact, memberId }
           Guardar
         </Button>
       </div>
+
+      {emmelyFieldsInBitrix === 0 && bitrixEntity === "lead" && !loadingFields && (
+        <div className="text-xs text-muted-foreground border rounded-md p-2 bg-muted/30">
+          Nenhum campo <code>UF_CRM_EMMELY_*</code> encontrado em <strong>Lead</strong>. Os campos criados automaticamente pela aplicação vivem na entidade <strong>Deal</strong> (negócios) — troque o seletor acima para visualizá-los.
+        </div>
+      )}
 
       {/* Main Table */}
       <div className="border rounded-lg overflow-hidden">
