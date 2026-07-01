@@ -2526,6 +2526,15 @@ Deno.serve(async (req) => {
         // CPF/CNPJ commonly stored in UF_CRM_CPF or UF_CRM_CNPJ or NIF
         contactCpfCnpj =
           String(contact.UF_CRM_CPF || contact.UF_CRM_CNPJ || contact.UF_CRM_CPF_CNPJ || contact.UF_CRM_NIF || "").trim();
+        contactAddress = {
+          postal_code: String(contact.ADDRESS_POSTAL_CODE || "").trim(),
+          street: String(contact.ADDRESS || "").trim(),
+          number: String(contact.ADDRESS_2 || "").trim(),
+          district: "",
+          city: String(contact.ADDRESS_CITY || "").trim(),
+          state: String(contact.ADDRESS_PROVINCE || "").trim(),
+          country: String(contact.ADDRESS_COUNTRY_CODE || contact.ADDRESS_COUNTRY || "").trim().slice(0, 2).toUpperCase(),
+        };
         // Fallback to Company NIF/CNPJ if contact has none and deal has a company
         if (!contactCpfCnpj && deal && deal.COMPANY_ID) {
           try {
