@@ -1,28 +1,33 @@
-# Fix: erro `sepa_debit is invalid` ao criar cobrança
+# Adicionar opção "Cliente escolhe" no Método do Emmely Pay
 
-## Problema
-No fluxo Emmely Pay do Bitrix, quando se escolhe **Cartão** e moeda **EUR**, a edge function `payment-create` envia à Stripe o array completo `["card", "multibanco", "mb_way", "sepa_debit"]`. A conta Stripe Portugal da Emmely não tem `sepa_debit` (nem eventualmente `mb_way`/`multibanco`) ativado no painel, e a Stripe rejeita a criação da sessão de checkout com o erro reportado.
+## Objetivo
+Permitir que o utilizador (quem cria a cobrança no Bitrix) opte por deixar o cliente escolher a forma de pagamento diretamente no link da Stripe, em vez de fixar um método.
 
-A função `payment-create-link` já resolve isto com retry iterativo, mas `payment-create` (chamada pelo botão "Criar Cobrança" do iframe Bitrix e por cada parcela) não tem essa lógica.
+## Mudanças
 
-## Solução
+### 1. Frontend do iframe (`supabase/functions/bitrix24-payment-tab/index.ts`)
+- Nos dropdowns `<select>` de método (formulário de criação, entrada, e edição inline por parcela), adicionar um novo `<option value="customer_choice">Cliente escolhe (Stripe)</option>`.
+- Manter as opções existentes (Cartão, Multibanco, MB Way, SEPA, Pix, Boleto).
+- No `submitInstallments()` e nos handlers de edição inline, quando `method === "customer_choice"`, gravar como `parcelado_direto` no `financial_records.payment_method` (para não quebrar constraints do enum) mas passar `payment_method: null` no payload enviado a `payment-create`.
+  - Alternativa mais limpa: gravar `customer_choice` no `financial_records.payment_method` **apenas se o enum permitir**. Verificar o enum primeiro; se não permitir, usar o fallback acima.
+- Regras de validação (CPF/endereço) continuam iguais — `customer_choice` não obriga a nada extra.
 
-Editar apenas `supabase/functions/payment-create/index.ts`:
+### 2. Backend `payment-create` (`supabase/functions/payment-create/index.ts`)
+- Já pronto: quando `requestedMethod` é vazio/null, devolve leque completo para a moeda + retry automático que descarta métodos não ativados.
+- Adicionar apenas: se `requestedMethod === "customer_choice"`, tratar como vazio (leque completo).
 
-1. **Tratar "card"/"direto" como escolha explícita de cartão.** Em `getStripePaymentMethods`, quando `requestedMethod === "card"` ou `"direto"`, devolver `["card"]` em vez de expandir para todos os métodos da moeda. Isto reflete o que o utilizador selecionou no dropdown "Método: Cartão".
-   - Só se `requestedMethod` for vazio/nulo é que se devolve o leque completo de métodos da moeda.
+### 3. Backend `payment-create-link` (`supabase/functions/payment-create-link/index.ts`)
+- Espelhar: `customer_choice` → sem método específico → leque completo com retry (já existente).
 
-2. **Adicionar retry iterativo de métodos rejeitados** em `createStripePayment`, espelhando o padrão já presente em `payment-create-link/index.ts`:
-   - Se a Stripe responder com `payment method type provided: <X> is invalid` ou `payment_method_types[n]: <X>`, remover `<X>` do array e tentar novamente.
-   - Máx. 4 tentativas; se `card` também for rejeitado ou o array ficar vazio, aí sim lançar o erro amigável atual pedindo para ativar métodos no dashboard.
-   - Registar em `console.warn` cada método descartado para diagnóstico.
-
-3. **Redeploy** de `payment-create` após a edição.
+## Verificação do enum
+Antes de codar, ler o schema de `financial_records.payment_method` (via `supabase read_query` no `information_schema`) para decidir se `customer_choice` cabe ou se precisamos do fallback `parcelado_direto` com marcador em metadata.
 
 ## Fora do âmbito
-- Sem mexer em `payment-create-link` (já funciona).
-- Sem mexer no frontend Bitrix (`bitrix24-payment-tab`); os dropdowns de método continuam iguais.
-- Sem alterar Asaas/BR.
+- Sem alterar aparência do checkout Stripe (é da Stripe).
+- Sem mexer em fluxo Asaas/BR — lá o método continua obrigatório.
+- Sem mexer no dashboard/relatórios.
 
 ## Ficheiros afetados
-- `supabase/functions/payment-create/index.ts` (função `getStripePaymentMethods` e `createStripePayment`)
+- `supabase/functions/bitrix24-payment-tab/index.ts`
+- `supabase/functions/payment-create/index.ts`
+- `supabase/functions/payment-create-link/index.ts`
