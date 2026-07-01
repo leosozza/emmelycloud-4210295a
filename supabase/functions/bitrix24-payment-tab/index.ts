@@ -839,6 +839,7 @@ function renderPaymentTab(opts: {
       <label class="b24-form-label">Método de Pagamento</label>
       <select id="edit-method" class="b24-input" style="height:32px">
         <option value="card">Cartão</option>
+        <option value="customer_choice">Cliente escolhe (Stripe)</option>
         <option value="pix">PIX</option>
         <option value="boleto">Boleto</option>
         <option value="multibanco">Multibanco</option>
