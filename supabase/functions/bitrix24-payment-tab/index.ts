@@ -499,16 +499,20 @@ function renderPaymentTab(opts: {
     .b24-create-bar { background: var(--bg-card); border-bottom: 1px solid var(--border-color); padding: 12px 24px; display: flex; justify-content: flex-end; }
     .b24-form-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 100; justify-content: center; align-items: center; backdrop-filter: blur(4px); }
     .b24-form-overlay.active { display: flex; }
-    .b24-form-card { background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 12px; padding: 24px; width: 440px; max-width: 92vw; max-height: 85vh; overflow-y: auto; box-shadow: var(--shadow-lg); }
-    .b24-form-title { font-size: 16px; font-weight: 800; margin-bottom: 20px; color: var(--text-primary); display: flex; align-items: center; gap: 8px; letter-spacing: -0.02em; }
-    .b24-form-group { margin-bottom: 14px; }
+    .b24-form-overlay { padding: 16px; box-sizing: border-box; }
+    .b24-form-card { background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 12px; padding: 22px 26px; width: 720px; max-width: 96vw; max-height: 94vh; overflow-y: auto; box-shadow: var(--shadow-lg); }
+    .b24-form-title { font-size: 17px; font-weight: 800; margin-bottom: 18px; color: var(--text-primary); display: flex; align-items: center; gap: 8px; letter-spacing: -0.02em; }
+    .b24-form-group { margin-bottom: 12px; }
     .b24-form-label { display: block; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.6px; color: var(--text-tertiary); margin-bottom: 5px; }
-    .b24-input { width: 100%; height: 36px; font-size: 13px; font-family: inherit; border: 1px solid var(--border-color); border-radius: var(--radius-sm); padding: 0 12px; background: var(--bg-card); color: var(--text-primary); outline: none; box-sizing: border-box; transition: border-color 0.15s, box-shadow 0.15s; }
+    .b24-input { width: 100%; height: 38px; font-size: 13px; font-family: inherit; border: 1px solid var(--border-color); border-radius: var(--radius-sm); padding: 0 12px; background: var(--bg-card); color: var(--text-primary); outline: none; box-sizing: border-box; transition: border-color 0.15s, box-shadow 0.15s; }
     .b24-input:focus { border-color: var(--progress-fill-flat); box-shadow: 0 0 0 3px rgba(59,130,246,0.1); }
-    .b24-form-row { display: flex; gap: 12px; }
-    .b24-form-row > * { flex: 1; }
-    .b24-form-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px; }
+    .b24-input.b24-invalid { border-color: #dc2626; box-shadow: 0 0 0 3px rgba(220,38,38,0.15); }
+    .b24-form-row { display: flex; gap: 12px; flex-wrap: wrap; }
+    .b24-form-row > * { flex: 1; min-width: 140px; }
+    .b24-form-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px; position: sticky; bottom: -22px; background: var(--bg-card); padding-top: 12px; }
     .b24-form-hint { font-size: 11px; color: var(--text-tertiary); margin-top: 4px; }
+    .b24-form-section { border:1px solid var(--border-color);border-radius:8px;padding:12px 14px;margin-bottom:12px;background:var(--bg-page); }
+    .b24-form-section-title { font-weight: 700; font-size: 12px; color: var(--text-primary); margin-bottom: 10px; display: flex; align-items: center; justify-content: space-between; }
     .b24-discount-row { background: #fef9c3; border: 1px solid #fbbf24; border-radius: 8px; padding: 12px 16px; margin-bottom: 14px; font-size: 12px; color: #92400e; }
     body.dark .b24-discount-row { background: #422006; color: #fbbf24; border-color: #92400e; }
     .b24-readonly { font-size: 18px; font-weight: 800; color: var(--text-primary); padding: 6px 0; letter-spacing: -0.02em; }
