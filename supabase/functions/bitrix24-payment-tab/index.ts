@@ -1373,6 +1373,7 @@ function renderPaymentTab(opts: {
   var submitInFlight = false;
   async function submitInstallments() {
     if (submitInFlight) { console.log('[pay] submit already in flight, ignoring'); return; }
+    if (_editMode) { return submitEditFull(); }
     var totalAmount = parseFloat(document.getElementById('pay-amount').value);
     if (!totalAmount || totalAmount <= 0) { showPayResult('Informe um valor válido.', true); return; }
     var downPayment = parseFloat(document.getElementById('pay-down').value) || 0;
