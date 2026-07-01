@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { readEmmelyPaymentPlan, planToParcels } from "../_shared/deal-payment-fields.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -303,21 +304,11 @@ async function handleCreateCharge(
   supabaseUrl: string,
   integration?: { client_endpoint: string; access_token: string; id: string } | null
 ): Promise<Record<string, string>> {
-  const totalAmount = parseFloat(properties.amount || properties.AMOUNT || "0");
-  const currency = properties.currency || properties.CURRENCY || "EUR";
-  const gateway = properties.gateway || properties.GATEWAY || "auto";
-  const paymentMethod = properties.payment_method || properties.PAYMENT_METHOD || "card";
-  const customerName = properties.customer_name || properties.CUSTOMER_NAME || "";
-  const customerEmail = properties.customer_email || properties.CUSTOMER_EMAIL || "";
-  const customerCpf = properties.customer_cpf || properties.CUSTOMER_CPF || "";
+  const dealId = String(properties.deal_id || properties.DEAL_ID || "").replace(/^DEAL_/, "");
+  const contactIdProp = String(properties.contact_id || properties.CONTACT_ID || "");
+  const companyIdProp = String(properties.company_id || properties.COMPANY_ID || "");
   const description = properties.description || properties.DESCRIPTION || "Cobrança Emmely via Bitrix24";
-  const numInstallments = parseInt(properties.installments || properties.INSTALLMENTS || "1") || 1;
-  const downPayment = parseFloat(properties.down_payment || properties.DOWN_PAYMENT || "0");
-  const firstDueDate = properties.first_due_date || properties.FIRST_DUE_DATE || "";
-  const dealId = properties.deal_id || properties.DEAL_ID || "";
-  const contactId = properties.contact_id || properties.CONTACT_ID || "";
-  const companyId = properties.company_id || properties.COMPANY_ID || "";
-  // Flow automation for charge
+  // Flow automation for charge (kept as BizProc-only knobs)
   const chargePaidFlowId = properties.paid_flow_id || properties.PAID_FLOW_ID || "";
   const chargeOverdueFlowId = properties.overdue_flow_id || properties.OVERDUE_FLOW_ID || "";
   const chargeOverdueDays = parseInt(properties.overdue_days || properties.OVERDUE_DAYS || "3") || 3;
@@ -325,14 +316,57 @@ async function handleCreateCharge(
   const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
   const supabase = createClient(supabaseUrl, serviceKey);
 
+  // ---- Read the Emmely Pay plan from the deal (source of truth) ----
+  // Falls back to properties only when a specific field is missing on the deal.
+  let plan: Awaited<ReturnType<typeof readEmmelyPaymentPlan>> | null = null;
+  if (dealId && integration?.client_endpoint && integration?.access_token) {
+    try {
+      const bxCall = (method: string, params: Record<string, any> = {}) =>
+        callBitrixWithRefresh(supabase, integration, method, params);
+      plan = await readEmmelyPaymentPlan(bxCall, "deal", dealId);
+      console.log(`[ROBOT-HANDLER] Deal ${dealId} plan loaded. warnings=${JSON.stringify(plan.warnings)}`);
+    } catch (e) {
+      console.warn(`[ROBOT-HANDLER] Failed to read deal ${dealId} fields:`, e);
+    }
+  }
+
+  // Merge: deal fields are the default, BizProc properties can override.
+  const pOr = (propKey1: string, propKey2: string, dealVal: any, coerce: (v: any) => any = (v) => v) => {
+    const p = properties[propKey1] ?? properties[propKey2];
+    return (p !== undefined && p !== "" && p !== null) ? coerce(p) : dealVal;
+  };
+  const totalAmount = pOr("amount", "AMOUNT", plan?.totalAmount ?? 0, parseFloat) || 0;
+  const currency = pOr("currency", "CURRENCY", plan?.currency ?? "EUR", String);
+  let companyGateway = pOr("gateway", "GATEWAY", plan?.gateway ?? "auto", String);
+  const paymentMethod = pOr("payment_method", "PAYMENT_METHOD", plan?.remainingMethod ?? "card", String);
+  const downMethod = pOr("down_method", "DOWN_METHOD", plan?.downMethod ?? paymentMethod, String);
+  const numInstallments = pOr("installments", "INSTALLMENTS", plan?.remainingInstallments ?? 1, (v) => parseInt(String(v), 10)) || 1;
+  const downInstallments = pOr("down_installments", "DOWN_INSTALLMENTS", plan?.downInstallments ?? 1, (v) => parseInt(String(v), 10)) || 1;
+  const downPayment = pOr("down_payment", "DOWN_PAYMENT", plan?.downPayment ?? 0, parseFloat) || 0;
+  const firstDueDate = pOr("first_due_date", "FIRST_DUE_DATE", plan?.firstDue ?? "", String);
+  const downFirstDue = pOr("down_first_due", "DOWN_FIRST_DUE", plan?.downFirstDue ?? "", String);
+  const interval = pOr("interval", "INTERVAL", plan?.interval ?? 30, (v) => parseInt(String(v), 10)) || 30;
+  const downInterval = pOr("down_interval", "DOWN_INTERVAL", plan?.downInterval ?? 30, (v) => parseInt(String(v), 10)) || 30;
+
+  const customerName = pOr("customer_name", "CUSTOMER_NAME", plan?.customer.name ?? "", String);
+  const customerEmail = pOr("customer_email", "CUSTOMER_EMAIL", plan?.customer.email ?? "", String);
+  const customerCpf = pOr("customer_cpf", "CUSTOMER_CPF", plan?.customer.cpf ?? "", String);
+  const contactId = contactIdProp || plan?.customer.contactId || "";
+  const companyId = companyIdProp || plan?.customer.companyId || "";
+
   if (!totalAmount || totalAmount <= 0) {
-    return { charge_id: "", charge_status: "error", payment_url: "", pix_code: "", gateway_used: "", invoices_created: "0", error: "amount must be > 0" };
+    return { charge_id: "", charge_status: "error", payment_url: "", pix_code: "", gateway_used: "", invoices_created: "0", error: "amount must be > 0 (check UF_CRM_EMMELY_TOTAL_AMOUNT)" };
+  }
+  if (!paymentMethod) {
+    return { charge_id: "", charge_status: "error", payment_url: "", pix_code: "", gateway_used: "", invoices_created: "0", error: "payment method missing (UF_CRM_EMMELY_PAYMENT_METHOD)" };
+  }
+  if (totalAmount > downPayment && !firstDueDate) {
+    return { charge_id: "", charge_status: "error", payment_url: "", pix_code: "", gateway_used: "", invoices_created: "0", error: "first due date missing (UF_CRM_EMMELY_FIRST_DUE_DATE)" };
   }
 
   // Lookup company credentials if company_id provided
   let companyCredentialProvider = "";
   let companyCredentialKey = "";
-  let companyGateway = gateway;
   let companyName = "";
 
   if (companyId) {
@@ -345,11 +379,9 @@ async function handleCreateCharge(
 
       if (company) {
         companyName = company.name || "";
-        // Use company's default gateway if robot sends "auto"
         if (companyGateway === "auto" && company.default_gateway && company.default_gateway !== "auto") {
           companyGateway = company.default_gateway;
         }
-        // Determine credential override based on gateway
         if (companyGateway === "asaas" && company.asaas_credential_key) {
           companyCredentialProvider = company.asaas_credential_key || "";
           companyCredentialKey = "ASAAS_API_KEY";
@@ -364,73 +396,75 @@ async function handleCreateCharge(
     }
   }
 
-  // Auto-determine gateway based on currency if still "auto"
   if (companyGateway === "auto") {
     companyGateway = currency === "BRL" ? "stripe_br" : "stripe_pt";
   }
 
-  // Validate payment method against gateway - map incompatible methods
-  let effectivePaymentMethod = paymentMethod;
+  // Validate methods per gateway (per-parcel, since down and saldo may differ)
   const ptOnlyMethods = ["multibanco", "mb_way", "sepa_debit"];
   const brOnlyMethods = ["pix", "boleto"];
-  
-  if (ptOnlyMethods.includes(paymentMethod) && companyGateway !== "stripe_pt" && companyGateway !== "stripe") {
-    // PT-only method requested but not using PT gateway - fallback to card
-    console.warn(`[ROBOT-HANDLER] ${paymentMethod} not supported on ${companyGateway}, using card`);
-    effectivePaymentMethod = "card";
-  } else if (brOnlyMethods.includes(paymentMethod) && companyGateway !== "stripe_br" && companyGateway !== "asaas") {
-    // BR-only method requested but not using BR gateway - fallback to card
-    console.warn(`[ROBOT-HANDLER] ${paymentMethod} not supported on ${companyGateway}, using card`);
-    effectivePaymentMethod = "card";
-  }
+  const normalizeMethod = (m: string): string => {
+    const mm = String(m || "").toLowerCase();
+    if (ptOnlyMethods.includes(mm) && companyGateway !== "stripe_pt" && companyGateway !== "stripe") {
+      console.warn(`[ROBOT-HANDLER] ${mm} not supported on ${companyGateway}, using card`);
+      return "card";
+    }
+    if (brOnlyMethods.includes(mm) && companyGateway !== "stripe_br" && companyGateway !== "asaas") {
+      console.warn(`[ROBOT-HANDLER] ${mm} not supported on ${companyGateway}, using card`);
+      return "card";
+    }
+    return mm;
+  };
 
   let country = currency === "BRL" ? "Brasil" : "Portugal";
   if (companyGateway === "stripe" || companyGateway === "stripe_pt") country = "Portugal";
   else if (companyGateway === "asaas" || companyGateway === "stripe_br") country = "Brasil";
 
   try {
-    // Calculate installment plan
-    const hasDown = downPayment > 0;
-    const remaining = totalAmount - downPayment;
-    const instValue = numInstallments > 0 ? Math.floor(remaining * 100 / numInstallments) / 100 : 0;
-    const lastInstValue = remaining - (instValue * (numInstallments - 1));
-    const totalCount = (hasDown ? 1 : 0) + numInstallments;
-
-    // Build parcels array
-    const parcels: { amount: number; due_date: string; number: number; is_down: boolean }[] = [];
-    const today = new Date().toISOString().split("T")[0];
-    const baseDueDate = firstDueDate || (() => {
-      const d = new Date();
-      d.setDate(d.getDate() + 30);
-      return d.toISOString().split("T")[0];
-    })();
-
-    if (hasDown) {
-      parcels.push({ amount: downPayment, due_date: today, number: 0, is_down: true });
-    }
-    for (let i = 0; i < numInstallments; i++) {
-      const d = new Date(baseDueDate);
-      d.setDate(d.getDate() + (30 * i));
-      const val = i === numInstallments - 1 ? lastInstValue : instValue;
-      parcels.push({ amount: val, due_date: d.toISOString().split("T")[0], number: i + 1, is_down: false });
-    }
+    // Build parcels from the (merged) plan, mirroring the manual calculator.
+    const mergedPlan = {
+      totalAmount,
+      currency,
+      gateway: companyGateway,
+      hasDown: downPayment > 0,
+      downPayment,
+      downInstallments,
+      downMethod: normalizeMethod(downMethod),
+      downFirstDue: downFirstDue || new Date().toISOString().split("T")[0],
+      downInterval,
+      remainingInstallments: numInstallments,
+      remainingMethod: normalizeMethod(paymentMethod),
+      firstDue: firstDueDate,
+      interval,
+      customer: {
+        name: customerName, email: customerEmail, cpf: customerCpf, phone: "",
+        contactId: String(contactId), companyId: String(companyId),
+      },
+      raw: {},
+      warnings: [],
+    };
+    const parcels = planToParcels(mergedPlan);
+    const totalCount = parcels.length;
 
     const groupId = crypto.randomUUID();
     let firstChargeId = "";
     let firstGateway = "";
+    let firstPaymentUrl = "";
     let invoicesCreated = 0;
+    const today = new Date().toISOString().split("T")[0];
 
     const invoiceBatchCmds: Record<string, any> = {};
     const parcelToTxMap: Record<string, string> = {};
 
     for (const parcel of parcels) {
-      const label = parcel.is_down ? "Entrada" : `Parcela ${parcel.number}/${numInstallments}`;
+      const label = parcel.is_down_payment
+        ? (parcel.total_in_group > 1 ? `Entrada ${parcel.installment_number}/${parcel.total_in_group}` : "Entrada")
+        : `Parcela ${parcel.installment_number}/${parcel.total_in_group}`;
 
-      // 1. Create payment transaction (Supabase)
       const paymentBody: Record<string, any> = {
         amount: parcel.amount,
         currency,
-        payment_method: effectivePaymentMethod,
+        payment_method: parcel.method,
         customer_data: {
           name: customerName,
           email: customerEmail,
@@ -439,10 +473,10 @@ async function handleCreateCharge(
         },
         description: `${description} (${label})`,
         due_date: parcel.due_date,
-        installment_number: parcel.number,
+        installment_number: parcel.installment_number,
         total_installments: totalCount,
         installment_group_id: groupId,
-        is_down_payment: parcel.is_down,
+        is_down_payment: parcel.is_down_payment,
         force_gateway: companyGateway,
         company_id: companyId || undefined,
         metadata: {
@@ -450,13 +484,12 @@ async function handleCreateCharge(
           bitrix_contact_id: contactId,
           source: "bitrix24_robot",
           company_name: companyName || undefined,
-          requested_payment_method: paymentMethod,
+          requested_payment_method: parcel.method,
           paid_flow_id: chargePaidFlowId || undefined,
           overdue_flow_id: chargeOverdueFlowId || undefined,
           overdue_days: chargeOverdueDays || undefined,
         },
       };
-      // Add credential overrides if company has them
       if (companyCredentialProvider && companyCredentialKey) {
         paymentBody.credential_provider = companyCredentialProvider;
         paymentBody.credential_key = companyCredentialKey;
@@ -472,12 +505,13 @@ async function handleCreateCharge(
 
       if (!firstChargeId && tx.id) firstChargeId = tx.id;
       if (!firstGateway && tx.gateway) firstGateway = tx.gateway;
-      
+      if (!firstPaymentUrl && tx.payment_url) firstPaymentUrl = tx.payment_url;
+
       if (tx.id) {
-        parcelToTxMap[`parcel_${parcel.number}`] = tx.id;
-        // Queue Bitrix24 invoice creation
+        const key = `p_${parcel.is_down_payment ? "d" : "r"}_${parcel.installment_number}`;
+        parcelToTxMap[key] = tx.id;
         if (integration?.client_endpoint && integration?.access_token && dealId) {
-          invoiceBatchCmds[`parcel_${parcel.number}`] = {
+          invoiceBatchCmds[key] = {
             method: "crm.item.add",
             params: {
               entityTypeId: 31,
@@ -487,9 +521,9 @@ async function handleCreateCharge(
                 begindate: today,
                 closedate: parcel.due_date,
                 opportunity: parcel.amount,
-                currencyId: "EUR",
+                currencyId: currency,
                 parentId2: parseInt(dealId) || 0,
-                contactId: parseInt(contactId) || 0,
+                contactId: parseInt(String(contactId)) || 0,
                 responsibleId: 1,
               },
             }
@@ -498,12 +532,10 @@ async function handleCreateCharge(
       }
     }
 
-    // 2. Execute Bitrix24 Smart Invoices in Batch
+    // Execute Bitrix24 Smart Invoices in Batch
     if (Object.keys(invoiceBatchCmds).length > 0) {
       console.log(`[ROBOT-HANDLER] Creating ${Object.keys(invoiceBatchCmds).length} Smart Invoices in batch...`);
       const batchResults = await callBitrixBatch(integration!.client_endpoint, integration!.access_token, invoiceBatchCmds);
-      
-      // Post-process: Update transactions with invoice IDs
       for (const [key, txId] of Object.entries(parcelToTxMap)) {
         const invRes = batchResults.result?.result?.[key];
         const invoiceId = invRes?.item?.id || invRes;
@@ -521,11 +553,23 @@ async function handleCreateCharge(
       }
     }
 
+    // Write payment URL + Pendente status back to the deal
+    if (firstPaymentUrl && dealId && integration?.client_endpoint && integration?.access_token) {
+      try {
+        await callBitrixWithRefresh(supabase, integration, "crm.deal.update", {
+          id: parseInt(dealId),
+          fields: {
+            UF_CRM_EMMELY_PAYMENT_URL: firstPaymentUrl,
+            UF_CRM_EMMELY_GATEWAY: companyGateway,
+          },
+        });
+      } catch (e) { console.warn("[ROBOT-HANDLER] deal.update payment url failed:", e); }
+    }
 
     return {
       charge_id: firstChargeId,
       charge_status: "pending",
-      payment_url: "",
+      payment_url: firstPaymentUrl,
       pix_code: "",
       gateway_used: firstGateway,
       invoices_created: String(invoicesCreated),
@@ -1704,8 +1748,11 @@ Deno.serve(async (req) => {
       case "emmely_send_instagram":
         returnValues = await handleSendInstagram(properties, supabaseUrl, serviceKey);
         break;
-      case "emmely_create_charge": {
-        // Get integration to pass to handleCreateCharge for Bitrix API calls
+      case "emmely_create_charge":
+      case "create_charge": {
+        // Get integration to pass to handleCreateCharge for Bitrix API calls.
+        // Prefer member_id, fallback to the most recently connected portal so
+        // internal callers (e.g. bitrix24-robot-asaas bridge) also work.
         let chargeIntegration: any = null;
         if (memberId) {
           const { data: intData } = await supabase
@@ -1715,10 +1762,18 @@ Deno.serve(async (req) => {
             .maybeSingle();
           chargeIntegration = intData;
         }
+        if (!chargeIntegration) {
+          const { data: intData } = await supabase
+            .from("bitrix24_integrations")
+            .select("*")
+            .order("created_at", { ascending: false })
+            .limit(1)
+            .maybeSingle();
+          chargeIntegration = intData;
+        }
         returnValues = await handleCreateCharge(properties, supabaseUrl, chargeIntegration);
         break;
       }
-        break;
       case "emmely_check_payment":
         returnValues = await handleCheckPayment(properties, supabaseUrl);
         break;

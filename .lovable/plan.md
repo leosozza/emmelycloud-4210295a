@@ -1,48 +1,70 @@
 ## Objetivo
-Quando o utilizador clica em **Editar** (ou nos avisos "Definir" de Vencimento/Método) em uma parcela existente, abrir o **mesmo modal completo da "Criar Cobrança"** — pré-preenchido com os dados atuais da parcela — para que ele possa completar todos os campos em falta (Vencimento, Método, Notas, Currency, etc.) e escolher a forma de pagamento no mesmo fluxo.
+Fazer a **cobrança automática via robots** (BizProc do Bitrix24) usar exatamente os mesmos campos `UF_CRM_EMMELY_*` que a calculadora manual escreve no negócio — para que "clicar no robot" produza o mesmo resultado que "clicar em Criar Cobrança" no Emmely Pay.
 
-## Alterações em `supabase/functions/bitrix24-payment-tab/index.ts`
+## Campos-fonte no Negócio (já preenchidos pela calculadora manual)
+Entrada:
+- `UF_CRM_EMMELY_DOWN_PAYMENT` (valor)
+- `UF_CRM_EMMELY_DOWN_INSTALLMENTS` (nº parcelas da entrada)
+- `UF_CRM_EMMELY_DOWN_METHOD`
+- `UF_CRM_EMMELY_DOWN_FIRST_DUE`
+- `UF_CRM_EMMELY_DOWN_INTERVAL`
 
-### 1. Reutilizar o modal `#pay-overlay` para edição
-- Adicionar campo oculto `#pay-edit-tx-id` (+ `#pay-edit-invoice-id`, `#pay-edit-original-value`) dentro de `#pay-overlay`.
-- Novo estado `_editMode` em JS: quando ativo, o título muda para "Editar Cobrança" e o botão principal para "Guardar Alterações".
+Saldo:
+- `UF_CRM_EMMELY_TOTAL_AMOUNT` (valor total)
+- `UF_CRM_EMMELY_TOTAL_INSTALLMENTS` (nº parcelas do saldo)
+- `UF_CRM_EMMELY_INSTALLMENT_VALUE`
+- `UF_CRM_EMMELY_FIRST_DUE_DATE`
+- `UF_CRM_EMMELY_INSTALLMENT_INTERVAL`
+- `UF_CRM_EMMELY_PAYMENT_METHOD` (método do saldo)
 
-### 2. Nova função `openEditFullModal(inst)`
-Substitui a atual `openEditModal(inst)` como handler dos botões/links "Editar", "Definir Vencimento" e "Definir Método":
-- Chama `openCreateForm()` para renderizar o modal.
-- Após aberto, preenche:
-  - `#pay-amount` = `inst.value` (bloqueado para edição de uma parcela: NÃO aciona recálculo de entrada/parcelas — trata como valor único).
-  - `#pay-currency` = `inst.currency`.
-  - `#pay-due-date` = `inst.due_date`.
-  - `#pay-method` = `inst.payment_method || 'card'` e chama `toggleMethodFields()` para exibir os campos do gateway correto (Stripe, PIX, Boleto, MB Way, Multibanco, Recebimento Direto).
-  - `#pay-notes` = `inst.notes`.
-  - Esconde a seção de parcelamento/entrada (bloco de Entrada + Saldo + Nº Parcelas) porque estamos editando **uma parcela específica**, não a cobrança inteira.
-- Define `_editMode = { txId, invoiceId, originalValue }`.
+Configuração geral:
+- `UF_CRM_EMMELY_GATEWAY` (stripe_pt / stripe_br / asaas / auto)
+- `CURRENCY_ID` do negócio (EUR/BRL)
+- Contact vinculado (para nome/email/telefone/CPF)
 
-### 3. Ajustar `submitInstallments()`
-No início da função, se `_editMode` estiver definido:
-- Bifurca para uma nova função `submitEditFull()` que:
-  - Chama `ensureTxExists()` (sintética → real) igual à atual `submitEdit`.
-  - Faz `PATCH /payment-create` com `amount_update`, `due_date_update`, `payment_method_update`, `notes`, mais os novos campos que o modal completo permite (ex.: `currency_update` se aplicável).
-  - Atualiza Smart Invoice no Bitrix (`crm.item.update` entityTypeId 31) com `opportunity`, `closedate`, `currencyId`.
-  - Chama `bitrix24-update-deal-payment` com `payment_data` sincronizando `installment_value`, `next_due_date`, `payment_method`, `currency`.
-  - Fecha modal e recarrega.
+## O que muda
 
-### 4. Remover / manter compatibilidade
-- Manter `#edit-overlay` no HTML mas deixar de referenciá-lo (código morto pode ficar por ora para não quebrar `openBaixaModal` que usa `ensureTxExists` compartilhado).
-- Trocar todos os `onclick='openEditModal(${instJson})'` em linhas 279, 298, 302, 314 por `openEditFullModal(${instJson})`.
+### 1. `bitrix24-robot-handler` (ação `create_charge`)
+Hoje espera `properties.amount`, `properties.installments`, `properties.down_payment`, etc, vindos do BizProc.
 
-### 5. UX no modal em modo edição
-- Título muda para "Editar Cobrança — Parcela N/M".
-- Botão "Cancelar" continua fechando; "Guardar Alterações" substitui "Criar Cobrança".
-- Bloco de parcelamento (Entrada / Nº Parcelas / Saldo) e "Auto-preencher do Negócio" ficam **escondidos**, pois estamos editando uma parcela única. O bloco de método de pagamento com todos os campos (Stripe / PIX / Boleto / MB Way / Multibanco / Direto) fica **visível e editável**.
-- Ao trocar `#pay-method`, `toggleMethodFields()` já mostra/oculta os campos específicos do gateway — reutilizado sem alterações.
+Novo comportamento:
+1. Se `properties.deal_id` está presente, chama `crm.deal.get` (via integração Bitrix já resolvida) para carregar os `UF_CRM_EMMELY_*`.
+2. **Sobrepõe** com as properties só quando o robot BizProc entrega explicitamente valor não vazio (ex: um robot que queira forçar `installments=1`). Caso contrário usa o deal.
+3. Deriva:
+   - Total, entrada, parcelas do saldo, método do saldo e da entrada, 1º vencimento, intervalo, moeda, gateway
+4. Se contacto/empresa vinculados, faz lookup para preencher `customer_name/email/cpf/phone` sem depender de properties.
+5. Executa o mesmo loop de `payment-create` que já existe — cria Entrada (parcela 0) + Parcelas 1..N do saldo com o `installment_group_id`.
+6. Após criar, escreve `UF_CRM_EMMELY_PAYMENT_URL` (primeiro link em aberto) e `UF_CRM_EMMELY_PAYMENT_STATUS = Pendente`, igual ao fluxo manual.
+7. Validações: se `TOTAL_AMOUNT ≤ 0` OU faltam `PAYMENT_METHOD`+`FIRST_DUE_DATE`, retorna `charge_status=error` com mensagem clara para BizProc mostrar.
+
+### 2. `bitrix24-robot-asaas` (código `ASAAS_CHARGE`)
+Hoje só cria **uma** cobrança única com `value` bruto passado pelo robot.
+
+Novo comportamento:
+- Passa a delegar no mesmo helper de leitura dos `UF_CRM_EMMELY_*` do deal e usa o loop de parcelas do handler (entrada + saldo). Assim ASAAS respeita entrada+parcelas configuradas na calculadora.
+- Mantém compat: se o BizProc mandar `properties[value]` sem `deal_id`, continua a criar cobrança única (comportamento legado).
+
+### 3. Helper partilhado (novo)
+Criar `supabase/functions/_shared/deal-payment-fields.ts` com:
+- `readEmmelyPaymentPlan(bitrixCallMethod, dealId)` → devolve `{ totalAmount, currency, gateway, downPayment, downInstallments, downMethod, downFirstDue, downInterval, remainingInstallments, remainingMethod, firstDue, interval, customer: { name, email, cpf, phone, companyId } }`
+- Reutilizado por `bitrix24-robot-handler` e `bitrix24-robot-asaas`.
+
+### 4. Robot register (documentação de campos)
+Atualizar `bitrix24-robot-register-asaas`:
+- `ASAAS_CHARGE`: remover `PROPERTIES.value` como obrigatório; adicionar comentário "Lê UF_CRM_EMMELY_TOTAL_AMOUNT + plano do negócio". Mantém `override_value` opcional para casos especiais.
 
 ## Fora de escopo
-- Alterações no fluxo de "Criar Cobrança" novo (continua igual).
-- Modal de Baixa.
-- Backend `payment-create` (o endpoint PATCH já aceita os campos necessários).
+- Interface visual do robot no BizProc designer (Bitrix gere isso).
+- Alteração do webhook de status (`bitrix24-sync-invoice-status`) — já funciona.
+- Novo robot para **atualizar** cobrança existente (só criação, tal como hoje).
 
-## Arquivos
-- `supabase/functions/bitrix24-payment-tab/index.ts` (único arquivo).
-- Redeploy da edge function após aplicar.
+## Ficheiros a alterar
+- `supabase/functions/_shared/deal-payment-fields.ts` (novo)
+- `supabase/functions/bitrix24-robot-handler/index.ts` (função `handleCreateCharge`)
+- `supabase/functions/bitrix24-robot-asaas/index.ts` (branch `ASAAS_CHARGE`)
+- `supabase/functions/bitrix24-robot-register-asaas/index.ts` (metadata)
+
+## Como validar
+1. Preencher a calculadora manual num negócio de teste e **não** clicar em Criar Cobrança — só guardar.
+2. Mover o negócio para a etapa que dispara o robot.
+3. Confirmar no Emmely Pay que aparecem Entrada + N parcelas iguais ao que a calculadora previa, com `UF_CRM_EMMELY_PAYMENT_URL` preenchido no negócio.
