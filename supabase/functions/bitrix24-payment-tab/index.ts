@@ -491,6 +491,11 @@ function renderPaymentTab(opts: {
     .b24-item-title { font-size: 13px; font-weight: 600; color: var(--text-primary); letter-spacing: -0.01em; }
     .b24-item-value { font-size: 16px; font-weight: 700; color: var(--text-primary); letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
     .b24-missing-icon { color: #b45309; font-size: 11px; cursor: help; display: inline-flex; align-items: center; gap: 3px; background: rgba(245,158,11,0.10); padding: 2px 8px; border-radius: 999px; }
+    .b24-not-generated { color: #b45309; font-size: 11px; display: inline-flex; align-items: center; gap: 3px; background: rgba(245,158,11,0.15); border: 1px dashed #f59e0b; padding: 2px 8px; border-radius: 999px; font-weight: 600; }
+    .b24-item.not-generated { border-left-color: #f59e0b; background: linear-gradient(to right, rgba(245,158,11,0.04), transparent 40%); }
+    .b24-btn-generate { background: #2563eb; color: #fff; border: 1px solid #2563eb; border-radius: var(--radius-sm); padding: 6px 14px; font-size: 12px; font-family: inherit; cursor: pointer; transition: all 0.15s; white-space: nowrap; display: inline-flex; align-items: center; gap: 5px; font-weight: 600; }
+    .b24-btn-generate:hover:not(.b24-btn-disabled) { background: #1d4ed8; border-color: #1d4ed8; box-shadow: 0 2px 6px rgba(37,99,235,0.3); }
+    .b24-btn-disabled { opacity: 0.5; cursor: not-allowed; background: #9ca3af !important; border-color: #9ca3af !important; }
     .b24-badge { display: inline-flex; align-items: center; background: var(--badge-bg); color: var(--badge-text); border-radius: 999px; padding: 3px 10px; font-size: 11px; font-weight: 600; white-space: nowrap; letter-spacing: 0.2px; }
     body.dark .b24-badge { background: var(--badge-bg-dark); color: var(--badge-text-dark); }
     .b24-item-meta { display: flex; gap: 12px; font-size: 12px; color: var(--text-secondary); margin-bottom: 6px; flex-wrap: wrap; align-items: center; }
