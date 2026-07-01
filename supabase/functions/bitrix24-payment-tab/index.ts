@@ -2310,7 +2310,7 @@ Deno.serve(async (req) => {
 
     if (!integration) {
       return new Response(renderPaymentTab({
-        entityId, dealTitle: "Negócio", totalValue: 0, paidValue: 0, openValue: 0,
+        entityId, entityTypeId, dealTitle: "Negócio", totalValue: 0, paidValue: 0, openValue: 0,
         currency: "EUR", installments: [], supabaseUrl, memberId,
         flows: [], contactPhone: "", noData: true,
       }), { headers: htmlHeaders });
@@ -2323,7 +2323,7 @@ Deno.serve(async (req) => {
       catch (tokErr) {
         console.error("[PAYMENT-TAB] Token refresh failed:", tokErr);
         return new Response(renderPaymentTab({
-          entityId, dealTitle: "Negócio", totalValue: 0, paidValue: 0, openValue: 0,
+          entityId, entityTypeId, dealTitle: "Negócio", totalValue: 0, paidValue: 0, openValue: 0,
           currency: "EUR", installments: [], supabaseUrl, memberId,
           flows: [], contactPhone: "", noData: true,
         } as any), { headers: htmlHeaders });
@@ -2768,7 +2768,7 @@ Deno.serve(async (req) => {
     const displayCreatedAt = dealCreatedAt || (dealTransactions.length > 0 ? dealTransactions[0].created_at : "") || "";
 
     return new Response(renderPaymentTab({
-      entityId, dealTitle, totalValue, paidValue, openValue, currency,
+      entityId, entityTypeId, dealTitle, totalValue, paidValue, openValue, currency,
       installments, supabaseUrl, memberId, flows, contactPhone,
       contactName, contactEmail, contactCpfCnpj, contactAddress,
       noData: installments.length === 0,
