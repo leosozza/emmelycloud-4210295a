@@ -1672,6 +1672,28 @@ function renderPaymentTab(opts: {
         }
       }
 
+      // Sync back to parent entity (Deal/Lead/SPA) UF fields so Emmely Pay stays consistent
+      // with what's in Bitrix24 next time it opens.
+      try {
+        var entityKind = ENTITY_TYPE_ID === '1' ? 'lead' : (ENTITY_TYPE_ID === '2' ? 'deal' : 'spa');
+        var syncBody = {
+          member_id: MEMBER_ID,
+          deal_id: ENTITY_ID,
+          entity_type: entityKind,
+          payment_data: {
+            next_due_date: payload.due_date_update,
+            payment_method: payload.payment_method_update,
+            installment_value: payload.amount_update,
+          }
+        };
+        if (entityKind === 'spa') syncBody.spa_entity_type_id = ENTITY_TYPE_ID;
+        await fetch(SUPABASE_URL + '/functions/v1/bitrix24-update-deal-payment', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_KEY, 'Authorization': 'Bearer ' + SUPABASE_KEY },
+          body: JSON.stringify(syncBody)
+        });
+      } catch(syncErr) { console.warn('[submitEdit] Bitrix sync failed:', syncErr); }
+
       el.innerHTML = 'Parcela atualizada com sucesso!'; el.style.color = 'var(--value-paid)'; el.style.display = 'block';
       setTimeout(function() { location.reload(); }, 1500);
     } catch(e) {
