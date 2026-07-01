@@ -1728,6 +1728,15 @@ Deno.serve(async (req) => {
           { bitrix_field_key: "UF_CRM_EMMELY_PROPOSAL_PDF", bitrix_field_title: "PDF da Proposta", supabase_table: "proposals", supabase_column: "pdf_url" },
           { bitrix_field_key: "UF_CRM_EMMELY_CONTRACT_URL", bitrix_field_title: "Link do Contrato", supabase_table: "proposals", supabase_column: "sign_token" },
           { bitrix_field_key: "UF_CRM_EMMELY_CONTRACT_PDF", bitrix_field_title: "PDF do Contrato", supabase_table: "proposals", supabase_column: "file_url" },
+          { bitrix_field_key: "UF_CRM_EMMELY_TOTAL_AMOUNT", bitrix_field_title: "Valor Total da Cobrança", supabase_table: "financial_records", supabase_column: "total_value" },
+          { bitrix_field_key: "UF_CRM_EMMELY_DOWN_PAYMENT", bitrix_field_title: "Valor de Entrada", supabase_table: "financial_records", supabase_column: "metadata.down_payment" },
+          { bitrix_field_key: "UF_CRM_EMMELY_DOWN_INSTALLMENTS", bitrix_field_title: "Nº Parcelas da Entrada", supabase_table: "financial_records", supabase_column: "metadata.down_installments" },
+          { bitrix_field_key: "UF_CRM_EMMELY_DOWN_METHOD", bitrix_field_title: "Método da Entrada", supabase_table: "financial_records", supabase_column: "metadata.down_method" },
+          { bitrix_field_key: "UF_CRM_EMMELY_DOWN_FIRST_DUE", bitrix_field_title: "1º Vencimento da Entrada", supabase_table: "financial_records", supabase_column: "metadata.down_first_due" },
+          { bitrix_field_key: "UF_CRM_EMMELY_DOWN_INTERVAL", bitrix_field_title: "Intervalo da Entrada", supabase_table: "financial_records", supabase_column: "metadata.down_interval" },
+          { bitrix_field_key: "UF_CRM_EMMELY_REMAINING_BALANCE", bitrix_field_title: "Saldo a Parcelar", supabase_table: "financial_records", supabase_column: "metadata.remaining_balance" },
+          { bitrix_field_key: "UF_CRM_EMMELY_FIRST_DUE_DATE", bitrix_field_title: "1º Vencimento das Parcelas", supabase_table: "financial_records", supabase_column: "metadata.first_due_date" },
+          { bitrix_field_key: "UF_CRM_EMMELY_INSTALLMENT_INTERVAL", bitrix_field_title: "Intervalo entre Parcelas", supabase_table: "financial_records", supabase_column: "metadata.installment_interval" },
         ];
 
         // Delete existing mappings for this integration
