@@ -183,6 +183,15 @@ function renderPaymentTab(opts: {
   contactName?: string;
   contactEmail?: string;
   contactCpfCnpj?: string;
+  contactAddress?: {
+    postal_code?: string;
+    street?: string;
+    number?: string;
+    district?: string;
+    city?: string;
+    state?: string;
+    country?: string;
+  };
   noData: boolean;
   gateway?: string;
   rawGateway?: string;
@@ -193,7 +202,8 @@ function renderPaymentTab(opts: {
   gatewayOptions?: { id: string; label: string }[];
   methodOptions?: { id: string; label: string }[];
 }): string {
-  const { dealTitle, totalValue, paidValue, openValue, currency, installments, supabaseUrl, memberId, flows, contactPhone, contactName, contactEmail, contactCpfCnpj, noData } = opts;
+  const { dealTitle, totalValue, paidValue, openValue, currency, installments, supabaseUrl, memberId, flows, contactPhone, contactName, contactEmail, contactCpfCnpj, contactAddress, noData } = opts;
+  const addr = contactAddress || {};
   const EUR_TO_BRL = 6.10;
 
   const paidPct = totalValue > 0 ? Math.round((paidValue / totalValue) * 100) : 0;
