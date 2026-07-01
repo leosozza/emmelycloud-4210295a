@@ -1,39 +1,33 @@
-## Problema
+## Objetivo
+Tornar o modal "Criar Cobrança" (Emmely Pay, iframe Bitrix24) mais automático: pega os produtos do Negócio, calcula saldo e valor das parcelas em tempo real, e limpa a exibição das opções.
 
-Ao abrir o Emmely Pay, a parcela aparece "pronta" (com valor 100,00 €) mas ainda **não foi gerada no Stripe** (é um registo sintético a partir dos UF do Deal). O utilizador confunde-se e pensa que já foi criada. Além disso, hoje se faltar Vencimento/Método, tem de sair do iframe, editar o Deal no Bitrix e voltar.
+## Alterações em `supabase/functions/bitrix24-payment-tab/index.ts`
 
-## O que muda
+### 1. Remover sufixo "x" dos seletores de Nº Parcelas
+Nos três `<select>` (Entrada, Saldo e Editar Parcela), voltar a exibir apenas o número (`1`, `2`, ..., `12`). O `value` continua numérico — só o texto muda. Assim automações que leiam o rótulo não quebram.
 
-### 1. Selo visual "Ainda não gerada" na frente da parcela
-No card da parcela em `supabase/functions/bitrix24-payment-tab/index.ts` (render de `b24-item`, ~linha 273–305):
+### 2. Auto-preencher "Valor Total" com soma dos produtos do Negócio
+Quando `openCreateForm()` abre o modal:
+- Se `pay-amount` estiver vazio/zero, chamar `BX24.callMethod('crm.deal.productrows.get', { id: ENTITY_ID })` (para Deals) ou o equivalente para SPA/Lead.
+- Somar `PRICE * QUANTITY` de cada linha e escrever em `#pay-amount`.
+- Disparar `calcInstallments()` para propagar os cálculos.
+- Fallback silencioso: se a API falhar ou retornar vazio, usa o `OPPORTUNITY` já carregado (`totalValue` do deal).
 
-- Detetar parcelas sintéticas (sem `transaction_id` real, ou seja `inst.financial_record_id` ausente **ou** `inst.id.startsWith("synthetic")`).
-- Adicionar badge amarelo destacado ao lado de "Parcela 1/1", com texto **"Não gerada"** + ícone `file-plus`.
-- Substituir/realçar o botão de ação para **"Gerar cobrança"** (primário azul) em vez do actual "Link" quando ainda não gerada. Ao clicar, abre o mesmo modal de edição já pré-preenchido — o Guardar cria a transação real (via `ensureTxExists` que já existe) e o link Stripe passa a ficar disponível.
-- Quando `hasMissing` (Vencimento ou Método por definir), o botão "Gerar cobrança" fica **desativado** com tooltip "Preencha Vencimento e Método primeiro".
+### 3. Novos campos read-only para Saldo e Valor da Parcela
+Adicionar dois campos visíveis (não editáveis, estilo `.b24-readonly`):
+- **"Saldo a parcelar"** dentro do bloco Parcelas (Saldo) — mostra `Valor Total − Valor da Entrada`.
+- **"Valor de cada parcela"** ao lado — mostra `saldo / nº parcelas`, formatado na moeda selecionada.
 
-### 2. Preencher Vencimento/Método direto no iframe (sync para Bitrix)
-Hoje o modal Editar (`submitEdit`, ~linha 1622) grava em `financial_records` + Smart Invoice 31, mas **não** volta a escrever nos campos UF do Deal/Lead/SPA — por isso ao reabrir, o Emmely Pay volta a mostrar "Definir".
+Ambos são atualizados dentro de `calcInstallments()` que já é disparado por todos os inputs relevantes (`pay-amount`, `pay-down`, `pay-installments`, `pay-currency`).
 
-Alterações:
+### 4. Ajustes em `calcInstallments()`
+- Escrever nos dois novos campos.
+- Continuar renderizando o `#installment-preview` com o resumo completo (datas, últimas parcelas com ajuste, total de faturas).
 
-- Em `submitEdit` (client-side dentro do HTML da edge function), após o PATCH de `payment-create`, invocar `bitrix24-update-deal-payment` com o `entity_type`, `deal_id` e `payment_data` contendo apenas os campos alterados:
-  - `next_due_date` ← `edit-due-date`
-  - `payment_method` ← `edit-method`
-  - `installment_value` ← `edit-amount` (quando o utilizador ajustar valor)
-- Passar `member_id` (já disponível no HTML como `MEMBER_ID`) e `spa_entity_type_id` quando `entity_type === "spa"`.
-- No `bitrix24-update-deal-payment/index.ts`, garantir que quando só chegam `next_due_date`/`payment_method` (sem `total_installments`), o bloco que recria Smart Invoices (~linha 130) é **saltado** — só atualiza os UF do entity. Adicionar guarda: `if (total_installments === undefined) skip invoice loop`.
+## Fora de escopo
+- Modal "Editar Parcela" e demais fluxos.
+- Alterações no backend `payment-create` — os cálculos continuam client-side; o servidor já recebe `amount`, `down_payment`, `num_installments`.
+- Sincronizar mudanças de produtos em tempo real após abrir o modal (usuário fecha e reabre se editar produtos).
 
-Resultado: ao Guardar no modal do iframe, os campos ficam persistidos em três lugares consistentes — `financial_records`, Smart Invoice 31, e UF do Deal — sem sair do Bitrix.
-
-### 3. Pequeno ajuste no render após guardar
-- Manter o `location.reload()` que já existe após 1,5 s (linha ~1655) para refletir imediatamente o estado "gerada" no card.
-
-## Fora do âmbito
-- Não altera o layout dos 3 cards KPI (Total/Pago/Em Aberto).
-- Não mexe no modal "Criar Cobrança" completo (só no fluxo por parcela existente).
-- Não muda regras de late-fee nem de baixa.
-
-## Ficheiros afetados
-- `supabase/functions/bitrix24-payment-tab/index.ts` — badge "Não gerada", botão "Gerar cobrança", chamada extra em `submitEdit` para `bitrix24-update-deal-payment`.
-- `supabase/functions/bitrix24-update-deal-payment/index.ts` — saltar recriação de Smart Invoices quando só se atualizam campos parciais (due_date/method).
+## Arquivos
+- `supabase/functions/bitrix24-payment-tab/index.ts` (único arquivo).
