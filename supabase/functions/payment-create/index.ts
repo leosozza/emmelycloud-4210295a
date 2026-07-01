@@ -817,6 +817,44 @@ Deno.serve(async (req) => {
       console.error("[PAYMENT-CREATE] Immediate TOKEN_PAY sync error:", tokenPayErr);
     }
 
+    // --- Push financial deal fields (entrada/saldo/parcelas) if provided by caller ---
+    try {
+      const bitrixDealId = body.bitrix_deal_id || extraMetadata?.bitrix_deal_id || extraMetadata?.bitrix24_deal_id;
+      const extraFields = body.deal_fields_extra;
+      if (bitrixDealId && extraFields && typeof extraFields === "object") {
+        const allowed = [
+          "UF_CRM_EMMELY_TOTAL_AMOUNT",
+          "UF_CRM_EMMELY_DOWN_PAYMENT",
+          "UF_CRM_EMMELY_DOWN_INSTALLMENTS",
+          "UF_CRM_EMMELY_DOWN_METHOD",
+          "UF_CRM_EMMELY_DOWN_FIRST_DUE",
+          "UF_CRM_EMMELY_DOWN_INTERVAL",
+          "UF_CRM_EMMELY_REMAINING_BALANCE",
+          "UF_CRM_EMMELY_FIRST_DUE_DATE",
+          "UF_CRM_EMMELY_INSTALLMENT_INTERVAL",
+        ];
+        const fieldsToWrite: Record<string, any> = {};
+        for (const k of allowed) {
+          if (extraFields[k] !== undefined && extraFields[k] !== null && extraFields[k] !== "") {
+            fieldsToWrite[k] = extraFields[k];
+          }
+        }
+        if (Object.keys(fieldsToWrite).length > 0) {
+          const { data: integration } = await supabase.from("bitrix24_integrations").select("*").limit(1).maybeSingle();
+          if (integration?.client_endpoint && integration?.access_token) {
+            await callBitrix(integration.client_endpoint, integration.access_token, "crm.deal.update", {
+              id: parseInt(bitrixDealId),
+              fields: fieldsToWrite,
+            });
+            console.log(`[PAYMENT-CREATE] Pushed ${Object.keys(fieldsToWrite).length} extra deal fields to Bitrix deal ${bitrixDealId}`);
+          }
+        }
+      }
+    } catch (extraFieldsErr) {
+      console.error("[PAYMENT-CREATE] deal_fields_extra push error:", extraFieldsErr);
+    }
+
+
     // --- Bitrix24 Badge: emmely_payment_created ---
     try {
       const bitrixDealId = body.bitrix_deal_id || extraMetadata?.bitrix_deal_id;
