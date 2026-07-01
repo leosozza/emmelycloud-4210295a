@@ -1446,9 +1446,15 @@ export default function NodeConfigPanel({ data, onChange, onDelete, onClose }: N
                             <Trash2 className="h-3 w-3" />
                           </Button>
                         </div>
-                        <Input className="h-7 text-xs" value={f.value}
-                          onChange={(e) => updateField(i, { value: e.target.value })}
-                          placeholder="{{valor}} ou texto fixo" />
+                        <BitrixFieldValueInput
+                          entity={isSpa ? "spa" : (crm.entity as any)}
+                          spaEntityTypeId={isSpa ? crm.spaEntityTypeId : undefined}
+                          fieldKey={f.key}
+                          categoryId={crm.targetPipelineId}
+                          value={f.value}
+                          onChange={(v) => updateField(i, { value: v })}
+                          placeholder="{{valor}} ou texto fixo"
+                        />
                       </div>
                     ))}
                     <Button variant="outline" size="sm" className="w-full h-7 text-xs" onClick={addField}>
