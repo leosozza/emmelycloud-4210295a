@@ -325,6 +325,8 @@ export default function FieldMappingManager({ integrationId, compact, memberId }
   // ── Stats ──
   const totalFields = rows.length;
   const mappedCount = rows.filter((r) => r.bitrixFieldKey !== "").length;
+  const systemCount = rows.filter((r) => r.isSystem).length;
+  const emmelyFieldsInBitrix = bitrixFields.filter((f) => isEmmelySystemBitrixField(f.key)).length;
 
   // ── Update a row ──
   const updateRow = (colKey: string, patch: Partial<RowMapping>) => {
