@@ -2715,7 +2715,7 @@ Deno.serve(async (req) => {
     return new Response(renderPaymentTab({
       entityId, dealTitle, totalValue, paidValue, openValue, currency,
       installments, supabaseUrl, memberId, flows, contactPhone,
-      contactName, contactEmail, contactCpfCnpj,
+      contactName, contactEmail, contactCpfCnpj, contactAddress,
       noData: installments.length === 0,
       gateway: gwNames[displayGateway] || displayGateway,
       rawGateway: rawGatewayValue || displayGateway,
