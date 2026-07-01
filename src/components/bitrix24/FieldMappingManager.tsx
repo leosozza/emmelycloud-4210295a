@@ -166,8 +166,8 @@ interface FieldMappingManagerProps {
 }
 
 export default function FieldMappingManager({ integrationId, compact, memberId }: FieldMappingManagerProps & { memberId?: string }) {
-  const [bitrixEntity, setBitrixEntity] = useState<"lead" | "deal">("lead");
-  const [supabaseTable, setSupabaseTable] = useState("leads");
+  const [bitrixEntity, setBitrixEntity] = useState<"lead" | "deal">("deal");
+  const [supabaseTable, setSupabaseTable] = useState("financial_records");
   const [bitrixFields, setBitrixFields] = useState<BitrixField[]>([]);
   const [loadingFields, setLoadingFields] = useState(false);
   const [rows, setRows] = useState<RowMapping[]>([]);
