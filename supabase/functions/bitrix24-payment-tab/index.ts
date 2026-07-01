@@ -662,6 +662,7 @@ function renderPaymentTab(opts: {
           <label class="b24-form-label">Método da Entrada</label>
           <select id="pay-down-method" class="b24-input" style="height:32px" onchange="toggleMethodFields()">
             <option value="card">Cartão</option>
+            <option value="customer_choice">Cliente escolhe (Stripe)</option>
             <option value="pix">PIX</option>
             <option value="boleto">Boleto</option>
             <option value="multibanco">Multibanco</option>
@@ -710,6 +711,7 @@ function renderPaymentTab(opts: {
         <label class="b24-form-label">Método do Saldo</label>
         <select id="pay-method" class="b24-input" style="height:32px" onchange="toggleMethodFields()">
           <option value="card">Cartão</option>
+          <option value="customer_choice">Cliente escolhe (Stripe)</option>
           <option value="pix">PIX</option>
           <option value="boleto">Boleto</option>
           <option value="multibanco">Multibanco</option>
