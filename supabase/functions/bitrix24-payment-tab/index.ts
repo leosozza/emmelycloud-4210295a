@@ -660,7 +660,7 @@ function renderPaymentTab(opts: {
     </div>
 
     <!-- Bloco Entrada -->
-    <div style="border:1px solid var(--border-color);border-radius:6px;padding:10px 12px;margin-bottom:12px;background:var(--bg-page)">
+    <div id="block-entrada" style="border:1px solid var(--border-color);border-radius:6px;padding:10px 12px;margin-bottom:12px;background:var(--bg-page)">
       <div style="font-weight:600;font-size:12px;color:var(--text-primary);margin-bottom:8px">Entrada</div>
       <div class="b24-form-row">
         <div class="b24-form-group">
