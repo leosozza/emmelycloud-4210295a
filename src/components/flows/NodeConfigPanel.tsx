@@ -31,6 +31,7 @@ import {
   type FlowSwitchCase, type FlowCondition,
 } from "./FlowNodeTypes";
 import BitrixFieldSelector from "./BitrixFieldSelector";
+import BitrixFieldValueInput from "./BitrixFieldValueInput";
 
 // ─── Props ────────────────────────────────────────────────────────────────────
 
@@ -1378,15 +1379,26 @@ export default function NodeConfigPanel({ data, onChange, onDelete, onClose }: N
                   <>
                     <div className="space-y-1">
                       <Label className="text-[11px]">Funil de destino (CATEGORY_ID)</Label>
-                      <Input className="h-8 text-xs" value={crm.targetPipelineId || ""}
-                        onChange={(e) => updateCrm({ targetPipelineId: e.target.value })}
-                        placeholder="Ex: 0 (funil padrão)" />
+                      <BitrixFieldValueInput
+                        entity={isSpa ? "spa" : (crm.entity as any)}
+                        spaEntityTypeId={isSpa ? crm.spaEntityTypeId : undefined}
+                        fieldKey="CATEGORY_ID"
+                        value={crm.targetPipelineId || ""}
+                        onChange={(v) => updateCrm({ targetPipelineId: v })}
+                        placeholder="Ex: 0 (funil padrão)"
+                      />
                     </div>
                     <div className="space-y-1">
                       <Label className="text-[11px]">Estágio de destino (STAGE_ID)</Label>
-                      <Input className="h-8 text-xs" value={crm.targetStageId || ""}
-                        onChange={(e) => updateCrm({ targetStageId: e.target.value })}
-                        placeholder="Ex: C1:NEW ou {{stage_id}}" />
+                      <BitrixFieldValueInput
+                        entity={isSpa ? "spa" : (crm.entity as any)}
+                        spaEntityTypeId={isSpa ? crm.spaEntityTypeId : undefined}
+                        fieldKey={isSpa ? "stageId" : (crm.entity === "lead" ? "STATUS_ID" : "STAGE_ID")}
+                        categoryId={crm.targetPipelineId}
+                        value={crm.targetStageId || ""}
+                        onChange={(v) => updateCrm({ targetStageId: v })}
+                        placeholder="Ex: C1:NEW ou {{stage_id}}"
+                      />
                     </div>
                   </>
                 )}
@@ -1434,9 +1446,15 @@ export default function NodeConfigPanel({ data, onChange, onDelete, onClose }: N
                             <Trash2 className="h-3 w-3" />
                           </Button>
                         </div>
-                        <Input className="h-7 text-xs" value={f.value}
-                          onChange={(e) => updateField(i, { value: e.target.value })}
-                          placeholder="{{valor}} ou texto fixo" />
+                        <BitrixFieldValueInput
+                          entity={isSpa ? "spa" : (crm.entity as any)}
+                          spaEntityTypeId={isSpa ? crm.spaEntityTypeId : undefined}
+                          fieldKey={f.key}
+                          categoryId={crm.targetPipelineId}
+                          value={f.value}
+                          onChange={(v) => updateField(i, { value: v })}
+                          placeholder="{{valor}} ou texto fixo"
+                        />
                       </div>
                     ))}
                     <Button variant="outline" size="sm" className="w-full h-7 text-xs" onClick={addField}>

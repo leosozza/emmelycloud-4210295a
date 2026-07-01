@@ -1,50 +1,90 @@
-# Adicionar 9 novos campos Emmely Pay ao Bitrix
+# Fix — Flows CRM node: valor do campo puxando do Bitrix
 
-## Campos a criar (no Deal e no Lead)
+## Problema
 
-| FIELD_NAME | Tipo | Label |
-|---|---|---|
-| `UF_CRM_EMMELY_TOTAL_AMOUNT` | double | Valor Total da Cobrança |
-| `UF_CRM_EMMELY_DOWN_PAYMENT` | double | Valor de Entrada |
-| `UF_CRM_EMMELY_DOWN_INSTALLMENTS` | integer | Nº Parcelas da Entrada |
-| `UF_CRM_EMMELY_DOWN_METHOD` | string | Método da Entrada |
-| `UF_CRM_EMMELY_DOWN_FIRST_DUE` | date | 1º Vencimento da Entrada |
-| `UF_CRM_EMMELY_DOWN_INTERVAL` | integer | Intervalo da Entrada (dias) |
-| `UF_CRM_EMMELY_REMAINING_BALANCE` | double | Saldo a Parcelar |
-| `UF_CRM_EMMELY_FIRST_DUE_DATE` | date | 1º Vencimento das Parcelas |
-| `UF_CRM_EMMELY_INSTALLMENT_INTERVAL` | integer | Intervalo entre Parcelas (dias) |
+No painel de configuração do nó CRM (`crm.deal.update`, `crm.lead.update`, `crm.deal.add` etc.) dentro do iframe:
 
-## Mudanças
+1. Ao escolher um campo como **Deal stage (STAGE_ID)**, o input de valor é um `<Input>` de texto livre com placeholder `{{valor}} ou texto fixo`. O usuário precisa saber decorado o código do estágio (ex.: `C1:NEW`) — não há dropdown com as etapas reais do Bitrix.
+2. O mesmo acontece com **CATEGORY_ID** (funil), **STATUS_ID** de Lead, campos `enumeration` (listas), `boolean`, `crm_status`, `crm_category`.
+3. Ao salvar/executar, o Bitrix rejeita o valor (ex.: `{{valor}}` literal, ou id inválido) → aparece como "erro ao criar o campo".
 
-### 1. `supabase/functions/bitrix24-install/index.ts`
-- Nas **duas** listas de definição de campos (install inicial ~linha 419–600 e action `repair_fields` ~linha 1390–1571), adicionar os 9 campos usando o mesmo padrão dos existentes (EDIT_FORM_LABEL PT/EN, LIST_COLUMN_LABEL, USER_TYPE_ID `double`/`integer`/`string`/`date`).
-- Adicionar linhas correspondentes no seed de `bitrix24_field_mappings` (~linha 1638+) para aparecerem no FieldMappingManager (`supabase_table` = `financial_records` na maioria).
+O endpoint `bitrix24-fields` já retorna `type` e `items` (quando existem inline), e o endpoint `bitrix24-fetch-entities` já sabe listar `pipelines` e `stages` de lead/deal/SPA — só falta ligar isso à UI.
 
-### 2. `supabase/functions/payment-create/index.ts`
-Ao patchear o Deal via `crm.deal.update`, incluir os novos campos calculados a partir do payload da(s) parcela(s):
-- `UF_CRM_EMMELY_TOTAL_AMOUNT` = soma total (entrada + saldo)
-- `UF_CRM_EMMELY_DOWN_PAYMENT` = soma parcelas com `is_down_payment=true`
-- `UF_CRM_EMMELY_DOWN_INSTALLMENTS` = contagem parcelas de entrada
-- `UF_CRM_EMMELY_DOWN_METHOD` = método da primeira parcela de entrada
-- `UF_CRM_EMMELY_DOWN_FIRST_DUE` = due_date mínimo entre parcelas de entrada
-- `UF_CRM_EMMELY_DOWN_INTERVAL` = diferença em dias entre 1ª e 2ª parcela de entrada (ou 0)
-- `UF_CRM_EMMELY_REMAINING_BALANCE` = total − entrada
-- `UF_CRM_EMMELY_FIRST_DUE_DATE` = due_date mínimo das parcelas do saldo
-- `UF_CRM_EMMELY_INSTALLMENT_INTERVAL` = diferença em dias entre 1ª e 2ª parcelas do saldo (ou 0)
+## Escopo (frontend + 1 tweak backend)
 
-### 3. `supabase/functions/bitrix24-payment-tab/index.ts`
-- Em `submitInstallments()`, incluir estes 9 valores no body enviado à `payment-create` (como `deal_fields_extra`), para que o backend consiga popular o Deal sem recalcular.
-- Backend usa esses valores diretamente se presentes; senão, deriva das parcelas.
+### 1. Novo componente `BitrixFieldValueInput`
+`src/components/flows/BitrixFieldValueInput.tsx`
 
-### 4. Após deploy
-O utilizador precisa clicar em **"Reparar Campos"** (action `repair_fields` já existente na integração) para criar os 9 novos user-fields nos Deals já instalados. Documentar isto no fim.
+Recebe: `entity`, `spaEntityTypeId`, `fieldKey`, `fieldMeta` (do hook `useBitrixFields`), `value`, `onChange`, `categoryId` opcional (para resolver stages do funil correto).
 
-## Fora do âmbito
-- Sem migrações Supabase (tabelas já suportam via `metadata`).
-- Sem alterar dashboards/relatórios.
-- Sem popular retroativamente Deals antigos — só cobranças novas.
+Comportamento por tipo detectado no `fieldMeta`:
 
-## Ficheiros afetados
-- `supabase/functions/bitrix24-install/index.ts`
-- `supabase/functions/payment-create/index.ts`
-- `supabase/functions/bitrix24-payment-tab/index.ts`
+| Campo / tipo                                       | Renderiza                                          |
+| -------------------------------------------------- | -------------------------------------------------- |
+| `STAGE_ID` (deal) ou `crm_status` com `DEAL_STAGE` | Dropdown de estágios (fetch `action=stages`)       |
+| `STATUS_ID` (lead)                                 | Dropdown de estágios de Lead                       |
+| `CATEGORY_ID` (deal)                               | Dropdown de funis (`action=pipelines`)             |
+| `stageId` (SPA)                                    | Dropdown de estágios SPA                           |
+| `type === "enumeration"` com `items`               | Dropdown a partir de `items` já retornados         |
+| `type === "boolean"` ou `char` (Y/N)               | Switch Sim/Não                                     |
+| `type === "date"` / `datetime`                     | Input `type="date"`/`datetime-local`               |
+| resto                                              | Input de texto (comportamento atual)               |
+
+Todos os dropdowns oferecem também opção **"Usar variável dinâmica"** que troca para input texto — para manter `{{deal_id}}`, `{{stage_id}}` etc.
+
+### 2. Novo hook `useBitrixStages`
+`src/hooks/useBitrixStages.ts`
+
+- Chama `bitrix24-fetch-entities?action=stages&entity=<lead|deal|spa>&category_id=<id>&spa_entity_type_id=<id>`.
+- Cache in-memory por chave `entity|categoryId|spaId` (5 min), mesmo padrão do `useBitrixFields`.
+- Também exporta `useBitrixPipelines` (usa `action=pipelines`) para dropdown de CATEGORY_ID.
+
+### 3. Substituir `<Input>` de valor no `NodeConfigPanel.tsx`
+
+- Linhas 1387–1389 (Estágio de destino no `isMove`): trocar por `BitrixFieldValueInput` com `fieldKey="STAGE_ID"` e passar `categoryId={crm.targetPipelineId}`.
+- Linhas 1381–1383 (Funil de destino no `isMove`): trocar por dropdown de pipelines.
+- Linhas 1437–1439 (valor genérico em Campos): trocar por `<BitrixFieldValueInput fieldKey={f.key} ... />` — pega `fieldMeta` do `useBitrixFields` já carregado.
+
+### 4. Ajustes no `bitrix24-fields` (backend)
+`supabase/functions/bitrix24-fields/index.ts`
+
+- Enriquecer o retorno do parseFields quando `type` for `crm_status` / `crm_category` / `crm_dealcategory`: incluir um flag `enrichSource: "stages" | "pipelines"` para que o frontend saiba qual endpoint chamar.
+- Nenhuma quebra de contrato — só campos adicionais.
+
+### 5. Erro "ao criar o campo" ao salvar/executar
+
+Duas causas prováveis, ambas cobertas pelas mudanças acima:
+
+- **Valor literal `{{valor}}`** (placeholder deixado sem preencher): adicionar validação client-side no `NodeConfigPanel` — se `f.value` contém `{{valor}}` ou vazio, mostrar aviso vermelho abaixo do campo e bloquear "Salvar" no toolbar do flow.
+- **STAGE_ID inválido**: com o dropdown, o valor sempre será um id válido (`C1:NEW`, `NEW`, `DT31_1:UC_...`).
+
+Se depois de aplicar isso ainda houver erro, capturaremos a mensagem exata no `flow-engine` (já existe `flow_execution_logs`) — nenhum ajuste extra necessário agora.
+
+## Fora de escopo
+
+- Nenhum trigger de banco, nenhuma nova tabela, nenhuma migração.
+- Não mexer no `flow-engine` (runtime) — o problema é UX/entrada de dados.
+- Não mexer no `BitrixFieldSelector` (seleção do campo — já funciona).
+
+## Arquivos tocados
+
+- **novo** `src/components/flows/BitrixFieldValueInput.tsx`
+- **novo** `src/hooks/useBitrixStages.ts` (inclui `useBitrixPipelines`)
+- editado `src/components/flows/NodeConfigPanel.tsx` (linhas ~1380–1445)
+- editado `supabase/functions/bitrix24-fields/index.ts` (enriquecer metadata)
+
+## Detalhes técnicos
+
+```text
+NodeConfigPanel
+  └─ BitrixFieldSelector (key)     ← já existe
+  └─ BitrixFieldValueInput (value) ← NOVO
+        ├─ if key===STAGE_ID / crm_status → useBitrixStages(entity, categoryId)
+        ├─ if key===CATEGORY_ID           → useBitrixPipelines(entity)
+        ├─ if fieldMeta.items?.length     → <Select> a partir dos items
+        ├─ if boolean                     → <Switch>
+        ├─ if date                        → <Input type=date>
+        └─ default                        → <Input> (comportamento atual)
+```
+
+Toggle "usar variável" em todos os casos para permitir `{{stage_id}}` vindo de nós anteriores.
