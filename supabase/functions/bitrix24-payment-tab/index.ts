@@ -570,12 +570,15 @@ function renderPaymentTab(opts: {
     <button class="b24-btn-primary" onclick="openCreateForm()">${icon("file-text", 14)} Criar Cobrança</button>
     ${!noData && installments.length > 0 ? (() => {
       const target = installments.find(i => i.status !== "paga") || installments[0];
+      const totalSum = installments.reduce((s, i) => s + (Number(i.value) || 0), 0);
       const targetJson = JSON.stringify({
         id: target.id,
         transaction_id: target.transaction_id,
         financial_record_id: target.financial_record_id || null,
         entity_id: opts.entityId,
         value: target.value,
+        total_value: totalSum,
+        total_installments_count: installments.length,
         due_date: target.due_date,
         payment_method: target.payment_method || "card",
         currency: target.currency,
