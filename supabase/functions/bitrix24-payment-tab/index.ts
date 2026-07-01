@@ -1180,11 +1180,49 @@ function renderPaymentTab(opts: {
     var currency = document.getElementById('pay-currency').value;
     var method = document.getElementById('pay-method').value;
     var desc = document.getElementById('pay-desc').value || 'Pagamento';
-    var name = document.getElementById('pay-name').value;
-    var email = document.getElementById('pay-email').value;
-    var cpf = document.getElementById('pay-cpf').value;
+    function val(id){ var el=document.getElementById(id); return el ? String(el.value||'').trim() : ''; }
+    function mark(id, bad){ var el=document.getElementById(id); if(!el) return; if(bad) el.classList.add('b24-invalid'); else el.classList.remove('b24-invalid'); }
+    ['pay-name','pay-email','pay-cpf','pay-postal','pay-street','pay-number','pay-city','pay-state'].forEach(function(k){ mark(k,false); });
+
+    var name = val('pay-name');
+    var email = val('pay-email');
+    var cpf = val('pay-cpf');
+    var phone = val('pay-phone');
+    var postal = val('pay-postal');
+    var street = val('pay-street');
+    var number = val('pay-number');
+    var district = val('pay-district');
+    var city = val('pay-city');
+    var state = val('pay-state');
+    var country = val('pay-country') || (currency === 'BRL' ? 'BR' : 'PT');
+
+    var missing = [];
+    if (!name) { missing.push('Nome'); mark('pay-name', true); }
+    if (!email || !/.+@.+\..+/.test(email)) { missing.push('Email válido'); mark('pay-email', true); }
+    var needsCpf = currency === 'BRL' || method === 'boleto' || method === 'pix' || downMethod === 'boleto' || downMethod === 'pix';
+    if (needsCpf && !cpf) { missing.push('CPF/CNPJ'); mark('pay-cpf', true); }
+    var needsAddr = method === 'boleto' || downMethod === 'boleto';
+    if (needsAddr) {
+      if (!postal) { missing.push('CEP'); mark('pay-postal', true); }
+      if (!street) { missing.push('Endereço'); mark('pay-street', true); }
+      if (!number) { missing.push('Número'); mark('pay-number', true); }
+      if (!city)   { missing.push('Cidade'); mark('pay-city', true); }
+      if (!state)  { missing.push('UF'); mark('pay-state', true); }
+    }
     if (downPayment > totalAmount) { showPayResult('Entrada não pode ser maior que o total.', true); return; }
-    if (currency === 'BRL' && !cpf) { showPayResult('CPF/CNPJ é obrigatório para BRL.', true); return; }
+    if (missing.length) {
+      var body=document.getElementById('customer-body'); var btnT=document.getElementById('customer-toggle-btn');
+      if (body) body.style.display=''; if (btnT) btnT.textContent='Recolher';
+      showPayResult('Preencha os campos obrigatórios: ' + missing.join(', ') + '.', true);
+      return;
+    }
+    var customerData = {
+      name: name, email: email, cpf_cnpj: cpf || undefined, phone: phone || undefined,
+      address: {
+        postal_code: postal || undefined, street: street || undefined, number: number || undefined,
+        district: district || undefined, city: city || undefined, state: state || undefined, country: country || undefined
+      }
+    };
     var remaining = totalAmount - downPayment;
     var instValue = numInstallments > 0 ? Math.floor(remaining * 100 / numInstallments) / 100 : 0;
     var lastInstValue = remaining - (instValue * (numInstallments - 1));
