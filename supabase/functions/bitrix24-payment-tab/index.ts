@@ -1281,7 +1281,7 @@ function renderPaymentTab(opts: {
             amount: parcel.amount, currency: currency, payment_method: parcel.method,
             force_gateway: DEAL_RAW_GATEWAY || undefined,
             description: desc + parcelLabel,
-            customer_data: { name: name, email: email, cpf_cnpj: cpf || undefined },
+            customer_data: customerData,
             due_date: parcel.due_date,
             installment_number: parcel.is_down_payment ? 0 : parcel.installment_number,
             total_installments: totalCount, installment_group_id: groupId, is_down_payment: parcel.is_down_payment,
