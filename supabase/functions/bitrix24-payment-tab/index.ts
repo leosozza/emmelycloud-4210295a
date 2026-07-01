@@ -1115,27 +1115,22 @@ function renderPaymentTab(opts: {
     var lblAmount = document.getElementById('label-pay-amount');
     var lblMethod = document.getElementById('label-pay-method');
     var preview = document.getElementById('installment-preview');
+    // Always keep the FULL form visible (Entrada, Parcelas, Dados do Cliente).
+    // Editing a cobrança means being able to restructure the whole thing.
+    if (entrada) entrada.style.display = '';
+    if (gNum) gNum.style.display = '';
+    if (gInt) gInt.style.display = '';
+    if (displays) displays.style.display = '';
+    if (lblFirstDue) lblFirstDue.textContent = '1º Vencimento';
+    if (lblAmount) lblAmount.textContent = 'Valor Total';
+    if (lblMethod) lblMethod.textContent = 'Método do Saldo';
+    if (preview) preview.style.display = '';
     if (on) {
       title.textContent = 'Editar Cobrança' + (opts.instLabel ? ' — ' + opts.instLabel : '');
       btn.textContent = 'Guardar Alterações';
-      if (entrada) entrada.style.display = 'none';
-      if (gNum) gNum.style.display = 'none';
-      if (gInt) gInt.style.display = 'none';
-      if (displays) displays.style.display = 'none';
-      if (lblFirstDue) lblFirstDue.textContent = 'Vencimento';
-      if (lblAmount) lblAmount.textContent = 'Valor da Parcela';
-      if (lblMethod) lblMethod.textContent = 'Método de Pagamento';
-      if (preview) preview.style.display = 'none';
     } else {
       title.textContent = 'Criar Cobrança';
       btn.textContent = 'Criar Cobrança';
-      if (entrada) entrada.style.display = '';
-      if (gNum) gNum.style.display = '';
-      if (gInt) gInt.style.display = '';
-      if (displays) displays.style.display = '';
-      if (lblFirstDue) lblFirstDue.textContent = '1º Vencimento';
-      if (lblAmount) lblAmount.textContent = 'Valor Total';
-      if (lblMethod) lblMethod.textContent = 'Método do Saldo';
     }
   }
 
