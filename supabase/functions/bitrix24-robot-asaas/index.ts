@@ -91,14 +91,31 @@ Deno.serve(async (req) => {
     let result: any = null;
 
     if (robotCode === "ASAAS_CHARGE") {
-      result = await callInternal("payment-create", {
-        gateway: "asaas",
-        amount: value,
-        currency: "BRL",
-        payment_method: billingType.toLowerCase() === "boleto" ? "boleto" : (billingType.toLowerCase() === "credit_card" ? "card" : "pix"),
-        description,
-        metadata: { bitrix_deal_id: dealIdNum, source: "bizproc_robot" },
-      });
+      // NEW: prefer routing through bitrix24-robot-handler create_charge, which
+      // reads the Emmely Pay plan (entrada + parcelas) from the deal fields.
+      // Falls back to legacy single-charge behavior when no deal_id is present.
+      if (dealIdNum) {
+        result = await callInternal("bitrix24-robot-handler", {
+          code: "create_charge",
+          properties: {
+            deal_id: dealIdNum,
+            // Optional overrides (empty ⇒ ignored)
+            amount: value || undefined,
+            payment_method: billingType ? (billingType.toLowerCase() === "boleto" ? "boleto" : (billingType.toLowerCase() === "credit_card" ? "card" : (billingType.toLowerCase() === "pix" ? "pix" : billingType.toLowerCase()))) : undefined,
+            description: description || undefined,
+          },
+          auth: { access_token: authToken },
+        });
+      } else {
+        result = await callInternal("payment-create", {
+          gateway: "asaas",
+          amount: value,
+          currency: "BRL",
+          payment_method: billingType.toLowerCase() === "boleto" ? "boleto" : (billingType.toLowerCase() === "credit_card" ? "card" : "pix"),
+          description,
+          metadata: { bitrix_deal_id: dealIdNum, source: "bizproc_robot" },
+        });
+      }
     } else if (robotCode === "ASAAS_SUB") {
       result = await callInternal("asaas-subscription-create", {
         bitrix24_deal_id: dealIdNum,
