@@ -670,7 +670,7 @@ function renderPaymentTab(opts: {
         <div class="b24-form-group">
           <label class="b24-form-label">Nº Parcelas da Entrada</label>
           <select id="pay-down-installments" class="b24-input" style="height:32px" onchange="calcInstallments()">
-            ${[1,2,3,4,5,6,7,8,9,10,11,12].map(n => `<option value="${n}">${n}${n>1?'x':''}</option>`).join("")}
+            ${[1,2,3,4,5,6,7,8,9,10,11,12].map(n => `<option value="${n}">${n}</option>`).join("")}
           </select>
         </div>
       </div>
@@ -708,7 +708,7 @@ function renderPaymentTab(opts: {
         <div class="b24-form-group">
           <label class="b24-form-label">Nº Parcelas</label>
           <select id="pay-installments" class="b24-input" style="height:32px" onchange="calcInstallments()">
-            ${[1,2,3,4,5,6,7,8,9,10,11,12].map(n => `<option value="${n}"${n===1?' selected':''}>${n}${n>1?'x':''}</option>`).join("")}
+            ${[1,2,3,4,5,6,7,8,9,10,11,12].map(n => `<option value="${n}"${n===1?' selected':''}>${n}</option>`).join("")}
           </select>
         </div>
         <div class="b24-form-group">
@@ -722,6 +722,16 @@ function renderPaymentTab(opts: {
         <div class="b24-form-group">
           <label class="b24-form-label">1º Vencimento</label>
           <input type="date" id="pay-first-due" class="b24-input" onchange="calcInstallments()">
+        </div>
+      </div>
+      <div class="b24-form-row">
+        <div class="b24-form-group">
+          <label class="b24-form-label">Saldo a Parcelar</label>
+          <div class="b24-readonly" id="pay-remaining-display">—</div>
+        </div>
+        <div class="b24-form-group">
+          <label class="b24-form-label">Valor de cada Parcela</label>
+          <div class="b24-readonly" id="pay-installment-value-display">—</div>
         </div>
       </div>
       <div class="b24-form-group">
@@ -830,7 +840,7 @@ function renderPaymentTab(opts: {
       <div class="b24-form-group">
         <label class="b24-form-label">Nº de Parcelas</label>
         <select id="edit-num-installments" class="b24-input" style="height:32px" onchange="recalcEditInstallments()">
-          ${[1,2,3,4,5,6,7,8,9,10,11,12].map(n => `<option value="${n}">${n}${n>1?'x':''}</option>`).join("")}
+          ${[1,2,3,4,5,6,7,8,9,10,11,12].map(n => `<option value="${n}">${n}</option>`).join("")}
         </select>
       </div>
       <div class="b24-form-group">
@@ -1065,6 +1075,48 @@ function renderPaymentTab(opts: {
     try { if (typeof BX24 !== 'undefined') { BX24.resizeWindow && BX24.resizeWindow(1200, 900); BX24.fitWindow && BX24.fitWindow(); } } catch(e){}
     toggleMethodFields();
     autoCollapseCustomerIfComplete();
+    autoFillTotalFromProducts();
+  }
+
+  function autoFillTotalFromProducts() {
+    var amountEl = document.getElementById('pay-amount');
+    if (!amountEl) return;
+    var current = parseFloat(amountEl.value) || 0;
+    if (current > 0) { calcInstallments(); return; }
+    var fallback = ${JSON.stringify(totalValue || 0)};
+    function applyTotal(v) {
+      if (v > 0) { amountEl.value = v.toFixed(2); }
+      else if (fallback > 0) { amountEl.value = Number(fallback).toFixed(2); }
+      calcInstallments();
+    }
+    if (typeof BX24 === 'undefined') { applyTotal(0); return; }
+    try {
+      if (ENTITY_TYPE_ID === '2') {
+        BX24.callMethod('crm.deal.productrows.get', { id: ENTITY_ID }, function(res) {
+          if (res.error()) { applyTotal(0); return; }
+          var rows = res.data() || [];
+          var sum = 0;
+          for (var i=0;i<rows.length;i++) {
+            var p = parseFloat(rows[i].PRICE) || 0;
+            var q = parseFloat(rows[i].QUANTITY) || 0;
+            sum += p * q;
+          }
+          applyTotal(sum);
+        });
+      } else {
+        BX24.callMethod('crm.item.productrow.list', { filter: { '=ownerType': ENTITY_TYPE_ID === '1' ? 'L' : 'T' + ENTITY_TYPE_ID, '=ownerId': parseInt(ENTITY_ID) } }, function(res) {
+          if (res.error()) { applyTotal(0); return; }
+          var rows = (res.data() && res.data().productRows) || [];
+          var sum = 0;
+          for (var i=0;i<rows.length;i++) {
+            var p = parseFloat(rows[i].price) || 0;
+            var q = parseFloat(rows[i].quantity) || 0;
+            sum += p * q;
+          }
+          applyTotal(sum);
+        });
+      }
+    } catch(e) { applyTotal(0); }
   }
   function closeCreateForm() {
     document.getElementById('create-overlay').classList.remove('active');
@@ -1087,6 +1139,7 @@ function renderPaymentTab(opts: {
 
   document.getElementById('pay-currency').addEventListener('change', function() {
     toggleMethodFields();
+    calcInstallments();
   });
 
   function toggleMethodFields() {
@@ -1131,13 +1184,26 @@ function renderPaymentTab(opts: {
     var preview = document.getElementById('installment-preview');
     var extra = document.getElementById('pay-down-extra');
     if (extra) extra.style.display = down > 0 ? '' : 'none';
-    if (total <= 0) { preview.style.display = 'none'; return; }
+    var curCode = (document.getElementById('pay-currency')||{}).value || 'EUR';
+    var curSym = curCode === 'BRL' ? 'R$ ' : (curCode === 'EUR' ? '€ ' : '');
+    var remainEl = document.getElementById('pay-remaining-display');
+    var instValEl = document.getElementById('pay-installment-value-display');
+    if (total <= 0) {
+      preview.style.display = 'none';
+      if (remainEl) remainEl.textContent = '—';
+      if (instValEl) instValEl.textContent = '—';
+      return;
+    }
     if (down > total) down = total;
     var remaining = total - down;
     var instValue = numInst > 0 ? Math.floor(remaining * 100 / numInst) / 100 : 0;
     var lastInst = remaining - (instValue * (numInst - 1));
     var downInstValue = downN > 0 ? Math.floor(down * 100 / downN) / 100 : 0;
     var lastDown = down - (downInstValue * (downN - 1));
+    if (remainEl) remainEl.textContent = curSym + remaining.toFixed(2);
+    if (instValEl) instValEl.textContent = numInst > 0 && remaining > 0
+      ? (numInst + 'x de ' + curSym + instValue.toFixed(2))
+      : '—';
     var lines = [];
     lines.push('<div style="font-weight:600;margin-bottom:6px;color:var(--text-primary)">Resumo do parcelamento</div>');
     lines.push('<div>Total: <strong>' + total.toFixed(2) + '</strong></div>');
