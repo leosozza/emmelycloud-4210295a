@@ -1039,22 +1039,52 @@ function renderPaymentTab(opts: {
   }
 
   // === Create form ===
-  function openCreateForm() { document.getElementById('create-overlay').classList.add('active'); }
+  function openCreateForm() {
+    document.getElementById('create-overlay').classList.add('active');
+    try { if (typeof BX24 !== 'undefined') { BX24.resizeWindow && BX24.resizeWindow(1200, 900); BX24.fitWindow && BX24.fitWindow(); } } catch(e){}
+    toggleMethodFields();
+    autoCollapseCustomerIfComplete();
+  }
   function closeCreateForm() {
     document.getElementById('create-overlay').classList.remove('active');
     document.getElementById('pay-result').style.display = 'none';
   }
+  function toggleCustomerSection() {
+    var body = document.getElementById('customer-body');
+    var btn = document.getElementById('customer-toggle-btn');
+    if (body.style.display === 'none') { body.style.display = ''; btn.textContent = 'Recolher'; }
+    else { body.style.display = 'none'; btn.textContent = 'Expandir'; }
+  }
+  function customerIsComplete() {
+    var required = ['pay-name','pay-email'];
+    for (var i=0;i<required.length;i++) { var v=(document.getElementById(required[i])||{}).value; if (!v || !String(v).trim()) return false; }
+    return true;
+  }
+  function autoCollapseCustomerIfComplete() {
+    if (customerIsComplete()) { var body=document.getElementById('customer-body'); var btn=document.getElementById('customer-toggle-btn'); if (body) body.style.display='none'; if (btn) btn.textContent='Expandir'; }
+  }
 
   document.getElementById('pay-currency').addEventListener('change', function() {
-    document.getElementById('cpf-group').style.display = this.value === 'BRL' ? 'block' : 'none';
     toggleMethodFields();
   });
 
   function toggleMethodFields() {
-    var method = document.getElementById('pay-method').value;
+    var method = (document.getElementById('pay-method')||{}).value || 'card';
+    var downMethod = (document.getElementById('pay-down-method')||{}).value || method;
+    var currency = (document.getElementById('pay-currency')||{}).value || 'EUR';
     var isDireto = method === 'direto';
     var emailEl = document.getElementById('pay-email');
     if (emailEl) emailEl.closest('.b24-form-group').style.opacity = isDireto ? '0.5' : '1';
+
+    var needsCpf = currency === 'BRL' || method === 'boleto' || method === 'pix' || downMethod === 'boleto' || downMethod === 'pix';
+    var cpfGroup = document.getElementById('cpf-group');
+    if (cpfGroup) cpfGroup.style.opacity = needsCpf ? '1' : '0.85';
+
+    var needsAddress = method === 'boleto' || downMethod === 'boleto';
+    var addressBlock = document.getElementById('address-block');
+    var addressHint = document.getElementById('address-hint');
+    if (addressBlock) addressBlock.style.display = needsAddress ? 'block' : (currency === 'BRL' ? 'block' : 'none');
+    if (addressHint) addressHint.style.display = needsAddress ? 'block' : 'none';
   }
 
   function initForm() {
