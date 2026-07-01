@@ -464,7 +464,13 @@ export default function FieldMappingManager({ integrationId, compact, memberId }
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
           <span>Total: <strong className="text-foreground">{totalFields}</strong></span>
           <span>Mapeados: <strong className="text-primary">{mappedCount}</strong></span>
+          {emmelyFieldsInBitrix > 0 && (
+            <span title="Campos UF_CRM_EMMELY_* criados e atualizados pela aplicação">
+              Auto (sistema): <strong className="text-emerald-600">{emmelyFieldsInBitrix}</strong>
+            </span>
+          )}
         </div>
+
 
         {/* Actions */}
         <Button variant="outline" size="sm" className="h-8" onClick={() => fetchBitrixFields(bitrixEntity)} disabled={loadingFields}>
