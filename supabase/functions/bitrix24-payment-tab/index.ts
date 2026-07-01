@@ -170,6 +170,7 @@ function getStatusColor(status: string): { bg: string; bgDark: string; text: str
 
 function renderPaymentTab(opts: {
   entityId: string;
+  entityTypeId?: string;
   dealTitle: string;
   totalValue: number;
   paidValue: number;
@@ -269,13 +270,23 @@ function renderPaymentTab(opts: {
       ? `<span class="b24-dual-currency">≈ ${formatCurrency(valueBRL, "BRL")}</span>`
       : `<span class="b24-dual-currency">≈ ${formatCurrency(valueEUR, "EUR")}</span>`;
 
+    // "Not generated yet" — no real transaction created in Stripe/gateway.
+    // Synthetic rows have either no transaction_id or one that starts with "deal-".
+    const notGenerated = (!inst.transaction_id || String(inst.transaction_id).startsWith("deal-")) && inst.status !== "paga";
+    const notGeneratedBadge = notGenerated ? `<span class="b24-not-generated" title="Esta cobrança ainda não foi gerada no gateway. Clique em Gerar cobrança.">${icon("file-plus", 12)} Não gerada</span>` : "";
+    const canGenerate = notGenerated && !hasMissing;
+    const generateBtn = notGenerated
+      ? `<button onclick='${canGenerate ? `openEditModal(${instJson})` : "void(0)"}' class="b24-btn-generate${canGenerate ? "" : " b24-btn-disabled"}" ${canGenerate ? "" : "disabled"} title="${canGenerate ? "Gerar cobrança agora" : "Preencha Vencimento e Método primeiro"}">${icon("file-plus", 13)} Gerar cobrança</button>`
+      : "";
+
     return `
-      <div class="b24-item ${statusClass}${missingClass}">
+      <div class="b24-item ${statusClass}${missingClass}${notGenerated ? " not-generated" : ""}">
         <div class="b24-item-row">
           <div class="b24-item-left">
             <span class="b24-item-title">${label}</span>
             <span class="b24-item-value">${formatCurrency(inst.value, inst.currency)}</span>
             ${dualDisplay}
+            ${notGeneratedBadge}
             ${missingIndicator}
           </div>
           <span class="b24-badge" style="--badge-bg:${s.bg};--badge-bg-dark:${s.bgDark};--badge-text:${s.text};--badge-text-dark:${s.textDark}">${s.label}</span>
@@ -299,8 +310,9 @@ function renderPaymentTab(opts: {
         ${inst.invoice_id ? `<div class="b24-link-row"><a href="javascript:void(0)" onclick="openInvoice(${inst.invoice_id})" class="b24-link">${icon("file-text", 13)} Ver Fatura #${inst.invoice_id}</a></div>` : ""}
         ${inst.status !== "paga" ? `
           <div class="b24-item-actions">
+            ${generateBtn}
             <button onclick='openEditModal(${instJson})' class="b24-btn-action" title="Editar Parcela">${icon("pencil", 13)} Editar</button>
-            ${["direto","parcelado_direto","transferencia","n"].includes(String(inst.payment_method || "").toLowerCase()) ? "" : `<button onclick='generatePaymentLink(${instJson})' class="b24-btn-action" title="Gerar Link de Pagamento">${icon("link", 13)} Link</button>`}
+            ${notGenerated || ["direto","parcelado_direto","transferencia","n"].includes(String(inst.payment_method || "").toLowerCase()) ? "" : `<button onclick='generatePaymentLink(${instJson})' class="b24-btn-action" title="Gerar Link de Pagamento">${icon("link", 13)} Link</button>`}
             <button onclick='openBaixaModal(${instJson})' class="b24-btn-action b24-btn-baixa" title="Dar Baixa">${icon("check", 13)} Baixa</button>
             ${contactPhone && flows.length > 0 ? `<button onclick='toggleFlowRow("${inst.id}")' class="b24-btn-action b24-btn-fluxo" title="Enviar Fluxo">${icon("send", 13)} Fluxo</button>` : ""}
           </div>
@@ -922,6 +934,7 @@ function renderPaymentTab(opts: {
   var FRONTEND_BASE = "${(Deno.env.get("FRONTEND_URL") || "https://emmelycloud.pages.dev").replace(/\/+$/, "")}";
   var MEMBER_ID = "${memberId}";
   var ENTITY_ID = "${opts.entityId}";
+  var ENTITY_TYPE_ID = "${opts.entityTypeId || "2"}";
   var DEAL_RAW_GATEWAY = "${opts.rawGateway || ""}";
   var DEAL_RAW_METHOD = "${opts.rawMethod || ""}";
   var GATEWAY_OPTIONS = ${JSON.stringify(opts.gatewayOptions || [])};
