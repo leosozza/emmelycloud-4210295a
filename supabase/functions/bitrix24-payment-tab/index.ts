@@ -570,12 +570,15 @@ function renderPaymentTab(opts: {
     <button class="b24-btn-primary" onclick="openCreateForm()">${icon("file-text", 14)} Criar Cobrança</button>
     ${!noData && installments.length > 0 ? (() => {
       const target = installments.find(i => i.status !== "paga") || installments[0];
+      const totalSum = installments.reduce((s, i) => s + (Number(i.value) || 0), 0);
       const targetJson = JSON.stringify({
         id: target.id,
         transaction_id: target.transaction_id,
         financial_record_id: target.financial_record_id || null,
         entity_id: opts.entityId,
         value: target.value,
+        total_value: totalSum,
+        total_installments_count: installments.length,
         due_date: target.due_date,
         payment_method: target.payment_method || "card",
         currency: target.currency,
@@ -1115,27 +1118,22 @@ function renderPaymentTab(opts: {
     var lblAmount = document.getElementById('label-pay-amount');
     var lblMethod = document.getElementById('label-pay-method');
     var preview = document.getElementById('installment-preview');
+    // Always keep the FULL form visible (Entrada, Parcelas, Dados do Cliente).
+    // Editing a cobrança means being able to restructure the whole thing.
+    if (entrada) entrada.style.display = '';
+    if (gNum) gNum.style.display = '';
+    if (gInt) gInt.style.display = '';
+    if (displays) displays.style.display = '';
+    if (lblFirstDue) lblFirstDue.textContent = '1º Vencimento';
+    if (lblAmount) lblAmount.textContent = 'Valor Total';
+    if (lblMethod) lblMethod.textContent = 'Método do Saldo';
+    if (preview) preview.style.display = '';
     if (on) {
       title.textContent = 'Editar Cobrança' + (opts.instLabel ? ' — ' + opts.instLabel : '');
       btn.textContent = 'Guardar Alterações';
-      if (entrada) entrada.style.display = 'none';
-      if (gNum) gNum.style.display = 'none';
-      if (gInt) gInt.style.display = 'none';
-      if (displays) displays.style.display = 'none';
-      if (lblFirstDue) lblFirstDue.textContent = 'Vencimento';
-      if (lblAmount) lblAmount.textContent = 'Valor da Parcela';
-      if (lblMethod) lblMethod.textContent = 'Método de Pagamento';
-      if (preview) preview.style.display = 'none';
     } else {
       title.textContent = 'Criar Cobrança';
       btn.textContent = 'Criar Cobrança';
-      if (entrada) entrada.style.display = '';
-      if (gNum) gNum.style.display = '';
-      if (gInt) gInt.style.display = '';
-      if (displays) displays.style.display = '';
-      if (lblFirstDue) lblFirstDue.textContent = '1º Vencimento';
-      if (lblAmount) lblAmount.textContent = 'Valor Total';
-      if (lblMethod) lblMethod.textContent = 'Método do Saldo';
     }
   }
 
@@ -1160,13 +1158,15 @@ function renderPaymentTab(opts: {
     var dwnN = document.getElementById('pay-down-installments');
     var nInst = document.getElementById('pay-installments');
     var desc = document.getElementById('pay-desc');
-    if (amt) amt.value = (inst.value != null ? Number(inst.value).toFixed(2) : '');
+    var totalVal = (inst.total_value != null && Number(inst.total_value) > 0) ? Number(inst.total_value) : Number(inst.value || 0);
+    var totalInstCount = (inst.total_installments_count != null && Number(inst.total_installments_count) > 0) ? Number(inst.total_installments_count) : 1;
+    if (amt) amt.value = totalVal.toFixed(2);
     if (cur && inst.currency) cur.value = inst.currency;
     if (due) due.value = inst.due_date ? String(inst.due_date).split('T')[0] : '';
     if (met) met.value = inst.payment_method || 'card';
     if (dwn) dwn.value = 0;
     if (dwnN) dwnN.value = 1;
-    if (nInst) nInst.value = 1;
+    if (nInst) nInst.value = totalInstCount;
     if (desc && inst.description) desc.value = inst.description;
     toggleMethodFields();
     autoCollapseCustomerIfComplete();
