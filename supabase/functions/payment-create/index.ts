@@ -30,15 +30,17 @@ function getStripePaymentMethods(region?: "pt" | "br" | null, requestedMethod?: 
   const eurMethods = ["card", "multibanco", "mb_way", "sepa_debit"];
   const validStripeMethods = ["card", "multibanco", "mb_way", "sepa_debit", "pix", "boleto", "link"];
 
-  // If a specific method was requested (not card/direto), return ONLY that method.
-  // No fallback to other methods — respect the user's explicit choice.
-  if (requestedMethod && requestedMethod !== "card" && requestedMethod !== "direto") {
-    if (validStripeMethods.includes(requestedMethod)) {
-      return [requestedMethod];
-    }
+  // "card"/"direto" = utilizador escolheu explicitamente Cartão no dropdown → só card.
+  if (requestedMethod === "card" || requestedMethod === "direto") {
+    return ["card"];
   }
 
-  // No specific method requested — return all currency-compatible methods
+  // Outro método específico pedido → apenas esse.
+  if (requestedMethod && validStripeMethods.includes(requestedMethod)) {
+    return [requestedMethod];
+  }
+
+  // Sem método específico → leque completo compatível com a moeda.
   if (region === "br") return cur === "BRL" ? brlMethods : ["card"];
   if (region === "pt") return (cur === "EUR" || !cur) ? eurMethods : ["card"];
   if (cur === "BRL") return brlMethods;
@@ -46,12 +48,22 @@ function getStripePaymentMethods(region?: "pt" | "br" | null, requestedMethod?: 
   return ["card"];
 }
 
+function extractRejectedStripeMethod(msg: string): string | null {
+  if (!msg) return null;
+  let m = msg.match(/payment method type provided:\s*([a-z_]+)/i);
+  if (m) return m[1];
+  m = msg.match(/payment_method_types\[\d+\]:\s*([a-z_]+)/i);
+  if (m) return m[1];
+  m = msg.match(/The following payment method types are invalid:\s*([a-z_]+)/i);
+  if (m) return m[1];
+  return null;
+}
+
 async function createStripePayment(apiKey: string, amount: number, currency: string, customerEmail: string, description: string, returnUrl?: string, region?: "pt" | "br" | null, requestedMethod?: string | null) {
   const baseUrl = returnUrl || Deno.env.get("FRONTEND_URL") || "https://emmelycloud.pages.dev";
-  
-  // Try with regional methods first, fallback to card-only if Stripe rejects any method
-  const methods = getStripePaymentMethods(region, requestedMethod, currency);
-  
+
+  let methods = getStripePaymentMethods(region, requestedMethod, currency);
+
   const buildParams = (paymentMethods: string[]) => {
     const params = new URLSearchParams();
     params.append("mode", "payment");
@@ -80,19 +92,38 @@ async function createStripePayment(apiKey: string, amount: number, currency: str
     return await res.json();
   };
 
-  let data = await callStripe(buildParams(methods));
+  // Retry iterativo: se a Stripe rejeitar um método não ativado, remove-o e volta a tentar.
+  let data: any = null;
+  const maxAttempts = 5;
+  const explicitChoice = requestedMethod && requestedMethod !== "card" && requestedMethod !== "direto";
 
-  // If a specific method was requested and Stripe rejected it, return clear error
-  if (data.error?.message?.includes("payment method type provided")) {
-    const requested = requestedMethod && requestedMethod !== "card" ? requestedMethod : "selecionado";
-    throw new Error(
-      `O método de pagamento "${requested}" não está ativado na sua conta Stripe. ` +
-      `Ative-o em https://dashboard.stripe.com/settings/payment_methods e tente novamente. ` +
-      `Detalhe Stripe: ${data.error.message}`
-    );
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    data = await callStripe(buildParams(methods));
+    if (!data.error) break;
+
+    const rejected = extractRejectedStripeMethod(data.error?.message || "");
+    if (!rejected) break;
+
+    // Se o método rejeitado foi escolhido explicitamente, não tentamos fallback silencioso.
+    if (explicitChoice && rejected === requestedMethod) break;
+
+    const before = methods.length;
+    methods = methods.filter((m) => m !== rejected);
+    console.warn(`[payment-create] Stripe rejeitou "${rejected}", removendo. Restantes: [${methods.join(", ")}]`);
+    if (methods.length === 0 || methods.length === before) break;
   }
-  
-  if (data.error) throw new Error(data.error.message);
+
+  if (data?.error) {
+    const rejected = extractRejectedStripeMethod(data.error?.message || "");
+    if (rejected) {
+      throw new Error(
+        `O método de pagamento "${rejected}" não está ativado na sua conta Stripe. ` +
+        `Ative-o em https://dashboard.stripe.com/settings/payment_methods e tente novamente. ` +
+        `Detalhe Stripe: ${data.error.message}`
+      );
+    }
+    throw new Error(data.error.message);
+  }
 
   return {
     gateway_payment_id: data.payment_intent || data.id,
@@ -102,6 +133,7 @@ async function createStripePayment(apiKey: string, amount: number, currency: str
     checkout_session_id: data.id,
   };
 }
+
 
 function isValidCPF(cpf: string): boolean {
   cpf = cpf.replace(/[^\d]+/g, '');
