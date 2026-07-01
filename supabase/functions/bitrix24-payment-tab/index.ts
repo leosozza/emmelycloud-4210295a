@@ -276,7 +276,7 @@ function renderPaymentTab(opts: {
     const notGeneratedBadge = notGenerated ? `<span class="b24-not-generated" title="Esta cobrança ainda não foi gerada no gateway. Clique em Gerar cobrança.">${icon("file-plus", 12)} Não gerada</span>` : "";
     const canGenerate = notGenerated && !hasMissing;
     const generateBtn = notGenerated
-      ? `<button onclick='${canGenerate ? `openEditFullModal(${instJson})` : "void(0)"}' class="b24-btn-generate${canGenerate ? "" : " b24-btn-disabled"}" ${canGenerate ? "" : "disabled"} title="${canGenerate ? "Gerar cobrança agora" : "Preencha Vencimento e Método primeiro"}">${icon("file-plus", 13)} Gerar cobrança</button>`
+      ? `<button onclick='${canGenerate ? `openEditParcelaModal(${instJson})` : "void(0)"}' class="b24-btn-generate${canGenerate ? "" : " b24-btn-disabled"}" ${canGenerate ? "" : "disabled"} title="${canGenerate ? "Gerar cobrança agora" : "Preencha Vencimento e Método primeiro"}">${icon("file-plus", 13)} Gerar cobrança</button>`
       : "";
 
     return `
@@ -295,11 +295,11 @@ function renderPaymentTab(opts: {
         <div class="b24-item-meta">
           ${inst.due_date
             ? `<span>${icon("calendar", 13)} Vence: ${formatDate(inst.due_date)}</span>`
-            : `<span onclick='openEditFullModal(${instJson})' class="b24-missing b24-clickable" title="Clique para definir">${icon("calendar", 13)} Vencimento: ${icon("alert-triangle", 11)} Definir</span>`}
+            : `<span onclick='openEditParcelaModal(${instJson})' class="b24-missing b24-clickable" title="Clique para definir">${icon("calendar", 13)} Vencimento: ${icon("alert-triangle", 11)} Definir</span>`}
           ${inst.paid_at ? `<span>${icon("check-circle", 13)} Pago: ${formatDate(inst.paid_at)}</span>` : ""}
           ${inst.payment_method
             ? `<span>${icon("credit-card", 13)} ${inst.payment_method}</span>`
-            : `<span onclick='openEditFullModal(${instJson})' class="b24-missing b24-clickable" title="Clique para definir">${icon("credit-card", 13)} Método: ${icon("alert-triangle", 11)} Definir</span>`}
+            : `<span onclick='openEditParcelaModal(${instJson})' class="b24-missing b24-clickable" title="Clique para definir">${icon("credit-card", 13)} Método: ${icon("alert-triangle", 11)} Definir</span>`}
           ${totalLabel}
         </div>
         ${lateFeeHtml}
@@ -312,6 +312,7 @@ function renderPaymentTab(opts: {
           <div class="b24-item-actions">
             ${generateBtn}
             ${notGenerated || ["direto","parcelado_direto","transferencia","n"].includes(String(inst.payment_method || "").toLowerCase()) ? "" : `<button onclick='generatePaymentLink(${instJson})' class="b24-btn-action" title="Gerar Link de Pagamento">${icon("link", 13)} Link</button>`}
+            <button onclick='openEditParcelaModal(${instJson})' class="b24-btn-action" title="Editar esta parcela">${icon("pencil", 13)} Editar</button>
             <button onclick='openBaixaModal(${instJson})' class="b24-btn-action b24-btn-baixa" title="Dar Baixa">${icon("check", 13)} Baixa</button>
             ${contactPhone && flows.length > 0 ? `<button onclick='toggleFlowRow("${inst.id}")' class="b24-btn-action b24-btn-fluxo" title="Enviar Fluxo">${icon("send", 13)} Fluxo</button>` : ""}
           </div>
@@ -1108,6 +1109,7 @@ function renderPaymentTab(opts: {
 
   function setEditModeUI(on, opts) {
     opts = opts || {};
+    var single = !!opts.single;
     var title = document.getElementById('pay-form-title');
     var btn = document.getElementById('pay-submit');
     var entrada = document.getElementById('block-entrada');
@@ -1118,22 +1120,35 @@ function renderPaymentTab(opts: {
     var lblAmount = document.getElementById('label-pay-amount');
     var lblMethod = document.getElementById('label-pay-method');
     var preview = document.getElementById('installment-preview');
-    // Always keep the FULL form visible (Entrada, Parcelas, Dados do Cliente).
-    // Editing a cobrança means being able to restructure the whole thing.
-    if (entrada) entrada.style.display = '';
-    if (gNum) gNum.style.display = '';
-    if (gInt) gInt.style.display = '';
-    if (displays) displays.style.display = '';
-    if (lblFirstDue) lblFirstDue.textContent = '1º Vencimento';
-    if (lblAmount) lblAmount.textContent = 'Valor Total';
-    if (lblMethod) lblMethod.textContent = 'Método do Saldo';
-    if (preview) preview.style.display = '';
-    if (on) {
-      title.textContent = 'Editar Cobrança' + (opts.instLabel ? ' — ' + opts.instLabel : '');
+    if (on && single) {
+      // Edit a single parcela — hide multi-installment blocks
+      if (entrada) entrada.style.display = 'none';
+      if (gNum) gNum.style.display = 'none';
+      if (gInt) gInt.style.display = 'none';
+      if (displays) displays.style.display = 'none';
+      if (preview) preview.style.display = 'none';
+      if (lblFirstDue) lblFirstDue.textContent = 'Vencimento';
+      if (lblAmount) lblAmount.textContent = 'Valor da Parcela';
+      if (lblMethod) lblMethod.textContent = 'Método de Pagamento';
+      title.textContent = 'Editar Parcela' + (opts.instLabel ? ' — ' + opts.instLabel : '');
       btn.textContent = 'Guardar Alterações';
     } else {
-      title.textContent = 'Criar Cobrança';
-      btn.textContent = 'Criar Cobrança';
+      // Full form (create OR edit-all)
+      if (entrada) entrada.style.display = '';
+      if (gNum) gNum.style.display = '';
+      if (gInt) gInt.style.display = '';
+      if (displays) displays.style.display = '';
+      if (preview) preview.style.display = '';
+      if (lblFirstDue) lblFirstDue.textContent = '1º Vencimento';
+      if (lblAmount) lblAmount.textContent = 'Valor Total';
+      if (lblMethod) lblMethod.textContent = 'Método do Saldo';
+      if (on) {
+        title.textContent = 'Editar Cobrança' + (opts.instLabel ? ' — ' + opts.instLabel : '');
+        btn.textContent = 'Guardar Alterações';
+      } else {
+        title.textContent = 'Criar Cobrança';
+        btn.textContent = 'Criar Cobrança';
+      }
     }
   }
 
@@ -1144,12 +1159,12 @@ function renderPaymentTab(opts: {
       currency: inst.currency || 'EUR',
       description: inst.description || '',
       entityId: inst.entity_id || ENTITY_ID,
-      instLabel: (inst.installment_number && inst.total_installments) ? ('Parcela ' + inst.installment_number + '/' + inst.total_installments) : ''
+      instLabel: '',
+      single: false
     };
     document.getElementById('create-overlay').classList.add('active');
     try { if (typeof BX24 !== 'undefined') { BX24.resizeWindow && BX24.resizeWindow(1200, 900); BX24.fitWindow && BX24.fitWindow(); } } catch(e){}
-    setEditModeUI(true, { instLabel: _editMode.instLabel });
-    // Prefill fields
+    setEditModeUI(true, { single: false });
     var amt = document.getElementById('pay-amount');
     var cur = document.getElementById('pay-currency');
     var due = document.getElementById('pay-first-due');
@@ -1167,6 +1182,34 @@ function renderPaymentTab(opts: {
     if (dwn) dwn.value = 0;
     if (dwnN) dwnN.value = 1;
     if (nInst) nInst.value = totalInstCount;
+    if (desc && inst.description) desc.value = inst.description;
+    toggleMethodFields();
+    autoCollapseCustomerIfComplete();
+    var pr = document.getElementById('pay-result'); if (pr) pr.style.display='none';
+  }
+
+  function openEditParcelaModal(inst) {
+    _editMode = {
+      txId: inst.transaction_id || inst.id,
+      invoiceId: inst.invoice_id || '',
+      currency: inst.currency || 'EUR',
+      description: inst.description || '',
+      entityId: inst.entity_id || ENTITY_ID,
+      instLabel: (inst.number && inst.total) ? ('Parcela ' + inst.number + '/' + inst.total) : '',
+      single: true
+    };
+    document.getElementById('create-overlay').classList.add('active');
+    try { if (typeof BX24 !== 'undefined') { BX24.resizeWindow && BX24.resizeWindow(1200, 900); BX24.fitWindow && BX24.fitWindow(); } } catch(e){}
+    setEditModeUI(true, { single: true, instLabel: _editMode.instLabel });
+    var amt = document.getElementById('pay-amount');
+    var cur = document.getElementById('pay-currency');
+    var due = document.getElementById('pay-first-due');
+    var met = document.getElementById('pay-method');
+    var desc = document.getElementById('pay-desc');
+    if (amt) amt.value = (inst.value != null ? Number(inst.value).toFixed(2) : '');
+    if (cur && inst.currency) cur.value = inst.currency;
+    if (due) due.value = inst.due_date ? String(inst.due_date).split('T')[0] : '';
+    if (met) met.value = inst.payment_method || 'card';
     if (desc && inst.description) desc.value = inst.description;
     toggleMethodFields();
     autoCollapseCustomerIfComplete();
