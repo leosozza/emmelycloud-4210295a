@@ -24,9 +24,9 @@ serve(async (req) => {
     const dateFrom = url.searchParams.get("date_from");
     const dateTo = url.searchParams.get("date_to");
 
-    if (!memberId || !action || !entity) {
+    if (!action || !entity) {
       return new Response(
-        JSON.stringify({ error: "member_id, action, and entity are required" }),
+        JSON.stringify({ error: "action and entity are required" }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
@@ -35,15 +35,29 @@ serve(async (req) => {
     const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    const { data: integration, error: intError } = await supabase
-      .from("bitrix24_integrations")
-      .select("*")
-      .eq("member_id", memberId)
-      .single();
+    // Resolve integration: by member_id if provided, else most recently updated
+    let integration: any = null;
+    if (memberId) {
+      const { data } = await supabase
+        .from("bitrix24_integrations")
+        .select("*")
+        .eq("member_id", memberId)
+        .maybeSingle();
+      integration = data;
+    }
+    if (!integration) {
+      const { data } = await supabase
+        .from("bitrix24_integrations")
+        .select("*")
+        .order("updated_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      integration = data;
+    }
 
-    if (intError || !integration) {
+    if (!integration) {
       return new Response(
-        JSON.stringify({ error: "Integration not found", details: intError }),
+        JSON.stringify({ error: "No Bitrix24 integration found" }),
         { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
