@@ -212,7 +212,11 @@ async function processRecord(
         financial_record_id: record.id,
         amount: finalAmount,
         currency,
-        payment_method: "card",
+        // Deixa o cliente escolher no checkout Stripe (leque completo de métodos).
+        // Se o registo financeiro tiver método fixo (pix/card/boleto), respeita-o.
+        payment_method: record.payment_method && record.payment_method !== "customer_choice"
+          ? record.payment_method
+          : "customer_choice",
         description: `Parcela ${record.installment_number || 1}/${record.total_installments || 1}${feeResult && feeResult.charges > 0 ? ` (inclui encargos)` : ""}`,
         customer_data: {
           name: clientName,
