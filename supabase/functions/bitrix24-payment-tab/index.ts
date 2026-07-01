@@ -1158,13 +1158,15 @@ function renderPaymentTab(opts: {
     var dwnN = document.getElementById('pay-down-installments');
     var nInst = document.getElementById('pay-installments');
     var desc = document.getElementById('pay-desc');
-    if (amt) amt.value = (inst.value != null ? Number(inst.value).toFixed(2) : '');
+    var totalVal = (inst.total_value != null && Number(inst.total_value) > 0) ? Number(inst.total_value) : Number(inst.value || 0);
+    var totalInstCount = (inst.total_installments_count != null && Number(inst.total_installments_count) > 0) ? Number(inst.total_installments_count) : 1;
+    if (amt) amt.value = totalVal.toFixed(2);
     if (cur && inst.currency) cur.value = inst.currency;
     if (due) due.value = inst.due_date ? String(inst.due_date).split('T')[0] : '';
     if (met) met.value = inst.payment_method || 'card';
     if (dwn) dwn.value = 0;
     if (dwnN) dwnN.value = 1;
-    if (nInst) nInst.value = 1;
+    if (nInst) nInst.value = totalInstCount;
     if (desc && inst.description) desc.value = inst.description;
     toggleMethodFields();
     autoCollapseCustomerIfComplete();
