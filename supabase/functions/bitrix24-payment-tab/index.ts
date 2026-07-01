@@ -2457,6 +2457,7 @@ Deno.serve(async (req) => {
     let contactName = "";
     let contactEmail = "";
     let contactCpfCnpj = "";
+    let contactAddress: { postal_code?: string; street?: string; number?: string; district?: string; city?: string; state?: string; country?: string } = {};
     let contactId = "";
     let dealGateway = "";
     let dealPaymentMethod = "";
