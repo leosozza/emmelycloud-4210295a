@@ -33,6 +33,8 @@ function calculateLateFees(amount: number, daysLate: number, config: LateFeeConf
 function getStripePaymentMethods(currency: string, requestedMethod?: string | null): string[] {
   const cur = (currency || "").toUpperCase();
   const validStripeMethods = ["card", "multibanco", "mb_way", "sepa_debit", "pix", "boleto", "link"];
+  // "customer_choice" = deixar o cliente escolher → devolve o leque completo da moeda.
+  if (requestedMethod === "customer_choice") requestedMethod = null;
   if (requestedMethod && requestedMethod !== "direto") {
     if (validStripeMethods.includes(requestedMethod)) return [requestedMethod];
   }
