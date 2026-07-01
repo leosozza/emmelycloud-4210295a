@@ -1241,6 +1241,51 @@ function renderPaymentTab(opts: {
     lines.push('<div style="margin-top:4px;font-size:11px;color:var(--text-secondary)">Total de faturas: ' + totalParcelas + '</div>');
     preview.innerHTML = lines.join('');
     preview.style.display = 'block';
+    scheduleBitrixSync({
+      total: total,
+      down: down,
+      remaining: remaining,
+      numInst: numInst,
+      instValue: instValue,
+      firstDue: firstDue,
+      method: (document.getElementById('pay-method')||{}).value || null,
+      currency: curCode
+    });
+  }
+
+  var _bxSyncTimer = null;
+  var _bxSyncLast = '';
+  function scheduleBitrixSync(payload) {
+    if (typeof BX24 === 'undefined' || !ENTITY_ID) return;
+    if (_bxSyncTimer) clearTimeout(_bxSyncTimer);
+    _bxSyncTimer = setTimeout(function() {
+      var sig = JSON.stringify(payload);
+      if (sig === _bxSyncLast) return;
+      _bxSyncLast = sig;
+      var fields = {
+        OPPORTUNITY: payload.total,
+        CURRENCY_ID: payload.currency,
+        UF_CRM_EMMELY_TOTAL_INSTALLMENTS: payload.numInst,
+        UF_CRM_EMMELY_INSTALLMENT_VALUE: payload.instValue
+      };
+      if (payload.firstDue) fields.UF_CRM_EMMELY_NEXT_DUE_DATE = payload.firstDue;
+      if (payload.method) fields.UF_CRM_EMMELY_PAYMENT_METHOD = payload.method;
+      try {
+        if (ENTITY_TYPE_ID === '1') {
+          BX24.callMethod('crm.lead.update', { id: parseInt(ENTITY_ID), fields: fields }, function(){});
+        } else if (ENTITY_TYPE_ID === '2') {
+          BX24.callMethod('crm.deal.update', { id: parseInt(ENTITY_ID), fields: fields }, function(){});
+        } else {
+          // SPA: camelCase field names
+          var spaFields = {};
+          for (var k in fields) {
+            var camel = k.toLowerCase().replace(/_([a-z])/g, function(_, c){ return c.toUpperCase(); });
+            spaFields[camel] = fields[k];
+          }
+          BX24.callMethod('crm.item.update', { entityTypeId: parseInt(ENTITY_TYPE_ID), id: parseInt(ENTITY_ID), fields: spaFields }, function(){});
+        }
+      } catch(e) { console.warn('[EmmelyPay] sync bitrix falhou', e); }
+    }, 800);
   }
 
 
