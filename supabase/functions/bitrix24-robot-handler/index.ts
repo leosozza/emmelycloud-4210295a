@@ -1748,8 +1748,11 @@ Deno.serve(async (req) => {
       case "emmely_send_instagram":
         returnValues = await handleSendInstagram(properties, supabaseUrl, serviceKey);
         break;
-      case "emmely_create_charge": {
-        // Get integration to pass to handleCreateCharge for Bitrix API calls
+      case "emmely_create_charge":
+      case "create_charge": {
+        // Get integration to pass to handleCreateCharge for Bitrix API calls.
+        // Prefer member_id, fallback to the most recently connected portal so
+        // internal callers (e.g. bitrix24-robot-asaas bridge) also work.
         let chargeIntegration: any = null;
         if (memberId) {
           const { data: intData } = await supabase
@@ -1759,10 +1762,18 @@ Deno.serve(async (req) => {
             .maybeSingle();
           chargeIntegration = intData;
         }
+        if (!chargeIntegration) {
+          const { data: intData } = await supabase
+            .from("bitrix24_integrations")
+            .select("*")
+            .order("created_at", { ascending: false })
+            .limit(1)
+            .maybeSingle();
+          chargeIntegration = intData;
+        }
         returnValues = await handleCreateCharge(properties, supabaseUrl, chargeIntegration);
         break;
       }
-        break;
       case "emmely_check_payment":
         returnValues = await handleCheckPayment(properties, supabaseUrl);
         break;
