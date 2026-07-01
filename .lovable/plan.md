@@ -1,33 +1,50 @@
-# Adicionar opção "Cliente escolhe" no Método do Emmely Pay
+# Adicionar 9 novos campos Emmely Pay ao Bitrix
 
-## Objetivo
-Permitir que o utilizador (quem cria a cobrança no Bitrix) opte por deixar o cliente escolher a forma de pagamento diretamente no link da Stripe, em vez de fixar um método.
+## Campos a criar (no Deal e no Lead)
+
+| FIELD_NAME | Tipo | Label |
+|---|---|---|
+| `UF_CRM_EMMELY_TOTAL_AMOUNT` | double | Valor Total da Cobrança |
+| `UF_CRM_EMMELY_DOWN_PAYMENT` | double | Valor de Entrada |
+| `UF_CRM_EMMELY_DOWN_INSTALLMENTS` | integer | Nº Parcelas da Entrada |
+| `UF_CRM_EMMELY_DOWN_METHOD` | string | Método da Entrada |
+| `UF_CRM_EMMELY_DOWN_FIRST_DUE` | date | 1º Vencimento da Entrada |
+| `UF_CRM_EMMELY_DOWN_INTERVAL` | integer | Intervalo da Entrada (dias) |
+| `UF_CRM_EMMELY_REMAINING_BALANCE` | double | Saldo a Parcelar |
+| `UF_CRM_EMMELY_FIRST_DUE_DATE` | date | 1º Vencimento das Parcelas |
+| `UF_CRM_EMMELY_INSTALLMENT_INTERVAL` | integer | Intervalo entre Parcelas (dias) |
 
 ## Mudanças
 
-### 1. Frontend do iframe (`supabase/functions/bitrix24-payment-tab/index.ts`)
-- Nos dropdowns `<select>` de método (formulário de criação, entrada, e edição inline por parcela), adicionar um novo `<option value="customer_choice">Cliente escolhe (Stripe)</option>`.
-- Manter as opções existentes (Cartão, Multibanco, MB Way, SEPA, Pix, Boleto).
-- No `submitInstallments()` e nos handlers de edição inline, quando `method === "customer_choice"`, gravar como `parcelado_direto` no `financial_records.payment_method` (para não quebrar constraints do enum) mas passar `payment_method: null` no payload enviado a `payment-create`.
-  - Alternativa mais limpa: gravar `customer_choice` no `financial_records.payment_method` **apenas se o enum permitir**. Verificar o enum primeiro; se não permitir, usar o fallback acima.
-- Regras de validação (CPF/endereço) continuam iguais — `customer_choice` não obriga a nada extra.
+### 1. `supabase/functions/bitrix24-install/index.ts`
+- Nas **duas** listas de definição de campos (install inicial ~linha 419–600 e action `repair_fields` ~linha 1390–1571), adicionar os 9 campos usando o mesmo padrão dos existentes (EDIT_FORM_LABEL PT/EN, LIST_COLUMN_LABEL, USER_TYPE_ID `double`/`integer`/`string`/`date`).
+- Adicionar linhas correspondentes no seed de `bitrix24_field_mappings` (~linha 1638+) para aparecerem no FieldMappingManager (`supabase_table` = `financial_records` na maioria).
 
-### 2. Backend `payment-create` (`supabase/functions/payment-create/index.ts`)
-- Já pronto: quando `requestedMethod` é vazio/null, devolve leque completo para a moeda + retry automático que descarta métodos não ativados.
-- Adicionar apenas: se `requestedMethod === "customer_choice"`, tratar como vazio (leque completo).
+### 2. `supabase/functions/payment-create/index.ts`
+Ao patchear o Deal via `crm.deal.update`, incluir os novos campos calculados a partir do payload da(s) parcela(s):
+- `UF_CRM_EMMELY_TOTAL_AMOUNT` = soma total (entrada + saldo)
+- `UF_CRM_EMMELY_DOWN_PAYMENT` = soma parcelas com `is_down_payment=true`
+- `UF_CRM_EMMELY_DOWN_INSTALLMENTS` = contagem parcelas de entrada
+- `UF_CRM_EMMELY_DOWN_METHOD` = método da primeira parcela de entrada
+- `UF_CRM_EMMELY_DOWN_FIRST_DUE` = due_date mínimo entre parcelas de entrada
+- `UF_CRM_EMMELY_DOWN_INTERVAL` = diferença em dias entre 1ª e 2ª parcela de entrada (ou 0)
+- `UF_CRM_EMMELY_REMAINING_BALANCE` = total − entrada
+- `UF_CRM_EMMELY_FIRST_DUE_DATE` = due_date mínimo das parcelas do saldo
+- `UF_CRM_EMMELY_INSTALLMENT_INTERVAL` = diferença em dias entre 1ª e 2ª parcelas do saldo (ou 0)
 
-### 3. Backend `payment-create-link` (`supabase/functions/payment-create-link/index.ts`)
-- Espelhar: `customer_choice` → sem método específico → leque completo com retry (já existente).
+### 3. `supabase/functions/bitrix24-payment-tab/index.ts`
+- Em `submitInstallments()`, incluir estes 9 valores no body enviado à `payment-create` (como `deal_fields_extra`), para que o backend consiga popular o Deal sem recalcular.
+- Backend usa esses valores diretamente se presentes; senão, deriva das parcelas.
 
-## Verificação do enum
-Antes de codar, ler o schema de `financial_records.payment_method` (via `supabase read_query` no `information_schema`) para decidir se `customer_choice` cabe ou se precisamos do fallback `parcelado_direto` com marcador em metadata.
+### 4. Após deploy
+O utilizador precisa clicar em **"Reparar Campos"** (action `repair_fields` já existente na integração) para criar os 9 novos user-fields nos Deals já instalados. Documentar isto no fim.
 
 ## Fora do âmbito
-- Sem alterar aparência do checkout Stripe (é da Stripe).
-- Sem mexer em fluxo Asaas/BR — lá o método continua obrigatório.
-- Sem mexer no dashboard/relatórios.
+- Sem migrações Supabase (tabelas já suportam via `metadata`).
+- Sem alterar dashboards/relatórios.
+- Sem popular retroativamente Deals antigos — só cobranças novas.
 
 ## Ficheiros afetados
-- `supabase/functions/bitrix24-payment-tab/index.ts`
+- `supabase/functions/bitrix24-install/index.ts`
 - `supabase/functions/payment-create/index.ts`
-- `supabase/functions/payment-create-link/index.ts`
+- `supabase/functions/bitrix24-payment-tab/index.ts`

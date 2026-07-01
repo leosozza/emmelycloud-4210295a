@@ -1269,6 +1269,17 @@ function renderPaymentTab(opts: {
     var errors = [];
     var createdTxIds = [];
     var createdResults = []; // { parcel, payment_url, tx_id, method }
+    var dealFieldsExtra = {
+      UF_CRM_EMMELY_TOTAL_AMOUNT: totalAmount,
+      UF_CRM_EMMELY_DOWN_PAYMENT: downPayment,
+      UF_CRM_EMMELY_DOWN_INSTALLMENTS: hasDown ? downN : 0,
+      UF_CRM_EMMELY_DOWN_METHOD: hasDown ? downMethod : '',
+      UF_CRM_EMMELY_DOWN_FIRST_DUE: hasDown ? downFirstDue : '',
+      UF_CRM_EMMELY_DOWN_INTERVAL: hasDown ? downInterval : 0,
+      UF_CRM_EMMELY_REMAINING_BALANCE: remaining,
+      UF_CRM_EMMELY_FIRST_DUE_DATE: (remaining > 0) ? firstDue : '',
+      UF_CRM_EMMELY_INSTALLMENT_INTERVAL: (remaining > 0) ? interval : 0
+    };
     for (var j = 0; j < parcels.length; j++) {
       var parcel = parcels[j];
       btn.textContent = 'A criar ' + (j+1) + '/' + parcels.length + '...';
@@ -1288,6 +1299,7 @@ function renderPaymentTab(opts: {
             due_date: parcel.due_date,
             installment_number: parcel.is_down_payment ? 0 : parcel.installment_number,
             total_installments: totalCount, installment_group_id: groupId, is_down_payment: parcel.is_down_payment,
+            deal_fields_extra: dealFieldsExtra,
             metadata: {
               bitrix_deal_id: ENTITY_ID, source: 'bitrix24_payment_tab',
               client_submit_key: submitKey + ':' + j,
