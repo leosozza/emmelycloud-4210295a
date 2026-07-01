@@ -131,6 +131,16 @@ const SYSTEM_MAPPINGS: Record<string, Record<string, { bitrixField: string; dire
   lead: {},
 };
 
+const SYSTEM_FIELD_PREFIX = "UF_CRM_EMMELY_";
+
+const isEmmelySystemBitrixField = (fieldKey: string) =>
+  fieldKey.toUpperCase().startsWith(SYSTEM_FIELD_PREFIX);
+
+const toSystemSupabaseColumn = (fieldKey: string) => {
+  const code = fieldKey.toUpperCase().replace(SYSTEM_FIELD_PREFIX, "").toLowerCase();
+  return `sistema.${code}`;
+};
+
 interface BitrixField {
   key: string;
   title: string;
@@ -224,12 +234,14 @@ export default function FieldMappingManager({ integrationId, compact, memberId }
           .filter((k) => k.startsWith(`${supabaseTable}::`))
           .map((k) => k.split("::")[1]),
       );
+      const renderedSystemBitrixFields = new Set<string>();
 
       const baseRows: RowMapping[] = tableColumns.map((col) => {
         const saved = savedByColumn.get(col.key);
         const sysKey = `${supabaseTable}::${col.key}`;
         const sys = systemForEntity[sysKey];
         if (sys) {
+          renderedSystemBitrixFields.add(sys.bitrixField.toUpperCase());
           return {
             supabaseColumn: col.key,
             supabaseType: col.type,
@@ -254,6 +266,7 @@ export default function FieldMappingManager({ integrationId, compact, memberId }
         .filter((col) => !tableColumns.some((c) => c.key === col))
         .map((col) => {
           const sys = systemForEntity[`${supabaseTable}::${col}`];
+          renderedSystemBitrixFields.add(sys.bitrixField.toUpperCase());
           return {
             supabaseColumn: col,
             supabaseType: "auto",
@@ -264,14 +277,29 @@ export default function FieldMappingManager({ integrationId, compact, memberId }
           };
         });
 
-      setRows([...extraSystemRows, ...baseRows]);
+      // Campos UF_CRM_EMMELY_* são criados e atualizados diretamente pela aplicação no Bitrix.
+      // Eles não dependem da tabela bitrix24_field_mappings, então devem aparecer como
+      // mapeados automaticamente sempre que existirem no CRM selecionado.
+      const discoveredSystemRows: RowMapping[] = bitrixFields
+        .filter((field) => isEmmelySystemBitrixField(field.key))
+        .filter((field) => !renderedSystemBitrixFields.has(field.key.toUpperCase()))
+        .map((field) => ({
+          supabaseColumn: toSystemSupabaseColumn(field.key),
+          supabaseType: field.type || "auto",
+          bitrixFieldKey: field.key,
+          syncDirection: "supabase_to_bitrix",
+          isActive: true,
+          isSystem: true,
+        }));
+
+      setRows([...extraSystemRows, ...discoveredSystemRows, ...baseRows]);
     } catch (e) {
       console.error("Error building rows:", e);
       setRows([]);
     } finally {
       setLoadingMappings(false);
     }
-  }, [bitrixEntity, supabaseTable, integrationId]);
+  }, [bitrixEntity, supabaseTable, integrationId, bitrixFields]);
 
   useEffect(() => {
     fetchBitrixFields(bitrixEntity);
@@ -527,8 +555,8 @@ export default function FieldMappingManager({ integrationId, compact, memberId }
                         {/* Bitrix field dropdown / system label */}
                         <TableCell className="py-1.5">
                           {isSystem ? (
-                            <div className="text-xs font-mono text-emerald-700 dark:text-emerald-400 truncate max-w-[280px]" title={row.bitrixFieldKey}>
-                              {row.bitrixFieldKey}
+                            <div className="text-xs font-mono text-emerald-700 dark:text-emerald-400 truncate max-w-[280px]" title={getBitrixFieldLabel(row.bitrixFieldKey)}>
+                              {getBitrixFieldLabel(row.bitrixFieldKey)}
                             </div>
                           ) : (
                             <Select
