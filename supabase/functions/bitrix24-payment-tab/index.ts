@@ -295,11 +295,11 @@ function renderPaymentTab(opts: {
         <div class="b24-item-meta">
           ${inst.due_date
             ? `<span>${icon("calendar", 13)} Vence: ${formatDate(inst.due_date)}</span>`
-            : `<span onclick='openEditFullModal(${instJson})' class="b24-missing b24-clickable" title="Clique para definir">${icon("calendar", 13)} Vencimento: ${icon("alert-triangle", 11)} Definir</span>`}
+            : `<span onclick='openEditParcelaModal(${instJson})' class="b24-missing b24-clickable" title="Clique para definir">${icon("calendar", 13)} Vencimento: ${icon("alert-triangle", 11)} Definir</span>`}
           ${inst.paid_at ? `<span>${icon("check-circle", 13)} Pago: ${formatDate(inst.paid_at)}</span>` : ""}
           ${inst.payment_method
             ? `<span>${icon("credit-card", 13)} ${inst.payment_method}</span>`
-            : `<span onclick='openEditFullModal(${instJson})' class="b24-missing b24-clickable" title="Clique para definir">${icon("credit-card", 13)} Método: ${icon("alert-triangle", 11)} Definir</span>`}
+            : `<span onclick='openEditParcelaModal(${instJson})' class="b24-missing b24-clickable" title="Clique para definir">${icon("credit-card", 13)} Método: ${icon("alert-triangle", 11)} Definir</span>`}
           ${totalLabel}
         </div>
         ${lateFeeHtml}
