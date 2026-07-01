@@ -1139,6 +1139,7 @@ function renderPaymentTab(opts: {
 
   document.getElementById('pay-currency').addEventListener('change', function() {
     toggleMethodFields();
+    calcInstallments();
   });
 
   function toggleMethodFields() {
