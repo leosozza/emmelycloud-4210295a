@@ -183,6 +183,15 @@ function renderPaymentTab(opts: {
   contactName?: string;
   contactEmail?: string;
   contactCpfCnpj?: string;
+  contactAddress?: {
+    postal_code?: string;
+    street?: string;
+    number?: string;
+    district?: string;
+    city?: string;
+    state?: string;
+    country?: string;
+  };
   noData: boolean;
   gateway?: string;
   rawGateway?: string;
@@ -193,7 +202,8 @@ function renderPaymentTab(opts: {
   gatewayOptions?: { id: string; label: string }[];
   methodOptions?: { id: string; label: string }[];
 }): string {
-  const { dealTitle, totalValue, paidValue, openValue, currency, installments, supabaseUrl, memberId, flows, contactPhone, contactName, contactEmail, contactCpfCnpj, noData } = opts;
+  const { dealTitle, totalValue, paidValue, openValue, currency, installments, supabaseUrl, memberId, flows, contactPhone, contactName, contactEmail, contactCpfCnpj, contactAddress, noData } = opts;
+  const addr = contactAddress || {};
   const EUR_TO_BRL = 6.10;
 
   const paidPct = totalValue > 0 ? Math.round((paidValue / totalValue) * 100) : 0;
@@ -499,16 +509,20 @@ function renderPaymentTab(opts: {
     .b24-create-bar { background: var(--bg-card); border-bottom: 1px solid var(--border-color); padding: 12px 24px; display: flex; justify-content: flex-end; }
     .b24-form-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 100; justify-content: center; align-items: center; backdrop-filter: blur(4px); }
     .b24-form-overlay.active { display: flex; }
-    .b24-form-card { background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 12px; padding: 24px; width: 440px; max-width: 92vw; max-height: 85vh; overflow-y: auto; box-shadow: var(--shadow-lg); }
-    .b24-form-title { font-size: 16px; font-weight: 800; margin-bottom: 20px; color: var(--text-primary); display: flex; align-items: center; gap: 8px; letter-spacing: -0.02em; }
-    .b24-form-group { margin-bottom: 14px; }
+    .b24-form-overlay { padding: 16px; box-sizing: border-box; }
+    .b24-form-card { background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 12px; padding: 22px 26px; width: 720px; max-width: 96vw; max-height: 94vh; overflow-y: auto; box-shadow: var(--shadow-lg); }
+    .b24-form-title { font-size: 17px; font-weight: 800; margin-bottom: 18px; color: var(--text-primary); display: flex; align-items: center; gap: 8px; letter-spacing: -0.02em; }
+    .b24-form-group { margin-bottom: 12px; }
     .b24-form-label { display: block; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.6px; color: var(--text-tertiary); margin-bottom: 5px; }
-    .b24-input { width: 100%; height: 36px; font-size: 13px; font-family: inherit; border: 1px solid var(--border-color); border-radius: var(--radius-sm); padding: 0 12px; background: var(--bg-card); color: var(--text-primary); outline: none; box-sizing: border-box; transition: border-color 0.15s, box-shadow 0.15s; }
+    .b24-input { width: 100%; height: 38px; font-size: 13px; font-family: inherit; border: 1px solid var(--border-color); border-radius: var(--radius-sm); padding: 0 12px; background: var(--bg-card); color: var(--text-primary); outline: none; box-sizing: border-box; transition: border-color 0.15s, box-shadow 0.15s; }
     .b24-input:focus { border-color: var(--progress-fill-flat); box-shadow: 0 0 0 3px rgba(59,130,246,0.1); }
-    .b24-form-row { display: flex; gap: 12px; }
-    .b24-form-row > * { flex: 1; }
-    .b24-form-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px; }
+    .b24-input.b24-invalid { border-color: #dc2626; box-shadow: 0 0 0 3px rgba(220,38,38,0.15); }
+    .b24-form-row { display: flex; gap: 12px; flex-wrap: wrap; }
+    .b24-form-row > * { flex: 1; min-width: 140px; }
+    .b24-form-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px; position: sticky; bottom: -22px; background: var(--bg-card); padding-top: 12px; }
     .b24-form-hint { font-size: 11px; color: var(--text-tertiary); margin-top: 4px; }
+    .b24-form-section { border:1px solid var(--border-color);border-radius:8px;padding:12px 14px;margin-bottom:12px;background:var(--bg-page); }
+    .b24-form-section-title { font-weight: 700; font-size: 12px; color: var(--text-primary); margin-bottom: 10px; display: flex; align-items: center; justify-content: space-between; }
     .b24-discount-row { background: #fef9c3; border: 1px solid #fbbf24; border-radius: 8px; padding: 12px 16px; margin-bottom: 14px; font-size: 12px; color: #92400e; }
     body.dark .b24-discount-row { background: #422006; color: #fbbf24; border-color: #92400e; }
     .b24-readonly { font-size: 18px; font-weight: 800; color: var(--text-primary); padding: 6px 0; letter-spacing: -0.02em; }
@@ -646,7 +660,7 @@ function renderPaymentTab(opts: {
       <div class="b24-form-row" id="pay-down-extra" style="display:none">
         <div class="b24-form-group">
           <label class="b24-form-label">Método da Entrada</label>
-          <select id="pay-down-method" class="b24-input" style="height:32px">
+          <select id="pay-down-method" class="b24-input" style="height:32px" onchange="toggleMethodFields()">
             <option value="card">Cartão</option>
             <option value="pix">PIX</option>
             <option value="boleto">Boleto</option>
@@ -711,19 +725,73 @@ function renderPaymentTab(opts: {
       <label class="b24-form-label">Descrição</label>
       <input type="text" id="pay-desc" class="b24-input" placeholder="${(dealTitle || "Negócio").replace(/"/g, "&quot;")}" value="${(dealTitle || "").replace(/"/g, "&quot;")}">
     </div>
-    <div class="b24-form-group">
-      <label class="b24-form-label">Nome do cliente</label>
-      <input type="text" id="pay-name" class="b24-input" placeholder="Nome" value="${(contactName || "").replace(/"/g, "&quot;")}">
+
+    <!-- Bloco Dados do Cliente -->
+    <div class="b24-form-section" id="customer-section">
+      <div class="b24-form-section-title">
+        <span>Dados do Cliente</span>
+        <button type="button" onclick="toggleCustomerSection()" style="background:none;border:0;color:var(--link-color);font-size:11px;cursor:pointer;font-weight:600" id="customer-toggle-btn">Recolher</button>
+      </div>
+      <div id="customer-body">
+        <div class="b24-form-row">
+          <div class="b24-form-group">
+            <label class="b24-form-label">Nome *</label>
+            <input type="text" id="pay-name" class="b24-input" placeholder="Nome completo" value="${(contactName || "").replace(/"/g, "&quot;")}">
+          </div>
+          <div class="b24-form-group">
+            <label class="b24-form-label">Email *</label>
+            <input type="email" id="pay-email" class="b24-input" placeholder="email@exemplo.com" value="${(contactEmail || "").replace(/"/g, "&quot;")}">
+          </div>
+        </div>
+        <div class="b24-form-row">
+          <div class="b24-form-group">
+            <label class="b24-form-label">Telefone</label>
+            <input type="text" id="pay-phone" class="b24-input" placeholder="+351 900 000 000" value="${(contactPhone || "").replace(/"/g, "&quot;")}">
+          </div>
+          <div class="b24-form-group" id="cpf-group">
+            <label class="b24-form-label">CPF / CNPJ / NIF</label>
+            <input type="text" id="pay-cpf" class="b24-input" placeholder="000.000.000-00" value="${(contactCpfCnpj || "").replace(/"/g, "&quot;")}">
+            <div class="b24-form-hint" id="cpf-hint">Obrigatório para BRL, Pix e Boleto</div>
+          </div>
+        </div>
+        <div id="address-block">
+          <div class="b24-form-row">
+            <div class="b24-form-group" style="flex:0 0 140px">
+              <label class="b24-form-label">CEP / Cód. Postal</label>
+              <input type="text" id="pay-postal" class="b24-input" placeholder="00000-000" value="${(addr.postal_code || "").replace(/"/g, "&quot;")}">
+            </div>
+            <div class="b24-form-group" style="flex:2">
+              <label class="b24-form-label">Endereço</label>
+              <input type="text" id="pay-street" class="b24-input" placeholder="Rua / Avenida" value="${(addr.street || "").replace(/"/g, "&quot;")}">
+            </div>
+            <div class="b24-form-group" style="flex:0 0 90px">
+              <label class="b24-form-label">Número</label>
+              <input type="text" id="pay-number" class="b24-input" placeholder="123" value="${(addr.number || "").replace(/"/g, "&quot;")}">
+            </div>
+          </div>
+          <div class="b24-form-row">
+            <div class="b24-form-group">
+              <label class="b24-form-label">Bairro</label>
+              <input type="text" id="pay-district" class="b24-input" placeholder="Bairro" value="${(addr.district || "").replace(/"/g, "&quot;")}">
+            </div>
+            <div class="b24-form-group">
+              <label class="b24-form-label">Cidade</label>
+              <input type="text" id="pay-city" class="b24-input" placeholder="Cidade" value="${(addr.city || "").replace(/"/g, "&quot;")}">
+            </div>
+            <div class="b24-form-group" style="flex:0 0 90px">
+              <label class="b24-form-label">UF</label>
+              <input type="text" id="pay-state" class="b24-input" placeholder="SP" maxlength="4" value="${(addr.state || "").replace(/"/g, "&quot;")}">
+            </div>
+            <div class="b24-form-group" style="flex:0 0 90px">
+              <label class="b24-form-label">País</label>
+              <input type="text" id="pay-country" class="b24-input" placeholder="BR" maxlength="2" value="${(addr.country || (currency === "BRL" ? "BR" : "PT")).replace(/"/g, "&quot;")}">
+            </div>
+          </div>
+          <div class="b24-form-hint" id="address-hint" style="display:none">Endereço completo é obrigatório para Boleto.</div>
+        </div>
+      </div>
     </div>
-    <div class="b24-form-group">
-      <label class="b24-form-label">Email</label>
-      <input type="email" id="pay-email" class="b24-input" placeholder="email@exemplo.com" value="${(contactEmail || "").replace(/"/g, "&quot;")}">
-    </div>
-    <div id="cpf-group" class="b24-form-group" style="display:none">
-      <label class="b24-form-label">CPF/CNPJ</label>
-      <input type="text" id="pay-cpf" class="b24-input" placeholder="000.000.000-00" value="${(contactCpfCnpj || "").replace(/"/g, "&quot;")}">
-      <div class="b24-form-hint">Obrigatório para cobranças em BRL</div>
-    </div>
+
     <div class="b24-form-actions">
       <button class="b24-btn-outline" onclick="closeCreateForm()">Cancelar</button>
       <button class="b24-btn-primary" id="pay-submit" onclick="submitInstallments()">Criar Cobrança</button>
@@ -971,22 +1039,52 @@ function renderPaymentTab(opts: {
   }
 
   // === Create form ===
-  function openCreateForm() { document.getElementById('create-overlay').classList.add('active'); }
+  function openCreateForm() {
+    document.getElementById('create-overlay').classList.add('active');
+    try { if (typeof BX24 !== 'undefined') { BX24.resizeWindow && BX24.resizeWindow(1200, 900); BX24.fitWindow && BX24.fitWindow(); } } catch(e){}
+    toggleMethodFields();
+    autoCollapseCustomerIfComplete();
+  }
   function closeCreateForm() {
     document.getElementById('create-overlay').classList.remove('active');
     document.getElementById('pay-result').style.display = 'none';
   }
+  function toggleCustomerSection() {
+    var body = document.getElementById('customer-body');
+    var btn = document.getElementById('customer-toggle-btn');
+    if (body.style.display === 'none') { body.style.display = ''; btn.textContent = 'Recolher'; }
+    else { body.style.display = 'none'; btn.textContent = 'Expandir'; }
+  }
+  function customerIsComplete() {
+    var required = ['pay-name','pay-email'];
+    for (var i=0;i<required.length;i++) { var v=(document.getElementById(required[i])||{}).value; if (!v || !String(v).trim()) return false; }
+    return true;
+  }
+  function autoCollapseCustomerIfComplete() {
+    if (customerIsComplete()) { var body=document.getElementById('customer-body'); var btn=document.getElementById('customer-toggle-btn'); if (body) body.style.display='none'; if (btn) btn.textContent='Expandir'; }
+  }
 
   document.getElementById('pay-currency').addEventListener('change', function() {
-    document.getElementById('cpf-group').style.display = this.value === 'BRL' ? 'block' : 'none';
     toggleMethodFields();
   });
 
   function toggleMethodFields() {
-    var method = document.getElementById('pay-method').value;
+    var method = (document.getElementById('pay-method')||{}).value || 'card';
+    var downMethod = (document.getElementById('pay-down-method')||{}).value || method;
+    var currency = (document.getElementById('pay-currency')||{}).value || 'EUR';
     var isDireto = method === 'direto';
     var emailEl = document.getElementById('pay-email');
     if (emailEl) emailEl.closest('.b24-form-group').style.opacity = isDireto ? '0.5' : '1';
+
+    var needsCpf = currency === 'BRL' || method === 'boleto' || method === 'pix' || downMethod === 'boleto' || downMethod === 'pix';
+    var cpfGroup = document.getElementById('cpf-group');
+    if (cpfGroup) cpfGroup.style.opacity = needsCpf ? '1' : '0.85';
+
+    var needsAddress = method === 'boleto' || downMethod === 'boleto';
+    var addressBlock = document.getElementById('address-block');
+    var addressHint = document.getElementById('address-hint');
+    if (addressBlock) addressBlock.style.display = needsAddress ? 'block' : (currency === 'BRL' ? 'block' : 'none');
+    if (addressHint) addressHint.style.display = needsAddress ? 'block' : 'none';
   }
 
   function initForm() {
@@ -1082,11 +1180,49 @@ function renderPaymentTab(opts: {
     var currency = document.getElementById('pay-currency').value;
     var method = document.getElementById('pay-method').value;
     var desc = document.getElementById('pay-desc').value || 'Pagamento';
-    var name = document.getElementById('pay-name').value;
-    var email = document.getElementById('pay-email').value;
-    var cpf = document.getElementById('pay-cpf').value;
+    function val(id){ var el=document.getElementById(id); return el ? String(el.value||'').trim() : ''; }
+    function mark(id, bad){ var el=document.getElementById(id); if(!el) return; if(bad) el.classList.add('b24-invalid'); else el.classList.remove('b24-invalid'); }
+    ['pay-name','pay-email','pay-cpf','pay-postal','pay-street','pay-number','pay-city','pay-state'].forEach(function(k){ mark(k,false); });
+
+    var name = val('pay-name');
+    var email = val('pay-email');
+    var cpf = val('pay-cpf');
+    var phone = val('pay-phone');
+    var postal = val('pay-postal');
+    var street = val('pay-street');
+    var number = val('pay-number');
+    var district = val('pay-district');
+    var city = val('pay-city');
+    var state = val('pay-state');
+    var country = val('pay-country') || (currency === 'BRL' ? 'BR' : 'PT');
+
+    var missing = [];
+    if (!name) { missing.push('Nome'); mark('pay-name', true); }
+    if (!email || !/.+@.+\..+/.test(email)) { missing.push('Email válido'); mark('pay-email', true); }
+    var needsCpf = currency === 'BRL' || method === 'boleto' || method === 'pix' || downMethod === 'boleto' || downMethod === 'pix';
+    if (needsCpf && !cpf) { missing.push('CPF/CNPJ'); mark('pay-cpf', true); }
+    var needsAddr = method === 'boleto' || downMethod === 'boleto';
+    if (needsAddr) {
+      if (!postal) { missing.push('CEP'); mark('pay-postal', true); }
+      if (!street) { missing.push('Endereço'); mark('pay-street', true); }
+      if (!number) { missing.push('Número'); mark('pay-number', true); }
+      if (!city)   { missing.push('Cidade'); mark('pay-city', true); }
+      if (!state)  { missing.push('UF'); mark('pay-state', true); }
+    }
     if (downPayment > totalAmount) { showPayResult('Entrada não pode ser maior que o total.', true); return; }
-    if (currency === 'BRL' && !cpf) { showPayResult('CPF/CNPJ é obrigatório para BRL.', true); return; }
+    if (missing.length) {
+      var body=document.getElementById('customer-body'); var btnT=document.getElementById('customer-toggle-btn');
+      if (body) body.style.display=''; if (btnT) btnT.textContent='Recolher';
+      showPayResult('Preencha os campos obrigatórios: ' + missing.join(', ') + '.', true);
+      return;
+    }
+    var customerData = {
+      name: name, email: email, cpf_cnpj: cpf || undefined, phone: phone || undefined,
+      address: {
+        postal_code: postal || undefined, street: street || undefined, number: number || undefined,
+        district: district || undefined, city: city || undefined, state: state || undefined, country: country || undefined
+      }
+    };
     var remaining = totalAmount - downPayment;
     var instValue = numInstallments > 0 ? Math.floor(remaining * 100 / numInstallments) / 100 : 0;
     var lastInstValue = remaining - (instValue * (numInstallments - 1));
@@ -1145,7 +1281,7 @@ function renderPaymentTab(opts: {
             amount: parcel.amount, currency: currency, payment_method: parcel.method,
             force_gateway: DEAL_RAW_GATEWAY || undefined,
             description: desc + parcelLabel,
-            customer_data: { name: name, email: email, cpf_cnpj: cpf || undefined },
+            customer_data: customerData,
             due_date: parcel.due_date,
             installment_number: parcel.is_down_payment ? 0 : parcel.installment_number,
             total_installments: totalCount, installment_group_id: groupId, is_down_payment: parcel.is_down_payment,
@@ -2321,6 +2457,7 @@ Deno.serve(async (req) => {
     let contactName = "";
     let contactEmail = "";
     let contactCpfCnpj = "";
+    let contactAddress: { postal_code?: string; street?: string; number?: string; district?: string; city?: string; state?: string; country?: string } = {};
     let contactId = "";
     let dealGateway = "";
     let dealPaymentMethod = "";
@@ -2389,6 +2526,15 @@ Deno.serve(async (req) => {
         // CPF/CNPJ commonly stored in UF_CRM_CPF or UF_CRM_CNPJ or NIF
         contactCpfCnpj =
           String(contact.UF_CRM_CPF || contact.UF_CRM_CNPJ || contact.UF_CRM_CPF_CNPJ || contact.UF_CRM_NIF || "").trim();
+        contactAddress = {
+          postal_code: String(contact.ADDRESS_POSTAL_CODE || "").trim(),
+          street: String(contact.ADDRESS || "").trim(),
+          number: String(contact.ADDRESS_2 || "").trim(),
+          district: "",
+          city: String(contact.ADDRESS_CITY || "").trim(),
+          state: String(contact.ADDRESS_PROVINCE || "").trim(),
+          country: String(contact.ADDRESS_COUNTRY_CODE || contact.ADDRESS_COUNTRY || "").trim().slice(0, 2).toUpperCase(),
+        };
         // Fallback to Company NIF/CNPJ if contact has none and deal has a company
         if (!contactCpfCnpj && deal && deal.COMPANY_ID) {
           try {
@@ -2569,7 +2715,7 @@ Deno.serve(async (req) => {
     return new Response(renderPaymentTab({
       entityId, dealTitle, totalValue, paidValue, openValue, currency,
       installments, supabaseUrl, memberId, flows, contactPhone,
-      contactName, contactEmail, contactCpfCnpj,
+      contactName, contactEmail, contactCpfCnpj, contactAddress,
       noData: installments.length === 0,
       gateway: gwNames[displayGateway] || displayGateway,
       rawGateway: rawGatewayValue || displayGateway,
