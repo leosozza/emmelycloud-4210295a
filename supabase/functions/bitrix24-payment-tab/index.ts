@@ -830,7 +830,7 @@ function renderPaymentTab(opts: {
       <div class="b24-form-group">
         <label class="b24-form-label">Nº de Parcelas</label>
         <select id="edit-num-installments" class="b24-input" style="height:32px" onchange="recalcEditInstallments()">
-          ${[1,2,3,4,5,6,7,8,9,10,11,12].map(n => `<option value="${n}">${n}</option>`).join("")}
+          ${[1,2,3,4,5,6,7,8,9,10,11,12].map(n => `<option value="${n}">${n}${n>1?'x':''}</option>`).join("")}
         </select>
       </div>
       <div class="b24-form-group">
