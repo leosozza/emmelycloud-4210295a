@@ -170,6 +170,7 @@ function getStatusColor(status: string): { bg: string; bgDark: string; text: str
 
 function renderPaymentTab(opts: {
   entityId: string;
+  entityTypeId?: string;
   dealTitle: string;
   totalValue: number;
   paidValue: number;
@@ -269,13 +270,23 @@ function renderPaymentTab(opts: {
       ? `<span class="b24-dual-currency">≈ ${formatCurrency(valueBRL, "BRL")}</span>`
       : `<span class="b24-dual-currency">≈ ${formatCurrency(valueEUR, "EUR")}</span>`;
 
+    // "Not generated yet" — no real transaction created in Stripe/gateway.
+    // Synthetic rows have either no transaction_id or one that starts with "deal-".
+    const notGenerated = (!inst.transaction_id || String(inst.transaction_id).startsWith("deal-")) && inst.status !== "paga";
+    const notGeneratedBadge = notGenerated ? `<span class="b24-not-generated" title="Esta cobrança ainda não foi gerada no gateway. Clique em Gerar cobrança.">${icon("file-plus", 12)} Não gerada</span>` : "";
+    const canGenerate = notGenerated && !hasMissing;
+    const generateBtn = notGenerated
+      ? `<button onclick='${canGenerate ? `openEditModal(${instJson})` : "void(0)"}' class="b24-btn-generate${canGenerate ? "" : " b24-btn-disabled"}" ${canGenerate ? "" : "disabled"} title="${canGenerate ? "Gerar cobrança agora" : "Preencha Vencimento e Método primeiro"}">${icon("file-plus", 13)} Gerar cobrança</button>`
+      : "";
+
     return `
-      <div class="b24-item ${statusClass}${missingClass}">
+      <div class="b24-item ${statusClass}${missingClass}${notGenerated ? " not-generated" : ""}">
         <div class="b24-item-row">
           <div class="b24-item-left">
             <span class="b24-item-title">${label}</span>
             <span class="b24-item-value">${formatCurrency(inst.value, inst.currency)}</span>
             ${dualDisplay}
+            ${notGeneratedBadge}
             ${missingIndicator}
           </div>
           <span class="b24-badge" style="--badge-bg:${s.bg};--badge-bg-dark:${s.bgDark};--badge-text:${s.text};--badge-text-dark:${s.textDark}">${s.label}</span>
@@ -299,8 +310,9 @@ function renderPaymentTab(opts: {
         ${inst.invoice_id ? `<div class="b24-link-row"><a href="javascript:void(0)" onclick="openInvoice(${inst.invoice_id})" class="b24-link">${icon("file-text", 13)} Ver Fatura #${inst.invoice_id}</a></div>` : ""}
         ${inst.status !== "paga" ? `
           <div class="b24-item-actions">
+            ${generateBtn}
             <button onclick='openEditModal(${instJson})' class="b24-btn-action" title="Editar Parcela">${icon("pencil", 13)} Editar</button>
-            ${["direto","parcelado_direto","transferencia","n"].includes(String(inst.payment_method || "").toLowerCase()) ? "" : `<button onclick='generatePaymentLink(${instJson})' class="b24-btn-action" title="Gerar Link de Pagamento">${icon("link", 13)} Link</button>`}
+            ${notGenerated || ["direto","parcelado_direto","transferencia","n"].includes(String(inst.payment_method || "").toLowerCase()) ? "" : `<button onclick='generatePaymentLink(${instJson})' class="b24-btn-action" title="Gerar Link de Pagamento">${icon("link", 13)} Link</button>`}
             <button onclick='openBaixaModal(${instJson})' class="b24-btn-action b24-btn-baixa" title="Dar Baixa">${icon("check", 13)} Baixa</button>
             ${contactPhone && flows.length > 0 ? `<button onclick='toggleFlowRow("${inst.id}")' class="b24-btn-action b24-btn-fluxo" title="Enviar Fluxo">${icon("send", 13)} Fluxo</button>` : ""}
           </div>
@@ -479,6 +491,11 @@ function renderPaymentTab(opts: {
     .b24-item-title { font-size: 13px; font-weight: 600; color: var(--text-primary); letter-spacing: -0.01em; }
     .b24-item-value { font-size: 16px; font-weight: 700; color: var(--text-primary); letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
     .b24-missing-icon { color: #b45309; font-size: 11px; cursor: help; display: inline-flex; align-items: center; gap: 3px; background: rgba(245,158,11,0.10); padding: 2px 8px; border-radius: 999px; }
+    .b24-not-generated { color: #b45309; font-size: 11px; display: inline-flex; align-items: center; gap: 3px; background: rgba(245,158,11,0.15); border: 1px dashed #f59e0b; padding: 2px 8px; border-radius: 999px; font-weight: 600; }
+    .b24-item.not-generated { border-left-color: #f59e0b; background: linear-gradient(to right, rgba(245,158,11,0.04), transparent 40%); }
+    .b24-btn-generate { background: #2563eb; color: #fff; border: 1px solid #2563eb; border-radius: var(--radius-sm); padding: 6px 14px; font-size: 12px; font-family: inherit; cursor: pointer; transition: all 0.15s; white-space: nowrap; display: inline-flex; align-items: center; gap: 5px; font-weight: 600; }
+    .b24-btn-generate:hover:not(.b24-btn-disabled) { background: #1d4ed8; border-color: #1d4ed8; box-shadow: 0 2px 6px rgba(37,99,235,0.3); }
+    .b24-btn-disabled { opacity: 0.5; cursor: not-allowed; background: #9ca3af !important; border-color: #9ca3af !important; }
     .b24-badge { display: inline-flex; align-items: center; background: var(--badge-bg); color: var(--badge-text); border-radius: 999px; padding: 3px 10px; font-size: 11px; font-weight: 600; white-space: nowrap; letter-spacing: 0.2px; }
     body.dark .b24-badge { background: var(--badge-bg-dark); color: var(--badge-text-dark); }
     .b24-item-meta { display: flex; gap: 12px; font-size: 12px; color: var(--text-secondary); margin-bottom: 6px; flex-wrap: wrap; align-items: center; }
@@ -922,6 +939,7 @@ function renderPaymentTab(opts: {
   var FRONTEND_BASE = "${(Deno.env.get("FRONTEND_URL") || "https://emmelycloud.pages.dev").replace(/\/+$/, "")}";
   var MEMBER_ID = "${memberId}";
   var ENTITY_ID = "${opts.entityId}";
+  var ENTITY_TYPE_ID = "${opts.entityTypeId || "2"}";
   var DEAL_RAW_GATEWAY = "${opts.rawGateway || ""}";
   var DEAL_RAW_METHOD = "${opts.rawMethod || ""}";
   var GATEWAY_OPTIONS = ${JSON.stringify(opts.gatewayOptions || [])};
@@ -1654,6 +1672,28 @@ function renderPaymentTab(opts: {
         }
       }
 
+      // Sync back to parent entity (Deal/Lead/SPA) UF fields so Emmely Pay stays consistent
+      // with what's in Bitrix24 next time it opens.
+      try {
+        var entityKind = ENTITY_TYPE_ID === '1' ? 'lead' : (ENTITY_TYPE_ID === '2' ? 'deal' : 'spa');
+        var syncBody = {
+          member_id: MEMBER_ID,
+          deal_id: ENTITY_ID,
+          entity_type: entityKind,
+          payment_data: {
+            next_due_date: payload.due_date_update,
+            payment_method: payload.payment_method_update,
+            installment_value: payload.amount_update,
+          }
+        };
+        if (entityKind === 'spa') syncBody.spa_entity_type_id = ENTITY_TYPE_ID;
+        await fetch(SUPABASE_URL + '/functions/v1/bitrix24-update-deal-payment', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_KEY, 'Authorization': 'Bearer ' + SUPABASE_KEY },
+          body: JSON.stringify(syncBody)
+        });
+      } catch(syncErr) { console.warn('[submitEdit] Bitrix sync failed:', syncErr); }
+
       el.innerHTML = 'Parcela atualizada com sucesso!'; el.style.color = 'var(--value-paid)'; el.style.display = 'block';
       setTimeout(function() { location.reload(); }, 1500);
     } catch(e) {
@@ -2270,7 +2310,7 @@ Deno.serve(async (req) => {
 
     if (!integration) {
       return new Response(renderPaymentTab({
-        entityId, dealTitle: "Negócio", totalValue: 0, paidValue: 0, openValue: 0,
+        entityId, entityTypeId, dealTitle: "Negócio", totalValue: 0, paidValue: 0, openValue: 0,
         currency: "EUR", installments: [], supabaseUrl, memberId,
         flows: [], contactPhone: "", noData: true,
       }), { headers: htmlHeaders });
@@ -2283,7 +2323,7 @@ Deno.serve(async (req) => {
       catch (tokErr) {
         console.error("[PAYMENT-TAB] Token refresh failed:", tokErr);
         return new Response(renderPaymentTab({
-          entityId, dealTitle: "Negócio", totalValue: 0, paidValue: 0, openValue: 0,
+          entityId, entityTypeId, dealTitle: "Negócio", totalValue: 0, paidValue: 0, openValue: 0,
           currency: "EUR", installments: [], supabaseUrl, memberId,
           flows: [], contactPhone: "", noData: true,
         } as any), { headers: htmlHeaders });
@@ -2728,7 +2768,7 @@ Deno.serve(async (req) => {
     const displayCreatedAt = dealCreatedAt || (dealTransactions.length > 0 ? dealTransactions[0].created_at : "") || "";
 
     return new Response(renderPaymentTab({
-      entityId, dealTitle, totalValue, paidValue, openValue, currency,
+      entityId, entityTypeId, dealTitle, totalValue, paidValue, openValue, currency,
       installments, supabaseUrl, memberId, flows, contactPhone,
       contactName, contactEmail, contactCpfCnpj, contactAddress,
       noData: installments.length === 0,

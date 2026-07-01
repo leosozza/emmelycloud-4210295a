@@ -1,90 +1,39 @@
-# Fix — Flows CRM node: valor do campo puxando do Bitrix
-
 ## Problema
 
-No painel de configuração do nó CRM (`crm.deal.update`, `crm.lead.update`, `crm.deal.add` etc.) dentro do iframe:
+Ao abrir o Emmely Pay, a parcela aparece "pronta" (com valor 100,00 €) mas ainda **não foi gerada no Stripe** (é um registo sintético a partir dos UF do Deal). O utilizador confunde-se e pensa que já foi criada. Além disso, hoje se faltar Vencimento/Método, tem de sair do iframe, editar o Deal no Bitrix e voltar.
 
-1. Ao escolher um campo como **Deal stage (STAGE_ID)**, o input de valor é um `<Input>` de texto livre com placeholder `{{valor}} ou texto fixo`. O usuário precisa saber decorado o código do estágio (ex.: `C1:NEW`) — não há dropdown com as etapas reais do Bitrix.
-2. O mesmo acontece com **CATEGORY_ID** (funil), **STATUS_ID** de Lead, campos `enumeration` (listas), `boolean`, `crm_status`, `crm_category`.
-3. Ao salvar/executar, o Bitrix rejeita o valor (ex.: `{{valor}}` literal, ou id inválido) → aparece como "erro ao criar o campo".
+## O que muda
 
-O endpoint `bitrix24-fields` já retorna `type` e `items` (quando existem inline), e o endpoint `bitrix24-fetch-entities` já sabe listar `pipelines` e `stages` de lead/deal/SPA — só falta ligar isso à UI.
+### 1. Selo visual "Ainda não gerada" na frente da parcela
+No card da parcela em `supabase/functions/bitrix24-payment-tab/index.ts` (render de `b24-item`, ~linha 273–305):
 
-## Escopo (frontend + 1 tweak backend)
+- Detetar parcelas sintéticas (sem `transaction_id` real, ou seja `inst.financial_record_id` ausente **ou** `inst.id.startsWith("synthetic")`).
+- Adicionar badge amarelo destacado ao lado de "Parcela 1/1", com texto **"Não gerada"** + ícone `file-plus`.
+- Substituir/realçar o botão de ação para **"Gerar cobrança"** (primário azul) em vez do actual "Link" quando ainda não gerada. Ao clicar, abre o mesmo modal de edição já pré-preenchido — o Guardar cria a transação real (via `ensureTxExists` que já existe) e o link Stripe passa a ficar disponível.
+- Quando `hasMissing` (Vencimento ou Método por definir), o botão "Gerar cobrança" fica **desativado** com tooltip "Preencha Vencimento e Método primeiro".
 
-### 1. Novo componente `BitrixFieldValueInput`
-`src/components/flows/BitrixFieldValueInput.tsx`
+### 2. Preencher Vencimento/Método direto no iframe (sync para Bitrix)
+Hoje o modal Editar (`submitEdit`, ~linha 1622) grava em `financial_records` + Smart Invoice 31, mas **não** volta a escrever nos campos UF do Deal/Lead/SPA — por isso ao reabrir, o Emmely Pay volta a mostrar "Definir".
 
-Recebe: `entity`, `spaEntityTypeId`, `fieldKey`, `fieldMeta` (do hook `useBitrixFields`), `value`, `onChange`, `categoryId` opcional (para resolver stages do funil correto).
+Alterações:
 
-Comportamento por tipo detectado no `fieldMeta`:
+- Em `submitEdit` (client-side dentro do HTML da edge function), após o PATCH de `payment-create`, invocar `bitrix24-update-deal-payment` com o `entity_type`, `deal_id` e `payment_data` contendo apenas os campos alterados:
+  - `next_due_date` ← `edit-due-date`
+  - `payment_method` ← `edit-method`
+  - `installment_value` ← `edit-amount` (quando o utilizador ajustar valor)
+- Passar `member_id` (já disponível no HTML como `MEMBER_ID`) e `spa_entity_type_id` quando `entity_type === "spa"`.
+- No `bitrix24-update-deal-payment/index.ts`, garantir que quando só chegam `next_due_date`/`payment_method` (sem `total_installments`), o bloco que recria Smart Invoices (~linha 130) é **saltado** — só atualiza os UF do entity. Adicionar guarda: `if (total_installments === undefined) skip invoice loop`.
 
-| Campo / tipo                                       | Renderiza                                          |
-| -------------------------------------------------- | -------------------------------------------------- |
-| `STAGE_ID` (deal) ou `crm_status` com `DEAL_STAGE` | Dropdown de estágios (fetch `action=stages`)       |
-| `STATUS_ID` (lead)                                 | Dropdown de estágios de Lead                       |
-| `CATEGORY_ID` (deal)                               | Dropdown de funis (`action=pipelines`)             |
-| `stageId` (SPA)                                    | Dropdown de estágios SPA                           |
-| `type === "enumeration"` com `items`               | Dropdown a partir de `items` já retornados         |
-| `type === "boolean"` ou `char` (Y/N)               | Switch Sim/Não                                     |
-| `type === "date"` / `datetime`                     | Input `type="date"`/`datetime-local`               |
-| resto                                              | Input de texto (comportamento atual)               |
+Resultado: ao Guardar no modal do iframe, os campos ficam persistidos em três lugares consistentes — `financial_records`, Smart Invoice 31, e UF do Deal — sem sair do Bitrix.
 
-Todos os dropdowns oferecem também opção **"Usar variável dinâmica"** que troca para input texto — para manter `{{deal_id}}`, `{{stage_id}}` etc.
+### 3. Pequeno ajuste no render após guardar
+- Manter o `location.reload()` que já existe após 1,5 s (linha ~1655) para refletir imediatamente o estado "gerada" no card.
 
-### 2. Novo hook `useBitrixStages`
-`src/hooks/useBitrixStages.ts`
+## Fora do âmbito
+- Não altera o layout dos 3 cards KPI (Total/Pago/Em Aberto).
+- Não mexe no modal "Criar Cobrança" completo (só no fluxo por parcela existente).
+- Não muda regras de late-fee nem de baixa.
 
-- Chama `bitrix24-fetch-entities?action=stages&entity=<lead|deal|spa>&category_id=<id>&spa_entity_type_id=<id>`.
-- Cache in-memory por chave `entity|categoryId|spaId` (5 min), mesmo padrão do `useBitrixFields`.
-- Também exporta `useBitrixPipelines` (usa `action=pipelines`) para dropdown de CATEGORY_ID.
-
-### 3. Substituir `<Input>` de valor no `NodeConfigPanel.tsx`
-
-- Linhas 1387–1389 (Estágio de destino no `isMove`): trocar por `BitrixFieldValueInput` com `fieldKey="STAGE_ID"` e passar `categoryId={crm.targetPipelineId}`.
-- Linhas 1381–1383 (Funil de destino no `isMove`): trocar por dropdown de pipelines.
-- Linhas 1437–1439 (valor genérico em Campos): trocar por `<BitrixFieldValueInput fieldKey={f.key} ... />` — pega `fieldMeta` do `useBitrixFields` já carregado.
-
-### 4. Ajustes no `bitrix24-fields` (backend)
-`supabase/functions/bitrix24-fields/index.ts`
-
-- Enriquecer o retorno do parseFields quando `type` for `crm_status` / `crm_category` / `crm_dealcategory`: incluir um flag `enrichSource: "stages" | "pipelines"` para que o frontend saiba qual endpoint chamar.
-- Nenhuma quebra de contrato — só campos adicionais.
-
-### 5. Erro "ao criar o campo" ao salvar/executar
-
-Duas causas prováveis, ambas cobertas pelas mudanças acima:
-
-- **Valor literal `{{valor}}`** (placeholder deixado sem preencher): adicionar validação client-side no `NodeConfigPanel` — se `f.value` contém `{{valor}}` ou vazio, mostrar aviso vermelho abaixo do campo e bloquear "Salvar" no toolbar do flow.
-- **STAGE_ID inválido**: com o dropdown, o valor sempre será um id válido (`C1:NEW`, `NEW`, `DT31_1:UC_...`).
-
-Se depois de aplicar isso ainda houver erro, capturaremos a mensagem exata no `flow-engine` (já existe `flow_execution_logs`) — nenhum ajuste extra necessário agora.
-
-## Fora de escopo
-
-- Nenhum trigger de banco, nenhuma nova tabela, nenhuma migração.
-- Não mexer no `flow-engine` (runtime) — o problema é UX/entrada de dados.
-- Não mexer no `BitrixFieldSelector` (seleção do campo — já funciona).
-
-## Arquivos tocados
-
-- **novo** `src/components/flows/BitrixFieldValueInput.tsx`
-- **novo** `src/hooks/useBitrixStages.ts` (inclui `useBitrixPipelines`)
-- editado `src/components/flows/NodeConfigPanel.tsx` (linhas ~1380–1445)
-- editado `supabase/functions/bitrix24-fields/index.ts` (enriquecer metadata)
-
-## Detalhes técnicos
-
-```text
-NodeConfigPanel
-  └─ BitrixFieldSelector (key)     ← já existe
-  └─ BitrixFieldValueInput (value) ← NOVO
-        ├─ if key===STAGE_ID / crm_status → useBitrixStages(entity, categoryId)
-        ├─ if key===CATEGORY_ID           → useBitrixPipelines(entity)
-        ├─ if fieldMeta.items?.length     → <Select> a partir dos items
-        ├─ if boolean                     → <Switch>
-        ├─ if date                        → <Input type=date>
-        └─ default                        → <Input> (comportamento atual)
-```
-
-Toggle "usar variável" em todos os casos para permitir `{{stage_id}}` vindo de nós anteriores.
+## Ficheiros afetados
+- `supabase/functions/bitrix24-payment-tab/index.ts` — badge "Não gerada", botão "Gerar cobrança", chamada extra em `submitEdit` para `bitrix24-update-deal-payment`.
+- `supabase/functions/bitrix24-update-deal-payment/index.ts` — saltar recriação de Smart Invoices quando só se atualizam campos parciais (due_date/method).

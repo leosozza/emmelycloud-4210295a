@@ -149,10 +149,14 @@ serve(async (req) => {
     }
 
     // ── 3. Create/Update Smart Invoices (Entity Type 31) ──
+    // Skip when caller only wants to patch UF fields (partial update from Emmely Pay iframe).
     const invoicesCreated: any[] = [];
+    const skipInvoiceSync = total_installments === undefined || total_installments === null;
     const totalInst = total_installments || 1;
     const paidInst = paid_installments || 0;
     const instValue = installment_value || (entityOpportunity / totalInst);
+
+    if (!skipInvoiceSync) {
 
     for (let i = 0; i < totalInst; i++) {
       const installmentNum = i + 1;
@@ -219,6 +223,7 @@ serve(async (req) => {
         invoicesCreated.push({ action: "created", result: createData });
       }
     }
+    } // end if (!skipInvoiceSync)
 
     // ── 4. Badge ──
     // ownerTypeId: 1=Lead, 2=Deal, SPA=entityTypeId
