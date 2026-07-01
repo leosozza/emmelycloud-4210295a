@@ -569,6 +569,30 @@ function renderPaymentTab(opts: {
 <div id="app">
   <div class="b24-create-bar">
     <button class="b24-btn-primary" onclick="openCreateForm()">${icon("file-text", 14)} Criar Cobrança</button>
+    ${!noData && installments.length > 0 ? (() => {
+      const target = installments.find(i => i.status !== "paga") || installments[0];
+      const targetJson = JSON.stringify({
+        id: target.id,
+        transaction_id: target.transaction_id,
+        financial_record_id: target.financial_record_id || null,
+        entity_id: opts.entityId,
+        value: target.value,
+        due_date: target.due_date,
+        payment_method: target.payment_method || "card",
+        currency: target.currency,
+        invoice_id: target.invoice_id,
+        description: target.description,
+        notes: (target.metadata || {}).notes || "",
+        number: target.number,
+        total: target.total,
+        late_penalty: target.late_penalty || 0,
+        late_interest: target.late_interest || 0,
+        late_days: target.late_days || 0,
+        late_total: target.late_total || target.value,
+        payment_url: target.payment_url || null,
+      }).replace(/"/g, "&quot;");
+      return `<button class="b24-btn-outline" onclick='openEditFullModal(${targetJson})' style="margin-left:8px">${icon("pencil", 14)} Editar</button>`;
+    })() : ""}
   </div>
   ${noData ? noDataHtml : `
   <div class="b24-summary">
