@@ -705,13 +705,13 @@ function renderPaymentTab(opts: {
     <div style="border:1px solid var(--border-color);border-radius:6px;padding:10px 12px;margin-bottom:12px;background:var(--bg-page)">
       <div style="font-weight:600;font-size:12px;color:var(--text-primary);margin-bottom:8px">Parcelas (Saldo)</div>
       <div class="b24-form-row">
-        <div class="b24-form-group">
+        <div class="b24-form-group" id="group-num-installments">
           <label class="b24-form-label">Nº Parcelas</label>
           <select id="pay-installments" class="b24-input" style="height:32px" onchange="calcInstallments()">
             ${[1,2,3,4,5,6,7,8,9,10,11,12].map(n => `<option value="${n}"${n===1?' selected':''}>${n}</option>`).join("")}
           </select>
         </div>
-        <div class="b24-form-group">
+        <div class="b24-form-group" id="group-interval">
           <label class="b24-form-label">Intervalo (dias)</label>
           <select id="pay-interval" class="b24-input" style="height:32px" onchange="calcInstallments()">
             <option value="30">30 dias</option>
@@ -719,12 +719,12 @@ function renderPaymentTab(opts: {
             <option value="90">90 dias</option>
           </select>
         </div>
-        <div class="b24-form-group">
-          <label class="b24-form-label">1º Vencimento</label>
+        <div class="b24-form-group" id="group-first-due">
+          <label class="b24-form-label" id="label-first-due">1º Vencimento</label>
           <input type="date" id="pay-first-due" class="b24-input" onchange="calcInstallments()">
         </div>
       </div>
-      <div class="b24-form-row">
+      <div class="b24-form-row" id="row-installment-displays">
         <div class="b24-form-group">
           <label class="b24-form-label">Saldo a Parcelar</label>
           <div class="b24-readonly" id="pay-remaining-display">—</div>
