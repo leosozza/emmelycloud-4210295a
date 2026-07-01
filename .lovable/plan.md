@@ -1,71 +1,28 @@
-## Objetivo
+# Fix: erro `sepa_debit is invalid` ao criar cobrança
 
-Corrigir dois problemas do modal "Criar Cobrança" dentro do iframe do Bitrix (Emmely Pay):
+## Problema
+No fluxo Emmely Pay do Bitrix, quando se escolhe **Cartão** e moeda **EUR**, a edge function `payment-create` envia à Stripe o array completo `["card", "multibanco", "mb_way", "sepa_debit"]`. A conta Stripe Portugal da Emmely não tem `sepa_debit` (nem eventualmente `mb_way`/`multibanco`) ativado no painel, e a Stripe rejeita a criação da sessão de checkout com o erro reportado.
 
-1. O cartão do formulário fica pequeno (largura 440px / altura 85vh) — difícil escrever dentro do iframe do Bitrix.
-2. Faltam campos obrigatórios de cliente exigidos pelos gateways (Asaas e Stripe), o que faz a cobrança falhar ao chegar no `payment-create`.
+A função `payment-create-link` já resolve isto com retry iterativo, mas `payment-create` (chamada pelo botão "Criar Cobrança" do iframe Bitrix e por cada parcela) não tem essa lógica.
 
-Escopo: apenas UI + payload do modal em `supabase/functions/bitrix24-payment-tab/index.ts`. Sem mudanças de backend, migrations ou outros arquivos.
+## Solução
 
-## Mudanças
+Editar apenas `supabase/functions/payment-create/index.ts`:
 
-### 1) Aumentar a área do modal
+1. **Tratar "card"/"direto" como escolha explícita de cartão.** Em `getStripePaymentMethods`, quando `requestedMethod === "card"` ou `"direto"`, devolver `["card"]` em vez de expandir para todos os métodos da moeda. Isto reflete o que o utilizador selecionou no dropdown "Método: Cartão".
+   - Só se `requestedMethod` for vazio/nulo é que se devolve o leque completo de métodos da moeda.
 
-Em `.b24-form-card` (linha ~502):
-- `width: 640px` (era 440px)
-- `max-width: 96vw`
-- `max-height: 92vh`
-- `padding: 20px 24px`
-- Inputs com `min-height: 36px` e `font-size: 13px` para digitação confortável.
-- Overlay com `padding: 12px` para não colar nas bordas do iframe.
-- `BX24.resizeWindow()` / `fitWindow()` chamado ao abrir o modal para o Bitrix expandir o iframe.
+2. **Adicionar retry iterativo de métodos rejeitados** em `createStripePayment`, espelhando o padrão já presente em `payment-create-link/index.ts`:
+   - Se a Stripe responder com `payment method type provided: <X> is invalid` ou `payment_method_types[n]: <X>`, remover `<X>` do array e tentar novamente.
+   - Máx. 4 tentativas; se `card` também for rejeitado ou o array ficar vazio, aí sim lançar o erro amigável atual pedindo para ativar métodos no dashboard.
+   - Registar em `console.warn` cada método descartado para diagnóstico.
 
-### 2) Campos obrigatórios de cliente (bloco "Dados do Cliente")
+3. **Redeploy** de `payment-create` após a edição.
 
-Novo bloco colapsável no modal, pré-preenchido com dados do contato/empresa do Bitrix (já disponíveis em `contactName`, `contactEmail`, `contactCpfCnpj`, mais os que vamos ler agora):
+## Fora do âmbito
+- Sem mexer em `payment-create-link` (já funciona).
+- Sem mexer no frontend Bitrix (`bitrix24-payment-tab`); os dropdowns de método continuam iguais.
+- Sem alterar Asaas/BR.
 
-| Campo | Obrigatoriedade | Origem no Bitrix |
-|---|---|---|
-| Nome | sempre | contact.NAME + LAST_NAME |
-| Email | sempre | contact.EMAIL[0] |
-| Telefone | Asaas (recomendado) / Stripe boleto | contact.PHONE[0] |
-| CPF/CNPJ / NIF | Asaas sempre; Stripe BRL | UF_CRM_CPF/CNPJ/NIF |
-| CEP / Código Postal | Asaas boleto+NF, Stripe boleto | contact.ADDRESS_POSTAL_CODE |
-| Endereço (rua) | Asaas boleto+NF | contact.ADDRESS |
-| Número | Asaas boleto+NF | contact.ADDRESS_2 (fallback) |
-| Bairro | Asaas boleto | contact.ADDRESS_CITY (aprox) |
-| Cidade | Asaas / Stripe boleto | contact.ADDRESS_CITY |
-| Estado (UF) | Asaas | contact.ADDRESS_PROVINCE |
-| País | Stripe | contact.ADDRESS_COUNTRY, default PT/BR pela moeda |
-
-Validação client-side antes de `submitInstallments()`:
-- Sempre: nome, email.
-- BRL ou método `boleto`/`pix`: CPF/CNPJ.
-- Método `boleto` (Asaas ou Stripe BR): CEP, endereço, número, cidade, estado.
-- Cada campo faltante destaca o input e mostra mensagem em `#pay-result` (sem enviar).
-
-Os campos são enviados ao `payment-create` num objeto `customer` já normalizado:
-
-```ts
-customer: {
-  name, email, phone, cpfCnpj,
-  address: { postal_code, street, number, district, city, state, country }
-}
-```
-
-`payment-create` já aceita esses campos hoje (via `_shared/asaas-client.ts` `ensureCustomer` e no path Stripe via `billing_details`) — nenhum ajuste necessário no backend, só passar o payload completo em vez de só `nome/email/cpf`.
-
-### 3) UX
-
-- Bloco "Dados do Cliente" abre expandido se algum obrigatório estiver vazio; caso contrário, colapsado com resumo ("João Silva · joao@x.com · CPF ok").
-- Toggle mostra/oculta campos de endereço automaticamente quando método = `boleto`.
-- Mantém o comportamento atual de esconder o CPF quando moeda = EUR e método ≠ boleto/pix.
-
-## Arquivos a editar
-
-- `supabase/functions/bitrix24-payment-tab/index.ts` (CSS do card, HTML do modal, leitura de campos do contato Bitrix já existente em ~L2380, função `submitInstallments()` para validar e montar `customer`).
-
-## Fora de escopo
-
-- Nada de novas migrations, secrets, ou mudanças no `payment-create` / `_shared/asaas-client.ts`.
-- Nada de mudança nos robots Bizproc, `FieldMappingManager`, ou outros placements.
+## Ficheiros afetados
+- `supabase/functions/payment-create/index.ts` (função `getStripePaymentMethods` e `createStripePayment`)
