@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { readEmmelyPaymentPlan, planToParcels } from "../_shared/deal-payment-fields.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
