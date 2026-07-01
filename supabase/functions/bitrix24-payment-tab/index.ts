@@ -1752,6 +1752,83 @@ function renderPaymentTab(opts: {
     }
   }
 
+  async function submitEditFull() {
+    if (!_editMode) return;
+    var btn = document.getElementById('pay-submit');
+    var el = document.getElementById('pay-result');
+    var newAmount = parseFloat(document.getElementById('pay-amount').value);
+    if (!newAmount || newAmount <= 0) { showPayResult('Informe um valor válido.', true); return; }
+    var newDue = document.getElementById('pay-first-due').value || undefined;
+    var newMethod = document.getElementById('pay-method').value || undefined;
+    var newCurrency = document.getElementById('pay-currency').value || _editMode.currency;
+    var newDesc = document.getElementById('pay-desc').value || undefined;
+    submitInFlight = true;
+    btn.disabled = true; btn.textContent = 'A guardar...';
+    try {
+      // Ensure tx exists (create if synthetic) — reuse edit-overlay-less path
+      var fakeOverlay = { dataset: {
+        entityId: _editMode.entityId || ENTITY_ID,
+        currency: _editMode.currency || newCurrency,
+        description: _editMode.description || newDesc || '',
+        amount: String(newAmount)
+      }};
+      var txId = await ensureTxExists(_editMode.txId, fakeOverlay, newAmount, newCurrency, newDesc || _editMode.description || '', null, null, null);
+
+      var payload = {
+        transaction_id: txId,
+        amount_update: newAmount,
+        due_date_update: newDue,
+        payment_method_update: newMethod,
+        notes: newDesc,
+      };
+      var res = await fetch(SUPABASE_URL + '/functions/v1/payment-create', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_KEY },
+        body: JSON.stringify(payload)
+      });
+      var data = await res.json();
+      if (data.error) throw new Error(data.error);
+
+      // Update Smart Invoice in Bitrix24 if exists
+      if (_editMode.invoiceId && typeof BX24 !== 'undefined') {
+        var fields = { opportunity: newAmount, currencyId: newCurrency, isManualOpportunity: 'Y' };
+        if (newDue) fields.closedate = newDue;
+        await new Promise(function(resolve) {
+          BX24.callMethod('crm.item.update', { entityTypeId: 31, id: parseInt(_editMode.invoiceId), fields: fields }, function(r) { resolve(null); });
+        });
+      }
+
+      // Sync back to parent entity UF fields
+      try {
+        var entityKind = ENTITY_TYPE_ID === '1' ? 'lead' : (ENTITY_TYPE_ID === '2' ? 'deal' : 'spa');
+        var syncBody = {
+          member_id: MEMBER_ID,
+          deal_id: ENTITY_ID,
+          entity_type: entityKind,
+          payment_data: {
+            next_due_date: newDue,
+            payment_method: newMethod,
+            installment_value: newAmount,
+          }
+        };
+        if (entityKind === 'spa') syncBody.spa_entity_type_id = ENTITY_TYPE_ID;
+        await fetch(SUPABASE_URL + '/functions/v1/bitrix24-update-deal-payment', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_KEY, 'Authorization': 'Bearer ' + SUPABASE_KEY },
+          body: JSON.stringify(syncBody)
+        });
+      } catch(syncErr) { console.warn('[submitEditFull] Bitrix sync failed:', syncErr); }
+
+      el.innerHTML = 'Cobrança atualizada com sucesso!'; el.style.color = 'var(--value-paid)'; el.style.display = 'block';
+      setTimeout(function() { location.reload(); }, 1200);
+    } catch(e) {
+      el.innerHTML = 'Erro: ' + e.message; el.style.color = 'var(--value-open)'; el.style.display = 'block';
+    } finally {
+      submitInFlight = false;
+      btn.disabled = false; btn.textContent = 'Guardar Alterações';
+    }
+  }
+
   // === Edit Modal ===
   function openEditModal(inst) {
     document.getElementById('edit-tx-id').value = inst.transaction_id || inst.id;
