@@ -2058,7 +2058,7 @@ Deno.serve(async (req) => {
             accept_flow_id: { Name: "Flow ao Aceitar", Type: "select", Options: flowOptions, Description: "O flow que será iniciado automaticamente quando o cliente aceitar/assinar o contrato." },
             signed_flow_id: { Name: "Flow ao Assinar", Type: "select", Options: flowOptions, Description: "Flow executado automaticamente quando o cliente assina o contrato digitalmente." },
             send_payment_after_sign: { Name: "Enviar Cobrança Após Assinatura", Type: "select", Options: { "Y": "Sim — enviar link de pagamento automaticamente", "N": "Não" }, Default: "N", Description: "Se 'Sim', o link de pagamento será enviado automaticamente via WhatsApp após o cliente assinar o contrato." },
-            payment_method: { Name: "Método de Pagamento (cobrança automática)", Type: "select", Options: { card: "Cartão", multibanco: "Multibanco", mb_way: "MB Way", pix: "Pix", boleto: "Boleto" }, Default: "card" },
+            payment_method: { Name: "Método de Pagamento (cobrança automática)", Type: "select", Options: { card: "Cartão", multibanco: "Multibanco", mb_way: "MB Way", pix: "Pix", boleto: "Boleto", customer_choice: "Cliente escolhe (Stripe)" }, Default: "card" },
             payment_installments: { Name: "Número de Parcelas", Type: "int", Default: "1" },
           },
           RETURN_PROPERTIES: {
