@@ -149,6 +149,31 @@ async function callBitrix(
   return data;
 }
 
+async function loadDealStageOptions(
+  clientEndpoint: string,
+  accessToken: string
+): Promise<Record<string, string>> {
+  const options: Record<string, string> = { "": "(Não alterar etapa)" };
+  try {
+    const catRes = await callBitrix(clientEndpoint, accessToken, "crm.dealcategory.list", { filter: {} });
+    const categories: Array<{ ID: string | number; NAME?: string }> = catRes?.result || [];
+    // Always include default pipeline (ID = 0)
+    const catList = [{ ID: 0, NAME: "Geral" }, ...categories.filter((c: any) => String(c.ID) !== "0")];
+    for (const cat of catList) {
+      const stagesRes = await callBitrix(clientEndpoint, accessToken, "crm.dealcategory.stage.list", { id: cat.ID });
+      const stages: Array<{ STATUS_ID: string; NAME: string }> = stagesRes?.result || [];
+      for (const st of stages) {
+        if (!st?.STATUS_ID) continue;
+        const label = `[${cat.NAME || `Pipeline ${cat.ID}`}] ${st.NAME}`;
+        options[st.STATUS_ID] = label;
+      }
+    }
+  } catch (err) {
+    console.error("[INSTALL] loadDealStageOptions error:", err);
+  }
+  return options;
+}
+
 
 async function debugLog(
   supabase: any,
@@ -691,6 +716,9 @@ Deno.serve(async (req) => {
       const flowOptions: Record<string, string> = { "": "(Não executar flow)" };
       (activeFlows || []).forEach((f: any) => { flowOptions[f.id] = f.name; });
 
+      // Load Bitrix deal stages for stage_on_paid / stage_on_overdue selects
+      const stageOptions = await loadDealStageOptions(ep, token);
+
       const repairRobots = [
         {
           CODE: "emmely_send_whatsapp",
@@ -737,8 +765,10 @@ Deno.serve(async (req) => {
             contact_id: { Name: "ID do Contacto", Type: "string", Description: "ID do Contacto para vincular faturas" },
             company_id: { Name: "ID da Empresa", Type: "string", Description: "UUID da empresa/filial em Emmely" },
             paid_flow_id: { Name: "Flow ao Confirmar Pagamento", Type: "select", Options: flowOptions, Description: "Flow executado automaticamente quando o pagamento é confirmado." },
+            stage_on_paid: { Name: "Etapa ao Confirmar Pagamento", Type: "select", Options: stageOptions, Description: "Move o Deal para esta etapa quando o pagamento for confirmado. Pode ser combinado com o Flow." },
             overdue_flow_id: { Name: "Flow ao Atrasar Pagamento", Type: "select", Options: flowOptions, Description: "Flow executado automaticamente quando o pagamento atrasa X dias." },
-            overdue_days: { Name: "Dias de Atraso para Flow", Type: "int", Default: "3", Description: "Número de dias em atraso para disparar o flow de cobrança (default: 3)." },
+            stage_on_overdue: { Name: "Etapa ao Atrasar Pagamento", Type: "select", Options: stageOptions, Description: "Move o Deal para esta etapa quando o pagamento atrasar X dias." },
+            overdue_days: { Name: "Dias de Atraso para Flow", Type: "int", Default: "3", Description: "Número de dias em atraso para disparar o flow/etapa de cobrança (default: 3)." },
           },
           RETURN_PROPERTIES: {
             charge_id: { Name: "ID da Cobrança", Type: "string" },
@@ -1814,6 +1844,9 @@ Deno.serve(async (req) => {
       const flowOptions: Record<string, string> = { "": "(Não executar flow)" };
       (activeFlows || []).forEach((f: any) => { flowOptions[f.id] = f.name; });
 
+      // Load Bitrix deal stages for stage_on_paid / stage_on_overdue selects
+      const stageOptions = await loadDealStageOptions(clientEndpoint, accessToken);
+
       const robots = [
         {
           CODE: "emmely_send_whatsapp",
@@ -1887,8 +1920,10 @@ Deno.serve(async (req) => {
             contact_id: { Name: "ID do Contacto", Type: "string", Description: "ID do Contacto para vincular faturas" },
             company_id: { Name: "ID da Empresa", Type: "string", Description: "UUID da empresa/filial em Emmely" },
             paid_flow_id: { Name: "Flow ao Confirmar Pagamento", Type: "select", Options: flowOptions, Description: "Flow executado automaticamente quando o pagamento é confirmado." },
+            stage_on_paid: { Name: "Etapa ao Confirmar Pagamento", Type: "select", Options: stageOptions, Description: "Move o Deal para esta etapa quando o pagamento for confirmado. Pode ser combinado com o Flow." },
             overdue_flow_id: { Name: "Flow ao Atrasar Pagamento", Type: "select", Options: flowOptions, Description: "Flow executado automaticamente quando o pagamento atrasa X dias." },
-            overdue_days: { Name: "Dias de Atraso para Flow", Type: "int", Default: "3", Description: "Número de dias em atraso para disparar o flow de cobrança (default: 3)." },
+            stage_on_overdue: { Name: "Etapa ao Atrasar Pagamento", Type: "select", Options: stageOptions, Description: "Move o Deal para esta etapa quando o pagamento atrasar X dias." },
+            overdue_days: { Name: "Dias de Atraso para Flow", Type: "int", Default: "3", Description: "Número de dias em atraso para disparar o flow/etapa de cobrança (default: 3)." },
           },
           RETURN_PROPERTIES: {
             charge_id: { Name: "ID da Cobrança", Type: "string" },

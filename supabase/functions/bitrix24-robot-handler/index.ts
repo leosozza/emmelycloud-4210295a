@@ -311,6 +311,8 @@ async function handleCreateCharge(
   // Flow automation for charge (kept as BizProc-only knobs)
   const chargePaidFlowId = properties.paid_flow_id || properties.PAID_FLOW_ID || "";
   const chargeOverdueFlowId = properties.overdue_flow_id || properties.OVERDUE_FLOW_ID || "";
+  const chargeStageOnPaid = String(properties.stage_on_paid || properties.STAGE_ON_PAID || "").trim();
+  const chargeStageOnOverdue = String(properties.stage_on_overdue || properties.STAGE_ON_OVERDUE || "").trim();
   const chargeOverdueDays = parseInt(properties.overdue_days || properties.OVERDUE_DAYS || "3") || 3;
 
   const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -487,6 +489,8 @@ async function handleCreateCharge(
           requested_payment_method: parcel.method,
           paid_flow_id: chargePaidFlowId || undefined,
           overdue_flow_id: chargeOverdueFlowId || undefined,
+          stage_on_paid: chargeStageOnPaid || undefined,
+          stage_on_overdue: chargeStageOnOverdue || undefined,
           overdue_days: chargeOverdueDays || undefined,
         },
       };
@@ -1035,6 +1039,8 @@ async function handleGenerateContract(
   const signedFlowId = properties.signed_flow_id || properties.SIGNED_FLOW_ID || "";
   const paidFlowId = properties.paid_flow_id || properties.PAID_FLOW_ID || "";
   const overdueFlowId = properties.overdue_flow_id || properties.OVERDUE_FLOW_ID || "";
+  const stageOnPaid = String(properties.stage_on_paid || properties.STAGE_ON_PAID || "").trim();
+  const stageOnOverdue = String(properties.stage_on_overdue || properties.STAGE_ON_OVERDUE || "").trim();
   const overdueDays = parseInt(properties.overdue_days || properties.OVERDUE_DAYS || "0") || 0;
 
   try {
@@ -1110,6 +1116,8 @@ async function handleGenerateContract(
             ...(signedFlowId ? { signed_flow_id: signedFlowId } : {}),
             ...(paidFlowId ? { paid_flow_id: paidFlowId } : {}),
             ...(overdueFlowId ? { overdue_flow_id: overdueFlowId } : {}),
+            ...(stageOnPaid ? { stage_on_paid: stageOnPaid } : {}),
+            ...(stageOnOverdue ? { stage_on_overdue: stageOnOverdue } : {}),
             ...(overdueDays ? { overdue_days: overdueDays } : {}),
           })
           .eq("id", proposal.id);
@@ -1206,6 +1214,8 @@ async function handleGenerateContract(
           ...(signedFlowId ? { signed_flow_id: signedFlowId } : {}),
           ...(paidFlowId ? { paid_flow_id: paidFlowId } : {}),
           ...(overdueFlowId ? { overdue_flow_id: overdueFlowId } : {}),
+          ...(stageOnPaid ? { stage_on_paid: stageOnPaid } : {}),
+          ...(stageOnOverdue ? { stage_on_overdue: stageOnOverdue } : {}),
           ...(overdueDays ? { overdue_days: overdueDays } : {}),
         })
         .select("*")

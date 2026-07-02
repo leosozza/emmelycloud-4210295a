@@ -93,7 +93,11 @@ async function notifyBitrix24DealPayment(
 
     // 2. Update deal in Bitrix24
     const dealUpdateFields: Record<string, any> = {};
-    if (isFullyPaid) {
+    const stageOnPaid = String(txMeta?.stage_on_paid || "").trim();
+    if (stageOnPaid) {
+      dealUpdateFields.STAGE_ID = stageOnPaid;
+      console.log(`[ASAAS-WEBHOOK] Deal ${dealId} paid → moving to configured stage ${stageOnPaid}`);
+    } else if (isFullyPaid) {
       // All installments paid → close deal as WON
       dealUpdateFields.STAGE_ID = "WON";
       dealUpdateFields.CLOSED = "Y";

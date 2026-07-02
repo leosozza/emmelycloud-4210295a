@@ -1,55 +1,55 @@
-## Problema
-
-O link que abriste — `emmelycloud.pages.dev/pagamento/...` — aponta para o build **Cloudflare Pages**, que continua a servir o layout antigo (verde, com emojis). O redesign Stripe já está no código React, mas nenhuma re-publicação chegou ao Cloudflare. As Edge Functions constroem os links usando `FRONTEND_URL` (default `emmelycloud.pages.dev`), por isso todo o link enviado a cliente cai no build velho.
 
 ## Objetivo
 
-Garantir que qualquer link `/pagamento/:token` — recém-gerado ou já enviado — abra o layout novo em `emmelycloud.lovable.app`, sem depender de re-publicar o Cloudflare Pages.
+No robot Emmely Pay (Criar Cobrança), hoje há dois campos que disparam um **Flow** interno:
+- **Flow ao Confirmar Pagamento** — quando o pagamento é confirmado.
+- **Flow ao Atrasar Pagamento** — quando passa X dias da data de vencimento.
+
+O utilizador quer, para cada um destes eventos, poder escolher **uma de duas ações** (ou ambas):
+1. Executar um Flow interno do Emmely (comportamento atual).
+2. Mudar a **etapa (stageId)** do Deal no Bitrix24.
 
 ## Alterações
 
-### 1. Redirect em `public/_redirects` (Cloudflare Pages)
-Cloudflare Pages **respeita** `_redirects` (ao contrário do Lovable hosting). Adicionar uma regra 302 no topo:
+### 1. Robot Bitrix24 — parâmetros novos
+Em `supabase/functions/bitrix24-install/index.ts` (definição do robot "Criar Cobrança"), adicionar 4 parâmetros novos:
 
-```
-/pagamento/*  https://emmelycloud.lovable.app/pagamento/:splat  302
-```
+- `stage_on_paid` — dropdown (enum) com as etapas do funil do Deal. Rótulo: **"Etapa ao Confirmar Pagamento"**.
+- `stage_on_overdue` — dropdown com as etapas do funil. Rótulo: **"Etapa ao Atrasar Pagamento"**.
+- (opcional) `category_id` — para saber de qual funil listar as etapas; se vazio, usa o funil do próprio Deal em runtime.
 
-Isto resolve **os links já enviados** aos clientes (deal 45807 etc.) assim que houver um redeploy do Pages. Se o Pages não for re-publicado, este passo fica inerte — nesse caso o passo 2 é o que passa a valer para links novos.
+Como o Bitrix não permite popular dinamicamente o dropdown do robot com stages por pipeline sem hardcode, a lista será preenchida na hora do install lendo `crm.dealcategory.stage.list` para cada categoria e concatenando (`C0:NEW`, `C1:PREPAYMENT_INVOICE`, etc.), com rótulo "[Funil] Nome da Etapa". Fallback: campo string livre onde o utilizador cola o `STAGE_ID`.
 
-### 2. Centralizar `publicReceiptBase()` num helper partilhado
-Criar `supabase/functions/_shared/public-urls.ts`:
+### 2. Handler do robot
+Em `supabase/functions/bitrix24-robot-handler/index.ts`, ao processar as propriedades recebidas, gravar os novos campos junto ao registo financeiro / transação (novas colunas em `financial_records` ou dentro de `metadata` JSON):
+- `stage_on_paid`
+- `stage_on_overdue`
+- `flow_on_paid` (já existe)
+- `flow_on_overdue` (já existe)
 
-```ts
-export function publicReceiptBase(): string {
-  return (Deno.env.get("PUBLIC_RECEIPT_URL") || "https://emmelycloud.lovable.app").replace(/\/+$/, "");
-}
-export function receiptUrl(token: string, qs = ""): string {
-  return `${publicReceiptBase()}/pagamento/${token}${qs}`;
-}
-```
+Não é preciso migração se guardarmos em `metadata` JSON (preferido, sem alterar schema).
 
-### 3. Trocar todos os geradores de link `/pagamento/${token}`
-Substituir o padrão atual (`FRONTEND_URL || emmelycloud.pages.dev`) por `receiptUrl(token)` nestes ficheiros:
+### 3. Disparo no evento "Pagamento Confirmado"
+Em `supabase/functions/payment-webhook-stripe/index.ts` (e no equivalente Asaas), depois de marcar como pago:
+- Se `metadata.flow_on_paid` estiver definido → dispara o flow (comportamento atual).
+- Se `metadata.stage_on_paid` estiver definido → chama `crm.deal.update` com `STAGE_ID` = valor guardado.
+- Ambos podem coexistir; executam-se em paralelo.
 
-- `supabase/functions/bitrix24-install/index.ts` (linha 342)
-- `supabase/functions/bitrix24-payment-tab/index.ts` (linhas 1090, 1967, 2622 — substituir `FRONTEND_BASE + '/pagamento/'` por uma constante `RECEIPT_BASE` injetada com `PUBLIC_RECEIPT_URL`)
-- `supabase/functions/bitrix24-robot-handler/index.ts` (linhas 1430-1431 e onde constrói link do comprovante)
-- `supabase/functions/payment-create/index.ts` (linhas 290-291)
-- `supabase/functions/payment-create-link/index.ts` (linhas 416-418: `successUrl` e `cancelUrl`)
+### 4. Disparo no evento "Atraso de Pagamento"
+No CRON `payment-reminder` (ou função equivalente que detecta atraso após X dias):
+- Se `metadata.flow_on_overdue` → dispara flow.
+- Se `metadata.stage_on_overdue` → move a etapa do Deal via `crm.deal.update`.
 
-**Não alterar** `FRONTEND_URL` nas funções que precisam voltar ao iframe Bitrix/dashboard interno (sign-contract callback interno, proposal-accept, bitrix24-payment-handler successUrl que retorna à conta Bitrix, etc.). Só o **link público do comprovante/parcela** é migrado.
+### 5. Reinstalação
+Utilizador precisa reautorizar/reinstalar a app Bitrix24 para os novos campos do robot aparecerem (`handler.add` só recria propriedades na (re)instalação).
 
-### 4. Deploy das Edge Functions afetadas
-Após as edições, as funções são redeployadas automaticamente pelo Lovable Cloud — links novos já saem apontando para `emmelycloud.lovable.app`.
+## Detalhes técnicos
 
-## Resultado esperado
+- Chamada Bitrix para mover etapa: `crm.deal.update` com `fields: { STAGE_ID: "C1:NEW" }` (usar `client_endpoint` + token válido, mesma helper `ensureValidToken` já existente em `bitrix24-sync-invoice-status`).
+- Guardar as escolhas no `metadata` da `financial_records` (ou `transactions`) já criadas pelo robot, para que os webhooks consigam recuperar sem consultar novamente o Bitrix.
+- Registar tudo em `bitrix24_debug_logs` (`event_type: "stage_change_on_paid" | "stage_change_on_overdue"`) para auditoria.
 
-- **Links novos** (criados após esta mudança em qualquer fluxo — manual, robot, Emmely Pay, checkout success/cancel) abrem diretamente no domínio Lovable com o design Stripe.
-- **Links antigos** que ficaram armazenados no Bitrix apontando para `pages.dev` passam a redirecionar via `_redirects` (assumindo que o Cloudflare Pages seja re-publicado uma vez para pegar o ficheiro).
-- Fluxos internos do Bitrix (retornos ao iframe, dashboards, tabs) continuam a usar `FRONTEND_URL` inalterado.
+## Fora de escopo
 
-## Fora do escopo
-
-- Não é feita migração/UPDATE em massa nos campos `UF_CRM_EMMELY_RECEIPT_URL` de deals antigos no Bitrix. Se quiseres, faço num segundo passo com uma função one-shot.
-- Findings de segurança que bloqueiam `preview_ui--publish` não são tocados aqui — para atualizar o build do Lovable basta clicares em **Publish → Update**.
+- Não alterar o layout do iframe Emmely Pay.
+- Não alterar o comportamento dos flows já existentes; apenas adicionar a ação de mudar etapa em paralelo.

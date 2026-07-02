@@ -358,6 +358,56 @@ async function processRecord(
     }
   }
 
+  // 10. Change Bitrix Deal stage on overdue (independent of flow)
+  const stageOnOverdue = String(meta.stage_on_overdue || "").trim();
+  const dealIdForStage = meta.bitrix_deal_id || meta.bitrix24_deal_id;
+  if (
+    stageOnOverdue &&
+    dealIdForStage &&
+    feeResult &&
+    feeResult.daysLate >= overdueDaysThreshold &&
+    !meta.overdue_stage_applied
+  ) {
+    try {
+      const { data: integration } = await supabase
+        .from("bitrix24_integrations")
+        .select("client_endpoint, access_token")
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (integration?.client_endpoint && integration?.access_token) {
+        const ep = integration.client_endpoint.endsWith("/")
+          ? integration.client_endpoint
+          : integration.client_endpoint + "/";
+        await fetch(`${ep}crm.deal.update`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            ID: dealIdForStage,
+            fields: { STAGE_ID: stageOnOverdue },
+            auth: integration.access_token,
+          }),
+        });
+        console.log(`[PAYMENT-REMINDER] Deal ${dealIdForStage} moved to overdue stage ${stageOnOverdue}`);
+        if (transactionId) {
+          await fetch(`${supabaseUrl}/functions/v1/payment-create`, {
+            method: "PATCH",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${serviceKey}`,
+            },
+            body: JSON.stringify({
+              transaction_id: transactionId,
+              metadata_update: { overdue_stage_applied: new Date().toISOString() },
+            }),
+          });
+        }
+      }
+    } catch (stageErr) {
+      console.error("[PAYMENT-REMINDER] Overdue stage change error:", stageErr);
+    }
+  }
+
   return { ok: true };
 }
 
