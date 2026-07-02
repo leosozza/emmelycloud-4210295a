@@ -1,18 +1,22 @@
-## Objetivo
-Adicionar botão "Gerar todas as cobranças" no cabeçalho do Emmely Pay (iframe Bitrix) para criar em lote os checkouts Stripe/Asaas de todas as parcelas ainda "Não geradas".
+## Diagnóstico
 
-## Mudanças
+O screenshot mostra o **layout antigo** (banner verde, emojis 💳/🔒, botões "Pagar" verdes). O código atual em `src/pages/PagamentoPublico.tsx` já está no estilo Stripe (paleta neutra, roxo `#635bff`, sem emojis, ícones SVG).
 
-### `supabase/functions/bitrix24-payment-tab/index.ts`
-1. **UI (cabeçalho do plano)** — junto ao botão "Editar", adicionar:
-   - `Gerar todas as cobranças (N)` — só aparece quando existe ≥1 parcela sintética/pendente sem `gateway_payment_id`.
-2. **Handler `generateAllCharges()`**:
-   - Coleta todas as parcelas com badge "Não gerada" (as sintéticas + pendentes sem checkout real).
-   - Executa sequencialmente (evita rate-limit Stripe) chamando o mesmo fluxo do botão individual "Gerar cobrança" (payment-create-link por parcela, com `financial_record_id`, `installment_number`, `bitrix_deal_id` no metadata).
-   - Mostra progresso (`Gerando 2/6…`) e toast final com sucessos/erros.
-   - Se todas OK: `BX24.reloadWindow()` para refletir badges "Gerada" + links.
-3. **Confirmação**: `confirm("Gerar N cobranças reais no Stripe/Asaas? Cada parcela receberá um link de pagamento.")` antes de disparar.
+Ou seja, o redesign **não está a ser servido**: o link público `/pagamento/:token` gerado pela edge function `payment-receipt` redireciona para `FRONTEND_URL` (por defeito `https://emmelycloud.pages.dev` — Cloudflare Pages), e essa build ainda não recebeu o novo código. A build da Lovable (`emmelycloud.lovable.app`) já tem o novo layout.
+
+## Correção
+
+1. **Apontar `FRONTEND_URL` da edge function `payment-receipt` para `https://emmelycloud.lovable.app`** (a URL publicada da Lovable, que é atualizada a cada publish). Assim o link enviado ao cliente serve sempre a versão mais recente do frontend.
+   - Alternativa (se preferir manter Cloudflare como domínio público): fazer novo deploy no Cloudflare Pages com o commit atual — mas isso exige ação fora da Lovable.
+
+2. **Publicar a app** para garantir que `emmelycloud.lovable.app` reflete a última versão do `PagamentoPublico.tsx`.
+
+3. **Verificar** abrindo o mesmo link do screenshot — deve mostrar o card branco, tipografia tabular, roxo Stripe, sem emojis.
 
 ## Fora de escopo
-- Não altera lógica de webhook nem de reconciliação (já corrigidas turno passado).
-- Não altera edição individual/full.
+
+- Nenhuma alteração visual adicional ao `PagamentoPublico.tsx` (o design já está no estilo pedido). Se após servir a versão nova o utilizador ainda achar "horrível", faço um novo redesign com `/redesign`.
+
+## Pergunta rápida
+
+Confirma que posso mudar o `FRONTEND_URL` do backend público para `https://emmelycloud.lovable.app`? Ou prefere manter o domínio `emmelycloud.pages.dev` (Cloudflare) e trata do redeploy nesse lado?
