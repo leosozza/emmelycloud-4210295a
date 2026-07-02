@@ -1090,6 +1090,22 @@ function renderPaymentTab(opts: {
   var DEAL_RAW_GATEWAY = "${opts.rawGateway || ""}";
   var BITRIX_INSTALLMENT_OPTIONS = ${JSON.stringify(opts.installmentOptions || [])};
   var BITRIX_METHOD_OPTIONS = ${JSON.stringify(opts.methodOptions || [])};
+  var ALL_INSTALLMENTS = ${JSON.stringify(installments.map((i: any) => ({
+    id: i.id,
+    number: i.number,
+    total: i.total,
+    value: i.value,
+    currency: i.currency,
+    payment_method: i.payment_method,
+    due_date: i.due_date,
+    description: i.description,
+    financial_record_id: i.financial_record_id,
+    transaction_id: i.transaction_id,
+    invoice_id: i.invoice_id,
+    status: i.status,
+    payment_url: i.payment_url,
+    not_generated: (!i.transaction_id || String(i.transaction_id).startsWith("deal-")) && i.status !== "paga",
+  })))};
 
   function clampInstallmentCount(n) {
     n = parseInt(n, 10) || 1;
