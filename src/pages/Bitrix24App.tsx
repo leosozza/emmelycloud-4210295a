@@ -1006,25 +1006,48 @@ function ConfigView({ integration, botId, domain, loading, onResync, onRefresh }
     setSavingAgent(false);
   };
 
-  const handleRebindEvents = async () => {
-    setRebinding(true);
-    setRebindResult(null);
-    try {
-      const mid = integration?.member_id;
-      const url = mid
-        ? `${SUPABASE_URL}/functions/v1/bitrix24-rebind-events?member_id=${encodeURIComponent(mid)}`
-        : `${SUPABASE_URL}/functions/v1/bitrix24-rebind-events`;
-      const res = await fetch(url, { headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` } });
-      const data = await res.json();
-      if (data.success) {
-        const ok = Object.values(data.results || {}).filter((v) => v === "OK").length;
-        const total = Object.keys(data.results || {}).length;
-        setRebindResult(`${ok}/${total} eventos re-registados com sucesso!`);
-      } else {
-        setRebindResult(`Erro: ${data.error || "Falha desconhecida"}`);
-      }
-    } catch (e) { setRebindResult(`Erro de rede: ${e}`); }
-    setRebinding(false);
+  const runFullRefresh = async () => {
+    setRefreshing(true);
+    setRefreshResult(null);
+    const auth = (window as any).BX24?.getAuth?.();
+    const authPayload = auth
+      ? { access_token: auth.access_token, refresh_token: auth.refresh_token, member_id: auth.member_id, domain: auth.domain, client_endpoint: auth.client_endpoint, expires_in: String(auth.expires || 3600) }
+      : integration
+      ? { member_id: integration.member_id, access_token: integration.access_token, refresh_token: integration.refresh_token, client_endpoint: integration.client_endpoint, domain: integration.domain, expires_in: "3600" }
+      : null;
+    if (!authPayload) { setRefreshResult("Erro: Sem sessão BX24 disponível."); setRefreshing(false); return; }
+
+    const headers = { "Content-Type": "application/json", apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` };
+    const steps: Array<{ name: string; run: () => Promise<boolean> }> = [
+      { name: "Conector & campos", run: async () => {
+        const r = await fetch(`${SUPABASE_URL}/functions/v1/bitrix24-install?action=resync`, { method: "POST", headers, body: JSON.stringify({ auth: authPayload }) });
+        const d = await r.json().catch(() => ({})); return r.ok && !d?.error;
+      }},
+      { name: "Reparar campos/robots", run: async () => {
+        const r = await fetch(`${SUPABASE_URL}/functions/v1/bitrix24-install?action=repair_fields`, { method: "POST", headers, body: JSON.stringify({ auth: authPayload }) });
+        const d = await r.json().catch(() => ({})); return r.ok && !d?.error;
+      }},
+      { name: "Re-registar bots", run: async () => {
+        const r = await fetch(`${SUPABASE_URL}/functions/v1/bitrix24-reregister-bot`, { method: "POST", headers, body: JSON.stringify({ member_id: authPayload.member_id }) });
+        const d = await r.json().catch(() => ({})); return r.ok && !d?.error;
+      }},
+      { name: "Eventos & botões do chat", run: async () => {
+        const mid = authPayload.member_id;
+        const url = mid ? `${SUPABASE_URL}/functions/v1/bitrix24-rebind-events?member_id=${encodeURIComponent(mid)}` : `${SUPABASE_URL}/functions/v1/bitrix24-rebind-events`;
+        const r = await fetch(url, { headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` } });
+        const d = await r.json().catch(() => ({})); return r.ok && (d?.success !== false);
+      }},
+    ];
+
+    const failures: string[] = [];
+    for (const s of steps) {
+      try { const ok = await s.run(); if (!ok) failures.push(s.name); }
+      catch { failures.push(s.name); }
+    }
+    if (failures.length === 0) setRefreshResult(`Bitrix24 atualizado: ${steps.length}/${steps.length} passos concluídos.`);
+    else setRefreshResult(`Erro em: ${failures.join(", ")} (${steps.length - failures.length}/${steps.length} OK).`);
+    if (integration?.member_id) setTimeout(() => onRefresh(), 1200);
+    setRefreshing(false);
   };
 
   const handleReturnToBot = async (conversationId?: string) => {
