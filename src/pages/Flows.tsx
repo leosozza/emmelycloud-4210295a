@@ -548,17 +548,28 @@ export default function FlowsPage() {
             <Button variant="ghost" size="icon" onClick={() => { setSelectedFlow(null); setSelectedNodeId(null); loadFlows(); }}>
               <ArrowLeft className="h-4 w-4" />
             </Button>
-            <div>
-              <h3 className="text-sm font-semibold flex items-center gap-2">
-                {selectedFlow.name}
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2">
+                <Input
+                  value={selectedFlow.name}
+                  onChange={(e) => setSelectedFlow({ ...selectedFlow, name: e.target.value } as any)}
+                  className="h-7 text-sm font-semibold border-transparent hover:border-input focus:border-input px-2 w-[280px]"
+                  placeholder="Nome do fluxo"
+                />
                 {(selectedFlow as any).flow_type && (
                   <Badge className={`text-[9px] ${FLOW_TYPE_LABELS[(selectedFlow as any).flow_type]?.color || ""}`}>
                     {FLOW_TYPE_LABELS[(selectedFlow as any).flow_type]?.label || (selectedFlow as any).flow_type}
                   </Badge>
                 )}
-              </h3>
-              <p className="text-[11px] text-muted-foreground">{selectedFlow.description || "Sem descrição"}</p>
+              </div>
+              <Input
+                value={selectedFlow.description || ""}
+                onChange={(e) => setSelectedFlow({ ...selectedFlow, description: e.target.value } as any)}
+                className="h-6 text-[11px] text-muted-foreground border-transparent hover:border-input focus:border-input px-2 mt-0.5 w-[320px]"
+                placeholder="Sem descrição"
+              />
             </div>
+
           </div>
           <div className="flex items-center gap-1">
             <Button variant="ghost" size="icon" className="h-8 w-8" onClick={undo} disabled={!canUndo} title="Desfazer (Ctrl+Z)">
