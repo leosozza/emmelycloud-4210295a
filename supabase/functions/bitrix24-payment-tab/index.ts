@@ -1190,16 +1190,25 @@ function renderPaymentTab(opts: {
   async function updateBitrixPaymentPlan(plan) {
     if (typeof BX24 === 'undefined' || !ENTITY_ID) return;
     var fields = buildBitrixDealFieldsFromPlan(plan);
+    function handleBitrixResult(r, resolve, reject) {
+      var err = r && r.error && r.error();
+      if (err) {
+        var msg = (err.ex && err.ex.error_description) || err.error_description || err.message || String(err);
+        reject(new Error(msg || 'Erro Bitrix'));
+      } else {
+        resolve(null);
+      }
+    }
     await new Promise(function(resolve, reject) {
       try {
         if (ENTITY_TYPE_ID === '1') {
-          BX24.callMethod('crm.lead.update', { id: parseInt(ENTITY_ID), fields: fields }, function(r) { r && r.error && r.error() ? reject(new Error(r.error().ex && r.error().ex.error_description || 'Erro Bitrix')) : resolve(null); });
+          BX24.callMethod('crm.lead.update', { id: parseInt(ENTITY_ID), fields: fields }, function(r) { handleBitrixResult(r, resolve, reject); });
         } else if (ENTITY_TYPE_ID === '2') {
-          BX24.callMethod('crm.deal.update', { id: parseInt(ENTITY_ID), fields: fields }, function(r) { r && r.error && r.error() ? reject(new Error(r.error().ex && r.error().ex.error_description || 'Erro Bitrix')) : resolve(null); });
+          BX24.callMethod('crm.deal.update', { id: parseInt(ENTITY_ID), fields: fields }, function(r) { handleBitrixResult(r, resolve, reject); });
         } else {
           var spaFields = {};
           for (var k in fields) spaFields[k.toLowerCase().replace(/_([a-z])/g, function(_, c){ return c.toUpperCase(); })] = fields[k];
-          BX24.callMethod('crm.item.update', { entityTypeId: parseInt(ENTITY_TYPE_ID), id: parseInt(ENTITY_ID), fields: spaFields }, function(r) { r && r.error && r.error() ? reject(new Error(r.error().ex && r.error().ex.error_description || 'Erro Bitrix')) : resolve(null); });
+          BX24.callMethod('crm.item.update', { entityTypeId: parseInt(ENTITY_TYPE_ID), id: parseInt(ENTITY_ID), fields: spaFields }, function(r) { handleBitrixResult(r, resolve, reject); });
         }
       } catch(e) { reject(e); }
     });
