@@ -1870,6 +1870,7 @@ Deno.serve(async (req) => {
                 sepa_debit: "Débito SEPA (PT)", 
                 pix: "PIX (BR)", 
                 boleto: "Boleto (BR)", 
+                customer_choice: "Cliente escolhe (Stripe)",
                 link: "Link de Pagamento",
                 direto: "Recebimento Direto" 
               }, 
