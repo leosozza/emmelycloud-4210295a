@@ -217,11 +217,9 @@ export default function PagamentoPublico() {
     };
   }, [data]);
 
-  const fontStack = 'ui-sans-serif, -apple-system, "SF Pro Text", "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif';
-
   if (loading) {
     return (
-      <div className="min-h-screen grid place-items-center bg-white text-slate-500" style={{ fontFamily: fontStack }}>
+      <div className="payment-receipt grid place-items-center">
         <div className="text-sm">A carregar…</div>
       </div>
     );
@@ -229,7 +227,7 @@ export default function PagamentoPublico() {
 
   if (error || !data || !computed) {
     return (
-      <div className="min-h-screen grid place-items-center bg-white p-6" style={{ fontFamily: fontStack }}>
+      <div className="payment-receipt grid place-items-center p-6">
         <div className="border border-slate-200 p-8 rounded-xl max-w-[440px] text-center">
           <div className="mx-auto w-10 h-10 rounded-full bg-rose-50 text-rose-600 grid place-items-center mb-3">{Icon.alert}</div>
           <h1 className="text-base text-slate-900 mb-1 font-semibold">Relatório indisponível</h1>
@@ -246,185 +244,149 @@ export default function PagamentoPublico() {
   const progressPct = data.total_value > 0 ? Math.round((computed.paidTotal / data.total_value) * 100) : 0;
 
   return (
-    <div className="min-h-screen bg-[#f6f9fc] text-slate-900" style={{ fontFamily: fontStack, fontFeatureSettings: '"ss01","cv11"' }}>
+    <div className="payment-receipt">
       <style>{`
-        @media print { .no-print { display: none !important; } body { background: #fff !important; } }
-        .tabnum { font-variant-numeric: tabular-nums; }
+        @media print { .no-print { display: none !important; } body { background: #fff !important; } .payment-page { display: block; max-width: 760px; padding: 24px; } .payment-summary-panel { margin-bottom: 24px; } }
       `}</style>
 
-      <div className="max-w-[720px] mx-auto px-4 md:px-6 py-8 md:py-12">
-        {/* HEADER */}
-        <div className="flex items-center gap-3 mb-8">
-          <div className="w-8 h-8 rounded-md bg-slate-900 text-white grid place-items-center font-semibold text-[13px] tracking-tight">E</div>
-          <div className="leading-tight">
-            <div className="text-[13px] font-semibold text-slate-900">Emmely Fernandes</div>
-            <div className="text-[11px] text-slate-500">Advocacia Internacional</div>
+      <div className="payment-page">
+        <aside className="payment-summary-panel">
+          <div className="payment-merchant">
+            <div className="payment-logo">E</div>
+            <div>
+              <div className="payment-merchant-name">Emmely Fernandes</div>
+              <div className="payment-merchant-subtitle">Advocacia Internacional</div>
+            </div>
           </div>
-          <div className="ml-auto">
-            <button
-              onClick={() => window.print()}
-              className="no-print inline-flex items-center gap-1.5 text-[12px] font-medium text-slate-600 hover:text-slate-900 border border-slate-200 hover:border-slate-300 bg-white px-3 py-1.5 rounded-md transition"
-            >
-              {Icon.download} PDF
-            </button>
-          </div>
-        </div>
 
-        {/* MAIN CARD */}
-        <div className="bg-white rounded-2xl border border-slate-200/70 shadow-[0_1px_2px_rgba(0,0,0,0.04),0_10px_30px_-15px_rgba(15,23,42,0.12)] overflow-hidden">
-          {/* Summary */}
-          <div className="px-6 md:px-8 pt-8 pb-6">
-            <div className="text-[11px] font-medium uppercase tracking-[0.08em] text-slate-500 mb-2">Fatura de serviços</div>
-            <div className="flex items-start justify-between gap-4 flex-wrap">
-              <div>
-                <h1 className="text-[20px] md:text-[22px] font-semibold text-slate-900 leading-tight">{productName}</h1>
-                {data.client_name && (
-                  <div className="text-[13px] text-slate-500 mt-1">Para <span className="text-slate-700">{data.client_name}</span></div>
-                )}
-              </div>
-              <div className="text-right">
-                <div className="text-[11px] uppercase tracking-wider text-slate-500 mb-0.5">Total</div>
-                <div className="text-[22px] font-semibold tabnum text-slate-900">{fmtCurrency(data.total_value, currency)}</div>
-              </div>
+          <p className="payment-kicker">Pagar à Emmely Fernandes</p>
+          <h1 className="payment-title">{productName}</h1>
+          {data.client_name && <p className="payment-kicker mt-2">Para {data.client_name}</p>}
+          <div className="payment-amount">{fmtCurrency(data.total_value, currency)}</div>
+
+          <div className="payment-summary-list">
+            <div className="payment-summary-row">
+              <span className="payment-summary-label">Total</span>
+              <span className="payment-summary-value">{fmtCurrency(data.total_value, currency)}</span>
+            </div>
+            <div className="payment-summary-row">
+              <span className="payment-summary-label">Pago</span>
+              <span className="payment-summary-value is-success">{fmtCurrency(computed.paidTotal, currency)}</span>
+            </div>
+            <div className="payment-summary-row">
+              <span className="payment-summary-label">Em aberto{computed.totalCharges > 0 ? "*" : ""}</span>
+              <span className="payment-summary-value">{fmtCurrency(computed.openTotal, currency)}</span>
+            </div>
+            <div className="payment-summary-row">
+              <span className="payment-summary-label">Parcelas pagas</span>
+              <span className="payment-summary-value">{computed.paidCount} de {data.installments.length}</span>
+            </div>
+          </div>
+
+          <button onClick={() => window.print()} className="payment-print-button no-print">
+            Descarregar PDF
+          </button>
+        </aside>
+
+        <main>
+          <div className="payment-detail-panel">
+            <div className="payment-section">
+              <div className="payment-kicker">Fatura de serviços</div>
+              <div className="payment-title">{data.client_name || productName}</div>
+
+              {paymentStatus === "success" && (
+                <div className="payment-alert is-success"><span className="font-medium">Pagamento recebido.</span> A confirmação pode levar alguns segundos.</div>
+              )}
+              {paymentStatus === "cancelled" && (
+                <div className="payment-alert is-warning"><span className="font-medium">Pagamento cancelado.</span> Pode tentar novamente abaixo.</div>
+              )}
             </div>
 
-            {/* Status banners */}
-            {paymentStatus === "success" && (
-              <div className="mt-5 flex items-start gap-2.5 rounded-lg border border-emerald-200 bg-emerald-50/70 px-3.5 py-2.5 text-[13px] text-emerald-900">
-                <span className="mt-0.5 text-emerald-600">{Icon.check}</span>
-                <div><span className="font-medium">Pagamento recebido.</span> A confirmação pode levar alguns segundos.</div>
-              </div>
-            )}
-            {paymentStatus === "cancelled" && (
-              <div className="mt-5 flex items-start gap-2.5 rounded-lg border border-amber-200 bg-amber-50/70 px-3.5 py-2.5 text-[13px] text-amber-900">
-                <span className="mt-0.5 text-amber-600">{Icon.alert}</span>
-                <div><span className="font-medium">Pagamento cancelado.</span> Pode tentar novamente abaixo.</div>
-              </div>
-            )}
-          </div>
-
-          {/* Pay CTA */}
-          {hasOpen && computed.nextOpen && (
-            <div className="no-print px-6 md:px-8 pb-6">
-              <div className="rounded-xl border border-slate-200 bg-gradient-to-b from-white to-slate-50 p-5">
-                <div className="flex items-baseline justify-between gap-3 mb-3">
-                  <div>
-                    <div className="text-[11px] uppercase tracking-wider text-slate-500 font-medium">Próximo pagamento</div>
-                    <div className="text-[26px] font-semibold tabnum text-slate-900 leading-none mt-1">
-                      {fmtCurrency(computed.nextOpen.lateFee.total, currency)}
-                    </div>
-                    <div className="text-[12px] text-slate-500 mt-1.5">
-                      Vence {fmtDate(computed.nextOpen.rec.due_date)} · Parcela {computed.nextOpen.rec.installment_number || 1} de {computed.nextOpen.rec.total_installments || 1}
-                    </div>
-                    {computed.nextOpen.lateFee.charges > 0 && (
-                      <div className="text-[12px] text-rose-600 mt-1">
-                        Inclui {fmtCurrency(computed.nextOpen.lateFee.charges, currency)} de juros e multa
-                      </div>
-                    )}
+            {hasOpen && computed.nextOpen && (
+              <div className="payment-section no-print">
+                <div className="payment-next-card">
+                  <div className="payment-next-label">Próximo pagamento</div>
+                  <div className="payment-next-amount">
+                    {fmtCurrency(computed.nextOpen.lateFee.total, currency)}
                   </div>
-                </div>
-                <button
-                  disabled={paying === computed.nextOpen.rec.id}
-                  onClick={() => setMethodChooser({ recordId: computed.nextOpen!.rec.id })}
-                  className="w-full inline-flex items-center justify-center gap-2 bg-[#635bff] hover:bg-[#5148e6] active:bg-[#4740d1] text-white font-medium text-[14px] py-3 rounded-lg transition disabled:opacity-60 shadow-[0_1px_2px_rgba(99,91,255,0.35)]"
-                >
-                  {paying === computed.nextOpen.rec.id ? "A processar…" : (<>Pagar agora {Icon.arrow}</>)}
-                </button>
-                <div className="flex items-center justify-center gap-1.5 text-[11px] text-slate-500 mt-3">
-                  {Icon.lock} Pagamento seguro · Multibanco · MB Way · Pix · Cartão
+                  <div className="payment-next-meta">
+                    Vence {fmtDate(computed.nextOpen.rec.due_date)} · Parcela {computed.nextOpen.rec.installment_number || 1} de {computed.nextOpen.rec.total_installments || 1}
+                  </div>
+                  {computed.nextOpen.lateFee.charges > 0 && (
+                    <div className="payment-installment-sub text-rose-600">
+                      Inclui {fmtCurrency(computed.nextOpen.lateFee.charges, currency)} de juros e multa
+                    </div>
+                  )}
+                  <button
+                    disabled={paying === computed.nextOpen.rec.id}
+                    onClick={() => setMethodChooser({ recordId: computed.nextOpen!.rec.id })}
+                    className="payment-primary-button"
+                  >
+                    {paying === computed.nextOpen.rec.id ? "A processar…" : "Pagar agora"}
+                  </button>
+                  <div className="payment-method-note">Pagamento seguro · Multibanco · MB Way · Pix · Cartão</div>
                 </div>
               </div>
-            </div>
-          )}
+            )}
 
-          {/* Progress + Totals */}
-          <div className="px-6 md:px-8 pb-6 border-t border-slate-100 pt-6">
-            <div className="grid grid-cols-3 gap-6 mb-5">
-              <div>
-                <div className="text-[11px] uppercase tracking-wider text-slate-500 font-medium">Total</div>
-                <div className="text-[15px] font-semibold tabnum text-slate-900 mt-0.5">{fmtCurrency(data.total_value, currency)}</div>
-              </div>
-              <div>
-                <div className="text-[11px] uppercase tracking-wider text-slate-500 font-medium">Pago</div>
-                <div className="text-[15px] font-semibold tabnum text-emerald-600 mt-0.5">{fmtCurrency(computed.paidTotal, currency)}</div>
-              </div>
-              <div>
-                <div className="text-[11px] uppercase tracking-wider text-slate-500 font-medium">
-                  Em aberto{computed.totalCharges > 0 ? "*" : ""}
+            <div className="payment-section">
+              <div className="payment-metrics">
+                <div>
+                  <div className="payment-metric-label">Total</div>
+                  <div className="payment-metric-value">{fmtCurrency(data.total_value, currency)}</div>
                 </div>
-                <div className="text-[15px] font-semibold tabnum text-slate-900 mt-0.5">{fmtCurrency(computed.openTotal, currency)}</div>
+                <div>
+                  <div className="payment-metric-label">Pago</div>
+                  <div className="payment-metric-value is-success">{fmtCurrency(computed.paidTotal, currency)}</div>
+                </div>
+                <div>
+                  <div className="payment-metric-label">Em aberto{computed.totalCharges > 0 ? "*" : ""}</div>
+                  <div className="payment-metric-value">{fmtCurrency(computed.openTotal, currency)}</div>
+                </div>
+              </div>
+              <div className="payment-progress-copy">
+                <span>{computed.paidCount} de {data.installments.length} parcelas pagas</span>
+                <span>{progressPct}%</span>
+              </div>
+              <div className="payment-progress">
+                <div className="payment-progress-bar" style={{ width: `${progressPct}%` }} />
               </div>
             </div>
-            <div className="flex justify-between items-center text-[11px] text-slate-500 mb-1.5">
-              <span>{computed.paidCount} de {data.installments.length} parcelas pagas</span>
-              <span className="tabnum">{progressPct}%</span>
-            </div>
-            <div className="h-1 bg-slate-100 rounded-full overflow-hidden">
-              <div className="h-full bg-[#635bff] transition-all" style={{ width: `${progressPct}%` }} />
-            </div>
-          </div>
 
-          {/* Installments list */}
-          <div className="border-t border-slate-100">
-            <div className="px-6 md:px-8 py-3 flex items-center text-[11px] uppercase tracking-wider text-slate-500 font-medium">
-              <div className="flex-1">Parcela</div>
-              <div className="w-24 text-right hidden sm:block">Vencimento</div>
-              <div className="w-24 text-right tabnum">Valor</div>
-              <div className="w-24 text-right hidden sm:block">Status</div>
-            </div>
-            <div className="divide-y divide-slate-100">
+            <div>
+              <div className="payment-installments-head payment-table-head">
+                <div>Parcela</div>
+                <div className="text-right">Vencimento</div>
+                <div className="text-right">Valor</div>
+                <div className="text-right">Status</div>
+              </div>
               {computed.rows.map(({ rec, value, isPaid, isOverdue, lateFee }) => {
                 const statusLabel = isPaid ? "Pago" : isOverdue ? "Atrasado" : "Pendente";
-                const statusClass = isPaid
-                  ? "text-emerald-700 bg-emerald-50 border-emerald-200"
-                  : isOverdue
-                    ? "text-rose-700 bg-rose-50 border-rose-200"
-                    : "text-amber-700 bg-amber-50 border-amber-200";
+                const statusClass = isPaid ? "is-paid" : isOverdue ? "is-overdue" : "is-pending";
                 return (
-                  <div key={rec.id} className="px-6 md:px-8 py-4 hover:bg-slate-50/60 transition">
-                    <div className="flex items-center">
-                      <div className="flex-1 min-w-0">
-                        <div className="text-[13px] font-medium text-slate-900">
-                          Parcela {rec.installment_number || 1} <span className="text-slate-400">de {rec.total_installments || 1}</span>
-                        </div>
-                        <div className="text-[12px] text-slate-500 sm:hidden mt-0.5">
-                          {fmtDate(rec.due_date)}
-                        </div>
-                        {lateFee.charges > 0 && !isPaid && (
-                          <div className="text-[11px] text-rose-600 mt-0.5">
-                            + {fmtCurrency(lateFee.charges, currency)} juros/multa
-                          </div>
-                        )}
-                        {isPaid && rec.paid_at && (
-                          <div className="text-[11px] text-slate-500 mt-0.5">
-                            Pago em {fmtDate(rec.paid_at)}
-                          </div>
-                        )}
+                  <div key={rec.id} className="payment-installment-row">
+                    <div>
+                      <div className="payment-installment-title">
+                        Parcela {rec.installment_number || 1} <span className="payment-installment-muted">de {rec.total_installments || 1}</span>
                       </div>
-                      <div className="w-24 text-right text-[13px] text-slate-600 tabnum hidden sm:block">
-                        {fmtDate(rec.due_date)}
-                      </div>
-                      <div className="w-24 text-right text-[13px] font-medium tabnum text-slate-900">
-                        {fmtCurrency(isPaid || !isOverdue ? value : lateFee.total, currency)}
-                      </div>
-                      <div className="w-24 text-right hidden sm:block">
-                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium border ${statusClass}`}>
-                          {statusLabel}
-                        </span>
-                      </div>
+                      {lateFee.charges > 0 && !isPaid && (
+                        <div className="payment-installment-sub">+ {fmtCurrency(lateFee.charges, currency)} juros/multa</div>
+                      )}
+                      {isPaid && rec.paid_at && (
+                        <div className="payment-installment-sub">Pago em {fmtDate(rec.paid_at)}</div>
+                      )}
                     </div>
-                    <div className="flex items-center justify-between mt-2 sm:mt-3">
-                      <span className={`sm:hidden inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium border ${statusClass}`}>
-                        {statusLabel}
-                      </span>
-                      <div className="sm:hidden flex-1" />
+                    <div className="payment-installment-date">{fmtDate(rec.due_date)}</div>
+                    <div className="payment-installment-value">{fmtCurrency(isPaid || !isOverdue ? value : lateFee.total, currency)}</div>
+                    <div className="text-right">
+                      <span className={`payment-status ${statusClass}`}>{statusLabel}</span>
                       {!isPaid && (
                         <button
                           disabled={paying === rec.id}
                           onClick={() => setMethodChooser({ recordId: rec.id })}
-                          className="no-print ml-auto inline-flex items-center gap-1 text-[12px] font-medium text-[#635bff] hover:text-[#4740d1] disabled:opacity-60"
+                          className="payment-link-button no-print"
                         >
-                          {paying === rec.id ? "A processar…" : (<>Pagar {Icon.arrow}</>)}
+                          {paying === rec.id ? "A processar…" : "Pagar"}
                         </button>
                       )}
                     </div>
@@ -432,20 +394,19 @@ export default function PagamentoPublico() {
                 );
               })}
             </div>
+
+            {computed.totalCharges > 0 && (
+              <div className="payment-footnote">
+                * Inclui juros e multa por atraso, calculados automaticamente.
+              </div>
+            )}
           </div>
 
-          {computed.totalCharges > 0 && (
-            <div className="px-6 md:px-8 py-3 border-t border-slate-100 text-[11px] text-slate-500">
-              * Inclui juros e multa por atraso, calculados automaticamente.
-            </div>
-          )}
-        </div>
-
-        {/* FOOTER */}
-        <div className="text-center text-slate-400 text-[11px] mt-6 leading-relaxed">
-          Emmely Fernandes Advocacia Internacional · Documento gerado em {today}
-          <br />Atualizado em tempo real.
-        </div>
+          <div className="payment-footer">
+            Emmely Fernandes Advocacia Internacional · Documento gerado em {today}
+            <br />Atualizado em tempo real.
+          </div>
+        </main>
       </div>
 
       {/* ERROR DIALOG */}
@@ -495,10 +456,10 @@ export default function PagamentoPublico() {
                 key={m}
                 disabled={!!paying}
                 onClick={() => methodChooser && pay(methodChooser.recordId, m)}
-                className="flex items-center justify-between px-4 py-3 border border-slate-200 rounded-lg hover:border-slate-900 hover:bg-slate-50 transition disabled:opacity-50 text-left"
+                className="payment-method-option"
               >
-                <span className="text-sm font-medium text-slate-900">{METHOD_LABELS[m]}</span>
-                <span className="text-slate-400">{Icon.arrow}</span>
+                <span>{METHOD_LABELS[m]}</span>
+                <span aria-hidden="true">→</span>
               </button>
             ))}
           </div>
