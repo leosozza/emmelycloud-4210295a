@@ -2077,6 +2077,63 @@ function renderPaymentTab(opts: {
     }
   }
 
+  async function generateAllCharges() {
+    var pending = (ALL_INSTALLMENTS || []).filter(function(i){ return i.not_generated; });
+    if (pending.length === 0) { setStatus('Nenhuma parcela pendente de geração.', 'var(--text-secondary)'); return; }
+    var missing = pending.filter(function(i){ return !i.due_date || !i.payment_method; });
+    if (missing.length > 0) {
+      alert('Existem ' + missing.length + ' parcela(s) sem Vencimento ou Método definidos. Preencha antes de gerar em lote.');
+      return;
+    }
+    if (!confirm('Gerar ' + pending.length + ' cobranças reais no gateway? Cada parcela receberá um link de pagamento.')) return;
+
+    var btns = document.querySelectorAll('button');
+    btns.forEach(function(b){ b.disabled = true; });
+    var ok = 0, fail = 0, errors = [];
+
+    for (var idx = 0; idx < pending.length; idx++) {
+      var inst = pending[idx];
+      setStatus('Gerando cobrança ' + (idx+1) + '/' + pending.length + ' (Parcela ' + inst.number + '/' + inst.total + ')...', 'var(--text-secondary)');
+      try {
+        var res = await fetch(SUPABASE_URL + '/functions/v1/payment-create', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_KEY },
+          body: JSON.stringify({
+            amount: inst.value || 0,
+            currency: inst.currency || 'EUR',
+            payment_method: inst.payment_method || 'card',
+            force_gateway: DEAL_RAW_GATEWAY || undefined,
+            description: inst.description || ('Parcela ' + inst.number + '/' + inst.total),
+            financial_record_id: inst.financial_record_id || undefined,
+            transaction_id: (inst.transaction_id && !String(inst.transaction_id).startsWith('deal-')) ? inst.transaction_id : undefined,
+            metadata: {
+              bitrix_deal_id: ENTITY_ID,
+              installment_number: inst.number,
+              total_installments: inst.total,
+              source: 'bitrix24_payment_tab_bulk'
+            }
+          })
+        });
+        var data = await res.json();
+        if (data.error) throw new Error(data.error);
+        ok++;
+      } catch(e) {
+        fail++;
+        errors.push('Parcela ' + inst.number + ': ' + e.message);
+      }
+    }
+
+    if (fail === 0) {
+      setStatus('✅ ' + ok + ' cobrança(s) gerada(s) com sucesso! A recarregar...', 'var(--value-paid)');
+      setTimeout(function(){ location.reload(); }, 1800);
+    } else {
+      setStatus('⚠ ' + ok + ' geradas, ' + fail + ' com erro: ' + errors.slice(0,3).join(' | '), 'var(--value-open)');
+      btns.forEach(function(b){ b.disabled = false; });
+    }
+  }
+
+
+
   async function submitEditFull() {
     if (!_editMode) return;
     var btn = document.getElementById('pay-submit');
