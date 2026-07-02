@@ -436,6 +436,40 @@ Deno.serve(async (req) => {
         .eq("id", tx.financial_record_id);
     }
 
+    // Orphan fallback: no tx row but we resolved a financial_record via metadata.
+    // Create the tx retroactively and mark the record as paid so the dashboard reflects it.
+    if (!tx && orphanFinancialRecordId && newStatus === "confirmed") {
+      const meta = (eventObject.metadata || {}) as Record<string, string>;
+      const amountFromEvent = typeof eventObject.amount_total === "number"
+        ? eventObject.amount_total / 100
+        : (typeof eventObject.amount === "number" ? eventObject.amount / 100 : 0);
+      const currencyFromEvent = (eventObject.currency || "eur").toUpperCase();
+
+      const { data: insertedTx } = await supabase.from("payment_transactions").insert({
+        financial_record_id: orphanFinancialRecordId,
+        amount: amountFromEvent,
+        currency: currencyFromEvent,
+        gateway: "stripe",
+        gateway_payment_id: gatewayPaymentId,
+        status: "confirmed",
+        payment_method: (eventObject.payment_method_types?.[0]) || "card",
+        metadata: {
+          source: "webhook_orphan_reconciliation",
+          stripe_event: event.type,
+          checkout_session_id: isCheckoutSessionEvent ? eventObject.id : null,
+          bitrix_deal_id: meta.bitrix24_deal_id || meta.bitrix_deal_id || null,
+          receipt_token: meta.receipt_token || null,
+        },
+      }).select("id, financial_record_id, metadata, amount, currency").maybeSingle();
+
+      await supabase
+        .from("financial_records")
+        .update({ status: "paga", paid_at: new Date().toISOString(), stripe_payment_id: gatewayPaymentId })
+        .eq("id", orphanFinancialRecordId);
+
+      console.log(`[STRIPE-WEBHOOK] Orphan reconciled: financial_record ${orphanFinancialRecordId} marked paga (tx ${insertedTx?.id})`);
+    }
+
     // Notify Bitrix24 on payment confirmation
     if (tx && newStatus === "confirmed") {
       await notifyBitrix24DealPayment(supabase, tx.metadata as any, tx.amount, tx.currency);
