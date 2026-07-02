@@ -765,8 +765,10 @@ Deno.serve(async (req) => {
             contact_id: { Name: "ID do Contacto", Type: "string", Description: "ID do Contacto para vincular faturas" },
             company_id: { Name: "ID da Empresa", Type: "string", Description: "UUID da empresa/filial em Emmely" },
             paid_flow_id: { Name: "Flow ao Confirmar Pagamento", Type: "select", Options: flowOptions, Description: "Flow executado automaticamente quando o pagamento é confirmado." },
+            stage_on_paid: { Name: "Etapa ao Confirmar Pagamento", Type: "select", Options: stageOptions, Description: "Move o Deal para esta etapa quando o pagamento for confirmado. Pode ser combinado com o Flow." },
             overdue_flow_id: { Name: "Flow ao Atrasar Pagamento", Type: "select", Options: flowOptions, Description: "Flow executado automaticamente quando o pagamento atrasa X dias." },
-            overdue_days: { Name: "Dias de Atraso para Flow", Type: "int", Default: "3", Description: "Número de dias em atraso para disparar o flow de cobrança (default: 3)." },
+            stage_on_overdue: { Name: "Etapa ao Atrasar Pagamento", Type: "select", Options: stageOptions, Description: "Move o Deal para esta etapa quando o pagamento atrasar X dias." },
+            overdue_days: { Name: "Dias de Atraso para Flow", Type: "int", Default: "3", Description: "Número de dias em atraso para disparar o flow/etapa de cobrança (default: 3)." },
           },
           RETURN_PROPERTIES: {
             charge_id: { Name: "ID da Cobrança", Type: "string" },
