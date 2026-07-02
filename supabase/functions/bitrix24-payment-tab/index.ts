@@ -704,7 +704,11 @@ function renderPaymentTab(opts: {
         late_total: target.late_total || target.value,
         payment_url: target.payment_url || null,
       }).replace(/"/g, "&quot;");
-      return `<button class="b24-btn-outline" onclick='openEditFullModal(${targetJson})' style="margin-left:8px">${icon("pencil", 14)} Editar</button>`;
+      const notGenCount = installments.filter((i: any) => (!i.transaction_id || String(i.transaction_id).startsWith("deal-")) && i.status !== "paga").length;
+      const bulkBtn = notGenCount > 1
+        ? `<button class="b24-btn-generate" onclick="generateAllCharges()" style="margin-left:8px" title="Gerar cobranças reais para todas as parcelas ainda não geradas">${icon("file-plus", 14)} Gerar todas (${notGenCount})</button>`
+        : "";
+      return `<button class="b24-btn-outline" onclick='openEditFullModal(${targetJson})' style="margin-left:8px">${icon("pencil", 14)} Editar</button>${bulkBtn}`;
     })() : ""}
   </div>
   ${noData ? noDataHtml : `
