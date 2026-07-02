@@ -1232,84 +1232,20 @@ function ConfigView({ integration, botId, domain, loading, onResync, onRefresh }
       )}
 
       <div className="space-y-2">
-        <Button
-          onClick={async () => {
-            setReregisteringBot(true);
-            setReregisterBotResult(null);
-            try {
-              const auth = (window as any).BX24?.getAuth?.();
-              if (!auth && !integration?.member_id) { setReregisterBotResult("Sem sessão BX24 disponível."); return; }
-              const res = await fetch(`${SUPABASE_URL}/functions/v1/bitrix24-install`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json", apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` },
-                body: JSON.stringify({
-                  auth: auth ? { access_token: auth.access_token, refresh_token: auth.refresh_token, member_id: auth.member_id, domain: auth.domain, client_endpoint: auth.client_endpoint, expires_in: String(auth.expires || 3600) }
-                    : { member_id: integration?.member_id, access_token: integration?.access_token, refresh_token: integration?.refresh_token, client_endpoint: integration?.client_endpoint, domain: integration?.domain, expires_in: "3600" },
-                }),
-              });
-              const data = await res.json();
-              if (data.success || res.ok) { setReregisterBotResult("Bot re-registado com sucesso!"); if (integration?.member_id) setTimeout(() => onRefresh(), 1500); }
-              else { setReregisterBotResult(`Erro: ${data.error || res.status}`); }
-            } catch (e) { setReregisterBotResult(`Erro de rede: ${e}`); }
-            finally { setReregisteringBot(false); }
-          }}
-          disabled={reregisteringBot} className="w-full rounded-md"
-        >
-          {reregisteringBot ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Re-registando Bot...</> : <><Bot className="h-4 w-4 mr-2" />Re-registar Bot</>}
+        <Button onClick={runFullRefresh} disabled={refreshing} className="w-full rounded-md">
+          {refreshing ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />A atualizar Bitrix24…</> : <><RefreshCw className="h-4 w-4 mr-2" />Atualizar Bitrix24</>}
         </Button>
-        {reregisterBotResult && (
-          <div className={cn("text-xs text-center px-3 py-2 rounded-lg flex items-center justify-center gap-1.5", reregisterBotResult.includes("Erro") ? "bg-destructive/10 text-destructive" : "bg-success/10 text-success")}>
-            {reregisterBotResult.includes("Erro") ? <XCircle className="h-3 w-3" /> : <CheckCircle className="h-3 w-3" />}
-            {reregisterBotResult}
-          </div>
-        )}
-        <Button onClick={handleRebindEvents} disabled={rebinding} className="w-full rounded-md" variant="outline">
-          {rebinding ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Registando eventos e botões...</> : <><Zap className="h-4 w-4 mr-2" />Registar Eventos & Botões do Chat</>}
-        </Button>
-        <p className="text-[10px] text-muted-foreground text-center -mt-1 px-2">
-          Inclui eventos do Open Channels/IMBot e os botões de Áudio, Anexar Ficheiro, Devolver ao Bot e Templates no bate-papo do Contact Center.
+        <p className="text-[10px] text-muted-foreground text-center px-2">
+          Re-regista conector, campos, robots, bots dos agentes e eventos/botões do chat numa só ação.
         </p>
-        {rebindResult && (
-          <div className={cn("text-xs text-center px-3 py-2 rounded-lg flex items-center justify-center gap-1.5", rebindResult.includes("Erro") ? "bg-destructive/10 text-destructive" : "bg-success/10 text-success")}>
-            {rebindResult.includes("Erro") ? <XCircle className="h-3 w-3" /> : <CheckCircle className="h-3 w-3" />}
-            {rebindResult}
-          </div>
-        )}
-        <Button onClick={onResync} disabled={loading} className="w-full rounded-md" variant="outline">
-          {loading ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Sincronizando...</> : <><RefreshCw className="h-4 w-4 mr-2" />Re-sincronizar Conector</>}
-        </Button>
-        <Button
-          onClick={async () => {
-            setRepairingFields(true);
-            setRepairFieldsResult(null);
-            try {
-              const auth = (window as any).BX24?.getAuth?.();
-              if (!auth && !integration?.member_id) { setRepairFieldsResult("Sem sessão BX24 disponível."); return; }
-              const res = await fetch(`${SUPABASE_URL}/functions/v1/bitrix24-install?action=repair_fields`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json", apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` },
-                body: JSON.stringify({
-                  auth: auth ? { access_token: auth.access_token, refresh_token: auth.refresh_token, member_id: auth.member_id, domain: auth.domain, client_endpoint: auth.client_endpoint, expires_in: String(auth.expires || 3600) }
-                    : { member_id: integration?.member_id, access_token: integration?.access_token, refresh_token: integration?.refresh_token, client_endpoint: integration?.client_endpoint, domain: integration?.domain, expires_in: "3600" },
-                }),
-              });
-              const data = await res.json();
-              if (data.success || res.ok) { setRepairFieldsResult("Campos e robots reparados com sucesso!"); if (integration?.member_id) setTimeout(() => onRefresh(), 1500); }
-              else { setRepairFieldsResult(`Erro: ${data.error || res.status}`); }
-            } catch (e) { setRepairFieldsResult(`Erro de rede: ${e}`); }
-            finally { setRepairingFields(false); }
-          }}
-          disabled={repairingFields} className="w-full rounded-md" variant="outline"
-        >
-          {repairingFields ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Reparando campos e robots...</> : <><Wrench className="h-4 w-4 mr-2" />Reparar Campos e Robots</>}
-        </Button>
-        {repairFieldsResult && (
-          <div className={cn("text-xs text-center px-3 py-2 rounded-lg flex items-center justify-center gap-1.5", repairFieldsResult.includes("Erro") ? "bg-destructive/10 text-destructive" : "bg-success/10 text-success")}>
-            {repairFieldsResult.includes("Erro") ? <XCircle className="h-3 w-3" /> : <CheckCircle className="h-3 w-3" />}
-            {repairFieldsResult}
+        {refreshResult && (
+          <div className={cn("text-xs text-center px-3 py-2 rounded-lg flex items-center justify-center gap-1.5", refreshResult.startsWith("Erro") ? "bg-destructive/10 text-destructive" : "bg-success/10 text-success")}>
+            {refreshResult.startsWith("Erro") ? <XCircle className="h-3 w-3" /> : <CheckCircle className="h-3 w-3" />}
+            {refreshResult}
           </div>
         )}
       </div>
+
 
       {logs.length > 0 && (
         <Card className="b24-card">
