@@ -1101,14 +1101,14 @@ function renderPaymentTab(opts: {
     var opts = BITRIX_INSTALLMENT_OPTIONS || [];
     for (var i = 0; i < opts.length; i++) {
       var label = String(opts[i].label || opts[i].value || '');
-      var m = label.match(/\d+/);
+      var m = label.match(/\\d+/);
       if (m && parseInt(m[0], 10) === n) return opts[i].id;
     }
     return n;
   }
 
   function normalizeMethodLabel(v) {
-    return String(v || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[\s_-]+/g, ' ').trim();
+    return String(v || '').toLowerCase().normalize('NFD').replace(/[\\u0300-\\u036f]/g, '').replace(/[\\s_-]+/g, ' ').trim();
   }
 
   function resolveBitrixMethodValue(code) {
