@@ -504,42 +504,94 @@
     justify-self: end;
     display: inline-flex;
     align-items: center;
+    gap: 6px;
     border-radius: 999px;
-    padding: 3px 9px;
+    padding: 3px 10px 3px 8px;
     font-size: 11px;
     line-height: 16px;
-    font-weight: 650;
-    border: 1px solid currentColor;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+    border: 1px solid transparent;
+    background: hsl(var(--payment-soft) / 0.5);
+    color: hsl(var(--payment-muted));
+  }
+
+  .payment-status::before {
+    content: "";
+    width: 6px;
+    height: 6px;
+    border-radius: 999px;
+    background: currentColor;
+    display: inline-block;
   }
 
   .payment-status.is-paid {
     color: hsl(var(--payment-success));
-    background: hsl(var(--payment-success) / 0.07);
+    background: hsl(var(--payment-success) / 0.10);
+    border-color: hsl(var(--payment-success) / 0.20);
   }
 
   .payment-status.is-overdue {
     color: hsl(var(--payment-danger));
-    background: hsl(var(--payment-danger) / 0.07);
+    background: hsl(var(--payment-danger) / 0.10);
+    border-color: hsl(var(--payment-danger) / 0.20);
   }
 
   .payment-status.is-pending {
     color: hsl(var(--payment-warning));
-    background: hsl(var(--payment-warning) / 0.08);
+    background: hsl(var(--payment-warning) / 0.12);
+    border-color: hsl(var(--payment-warning) / 0.22);
   }
 
   .payment-link-button {
     margin-top: 10px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
     appearance: none;
-    border: 0;
-    background: transparent;
-    color: hsl(var(--payment-accent));
+    border: 1px solid hsl(var(--payment-accent) / 0.15);
+    background: hsl(var(--payment-accent));
+    color: #fff;
     font: inherit;
-    font-size: 13px;
-    line-height: 18px;
-    font-weight: 650;
-    padding: 0;
+    font-size: 12px;
+    line-height: 1;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+    padding: 8px 14px;
+    height: 30px;
+    border-radius: 999px;
     cursor: pointer;
+    box-shadow: 0 1px 2px hsl(var(--payment-accent) / 0.25), 0 1px 0 rgba(255,255,255,0.15) inset;
+    transition: transform 0.08s ease, box-shadow 0.15s ease, background 0.15s ease;
   }
+
+  .payment-link-button:hover:not(:disabled) {
+    background: hsl(var(--payment-accent) / 0.92);
+    box-shadow: 0 2px 6px hsl(var(--payment-accent) / 0.35), 0 1px 0 rgba(255,255,255,0.15) inset;
+  }
+
+  .payment-link-button:active:not(:disabled) {
+    transform: translateY(1px);
+    box-shadow: 0 1px 2px hsl(var(--payment-accent) / 0.25);
+  }
+
+  .payment-link-button::after {
+    content: "→";
+    font-size: 13px;
+    line-height: 1;
+    transition: transform 0.15s ease;
+  }
+
+  .payment-link-button:hover:not(:disabled)::after {
+    transform: translateX(2px);
+  }
+
+  .payment-link-button:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+
 
   .payment-footnote {
     padding: 16px 32px;
