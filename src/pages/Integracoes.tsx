@@ -216,28 +216,41 @@ function CRMTab() {
   const handleResync = async () => {
     setResyncing(true);
     setTestResult(null);
-    try {
-      const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/bitrix24-install?action=resync`;
-      const res = await fetch(url, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
-          Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
-        },
-        body: "{}",
-      });
-      const data = await res.json();
-      if (!res.ok || data?.error) {
-        toast.error(data?.error || `Falha HTTP ${res.status}`);
-      } else {
-        toast.success("App atualizada — conector, campos, robôs e placements re-registados.");
-        const { data: intRes } = await supabase.from("bitrix24_integrations").select("id, domain, connector_registered, connector_active, updated_at").limit(1).single();
-        if (intRes) setIntegration(intRes);
-      }
-    } catch (e: any) {
-      toast.error(e?.message || "Erro de rede.");
+    const base = import.meta.env.VITE_SUPABASE_URL;
+    const key = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+    const headers = { "Content-Type": "application/json", apikey: key, Authorization: `Bearer ${key}` };
+    const memberId = (integration as any)?.member_id;
+
+    const steps: Array<{ name: string; run: () => Promise<boolean> }> = [
+      { name: "Conector & campos", run: async () => {
+        const r = await fetch(`${base}/functions/v1/bitrix24-install?action=resync`, { method: "POST", headers, body: "{}" });
+        const d = await r.json().catch(() => ({})); return r.ok && !d?.error;
+      }},
+      { name: "Reparar campos/robots", run: async () => {
+        const r = await fetch(`${base}/functions/v1/bitrix24-install?action=repair_fields`, { method: "POST", headers, body: "{}" });
+        const d = await r.json().catch(() => ({})); return r.ok && !d?.error;
+      }},
+      { name: "Re-registar bots", run: async () => {
+        const r = await fetch(`${base}/functions/v1/bitrix24-reregister-bot`, { method: "POST", headers, body: JSON.stringify({ member_id: memberId }) });
+        const d = await r.json().catch(() => ({})); return r.ok && !d?.error;
+      }},
+      { name: "Eventos & botões do chat", run: async () => {
+        const url = memberId ? `${base}/functions/v1/bitrix24-rebind-events?member_id=${encodeURIComponent(memberId)}` : `${base}/functions/v1/bitrix24-rebind-events`;
+        const r = await fetch(url, { headers: { apikey: key, Authorization: `Bearer ${key}` } });
+        const d = await r.json().catch(() => ({})); return r.ok && (d?.success !== false);
+      }},
+    ];
+
+    const failures: string[] = [];
+    for (const s of steps) {
+      try { const ok = await s.run(); if (!ok) failures.push(s.name); }
+      catch { failures.push(s.name); }
     }
+    if (failures.length === 0) toast.success(`Bitrix24 atualizado (${steps.length}/${steps.length} passos).`);
+    else toast.error(`Falhou: ${failures.join(", ")} — ${steps.length - failures.length}/${steps.length} OK.`);
+
+    const { data: intRes } = await supabase.from("bitrix24_integrations").select("id, domain, connector_registered, connector_active, updated_at").limit(1).single();
+    if (intRes) setIntegration(intRes);
     setResyncing(false);
   };
 
@@ -277,9 +290,9 @@ function CRMTab() {
                   {testing ? <RefreshCw className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <Activity className="h-3.5 w-3.5 mr-1.5" />}
                   {testing ? "A testar…" : "Testar Conexão"}
                 </Button>
-                <Button size="sm" variant="default" onClick={handleResync} disabled={testing || resyncing} title="Re-registar conector, campos, robôs e placements sem reinstalar a app">
+                <Button size="sm" variant="default" onClick={handleResync} disabled={testing || resyncing} title="Re-regista conector, campos, robôs, bots e eventos numa só ação">
                   <RefreshCw className={`h-3.5 w-3.5 mr-1.5 ${resyncing ? "animate-spin" : ""}`} />
-                  {resyncing ? "A atualizar…" : "Atualizar App"}
+                  {resyncing ? "A atualizar…" : "Atualizar Bitrix24"}
                 </Button>
               </div>
               {testResult && (

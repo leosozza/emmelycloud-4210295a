@@ -927,12 +927,8 @@ function ConfigView({ integration, botId, domain, loading, onResync, onRefresh }
   const [selectedAgent, setSelectedAgent] = useState<string>(integration?.bitrix_agent_id || "");
   const [savingAgent, setSavingAgent] = useState(false);
   const [logs, setLogs] = useState<any[]>([]);
-  const [rebinding, setRebinding] = useState(false);
-  const [rebindResult, setRebindResult] = useState<string | null>(null);
-  const [reregisteringBot, setReregisteringBot] = useState(false);
-  const [reregisterBotResult, setReregisterBotResult] = useState<string | null>(null);
-  const [repairingFields, setRepairingFields] = useState(false);
-  const [repairFieldsResult, setRepairFieldsResult] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+  const [refreshResult, setRefreshResult] = useState<string | null>(null);
   const [returnToBotDialogId, setReturnToBotDialogId] = useState("");
   const [returningToBot, setReturningToBot] = useState(false);
   const [returnToBotResult, setReturnToBotResult] = useState<string | null>(null);
@@ -1010,25 +1006,48 @@ function ConfigView({ integration, botId, domain, loading, onResync, onRefresh }
     setSavingAgent(false);
   };
 
-  const handleRebindEvents = async () => {
-    setRebinding(true);
-    setRebindResult(null);
-    try {
-      const mid = integration?.member_id;
-      const url = mid
-        ? `${SUPABASE_URL}/functions/v1/bitrix24-rebind-events?member_id=${encodeURIComponent(mid)}`
-        : `${SUPABASE_URL}/functions/v1/bitrix24-rebind-events`;
-      const res = await fetch(url, { headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` } });
-      const data = await res.json();
-      if (data.success) {
-        const ok = Object.values(data.results || {}).filter((v) => v === "OK").length;
-        const total = Object.keys(data.results || {}).length;
-        setRebindResult(`${ok}/${total} eventos re-registados com sucesso!`);
-      } else {
-        setRebindResult(`Erro: ${data.error || "Falha desconhecida"}`);
-      }
-    } catch (e) { setRebindResult(`Erro de rede: ${e}`); }
-    setRebinding(false);
+  const runFullRefresh = async () => {
+    setRefreshing(true);
+    setRefreshResult(null);
+    const auth = (window as any).BX24?.getAuth?.();
+    const authPayload = auth
+      ? { access_token: auth.access_token, refresh_token: auth.refresh_token, member_id: auth.member_id, domain: auth.domain, client_endpoint: auth.client_endpoint, expires_in: String(auth.expires || 3600) }
+      : integration
+      ? { member_id: integration.member_id, access_token: integration.access_token, refresh_token: integration.refresh_token, client_endpoint: integration.client_endpoint, domain: integration.domain, expires_in: "3600" }
+      : null;
+    if (!authPayload) { setRefreshResult("Erro: Sem sessão BX24 disponível."); setRefreshing(false); return; }
+
+    const headers = { "Content-Type": "application/json", apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` };
+    const steps: Array<{ name: string; run: () => Promise<boolean> }> = [
+      { name: "Conector & campos", run: async () => {
+        const r = await fetch(`${SUPABASE_URL}/functions/v1/bitrix24-install?action=resync`, { method: "POST", headers, body: JSON.stringify({ auth: authPayload }) });
+        const d = await r.json().catch(() => ({})); return r.ok && !d?.error;
+      }},
+      { name: "Reparar campos/robots", run: async () => {
+        const r = await fetch(`${SUPABASE_URL}/functions/v1/bitrix24-install?action=repair_fields`, { method: "POST", headers, body: JSON.stringify({ auth: authPayload }) });
+        const d = await r.json().catch(() => ({})); return r.ok && !d?.error;
+      }},
+      { name: "Re-registar bots", run: async () => {
+        const r = await fetch(`${SUPABASE_URL}/functions/v1/bitrix24-reregister-bot`, { method: "POST", headers, body: JSON.stringify({ member_id: authPayload.member_id }) });
+        const d = await r.json().catch(() => ({})); return r.ok && !d?.error;
+      }},
+      { name: "Eventos & botões do chat", run: async () => {
+        const mid = authPayload.member_id;
+        const url = mid ? `${SUPABASE_URL}/functions/v1/bitrix24-rebind-events?member_id=${encodeURIComponent(mid)}` : `${SUPABASE_URL}/functions/v1/bitrix24-rebind-events`;
+        const r = await fetch(url, { headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` } });
+        const d = await r.json().catch(() => ({})); return r.ok && (d?.success !== false);
+      }},
+    ];
+
+    const failures: string[] = [];
+    for (const s of steps) {
+      try { const ok = await s.run(); if (!ok) failures.push(s.name); }
+      catch { failures.push(s.name); }
+    }
+    if (failures.length === 0) setRefreshResult(`Bitrix24 atualizado: ${steps.length}/${steps.length} passos concluídos.`);
+    else setRefreshResult(`Erro em: ${failures.join(", ")} (${steps.length - failures.length}/${steps.length} OK).`);
+    if (integration?.member_id) setTimeout(() => onRefresh(), 1200);
+    setRefreshing(false);
   };
 
   const handleReturnToBot = async (conversationId?: string) => {
@@ -1213,84 +1232,20 @@ function ConfigView({ integration, botId, domain, loading, onResync, onRefresh }
       )}
 
       <div className="space-y-2">
-        <Button
-          onClick={async () => {
-            setReregisteringBot(true);
-            setReregisterBotResult(null);
-            try {
-              const auth = (window as any).BX24?.getAuth?.();
-              if (!auth && !integration?.member_id) { setReregisterBotResult("Sem sessão BX24 disponível."); return; }
-              const res = await fetch(`${SUPABASE_URL}/functions/v1/bitrix24-install`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json", apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` },
-                body: JSON.stringify({
-                  auth: auth ? { access_token: auth.access_token, refresh_token: auth.refresh_token, member_id: auth.member_id, domain: auth.domain, client_endpoint: auth.client_endpoint, expires_in: String(auth.expires || 3600) }
-                    : { member_id: integration?.member_id, access_token: integration?.access_token, refresh_token: integration?.refresh_token, client_endpoint: integration?.client_endpoint, domain: integration?.domain, expires_in: "3600" },
-                }),
-              });
-              const data = await res.json();
-              if (data.success || res.ok) { setReregisterBotResult("Bot re-registado com sucesso!"); if (integration?.member_id) setTimeout(() => onRefresh(), 1500); }
-              else { setReregisterBotResult(`Erro: ${data.error || res.status}`); }
-            } catch (e) { setReregisterBotResult(`Erro de rede: ${e}`); }
-            finally { setReregisteringBot(false); }
-          }}
-          disabled={reregisteringBot} className="w-full rounded-md"
-        >
-          {reregisteringBot ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Re-registando Bot...</> : <><Bot className="h-4 w-4 mr-2" />Re-registar Bot</>}
+        <Button onClick={runFullRefresh} disabled={refreshing} className="w-full rounded-md">
+          {refreshing ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />A atualizar Bitrix24…</> : <><RefreshCw className="h-4 w-4 mr-2" />Atualizar Bitrix24</>}
         </Button>
-        {reregisterBotResult && (
-          <div className={cn("text-xs text-center px-3 py-2 rounded-lg flex items-center justify-center gap-1.5", reregisterBotResult.includes("Erro") ? "bg-destructive/10 text-destructive" : "bg-success/10 text-success")}>
-            {reregisterBotResult.includes("Erro") ? <XCircle className="h-3 w-3" /> : <CheckCircle className="h-3 w-3" />}
-            {reregisterBotResult}
-          </div>
-        )}
-        <Button onClick={handleRebindEvents} disabled={rebinding} className="w-full rounded-md" variant="outline">
-          {rebinding ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Registando eventos e botões...</> : <><Zap className="h-4 w-4 mr-2" />Registar Eventos & Botões do Chat</>}
-        </Button>
-        <p className="text-[10px] text-muted-foreground text-center -mt-1 px-2">
-          Inclui eventos do Open Channels/IMBot e os botões de Áudio, Anexar Ficheiro, Devolver ao Bot e Templates no bate-papo do Contact Center.
+        <p className="text-[10px] text-muted-foreground text-center px-2">
+          Re-regista conector, campos, robots, bots dos agentes e eventos/botões do chat numa só ação.
         </p>
-        {rebindResult && (
-          <div className={cn("text-xs text-center px-3 py-2 rounded-lg flex items-center justify-center gap-1.5", rebindResult.includes("Erro") ? "bg-destructive/10 text-destructive" : "bg-success/10 text-success")}>
-            {rebindResult.includes("Erro") ? <XCircle className="h-3 w-3" /> : <CheckCircle className="h-3 w-3" />}
-            {rebindResult}
-          </div>
-        )}
-        <Button onClick={onResync} disabled={loading} className="w-full rounded-md" variant="outline">
-          {loading ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Sincronizando...</> : <><RefreshCw className="h-4 w-4 mr-2" />Re-sincronizar Conector</>}
-        </Button>
-        <Button
-          onClick={async () => {
-            setRepairingFields(true);
-            setRepairFieldsResult(null);
-            try {
-              const auth = (window as any).BX24?.getAuth?.();
-              if (!auth && !integration?.member_id) { setRepairFieldsResult("Sem sessão BX24 disponível."); return; }
-              const res = await fetch(`${SUPABASE_URL}/functions/v1/bitrix24-install?action=repair_fields`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json", apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` },
-                body: JSON.stringify({
-                  auth: auth ? { access_token: auth.access_token, refresh_token: auth.refresh_token, member_id: auth.member_id, domain: auth.domain, client_endpoint: auth.client_endpoint, expires_in: String(auth.expires || 3600) }
-                    : { member_id: integration?.member_id, access_token: integration?.access_token, refresh_token: integration?.refresh_token, client_endpoint: integration?.client_endpoint, domain: integration?.domain, expires_in: "3600" },
-                }),
-              });
-              const data = await res.json();
-              if (data.success || res.ok) { setRepairFieldsResult("Campos e robots reparados com sucesso!"); if (integration?.member_id) setTimeout(() => onRefresh(), 1500); }
-              else { setRepairFieldsResult(`Erro: ${data.error || res.status}`); }
-            } catch (e) { setRepairFieldsResult(`Erro de rede: ${e}`); }
-            finally { setRepairingFields(false); }
-          }}
-          disabled={repairingFields} className="w-full rounded-md" variant="outline"
-        >
-          {repairingFields ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Reparando campos e robots...</> : <><Wrench className="h-4 w-4 mr-2" />Reparar Campos e Robots</>}
-        </Button>
-        {repairFieldsResult && (
-          <div className={cn("text-xs text-center px-3 py-2 rounded-lg flex items-center justify-center gap-1.5", repairFieldsResult.includes("Erro") ? "bg-destructive/10 text-destructive" : "bg-success/10 text-success")}>
-            {repairFieldsResult.includes("Erro") ? <XCircle className="h-3 w-3" /> : <CheckCircle className="h-3 w-3" />}
-            {repairFieldsResult}
+        {refreshResult && (
+          <div className={cn("text-xs text-center px-3 py-2 rounded-lg flex items-center justify-center gap-1.5", refreshResult.startsWith("Erro") ? "bg-destructive/10 text-destructive" : "bg-success/10 text-success")}>
+            {refreshResult.startsWith("Erro") ? <XCircle className="h-3 w-3" /> : <CheckCircle className="h-3 w-3" />}
+            {refreshResult}
           </div>
         )}
       </div>
+
 
       {logs.length > 0 && (
         <Card className="b24-card">
