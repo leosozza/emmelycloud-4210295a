@@ -172,8 +172,19 @@
     background: hsl(var(--payment-bg));
     color: hsl(var(--payment-text));
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Ubuntu, sans-serif;
-    font-feature-settings: "tnum" 1, "cv11" 1;
+    font-feature-settings: normal;
     letter-spacing: 0;
+  }
+
+  .payment-receipt,
+  .payment-receipt h1,
+  .payment-receipt h2,
+  .payment-receipt h3,
+  .payment-receipt button,
+  .payment-receipt input,
+  .payment-receipt textarea,
+  .payment-receipt select {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Ubuntu, sans-serif;
   }
 
   .payment-page {
@@ -236,13 +247,14 @@
     font-size: 18px;
     line-height: 26px;
     font-weight: 600;
+    font-family: inherit;
     color: hsl(var(--payment-text));
   }
 
   .payment-amount {
     margin-top: 12px;
-    font-size: 40px;
-    line-height: 48px;
+    font-size: 44px;
+    line-height: 52px;
     font-weight: 650;
     color: hsl(var(--payment-text));
   }
@@ -292,8 +304,8 @@
   .payment-detail-panel {
     background: hsl(var(--payment-surface));
     border: 1px solid hsl(var(--payment-soft));
-    border-radius: 10px;
-    box-shadow: 0 12px 32px hsl(226 32% 14% / 0.07), 0 1px 2px hsl(226 32% 14% / 0.04);
+    border-radius: 12px;
+    box-shadow: 0 18px 44px hsl(226 32% 14% / 0.08), 0 1px 2px hsl(226 32% 14% / 0.04);
     overflow: hidden;
   }
 
@@ -324,8 +336,8 @@
 
   .payment-next-amount {
     margin-top: 4px;
-    font-size: 28px;
-    line-height: 34px;
+    font-size: 30px;
+    line-height: 36px;
     font-weight: 650;
   }
 
@@ -481,6 +493,7 @@
     font-size: 13px;
     line-height: 20px;
     text-align: right;
+    font-variant-numeric: tabular-nums;
   }
 
   .payment-installment-value {
