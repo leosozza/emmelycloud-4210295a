@@ -94,8 +94,13 @@ async function notifyBitrix24DealPayment(supabase: any, txMeta: any, paidAmount:
       UF_CRM_EMMELY_PAYMENT_STATUS: dealPaymentStatusId,
     };
 
-    // If balance is zero, move deal to paid/won stage
-    if (newAmount === 0) {
+    // Stage override configured in the robot (highest priority)
+    const stageOnPaid = String(txMeta?.stage_on_paid || "").trim();
+    if (stageOnPaid) {
+      dealUpdateFields.STAGE_ID = stageOnPaid;
+      console.log(`[STRIPE-WEBHOOK] Deal ${dealId} paid, moving to configured stage ${stageOnPaid}`);
+    } else if (newAmount === 0) {
+      // Fallback: if balance is zero, move deal to paid/won stage
       const paidStageId = deal.UF_CRM_EMMELY_PAID_STAGE || "WON";
       dealUpdateFields.STAGE_ID = paidStageId;
       console.log(`[STRIPE-WEBHOOK] Deal ${dealId} fully paid, moving to stage ${paidStageId}`);
