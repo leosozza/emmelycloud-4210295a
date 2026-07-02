@@ -927,12 +927,8 @@ function ConfigView({ integration, botId, domain, loading, onResync, onRefresh }
   const [selectedAgent, setSelectedAgent] = useState<string>(integration?.bitrix_agent_id || "");
   const [savingAgent, setSavingAgent] = useState(false);
   const [logs, setLogs] = useState<any[]>([]);
-  const [rebinding, setRebinding] = useState(false);
-  const [rebindResult, setRebindResult] = useState<string | null>(null);
-  const [reregisteringBot, setReregisteringBot] = useState(false);
-  const [reregisterBotResult, setReregisterBotResult] = useState<string | null>(null);
-  const [repairingFields, setRepairingFields] = useState(false);
-  const [repairFieldsResult, setRepairFieldsResult] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+  const [refreshResult, setRefreshResult] = useState<string | null>(null);
   const [returnToBotDialogId, setReturnToBotDialogId] = useState("");
   const [returningToBot, setReturningToBot] = useState(false);
   const [returnToBotResult, setReturnToBotResult] = useState<string | null>(null);
