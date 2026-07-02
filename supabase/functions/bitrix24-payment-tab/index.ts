@@ -1640,11 +1640,11 @@ function renderPaymentTab(opts: {
       var fields = {
         OPPORTUNITY: payload.total,
         CURRENCY_ID: payload.currency,
-        UF_CRM_EMMELY_TOTAL_INSTALLMENTS: payload.numInst,
+        UF_CRM_EMMELY_TOTAL_INSTALLMENTS: resolveBitrixInstallmentValue(payload.numInst),
         UF_CRM_EMMELY_INSTALLMENT_VALUE: payload.instValue
       };
       if (payload.firstDue) fields.UF_CRM_EMMELY_NEXT_DUE_DATE = payload.firstDue;
-      if (payload.method) fields.UF_CRM_EMMELY_PAYMENT_METHOD = payload.method;
+      if (payload.method) fields.UF_CRM_EMMELY_PAYMENT_METHOD = resolveBitrixMethodValue(payload.method);
       try {
         if (ENTITY_TYPE_ID === '1') {
           BX24.callMethod('crm.lead.update', { id: parseInt(ENTITY_ID), fields: fields }, function(){});
