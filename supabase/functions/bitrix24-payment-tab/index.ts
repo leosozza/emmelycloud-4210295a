@@ -88,6 +88,115 @@ function formatDate(dateStr: string | null): string {
   } catch { return dateStr; }
 }
 
+function parseFlexibleNumber(value: any, fallback = 0): number {
+  if (value === null || value === undefined || value === "") return fallback;
+  const n = typeof value === "number" ? value : parseFloat(String(value).replace(",", "."));
+  return Number.isFinite(n) ? n : fallback;
+}
+
+function parseBitrixDate(value: any): string | null {
+  if (!value) return null;
+  const m = String(value).match(/^(\d{4})-(\d{2})-(\d{2})/);
+  return m ? `${m[1]}-${m[2]}-${m[3]}` : null;
+}
+
+function enumItems(fieldDef: any): any[] {
+  const items = fieldDef?.items || fieldDef?.ITEMS || fieldDef?.LIST || [];
+  return Array.isArray(items) ? items : [];
+}
+
+function parseInstallmentCountFromBitrix(rawValue: any, fieldDef?: any): number {
+  if (rawValue === null || rawValue === undefined || rawValue === "") return 1;
+  const raw = String(rawValue).trim();
+  const items = enumItems(fieldDef);
+  const byEnum = items.find((item: any) => String(item.ID) === raw || String(item.VALUE) === raw || String(item.value) === raw);
+  if (byEnum) {
+    const label = String(byEnum.VALUE || byEnum.value || "");
+    const m = label.match(/\d+/);
+    if (m) {
+      const n = parseInt(m[0], 10);
+      if (n >= 1 && n <= 12) return n;
+    }
+  }
+  const labelMatch = raw.match(/\d+/);
+  if (labelMatch) {
+    const n = parseInt(labelMatch[0], 10);
+    if (n >= 1 && n <= 12) return n;
+    // Some Bitrix portals have enum IDs/SORT values like 100, 200, ... 1200.
+    if (n % 100 === 0 && n / 100 >= 1 && n / 100 <= 12) return n / 100;
+  }
+  return 1;
+}
+
+function normalizePaymentMethodCode(rawValue: any, fieldDef?: any): string {
+  if (rawValue === null || rawValue === undefined || rawValue === "") return "";
+  let raw = String(rawValue).trim();
+  const items = enumItems(fieldDef);
+  const byEnum = items.find((item: any) => String(item.ID) === raw || String(item.VALUE) === raw || String(item.value) === raw);
+  if (byEnum) raw = String(byEnum.VALUE || byEnum.value || raw);
+  const key = raw.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[\s_-]+/g, " ").trim();
+  const map: Record<string, string> = {
+    "cartao": "card", "card": "card",
+    "cliente escolhe": "customer_choice", "cliente escolhe stripe": "customer_choice", "customer choice": "customer_choice",
+    "pix": "pix", "boleto": "boleto",
+    "mb way": "mb_way", "mbway": "mb_way",
+    "multibanco": "multibanco",
+    "debito sepa": "sepa_debit", "sepa": "sepa_debit", "sepa debit": "sepa_debit",
+    "direto": "direto", "recebimento direto": "direto", "parcelado direto": "parcelado_direto"
+  };
+  return map[key] || raw;
+}
+
+function addDaysIso(baseDate: string | null, days: number): string | null {
+  if (!baseDate) return null;
+  const d = new Date(baseDate + "T00:00:00Z");
+  if (Number.isNaN(d.getTime())) return null;
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
+function splitMoney(total: number, count: number): number[] {
+  const n = Math.max(1, Math.min(12, Math.round(count || 1)));
+  const per = Math.floor((Math.max(0, total) * 100) / n) / 100;
+  return Array.from({ length: n }, (_, idx) => idx === n - 1 ? Math.round((Math.max(0, total) - per * (n - 1)) * 100) / 100 : per);
+}
+
+function buildSyntheticInstallmentsFromPlan(plan: {
+  entityId: string; title: string; totalAmount: number; currency: string; downPayment: number; downInstallments: number;
+  downMethod?: string; downFirstDue?: string | null; downInterval: number; remainingInstallments: number;
+  method?: string; firstDue?: string | null; interval: number;
+}): InstallmentData[] {
+  const rows: InstallmentData[] = [];
+  const total = Math.max(0, Number(plan.totalAmount) || 0);
+  const down = Math.min(total, Math.max(0, Number(plan.downPayment) || 0));
+  const remaining = Math.max(0, Math.round((total - down) * 100) / 100);
+  if (down > 0) {
+    const n = Math.max(1, Math.min(12, Math.round(plan.downInstallments || 1)));
+    splitMoney(down, n).forEach((value, idx) => {
+      rows.push({
+        id: `deal-${plan.entityId}-entrada-${idx + 1}-${n}`,
+        number: idx + 1, total: n, value, status: "pendente",
+        due_date: addDaysIso(plan.downFirstDue || null, (plan.downInterval || 30) * idx), paid_at: null,
+        currency: plan.currency, description: plan.title, is_down_payment: true,
+        payment_method: plan.downMethod || plan.method || undefined, metadata: { source: "bitrix_plan_synthetic" },
+      });
+    });
+  }
+  if (remaining > 0) {
+    const n = Math.max(1, Math.min(12, Math.round(plan.remainingInstallments || 1)));
+    splitMoney(remaining, n).forEach((value, idx) => {
+      rows.push({
+        id: `deal-${plan.entityId}-parcela-${idx + 1}-${n}`,
+        number: idx + 1, total: n, value, status: "pendente",
+        due_date: addDaysIso(plan.firstDue || null, (plan.interval || 30) * idx), paid_at: null,
+        currency: plan.currency, description: plan.title, is_down_payment: false,
+        payment_method: plan.method || undefined, metadata: { source: "bitrix_plan_synthetic" },
+      });
+    });
+  }
+  return rows;
+}
+
 // ─── Late Fee Calculation ───────────────────────────────────────────────────
 
 interface LateFeeConfig {
@@ -202,6 +311,7 @@ function renderPaymentTab(opts: {
   createdAt?: string | null;
   gatewayOptions?: { id: string; label: string }[];
   methodOptions?: { id: string; label: string }[];
+  installmentOptions?: { id: string; label: string }[];
 }): string {
   const { dealTitle, totalValue, paidValue, openValue, currency, installments, supabaseUrl, memberId, flows, contactPhone, contactName, contactEmail, contactCpfCnpj, contactAddress, noData } = opts;
   const addr = contactAddress || {};
@@ -978,6 +1088,122 @@ function renderPaymentTab(opts: {
   var ENTITY_ID = "${opts.entityId}";
   var ENTITY_TYPE_ID = "${opts.entityTypeId || "2"}";
   var DEAL_RAW_GATEWAY = "${opts.rawGateway || ""}";
+  var BITRIX_INSTALLMENT_OPTIONS = ${JSON.stringify(opts.installmentOptions || [])};
+  var BITRIX_METHOD_OPTIONS = ${JSON.stringify(opts.methodOptions || [])};
+
+  function clampInstallmentCount(n) {
+    n = parseInt(n, 10) || 1;
+    return Math.max(1, Math.min(12, n));
+  }
+
+  function resolveBitrixInstallmentValue(n) {
+    n = clampInstallmentCount(n);
+    var opts = BITRIX_INSTALLMENT_OPTIONS || [];
+    for (var i = 0; i < opts.length; i++) {
+      var label = String(opts[i].label || opts[i].value || '');
+      var m = label.match(/\d+/);
+      if (m && parseInt(m[0], 10) === n) return opts[i].id;
+    }
+    return n;
+  }
+
+  function normalizeMethodLabel(v) {
+    return String(v || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[\s_-]+/g, ' ').trim();
+  }
+
+  function resolveBitrixMethodValue(code) {
+    if (!code) return '';
+    var wanted = {
+      card: ['cartao', 'card'],
+      customer_choice: ['cliente escolhe', 'cliente escolhe stripe', 'customer choice'],
+      pix: ['pix'],
+      boleto: ['boleto'],
+      multibanco: ['multibanco'],
+      mb_way: ['mb way', 'mbway'],
+      sepa_debit: ['debito sepa', 'sepa debit', 'sepa'],
+      direto: ['direto', 'recebimento direto', 'parcelado direto'],
+      parcelado_direto: ['direto', 'recebimento direto', 'parcelado direto']
+    }[String(code)] || [String(code)];
+    var opts = BITRIX_METHOD_OPTIONS || [];
+    for (var i = 0; i < opts.length; i++) {
+      var lbl = normalizeMethodLabel(opts[i].label || opts[i].value || '');
+      if (wanted.indexOf(lbl) >= 0) return opts[i].id;
+    }
+    return code;
+  }
+
+  function buildPaymentPlanFromForm() {
+    var totalAmount = parseFloat(document.getElementById('pay-amount').value) || 0;
+    var downPayment = parseFloat(document.getElementById('pay-down').value) || 0;
+    if (downPayment < 0) downPayment = 0;
+    if (downPayment > totalAmount) downPayment = totalAmount;
+    var downN = clampInstallmentCount(document.getElementById('pay-down-installments').value);
+    var downInterval = parseInt(document.getElementById('pay-down-interval').value) || 30;
+    var downFirstDue = document.getElementById('pay-down-first-due').value || '';
+    var downMethod = (document.getElementById('pay-down-method') || {}).value || (document.getElementById('pay-method') || {}).value || 'card';
+    var numInstallments = clampInstallmentCount(document.getElementById('pay-installments').value);
+    var interval = parseInt(document.getElementById('pay-interval').value) || 30;
+    var firstDue = document.getElementById('pay-first-due').value || '';
+    var currency = document.getElementById('pay-currency').value || 'EUR';
+    var method = document.getElementById('pay-method').value || 'card';
+    var remaining = Math.max(0, Math.round((totalAmount - downPayment) * 100) / 100);
+    var instValue = numInstallments > 0 ? Math.floor(remaining * 100 / numInstallments) / 100 : 0;
+    return {
+      totalAmount: totalAmount,
+      downPayment: downPayment,
+      hasDown: downPayment > 0,
+      downInstallments: downN,
+      downInterval: downInterval,
+      downFirstDue: downFirstDue,
+      downMethod: downMethod,
+      remaining: remaining,
+      numInstallments: numInstallments,
+      interval: interval,
+      firstDue: firstDue,
+      currency: currency,
+      method: method,
+      installmentValue: instValue,
+      description: document.getElementById('pay-desc').value || 'Pagamento'
+    };
+  }
+
+  function buildBitrixDealFieldsFromPlan(plan) {
+    return {
+      OPPORTUNITY: plan.totalAmount,
+      CURRENCY_ID: plan.currency,
+      UF_CRM_EMMELY_TOTAL_AMOUNT: plan.totalAmount,
+      UF_CRM_EMMELY_DOWN_PAYMENT: plan.downPayment,
+      UF_CRM_EMMELY_DOWN_INSTALLMENTS: plan.hasDown ? plan.downInstallments : 0,
+      UF_CRM_EMMELY_DOWN_METHOD: plan.hasDown ? resolveBitrixMethodValue(plan.downMethod) : '',
+      UF_CRM_EMMELY_DOWN_FIRST_DUE: plan.hasDown ? plan.downFirstDue : '',
+      UF_CRM_EMMELY_DOWN_INTERVAL: plan.hasDown ? plan.downInterval : 0,
+      UF_CRM_EMMELY_REMAINING_BALANCE: plan.remaining,
+      UF_CRM_EMMELY_TOTAL_INSTALLMENTS: resolveBitrixInstallmentValue(plan.numInstallments),
+      UF_CRM_EMMELY_INSTALLMENT_VALUE: plan.installmentValue,
+      UF_CRM_EMMELY_NEXT_DUE_DATE: plan.firstDue,
+      UF_CRM_EMMELY_FIRST_DUE_DATE: plan.firstDue,
+      UF_CRM_EMMELY_INSTALLMENT_INTERVAL: plan.interval,
+      UF_CRM_EMMELY_PAYMENT_METHOD: resolveBitrixMethodValue(plan.method)
+    };
+  }
+
+  async function updateBitrixPaymentPlan(plan) {
+    if (typeof BX24 === 'undefined' || !ENTITY_ID) return;
+    var fields = buildBitrixDealFieldsFromPlan(plan);
+    await new Promise(function(resolve, reject) {
+      try {
+        if (ENTITY_TYPE_ID === '1') {
+          BX24.callMethod('crm.lead.update', { id: parseInt(ENTITY_ID), fields: fields }, function(r) { r && r.error && r.error() ? reject(new Error(r.error().ex && r.error().ex.error_description || 'Erro Bitrix')) : resolve(null); });
+        } else if (ENTITY_TYPE_ID === '2') {
+          BX24.callMethod('crm.deal.update', { id: parseInt(ENTITY_ID), fields: fields }, function(r) { r && r.error && r.error() ? reject(new Error(r.error().ex && r.error().ex.error_description || 'Erro Bitrix')) : resolve(null); });
+        } else {
+          var spaFields = {};
+          for (var k in fields) spaFields[k.toLowerCase().replace(/_([a-z])/g, function(_, c){ return c.toUpperCase(); })] = fields[k];
+          BX24.callMethod('crm.item.update', { entityTypeId: parseInt(ENTITY_TYPE_ID), id: parseInt(ENTITY_ID), fields: spaFields }, function(r) { r && r.error && r.error() ? reject(new Error(r.error().ex && r.error().ex.error_description || 'Erro Bitrix')) : resolve(null); });
+        }
+      } catch(e) { reject(e); }
+    });
+  }
   var DEAL_RAW_METHOD = "${opts.rawMethod || ""}";
   var GATEWAY_OPTIONS = ${JSON.stringify(opts.gatewayOptions || [])};
   var METHOD_OPTIONS = ${JSON.stringify(opts.methodOptions || [])};
@@ -2850,6 +3076,19 @@ Deno.serve(async (req) => {
     let rawMethodValue = "";
     let gatewayEnumOptions: { id: string; label: string }[] = [];
     let methodEnumOptions: { id: string; label: string }[] = [];
+    let installmentEnumOptions: { id: string; label: string }[] = [];
+    let paymentPlanFromDeal: {
+      totalAmount: number;
+      downPayment: number;
+      downInstallments: number;
+      downMethod: string;
+      downFirstDue: string | null;
+      downInterval: number;
+      remainingInstallments: number;
+      method: string;
+      firstDue: string | null;
+      interval: number;
+    } | null = null;
 
     try {
       const dealResult = await callBitrix(endpoint, accessToken, "crm.deal.get", { ID: entityId });
@@ -2877,6 +3116,22 @@ Deno.serve(async (req) => {
         };
         gatewayEnumOptions = extractItems(fields.UF_CRM_EMMELY_GATEWAY);
         methodEnumOptions = extractItems(fields.UF_CRM_EMMELY_PAYMENT_METHOD);
+        installmentEnumOptions = extractItems(fields.UF_CRM_EMMELY_TOTAL_INSTALLMENTS);
+
+        const totalPlanAmount = parseFlexibleNumber(deal.UF_CRM_EMMELY_TOTAL_AMOUNT) || dealAmount;
+        const downPayment = parseFlexibleNumber(deal.UF_CRM_EMMELY_DOWN_PAYMENT);
+        paymentPlanFromDeal = {
+          totalAmount: totalPlanAmount,
+          downPayment,
+          downInstallments: Math.max(1, Math.min(12, Math.round(parseFlexibleNumber(deal.UF_CRM_EMMELY_DOWN_INSTALLMENTS, 1)))) ,
+          downMethod: normalizePaymentMethodCode(deal.UF_CRM_EMMELY_DOWN_METHOD, fields.UF_CRM_EMMELY_PAYMENT_METHOD),
+          downFirstDue: parseBitrixDate(deal.UF_CRM_EMMELY_DOWN_FIRST_DUE),
+          downInterval: Math.max(1, Math.round(parseFlexibleNumber(deal.UF_CRM_EMMELY_DOWN_INTERVAL, 30))),
+          remainingInstallments: parseInstallmentCountFromBitrix(deal.UF_CRM_EMMELY_TOTAL_INSTALLMENTS, fields.UF_CRM_EMMELY_TOTAL_INSTALLMENTS),
+          method: normalizePaymentMethodCode(deal.UF_CRM_EMMELY_PAYMENT_METHOD, fields.UF_CRM_EMMELY_PAYMENT_METHOD),
+          firstDue: parseBitrixDate(deal.UF_CRM_EMMELY_FIRST_DUE_DATE || deal.UF_CRM_EMMELY_NEXT_DUE_DATE),
+          interval: Math.max(1, Math.round(parseFlexibleNumber(deal.UF_CRM_EMMELY_INSTALLMENT_INTERVAL, 30))),
+        };
 
         const resolveListValue = (fieldDef: any, rawVal: string): string => {
           if (!fieldDef || !rawVal) return "";
@@ -2894,6 +3149,20 @@ Deno.serve(async (req) => {
         console.error("[PAYMENT-TAB] Error resolving list fields:", e);
         dealGateway = /^\d+$/.test(rawGateway) ? "" : rawGateway;
         dealPaymentMethod = /^\d+$/.test(rawMethod) ? "" : rawMethod;
+        const totalPlanAmount = parseFlexibleNumber(deal.UF_CRM_EMMELY_TOTAL_AMOUNT) || dealAmount;
+        const downPayment = parseFlexibleNumber(deal.UF_CRM_EMMELY_DOWN_PAYMENT);
+        paymentPlanFromDeal = {
+          totalAmount: totalPlanAmount,
+          downPayment,
+          downInstallments: Math.max(1, Math.min(12, Math.round(parseFlexibleNumber(deal.UF_CRM_EMMELY_DOWN_INSTALLMENTS, 1)))) ,
+          downMethod: normalizePaymentMethodCode(deal.UF_CRM_EMMELY_DOWN_METHOD),
+          downFirstDue: parseBitrixDate(deal.UF_CRM_EMMELY_DOWN_FIRST_DUE),
+          downInterval: Math.max(1, Math.round(parseFlexibleNumber(deal.UF_CRM_EMMELY_DOWN_INTERVAL, 30))),
+          remainingInstallments: parseInstallmentCountFromBitrix(deal.UF_CRM_EMMELY_TOTAL_INSTALLMENTS),
+          method: normalizePaymentMethodCode(deal.UF_CRM_EMMELY_PAYMENT_METHOD),
+          firstDue: parseBitrixDate(deal.UF_CRM_EMMELY_FIRST_DUE_DATE || deal.UF_CRM_EMMELY_NEXT_DUE_DATE),
+          interval: Math.max(1, Math.round(parseFlexibleNumber(deal.UF_CRM_EMMELY_INSTALLMENT_INTERVAL, 30))),
+        };
       }
       if (contactId) {
         const contactResult = await callBitrix(endpoint, accessToken, "crm.contact.get", { ID: contactId });
@@ -3059,6 +3328,42 @@ Deno.serve(async (req) => {
       }
     }
 
+    // If the Bitrix fields already define a payment plan (for example 6 parcelas),
+    // show that plan even when old/single payment rows exist in Supabase. This keeps
+    // the iframe in sync when the user edits Nº de Parcelas directly in Bitrix or in
+    // the full edit modal before generating the gateway charges.
+    if (paymentPlanFromDeal && paymentPlanFromDeal.totalAmount > 0) {
+      const plannedRows = buildSyntheticInstallmentsFromPlan({
+        entityId: String(entityId),
+        title: dealTitle,
+        totalAmount: paymentPlanFromDeal.totalAmount,
+        currency: dealCurrency,
+        downPayment: paymentPlanFromDeal.downPayment,
+        downInstallments: paymentPlanFromDeal.downInstallments,
+        downMethod: paymentPlanFromDeal.downMethod,
+        downFirstDue: paymentPlanFromDeal.downFirstDue,
+        downInterval: paymentPlanFromDeal.downInterval,
+        remainingInstallments: paymentPlanFromDeal.remainingInstallments,
+        method: paymentPlanFromDeal.method,
+        firstDue: paymentPlanFromDeal.firstDue,
+        interval: paymentPlanFromDeal.interval,
+      });
+      const hasPaidRows = installments.some((i) => i.status === "paga");
+      const hasGeneratedRows = installments.some((i) => !!i.transaction_id && !String(i.transaction_id).startsWith("deal-"));
+      const planCount = plannedRows.length;
+      const currentCount = installments.length;
+      const currentSum = Math.round(installments.reduce((s, i) => s + (Number(i.value) || 0), 0) * 100) / 100;
+      const planSum = Math.round(plannedRows.reduce((s, i) => s + (Number(i.value) || 0), 0) * 100) / 100;
+      const planExplicitlySplit = planCount > 1 || paymentPlanFromDeal.downPayment > 0 || paymentPlanFromDeal.firstDue || paymentPlanFromDeal.method;
+      const planDiffers = planCount !== currentCount || Math.abs(planSum - currentSum) > 0.01;
+      if (plannedRows.length > 0 && planExplicitlySplit && !hasPaidRows && (!hasGeneratedRows || planDiffers)) {
+        installments = plannedRows;
+        totalValue = paymentPlanFromDeal.totalAmount;
+        paidValue = 0;
+        currency = dealCurrency;
+      }
+    }
+
     // Compute late fees for overdue installments (detect by due_date, not just status)
     const now = new Date();
     for (const inst of installments) {
@@ -3109,6 +3414,7 @@ Deno.serve(async (req) => {
       createdAt: displayCreatedAt,
       gatewayOptions: gatewayEnumOptions,
       methodOptions: methodEnumOptions,
+      installmentOptions: installmentEnumOptions,
     }), { headers: htmlHeaders });
 
   } catch (err) {
