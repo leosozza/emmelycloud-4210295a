@@ -66,12 +66,21 @@ async function resolvePaymentMethod(
 ): Promise<string> {
   const v = str(rawValue).toLowerCase();
   if (!v) return "";
+  const LABEL_MAP: Record<string, string> = {
+    "cartão": "card", "cartao": "card", "credit_card": "card",
+    "cliente escolhe": "customer_choice", "cliente escolhe (stripe)": "customer_choice",
+    "customer choice": "customer_choice", "customer_choice": "customer_choice",
+    "mb way": "mb_way", "mbway": "mb_way",
+    "débito sepa": "sepa_debit", "debito sepa": "sepa_debit",
+  };
+  if (LABEL_MAP[v]) return LABEL_MAP[v];
   // If already a known string code, keep it.
   const KNOWN = new Set([
-    "card", "pix", "boleto", "multibanco", "mb_way", "mbway",
-    "sepa_debit", "transferencia", "direto", "parcelado_direto", "n"
+    "card", "pix", "boleto", "multibanco", "mb_way",
+    "sepa_debit", "transferencia", "direto", "parcelado_direto",
+    "customer_choice", "link", "n"
   ]);
-  if (KNOWN.has(v)) return v === "mbway" ? "mb_way" : v;
+  if (KNOWN.has(v)) return v;
   // Purely numeric → enum ID, need to resolve.
   if (!/^\d+$/.test(v)) return v;
   try {
@@ -85,7 +94,10 @@ async function resolvePaymentMethod(
     const fields = res?.result || {};
     const items = fields.UF_CRM_EMMELY_PAYMENT_METHOD?.items || [];
     const found = items.find((it: any) => String(it.ID) === v);
-    if (found) return String(found.VALUE || found.value || v).toLowerCase();
+    if (found) {
+      const label = String(found.VALUE || found.value || v).toLowerCase();
+      return LABEL_MAP[label] || label;
+    }
   } catch (_e) { /* ignore */ }
   return v;
 }
