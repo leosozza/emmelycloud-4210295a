@@ -1427,7 +1427,7 @@ async function handleSendPaymentReport(
       token = newLink.token;
     }
 
-    const frontendBase = (Deno.env.get("FRONTEND_URL") || "https://emmelycloud.pages.dev").replace(/\/+$/, "");
+    const frontendBase = (Deno.env.get("PUBLIC_RECEIPT_URL") || "https://emmelycloud.lovable.app").replace(/\/+$/, "");
     const reportUrl = `${frontendBase}/pagamento/${token}`;
 
     // 2. Get Bitrix24 integration
