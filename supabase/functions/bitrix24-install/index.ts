@@ -716,6 +716,9 @@ Deno.serve(async (req) => {
       const flowOptions: Record<string, string> = { "": "(Não executar flow)" };
       (activeFlows || []).forEach((f: any) => { flowOptions[f.id] = f.name; });
 
+      // Load Bitrix deal stages for stage_on_paid / stage_on_overdue selects
+      const stageOptions = await loadDealStageOptions(ep, token);
+
       const repairRobots = [
         {
           CODE: "emmely_send_whatsapp",
