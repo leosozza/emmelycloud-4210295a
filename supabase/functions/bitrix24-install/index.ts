@@ -779,21 +779,17 @@ Deno.serve(async (req) => {
       ];
 
 
-      emmelyUserFields.forEach(f => {
-        addCommands[`add_deal_${f.FIELD_NAME}`] = { method: "crm.deal.userfield.add", params: { fields: f } };
-        addCommands[`add_lead_${f.FIELD_NAME}`] = { method: "crm.lead.userfield.add", params: { fields: f } };
-      });
-
-      console.log(`[SYNC] Creating ${Object.keys(addCommands).length} fields in batch...`);
-      const addResults = await callBitrixBatch(ep, token, addCommands);
-      Object.keys(addCommands).forEach(key => {
-        const fieldName = key.includes("deal") ? "created_deal" : "created_lead";
-        if (addResults.result?.result?.[key]) report[fieldName].push(key);
-        else {
-          const err = addResults.result?.result_error?.[key]?.error || 'unknown';
-          if (!err.includes("ALREADY") && !err.includes("DUPLICATE")) report.errors.push(`create ${key}: ${err}`);
-        }
-      });
+      console.log(`[SYNC] Upserting ${emmelyUserFields.length} EMMELY fields (idempotent, no deletes)...`);
+      const upsertReport = await upsertEmmelyUserFields(ep, token, emmelyUserFields);
+      report.created_deal = upsertReport.created_deal;
+      report.updated_deal = upsertReport.updated_deal;
+      report.unchanged_deal = upsertReport.unchanged_deal;
+      report.orphan_kept_deal = upsertReport.orphan_kept_deal;
+      report.created_lead = upsertReport.created_lead;
+      report.updated_lead = upsertReport.updated_lead;
+      report.unchanged_lead = upsertReport.unchanged_lead;
+      report.orphan_kept_lead = upsertReport.orphan_kept_lead;
+      report.errors.push(...upsertReport.errors);
 
 
       // --- Re-register robots with updated template options ---
