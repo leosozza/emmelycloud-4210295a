@@ -2061,8 +2061,30 @@ function renderPaymentTab(opts: {
     if (!_editMode) return;
     var btn = document.getElementById('pay-submit');
     var el = document.getElementById('pay-result');
-    var newAmount = parseFloat(document.getElementById('pay-amount').value);
+    var plan = buildPaymentPlanFromForm();
+    var newAmount = plan.totalAmount;
     if (!newAmount || newAmount <= 0) { showPayResult('Informe um valor válido.', true); return; }
+
+    // Full edit changes the payment structure (ex.: 1x -> 6x). Do not patch only
+    // the first transaction; save the complete plan in Bitrix and reload so the
+    // tab renders the planned/synthetic installments immediately.
+    if (!_editMode.single) {
+      submitInFlight = true;
+      btn.disabled = true; btn.textContent = 'A guardar plano...';
+      try {
+        await updateBitrixPaymentPlan(plan);
+        el.innerHTML = 'Plano da cobrança atualizado. As parcelas serão recalculadas agora.';
+        el.style.color = 'var(--value-paid)'; el.style.display = 'block';
+        setTimeout(function() { location.reload(); }, 700);
+      } catch(e) {
+        el.innerHTML = 'Erro ao guardar no Bitrix: ' + e.message;
+        el.style.color = 'var(--value-open)'; el.style.display = 'block';
+        submitInFlight = false;
+        btn.disabled = false; btn.textContent = 'Guardar Alterações';
+      }
+      return;
+    }
+
     var newDue = document.getElementById('pay-first-due').value || undefined;
     var newMethod = document.getElementById('pay-method').value || undefined;
     var newCurrency = document.getElementById('pay-currency').value || _editMode.currency;
