@@ -290,9 +290,9 @@ function CRMTab() {
                   {testing ? <RefreshCw className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <Activity className="h-3.5 w-3.5 mr-1.5" />}
                   {testing ? "A testar…" : "Testar Conexão"}
                 </Button>
-                <Button size="sm" variant="default" onClick={handleResync} disabled={testing || resyncing} title="Re-registar conector, campos, robôs e placements sem reinstalar a app">
+                <Button size="sm" variant="default" onClick={handleResync} disabled={testing || resyncing} title="Re-regista conector, campos, robôs, bots e eventos numa só ação">
                   <RefreshCw className={`h-3.5 w-3.5 mr-1.5 ${resyncing ? "animate-spin" : ""}`} />
-                  {resyncing ? "A atualizar…" : "Atualizar App"}
+                  {resyncing ? "A atualizar…" : "Atualizar Bitrix24"}
                 </Button>
               </div>
               {testResult && (
