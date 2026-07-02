@@ -1214,6 +1214,8 @@ async function handleGenerateContract(
           ...(signedFlowId ? { signed_flow_id: signedFlowId } : {}),
           ...(paidFlowId ? { paid_flow_id: paidFlowId } : {}),
           ...(overdueFlowId ? { overdue_flow_id: overdueFlowId } : {}),
+          ...(stageOnPaid ? { stage_on_paid: stageOnPaid } : {}),
+          ...(stageOnOverdue ? { stage_on_overdue: stageOnOverdue } : {}),
           ...(overdueDays ? { overdue_days: overdueDays } : {}),
         })
         .select("*")
