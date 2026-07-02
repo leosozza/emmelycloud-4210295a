@@ -1039,6 +1039,8 @@ async function handleGenerateContract(
   const signedFlowId = properties.signed_flow_id || properties.SIGNED_FLOW_ID || "";
   const paidFlowId = properties.paid_flow_id || properties.PAID_FLOW_ID || "";
   const overdueFlowId = properties.overdue_flow_id || properties.OVERDUE_FLOW_ID || "";
+  const stageOnPaid = String(properties.stage_on_paid || properties.STAGE_ON_PAID || "").trim();
+  const stageOnOverdue = String(properties.stage_on_overdue || properties.STAGE_ON_OVERDUE || "").trim();
   const overdueDays = parseInt(properties.overdue_days || properties.OVERDUE_DAYS || "0") || 0;
 
   try {
