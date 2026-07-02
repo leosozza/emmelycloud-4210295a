@@ -387,10 +387,28 @@ export default function FlowsPage() {
 
   const handleSaveFlow = async () => {
     if (!selectedFlow) return;
+    const flowName = selectedFlow.name.trim();
+    if (!flowName) { toast.error("Nome é obrigatório"); return; }
     setSaving(true);
     try {
-      const { error } = await supabase.from("flows").update({ nodes: nodes as any, edges: edges as any } as any).eq("id", selectedFlow.id);
+      const payload = {
+        name: flowName,
+        description: selectedFlow.description?.trim() || null,
+        nodes: nodes as any,
+        edges: edges as any,
+      };
+      const { data, error } = await supabase
+        .from("flows")
+        .update(payload as any)
+        .eq("id", selectedFlow.id)
+        .select()
+        .single();
       if (error) throw error;
+      if (data) {
+        const savedFlow = data as unknown as Flow;
+        setSelectedFlow(savedFlow);
+        setFlows((prev) => prev.map((flow) => flow.id === savedFlow.id ? savedFlow : flow));
+      }
       toast.success("Fluxo guardado");
     } catch (e: any) { toast.error(e.message); }
     finally { setSaving(false); }
