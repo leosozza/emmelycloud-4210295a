@@ -286,13 +286,17 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Map Stripe event to status
+    // Map Stripe event to status. Include async_payment_* for MBWay, SEPA, Multibanco,
+    // Boleto, and other delayed-notification methods that never fire checkout.session.completed
+    // with a paid state.
     const statusMap: Record<string, string> = {
       "payment_intent.succeeded": "confirmed",
       "payment_intent.payment_failed": "failed",
       "payment_intent.canceled": "canceled",
       "charge.refunded": "refunded",
       "checkout.session.completed": "confirmed",
+      "checkout.session.async_payment_succeeded": "confirmed",
+      "checkout.session.async_payment_failed": "failed",
     };
 
     const newStatus = statusMap[event.type];
@@ -304,9 +308,10 @@ Deno.serve(async (req) => {
 
     console.log(`[STRIPE-WEBHOOK] Event: ${event.type}, objectId: ${eventObject.id}`);
 
-    // For checkout.session.completed, resolve the payment_intent ID from the session
+    // For checkout.session.* events, resolve the payment_intent ID from the session
+    const isCheckoutSessionEvent = event.type.startsWith("checkout.session.");
     let gatewayPaymentId = eventObject.id;
-    if (event.type === "checkout.session.completed") {
+    if (isCheckoutSessionEvent) {
       gatewayPaymentId = eventObject.payment_intent || eventObject.id;
     }
 
@@ -323,9 +328,10 @@ Deno.serve(async (req) => {
       existingTx = data;
     }
 
-    // Fallback for checkout.session.completed: also try matching by the session ID directly
-    // (payment-create stores cs_xxx as gateway_payment_id, not the payment_intent)
-    if (!existingTx && event.type === "checkout.session.completed") {
+    // Fallback for checkout.session.* events: match by the session ID directly
+    // (payment-create/payment-create-link often store cs_xxx as gateway_payment_id
+    // when the payment_intent isn't ready yet — the case for async methods like MBWay).
+    if (!existingTx && isCheckoutSessionEvent) {
       const sessionId = eventObject.id; // cs_xxx
       const { data } = await supabase
         .from("payment_transactions")
@@ -349,7 +355,7 @@ Deno.serve(async (req) => {
     }
 
     // Legacy fallback: try checkout_session_id in metadata (kept for old transactions)
-    if (!existingTx && event.type === "checkout.session.completed") {
+    if (!existingTx && isCheckoutSessionEvent) {
       const sessionId = eventObject.id;
       const { data: allPending } = await supabase
         .from("payment_transactions")
@@ -374,7 +380,39 @@ Deno.serve(async (req) => {
       }
     }
 
-    if (!existingTx) {
+    // Metadata fallback: Stripe checkout metadata carries financial_record_id / bitrix24_deal_id.
+    // If we still can't find the tx (e.g. it was never inserted), locate the target
+    // financial_record and update it directly so the dashboard reflects the payment.
+    let orphanFinancialRecordId: string | null = null;
+    if (!existingTx && newStatus === "confirmed") {
+      const meta = (eventObject.metadata || {}) as Record<string, string>;
+      const frFromMeta = meta.financial_record_id || null;
+      const dealFromMeta = meta.bitrix24_deal_id || meta.bitrix_deal_id || null;
+      const installmentFromMeta = meta.installment_number ? Number(meta.installment_number) : null;
+
+      if (frFromMeta) {
+        orphanFinancialRecordId = frFromMeta;
+      } else if (dealFromMeta) {
+        let q = supabase
+          .from("financial_records")
+          .select("id")
+          .eq("bitrix24_deal_id", String(dealFromMeta))
+          .neq("status", "paga")
+          .order("installment_number", { ascending: true })
+          .limit(1);
+        if (installmentFromMeta) q = q.eq("installment_number", installmentFromMeta);
+        const { data: frRow } = await q.maybeSingle();
+        if (frRow?.id) orphanFinancialRecordId = frRow.id;
+      }
+
+      if (orphanFinancialRecordId) {
+        console.log(`[STRIPE-WEBHOOK] Metadata fallback resolved financial_record_id=${orphanFinancialRecordId} for event ${eventObject.id}`);
+      } else {
+        console.warn(`[STRIPE-WEBHOOK] No tx and no metadata match for ${gatewayPaymentId}. Meta:`, meta);
+      }
+    }
+
+    if (!existingTx && !orphanFinancialRecordId) {
       console.log(`[STRIPE-WEBHOOK] No transaction found for ${gatewayPaymentId}`);
     }
 
@@ -396,6 +434,40 @@ Deno.serve(async (req) => {
         .from("financial_records")
         .update({ status: "paga", paid_at: new Date().toISOString(), stripe_payment_id: gatewayPaymentId })
         .eq("id", tx.financial_record_id);
+    }
+
+    // Orphan fallback: no tx row but we resolved a financial_record via metadata.
+    // Create the tx retroactively and mark the record as paid so the dashboard reflects it.
+    if (!tx && orphanFinancialRecordId && newStatus === "confirmed") {
+      const meta = (eventObject.metadata || {}) as Record<string, string>;
+      const amountFromEvent = typeof eventObject.amount_total === "number"
+        ? eventObject.amount_total / 100
+        : (typeof eventObject.amount === "number" ? eventObject.amount / 100 : 0);
+      const currencyFromEvent = (eventObject.currency || "eur").toUpperCase();
+
+      const { data: insertedTx } = await supabase.from("payment_transactions").insert({
+        financial_record_id: orphanFinancialRecordId,
+        amount: amountFromEvent,
+        currency: currencyFromEvent,
+        gateway: "stripe",
+        gateway_payment_id: gatewayPaymentId,
+        status: "confirmed",
+        payment_method: (eventObject.payment_method_types?.[0]) || "card",
+        metadata: {
+          source: "webhook_orphan_reconciliation",
+          stripe_event: event.type,
+          checkout_session_id: isCheckoutSessionEvent ? eventObject.id : null,
+          bitrix_deal_id: meta.bitrix24_deal_id || meta.bitrix_deal_id || null,
+          receipt_token: meta.receipt_token || null,
+        },
+      }).select("id, financial_record_id, metadata, amount, currency").maybeSingle();
+
+      await supabase
+        .from("financial_records")
+        .update({ status: "paga", paid_at: new Date().toISOString(), stripe_payment_id: gatewayPaymentId })
+        .eq("id", orphanFinancialRecordId);
+
+      console.log(`[STRIPE-WEBHOOK] Orphan reconciled: financial_record ${orphanFinancialRecordId} marked paga (tx ${insertedTx?.id})`);
     }
 
     // Notify Bitrix24 on payment confirmation

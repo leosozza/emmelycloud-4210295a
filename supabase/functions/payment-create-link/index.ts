@@ -431,7 +431,11 @@ Deno.serve(async (req) => {
     baseParams.append("cancel_url", cancelUrl);
     baseParams.append("metadata[financial_record_id]", actualRecordId);
     baseParams.append("metadata[receipt_token]", token);
-    if (link.bitrix24_deal_id) baseParams.append("metadata[bitrix24_deal_id]", String(link.bitrix24_deal_id));
+    if (link.bitrix24_deal_id) {
+      baseParams.append("metadata[bitrix24_deal_id]", String(link.bitrix24_deal_id));
+      baseParams.append("metadata[bitrix_deal_id]", String(link.bitrix24_deal_id));
+    }
+    if (record?.installment_number) baseParams.append("metadata[installment_number]", String(record.installment_number));
     if (record.contract_id) baseParams.append("metadata[contract_id]", record.contract_id);
 
     const stripeResult = await createStripeCheckout(stripeKey, baseParams, methods, currency);
