@@ -1788,61 +1788,34 @@ Deno.serve(async (req) => {
           LIST_FILTER_LABEL: { br: "INTERVALO PARCELAS", en: "INSTALLMENT INTERVAL" } },
       ];
 
-      const deleteApis = [
-        { name: "Deal", listMethod: "crm.deal.userfield.list", deleteMethod: "crm.deal.userfield.delete" },
-        { name: "Lead", listMethod: "crm.lead.userfield.list", deleteMethod: "crm.lead.userfield.delete" },
-      ];
-
-      const ufBatchCmds: Record<string, any> = {};
-      
-      // Part A: Cleanup (Delete existing)
-      for (const api of deleteApis) {
-        try {
-          const existingFields = await callBitrix(clientEndpoint, accessToken, api.listMethod, {});
-          const emmelyFields = (existingFields.result || []).filter(
-            (f: any) => f.FIELD_NAME && f.FIELD_NAME.startsWith("UF_CRM_EMMELY_")
-          );
-          for (const f of emmelyFields) {
-            ufBatchCmds[`del_${api.name}_${f.ID}`] = { method: api.deleteMethod, params: { id: f.ID } };
-          }
-        } catch (delErr) {
-          console.error(`[INSTALL] Error listing ${api.name} fields for clean:`, delErr);
-        }
-      }
-
-      // Part B: Addition
-      const entityApis = [
-        { name: "Deal", method: "crm.deal.userfield.add" },
-        { name: "Lead", method: "crm.lead.userfield.add" },
-      ];
-      for (const entity of entityApis) {
-        for (const field of emmelyUserFields) {
-          ufBatchCmds[`add_${entity.name}_${field.FIELD_NAME}`] = { method: entity.method, params: { fields: field } };
-        }
-      }
-
-      console.log(`[INSTALL] Executing ${Object.keys(ufBatchCmds).length} UserField operations in batch...`);
-      // Use halt: 0 to ensure one field failure (e.g. already exists) doesn't stop others
-      const ufResults = await callBitrixBatch(clientEndpoint, accessToken, ufBatchCmds);
-      
-      Object.keys(ufBatchCmds).forEach(key => {
-        if (key.startsWith("add_")) {
-          const res = ufResults.result?.result?.[key];
-          const err = ufResults.result?.result_error?.[key];
-          if (res || (err && (String(err.error).includes("ALREADY") || String(err.error).includes("DUPLICATE")))) {
-            installSummary.userfields_registered.push(key.replace("add_", ""));
-          }
-        }
-      });
-
+      // Idempotent upsert — never deletes existing UF_CRM_EMMELY_* fields,
+      // so previously stored values on deals/leads are preserved.
+      console.log(`[INSTALL] Upserting ${emmelyUserFields.length} EMMELY fields (idempotent)...`);
+      const ufReport = await upsertEmmelyUserFields(clientEndpoint, accessToken, emmelyUserFields);
+      for (const name of ufReport.created_deal) installSummary.userfields_registered.push(`deal_${name}`);
+      for (const name of ufReport.updated_deal) installSummary.userfields_registered.push(`deal_${name}`);
+      for (const name of ufReport.unchanged_deal) installSummary.userfields_registered.push(`deal_${name}`);
+      for (const name of ufReport.created_lead) installSummary.userfields_registered.push(`lead_${name}`);
+      for (const name of ufReport.updated_lead) installSummary.userfields_registered.push(`lead_${name}`);
+      for (const name of ufReport.unchanged_lead) installSummary.userfields_registered.push(`lead_${name}`);
 
       if (installSummary.userfields_registered.length > 0) {
         installSummary.installed_modules.push("userfields");
       }
 
-      await debugLog(supabase, integrationId, "userfields_registered", "outbound", {
+      await debugLog(supabase, integrationId, "userfields_upserted", "outbound", {
         fields: installSummary.userfields_registered,
+        created_deal: ufReport.created_deal,
+        updated_deal: ufReport.updated_deal,
+        unchanged_deal: ufReport.unchanged_deal,
+        orphan_kept_deal: ufReport.orphan_kept_deal,
+        created_lead: ufReport.created_lead,
+        updated_lead: ufReport.updated_lead,
+        unchanged_lead: ufReport.unchanged_lead,
+        orphan_kept_lead: ufReport.orphan_kept_lead,
+        errors: ufReport.errors,
       });
+
 
       // --- Auto-seed field mappings for Deal entity ---
       try {
