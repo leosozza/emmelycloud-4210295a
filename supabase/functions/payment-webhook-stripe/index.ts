@@ -328,9 +328,10 @@ Deno.serve(async (req) => {
       existingTx = data;
     }
 
-    // Fallback for checkout.session.completed: also try matching by the session ID directly
-    // (payment-create stores cs_xxx as gateway_payment_id, not the payment_intent)
-    if (!existingTx && event.type === "checkout.session.completed") {
+    // Fallback for checkout.session.* events: match by the session ID directly
+    // (payment-create/payment-create-link often store cs_xxx as gateway_payment_id
+    // when the payment_intent isn't ready yet — the case for async methods like MBWay).
+    if (!existingTx && isCheckoutSessionEvent) {
       const sessionId = eventObject.id; // cs_xxx
       const { data } = await supabase
         .from("payment_transactions")
@@ -354,7 +355,7 @@ Deno.serve(async (req) => {
     }
 
     // Legacy fallback: try checkout_session_id in metadata (kept for old transactions)
-    if (!existingTx && event.type === "checkout.session.completed") {
+    if (!existingTx && isCheckoutSessionEvent) {
       const sessionId = eventObject.id;
       const { data: allPending } = await supabase
         .from("payment_transactions")
@@ -379,7 +380,39 @@ Deno.serve(async (req) => {
       }
     }
 
-    if (!existingTx) {
+    // Metadata fallback: Stripe checkout metadata carries financial_record_id / bitrix24_deal_id.
+    // If we still can't find the tx (e.g. it was never inserted), locate the target
+    // financial_record and update it directly so the dashboard reflects the payment.
+    let orphanFinancialRecordId: string | null = null;
+    if (!existingTx && newStatus === "confirmed") {
+      const meta = (eventObject.metadata || {}) as Record<string, string>;
+      const frFromMeta = meta.financial_record_id || null;
+      const dealFromMeta = meta.bitrix24_deal_id || meta.bitrix_deal_id || null;
+      const installmentFromMeta = meta.installment_number ? Number(meta.installment_number) : null;
+
+      if (frFromMeta) {
+        orphanFinancialRecordId = frFromMeta;
+      } else if (dealFromMeta) {
+        let q = supabase
+          .from("financial_records")
+          .select("id")
+          .eq("bitrix24_deal_id", String(dealFromMeta))
+          .neq("status", "paga")
+          .order("installment_number", { ascending: true })
+          .limit(1);
+        if (installmentFromMeta) q = q.eq("installment_number", installmentFromMeta);
+        const { data: frRow } = await q.maybeSingle();
+        if (frRow?.id) orphanFinancialRecordId = frRow.id;
+      }
+
+      if (orphanFinancialRecordId) {
+        console.log(`[STRIPE-WEBHOOK] Metadata fallback resolved financial_record_id=${orphanFinancialRecordId} for event ${eventObject.id}`);
+      } else {
+        console.warn(`[STRIPE-WEBHOOK] No tx and no metadata match for ${gatewayPaymentId}. Meta:`, meta);
+      }
+    }
+
+    if (!existingTx && !orphanFinancialRecordId) {
       console.log(`[STRIPE-WEBHOOK] No transaction found for ${gatewayPaymentId}`);
     }
 
