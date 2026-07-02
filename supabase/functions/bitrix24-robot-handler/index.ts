@@ -489,6 +489,8 @@ async function handleCreateCharge(
           requested_payment_method: parcel.method,
           paid_flow_id: chargePaidFlowId || undefined,
           overdue_flow_id: chargeOverdueFlowId || undefined,
+          stage_on_paid: chargeStageOnPaid || undefined,
+          stage_on_overdue: chargeStageOnOverdue || undefined,
           overdue_days: chargeOverdueDays || undefined,
         },
       };
