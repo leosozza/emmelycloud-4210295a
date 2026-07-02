@@ -1778,10 +1778,14 @@ function renderPaymentTab(opts: {
       UF_CRM_EMMELY_TOTAL_AMOUNT: totalAmount,
       UF_CRM_EMMELY_DOWN_PAYMENT: downPayment,
       UF_CRM_EMMELY_DOWN_INSTALLMENTS: hasDown ? downN : 0,
-      UF_CRM_EMMELY_DOWN_METHOD: hasDown ? downMethod : '',
+      UF_CRM_EMMELY_DOWN_METHOD: hasDown ? resolveBitrixMethodValue(downMethod) : '',
       UF_CRM_EMMELY_DOWN_FIRST_DUE: hasDown ? downFirstDue : '',
       UF_CRM_EMMELY_DOWN_INTERVAL: hasDown ? downInterval : 0,
       UF_CRM_EMMELY_REMAINING_BALANCE: remaining,
+      UF_CRM_EMMELY_TOTAL_INSTALLMENTS: resolveBitrixInstallmentValue(numInstallments),
+      UF_CRM_EMMELY_INSTALLMENT_VALUE: instValue,
+      UF_CRM_EMMELY_PAYMENT_METHOD: resolveBitrixMethodValue(method),
+      UF_CRM_EMMELY_NEXT_DUE_DATE: (remaining > 0) ? firstDue : '',
       UF_CRM_EMMELY_FIRST_DUE_DATE: (remaining > 0) ? firstDue : '',
       UF_CRM_EMMELY_INSTALLMENT_INTERVAL: (remaining > 0) ? interval : 0
     };
