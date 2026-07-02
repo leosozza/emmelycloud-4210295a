@@ -286,13 +286,17 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Map Stripe event to status
+    // Map Stripe event to status. Include async_payment_* for MBWay, SEPA, Multibanco,
+    // Boleto, and other delayed-notification methods that never fire checkout.session.completed
+    // with a paid state.
     const statusMap: Record<string, string> = {
       "payment_intent.succeeded": "confirmed",
       "payment_intent.payment_failed": "failed",
       "payment_intent.canceled": "canceled",
       "charge.refunded": "refunded",
       "checkout.session.completed": "confirmed",
+      "checkout.session.async_payment_succeeded": "confirmed",
+      "checkout.session.async_payment_failed": "failed",
     };
 
     const newStatus = statusMap[event.type];
@@ -304,9 +308,10 @@ Deno.serve(async (req) => {
 
     console.log(`[STRIPE-WEBHOOK] Event: ${event.type}, objectId: ${eventObject.id}`);
 
-    // For checkout.session.completed, resolve the payment_intent ID from the session
+    // For checkout.session.* events, resolve the payment_intent ID from the session
+    const isCheckoutSessionEvent = event.type.startsWith("checkout.session.");
     let gatewayPaymentId = eventObject.id;
-    if (event.type === "checkout.session.completed") {
+    if (isCheckoutSessionEvent) {
       gatewayPaymentId = eventObject.payment_intent || eventObject.id;
     }
 
