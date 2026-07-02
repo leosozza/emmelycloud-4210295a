@@ -174,6 +174,141 @@ async function loadDealStageOptions(
   return options;
 }
 
+/**
+ * Idempotent upsert of UF_CRM_EMMELY_* user fields on Deal + Lead.
+ * NEVER deletes fields (that would erase stored values on every deal/lead).
+ * - Adds missing fields.
+ * - Updates labels/settings only when they changed.
+ * - For enumeration fields, merges LIST preserving existing IDs; only appends
+ *   new options (matched by VALUE, case-insensitive). Never removes options.
+ * - Fields present in Bitrix that are not in the desired set are kept as-is
+ *   and only reported as `orphan_kept_*`.
+ */
+async function upsertEmmelyUserFields(
+  ep: string,
+  token: string,
+  emmelyUserFields: any[],
+): Promise<any> {
+  const report: any = {
+    created_deal: [], updated_deal: [], unchanged_deal: [], orphan_kept_deal: [],
+    created_lead: [], updated_lead: [], unchanged_lead: [], orphan_kept_lead: [],
+    errors: [],
+  };
+
+  const entities = [
+    { name: "deal", listMethod: "crm.deal.userfield.list", addMethod: "crm.deal.userfield.add", updateMethod: "crm.deal.userfield.update" },
+    { name: "lead", listMethod: "crm.lead.userfield.list", addMethod: "crm.lead.userfield.add", updateMethod: "crm.lead.userfield.update" },
+  ];
+
+  const jsonEq = (a: any, b: any) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
+  const desiredNames = new Set(emmelyUserFields.map((f) => f.FIELD_NAME));
+
+  for (const ent of entities) {
+    const listRes = await callBitrix(ep, token, ent.listMethod, { filter: {} });
+    const existingFields: any[] = Array.isArray(listRes.result) ? listRes.result : [];
+    const byName = new Map<string, any>();
+    for (const f of existingFields) if (f?.FIELD_NAME) byName.set(f.FIELD_NAME, f);
+
+    for (const f of existingFields) {
+      if (f.FIELD_NAME?.startsWith("UF_CRM_EMMELY_") && !desiredNames.has(f.FIELD_NAME)) {
+        report[`orphan_kept_${ent.name}`].push(f.FIELD_NAME);
+      }
+    }
+
+    const addCmds: Record<string, any> = {};
+    const updateBatchCmds: Record<string, any> = {};
+    const updateMeta: Record<string, string> = {};
+
+    for (const desired of emmelyUserFields) {
+      const existing = byName.get(desired.FIELD_NAME);
+      if (!existing) {
+        addCmds[`add_${desired.FIELD_NAME}`] = { method: ent.addMethod, params: { fields: desired } };
+        continue;
+      }
+
+      const updateFields: any = {};
+      if (desired.EDIT_FORM_LABEL && !jsonEq(existing.EDIT_FORM_LABEL, desired.EDIT_FORM_LABEL)) {
+        updateFields.EDIT_FORM_LABEL = desired.EDIT_FORM_LABEL;
+      }
+      if (desired.LIST_COLUMN_LABEL && !jsonEq(existing.LIST_COLUMN_LABEL, desired.LIST_COLUMN_LABEL)) {
+        updateFields.LIST_COLUMN_LABEL = desired.LIST_COLUMN_LABEL;
+      }
+      if (desired.LIST_FILTER_LABEL && !jsonEq(existing.LIST_FILTER_LABEL, desired.LIST_FILTER_LABEL)) {
+        updateFields.LIST_FILTER_LABEL = desired.LIST_FILTER_LABEL;
+      }
+      if (desired.SETTINGS && !jsonEq(existing.SETTINGS, desired.SETTINGS)) {
+        updateFields.SETTINGS = desired.SETTINGS;
+      }
+
+      if (desired.USER_TYPE_ID === "enumeration" && Array.isArray(desired.LIST)) {
+        const existingList: any[] = Array.isArray(existing.LIST) ? existing.LIST : [];
+        const existingByValue = new Map<string, any>();
+        for (const item of existingList) {
+          if (item?.VALUE != null) existingByValue.set(String(item.VALUE).trim().toLowerCase(), item);
+        }
+        const toAppend: any[] = [];
+        for (const wanted of desired.LIST) {
+          const key = String(wanted.VALUE ?? "").trim().toLowerCase();
+          if (key && !existingByValue.has(key)) {
+            toAppend.push({ VALUE: wanted.VALUE, SORT: wanted.SORT ?? 500, DEF: wanted.DEF || "N" });
+          }
+        }
+        if (toAppend.length > 0) {
+          // Preserve existing options with their IDs, only append missing.
+          const mergedList = [
+            ...existingList.map((it) => ({ ID: it.ID, VALUE: it.VALUE, SORT: it.SORT, DEF: it.DEF, XML_ID: it.XML_ID })),
+            ...toAppend,
+          ];
+          updateFields.LIST = mergedList;
+        }
+      }
+
+      if (Object.keys(updateFields).length === 0) {
+        report[`unchanged_${ent.name}`].push(desired.FIELD_NAME);
+      } else {
+        const key = `upd_${desired.FIELD_NAME}`;
+        updateBatchCmds[key] = {
+          method: ent.updateMethod,
+          params: { id: existing.ID, fields: updateFields },
+        };
+        updateMeta[key] = desired.FIELD_NAME;
+      }
+    }
+
+    if (Object.keys(addCmds).length > 0) {
+      const addRes = await callBitrixBatch(ep, token, addCmds);
+      for (const key of Object.keys(addCmds)) {
+        const fieldName = key.replace("add_", "");
+        if (addRes.result?.result?.[key]) {
+          report[`created_${ent.name}`].push(fieldName);
+        } else {
+          const err = addRes.result?.result_error?.[key]?.error || "";
+          if (String(err).includes("ALREADY") || String(err).includes("DUPLICATE")) {
+            report[`unchanged_${ent.name}`].push(fieldName);
+          } else if (err) {
+            report.errors.push(`${ent.name} add ${fieldName}: ${err}`);
+          }
+        }
+      }
+    }
+
+    if (Object.keys(updateBatchCmds).length > 0) {
+      const updRes = await callBitrixBatch(ep, token, updateBatchCmds);
+      for (const key of Object.keys(updateBatchCmds)) {
+        const fieldName = updateMeta[key];
+        if (updRes.result?.result?.[key]) {
+          report[`updated_${ent.name}`].push(fieldName);
+        } else {
+          const err = updRes.result?.result_error?.[key]?.error || "unknown";
+          report.errors.push(`${ent.name} update ${fieldName}: ${err}`);
+        }
+      }
+    }
+  }
+
+  return report;
+}
+
 
 async function debugLog(
   supabase: any,
@@ -403,43 +538,18 @@ Deno.serve(async (req) => {
 
       const ep = integration.client_endpoint.endsWith("/") ? integration.client_endpoint : integration.client_endpoint + "/";
       const token = integration.access_token;
-      const report: any = { deleted_deal: [], deleted_lead: [], created_deal: [], created_lead: [], errors: [] };
+      const report: any = {
+        created_deal: [], updated_deal: [], unchanged_deal: [], orphan_kept_deal: [],
+        created_lead: [], updated_lead: [], unchanged_lead: [], orphan_kept_lead: [],
+        errors: [],
+      };
 
-      // 1. Delete existing EMMELY fields (Batch)
-      const dealFieldsList = await callBitrix(ep, token, "crm.deal.userfield.list", { filter: {} });
-      const leadFieldsList = await callBitrix(ep, token, "crm.lead.userfield.list", { filter: {} });
-      
-      const delCommands: Record<string, any> = {};
-      const dealFields = Array.isArray(dealFieldsList.result) ? dealFieldsList.result : [];
-      dealFields.forEach((f: any) => {
-        if (f.FIELD_NAME?.startsWith("UF_CRM_EMMELY_")) {
-          delCommands[`del_deal_${f.ID}`] = { method: "crm.deal.userfield.delete", params: { id: f.ID } };
-        }
-      });
-      
-      const leadFields = Array.isArray(leadFieldsList.result) ? leadFieldsList.result : [];
-      leadFields.forEach((f: any) => {
-        if (f.FIELD_NAME?.startsWith("UF_CRM_EMMELY_")) {
-          delCommands[`del_lead_${f.ID}`] = { method: "crm.lead.userfield.delete", params: { id: f.ID } };
-        }
-      });
-
-      if (Object.keys(delCommands).length > 0) {
-        console.log(`[SYNC] Deleting ${Object.keys(delCommands).length} fields in batch...`);
-        const delResults = await callBitrixBatch(ep, token, delCommands);
-        // Map results to report
-        Object.keys(delCommands).forEach(key => {
-          const fieldName = key.includes("deal") ? "deal" : "lead";
-          if (delResults.result?.result?.[key]) report[`deleted_${fieldName}`].push(key);
-          else report.errors.push(`delete ${key}: ${delResults.result?.result_error?.[key]?.error || 'unknown'}`);
-        });
-      }
-
-      // 3. Recreate all fields (Batch)
-      // We'll split creation into Deal and Lead batches to avoid the 50 limit if needed, 
-      // though currently we have 17 * 2 = 34 fields.
-      const addCommands: Record<string, any> = {};
+      // Idempotent field definitions — helper (upsertEmmelyUserFields) below
+      // will add missing fields, update labels only when changed, and merge
+      // enumeration LISTs preserving existing IDs. No field is ever deleted,
+      // so stored values on deals/leads are preserved.
       const emmelyUserFields = [
+
         {
           FIELD_NAME: "UF_CRM_EMMELY_PAYMENT_STATUS",
           USER_TYPE_ID: "enumeration",
@@ -669,21 +779,17 @@ Deno.serve(async (req) => {
       ];
 
 
-      emmelyUserFields.forEach(f => {
-        addCommands[`add_deal_${f.FIELD_NAME}`] = { method: "crm.deal.userfield.add", params: { fields: f } };
-        addCommands[`add_lead_${f.FIELD_NAME}`] = { method: "crm.lead.userfield.add", params: { fields: f } };
-      });
-
-      console.log(`[SYNC] Creating ${Object.keys(addCommands).length} fields in batch...`);
-      const addResults = await callBitrixBatch(ep, token, addCommands);
-      Object.keys(addCommands).forEach(key => {
-        const fieldName = key.includes("deal") ? "created_deal" : "created_lead";
-        if (addResults.result?.result?.[key]) report[fieldName].push(key);
-        else {
-          const err = addResults.result?.result_error?.[key]?.error || 'unknown';
-          if (!err.includes("ALREADY") && !err.includes("DUPLICATE")) report.errors.push(`create ${key}: ${err}`);
-        }
-      });
+      console.log(`[SYNC] Upserting ${emmelyUserFields.length} EMMELY fields (idempotent, no deletes)...`);
+      const upsertReport = await upsertEmmelyUserFields(ep, token, emmelyUserFields);
+      report.created_deal = upsertReport.created_deal;
+      report.updated_deal = upsertReport.updated_deal;
+      report.unchanged_deal = upsertReport.unchanged_deal;
+      report.orphan_kept_deal = upsertReport.orphan_kept_deal;
+      report.created_lead = upsertReport.created_lead;
+      report.updated_lead = upsertReport.updated_lead;
+      report.unchanged_lead = upsertReport.unchanged_lead;
+      report.orphan_kept_lead = upsertReport.orphan_kept_lead;
+      report.errors.push(...upsertReport.errors);
 
 
       // --- Re-register robots with updated template options ---
@@ -1682,61 +1788,34 @@ Deno.serve(async (req) => {
           LIST_FILTER_LABEL: { br: "INTERVALO PARCELAS", en: "INSTALLMENT INTERVAL" } },
       ];
 
-      const deleteApis = [
-        { name: "Deal", listMethod: "crm.deal.userfield.list", deleteMethod: "crm.deal.userfield.delete" },
-        { name: "Lead", listMethod: "crm.lead.userfield.list", deleteMethod: "crm.lead.userfield.delete" },
-      ];
-
-      const ufBatchCmds: Record<string, any> = {};
-      
-      // Part A: Cleanup (Delete existing)
-      for (const api of deleteApis) {
-        try {
-          const existingFields = await callBitrix(clientEndpoint, accessToken, api.listMethod, {});
-          const emmelyFields = (existingFields.result || []).filter(
-            (f: any) => f.FIELD_NAME && f.FIELD_NAME.startsWith("UF_CRM_EMMELY_")
-          );
-          for (const f of emmelyFields) {
-            ufBatchCmds[`del_${api.name}_${f.ID}`] = { method: api.deleteMethod, params: { id: f.ID } };
-          }
-        } catch (delErr) {
-          console.error(`[INSTALL] Error listing ${api.name} fields for clean:`, delErr);
-        }
-      }
-
-      // Part B: Addition
-      const entityApis = [
-        { name: "Deal", method: "crm.deal.userfield.add" },
-        { name: "Lead", method: "crm.lead.userfield.add" },
-      ];
-      for (const entity of entityApis) {
-        for (const field of emmelyUserFields) {
-          ufBatchCmds[`add_${entity.name}_${field.FIELD_NAME}`] = { method: entity.method, params: { fields: field } };
-        }
-      }
-
-      console.log(`[INSTALL] Executing ${Object.keys(ufBatchCmds).length} UserField operations in batch...`);
-      // Use halt: 0 to ensure one field failure (e.g. already exists) doesn't stop others
-      const ufResults = await callBitrixBatch(clientEndpoint, accessToken, ufBatchCmds);
-      
-      Object.keys(ufBatchCmds).forEach(key => {
-        if (key.startsWith("add_")) {
-          const res = ufResults.result?.result?.[key];
-          const err = ufResults.result?.result_error?.[key];
-          if (res || (err && (String(err.error).includes("ALREADY") || String(err.error).includes("DUPLICATE")))) {
-            installSummary.userfields_registered.push(key.replace("add_", ""));
-          }
-        }
-      });
-
+      // Idempotent upsert — never deletes existing UF_CRM_EMMELY_* fields,
+      // so previously stored values on deals/leads are preserved.
+      console.log(`[INSTALL] Upserting ${emmelyUserFields.length} EMMELY fields (idempotent)...`);
+      const ufReport = await upsertEmmelyUserFields(clientEndpoint, accessToken, emmelyUserFields);
+      for (const name of ufReport.created_deal) installSummary.userfields_registered.push(`deal_${name}`);
+      for (const name of ufReport.updated_deal) installSummary.userfields_registered.push(`deal_${name}`);
+      for (const name of ufReport.unchanged_deal) installSummary.userfields_registered.push(`deal_${name}`);
+      for (const name of ufReport.created_lead) installSummary.userfields_registered.push(`lead_${name}`);
+      for (const name of ufReport.updated_lead) installSummary.userfields_registered.push(`lead_${name}`);
+      for (const name of ufReport.unchanged_lead) installSummary.userfields_registered.push(`lead_${name}`);
 
       if (installSummary.userfields_registered.length > 0) {
         installSummary.installed_modules.push("userfields");
       }
 
-      await debugLog(supabase, integrationId, "userfields_registered", "outbound", {
+      await debugLog(supabase, integrationId, "userfields_upserted", "outbound", {
         fields: installSummary.userfields_registered,
+        created_deal: ufReport.created_deal,
+        updated_deal: ufReport.updated_deal,
+        unchanged_deal: ufReport.unchanged_deal,
+        orphan_kept_deal: ufReport.orphan_kept_deal,
+        created_lead: ufReport.created_lead,
+        updated_lead: ufReport.updated_lead,
+        unchanged_lead: ufReport.unchanged_lead,
+        orphan_kept_lead: ufReport.orphan_kept_lead,
+        errors: ufReport.errors,
       });
+
 
       // --- Auto-seed field mappings for Deal entity ---
       try {
