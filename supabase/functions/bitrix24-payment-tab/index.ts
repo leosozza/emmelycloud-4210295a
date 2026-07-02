@@ -2262,27 +2262,12 @@ function renderPaymentTab(opts: {
         }
       }
 
-      // Sync back to parent entity (Deal/Lead/SPA) UF fields so Emmely Pay stays consistent
-      // with what's in Bitrix24 next time it opens.
-      try {
-        var entityKind = ENTITY_TYPE_ID === '1' ? 'lead' : (ENTITY_TYPE_ID === '2' ? 'deal' : 'spa');
-        var syncBody = {
-          member_id: MEMBER_ID,
-          deal_id: ENTITY_ID,
-          entity_type: entityKind,
-          payment_data: {
-            next_due_date: payload.due_date_update,
-            payment_method: payload.payment_method_update,
-            installment_value: payload.amount_update,
-          }
-        };
-        if (entityKind === 'spa') syncBody.spa_entity_type_id = ENTITY_TYPE_ID;
-        await fetch(SUPABASE_URL + '/functions/v1/bitrix24-update-deal-payment', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_KEY, 'Authorization': 'Bearer ' + SUPABASE_KEY },
-          body: JSON.stringify(syncBody)
-        });
-      } catch(syncErr) { console.warn('[submitEdit] Bitrix sync failed:', syncErr); }
+      // NOTE: Do NOT sync back to parent entity UF fields here.
+      // Those UF fields (INSTALLMENT_VALUE, NEXT_DUE_DATE, PAYMENT_METHOD) describe the
+      // WHOLE plan, not a single parcel. Writing them from a per-row edit corrupts the
+      // plan — e.g. editing parcel 2 would overwrite the plan's "next due date" with
+      // parcel 2's date, and on reload the synthetic rebuild would collapse to 1 parcela.
+      // Plan-level UF sync only happens from submitEditFull / submitInstallments.
 
       el.innerHTML = 'Parcela atualizada com sucesso!'; el.style.color = 'var(--value-paid)'; el.style.display = 'block';
       setTimeout(function() { location.reload(); }, 1500);
