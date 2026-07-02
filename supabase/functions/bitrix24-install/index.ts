@@ -1538,6 +1538,7 @@ Deno.serve(async (req) => {
             { VALUE: "MB Way", SORT: 400 },
             { VALUE: "Multibanco", SORT: 500 },
             { VALUE: "Débito SEPA", SORT: 600 },
+            { VALUE: "Cliente escolhe", SORT: 650 },
             { VALUE: "Direto", SORT: 700 },
           ],
         },
