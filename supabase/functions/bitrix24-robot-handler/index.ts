@@ -311,6 +311,8 @@ async function handleCreateCharge(
   // Flow automation for charge (kept as BizProc-only knobs)
   const chargePaidFlowId = properties.paid_flow_id || properties.PAID_FLOW_ID || "";
   const chargeOverdueFlowId = properties.overdue_flow_id || properties.OVERDUE_FLOW_ID || "";
+  const chargeStageOnPaid = String(properties.stage_on_paid || properties.STAGE_ON_PAID || "").trim();
+  const chargeStageOnOverdue = String(properties.stage_on_overdue || properties.STAGE_ON_OVERDUE || "").trim();
   const chargeOverdueDays = parseInt(properties.overdue_days || properties.OVERDUE_DAYS || "3") || 3;
 
   const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
