@@ -725,7 +725,7 @@ Deno.serve(async (req) => {
             amount: { Name: "Valor Total", Type: "double", Required: "Y", Description: "Valor total da cobrança" },
             currency: { Name: "Moeda", Type: "select", Required: "Y", Options: { EUR: "EUR", BRL: "BRL" }, Default: "EUR" },
             gateway: { Name: "Gateway", Type: "select", Options: { auto: "Automático", stripe_pt: "Stripe Portugal (EUR)", stripe_br: "Stripe Brasil (BRL)", asaas: "Asaas (Brasil)", direto: "Crediário Próprio" }, Default: "auto", Description: "Automático: EUR→Stripe PT, BRL→Stripe BR ou Asaas" },
-            payment_method: { Name: "Método de Pagamento", Type: "select", Options: { card: "Cartão", multibanco: "Multibanco (PT)", mb_way: "MB WAY (PT)", sepa_debit: "Débito SEPA (PT)", pix: "PIX (BR)", boleto: "Boleto (BR)", link: "Link de Pagamento", direto: "Recebimento Direto" }, Default: "card" },
+            payment_method: { Name: "Método de Pagamento", Type: "select", Options: { card: "Cartão", multibanco: "Multibanco (PT)", mb_way: "MB WAY (PT)", sepa_debit: "Débito SEPA (PT)", pix: "PIX (BR)", boleto: "Boleto (BR)", customer_choice: "Cliente escolhe (Stripe)", link: "Link de Pagamento", direto: "Recebimento Direto" }, Default: "card" },
             customer_name: { Name: "Nome do Cliente", Type: "string" },
             customer_email: { Name: "Email do Cliente", Type: "string" },
             customer_cpf: { Name: "CPF/CNPJ", Type: "string", Description: "Obrigatório para Asaas" },
