@@ -538,43 +538,18 @@ Deno.serve(async (req) => {
 
       const ep = integration.client_endpoint.endsWith("/") ? integration.client_endpoint : integration.client_endpoint + "/";
       const token = integration.access_token;
-      const report: any = { deleted_deal: [], deleted_lead: [], created_deal: [], created_lead: [], errors: [] };
+      const report: any = {
+        created_deal: [], updated_deal: [], unchanged_deal: [], orphan_kept_deal: [],
+        created_lead: [], updated_lead: [], unchanged_lead: [], orphan_kept_lead: [],
+        errors: [],
+      };
 
-      // 1. Delete existing EMMELY fields (Batch)
-      const dealFieldsList = await callBitrix(ep, token, "crm.deal.userfield.list", { filter: {} });
-      const leadFieldsList = await callBitrix(ep, token, "crm.lead.userfield.list", { filter: {} });
-      
-      const delCommands: Record<string, any> = {};
-      const dealFields = Array.isArray(dealFieldsList.result) ? dealFieldsList.result : [];
-      dealFields.forEach((f: any) => {
-        if (f.FIELD_NAME?.startsWith("UF_CRM_EMMELY_")) {
-          delCommands[`del_deal_${f.ID}`] = { method: "crm.deal.userfield.delete", params: { id: f.ID } };
-        }
-      });
-      
-      const leadFields = Array.isArray(leadFieldsList.result) ? leadFieldsList.result : [];
-      leadFields.forEach((f: any) => {
-        if (f.FIELD_NAME?.startsWith("UF_CRM_EMMELY_")) {
-          delCommands[`del_lead_${f.ID}`] = { method: "crm.lead.userfield.delete", params: { id: f.ID } };
-        }
-      });
-
-      if (Object.keys(delCommands).length > 0) {
-        console.log(`[SYNC] Deleting ${Object.keys(delCommands).length} fields in batch...`);
-        const delResults = await callBitrixBatch(ep, token, delCommands);
-        // Map results to report
-        Object.keys(delCommands).forEach(key => {
-          const fieldName = key.includes("deal") ? "deal" : "lead";
-          if (delResults.result?.result?.[key]) report[`deleted_${fieldName}`].push(key);
-          else report.errors.push(`delete ${key}: ${delResults.result?.result_error?.[key]?.error || 'unknown'}`);
-        });
-      }
-
-      // 3. Recreate all fields (Batch)
-      // We'll split creation into Deal and Lead batches to avoid the 50 limit if needed, 
-      // though currently we have 17 * 2 = 34 fields.
-      const addCommands: Record<string, any> = {};
+      // Idempotent field definitions — helper (upsertEmmelyUserFields) below
+      // will add missing fields, update labels only when changed, and merge
+      // enumeration LISTs preserving existing IDs. No field is ever deleted,
+      // so stored values on deals/leads are preserved.
       const emmelyUserFields = [
+
         {
           FIELD_NAME: "UF_CRM_EMMELY_PAYMENT_STATUS",
           USER_TYPE_ID: "enumeration",
