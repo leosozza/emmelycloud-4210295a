@@ -37,7 +37,10 @@ function formatDate(dateStr: string | null): string {
 }
 
 function publicReportUrl(token: string): string {
-  const base = (Deno.env.get("FRONTEND_URL") || "https://emmelycloud.pages.dev").replace(/\/+$/, "");
+  // Always serve the public receipt from the Lovable-hosted build so the latest
+  // frontend (Stripe-style redesign) is picked up immediately after publish.
+  // FRONTEND_URL continues to be used elsewhere for internal links.
+  const base = (Deno.env.get("PUBLIC_RECEIPT_URL") || "https://emmelycloud.lovable.app").replace(/\/+$/, "");
   return `${base}/pagamento/${token}`;
 }
 
