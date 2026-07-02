@@ -174,6 +174,141 @@ async function loadDealStageOptions(
   return options;
 }
 
+/**
+ * Idempotent upsert of UF_CRM_EMMELY_* user fields on Deal + Lead.
+ * NEVER deletes fields (that would erase stored values on every deal/lead).
+ * - Adds missing fields.
+ * - Updates labels/settings only when they changed.
+ * - For enumeration fields, merges LIST preserving existing IDs; only appends
+ *   new options (matched by VALUE, case-insensitive). Never removes options.
+ * - Fields present in Bitrix that are not in the desired set are kept as-is
+ *   and only reported as `orphan_kept_*`.
+ */
+async function upsertEmmelyUserFields(
+  ep: string,
+  token: string,
+  emmelyUserFields: any[],
+): Promise<any> {
+  const report: any = {
+    created_deal: [], updated_deal: [], unchanged_deal: [], orphan_kept_deal: [],
+    created_lead: [], updated_lead: [], unchanged_lead: [], orphan_kept_lead: [],
+    errors: [],
+  };
+
+  const entities = [
+    { name: "deal", listMethod: "crm.deal.userfield.list", addMethod: "crm.deal.userfield.add", updateMethod: "crm.deal.userfield.update" },
+    { name: "lead", listMethod: "crm.lead.userfield.list", addMethod: "crm.lead.userfield.add", updateMethod: "crm.lead.userfield.update" },
+  ];
+
+  const jsonEq = (a: any, b: any) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
+  const desiredNames = new Set(emmelyUserFields.map((f) => f.FIELD_NAME));
+
+  for (const ent of entities) {
+    const listRes = await callBitrix(ep, token, ent.listMethod, { filter: {} });
+    const existingFields: any[] = Array.isArray(listRes.result) ? listRes.result : [];
+    const byName = new Map<string, any>();
+    for (const f of existingFields) if (f?.FIELD_NAME) byName.set(f.FIELD_NAME, f);
+
+    for (const f of existingFields) {
+      if (f.FIELD_NAME?.startsWith("UF_CRM_EMMELY_") && !desiredNames.has(f.FIELD_NAME)) {
+        report[`orphan_kept_${ent.name}`].push(f.FIELD_NAME);
+      }
+    }
+
+    const addCmds: Record<string, any> = {};
+    const updateBatchCmds: Record<string, any> = {};
+    const updateMeta: Record<string, string> = {};
+
+    for (const desired of emmelyUserFields) {
+      const existing = byName.get(desired.FIELD_NAME);
+      if (!existing) {
+        addCmds[`add_${desired.FIELD_NAME}`] = { method: ent.addMethod, params: { fields: desired } };
+        continue;
+      }
+
+      const updateFields: any = {};
+      if (desired.EDIT_FORM_LABEL && !jsonEq(existing.EDIT_FORM_LABEL, desired.EDIT_FORM_LABEL)) {
+        updateFields.EDIT_FORM_LABEL = desired.EDIT_FORM_LABEL;
+      }
+      if (desired.LIST_COLUMN_LABEL && !jsonEq(existing.LIST_COLUMN_LABEL, desired.LIST_COLUMN_LABEL)) {
+        updateFields.LIST_COLUMN_LABEL = desired.LIST_COLUMN_LABEL;
+      }
+      if (desired.LIST_FILTER_LABEL && !jsonEq(existing.LIST_FILTER_LABEL, desired.LIST_FILTER_LABEL)) {
+        updateFields.LIST_FILTER_LABEL = desired.LIST_FILTER_LABEL;
+      }
+      if (desired.SETTINGS && !jsonEq(existing.SETTINGS, desired.SETTINGS)) {
+        updateFields.SETTINGS = desired.SETTINGS;
+      }
+
+      if (desired.USER_TYPE_ID === "enumeration" && Array.isArray(desired.LIST)) {
+        const existingList: any[] = Array.isArray(existing.LIST) ? existing.LIST : [];
+        const existingByValue = new Map<string, any>();
+        for (const item of existingList) {
+          if (item?.VALUE != null) existingByValue.set(String(item.VALUE).trim().toLowerCase(), item);
+        }
+        const toAppend: any[] = [];
+        for (const wanted of desired.LIST) {
+          const key = String(wanted.VALUE ?? "").trim().toLowerCase();
+          if (key && !existingByValue.has(key)) {
+            toAppend.push({ VALUE: wanted.VALUE, SORT: wanted.SORT ?? 500, DEF: wanted.DEF || "N" });
+          }
+        }
+        if (toAppend.length > 0) {
+          // Preserve existing options with their IDs, only append missing.
+          const mergedList = [
+            ...existingList.map((it) => ({ ID: it.ID, VALUE: it.VALUE, SORT: it.SORT, DEF: it.DEF, XML_ID: it.XML_ID })),
+            ...toAppend,
+          ];
+          updateFields.LIST = mergedList;
+        }
+      }
+
+      if (Object.keys(updateFields).length === 0) {
+        report[`unchanged_${ent.name}`].push(desired.FIELD_NAME);
+      } else {
+        const key = `upd_${desired.FIELD_NAME}`;
+        updateBatchCmds[key] = {
+          method: ent.updateMethod,
+          params: { id: existing.ID, fields: updateFields },
+        };
+        updateMeta[key] = desired.FIELD_NAME;
+      }
+    }
+
+    if (Object.keys(addCmds).length > 0) {
+      const addRes = await callBitrixBatch(ep, token, addCmds);
+      for (const key of Object.keys(addCmds)) {
+        const fieldName = key.replace("add_", "");
+        if (addRes.result?.result?.[key]) {
+          report[`created_${ent.name}`].push(fieldName);
+        } else {
+          const err = addRes.result?.result_error?.[key]?.error || "";
+          if (String(err).includes("ALREADY") || String(err).includes("DUPLICATE")) {
+            report[`unchanged_${ent.name}`].push(fieldName);
+          } else if (err) {
+            report.errors.push(`${ent.name} add ${fieldName}: ${err}`);
+          }
+        }
+      }
+    }
+
+    if (Object.keys(updateBatchCmds).length > 0) {
+      const updRes = await callBitrixBatch(ep, token, updateBatchCmds);
+      for (const key of Object.keys(updateBatchCmds)) {
+        const fieldName = updateMeta[key];
+        if (updRes.result?.result?.[key]) {
+          report[`updated_${ent.name}`].push(fieldName);
+        } else {
+          const err = updRes.result?.result_error?.[key]?.error || "unknown";
+          report.errors.push(`${ent.name} update ${fieldName}: ${err}`);
+        }
+      }
+    }
+  }
+
+  return report;
+}
+
 
 async function debugLog(
   supabase: any,
