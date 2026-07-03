@@ -355,7 +355,7 @@ async function handleCreateCharge(
     try {
       const bxCall = (method: string, params: Record<string, any> = {}) =>
         callBitrixWithRefresh(supabase, integration, method, params);
-      plan = await readEmmelyPaymentPlan(bxCall, "deal", dealId);
+      plan = await readEmmelyPaymentPlan(bxCall, "deal", dealId, undefined, supabase);
       console.log(`[ROBOT-HANDLER] Deal ${dealId} plan loaded. warnings=${JSON.stringify(plan.warnings)}`);
     } catch (e) {
       console.warn(`[ROBOT-HANDLER] Failed to read deal ${dealId} fields:`, e);
