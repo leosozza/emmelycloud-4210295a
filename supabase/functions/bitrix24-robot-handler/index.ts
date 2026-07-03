@@ -588,6 +588,7 @@ async function handleCreateCharge(
 
     const invoiceBatchCmds: Record<string, any> = {};
     const parcelToTxMap: Record<string, string> = {};
+    const parcelErrors: string[] = [];
 
     for (const parcel of parcels) {
       const label = parcel.is_down_payment
@@ -630,40 +631,67 @@ async function handleCreateCharge(
         paymentBody.credential_key = companyCredentialKey;
       }
 
-      const res = await fetch(`${supabaseUrl}/functions/v1/payment-create`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(paymentBody),
-      });
-      const data = await res.json();
+      let res: Response | null = null;
+      let data: any = {};
+      try {
+        res = await fetch(`${supabaseUrl}/functions/v1/payment-create`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(paymentBody),
+        });
+        data = await res.json().catch(() => ({}));
+      } catch (fetchErr) {
+        data = { error: String(fetchErr) };
+      }
       const tx = data.transaction || {};
 
-      if (!firstChargeId && tx.id) firstChargeId = tx.id;
+      if (!tx.id) {
+        const errDetail = String(data?.error || `HTTP ${res?.status ?? "?"}`).slice(0, 400);
+        parcelErrors.push(`${label}: ${errDetail}`);
+        console.error(`[ROBOT-HANDLER] payment-create failed for deal ${dealId} ${label}:`, errDetail);
+        try {
+          await supabase.from("bitrix24_debug_logs").insert({
+            event_type: "payment_create_failed",
+            direction: "outbound",
+            payload: {
+              bitrix_deal_id: dealId,
+              parcel: label,
+              http_status: res?.status ?? null,
+              response: data,
+              request_summary: {
+                amount: parcel.amount, currency, payment_method: parcel.method,
+                gateway: companyGateway, email: customerEmail,
+              },
+            },
+          });
+        } catch (_) { /* best-effort */ }
+        continue;
+      }
+
+      if (!firstChargeId) firstChargeId = tx.id;
       if (!firstGateway && tx.gateway) firstGateway = tx.gateway;
       if (!firstPaymentUrl && tx.payment_url) firstPaymentUrl = tx.payment_url;
 
-      if (tx.id) {
-        const key = `p_${parcel.is_down_payment ? "d" : "r"}_${parcel.installment_number}`;
-        parcelToTxMap[key] = tx.id;
-        if (integration?.client_endpoint && integration?.access_token && dealId) {
-          invoiceBatchCmds[key] = {
-            method: "crm.item.add",
-            params: {
-              entityTypeId: 31,
-              fields: {
-                title: `${label} - ${description}`,
-                stageId: "DT31_3:N",
-                begindate: today,
-                closedate: parcel.due_date,
-                opportunity: parcel.amount,
-                currencyId: currency,
-                parentId2: parseInt(dealId) || 0,
-                contactId: parseInt(String(contactId)) || 0,
-                responsibleId: 1,
-              },
-            }
-          };
-        }
+      const key = `p_${parcel.is_down_payment ? "d" : "r"}_${parcel.installment_number}`;
+      parcelToTxMap[key] = tx.id;
+      if (integration?.client_endpoint && integration?.access_token && dealId) {
+        invoiceBatchCmds[key] = {
+          method: "crm.item.add",
+          params: {
+            entityTypeId: 31,
+            fields: {
+              title: `${label} - ${description}`,
+              stageId: "DT31_3:N",
+              begindate: today,
+              closedate: parcel.due_date,
+              opportunity: parcel.amount,
+              currencyId: currency,
+              parentId2: parseInt(dealId) || 0,
+              contactId: parseInt(String(contactId)) || 0,
+              responsibleId: 1,
+            },
+          }
+        };
       }
     }
 
@@ -688,17 +716,68 @@ async function handleCreateCharge(
       }
     }
 
-    // Write payment URL + Pendente status back to the deal
+    // Nothing succeeded → post error and abort with error status.
+    if (!firstPaymentUrl && parcelErrors.length > 0) {
+      if (dealId) {
+        const comment =
+          `[B]❌ Emmely Pay — falha ao criar cobrança(s)[/B]\n` +
+          `Nenhum link de pagamento foi gerado. Detalhes por parcela:\n- ${parcelErrors.join("\n- ")}\n\n` +
+          `Corrija os dados (ex.: email do cliente, método de pagamento, chave Stripe) e mova novamente para "Gerar link Pagamento".`;
+        await postTimelineComment(supabase, integration, { type: "deal", id: dealId }, comment);
+      }
+      return {
+        charge_id: "",
+        charge_status: "error",
+        payment_url: "",
+        pix_code: "",
+        gateway_used: "",
+        invoices_created: "0",
+        error: parcelErrors.join("; ").slice(0, 500),
+      };
+    }
+
+    // Write payment URL + Pendente status back to the deal (with 1 retry + audit log).
+    let dealUpdateOk = false;
+    let dealUpdateError = "";
     if (firstPaymentUrl && dealId && integration?.client_endpoint && integration?.access_token) {
-      try {
-        await callBitrixWithRefresh(supabase, integration, "crm.deal.update", {
+      const attemptUpdate = async () => {
+        return await callBitrixWithRefresh(supabase, integration, "crm.deal.update", {
           id: parseInt(dealId),
           fields: {
             UF_CRM_EMMELY_PAYMENT_URL: firstPaymentUrl,
             UF_CRM_EMMELY_GATEWAY: companyGateway,
           },
         });
-      } catch (e) { console.warn("[ROBOT-HANDLER] deal.update payment url failed:", e); }
+      };
+      for (let attempt = 1; attempt <= 2; attempt++) {
+        try {
+          const upd: any = await attemptUpdate();
+          if (upd?.error) {
+            dealUpdateError = String(upd.error_description || upd.error);
+          } else {
+            dealUpdateOk = true;
+            dealUpdateError = "";
+            break;
+          }
+        } catch (e) {
+          dealUpdateError = String(e);
+        }
+        if (attempt === 1) await new Promise((r) => setTimeout(r, 400));
+      }
+      try {
+        await supabase.from("bitrix24_debug_logs").insert({
+          event_type: "deal_update_payment_url",
+          direction: "outbound",
+          payload: {
+            bitrix_deal_id: dealId,
+            success: dealUpdateOk,
+            error: dealUpdateError || null,
+            payment_url: firstPaymentUrl,
+            gateway: companyGateway,
+          },
+        });
+      } catch (_) { /* best-effort */ }
+      if (!dealUpdateOk) console.warn("[ROBOT-HANDLER] deal.update payment url failed:", dealUpdateError);
     }
 
     // Post a friendly summary to the deal timeline
@@ -707,13 +786,19 @@ async function handleCreateCharge(
       const linkLine = firstPaymentUrl
         ? `\n[URL=${firstPaymentUrl}]Abrir link de pagamento[/URL]`
         : `\n(⚠️ nenhum link retornado pelo gateway)`;
+      const parcelErrorLine = parcelErrors.length > 0
+        ? `\n⚠️ Falhas em algumas parcelas:\n- ${parcelErrors.join("\n- ")}`
+        : "";
+      const dealUpdateLine = (firstPaymentUrl && !dealUpdateOk)
+        ? `\n⚠️ Link gerado mas UF_CRM_EMMELY_PAYMENT_URL não foi atualizado (${dealUpdateError.slice(0, 200)}). A automação de envio ao cliente pode não disparar — atualize o campo manualmente.`
+        : "";
       const comment =
         `[B]✅ Emmely Pay — link de pagamento gerado[/B]\n` +
         `Valor total: ${fmt(totalAmount)}\n` +
         `Gateway: ${firstGateway || companyGateway}\n` +
         `Parcelas: ${totalCount}${downPayment > 0 ? ` (entrada ${fmt(downPayment)} + ${numInstallments}x)` : ""}\n` +
         `Faturas Bitrix24 criadas: ${invoicesCreated}` +
-        linkLine;
+        linkLine + parcelErrorLine + dealUpdateLine;
       await postTimelineComment(supabase, integration, { type: "deal", id: dealId }, comment);
     }
 
