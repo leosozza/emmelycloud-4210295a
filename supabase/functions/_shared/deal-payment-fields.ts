@@ -111,6 +111,7 @@ export async function readEmmelyPaymentPlan(
   entityType: "deal" | "lead" | "spa",
   entityId: string | number,
   entityTypeId?: number, // required for SPA
+  supabase?: any, // optional — enables fallback to financial_records when UF fields are empty
 ): Promise<EmmelyPaymentPlan> {
   const warnings: string[] = [];
   const id = typeof entityId === "number" ? entityId : parseInt(String(entityId).replace(/^\D+/, ""), 10);
