@@ -119,6 +119,7 @@ async function createStripePayment(apiKey: string, amount: number, currency: str
   }
 
   if (data?.error) {
+    console.error(`[payment-create] Stripe error (amount=${amount} ${currency}, methods=[${methods.join(",")}], email="${customerEmail}"):`, JSON.stringify(data.error));
     const rejected = extractRejectedStripeMethod(data.error?.message || "");
     if (rejected) {
       throw new Error(
@@ -599,6 +600,17 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ error: "amount is required and must be > 0" }), {
         status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
+    }
+
+    // Validate customer email (Stripe rejects comma-separated or malformed emails).
+    const rawEmail = customer_data?.email ? String(customer_data.email).trim() : "";
+    if (rawEmail) {
+      const emailRe = /^[^\s@,;]+@[^\s@,;]+\.[^\s@,;]+$/;
+      if (!emailRe.test(rawEmail)) {
+        return new Response(JSON.stringify({ error: `Email do cliente inválido: "${rawEmail.slice(0, 120)}". Use um único endereço válido (ex.: nome@dominio.com).` }), {
+          status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
     }
 
     // Stripe minimum is 0.50 for most currencies; Asaas minimum is 5.00 BRL
