@@ -601,6 +601,17 @@ Deno.serve(async (req) => {
       });
     }
 
+    // Validate customer email (Stripe rejects comma-separated or malformed emails).
+    const rawEmail = customer_data?.email ? String(customer_data.email).trim() : "";
+    if (rawEmail) {
+      const emailRe = /^[^\s@,;]+@[^\s@,;]+\.[^\s@,;]+$/;
+      if (!emailRe.test(rawEmail)) {
+        return new Response(JSON.stringify({ error: `Email do cliente inválido: "${rawEmail.slice(0, 120)}". Use um único endereço válido (ex.: nome@dominio.com).` }), {
+          status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+    }
+
     // Stripe minimum is 0.50 for most currencies; Asaas minimum is 5.00 BRL
     const minAmount = (currency === "BRL") ? 5.0 : 0.50;
     if (amount < minAmount && payment_method !== "direto" && force_gateway !== "direto") {
