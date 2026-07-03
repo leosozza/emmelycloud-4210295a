@@ -708,7 +708,11 @@ function renderPaymentTab(opts: {
       const bulkBtn = notGenCount > 1
         ? `<button class="b24-btn-generate" onclick="generateAllCharges()" style="margin-left:8px" title="Gerar cobranças reais para todas as parcelas ainda não geradas">${icon("file-plus", 14)} Gerar todas (${notGenCount})</button>`
         : "";
-      return `<button class="b24-btn-outline" onclick='openEditFullModal(${targetJson})' style="margin-left:8px">${icon("pencil", 14)} Editar</button>${bulkBtn}`;
+      const cancellableCount = installments.filter((i: any) => i.transaction_id && !String(i.transaction_id).startsWith("deal-") && i.status !== "paga").length;
+      const cancelBtn = cancellableCount > 0
+        ? `<button class="b24-btn-outline" onclick="cancelDealCharge()" style="margin-left:8px;border-color:#dc2626;color:#dc2626" title="Cancelar todas as parcelas pendentes desta cobrança">${icon("x-circle", 14)} Cancelar cobrança (${cancellableCount})</button>`
+        : "";
+      return `<button class="b24-btn-outline" onclick='openEditFullModal(${targetJson})' style="margin-left:8px">${icon("pencil", 14)} Editar</button>${bulkBtn}${cancelBtn}`;
     })() : ""}
   </div>
   ${noData ? noDataHtml : `
