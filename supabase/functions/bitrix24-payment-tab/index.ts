@@ -2082,6 +2082,56 @@ function renderPaymentTab(opts: {
     }
   }
 
+  async function cancelDealCharge() {
+    var reason = prompt('Motivo do cancelamento (aparecerá no timeline):', 'Cliente cancelou');
+    if (reason === null) return;
+    if (!confirm('Cancelar TODAS as parcelas pendentes desta cobrança? Isto expira o link Stripe, cancela as faturas Bitrix e limpa o link do negócio.')) return;
+    setStatus('A cancelar cobrança...', 'var(--text-secondary)');
+    try {
+      var r = await fetch(SUPABASE_URL + '/functions/v1/payment-cancel', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode: 'deal', deal_id: ENTITY_ID, member_id: MEMBER_ID, reason: reason, source: 'iframe' })
+      });
+      var d = await r.json();
+      if (d.status === 'cancelled') {
+        setStatus(d.cancelled_count + ' parcela(s) canceladas, ' + (d.invoices_cancelled||0) + ' fatura(s) Bitrix atualizada(s).', 'var(--accent-paid)');
+        setTimeout(function(){ location.reload(); }, 1200);
+      } else if (d.status === 'blocked') {
+        alert('Não é possível cancelar: já existe pagamento realizado.');
+      } else if (d.status === 'noop') {
+        alert('Nada a cancelar (nenhuma parcela pendente).');
+      } else {
+        alert('Erro ao cancelar: ' + (d.reason || d.error || 'desconhecido'));
+      }
+    } catch (e) {
+      alert('Erro de rede: ' + e);
+    }
+  }
+
+  async function cancelParcel(txId, label) {
+    var reason = prompt('Motivo do cancelamento de "' + label + '":', 'Parcela cancelada');
+    if (reason === null) return;
+    if (!confirm('Cancelar apenas esta parcela? A fatura Bitrix correspondente será marcada como cancelada.')) return;
+    setStatus('A cancelar parcela...', 'var(--text-secondary)');
+    try {
+      var r = await fetch(SUPABASE_URL + '/functions/v1/payment-cancel', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode: 'tx', tx_id: txId, member_id: MEMBER_ID, reason: reason, source: 'iframe' })
+      });
+      var d = await r.json();
+      if (d.status === 'cancelled') {
+        setStatus('Parcela cancelada.', 'var(--accent-paid)');
+        setTimeout(function(){ location.reload(); }, 900);
+      } else if (d.status === 'blocked') {
+        alert('Não é possível cancelar: parcela já paga.');
+      } else {
+        alert('Erro: ' + (d.reason || d.error || 'desconhecido'));
+      }
+    } catch (e) {
+      alert('Erro de rede: ' + e);
+    }
+  }
+
   async function generateAllCharges() {
     var pending = (ALL_INSTALLMENTS || []).filter(function(i){ return i.not_generated; });
     if (pending.length === 0) { setStatus('Nenhuma parcela pendente de geração.', 'var(--text-secondary)'); return; }
