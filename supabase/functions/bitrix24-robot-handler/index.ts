@@ -409,6 +409,77 @@ async function postTimelineComment(
   }
 }
 
+// Deterministic signature of a charge plan. Same deal + same parcels (amount, due_date, seq)
+// + same currency/gateway => same signature => safe to reuse existing link.
+async function computeInstallmentSignature(
+  dealId: string,
+  currency: string,
+  gateway: string,
+  parcels: Array<{ installment_number: number; is_down_payment: boolean; amount: number; due_date: string; method: string }>,
+): Promise<string> {
+  const norm = parcels
+    .slice()
+    .sort((a, b) =>
+      (a.is_down_payment === b.is_down_payment ? 0 : a.is_down_payment ? -1 : 1) ||
+      (a.installment_number - b.installment_number),
+    )
+    .map((p) => ({
+      seq: p.installment_number,
+      down: !!p.is_down_payment,
+      amount_cents: Math.round(Number(p.amount) * 100),
+      due_date: String(p.due_date || "").slice(0, 10),
+      method: String(p.method || ""),
+    }));
+  const payload = JSON.stringify({ deal_id: String(dealId), currency, gateway, installments: norm });
+  const buf = new TextEncoder().encode(payload);
+  const hash = await crypto.subtle.digest("SHA-256", buf);
+  return Array.from(new Uint8Array(hash)).map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+// Best-effort: expire pending Stripe Checkout Sessions attached to old transactions.
+async function expireStripeSessionsBestEffort(
+  supabase: any,
+  oldTxs: Array<{ id: string; gateway: string | null; gateway_payment_id: string | null; company_id?: string | null }>,
+  companyCredentialProvider: string,
+  fallbackRegion: "pt" | "br" | null,
+): Promise<void> {
+  // Resolve stripe key once (company override → region default). Silent if not available.
+  let stripeKey: string | null = null;
+  try {
+    if (companyCredentialProvider) {
+      const { data } = await supabase
+        .from("integration_credentials")
+        .select("credential_value")
+        .eq("provider", companyCredentialProvider)
+        .eq("credential_key", "STRIPE_SECRET_KEY")
+        .maybeSingle();
+      stripeKey = data?.credential_value?.trim() || null;
+    }
+    if (!stripeKey) {
+      const keyName = fallbackRegion === "br" ? "STRIPE_SECRET_KEY_BR" : "STRIPE_SECRET_KEY_PT";
+      stripeKey = Deno.env.get(keyName) || Deno.env.get("STRIPE_SECRET_KEY") || null;
+    }
+  } catch (_) { /* silent */ }
+
+  if (!stripeKey) return;
+
+  for (const tx of oldTxs) {
+    if (!tx.gateway_payment_id || !String(tx.gateway || "").startsWith("stripe")) continue;
+    try {
+      const res = await fetch(`https://api.stripe.com/v1/checkout/sessions/${tx.gateway_payment_id}/expire`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${stripeKey}` },
+      });
+      if (!res.ok) {
+        const txt = await res.text().catch(() => "");
+        console.warn(`[ROBOT-HANDLER] Stripe expire ${tx.gateway_payment_id} HTTP ${res.status}: ${txt.slice(0, 200)}`);
+      }
+    } catch (e) {
+      console.warn(`[ROBOT-HANDLER] Stripe expire ${tx.gateway_payment_id} failed:`, String(e).slice(0, 200));
+    }
+  }
+}
+
 async function handleCreateCharge(
   properties: Record<string, any>,
   supabaseUrl: string,
