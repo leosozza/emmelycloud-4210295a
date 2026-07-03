@@ -920,6 +920,12 @@ async function handleCreateCharge(
               parentId2: parseInt(dealId) || 0,
               contactId: parseInt(String(contactId)) || 0,
               responsibleId: 1,
+              // Per-parcel UF fields (harmlessly ignored on portals where UFs
+              // haven't been provisioned yet; provisioned by bitrix24-install).
+              ufCrm_SmartInvoice_EmmelyPaymentUrl: tx.payment_url || "",
+              ufCrm_SmartInvoice_EmmelyPaymentStatus: "Pendente",
+              ufCrm_SmartInvoice_EmmelyGateway: tx.gateway || companyGateway,
+              ufCrm_SmartInvoice_EmmelyTxId: tx.id,
             },
           }
         };
