@@ -119,6 +119,7 @@ async function createStripePayment(apiKey: string, amount: number, currency: str
   }
 
   if (data?.error) {
+    console.error(`[payment-create] Stripe error (amount=${amount} ${currency}, methods=[${methods.join(",")}], email="${customerEmail}"):`, JSON.stringify(data.error));
     const rejected = extractRejectedStripeMethod(data.error?.message || "");
     if (rejected) {
       throw new Error(
