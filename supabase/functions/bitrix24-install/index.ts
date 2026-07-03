@@ -499,7 +499,7 @@ Deno.serve(async (req) => {
 
       for (const link of links || []) {
         if (!link?.token || !link?.bitrix24_deal_id) continue;
-        const reportUrl = `${(Deno.env.get("PUBLIC_RECEIPT_URL") || "https://emmelycloud.lovable.app").replace(/\/+$/, "")}/pagamento/${link.token}`;
+        const reportUrl = `${(Deno.env.get("PUBLIC_RECEIPT_URL") || "https://emmelycloud.pages.dev").replace(/\/+$/, "")}/pagamento/${link.token}`;
         const updated = await callBitrix(ep, token, "crm.deal.update", {
           id: parseInt(String(link.bitrix24_deal_id), 10),
           fields: {

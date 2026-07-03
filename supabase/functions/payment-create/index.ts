@@ -288,7 +288,7 @@ async function updateBitrixPaymentReportFields(supabase: any, dealId: string, to
   const { data: integration } = await supabase.from("bitrix24_integrations").select("*").limit(1).maybeSingle();
   if (!integration?.client_endpoint || !integration?.access_token) return;
   const receiptUrl = `${Deno.env.get("SUPABASE_URL")}/functions/v1/payment-receipt?token=${token}`;
-  const frontendBase = (Deno.env.get("PUBLIC_RECEIPT_URL") || "https://emmelycloud.lovable.app").replace(/\/+$/, "");
+  const frontendBase = (Deno.env.get("PUBLIC_RECEIPT_URL") || "https://emmelycloud.pages.dev").replace(/\/+$/, "");
   const reportUrl = `${frontendBase}/pagamento/${token}`;
   await ensureBitrixTokenPayField(integration);
   await callBitrix(integration.client_endpoint, integration.access_token, "crm.deal.update", {
