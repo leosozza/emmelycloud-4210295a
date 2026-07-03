@@ -1093,7 +1093,7 @@ function renderPaymentTab(opts: {
 <script>
   var SUPABASE_URL = "${supabaseUrl}";
   var SUPABASE_KEY = "${Deno.env.get("SUPABASE_ANON_KEY") || ""}";
-  var FRONTEND_BASE = "${(Deno.env.get("PUBLIC_RECEIPT_URL") || "https://emmelycloud.lovable.app").replace(/\/+$/, "")}";
+  var FRONTEND_BASE = "${(Deno.env.get("PUBLIC_RECEIPT_URL") || "https://emmelycloud.pages.dev").replace(/\/+$/, "")}";
   var MEMBER_ID = "${memberId}";
   var ENTITY_ID = "${opts.entityId}";
   var ENTITY_TYPE_ID = "${opts.entityTypeId || "2"}";
