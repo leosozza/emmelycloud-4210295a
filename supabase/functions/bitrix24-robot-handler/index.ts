@@ -2306,6 +2306,21 @@ Deno.serve(async (req) => {
       case "emmely_check_payment":
         returnValues = await handleCheckPayment(properties, supabaseUrl);
         break;
+      case "emmely_cancel_charge":
+      case "cancel_charge":
+      case "cancel_charge_invoice": {
+        let cancelIntegration: any = null;
+        if (memberId) {
+          const { data } = await supabase.from("bitrix24_integrations").select("*").eq("member_id", memberId).maybeSingle();
+          cancelIntegration = data;
+        }
+        if (!cancelIntegration) {
+          const { data } = await supabase.from("bitrix24_integrations").select("*").order("created_at", { ascending: false }).limit(1).maybeSingle();
+          cancelIntegration = data;
+        }
+        returnValues = await handleCancelCharge(properties, supabaseUrl, cancelIntegration);
+        break;
+      }
       case "emmely_execute_flow":
         returnValues = await handleExecuteFlow(properties, supabaseUrl, serviceKey);
         break;
