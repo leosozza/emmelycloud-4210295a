@@ -301,6 +301,9 @@ async function handleSendInstagram(properties: Record<string, any>, supabaseUrl:
 
 // Post a comment to the Bitrix24 timeline of a deal/lead/SPA.
 // Docs: https://apidocs.bitrix24.com/api-reference/crm/timeline/comments/crm-timeline-comment-add.html
+// Persists the outcome to bitrix24_debug_logs so silent failures are diagnosable,
+// retries with the deal's ASSIGNED_BY_ID when AUTHOR_ID=1 is rejected, and
+// finally falls back to crm.timeline.bindings + crm.activity.add if needed.
 async function postTimelineComment(
   supabase: any,
   integration: { client_endpoint: string; access_token: string; id: string } | null | undefined,
@@ -312,20 +315,97 @@ async function postTimelineComment(
   if (entity.type === "deal") entityType = "deal";
   else if (entity.type === "lead") entityType = "lead";
   else entityType = `dynamic_${entity.spaEntityTypeId || 131}`;
-  try {
-    const res = await callBitrixWithRefresh(supabase, integration, "crm.timeline.comment.add", {
+
+  const entityIdInt = parseInt(String(entity.id)) || entity.id;
+
+  const tryAdd = async (authorId: number) => {
+    return await callBitrixWithRefresh(supabase, integration, "crm.timeline.comment.add", {
       fields: {
-        ENTITY_ID: parseInt(String(entity.id)) || entity.id,
+        ENTITY_ID: entityIdInt,
         ENTITY_TYPE: entityType,
         COMMENT: comment,
-        AUTHOR_ID: 1,
+        AUTHOR_ID: authorId,
       },
     });
-    if (res?.error) {
-      console.warn("[ROBOT-HANDLER] timeline.comment.add error:", res.error, res.error_description);
+  };
+
+  const logAttempt = async (attempt: string, res: any, err: any) => {
+    try {
+      await supabase.from("bitrix24_debug_logs").insert({
+        integration_id: integration.id || null,
+        event_type: "timeline_comment_add",
+        direction: "outbound",
+        payload: {
+          entity_type: entityType,
+          entity_id: entityIdInt,
+          attempt,
+          ok: !!res?.result && !res?.error,
+          bitrix_error: res?.error || null,
+          bitrix_error_description: res?.error_description || null,
+        },
+        error: err ? String(err).slice(0, 500) : (res?.error_description || res?.error || null),
+      });
+    } catch (_e) { /* ignore log failures */ }
+  };
+
+  // Attempt 1 — AUTHOR_ID = 1 (portal admin)
+  try {
+    const res = await tryAdd(1);
+    if (res?.result && !res?.error) {
+      await logAttempt("author_1", res, null);
+      return;
+    }
+    await logAttempt("author_1", res, null);
+    console.warn("[ROBOT-HANDLER] timeline.comment.add attempt1 error:", res?.error, res?.error_description);
+  } catch (e) {
+    await logAttempt("author_1", null, e);
+    console.warn("[ROBOT-HANDLER] timeline.comment.add attempt1 failed:", e);
+  }
+
+  // Attempt 2 — use the deal's ASSIGNED_BY_ID as author
+  try {
+    let assignedBy: number | null = null;
+    if (entity.type === "deal") {
+      const dres = await callBitrixWithRefresh(supabase, integration, "crm.deal.get", { id: entityIdInt });
+      assignedBy = parseInt(String(dres?.result?.ASSIGNED_BY_ID || "")) || null;
+    } else if (entity.type === "lead") {
+      const dres = await callBitrixWithRefresh(supabase, integration, "crm.lead.get", { id: entityIdInt });
+      assignedBy = parseInt(String(dres?.result?.ASSIGNED_BY_ID || "")) || null;
+    }
+    if (assignedBy && assignedBy !== 1) {
+      const res = await tryAdd(assignedBy);
+      if (res?.result && !res?.error) {
+        await logAttempt(`author_${assignedBy}`, res, null);
+        return;
+      }
+      await logAttempt(`author_${assignedBy}`, res, null);
     }
   } catch (e) {
-    console.warn("[ROBOT-HANDLER] timeline.comment.add failed:", e);
+    await logAttempt("author_assigned_by", null, e);
+  }
+
+  // Attempt 3 — fallback: create a plain activity so the message is visible on the timeline
+  try {
+    const plain = comment
+      .replace(/\[B\]|\[\/B\]/g, "")
+      .replace(/\[URL=([^\]]+)\]([^\[]+)\[\/URL\]/g, "$2: $1")
+      .slice(0, 4000);
+    const res = await callBitrixWithRefresh(supabase, integration, "crm.activity.add", {
+      fields: {
+        OWNER_TYPE_ID: entity.type === "deal" ? 2 : entity.type === "lead" ? 1 : (entity.spaEntityTypeId || 131),
+        OWNER_ID: entityIdInt,
+        TYPE_ID: 4, // Note/comment
+        SUBJECT: "Emmely Pay",
+        DESCRIPTION: plain,
+        DESCRIPTION_TYPE: 1, // plain text
+        COMPLETED: "Y",
+        RESPONSIBLE_ID: 1,
+      },
+    });
+    await logAttempt("activity_fallback", res, null);
+  } catch (e) {
+    await logAttempt("activity_fallback", null, e);
+    console.warn("[ROBOT-HANDLER] timeline activity fallback failed:", e);
   }
 }
 
@@ -355,7 +435,7 @@ async function handleCreateCharge(
     try {
       const bxCall = (method: string, params: Record<string, any> = {}) =>
         callBitrixWithRefresh(supabase, integration, method, params);
-      plan = await readEmmelyPaymentPlan(bxCall, "deal", dealId);
+      plan = await readEmmelyPaymentPlan(bxCall, "deal", dealId, undefined, supabase);
       console.log(`[ROBOT-HANDLER] Deal ${dealId} plan loaded. warnings=${JSON.stringify(plan.warnings)}`);
     } catch (e) {
       console.warn(`[ROBOT-HANDLER] Failed to read deal ${dealId} fields:`, e);
@@ -391,6 +471,8 @@ async function handleCreateCharge(
   if (!totalAmount || totalAmount <= 0) missing.push("Valor total (UF_CRM_EMMELY_TOTAL_AMOUNT)");
   if (!paymentMethod) missing.push("Método de pagamento (UF_CRM_EMMELY_PAYMENT_METHOD)");
   if (totalAmount > downPayment && !firstDueDate) missing.push("Data do primeiro vencimento (UF_CRM_EMMELY_FIRST_DUE_DATE)");
+  const parcelHoles: string[] = Array.isArray((plan as any)?.missingParcels) ? (plan as any).missingParcels : [];
+  for (const ph of parcelHoles) missing.push(ph);
 
   if (missing.length > 0) {
     const errMsg = missing.join("; ");
@@ -398,7 +480,7 @@ async function handleCreateCharge(
     const comment =
       `[B]⚠️ Emmely Pay — não foi possível gerar o link de pagamento[/B]\n` +
       `Campos em falta ou inválidos:\n- ${missing.join("\n- ")}\n\n` +
-      `Preencha os campos no negócio e mova novamente para "Gerar link Pagamento".`;
+      `Preencha os dados na aba Emmely Pay do negócio e mova novamente para "Gerar link Pagamento".`;
     await postTimelineComment(supabaseSvc, integration, { type: "deal", id: dealId }, comment);
     return { charge_id: "", charge_status: "error", payment_url: "", pix_code: "", gateway_used: "", invoices_created: "0", error: errMsg };
   }
