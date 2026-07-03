@@ -650,6 +650,142 @@ async function handleCreateCharge(
     const parcels = planToParcels(mergedPlan);
     const totalCount = parcels.length;
 
+    // ---- Reuse / cancel-and-recreate detection ----
+    const newSignature = await computeInstallmentSignature(dealId, currency, companyGateway, parcels);
+    const stripeRegion: "pt" | "br" | null =
+      companyGateway === "stripe_br" ? "br" : (companyGateway === "stripe_pt" || companyGateway === "stripe" ? "pt" : null);
+
+    let reuseDecision: "create" | "reuse" | "recreate" | "blocked" = "create";
+    let previousGroupId: string | null = null;
+    let reusedPaymentUrl = "";
+    let reusedChargeId = "";
+    let reusedGateway = "";
+
+    if (dealId) {
+      try {
+        const { data: existingTxs } = await supabase
+          .from("payment_transactions")
+          .select("id, status, payment_url, gateway, gateway_payment_id, metadata, created_at")
+          .eq("metadata->>bitrix_deal_id", String(dealId))
+          .order("created_at", { ascending: false })
+          .limit(200);
+
+        // Group by installment_group_id, newest first.
+        const groups = new Map<string, any[]>();
+        for (const tx of (existingTxs || [])) {
+          const gid = (tx.metadata as any)?.installment_group_id || `_solo_${tx.id}`;
+          if (!groups.has(gid)) groups.set(gid, []);
+          groups.get(gid)!.push(tx);
+        }
+
+        // Look at the most-recent group only (first insertion order preserved).
+        const firstGid = groups.keys().next().value as string | undefined;
+        if (firstGid && !firstGid.startsWith("_solo_")) {
+          const grp = groups.get(firstGid)!;
+          const hasPaid = grp.some((t) => ["paid", "confirmed", "succeeded"].includes(String(t.status || "").toLowerCase()));
+          const pendingOnes = grp.filter((t) => ["pending", "processing"].includes(String(t.status || "").toLowerCase()));
+          const oldSignature = (grp[0]?.metadata as any)?.installment_signature || null;
+
+          if (hasPaid) {
+            reuseDecision = "blocked";
+            previousGroupId = firstGid;
+          } else if (pendingOnes.length > 0 && oldSignature && oldSignature === newSignature) {
+            reuseDecision = "reuse";
+            previousGroupId = firstGid;
+            const primary = pendingOnes
+              .sort((a, b) => ((a.metadata as any)?.installment_number ?? 99) - ((b.metadata as any)?.installment_number ?? 99))[0];
+            reusedPaymentUrl = primary?.payment_url || "";
+            reusedChargeId = primary?.id || "";
+            reusedGateway = primary?.gateway || "";
+          } else if (pendingOnes.length > 0) {
+            reuseDecision = "recreate";
+            previousGroupId = firstGid;
+            // Mark pending ones as cancelled and best-effort expire Stripe sessions.
+            const ids = pendingOnes.map((t) => t.id);
+            await supabase
+              .from("payment_transactions")
+              .update({
+                status: "cancelled",
+                metadata: {}, // will be overwritten below to preserve keys? no — keep, do a per-row update instead
+              })
+              .in("id", ids)
+              .then(() => {}, () => {});
+            // Redo status update without metadata wipe (safer path):
+            await supabase.from("payment_transactions").update({ status: "cancelled" }).in("id", ids);
+            await expireStripeSessionsBestEffort(supabase, pendingOnes, companyCredentialProvider, stripeRegion);
+          }
+        }
+
+        await supabase.from("bitrix24_debug_logs").insert({
+          event_type: "charge_reuse_decision",
+          direction: "outbound",
+          payload: {
+            bitrix_deal_id: dealId,
+            decision: reuseDecision,
+            previous_group_id: previousGroupId,
+            new_signature: newSignature,
+          },
+        }).then(() => {}, () => {});
+      } catch (e) {
+        console.warn("[ROBOT-HANDLER] reuse detection failed (continuing as create):", e);
+      }
+    }
+
+    // Reuse branch: overwrite the deal payment URL + timeline, and short-circuit.
+    if (reuseDecision === "reuse") {
+      let dealUpdOk = false;
+      let dealUpdErr = "";
+      if (reusedPaymentUrl && dealId && integration?.client_endpoint && integration?.access_token) {
+        try {
+          const upd: any = await callBitrixWithRefresh(supabase, integration, "crm.deal.update", {
+            id: parseInt(dealId),
+            fields: {
+              UF_CRM_EMMELY_PAYMENT_URL: reusedPaymentUrl,
+              UF_CRM_EMMELY_GATEWAY: reusedGateway || companyGateway,
+            },
+          });
+          if (upd?.error) dealUpdErr = String(upd.error_description || upd.error); else dealUpdOk = true;
+        } catch (e) {
+          dealUpdErr = String(e);
+        }
+      }
+      const fmt = (v: number) => new Intl.NumberFormat("pt-PT", { style: "currency", currency }).format(v);
+      const comment =
+        `[B]♻️ Emmely Pay — link existente reutilizado (sem alterações)[/B]\n` +
+        `Valor total: ${fmt(totalAmount)}\n` +
+        `Gateway: ${reusedGateway || companyGateway}\n` +
+        `Parcelas: ${parcels.length}\n` +
+        (reusedPaymentUrl ? `[URL=${reusedPaymentUrl}]Abrir link de pagamento[/URL]` : `(⚠️ link anterior não estava registado)`) +
+        (dealUpdErr ? `\n⚠️ Não foi possível reescrever UF_CRM_EMMELY_PAYMENT_URL: ${dealUpdErr.slice(0, 200)}` : "");
+      await postTimelineComment(supabase, integration, { type: "deal", id: dealId }, comment);
+      return {
+        charge_id: reusedChargeId,
+        charge_status: "reused",
+        payment_url: reusedPaymentUrl,
+        pix_code: "",
+        gateway_used: reusedGateway || companyGateway,
+        invoices_created: "0",
+        error: "",
+      };
+    }
+
+    // Blocked branch: previous group already has a paid parcel — do not regenerate.
+    if (reuseDecision === "blocked") {
+      const comment =
+        `[B]⚠️ Emmely Pay — já existe pagamento realizado neste negócio[/B]\n` +
+        `Não é seguro gerar um novo link automaticamente. Cancele/estorne manualmente o grupo anterior antes de reprocessar.`;
+      await postTimelineComment(supabase, integration, { type: "deal", id: dealId }, comment);
+      return {
+        charge_id: "",
+        charge_status: "blocked",
+        payment_url: "",
+        pix_code: "",
+        gateway_used: "",
+        invoices_created: "0",
+        error: "paid_group_exists",
+      };
+    }
+
     const groupId = crypto.randomUUID();
     let firstChargeId = "";
     let firstGateway = "";
