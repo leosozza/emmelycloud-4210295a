@@ -1,72 +1,29 @@
 ## Diagnóstico do deal 45807
 
-Nos logs (`bitrix24_debug_logs`, evento `robot_emmely_create_charge_response` às 15:30):
+Os logs mostram que o robot rodou, chamou `payment-create` para as 2 parcelas e ambas devolveram sem `transaction.id` — daí `gateway_used=""`, `payment_url=""`, `invoices_created="0"` e o campo `UF_CRM_EMMELY_PAYMENT_URL` não foi preenchido (o `crm.deal.update` só corre quando existe `firstPaymentUrl`).
 
-```
-returnValues.error = "Data do primeiro vencimento (UF_CRM_EMMELY_FIRST_DUE_DATE)"
-charge_status    = "error"
-```
+Causa mais provável: o `customer_email` recebido do Bitrix24 é **`"ailson.franca@outlook.com, cordeirothalita10@gmail.com"`** (dois emails separados por vírgula). A Stripe rejeita esse formato ao criar a Checkout Session, `payment-create` faz `throw`, devolve `{ error: ... }` sem `transaction`, e o robot ignora silenciosamente. Sem `payment_url`, a automação de envio ao cliente também não dispara porque `UF_CRM_EMMELY_PAYMENT_URL` fica vazio.
 
-O robot **foi disparado** e **abortou** por validação: considerou `firstDueDate` vazio. Não gerou link nem faturas.
+## Alterações propostas
 
-### Por que aconteceu, mesmo com o utilizador "cadastrando certinho"
+**1. `supabase/functions/bitrix24-robot-handler/index.ts` — `handleCreateCharge`**
+- Sanitizar `customerEmail`: aceitar apenas o primeiro email válido (`split(/[,;\s]+/)` → primeiro que passa numa regex simples). Se depois de sanitizar ficar inválido, adicionar a `missing` como `Email do cliente — formato inválido`.
+- Sanitizar `customerName` (trim, limite de tamanho).
+- No loop de parcelas capturar a resposta completa de `payment-create`:
+  - Se `!res.ok` ou `!data.transaction?.id`, registar em `bitrix24_debug_logs` (`event_type: payment_create_failed`, com deal, parcela, HTTP status e `data.error`).
+  - Acumular em `parcelErrors: string[]` (ex.: `Entrada 1/1: <mensagem>`).
+- Postar comentário `❌ Emmely Pay — falha ao criar cobrança(s)` com a lista de erros e devolver `charge_status: "error"` quando nenhuma parcela produziu link. Só postar o `✅ … link gerado` quando existir pelo menos um `payment_url`.
+- **Garantir preenchimento de `UF_CRM_EMMELY_PAYMENT_URL`** (bloco `crm.deal.update`): manter a escrita atual e adicionar:
+  - Registo em `bitrix24_debug_logs` (`event_type: deal_update_payment_url`) com o resultado da chamada, para termos evidência de que o campo foi gravado.
+  - Se `crm.deal.update` devolver `error`, refazer a tentativa uma vez e, se voltar a falhar, incluir o aviso `⚠️ Link gerado mas UF_CRM_EMMELY_PAYMENT_URL não foi atualizado` no comentário de sucesso, para a automação de envio ao cliente ser corrigida manualmente.
+  - Continuar a gravar `UF_CRM_EMMELY_GATEWAY` no mesmo update.
 
-Existe uma **desconexão entre a UI Emmely Pay e o robot**:
+**2. `supabase/functions/payment-create/index.ts`**
+- Validar `customer_data.email` com regex antes de chamar `createStripePayment`; se inválido, devolver 400 com `Email do cliente inválido: "<valor>"`.
+- `console.error` do corpo devolvido pela Stripe quando a chamada falha, para termos rasto nos logs da função.
 
-1. Na aba **Emmely Pay** (screenshot), o utilizador configurou o plano (Entrada 5€ + Parcela 1/1 15€). Essa aba grava/lê a partir de `financial_records` (fonte de verdade do ciclo comercial, conforme a memória do projeto).
-2. O robot chama `readEmmelyPaymentPlan()` (`supabase/functions/_shared/deal-payment-fields.ts`) que só lê `UF_CRM_EMMELY_FIRST_DUE_DATE` / `UF_CRM_EMMELY_NEXT_DUE_DATE` **direto do deal no Bitrix24**. Esses campos UF continuam vazios porque a UI não os escreve.
-3. O BizProc mapeou `Data 1º Vencimento` como campo vazio (screenshot 2 confirma o input em branco) e `installments` também vazio. Sem fallback do plano, `firstDueDate = ""` → validação falha.
+**3. Validação**
+- Reprocessar deal 45807 com o email atual (com vírgula) → deve aparecer `❌ falha ao criar cobrança` com "Email do cliente inválido" e nada gravado em `UF_CRM_EMMELY_PAYMENT_URL`.
+- Corrigir o email do contacto (deixar só um) e reprocessar → comentário `✅ link gerado`, `UF_CRM_EMMELY_PAYMENT_URL` preenchido (confirmar via `crm.deal.get` e no debug log `deal_update_payment_url`) e `Faturas Bitrix24 criadas: 2`.
 
-Além disso a Parcela 1/1 na UI mostra "Vencimento: Definir" e "Método: Definir" — a parcela em `financial_records` também está incompleta (só existe o registo da entrada, sem `due_date` do saldo).
-
-### Por que o comentário no timeline não apareceu
-
-O helper `postTimelineComment` foi chamado (a rota está no código), mas se `crm.timeline.comment.add` retorna erro (por exemplo `AUTHOR_ID: 1` inválido no portal, ou `ENTITY_TYPE` mal aceite), o helper apenas faz `console.warn` e não persiste em `bitrix24_debug_logs`. Não temos evidência de sucesso nem de falha da chamada.
-
----
-
-## Plano
-
-### 1. Fazer o robot enxergar o plano configurado na UI (`financial_records`)
-
-Em `supabase/functions/_shared/deal-payment-fields.ts` → `readEmmelyPaymentPlan()`:
-
-- Depois de ler os campos UF do deal, se `firstDue` ou `remainingMethod` ou `remainingInstallments` ou `totalAmount` estiverem vazios/zerados, carregar de `financial_records where bitrix24_deal_id = dealId order by installment_number`:
-  - `totalAmount` ← soma de `installment_value` (quando o UF `TOTAL_AMOUNT` estiver vazio).
-  - `firstDue` ← menor `due_date` entre parcelas com `status = 'pendente'` que **não** sejam a entrada.
-  - `remainingInstallments` ← contagem das parcelas pendentes de saldo.
-  - `remainingMethod` ← método mais frequente entre as parcelas pendentes (fallback `card`).
-  - `downPayment` / `downFirstDue` / `downMethod` ← primeira parcela marcada como entrada (heurística: `installment_number = 1` e `total_installments > 1` com valor < total — se o esquema não tiver flag, deixamos como está).
-- Adicionar em `plan.warnings` origem (`"firstDue from financial_records"`) para debug.
-
-### 2. Mensagem de validação mais útil
-
-Em `handleCreateCharge` (`supabase/functions/bitrix24-robot-handler/index.ts`):
-
-- Além dos 3 checks atuais, iterar `financial_records` do deal e listar parcelas com `due_date IS NULL` ou `payment_method IS NULL/''` — juntar na lista `missing` (ex.: `"Parcela 1/1: falta data de vencimento e método"`).
-- Manter o comentário `[B]⚠️ Emmely Pay — não foi possível gerar o link[/B]` com a lista consolidada.
-
-### 3. Garantir que o comentário no timeline chega ao utilizador
-
-Em `postTimelineComment`:
-
-- Persistir o resultado em `bitrix24_debug_logs` (evento `timeline_comment_add`, `direction: "outbound"`) com o `error` do Bitrix quando existir — assim conseguimos diagnosticar falhas silenciosas.
-- Se a resposta trouxer erro, tentar **um retry** trocando `AUTHOR_ID` para o `responsible_id` do próprio deal (buscar via `crm.deal.get`) — evita rejeição por AUTHOR_ID inválido em alguns portais.
-- Fallback final: usar `crm.activity.add` com um provider próprio (comentário simples) se `crm.timeline.comment.add` continuar a falhar, garantindo visibilidade no timeline.
-
-### 4. (opcional/segurança) Escrever o plano de volta no deal
-
-Quando `readEmmelyPaymentPlan` reconstruir o plano a partir de `financial_records`, atualizar em best-effort os campos `UF_CRM_EMMELY_FIRST_DUE_DATE`, `UF_CRM_EMMELY_TOTAL_AMOUNT`, `UF_CRM_EMMELY_PAYMENT_METHOD` no deal (via `crm.deal.update`) para manter consistência entre UI e Bitrix. Isso evita que próximas execuções voltem a cair no fallback.
-
-### 5. Validação
-
-1. Reprocessar deal 45807 (com `financial_records` incompleto): esperar comentário no timeline listando "Parcela 1/1: falta data de vencimento e método" e `bitrix24_debug_logs` a registar `timeline_comment_add` com/sem erro.
-2. Completar `due_date` + `payment_method` da parcela via UI Emmely Pay → mover o deal para "Gerar link Pagamento" → esperar comentário `✅ Emmely Pay — link gerado` com URL clicável.
-3. Confirmar que os UF do deal foram atualizados após a execução bem-sucedida (passo 4).
-
-## Arquivos alterados
-
-- `supabase/functions/_shared/deal-payment-fields.ts` (fallback `financial_records`, escrita opcional de UF)
-- `supabase/functions/bitrix24-robot-handler/index.ts` (validação por parcela, `postTimelineComment` com log/retry/fallback)
-
-Sem alterações em UI, `bitrix24-payment-tab` nem `payment-create-link`.
+Alterações restritas às duas Edge Functions acima; sem mudanças de UI ou de outros fluxos.
