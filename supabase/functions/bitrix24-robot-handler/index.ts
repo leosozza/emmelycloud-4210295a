@@ -386,15 +386,23 @@ async function handleCreateCharge(
   const contactId = contactIdProp || plan?.customer.contactId || "";
   const companyId = companyIdProp || plan?.customer.companyId || "";
 
-  if (!totalAmount || totalAmount <= 0) {
-    return { charge_id: "", charge_status: "error", payment_url: "", pix_code: "", gateway_used: "", invoices_created: "0", error: "amount must be > 0 (check UF_CRM_EMMELY_TOTAL_AMOUNT)" };
+  // Collect all missing/invalid fields at once so the user sees the full list in one comment.
+  const missing: string[] = [];
+  if (!totalAmount || totalAmount <= 0) missing.push("Valor total (UF_CRM_EMMELY_TOTAL_AMOUNT)");
+  if (!paymentMethod) missing.push("Método de pagamento (UF_CRM_EMMELY_PAYMENT_METHOD)");
+  if (totalAmount > downPayment && !firstDueDate) missing.push("Data do primeiro vencimento (UF_CRM_EMMELY_FIRST_DUE_DATE)");
+
+  if (missing.length > 0) {
+    const errMsg = missing.join("; ");
+    const supabaseSvc = createClient(supabaseUrl, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+    const comment =
+      `[B]⚠️ Emmely Pay — não foi possível gerar o link de pagamento[/B]\n` +
+      `Campos em falta ou inválidos:\n- ${missing.join("\n- ")}\n\n` +
+      `Preencha os campos no negócio e mova novamente para "Gerar link Pagamento".`;
+    await postTimelineComment(supabaseSvc, integration, { type: "deal", id: dealId }, comment);
+    return { charge_id: "", charge_status: "error", payment_url: "", pix_code: "", gateway_used: "", invoices_created: "0", error: errMsg };
   }
-  if (!paymentMethod) {
-    return { charge_id: "", charge_status: "error", payment_url: "", pix_code: "", gateway_used: "", invoices_created: "0", error: "payment method missing (UF_CRM_EMMELY_PAYMENT_METHOD)" };
-  }
-  if (totalAmount > downPayment && !firstDueDate) {
-    return { charge_id: "", charge_status: "error", payment_url: "", pix_code: "", gateway_used: "", invoices_created: "0", error: "first due date missing (UF_CRM_EMMELY_FIRST_DUE_DATE)" };
-  }
+
 
   // Lookup company credentials if company_id provided
   let companyCredentialProvider = "";
