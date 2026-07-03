@@ -460,8 +460,18 @@ async function handleCreateCharge(
   const interval = pOr("interval", "INTERVAL", plan?.interval ?? 30, (v) => parseInt(String(v), 10)) || 30;
   const downInterval = pOr("down_interval", "DOWN_INTERVAL", plan?.downInterval ?? 30, (v) => parseInt(String(v), 10)) || 30;
 
-  const customerName = pOr("customer_name", "CUSTOMER_NAME", plan?.customer.name ?? "", String);
-  const customerEmail = pOr("customer_email", "CUSTOMER_EMAIL", plan?.customer.email ?? "", String);
+  const customerNameRaw = pOr("customer_name", "CUSTOMER_NAME", plan?.customer.name ?? "", String);
+  const customerName = String(customerNameRaw || "").trim().slice(0, 200);
+  const customerEmailRaw = pOr("customer_email", "CUSTOMER_EMAIL", plan?.customer.email ?? "", String);
+  // Sanitize: Bitrix contacts often store multiple emails separated by ",", ";" or whitespace.
+  // Stripe rejects that format — pick the first RFC-ish valid email.
+  const emailRe = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  const customerEmailCandidates = String(customerEmailRaw || "")
+    .split(/[,;\s]+/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+  const customerEmail = customerEmailCandidates.find((e) => emailRe.test(e)) || "";
+  const customerEmailInvalid = !!customerEmailRaw && !customerEmail;
   const customerCpf = pOr("customer_cpf", "CUSTOMER_CPF", plan?.customer.cpf ?? "", String);
   const contactId = contactIdProp || plan?.customer.contactId || "";
   const companyId = companyIdProp || plan?.customer.companyId || "";
