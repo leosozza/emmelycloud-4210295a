@@ -183,32 +183,110 @@ export async function readEmmelyPaymentPlan(
     customer.phone = str(phones[0]?.VALUE);
   }
 
-  // Warnings
-  if (totalAmount <= 0) warnings.push("UF_CRM_EMMELY_TOTAL_AMOUNT is empty or 0");
-  if (!remainingMethod && !downMethod) warnings.push("UF_CRM_EMMELY_PAYMENT_METHOD missing");
-  if (totalAmount > downPayment && !firstDue) warnings.push("UF_CRM_EMMELY_FIRST_DUE_DATE missing for saldo");
+  // ---- Fallback to financial_records when UF fields are empty ----
+  // The Emmely Pay UI writes the plan to financial_records (source of truth),
+  // and does NOT sync those values back to the deal's UF_CRM_EMMELY_* fields.
+  // Without this fallback, deals configured via the UI fail validation here.
+  let effTotal = totalAmount;
+  let effFirstDue = firstDue;
+  let effRemainingInstallments = remainingInstallments;
+  let effRemainingMethod = remainingMethod;
+  const missingParcels: string[] = [];
+  let frRows: any[] = [];
+
+  if (supabase && entityType === "deal" && id) {
+    try {
+      const { data: frData, error: frErr } = await supabase
+        .from("financial_records")
+        .select("id, installment_number, total_installments, installment_value, payment_method, due_date, status")
+        .eq("bitrix24_deal_id", String(id))
+        .order("installment_number", { ascending: true, nullsFirst: true });
+      if (frErr) {
+        warnings.push(`financial_records fallback query error: ${frErr.message || frErr}`);
+      } else if (Array.isArray(frData) && frData.length > 0) {
+        frRows = frData;
+        const pendingOrAll = frData.filter((r: any) => (r.status || "pendente") !== "paga");
+        const sumAll = frData.reduce((a: number, r: any) => a + num(r.installment_value), 0);
+        if (effTotal <= 0 && sumAll > 0) {
+          effTotal = sumAll;
+          warnings.push("totalAmount from financial_records");
+        }
+        if (!effFirstDue) {
+          const withDue = pendingOrAll
+            .filter((r: any) => r.due_date)
+            .sort((a: any, b: any) => String(a.due_date).localeCompare(String(b.due_date)));
+          if (withDue[0]?.due_date) {
+            effFirstDue = toIsoDate(withDue[0].due_date);
+            if (effFirstDue) warnings.push("firstDue from financial_records");
+          }
+        }
+        if (!remainingInstallments || remainingInstallments === 1) {
+          // Best-effort: use max total_installments seen or the count of rows
+          const maxTot = frData.reduce((m: number, r: any) => Math.max(m, intNum(r.total_installments, 0)), 0);
+          if (maxTot > 0) effRemainingInstallments = maxTot;
+          else if (pendingOrAll.length > 0) effRemainingInstallments = pendingOrAll.length;
+        }
+        if (!effRemainingMethod) {
+          // Majority method among rows that declare one
+          const counts: Record<string, number> = {};
+          for (const r of frData) {
+            const m = str(r.payment_method).toLowerCase();
+            if (m) counts[m] = (counts[m] || 0) + 1;
+          }
+          const top = Object.entries(counts).sort((a, b) => b[1] - a[1])[0]?.[0];
+          if (top) {
+            effRemainingMethod = top;
+            warnings.push(`remainingMethod from financial_records (${top})`);
+          }
+        }
+        // Per-parcel diagnostics for the caller to surface in the timeline
+        for (const r of frData) {
+          const label = r.total_installments && r.total_installments > 1
+            ? `Parcela ${r.installment_number || "?"}/${r.total_installments}`
+            : `Parcela ${r.installment_number || "?"}`;
+          const holes: string[] = [];
+          if (!r.due_date) holes.push("data de vencimento");
+          if (!str(r.payment_method)) holes.push("método");
+          if (holes.length > 0) missingParcels.push(`${label}: falta ${holes.join(" e ")}`);
+        }
+      } else {
+        warnings.push("no financial_records for this deal");
+      }
+    } catch (e) {
+      warnings.push(`financial_records fallback exception: ${String(e).slice(0, 200)}`);
+    }
+  }
+
+  // Warnings (post-fallback so they reflect effective values)
+  if (effTotal <= 0) warnings.push("UF_CRM_EMMELY_TOTAL_AMOUNT is empty or 0");
+  if (!effRemainingMethod && !downMethod) warnings.push("UF_CRM_EMMELY_PAYMENT_METHOD missing");
+  if (effTotal > downPayment && !effFirstDue) warnings.push("UF_CRM_EMMELY_FIRST_DUE_DATE missing for saldo");
   if (downPayment > 0 && !downFirstDue) warnings.push("UF_CRM_EMMELY_DOWN_FIRST_DUE missing");
   if (!customer.name) warnings.push("Customer name not found (link a contact to the deal)");
   if (!customer.email) warnings.push("Customer email not found (link a contact with email)");
 
-  return {
-    totalAmount,
+  const plan: EmmelyPaymentPlan = {
+    totalAmount: effTotal,
     currency,
     gateway,
     hasDown: downPayment > 0,
     downPayment,
     downInstallments: Math.max(1, downInstallments),
-    downMethod: downMethod || remainingMethod || "card",
+    downMethod: downMethod || effRemainingMethod || "card",
     downFirstDue: downFirstDue || new Date().toISOString().split("T")[0],
     downInterval: Math.max(1, downInterval),
-    remainingInstallments: Math.max(1, remainingInstallments),
-    remainingMethod: remainingMethod || downMethod || "card",
-    firstDue,
+    remainingInstallments: Math.max(1, effRemainingInstallments),
+    remainingMethod: effRemainingMethod || downMethod || "card",
+    firstDue: effFirstDue,
     interval: Math.max(1, interval),
     customer,
     raw: deal,
     warnings,
   };
+  // Attach parcel-level diagnostics as a non-typed extra field for the caller.
+  (plan as any).missingParcels = missingParcels;
+  (plan as any).financialRecords = frRows;
+  return plan;
 }
 
 /**
