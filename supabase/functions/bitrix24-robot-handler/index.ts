@@ -702,15 +702,6 @@ async function handleCreateCharge(
             previousGroupId = firstGid;
             // Mark pending ones as cancelled and best-effort expire Stripe sessions.
             const ids = pendingOnes.map((t) => t.id);
-            await supabase
-              .from("payment_transactions")
-              .update({
-                status: "cancelled",
-                metadata: {}, // will be overwritten below to preserve keys? no — keep, do a per-row update instead
-              })
-              .in("id", ids)
-              .then(() => {}, () => {});
-            // Redo status update without metadata wipe (safer path):
             await supabase.from("payment_transactions").update({ status: "cancelled" }).in("id", ids);
             await expireStripeSessionsBestEffort(supabase, pendingOnes, companyCredentialProvider, stripeRegion);
           }
