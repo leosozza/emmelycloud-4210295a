@@ -704,6 +704,38 @@ async function handleCreateCharge(
             const ids = pendingOnes.map((t) => t.id);
             await supabase.from("payment_transactions").update({ status: "cancelled" }).in("id", ids);
             await expireStripeSessionsBestEffort(supabase, pendingOnes, companyCredentialProvider, stripeRegion);
+            // Cancel corresponding Bitrix Smart Invoices to avoid duplication on recreate.
+            if (integration?.client_endpoint && integration?.access_token) {
+              const invoiceIds: number[] = [];
+              for (const t of pendingOnes) {
+                const invId = (t.metadata as any)?.bitrix_old_invoice_id;
+                const n = invId ? parseInt(String(invId)) : NaN;
+                if (!Number.isNaN(n)) invoiceIds.push(n);
+              }
+              if (invoiceIds.length > 0) {
+                const batch: Record<string, any> = {};
+                invoiceIds.forEach((iid, idx) => {
+                  batch[`inv_${idx}`] = {
+                    method: "crm.item.update",
+                    params: {
+                      entityTypeId: 31,
+                      id: iid,
+                      fields: { stageId: "DT31_3:D", ufCrm_SmartInvoice_EmmelyPaymentStatus: "Cancelado" },
+                    },
+                  };
+                });
+                try {
+                  await callBitrixBatch(integration.client_endpoint, integration.access_token, batch);
+                  await supabase.from("bitrix24_debug_logs").insert({
+                    event_type: "invoice_cancel_before_recreate",
+                    direction: "outbound",
+                    payload: { bitrix_deal_id: dealId, invoice_ids: invoiceIds },
+                  });
+                } catch (e) {
+                  console.warn("[ROBOT-HANDLER] recreate: batch invoice cancel failed:", e);
+                }
+              }
+            }
           }
         }
 
