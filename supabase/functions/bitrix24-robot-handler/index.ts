@@ -608,6 +608,22 @@ async function handleCreateCharge(
       } catch (e) { console.warn("[ROBOT-HANDLER] deal.update payment url failed:", e); }
     }
 
+    // Post a friendly summary to the deal timeline
+    if (dealId) {
+      const fmt = (v: number) => new Intl.NumberFormat("pt-PT", { style: "currency", currency }).format(v);
+      const linkLine = firstPaymentUrl
+        ? `\n[URL=${firstPaymentUrl}]Abrir link de pagamento[/URL]`
+        : `\n(⚠️ nenhum link retornado pelo gateway)`;
+      const comment =
+        `[B]✅ Emmely Pay — link de pagamento gerado[/B]\n` +
+        `Valor total: ${fmt(totalAmount)}\n` +
+        `Gateway: ${firstGateway || companyGateway}\n` +
+        `Parcelas: ${totalCount}${downPayment > 0 ? ` (entrada ${fmt(downPayment)} + ${numInstallments}x)` : ""}\n` +
+        `Faturas Bitrix24 criadas: ${invoicesCreated}` +
+        linkLine;
+      await postTimelineComment(supabase, integration, { type: "deal", id: dealId }, comment);
+    }
+
     return {
       charge_id: firstChargeId,
       charge_status: "pending",
@@ -618,6 +634,12 @@ async function handleCreateCharge(
       error: "",
     };
   } catch (e) {
+    if (dealId) {
+      const comment =
+        `[B]❌ Emmely Pay — erro ao gerar link de pagamento[/B]\n` +
+        `Detalhe: ${String(e).slice(0, 500)}`;
+      await postTimelineComment(supabase, integration, { type: "deal", id: dealId }, comment);
+    }
     return { charge_id: "", charge_status: "error", payment_url: "", pix_code: "", gateway_used: "", invoices_created: "0", error: String(e) };
   }
 }
