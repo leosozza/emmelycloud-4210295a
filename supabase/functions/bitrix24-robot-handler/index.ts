@@ -1000,8 +1000,11 @@ async function handleCreateCharge(
       const dealUpdateLine = (firstPaymentUrl && !dealUpdateOk)
         ? `\n⚠️ Link gerado mas UF_CRM_EMMELY_PAYMENT_URL não foi atualizado (${dealUpdateError.slice(0, 200)}). A automação de envio ao cliente pode não disparar — atualize o campo manualmente.`
         : "";
+      const header = reuseDecision === "recreate"
+        ? `[B]🔄 Emmely Pay — parcelas alteradas, novo link gerado (anterior cancelado)[/B]\n`
+        : `[B]✅ Emmely Pay — link de pagamento gerado[/B]\n`;
       const comment =
-        `[B]✅ Emmely Pay — link de pagamento gerado[/B]\n` +
+        header +
         `Valor total: ${fmt(totalAmount)}\n` +
         `Gateway: ${firstGateway || companyGateway}\n` +
         `Parcelas: ${totalCount}${downPayment > 0 ? ` (entrada ${fmt(downPayment)} + ${numInstallments}x)` : ""}\n` +
@@ -1012,7 +1015,7 @@ async function handleCreateCharge(
 
     return {
       charge_id: firstChargeId,
-      charge_status: "pending",
+      charge_status: reuseDecision === "recreate" ? "updated" : "pending",
       payment_url: firstPaymentUrl,
       pix_code: "",
       gateway_used: firstGateway,
