@@ -391,6 +391,8 @@ async function handleCreateCharge(
   if (!totalAmount || totalAmount <= 0) missing.push("Valor total (UF_CRM_EMMELY_TOTAL_AMOUNT)");
   if (!paymentMethod) missing.push("Método de pagamento (UF_CRM_EMMELY_PAYMENT_METHOD)");
   if (totalAmount > downPayment && !firstDueDate) missing.push("Data do primeiro vencimento (UF_CRM_EMMELY_FIRST_DUE_DATE)");
+  const parcelHoles: string[] = Array.isArray((plan as any)?.missingParcels) ? (plan as any).missingParcels : [];
+  for (const ph of parcelHoles) missing.push(ph);
 
   if (missing.length > 0) {
     const errMsg = missing.join("; ");
@@ -398,7 +400,7 @@ async function handleCreateCharge(
     const comment =
       `[B]⚠️ Emmely Pay — não foi possível gerar o link de pagamento[/B]\n` +
       `Campos em falta ou inválidos:\n- ${missing.join("\n- ")}\n\n` +
-      `Preencha os campos no negócio e mova novamente para "Gerar link Pagamento".`;
+      `Preencha os dados na aba Emmely Pay do negócio e mova novamente para "Gerar link Pagamento".`;
     await postTimelineComment(supabaseSvc, integration, { type: "deal", id: dealId }, comment);
     return { charge_id: "", charge_status: "error", payment_url: "", pix_code: "", gateway_used: "", invoices_created: "0", error: errMsg };
   }
