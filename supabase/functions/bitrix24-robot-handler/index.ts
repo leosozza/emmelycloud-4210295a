@@ -704,6 +704,38 @@ async function handleCreateCharge(
             const ids = pendingOnes.map((t) => t.id);
             await supabase.from("payment_transactions").update({ status: "cancelled" }).in("id", ids);
             await expireStripeSessionsBestEffort(supabase, pendingOnes, companyCredentialProvider, stripeRegion);
+            // Cancel corresponding Bitrix Smart Invoices to avoid duplication on recreate.
+            if (integration?.client_endpoint && integration?.access_token) {
+              const invoiceIds: number[] = [];
+              for (const t of pendingOnes) {
+                const invId = (t.metadata as any)?.bitrix_old_invoice_id;
+                const n = invId ? parseInt(String(invId)) : NaN;
+                if (!Number.isNaN(n)) invoiceIds.push(n);
+              }
+              if (invoiceIds.length > 0) {
+                const batch: Record<string, any> = {};
+                invoiceIds.forEach((iid, idx) => {
+                  batch[`inv_${idx}`] = {
+                    method: "crm.item.update",
+                    params: {
+                      entityTypeId: 31,
+                      id: iid,
+                      fields: { stageId: "DT31_3:D", ufCrm_SmartInvoice_EmmelyPaymentStatus: "Cancelado" },
+                    },
+                  };
+                });
+                try {
+                  await callBitrixBatch(integration.client_endpoint, integration.access_token, batch);
+                  await supabase.from("bitrix24_debug_logs").insert({
+                    event_type: "invoice_cancel_before_recreate",
+                    direction: "outbound",
+                    payload: { bitrix_deal_id: dealId, invoice_ids: invoiceIds },
+                  });
+                } catch (e) {
+                  console.warn("[ROBOT-HANDLER] recreate: batch invoice cancel failed:", e);
+                }
+              }
+            }
           }
         }
 
@@ -888,6 +920,12 @@ async function handleCreateCharge(
               parentId2: parseInt(dealId) || 0,
               contactId: parseInt(String(contactId)) || 0,
               responsibleId: 1,
+              // Per-parcel UF fields (harmlessly ignored on portals where UFs
+              // haven't been provisioned yet; provisioned by bitrix24-install).
+              ufCrm_SmartInvoice_EmmelyPaymentUrl: tx.payment_url || "",
+              ufCrm_SmartInvoice_EmmelyPaymentStatus: "Pendente",
+              ufCrm_SmartInvoice_EmmelyGateway: tx.gateway || companyGateway,
+              ufCrm_SmartInvoice_EmmelyTxId: tx.id,
             },
           }
         };
@@ -1021,6 +1059,47 @@ async function handleCreateCharge(
       await postTimelineComment(supabase, integration, { type: "deal", id: dealId }, comment);
     }
     return { charge_id: "", charge_status: "error", payment_url: "", pix_code: "", gateway_used: "", invoices_created: "0", error: String(e) };
+  }
+}
+
+async function handleCancelCharge(
+  properties: Record<string, any>,
+  supabaseUrl: string,
+  integration?: { member_id?: string; client_endpoint?: string; access_token?: string; id?: string } | null,
+): Promise<Record<string, string>> {
+  const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+  const dealIdRaw = String(properties.deal_id || properties.DEAL_ID || "").replace(/^DEAL_/, "");
+  const invoiceIdRaw = String(properties.invoice_id || properties.INVOICE_ID || "").replace(/^SI_/i, "").replace(/^DYNAMIC_31_/i, "");
+  const txId = String(properties.tx_id || properties.TX_ID || "");
+  const reason = String(properties.reason || properties.REASON || "Cancelado via robot BizProc");
+
+  const body: Record<string, any> = {
+    reason,
+    source: "robot",
+    member_id: integration?.member_id,
+  };
+  if (txId) { body.mode = "tx"; body.tx_id = txId; }
+  else if (invoiceIdRaw) { body.mode = "invoice"; body.invoice_id = invoiceIdRaw; }
+  else if (dealIdRaw) { body.mode = "deal"; body.deal_id = dealIdRaw; }
+  else {
+    return { cancel_status: "error", cancelled_count: "0", error: "deal_id, invoice_id or tx_id required" };
+  }
+
+  try {
+    const res = await fetch(`${supabaseUrl}/functions/v1/payment-cancel`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${serviceKey}` },
+      body: JSON.stringify(body),
+    });
+    const data = await res.json().catch(() => ({}));
+    return {
+      cancel_status: String(data?.status || "error"),
+      cancelled_count: String(data?.cancelled_count || 0),
+      invoices_cancelled: String(data?.invoices_cancelled || 0),
+      error: data?.status === "cancelled" || data?.status === "noop" ? "" : String(data?.reason || data?.error || "unknown"),
+    };
+  } catch (e) {
+    return { cancel_status: "error", cancelled_count: "0", error: String(e).slice(0, 300) };
   }
 }
 
@@ -2227,6 +2306,21 @@ Deno.serve(async (req) => {
       case "emmely_check_payment":
         returnValues = await handleCheckPayment(properties, supabaseUrl);
         break;
+      case "emmely_cancel_charge":
+      case "cancel_charge":
+      case "cancel_charge_invoice": {
+        let cancelIntegration: any = null;
+        if (memberId) {
+          const { data } = await supabase.from("bitrix24_integrations").select("*").eq("member_id", memberId).maybeSingle();
+          cancelIntegration = data;
+        }
+        if (!cancelIntegration) {
+          const { data } = await supabase.from("bitrix24_integrations").select("*").order("created_at", { ascending: false }).limit(1).maybeSingle();
+          cancelIntegration = data;
+        }
+        returnValues = await handleCancelCharge(properties, supabaseUrl, cancelIntegration);
+        break;
+      }
       case "emmely_execute_flow":
         returnValues = await handleExecuteFlow(properties, supabaseUrl, serviceKey);
         break;

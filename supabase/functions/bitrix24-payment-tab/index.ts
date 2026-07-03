@@ -77,6 +77,7 @@ function icon(name: string, size = 14): string {
     "file-text": `<svg ${s}><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><line x1="10" y1="9" x2="8" y2="9"/></svg>`,
     paperclip: `<svg ${s}><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>`,
     building: `<svg ${s}><rect x="4" y="2" width="16" height="20" rx="2"/><path d="M9 22v-4h6v4"/><path d="M8 6h.01"/><path d="M16 6h.01"/><path d="M12 6h.01"/><path d="M12 10h.01"/><path d="M12 14h.01"/><path d="M16 10h.01"/><path d="M16 14h.01"/><path d="M8 10h.01"/><path d="M8 14h.01"/></svg>`,
+    "x-circle": `<svg ${s}><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>`,
   };
   return icons[name] || "";
 }
@@ -424,6 +425,7 @@ function renderPaymentTab(opts: {
             ${notGenerated || ["direto","parcelado_direto","transferencia","n"].includes(String(inst.payment_method || "").toLowerCase()) ? "" : `<button onclick='generatePaymentLink(${instJson})' class="b24-btn-action" title="Gerar Link de Pagamento">${icon("link", 13)} Link</button>`}
             <button onclick='openEditParcelaModal(${instJson})' class="b24-btn-action" title="Editar esta parcela">${icon("pencil", 13)} Editar</button>
             <button onclick='openBaixaModal(${instJson})' class="b24-btn-action b24-btn-baixa" title="Dar Baixa">${icon("check", 13)} Baixa</button>
+            ${!notGenerated && inst.transaction_id ? `<button onclick="cancelParcel('${inst.transaction_id}', '${(label || "Parcela").replace(/'/g, "\\'")}')" class="b24-btn-action" style="border-color:#dc2626;color:#dc2626" title="Cancelar esta parcela">${icon("x-circle", 13)} Cancelar</button>` : ""}
             ${contactPhone && flows.length > 0 ? `<button onclick='toggleFlowRow("${inst.id}")' class="b24-btn-action b24-btn-fluxo" title="Enviar Fluxo">${icon("send", 13)} Fluxo</button>` : ""}
           </div>
           ${contactPhone && flows.length > 0 ? `
@@ -708,7 +710,11 @@ function renderPaymentTab(opts: {
       const bulkBtn = notGenCount > 1
         ? `<button class="b24-btn-generate" onclick="generateAllCharges()" style="margin-left:8px" title="Gerar cobranças reais para todas as parcelas ainda não geradas">${icon("file-plus", 14)} Gerar todas (${notGenCount})</button>`
         : "";
-      return `<button class="b24-btn-outline" onclick='openEditFullModal(${targetJson})' style="margin-left:8px">${icon("pencil", 14)} Editar</button>${bulkBtn}`;
+      const cancellableCount = installments.filter((i: any) => i.transaction_id && !String(i.transaction_id).startsWith("deal-") && i.status !== "paga").length;
+      const cancelBtn = cancellableCount > 0
+        ? `<button class="b24-btn-outline" onclick="cancelDealCharge()" style="margin-left:8px;border-color:#dc2626;color:#dc2626" title="Cancelar todas as parcelas pendentes desta cobrança">${icon("x-circle", 14)} Cancelar cobrança (${cancellableCount})</button>`
+        : "";
+      return `<button class="b24-btn-outline" onclick='openEditFullModal(${targetJson})' style="margin-left:8px">${icon("pencil", 14)} Editar</button>${bulkBtn}${cancelBtn}`;
     })() : ""}
   </div>
   ${noData ? noDataHtml : `
@@ -2074,6 +2080,56 @@ function renderPaymentTab(opts: {
       setStatus('Erro: ' + e.message, 'var(--value-open)');
     } finally {
       btns.forEach(function(b) { b.disabled = false; });
+    }
+  }
+
+  async function cancelDealCharge() {
+    var reason = prompt('Motivo do cancelamento (aparecerá no timeline):', 'Cliente cancelou');
+    if (reason === null) return;
+    if (!confirm('Cancelar TODAS as parcelas pendentes desta cobrança? Isto expira o link Stripe, cancela as faturas Bitrix e limpa o link do negócio.')) return;
+    setStatus('A cancelar cobrança...', 'var(--text-secondary)');
+    try {
+      var r = await fetch(SUPABASE_URL + '/functions/v1/payment-cancel', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode: 'deal', deal_id: ENTITY_ID, member_id: MEMBER_ID, reason: reason, source: 'iframe' })
+      });
+      var d = await r.json();
+      if (d.status === 'cancelled') {
+        setStatus(d.cancelled_count + ' parcela(s) canceladas, ' + (d.invoices_cancelled||0) + ' fatura(s) Bitrix atualizada(s).', 'var(--accent-paid)');
+        setTimeout(function(){ location.reload(); }, 1200);
+      } else if (d.status === 'blocked') {
+        alert('Não é possível cancelar: já existe pagamento realizado.');
+      } else if (d.status === 'noop') {
+        alert('Nada a cancelar (nenhuma parcela pendente).');
+      } else {
+        alert('Erro ao cancelar: ' + (d.reason || d.error || 'desconhecido'));
+      }
+    } catch (e) {
+      alert('Erro de rede: ' + e);
+    }
+  }
+
+  async function cancelParcel(txId, label) {
+    var reason = prompt('Motivo do cancelamento de "' + label + '":', 'Parcela cancelada');
+    if (reason === null) return;
+    if (!confirm('Cancelar apenas esta parcela? A fatura Bitrix correspondente será marcada como cancelada.')) return;
+    setStatus('A cancelar parcela...', 'var(--text-secondary)');
+    try {
+      var r = await fetch(SUPABASE_URL + '/functions/v1/payment-cancel', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode: 'tx', tx_id: txId, member_id: MEMBER_ID, reason: reason, source: 'iframe' })
+      });
+      var d = await r.json();
+      if (d.status === 'cancelled') {
+        setStatus('Parcela cancelada.', 'var(--accent-paid)');
+        setTimeout(function(){ location.reload(); }, 900);
+      } else if (d.status === 'blocked') {
+        alert('Não é possível cancelar: parcela já paga.');
+      } else {
+        alert('Erro: ' + (d.reason || d.error || 'desconhecido'));
+      }
+    } catch (e) {
+      alert('Erro de rede: ' + e);
     }
   }
 
