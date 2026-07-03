@@ -483,6 +483,7 @@ async function handleCreateCharge(
   if (totalAmount > downPayment && !firstDueDate) missing.push("Data do primeiro vencimento (UF_CRM_EMMELY_FIRST_DUE_DATE)");
   const parcelHoles: string[] = Array.isArray((plan as any)?.missingParcels) ? (plan as any).missingParcels : [];
   for (const ph of parcelHoles) missing.push(ph);
+  if (customerEmailInvalid) missing.push(`Email do cliente — formato inválido: "${String(customerEmailRaw).slice(0, 120)}"`);
 
   if (missing.length > 0) {
     const errMsg = missing.join("; ");
