@@ -1062,6 +1062,47 @@ async function handleCreateCharge(
   }
 }
 
+async function handleCancelCharge(
+  properties: Record<string, any>,
+  supabaseUrl: string,
+  integration?: { member_id?: string; client_endpoint?: string; access_token?: string; id?: string } | null,
+): Promise<Record<string, string>> {
+  const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+  const dealIdRaw = String(properties.deal_id || properties.DEAL_ID || "").replace(/^DEAL_/, "");
+  const invoiceIdRaw = String(properties.invoice_id || properties.INVOICE_ID || "").replace(/^SI_/i, "").replace(/^DYNAMIC_31_/i, "");
+  const txId = String(properties.tx_id || properties.TX_ID || "");
+  const reason = String(properties.reason || properties.REASON || "Cancelado via robot BizProc");
+
+  const body: Record<string, any> = {
+    reason,
+    source: "robot",
+    member_id: integration?.member_id,
+  };
+  if (txId) { body.mode = "tx"; body.tx_id = txId; }
+  else if (invoiceIdRaw) { body.mode = "invoice"; body.invoice_id = invoiceIdRaw; }
+  else if (dealIdRaw) { body.mode = "deal"; body.deal_id = dealIdRaw; }
+  else {
+    return { cancel_status: "error", cancelled_count: "0", error: "deal_id, invoice_id or tx_id required" };
+  }
+
+  try {
+    const res = await fetch(`${supabaseUrl}/functions/v1/payment-cancel`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${serviceKey}` },
+      body: JSON.stringify(body),
+    });
+    const data = await res.json().catch(() => ({}));
+    return {
+      cancel_status: String(data?.status || "error"),
+      cancelled_count: String(data?.cancelled_count || 0),
+      invoices_cancelled: String(data?.invoices_cancelled || 0),
+      error: data?.status === "cancelled" || data?.status === "noop" ? "" : String(data?.reason || data?.error || "unknown"),
+    };
+  } catch (e) {
+    return { cancel_status: "error", cancelled_count: "0", error: String(e).slice(0, 300) };
+  }
+}
+
 async function handleCheckPayment(properties: Record<string, any>, supabaseUrl: string): Promise<Record<string, string>> {
   const chargeId = properties.charge_id || properties.CHARGE_ID || "";
 
