@@ -409,6 +409,77 @@ async function postTimelineComment(
   }
 }
 
+// Deterministic signature of a charge plan. Same deal + same parcels (amount, due_date, seq)
+// + same currency/gateway => same signature => safe to reuse existing link.
+async function computeInstallmentSignature(
+  dealId: string,
+  currency: string,
+  gateway: string,
+  parcels: Array<{ installment_number: number; is_down_payment: boolean; amount: number; due_date: string; method: string }>,
+): Promise<string> {
+  const norm = parcels
+    .slice()
+    .sort((a, b) =>
+      (a.is_down_payment === b.is_down_payment ? 0 : a.is_down_payment ? -1 : 1) ||
+      (a.installment_number - b.installment_number),
+    )
+    .map((p) => ({
+      seq: p.installment_number,
+      down: !!p.is_down_payment,
+      amount_cents: Math.round(Number(p.amount) * 100),
+      due_date: String(p.due_date || "").slice(0, 10),
+      method: String(p.method || ""),
+    }));
+  const payload = JSON.stringify({ deal_id: String(dealId), currency, gateway, installments: norm });
+  const buf = new TextEncoder().encode(payload);
+  const hash = await crypto.subtle.digest("SHA-256", buf);
+  return Array.from(new Uint8Array(hash)).map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+// Best-effort: expire pending Stripe Checkout Sessions attached to old transactions.
+async function expireStripeSessionsBestEffort(
+  supabase: any,
+  oldTxs: Array<{ id: string; gateway: string | null; gateway_payment_id: string | null; company_id?: string | null }>,
+  companyCredentialProvider: string,
+  fallbackRegion: "pt" | "br" | null,
+): Promise<void> {
+  // Resolve stripe key once (company override → region default). Silent if not available.
+  let stripeKey: string | null = null;
+  try {
+    if (companyCredentialProvider) {
+      const { data } = await supabase
+        .from("integration_credentials")
+        .select("credential_value")
+        .eq("provider", companyCredentialProvider)
+        .eq("credential_key", "STRIPE_SECRET_KEY")
+        .maybeSingle();
+      stripeKey = data?.credential_value?.trim() || null;
+    }
+    if (!stripeKey) {
+      const keyName = fallbackRegion === "br" ? "STRIPE_SECRET_KEY_BR" : "STRIPE_SECRET_KEY_PT";
+      stripeKey = Deno.env.get(keyName) || Deno.env.get("STRIPE_SECRET_KEY") || null;
+    }
+  } catch (_) { /* silent */ }
+
+  if (!stripeKey) return;
+
+  for (const tx of oldTxs) {
+    if (!tx.gateway_payment_id || !String(tx.gateway || "").startsWith("stripe")) continue;
+    try {
+      const res = await fetch(`https://api.stripe.com/v1/checkout/sessions/${tx.gateway_payment_id}/expire`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${stripeKey}` },
+      });
+      if (!res.ok) {
+        const txt = await res.text().catch(() => "");
+        console.warn(`[ROBOT-HANDLER] Stripe expire ${tx.gateway_payment_id} HTTP ${res.status}: ${txt.slice(0, 200)}`);
+      }
+    } catch (e) {
+      console.warn(`[ROBOT-HANDLER] Stripe expire ${tx.gateway_payment_id} failed:`, String(e).slice(0, 200));
+    }
+  }
+}
+
 async function handleCreateCharge(
   properties: Record<string, any>,
   supabaseUrl: string,
@@ -579,6 +650,133 @@ async function handleCreateCharge(
     const parcels = planToParcels(mergedPlan);
     const totalCount = parcels.length;
 
+    // ---- Reuse / cancel-and-recreate detection ----
+    const newSignature = await computeInstallmentSignature(dealId, currency, companyGateway, parcels);
+    const stripeRegion: "pt" | "br" | null =
+      companyGateway === "stripe_br" ? "br" : (companyGateway === "stripe_pt" || companyGateway === "stripe" ? "pt" : null);
+
+    let reuseDecision: "create" | "reuse" | "recreate" | "blocked" = "create";
+    let previousGroupId: string | null = null;
+    let reusedPaymentUrl = "";
+    let reusedChargeId = "";
+    let reusedGateway = "";
+
+    if (dealId) {
+      try {
+        const { data: existingTxs } = await supabase
+          .from("payment_transactions")
+          .select("id, status, payment_url, gateway, gateway_payment_id, metadata, created_at")
+          .eq("metadata->>bitrix_deal_id", String(dealId))
+          .order("created_at", { ascending: false })
+          .limit(200);
+
+        // Group by installment_group_id, newest first.
+        const groups = new Map<string, any[]>();
+        for (const tx of (existingTxs || [])) {
+          const gid = (tx.metadata as any)?.installment_group_id || `_solo_${tx.id}`;
+          if (!groups.has(gid)) groups.set(gid, []);
+          groups.get(gid)!.push(tx);
+        }
+
+        // Look at the most-recent group only (first insertion order preserved).
+        const firstGid = groups.keys().next().value as string | undefined;
+        if (firstGid && !firstGid.startsWith("_solo_")) {
+          const grp = groups.get(firstGid)!;
+          const hasPaid = grp.some((t) => ["paid", "confirmed", "succeeded"].includes(String(t.status || "").toLowerCase()));
+          const pendingOnes = grp.filter((t) => ["pending", "processing"].includes(String(t.status || "").toLowerCase()));
+          const oldSignature = (grp[0]?.metadata as any)?.installment_signature || null;
+
+          if (hasPaid) {
+            reuseDecision = "blocked";
+            previousGroupId = firstGid;
+          } else if (pendingOnes.length > 0 && oldSignature && oldSignature === newSignature) {
+            reuseDecision = "reuse";
+            previousGroupId = firstGid;
+            const primary = pendingOnes
+              .sort((a, b) => ((a.metadata as any)?.installment_number ?? 99) - ((b.metadata as any)?.installment_number ?? 99))[0];
+            reusedPaymentUrl = primary?.payment_url || "";
+            reusedChargeId = primary?.id || "";
+            reusedGateway = primary?.gateway || "";
+          } else if (pendingOnes.length > 0) {
+            reuseDecision = "recreate";
+            previousGroupId = firstGid;
+            // Mark pending ones as cancelled and best-effort expire Stripe sessions.
+            const ids = pendingOnes.map((t) => t.id);
+            await supabase.from("payment_transactions").update({ status: "cancelled" }).in("id", ids);
+            await expireStripeSessionsBestEffort(supabase, pendingOnes, companyCredentialProvider, stripeRegion);
+          }
+        }
+
+        await supabase.from("bitrix24_debug_logs").insert({
+          event_type: "charge_reuse_decision",
+          direction: "outbound",
+          payload: {
+            bitrix_deal_id: dealId,
+            decision: reuseDecision,
+            previous_group_id: previousGroupId,
+            new_signature: newSignature,
+          },
+        }).then(() => {}, () => {});
+      } catch (e) {
+        console.warn("[ROBOT-HANDLER] reuse detection failed (continuing as create):", e);
+      }
+    }
+
+    // Reuse branch: overwrite the deal payment URL + timeline, and short-circuit.
+    if (reuseDecision === "reuse") {
+      let dealUpdOk = false;
+      let dealUpdErr = "";
+      if (reusedPaymentUrl && dealId && integration?.client_endpoint && integration?.access_token) {
+        try {
+          const upd: any = await callBitrixWithRefresh(supabase, integration, "crm.deal.update", {
+            id: parseInt(dealId),
+            fields: {
+              UF_CRM_EMMELY_PAYMENT_URL: reusedPaymentUrl,
+              UF_CRM_EMMELY_GATEWAY: reusedGateway || companyGateway,
+            },
+          });
+          if (upd?.error) dealUpdErr = String(upd.error_description || upd.error); else dealUpdOk = true;
+        } catch (e) {
+          dealUpdErr = String(e);
+        }
+      }
+      const fmt = (v: number) => new Intl.NumberFormat("pt-PT", { style: "currency", currency }).format(v);
+      const comment =
+        `[B]♻️ Emmely Pay — link existente reutilizado (sem alterações)[/B]\n` +
+        `Valor total: ${fmt(totalAmount)}\n` +
+        `Gateway: ${reusedGateway || companyGateway}\n` +
+        `Parcelas: ${parcels.length}\n` +
+        (reusedPaymentUrl ? `[URL=${reusedPaymentUrl}]Abrir link de pagamento[/URL]` : `(⚠️ link anterior não estava registado)`) +
+        (dealUpdErr ? `\n⚠️ Não foi possível reescrever UF_CRM_EMMELY_PAYMENT_URL: ${dealUpdErr.slice(0, 200)}` : "");
+      await postTimelineComment(supabase, integration, { type: "deal", id: dealId }, comment);
+      return {
+        charge_id: reusedChargeId,
+        charge_status: "reused",
+        payment_url: reusedPaymentUrl,
+        pix_code: "",
+        gateway_used: reusedGateway || companyGateway,
+        invoices_created: "0",
+        error: "",
+      };
+    }
+
+    // Blocked branch: previous group already has a paid parcel — do not regenerate.
+    if (reuseDecision === "blocked") {
+      const comment =
+        `[B]⚠️ Emmely Pay — já existe pagamento realizado neste negócio[/B]\n` +
+        `Não é seguro gerar um novo link automaticamente. Cancele/estorne manualmente o grupo anterior antes de reprocessar.`;
+      await postTimelineComment(supabase, integration, { type: "deal", id: dealId }, comment);
+      return {
+        charge_id: "",
+        charge_status: "blocked",
+        payment_url: "",
+        pix_code: "",
+        gateway_used: "",
+        invoices_created: "0",
+        error: "paid_group_exists",
+      };
+    }
+
     const groupId = crypto.randomUUID();
     let firstChargeId = "";
     let firstGateway = "";
@@ -619,6 +817,7 @@ async function handleCreateCharge(
           source: "bitrix24_robot",
           company_name: companyName || undefined,
           requested_payment_method: parcel.method,
+          installment_signature: newSignature,
           paid_flow_id: chargePaidFlowId || undefined,
           overdue_flow_id: chargeOverdueFlowId || undefined,
           stage_on_paid: chargeStageOnPaid || undefined,
@@ -792,8 +991,11 @@ async function handleCreateCharge(
       const dealUpdateLine = (firstPaymentUrl && !dealUpdateOk)
         ? `\n⚠️ Link gerado mas UF_CRM_EMMELY_PAYMENT_URL não foi atualizado (${dealUpdateError.slice(0, 200)}). A automação de envio ao cliente pode não disparar — atualize o campo manualmente.`
         : "";
+      const header = reuseDecision === "recreate"
+        ? `[B]🔄 Emmely Pay — parcelas alteradas, novo link gerado (anterior cancelado)[/B]\n`
+        : `[B]✅ Emmely Pay — link de pagamento gerado[/B]\n`;
       const comment =
-        `[B]✅ Emmely Pay — link de pagamento gerado[/B]\n` +
+        header +
         `Valor total: ${fmt(totalAmount)}\n` +
         `Gateway: ${firstGateway || companyGateway}\n` +
         `Parcelas: ${totalCount}${downPayment > 0 ? ` (entrada ${fmt(downPayment)} + ${numInstallments}x)` : ""}\n` +
@@ -804,7 +1006,7 @@ async function handleCreateCharge(
 
     return {
       charge_id: firstChargeId,
-      charge_status: "pending",
+      charge_status: reuseDecision === "recreate" ? "updated" : "pending",
       payment_url: firstPaymentUrl,
       pix_code: "",
       gateway_used: firstGateway,
