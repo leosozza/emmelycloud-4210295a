@@ -299,6 +299,36 @@ async function handleSendInstagram(properties: Record<string, any>, supabaseUrl:
   }
 }
 
+// Post a comment to the Bitrix24 timeline of a deal/lead/SPA.
+// Docs: https://apidocs.bitrix24.com/api-reference/crm/timeline/comments/crm-timeline-comment-add.html
+async function postTimelineComment(
+  supabase: any,
+  integration: { client_endpoint: string; access_token: string; id: string } | null | undefined,
+  entity: { type: "deal" | "lead" | "spa"; id: string | number; spaEntityTypeId?: number | string },
+  comment: string,
+): Promise<void> {
+  if (!integration?.client_endpoint || !integration?.access_token || !entity?.id) return;
+  let entityType: string;
+  if (entity.type === "deal") entityType = "deal";
+  else if (entity.type === "lead") entityType = "lead";
+  else entityType = `dynamic_${entity.spaEntityTypeId || 131}`;
+  try {
+    const res = await callBitrixWithRefresh(supabase, integration, "crm.timeline.comment.add", {
+      fields: {
+        ENTITY_ID: parseInt(String(entity.id)) || entity.id,
+        ENTITY_TYPE: entityType,
+        COMMENT: comment,
+        AUTHOR_ID: 1,
+      },
+    });
+    if (res?.error) {
+      console.warn("[ROBOT-HANDLER] timeline.comment.add error:", res.error, res.error_description);
+    }
+  } catch (e) {
+    console.warn("[ROBOT-HANDLER] timeline.comment.add failed:", e);
+  }
+}
+
 async function handleCreateCharge(
   properties: Record<string, any>,
   supabaseUrl: string,
@@ -356,15 +386,23 @@ async function handleCreateCharge(
   const contactId = contactIdProp || plan?.customer.contactId || "";
   const companyId = companyIdProp || plan?.customer.companyId || "";
 
-  if (!totalAmount || totalAmount <= 0) {
-    return { charge_id: "", charge_status: "error", payment_url: "", pix_code: "", gateway_used: "", invoices_created: "0", error: "amount must be > 0 (check UF_CRM_EMMELY_TOTAL_AMOUNT)" };
+  // Collect all missing/invalid fields at once so the user sees the full list in one comment.
+  const missing: string[] = [];
+  if (!totalAmount || totalAmount <= 0) missing.push("Valor total (UF_CRM_EMMELY_TOTAL_AMOUNT)");
+  if (!paymentMethod) missing.push("Método de pagamento (UF_CRM_EMMELY_PAYMENT_METHOD)");
+  if (totalAmount > downPayment && !firstDueDate) missing.push("Data do primeiro vencimento (UF_CRM_EMMELY_FIRST_DUE_DATE)");
+
+  if (missing.length > 0) {
+    const errMsg = missing.join("; ");
+    const supabaseSvc = createClient(supabaseUrl, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+    const comment =
+      `[B]⚠️ Emmely Pay — não foi possível gerar o link de pagamento[/B]\n` +
+      `Campos em falta ou inválidos:\n- ${missing.join("\n- ")}\n\n` +
+      `Preencha os campos no negócio e mova novamente para "Gerar link Pagamento".`;
+    await postTimelineComment(supabaseSvc, integration, { type: "deal", id: dealId }, comment);
+    return { charge_id: "", charge_status: "error", payment_url: "", pix_code: "", gateway_used: "", invoices_created: "0", error: errMsg };
   }
-  if (!paymentMethod) {
-    return { charge_id: "", charge_status: "error", payment_url: "", pix_code: "", gateway_used: "", invoices_created: "0", error: "payment method missing (UF_CRM_EMMELY_PAYMENT_METHOD)" };
-  }
-  if (totalAmount > downPayment && !firstDueDate) {
-    return { charge_id: "", charge_status: "error", payment_url: "", pix_code: "", gateway_used: "", invoices_created: "0", error: "first due date missing (UF_CRM_EMMELY_FIRST_DUE_DATE)" };
-  }
+
 
   // Lookup company credentials if company_id provided
   let companyCredentialProvider = "";
@@ -570,6 +608,22 @@ async function handleCreateCharge(
       } catch (e) { console.warn("[ROBOT-HANDLER] deal.update payment url failed:", e); }
     }
 
+    // Post a friendly summary to the deal timeline
+    if (dealId) {
+      const fmt = (v: number) => new Intl.NumberFormat("pt-PT", { style: "currency", currency }).format(v);
+      const linkLine = firstPaymentUrl
+        ? `\n[URL=${firstPaymentUrl}]Abrir link de pagamento[/URL]`
+        : `\n(⚠️ nenhum link retornado pelo gateway)`;
+      const comment =
+        `[B]✅ Emmely Pay — link de pagamento gerado[/B]\n` +
+        `Valor total: ${fmt(totalAmount)}\n` +
+        `Gateway: ${firstGateway || companyGateway}\n` +
+        `Parcelas: ${totalCount}${downPayment > 0 ? ` (entrada ${fmt(downPayment)} + ${numInstallments}x)` : ""}\n` +
+        `Faturas Bitrix24 criadas: ${invoicesCreated}` +
+        linkLine;
+      await postTimelineComment(supabase, integration, { type: "deal", id: dealId }, comment);
+    }
+
     return {
       charge_id: firstChargeId,
       charge_status: "pending",
@@ -580,6 +634,12 @@ async function handleCreateCharge(
       error: "",
     };
   } catch (e) {
+    if (dealId) {
+      const comment =
+        `[B]❌ Emmely Pay — erro ao gerar link de pagamento[/B]\n` +
+        `Detalhe: ${String(e).slice(0, 500)}`;
+      await postTimelineComment(supabase, integration, { type: "deal", id: dealId }, comment);
+    }
     return { charge_id: "", charge_status: "error", payment_url: "", pix_code: "", gateway_used: "", invoices_created: "0", error: String(e) };
   }
 }

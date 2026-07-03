@@ -1,60 +1,69 @@
-# Corrigir "Reparar Campos" para não apagar dados do Bitrix
+## Diagnóstico do deal 45807
 
-## Problema
+Nos logs de `bitrix24-robot-handler`:
 
-Hoje o endpoint `bitrix24-install?action=repair_fields` (arquivo `supabase/functions/bitrix24-install/index.ts`, linhas ~385–686) faz:
+```
+Deal 45807 plan loaded. warnings=[
+  "UF_CRM_EMMELY_PAYMENT_METHOD missing",
+  "UF_CRM_EMMELY_FIRST_DUE_DATE missing for saldo"
+]
+```
 
-1. Lista **todos** os campos `UF_CRM_EMMELY_*` em Deal e Lead.
-2. **Apaga todos** via `crm.deal.userfield.delete` / `crm.lead.userfield.delete`.
-3. Recria via `.userfield.add`.
+O link **não foi gerado**: o robot abortou porque faltaram os campos obrigatórios `UF_CRM_EMMELY_PAYMENT_METHOD` e `UF_CRM_EMMELY_FIRST_DUE_DATE`. Hoje o robot devolve `error` para o BizProc mas **não escreve nada no timeline** — por isso o utilizador vê a etapa mudar para "Gerar link Pagamento" e nada mais.
 
-Ao apagar o campo, o Bitrix **remove os valores gravados nos deals/leads**. Por isso, sempre que se clica em "Atualizar Bitrix24" (que chama repair_fields), perdem-se dados já preenchidos (status de pagamento, valor entrada, saldo, etc.). O mesmo padrão destrutivo existe no fluxo de reinstalação (linhas ~1685–1735).
+## Objetivo
 
-## Solução: reparar de forma idempotente (upsert, nunca delete)
+Sempre que o robot `emmely_create_charge` correr num deal/lead/SPA, deixar um comentário visível no timeline com:
 
-Substituir a lógica destrutiva por uma que preserva os campos existentes e apenas cria/atualiza o necessário.
+- ✅ **Sucesso** — link gerado, valor, moeda, gateway, nº de parcelas, URL de pagamento (clicável) e nº de faturas criadas.
+- ❌ **Erro / validação falhou** — motivo curto (ex.: "Faltam campos: método de pagamento, data do primeiro vencimento") e sugestão de reabrir o negócio para preencher.
 
-### Novo comportamento de `repair_fields`
+Assim o utilizador entende, direto no timeline do Bitrix24, se o link foi criado ou se faltou informação.
 
-Para cada campo definido em `emmelyUserFields` (Deal e Lead):
+## Alterações
 
-1. **Listar** os campos existentes (`crm.deal.userfield.list` / `crm.lead.userfield.list`) e indexar por `FIELD_NAME`.
-2. Para cada campo desejado:
-   - **Não existe** → `crm.<entity>.userfield.add` (cria, sem tocar em nada).
-   - **Existe** → `crm.<entity>.userfield.update` com `id` do campo, atualizando apenas:
-     - labels (`EDIT_FORM_LABEL`, `LIST_COLUMN_LABEL`, `LIST_FILTER_LABEL`)
-     - `SETTINGS`
-     - para `enumeration`: fazer merge da `LIST` — manter os `ID` existentes intactos, adicionar apenas entradas novas por `VALUE` (Bitrix apaga valores gravados se o `ID` da opção mudar).
-   - **Nunca** chamar `.userfield.delete`.
-3. Campos "órfãos" `UF_CRM_EMMELY_*` que existam no Bitrix e não estejam mais em `emmelyUserFields`: **manter** (apenas logar no relatório como `orphan_kept`). Se algum dia for necessário limpar, criar uma ação separada explícita (`action=purge_orphan_fields`) que exige confirmação — fora do escopo do botão único.
-4. Relatório passa a devolver `created_deal`, `updated_deal`, `unchanged_deal`, `orphan_kept_deal` (e equivalentes lead) em vez de `deleted_*`.
+### 1. Helper `postDealTimelineComment` em `supabase/functions/bitrix24-robot-handler/index.ts`
 
-### Enumerations (crítico)
+Novo helper que chama `crm.timeline.comment.add` (docs: https://apidocs.bitrix24.com/api-reference/crm/timeline/comments/crm-timeline-comment-add.html) usando o binding correto conforme a entidade:
 
-Para campos como `UF_CRM_EMMELY_PAYMENT_STATUS` e `UF_CRM_EMMELY_PAYMENT_METHOD`:
+```ts
+fields: {
+  ENTITY_ID: <id>,
+  ENTITY_TYPE: "deal" | "lead" | "dynamic_<spaTypeId>",
+  COMMENT: <texto BB>,
+  AUTHOR_ID: 1,
+}
+```
 
-- Ler `LIST` atual do campo no Bitrix (cada item tem `ID`, `VALUE`, `SORT`, `DEF`).
-- Construir novo `LIST` para o update:
-  - Cada item existente entra com seu `ID` original preservado.
-  - Itens desejados que não existem entram sem `ID` (Bitrix cria).
-  - Não remover itens existentes (mesmo que não estejam na definição), para não invalidar deals que já tenham o valor selecionado.
+Faz retry via `callBitrixWithRefresh` (token) e captura erros sem quebrar o retorno para o BizProc.
 
-### Fluxo de reinstalação (linhas ~1685–1735)
+### 2. Chamadas em `handleCreateCharge`
 
-Aplicar a mesma lógica idempotente: remover o bloco que dá `.userfield.delete` em massa e substituir pelo mesmo helper de upsert. Assim, reinstalar a app também deixa de apagar dados.
+- **Antes do `return` de erro por validação** (linhas ~360-366, valores/método/data em falta): montar mensagem tipo:
+  > ⚠️ Emmely Pay: não foi possível gerar o link de pagamento.
+  > Campos em falta: método de pagamento, data do primeiro vencimento.
+  > Preencha e mova o negócio novamente para "Gerar link Pagamento".
+- **Antes do `return` de sucesso** (linhas ~573-581): mensagem tipo:
+  > ✅ Emmely Pay: link de pagamento gerado.
+  > Valor: €20,00 · Gateway: stripe_pt · Parcelas: 1
+  > [Abrir link de pagamento](https://…)
+  > Faturas Bitrix24 criadas: 1
+- **No `catch` genérico** (linha ~582): comentário curto com o erro.
 
-### Helper compartilhado
+### 3. Aplicar a lead/SPA quando aplicável
 
-Extrair para uma função `upsertEmmelyUserFields(ep, token, fieldsDef)` reutilizada tanto pelo `repair_fields` quanto pelo caminho de instalação, para garantir consistência.
+Hoje o handler já sabe `entity_type` (deal por padrão). O helper aceita os três tipos e usa o `ENTITY_TYPE` correto para o timeline binding.
 
-## Arquivos afetados
+### 4. Não mexer noutros paths
 
-- `supabase/functions/bitrix24-install/index.ts` — substituir bloco `repair_fields` (linhas ~408–686) e bloco de reinstalação (linhas ~1685–1735) pela nova lógica idempotente.
-
-Nenhuma alteração no frontend — o botão "Atualizar Bitrix24" continua igual, mas passa a ser **seguro** de correr sempre que quiser.
+Sem mudanças em UI, frontend, `bitrix24-payment-tab`, ou `payment-create-link` — apenas o robot handler.
 
 ## Validação
 
-- Rodar `repair_fields` em ambiente com deals que tenham `UF_CRM_EMMELY_PAYMENT_STATUS` preenchido e confirmar que o valor permanece após a execução.
-- Rodar duas vezes seguidas e confirmar que a 2ª execução reporta tudo como `unchanged` (sem creates/updates desnecessários).
-- Adicionar/remover manualmente uma opção da enum no Bitrix e confirmar que o repair não apaga a opção manual e ainda garante que as opções oficiais existem.
+1. Reproduzir com deal 45807 (faltam campos) → confirmar comentário de erro no timeline.
+2. Preencher os campos e disparar de novo → confirmar comentário de sucesso com URL clicável.
+3. Verificar logs `bitrix24-robot-handler` para garantir que falhas no `timeline.comment.add` não quebram o retorno do BizProc.
+
+## Arquivos
+
+- `supabase/functions/bitrix24-robot-handler/index.ts` (único ficheiro alterado)
