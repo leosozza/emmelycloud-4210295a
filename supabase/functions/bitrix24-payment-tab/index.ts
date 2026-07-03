@@ -424,6 +424,7 @@ function renderPaymentTab(opts: {
             ${notGenerated || ["direto","parcelado_direto","transferencia","n"].includes(String(inst.payment_method || "").toLowerCase()) ? "" : `<button onclick='generatePaymentLink(${instJson})' class="b24-btn-action" title="Gerar Link de Pagamento">${icon("link", 13)} Link</button>`}
             <button onclick='openEditParcelaModal(${instJson})' class="b24-btn-action" title="Editar esta parcela">${icon("pencil", 13)} Editar</button>
             <button onclick='openBaixaModal(${instJson})' class="b24-btn-action b24-btn-baixa" title="Dar Baixa">${icon("check", 13)} Baixa</button>
+            ${!notGenerated && inst.transaction_id ? `<button onclick="cancelParcel('${inst.transaction_id}', '${(label || "Parcela").replace(/'/g, "\\'")}')" class="b24-btn-action" style="border-color:#dc2626;color:#dc2626" title="Cancelar esta parcela">${icon("x-circle", 13)} Cancelar</button>` : ""}
             ${contactPhone && flows.length > 0 ? `<button onclick='toggleFlowRow("${inst.id}")' class="b24-btn-action b24-btn-fluxo" title="Enviar Fluxo">${icon("send", 13)} Fluxo</button>` : ""}
           </div>
           ${contactPhone && flows.length > 0 ? `
