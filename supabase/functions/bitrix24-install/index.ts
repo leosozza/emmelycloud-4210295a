@@ -1817,6 +1817,74 @@ Deno.serve(async (req) => {
       });
 
 
+      // --- Register Emmely Pay UF fields on Smart Invoice (entityTypeId 31) ---
+      // Uses userfieldconfig.add (universal CRM API) with moduleId=crm and
+      // entityId=CRM_31. Idempotent: swallows "already exists" errors so re-install
+      // never fails and never wipes existing values.
+      try {
+        const invoiceFields = [
+          {
+            FIELD_NAME: "UF_CRM_SMART_INVOICE_EMMELY_PAYMENT_URL",
+            USER_TYPE_ID: "url",
+            EDIT_FORM_LABEL: { br: "LINK DE PAGAMENTO (PARCELA)", en: "PAYMENT LINK (PARCEL)" },
+            LIST_COLUMN_LABEL: { br: "LINK PAGAMENTO", en: "PAYMENT LINK" },
+            LIST_FILTER_LABEL: { br: "LINK PAGAMENTO", en: "PAYMENT LINK" },
+          },
+          {
+            FIELD_NAME: "UF_CRM_SMART_INVOICE_EMMELY_PAYMENT_STATUS",
+            USER_TYPE_ID: "string",
+            EDIT_FORM_LABEL: { br: "STATUS DE PAGAMENTO (PARCELA)", en: "PAYMENT STATUS (PARCEL)" },
+            LIST_COLUMN_LABEL: { br: "STATUS PAGAMENTO", en: "PAYMENT STATUS" },
+            LIST_FILTER_LABEL: { br: "STATUS PAGAMENTO", en: "PAYMENT STATUS" },
+          },
+          {
+            FIELD_NAME: "UF_CRM_SMART_INVOICE_EMMELY_RECEIPT_URL",
+            USER_TYPE_ID: "url",
+            EDIT_FORM_LABEL: { br: "COMPROVANTE (PARCELA)", en: "RECEIPT (PARCEL)" },
+            LIST_COLUMN_LABEL: { br: "COMPROVANTE", en: "RECEIPT" },
+            LIST_FILTER_LABEL: { br: "COMPROVANTE", en: "RECEIPT" },
+          },
+          {
+            FIELD_NAME: "UF_CRM_SMART_INVOICE_EMMELY_TX_ID",
+            USER_TYPE_ID: "string",
+            EDIT_FORM_LABEL: { br: "EMMELY TX_ID (PARCELA)", en: "EMMELY TX_ID (PARCEL)" },
+            LIST_COLUMN_LABEL: { br: "TX_ID", en: "TX_ID" },
+            LIST_FILTER_LABEL: { br: "TX_ID", en: "TX_ID" },
+          },
+          {
+            FIELD_NAME: "UF_CRM_SMART_INVOICE_EMMELY_GATEWAY",
+            USER_TYPE_ID: "string",
+            EDIT_FORM_LABEL: { br: "GATEWAY (PARCELA)", en: "GATEWAY (PARCEL)" },
+            LIST_COLUMN_LABEL: { br: "GATEWAY", en: "GATEWAY" },
+            LIST_FILTER_LABEL: { br: "GATEWAY", en: "GATEWAY" },
+          },
+        ];
+        const invoiceUfReport: { created: string[]; skipped: string[]; errors: any[] } = { created: [], skipped: [], errors: [] };
+        for (const f of invoiceFields) {
+          try {
+            const r = await callBitrix(clientEndpoint, accessToken, "userfieldconfig.add", {
+              moduleId: "crm",
+              field: { entityId: "CRM_31", ...f },
+            });
+            if (r?.error) {
+              const desc = String(r.error_description || r.error);
+              if (/already exists|EXISTS|USER_FIELD_ALREADY_EXISTS/i.test(desc)) invoiceUfReport.skipped.push(f.FIELD_NAME);
+              else invoiceUfReport.errors.push({ field: f.FIELD_NAME, error: desc });
+            } else {
+              invoiceUfReport.created.push(f.FIELD_NAME);
+            }
+          } catch (e) {
+            invoiceUfReport.errors.push({ field: f.FIELD_NAME, error: String(e) });
+          }
+        }
+        await debugLog(supabase, integrationId, "invoice_userfields_upserted", "outbound", invoiceUfReport);
+        console.log("[INSTALL] Smart Invoice UF upsert:", JSON.stringify(invoiceUfReport));
+      } catch (invUfErr) {
+        console.warn("[INSTALL] Smart Invoice UF registration error:", invUfErr);
+      }
+
+
+
       // --- Auto-seed field mappings for Deal entity ---
       try {
         const fieldMappingSeed = [
