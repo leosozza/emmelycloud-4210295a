@@ -299,6 +299,36 @@ async function handleSendInstagram(properties: Record<string, any>, supabaseUrl:
   }
 }
 
+// Post a comment to the Bitrix24 timeline of a deal/lead/SPA.
+// Docs: https://apidocs.bitrix24.com/api-reference/crm/timeline/comments/crm-timeline-comment-add.html
+async function postTimelineComment(
+  supabase: any,
+  integration: { client_endpoint: string; access_token: string; id: string } | null | undefined,
+  entity: { type: "deal" | "lead" | "spa"; id: string | number; spaEntityTypeId?: number | string },
+  comment: string,
+): Promise<void> {
+  if (!integration?.client_endpoint || !integration?.access_token || !entity?.id) return;
+  let entityType: string;
+  if (entity.type === "deal") entityType = "deal";
+  else if (entity.type === "lead") entityType = "lead";
+  else entityType = `dynamic_${entity.spaEntityTypeId || 131}`;
+  try {
+    const res = await callBitrixWithRefresh(supabase, integration, "crm.timeline.comment.add", {
+      fields: {
+        ENTITY_ID: parseInt(String(entity.id)) || entity.id,
+        ENTITY_TYPE: entityType,
+        COMMENT: comment,
+        AUTHOR_ID: 1,
+      },
+    });
+    if (res?.error) {
+      console.warn("[ROBOT-HANDLER] timeline.comment.add error:", res.error, res.error_description);
+    }
+  } catch (e) {
+    console.warn("[ROBOT-HANDLER] timeline.comment.add failed:", e);
+  }
+}
+
 async function handleCreateCharge(
   properties: Record<string, any>,
   supabaseUrl: string,
