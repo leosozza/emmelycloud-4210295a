@@ -820,9 +820,9 @@ Deno.serve(async (req) => {
       }
     }
 
-    // If an existing transaction_id was provided, update it instead of creating a new one
-    if (existingTransactionId) {
-      const res = await supabase.from("payment_transactions").update(txPayload).eq("id", existingTransactionId).select().maybeSingle();
+    // If an existing transaction_id was provided (or a stale one was reused), update it instead of creating a new one
+    if (reuseTransactionId) {
+      const res = await supabase.from("payment_transactions").update(txPayload).eq("id", reuseTransactionId).select().maybeSingle();
       tx = res.data;
       txError = res.error;
       if (!tx && !txError) {
@@ -831,7 +831,7 @@ Deno.serve(async (req) => {
         tx = insertRes.data;
         txError = insertRes.error;
       }
-      console.log(`[PAYMENT-CREATE] Updated existing transaction ${existingTransactionId}`);
+      console.log(`[PAYMENT-CREATE] Updated existing transaction ${reuseTransactionId}`);
     } else {
       const insertRes = await supabase.from("payment_transactions").insert(txPayload).select().single();
       tx = insertRes.data;
