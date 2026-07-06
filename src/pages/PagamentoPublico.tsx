@@ -141,6 +141,16 @@ export default function PagamentoPublico() {
 
   useEffect(() => { load(); }, [token]);
 
+  // Auto-regenerar checkout Stripe quando o utilizador chega via link estável ?pay=<recordId>
+  useEffect(() => {
+    if (!autoPayRecordId || autoTriggered || !data || paymentStatus) return;
+    const rec = data.installments.find((r) => r.id === autoPayRecordId);
+    if (!rec || rec.status === "paga") return;
+    setAutoTriggered(true);
+    pay(autoPayRecordId, autoPayMethod || undefined);
+  }, [autoPayRecordId, autoTriggered, data, paymentStatus, autoPayMethod]);
+
+
   async function pay(recordId: string, payment_method?: PayMethod) {
     if (!token) return;
     setPaying(recordId);
