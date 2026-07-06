@@ -90,6 +90,10 @@ export default function PagamentoPublico() {
   const { token } = useParams<{ token: string }>();
   const [searchParams] = useSearchParams();
   const paymentStatus = searchParams.get("payment");
+  const autoPayRecordId = searchParams.get("pay");
+  const autoPayMethod = searchParams.get("method") as PayMethod | null;
+  const [autoTriggered, setAutoTriggered] = useState(false);
+
   const [data, setData] = useState<ReportData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -136,6 +140,16 @@ export default function PagamentoPublico() {
   }
 
   useEffect(() => { load(); }, [token]);
+
+  // Auto-regenerar checkout Stripe quando o utilizador chega via link estável ?pay=<recordId>
+  useEffect(() => {
+    if (!autoPayRecordId || autoTriggered || !data || paymentStatus) return;
+    const rec = data.installments.find((r) => r.id === autoPayRecordId);
+    if (!rec || rec.status === "paga") return;
+    setAutoTriggered(true);
+    pay(autoPayRecordId, autoPayMethod || undefined);
+  }, [autoPayRecordId, autoTriggered, data, paymentStatus, autoPayMethod]);
+
 
   async function pay(recordId: string, payment_method?: PayMethod) {
     if (!token) return;
