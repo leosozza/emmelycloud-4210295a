@@ -238,6 +238,22 @@ async function processRecord(
     transactionId = paymentResult.transaction?.id || null;
   }
 
+  // Preferir link estável do recibo (não expira) — auto-regenera Stripe Session ao abrir
+  try {
+    const { data: rlink } = await supabase
+      .from("receipt_links")
+      .select("token")
+      .eq("contract_id", record.contract_id)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (rlink?.token) {
+      const base = (Deno.env.get("PUBLIC_RECEIPT_URL") || "https://emmelycloud.pages.dev").replace(/\/+$/, "");
+      paymentUrl = `${base}/pagamento/${rlink.token}?pay=${record.id}`;
+    }
+  } catch (_) { /* mantém paymentUrl anterior */ }
+
+
   // 6. Build personalized message
   const dueStr = record.due_date ? formatDate(record.due_date) : "—";
   const installmentInfo = record.installment_number
