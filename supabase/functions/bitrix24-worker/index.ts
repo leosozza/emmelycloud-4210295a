@@ -275,7 +275,7 @@ async function createBitrixBadgeActivity(params: BadgeParams): Promise<void> {
     }
 
     const layout: any = {
-      icon: { code: "chat" },
+      icon: { code: "IM" },
       header: { title: headerTitle },
       body: {
         logo: { code: "robot" },
