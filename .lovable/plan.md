@@ -1,40 +1,35 @@
-## Problema
+## Objetivo
 
-Os links `/pagamento/{token}` estão a ser gerados como `https://emmelycloud.lovable.app/pagamento/...`, mas o hosting oficial (memória do projeto) é Cloudflare Pages → `https://emmelycloud.pages.dev`.
+Ao criar uma cobrança, se já existir uma transação `pending` para a mesma parcela (`financial_record_id`), reutilizar/atualizar em vez de criar duplicado — e quando a existente já tiver mais de 24h, sobrescrevê-la com uma nova sessão de gateway (link fresco).
 
-Causa: várias edge functions usam `Deno.env.get("PUBLIC_RECEIPT_URL") || "https://emmelycloud.lovable.app"` como fallback. Como o secret `PUBLIC_RECEIPT_URL` não está definido, cai sempre no fallback errado.
+## Comportamento actual
 
-## Correção
+`supabase/functions/payment-create/index.ts` só reutiliza uma transação em dois casos:
+- `existingTransactionId` explícito no body.
+- `client_submit_key` idempotente nos últimos 60s.
 
-### 1. Trocar fallback nas edge functions
+Fora disso, faz sempre `INSERT` novo, mesmo que exista uma cobrança pendente para a mesma parcela. Isto cria duplicados e não renova links Stripe expirados (>24h).
 
-Substituir o default `"https://emmelycloud.lovable.app"` por `"https://emmelycloud.pages.dev"` em:
+## Alteração
 
-- `supabase/functions/payment-receipt/index.ts:43`
-- `supabase/functions/payment-create-link/index.ts:416`
-- `supabase/functions/payment-create/index.ts:291`
-- `supabase/functions/bitrix24-payment-tab/index.ts:1096` (`FRONTEND_BASE` injetado no HTML do iframe)
-- `supabase/functions/bitrix24-robot-handler/index.ts:1959`
-- `supabase/functions/bitrix24-install/index.ts:502`
+Em `payment-create/index.ts`, no início do `try` principal (antes de decidir gateway), adicionar lookup por `financial_record_id`:
 
-(Mantém a leitura de `PUBLIC_RECEIPT_URL` — permite override no futuro.)
+```text
+if (!existingTransactionId && !clientSubmitKey && financial_record_id) {
+  buscar payment_transactions.pending mais recente com esse financial_record_id
+  se encontrada:
+     idade = now - created_at
+     se idade < 24h  → devolver { idempotent: true, transaction, payment_url } (sem chamar Stripe/Asaas)
+     se idade >= 24h → definir existingTransactionId = tx.id (força UPDATE da linha existente com nova sessão)
+}
+```
 
-### 2. Remover `public/_redirects`
+Assim:
+- Fresca (<24h): devolve o mesmo link, sem nova cobrança no gateway.
+- Antiga (>24h): gera nova sessão Stripe/Asaas e sobrescreve `gateway_payment_id`, `payment_url`, `metadata`, mantendo o `id` — o link `/pagamento/{token}?pay=<recordId>` continua a apontar para a mesma linha e passa a ter checkout válido.
 
-O ficheiro atual redireciona `/pagamento/*` para `emmelycloud.lovable.app` — reforça o bug e Lovable/Cloudflare ignoram o formato Netlify. Apagar `public/_redirects`.
+Nenhuma alteração em frontend, schema ou outros edge functions.
 
-### 3. Redeploy
+## Ficheiro alterado
 
-Redeploy das 6 edge functions acima para os links passarem a apontar para `emmelycloud.pages.dev`.
-
-## Fora de escopo
-
-- Não altero os `FRONTEND_URL` do Stripe success/cancel (já são `emmelycloud.pages.dev`).
-- Não altero o URL do `bitrix24-im-send-audio.html` (comentário explica que precisa mesmo estar em `.lovable.app` por causa do 405 no Cloudflare Pages).
-- Links já gravados em faturas antigas do Bitrix continuam com o domínio antigo — só novos links usam o novo domínio. Se quiseres, faço uma migração/reescrita depois.
-
-## Validação
-
-1. Gerar um novo link de cobrança → URL deve começar por `https://emmelycloud.pages.dev/pagamento/…`.
-2. Abrir iframe Emmely Pay num deal → botões "Copiar link" produzem URL `pages.dev`.
-3. Robot `emmely_create_charge` → mensagem WhatsApp / campo `UF_CRM_EMMELY_PAYMENT_URL` com domínio `pages.dev`.
+- `supabase/functions/payment-create/index.ts` — ~15 linhas novas antes do bloco de escolha de gateway (linha ~674).

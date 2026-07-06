@@ -595,12 +595,40 @@ Deno.serve(async (req) => {
 
     const body = await req.json();
     const { contract_id, client_id, financial_record_id, amount, currency = "EUR", payment_method = "card", customer_data, description = "Pagamento Emmely Cloud", metadata: extraMetadata, due_date, installment_number, total_installments, installment_group_id, is_down_payment, force_gateway, company_id, credential_provider, credential_key, transaction_id: existingTransactionId } = body;
+    let reuseTransactionId: string | null = existingTransactionId || null;
 
     if (!amount || amount <= 0) {
       return new Response(JSON.stringify({ error: "amount is required and must be > 0" }), {
         status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
+
+    // Reuse existing pending transaction for the same financial_record:
+    //  - < 24h old → return same link (no new gateway session)
+    //  - >= 24h old → overwrite same row with a fresh gateway session
+    const clientSubmitKeyEarly = extraMetadata?.client_submit_key;
+    if (!reuseTransactionId && !clientSubmitKeyEarly && financial_record_id) {
+      const { data: existingPending } = await supabase
+        .from("payment_transactions")
+        .select("*")
+        .eq("financial_record_id", financial_record_id)
+        .eq("status", "pending")
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (existingPending) {
+        const ageMs = Date.now() - new Date(existingPending.created_at).getTime();
+        if (ageMs < 24 * 60 * 60 * 1000) {
+          console.log(`[PAYMENT-CREATE] Reusing pending tx ${existingPending.id} (age ${Math.round(ageMs/60000)}min)`);
+          return new Response(JSON.stringify({ ok: true, idempotent: true, transaction: existingPending, payment_url: existingPending.payment_url || null }), {
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+        reuseTransactionId = existingPending.id;
+        console.log(`[PAYMENT-CREATE] Overwriting stale tx ${existingPending.id} (age ${Math.round(ageMs/3600000)}h) with fresh gateway session`);
+      }
+    }
+
 
     // Validate customer email (Stripe rejects comma-separated or malformed emails).
     const rawEmail = customer_data?.email ? String(customer_data.email).trim() : "";
