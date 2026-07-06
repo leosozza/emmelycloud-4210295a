@@ -790,7 +790,7 @@ Deno.serve(async (req) => {
       gateway_customer_id: result.gateway_customer_id || null,
       amount,
       currency,
-      payment_method: payment_method === "direto" ? "parcelado_direto" : (["card","pix","boleto","transferencia","parcelado_direto"].includes(payment_method) ? payment_method : "card"),
+      payment_method: payment_method === "direto" ? "parcelado_direto" : (["card","pix","boleto","transfer","parcelado_direto"].includes(payment_method) ? payment_method : (payment_method === "transferencia" ? "transfer" : "card")),
       status: result.status || "pending",
       payment_url: result.payment_url,
       pix_qr_code: result.pix_qr_code || null,
