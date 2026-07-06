@@ -90,6 +90,10 @@ export default function PagamentoPublico() {
   const { token } = useParams<{ token: string }>();
   const [searchParams] = useSearchParams();
   const paymentStatus = searchParams.get("payment");
+  const autoPayRecordId = searchParams.get("pay");
+  const autoPayMethod = searchParams.get("method") as PayMethod | null;
+  const [autoTriggered, setAutoTriggered] = useState(false);
+
   const [data, setData] = useState<ReportData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
