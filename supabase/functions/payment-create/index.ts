@@ -594,7 +594,9 @@ Deno.serve(async (req) => {
     );
 
     const body = await req.json();
-    const { contract_id, client_id, financial_record_id, amount, currency = "EUR", payment_method = "card", customer_data, description = "Pagamento Emmely Cloud", metadata: extraMetadata, due_date, installment_number, total_installments, installment_group_id, is_down_payment, force_gateway, company_id, credential_provider, credential_key, transaction_id: existingTransactionId } = body;
+    const { contract_id, client_id, financial_record_id, amount, currency = "EUR", payment_method: rawPaymentMethod, customer_data, description = "Pagamento Emmely Cloud", metadata: extraMetadata, due_date, installment_number, total_installments, installment_group_id, is_down_payment, force_gateway, company_id, credential_provider, credential_key, transaction_id: existingTransactionId } = body;
+    // Default: quando não definido, deixar cliente escolher no checkout
+    const payment_method = (rawPaymentMethod === undefined || rawPaymentMethod === null || rawPaymentMethod === "") ? "customer_choice" : rawPaymentMethod;
     let reuseTransactionId: string | null = existingTransactionId || null;
 
     if (!amount || amount <= 0) {
