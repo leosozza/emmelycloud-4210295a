@@ -867,6 +867,23 @@ Deno.serve(async (req) => {
         .maybeSingle();
       if (existingByKey) {
         console.log(`[PAYMENT-CREATE] Idempotent hit for client_submit_key=${clientSubmitKey}, returning existing tx ${existingByKey.id}`);
+        try {
+          const existingPaymentUrl = existingByKey.payment_url || null;
+          const existingStripeToken = extractStripeCheckoutToken(existingPaymentUrl);
+          const bitrixDealId = body.bitrix_deal_id || extraMetadata?.bitrix_deal_id || extraMetadata?.bitrix24_deal_id;
+          if (bitrixDealId || financial_record_id) {
+            await ensurePaymentReportTokenForDeal(supabase, {
+              dealId: bitrixDealId,
+              financialRecordId: financial_record_id || null,
+              clientName: customer_data?.name || extraMetadata?.client_name || null,
+              dealTitle: extraMetadata?.deal_title || description || null,
+              stripeToken: existingStripeToken,
+              paymentUrl: existingPaymentUrl,
+            });
+          }
+        } catch (idempotentTokenErr) {
+          console.error("[PAYMENT-CREATE] Idempotent TOKEN_PAY/Stripe token sync error:", idempotentTokenErr);
+        }
         return new Response(JSON.stringify({ ok: true, idempotent: true, transaction: existingByKey, payment_url: existingByKey.payment_url || null }), {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
