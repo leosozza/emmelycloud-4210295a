@@ -260,6 +260,9 @@ export default function Configuracoes() {
         <TabsContent value="migracao-spa">
           <MigracaoSpaTab />
         </TabsContent>
+        <TabsContent value="wa-templates">
+          <WhatsappTemplatesTab />
+        </TabsContent>
       </Tabs>
     </div>
   );
