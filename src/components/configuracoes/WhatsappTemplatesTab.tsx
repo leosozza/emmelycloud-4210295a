@@ -33,9 +33,11 @@ type ButtonDraft = {
   phone_number?: string;
   example?: string;
   is_stripe_token?: boolean;
+  is_emmely_token?: boolean;
 };
 
 const STRIPE_BUTTON_URL_TEMPLATE = "https://checkout.stripe.com/c/pay/{{1}}";
+const EMMELY_BUTTON_URL_TEMPLATE = "https://emmelycloud.pages.dev/pagamento/{{1}}";
 
 const statusVariant = (s: string): "default" | "secondary" | "destructive" | "outline" => {
   const v = (s || "").toUpperCase();
