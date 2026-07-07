@@ -127,7 +127,7 @@ Deno.serve(async (req) => {
       }
     }
 
-    const url = `https://api.gupshup.io/wa/app/${encodeURIComponent(appId)}/templates`;
+    const url = `https://api.gupshup.io/wa/app/${encodeURIComponent(appId)}/template`;
     const res = await fetch(url, {
       method: "POST",
       headers: {
