@@ -284,7 +284,7 @@ export default function WhatsappTemplatesTab() {
                     {buttons.map((b, i) => (
                       <div key={i} className="grid grid-cols-12 gap-2 items-end border-t pt-2">
                         <div className="col-span-2 text-xs text-muted-foreground">
-                          {b.is_stripe_token ? "STRIPE" : b.type}
+                          {b.is_stripe_token ? "STRIPE" : b.is_emmely_token ? "EMMELY" : b.type}
                         </div>
                         <div className="col-span-4">
                           <Label className="text-xs">Texto</Label>
@@ -295,11 +295,21 @@ export default function WhatsappTemplatesTab() {
                         {b.type === "URL" && (
                           <div className="col-span-5">
                             <Label className="text-xs">
-                              {b.is_stripe_token ? "URL (fixa Stripe)" : "URL (usa {{1}} para dinâmico)"}
+                              {b.is_stripe_token
+                                ? "URL (fixa Stripe)"
+                                : b.is_emmely_token
+                                  ? "URL (fixa Emmely)"
+                                  : "URL (usa {{1}} para dinâmico)"}
                             </Label>
                             <Input
-                              value={b.is_stripe_token ? STRIPE_BUTTON_URL_TEMPLATE : (b.url || "")}
-                              disabled={b.is_stripe_token}
+                              value={
+                                b.is_stripe_token
+                                  ? STRIPE_BUTTON_URL_TEMPLATE
+                                  : b.is_emmely_token
+                                    ? EMMELY_BUTTON_URL_TEMPLATE
+                                    : (b.url || "")
+                              }
+                              disabled={b.is_stripe_token || b.is_emmely_token}
                               onChange={(e) => {
                                 const n = [...buttons]; n[i] = { ...b, url: e.target.value }; setButtons(n);
                               }}
@@ -308,6 +318,11 @@ export default function WhatsappTemplatesTab() {
                             {b.is_stripe_token && (
                               <p className="mt-1 text-[10px] text-muted-foreground">
                                 A variável {"{{1}}"} será preenchida com o token do checkout Stripe do Deal/Fatura.
+                              </p>
+                            )}
+                            {b.is_emmely_token && (
+                              <p className="mt-1 text-[10px] text-muted-foreground">
+                                A variável {"{{1}}"} será preenchida com o ID do pagamento interno Emmely (ex.: 799e3b72-...).
                               </p>
                             )}
                           </div>
@@ -319,7 +334,7 @@ export default function WhatsappTemplatesTab() {
                         </div>
                       </div>
                     ))}
-                    {buttons.some((b) => b.type === "URL" && !b.is_stripe_token && /\{\{1\}\}/.test(b.url || "")) && (
+                    {buttons.some((b) => b.type === "URL" && !b.is_stripe_token && !b.is_emmely_token && /\{\{1\}\}/.test(b.url || "")) && (
                       <div>
                         <Label className="text-xs">Exemplo de URL dinâmica</Label>
                         <Input
