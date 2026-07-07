@@ -34,7 +34,9 @@ export interface EmmelyPaymentPlan {
 
 function num(v: any, fallback = 0): number {
   if (v === null || v === undefined || v === "") return fallback;
-  const n = typeof v === "number" ? v : parseFloat(String(v).replace(",", "."));
+  // Bitrix "money" fields serialize as "12.34|EUR" — strip the currency suffix.
+  const raw = typeof v === "string" ? v.split("|")[0] : v;
+  const n = typeof raw === "number" ? raw : parseFloat(String(raw).replace(",", "."));
   return Number.isFinite(n) ? n : fallback;
 }
 
