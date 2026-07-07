@@ -10,7 +10,7 @@ const GUPSHUP_URL = "https://api.gupshup.io/wa/api/v1/msg";
 
 type MessageType =
   | "text" | "image" | "video" | "audio" | "document" | "sticker"
-  | "template" | "list" | "quick_reply" | "location" | "contact" | "reaction";
+  | "template" | "list" | "quick_reply" | "cta_url" | "location" | "contact" | "reaction";
 
 interface SendBody {
   to: string;                        // E.164 sem +, ex: "351912345678"
@@ -24,11 +24,12 @@ interface SendBody {
   force_ptt?: boolean | string;       // áudio: enviar como nota de voz/PTT nativa
   disable_preview?: boolean;         // text: desativa link preview
   // interactive / location / contact / reaction
-  interactive?: any;                 // objeto pronto (list/quick_reply)
+  interactive?: any;                 // objeto pronto (list/quick_reply/cta_url)
   location?: { latitude: number; longitude: number; name?: string; address?: string };
   contact?: any;                     // objeto pronto conforme docs
   reaction?: { msgid: string; emoji: string };
   template?: { id: string; params?: string[] };
+  cta_url?: { url: string; display_text: string };
 }
 
 async function getCreds(supabase: any) {
@@ -181,6 +182,21 @@ function buildMessageObject(body: SendBody): { messageObj: any; isTemplate: bool
       // interactive: caller envia objeto completo conforme docs
       return { messageObj: body.interactive, isTemplate: false };
 
+    case "cta_url": {
+      const cta = body.cta_url || (body.interactive && body.interactive.cta_url) || null;
+      const url = cta?.url || "";
+      const display_text = cta?.display_text || "Abrir link";
+      const bodyText = body.content || "";
+      return {
+        messageObj: {
+          type: "cta_url",
+          cta_url: { display_text, url },
+          ...(bodyText ? { body: { text: bodyText } } : {}),
+        },
+        isTemplate: false,
+      };
+    }
+
     case "template":
       return {
         messageObj: { id: body.template!.id, params: body.template!.params || [] },
@@ -211,6 +227,10 @@ function validate(body: SendBody): string | null {
   }
   if ((t === "list" || t === "quick_reply") && !body.interactive) {
     return "'interactive' obrigatório para list/quick_reply";
+  }
+  if (t === "cta_url") {
+    const cta = body.cta_url || (body.interactive && body.interactive.cta_url);
+    if (!cta?.url || !cta?.display_text) return "'cta_url.url' e 'cta_url.display_text' obrigatórios";
   }
   if (t === "template" && !body.template?.id) return "'template.id' obrigatório";
   return null;

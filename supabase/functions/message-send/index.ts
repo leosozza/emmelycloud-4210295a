@@ -590,6 +590,13 @@ Deno.serve(async (req) => {
             id: (resolvedInteractiveData as any).id || (resolvedInteractiveData as any).name,
             params: (resolvedInteractiveData as any).params || [],
           };
+        } else if (mt === "cta_url" && resolvedInteractiveData) {
+          gsBody.message_type = "cta_url";
+          gsBody.content = content;
+          gsBody.cta_url = {
+            url: (resolvedInteractiveData as any).url,
+            display_text: (resolvedInteractiveData as any).label || (resolvedInteractiveData as any).display_text || "Abrir link",
+          };
         }
         const gsRes = await fetch(`${supabaseUrl}/functions/v1/gupshup-send`, {
           method: "POST",
@@ -739,6 +746,12 @@ Deno.serve(async (req) => {
         } else if (message_type === "location" && resolvedInteractiveData) {
           wuzapiEndpoint = "/chat/send/location";
           wuzapiPayload = { Phone: wuzapiPhone, Latitude: resolvedInteractiveData.latitude, Longitude: resolvedInteractiveData.longitude, Name: resolvedInteractiveData.name || "", Address: resolvedInteractiveData.address || "" };
+        } else if (message_type === "cta_url" && resolvedInteractiveData) {
+          // WUZAPI não suporta CTA URL nativo — fallback para texto com URL
+          const label = (resolvedInteractiveData as any).label || (resolvedInteractiveData as any).display_text || "Abrir link";
+          const url = (resolvedInteractiveData as any).url || "";
+          const bodyText = [content, label, url].filter(Boolean).join("\n");
+          wuzapiPayload = { Phone: wuzapiPhone, Body: bodyText };
         }
 
         console.log(`[MESSAGE-SEND] Sending via WhatsApp QRCode: ${wuzapiEndpoint}`);
@@ -797,6 +810,19 @@ Deno.serve(async (req) => {
           waPayload = { messaging_product: "whatsapp", to: phone, type: "template", template: { name: resolvedInteractiveData.name, language: { code: resolvedInteractiveData.language || "pt_BR" }, components: resolvedInteractiveData.components || [] } };
         } else if (message_type === "reaction" && resolvedInteractiveData) {
           waPayload = { messaging_product: "whatsapp", to: phone, type: "reaction", reaction: { message_id: resolvedInteractiveData.message_id, emoji: resolvedInteractiveData.emoji || "👍" } };
+        } else if (message_type === "cta_url" && resolvedInteractiveData) {
+          const ctaUrl = (resolvedInteractiveData as any).url;
+          const ctaLabel = (resolvedInteractiveData as any).label || (resolvedInteractiveData as any).display_text || "Abrir link";
+          waPayload = {
+            messaging_product: "whatsapp",
+            to: phone,
+            type: "interactive",
+            interactive: {
+              type: "cta_url",
+              body: { text: content || "" },
+              action: { name: "cta_url", parameters: { display_text: ctaLabel, url: ctaUrl } },
+            },
+          };
         } else {
           // Prefix content with sender name if provided
           const waContent = bodySenderName ? `*${bodySenderName}:*\n${content}` : content;
