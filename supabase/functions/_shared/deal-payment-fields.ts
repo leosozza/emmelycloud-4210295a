@@ -144,11 +144,16 @@ export async function readEmmelyPaymentPlan(
   const gatewayRaw = str(pick("UF_CRM_EMMELY_GATEWAY")).toLowerCase();
   const gateway = gatewayRaw || "auto";
 
+  const isSet = (v: any) => v !== undefined && v !== null && String(v).trim() !== "";
   const downPayment = num(pick("UF_CRM_EMMELY_DOWN_PAYMENT"));
-  const downInstallments = intNum(pick("UF_CRM_EMMELY_DOWN_INSTALLMENTS"), 1);
+  const downInstallmentsRaw = pick("UF_CRM_EMMELY_DOWN_INSTALLMENTS");
+  const downInstallmentsExplicit = isSet(downInstallmentsRaw);
+  const downInstallments = intNum(downInstallmentsRaw, 1);
   const downFirstDue = toIsoDate(pick("UF_CRM_EMMELY_DOWN_FIRST_DUE"));
   const downInterval = intNum(pick("UF_CRM_EMMELY_DOWN_INTERVAL"), 30);
-  const remainingInstallments = intNum(pick("UF_CRM_EMMELY_TOTAL_INSTALLMENTS"), 1);
+  const remainingInstallmentsRaw = pick("UF_CRM_EMMELY_TOTAL_INSTALLMENTS");
+  const remainingInstallmentsExplicit = isSet(remainingInstallmentsRaw);
+  const remainingInstallments = intNum(remainingInstallmentsRaw, 1);
   const firstDue = toIsoDate(pick("UF_CRM_EMMELY_FIRST_DUE_DATE") || pick("UF_CRM_EMMELY_NEXT_DUE_DATE"));
   const interval = intNum(pick("UF_CRM_EMMELY_INSTALLMENT_INTERVAL"), 30);
 
@@ -222,11 +227,17 @@ export async function readEmmelyPaymentPlan(
             if (effFirstDue) warnings.push("firstDue from financial_records");
           }
         }
-        if (!remainingInstallments || remainingInstallments === 1) {
-          // Best-effort: use max total_installments seen or the count of rows
+        if (!remainingInstallmentsExplicit) {
+          // Only use financial_records as fallback when the deal field is truly unset.
+          // Never override an explicit value (including 1) — user may have just reduced the plan.
           const maxTot = frData.reduce((m: number, r: any) => Math.max(m, intNum(r.total_installments, 0)), 0);
-          if (maxTot > 0) effRemainingInstallments = maxTot;
-          else if (pendingOrAll.length > 0) effRemainingInstallments = pendingOrAll.length;
+          if (maxTot > 0) {
+            effRemainingInstallments = maxTot;
+            warnings.push(`remainingInstallments fallback from financial_records (${maxTot})`);
+          } else if (pendingOrAll.length > 0) {
+            effRemainingInstallments = pendingOrAll.length;
+            warnings.push(`remainingInstallments fallback from FR count (${pendingOrAll.length})`);
+          }
         }
         if (!effRemainingMethod) {
           // Majority method among rows that declare one
