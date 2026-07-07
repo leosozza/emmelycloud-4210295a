@@ -323,15 +323,43 @@ async function handleSendWhatsApp(properties: Record<string, any>, supabaseUrl: 
       body: JSON.stringify(sendBody),
     });
     const data = await res.json();
-    if (data.error) {
-      return { message_id: "", status: "error", error: data.error };
+
+    const postTl = async (ok: boolean, extra: string) => {
+      if (!timelineCtx?.integration || !timelineCtx?.entity?.id) return;
+      const header = ok
+        ? "[B]✅ WhatsApp enviado[/B]"
+        : "[B]❌ WhatsApp NÃO enviado[/B]";
+      const tName = String(pick("template_name") || "").trim();
+      const details: string[] = [];
+      details.push(`Telefone: ${phone}`);
+      details.push(`Tipo: ${messageType}`);
+      if (tName) details.push(`Template: ${tName}`);
+      const paramsRaw = String(pick("template_params") || "").trim();
+      if (paramsRaw) details.push(`Parâmetros: ${paramsRaw}`);
+      if (mediaUrl) details.push(`Mídia: ${mediaUrl}`);
+      if (extra) details.push(extra);
+      try {
+        await postTimelineComment(timelineCtx.supabase, timelineCtx.integration, timelineCtx.entity!, `${header}\n${details.join("\n")}`);
+      } catch (_e) { /* ignore */ }
+    };
+
+    if (data.error || data.success === false) {
+      const errMsg = data.error || data.error_description || "Falha ao enviar";
+      await postTl(false, `Erro: ${errMsg}`);
+      return { message_id: "", status: "error", error: String(errMsg) };
     }
+    await postTl(true, data.message_id ? `ID externo: ${data.message_id}` : "");
     return {
       message_id: data.message_id || "",
       status: "sent",
       error: "",
     };
   } catch (e) {
+    if (timelineCtx?.integration && timelineCtx?.entity?.id) {
+      try {
+        await postTimelineComment(timelineCtx.supabase, timelineCtx.integration, timelineCtx.entity, `[B]❌ WhatsApp NÃO enviado[/B]\nErro: ${String(e)}`);
+      } catch (_e) { /* ignore */ }
+    }
     return { message_id: "", status: "error", error: String(e) };
   }
 }
