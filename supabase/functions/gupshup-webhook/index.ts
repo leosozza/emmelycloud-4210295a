@@ -79,6 +79,9 @@ Deno.serve(async (req) => {
         failed: "failed", mo_message: "received",
       };
       const status = statusMap[evt.type] || evt.type;
+      if (evt.type === "failed") {
+        console.log("[GUPSHUP-WEBHOOK] failure detail:", JSON.stringify(evt).slice(0, 800));
+      }
       if (gsId && status) {
         const { data: updatedRows } = await supabase
           .from("messages")

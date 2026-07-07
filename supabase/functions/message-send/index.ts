@@ -965,7 +965,7 @@ Deno.serve(async (req) => {
       } catch {}
     }
 
-    return new Response(JSON.stringify({ success: true, message_id: externalMessageId }), {
+    return new Response(JSON.stringify({ success: true, message_id: externalMessageId, saved_message_id: savedMessageId }), {
       status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (err) {

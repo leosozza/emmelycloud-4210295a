@@ -324,10 +324,11 @@ async function handleSendWhatsApp(properties: Record<string, any>, supabaseUrl: 
     });
     const data = await res.json();
 
-    const postTl = async (ok: boolean, extra: string) => {
-      if (!timelineCtx?.integration || !timelineCtx?.entity?.id) return;
-      const header = ok
-        ? "[B]✅ WhatsApp enviado[/B]"
+    const postTl = async (state: "sending" | "ok" | "error", extra: string): Promise<number | null> => {
+      if (!timelineCtx?.integration || !timelineCtx?.entity?.id) return null;
+      const header =
+        state === "sending" ? "[B]⏳ WhatsApp enviado ao provedor[/B]\n(aguardando confirmação de entrega)"
+        : state === "ok" ? "[B]✅ WhatsApp enviado[/B]"
         : "[B]❌ WhatsApp NÃO enviado[/B]";
       const tName = String(pick("template_name") || "").trim();
       const details: string[] = [];
@@ -339,16 +340,27 @@ async function handleSendWhatsApp(properties: Record<string, any>, supabaseUrl: 
       if (mediaUrl) details.push(`Mídia: ${mediaUrl}`);
       if (extra) details.push(extra);
       try {
-        await postTimelineComment(timelineCtx.supabase, timelineCtx.integration, timelineCtx.entity!, `${header}\n${details.join("\n")}`);
-      } catch (_e) { /* ignore */ }
+        return await postTimelineComment(timelineCtx.supabase, timelineCtx.integration, timelineCtx.entity!, `${header}\n${details.join("\n")}`);
+      } catch (_e) { return null; }
     };
 
     if (data.error || data.success === false) {
       const errMsg = data.error || data.error_description || "Falha ao enviar";
-      await postTl(false, `Erro: ${errMsg}`);
+      await postTl("error", `Erro: ${errMsg}`);
       return { message_id: "", status: "error", error: String(errMsg) };
     }
-    await postTl(true, data.message_id ? `ID externo: ${data.message_id}` : "");
+    // Post initial "sending" comment and link it to the saved message so the
+    // gupshup/meta webhook can update it in-place when delivery succeeds/fails.
+    const commentId = await postTl("sending", data.message_id ? `ID externo: ${data.message_id}` : "");
+    const savedMessageId = data.saved_message_id || null;
+    if (commentId && savedMessageId) {
+      try {
+        await createClient(supabaseUrl, serviceKey)
+          .from("messages")
+          .update({ bitrix_timeline_comment_id: commentId })
+          .eq("id", savedMessageId);
+      } catch (_e) { /* ignore */ }
+    }
     return {
       message_id: data.message_id || "",
       status: "sent",
@@ -431,8 +443,8 @@ async function postTimelineComment(
   integration: { client_endpoint: string; access_token: string; id: string } | null | undefined,
   entity: { type: "deal" | "lead" | "spa"; id: string | number; spaEntityTypeId?: number | string },
   comment: string,
-): Promise<void> {
-  if (!integration?.client_endpoint || !integration?.access_token || !entity?.id) return;
+): Promise<number | null> {
+  if (!integration?.client_endpoint || !integration?.access_token || !entity?.id) return null;
   let entityType: string;
   if (entity.type === "deal") entityType = "deal";
   else if (entity.type === "lead") entityType = "lead";
@@ -462,6 +474,7 @@ async function postTimelineComment(
           entity_id: entityIdInt,
           attempt,
           ok: !!res?.result && !res?.error,
+          comment_id: res?.result || null,
           bitrix_error: res?.error || null,
           bitrix_error_description: res?.error_description || null,
         },
@@ -475,7 +488,7 @@ async function postTimelineComment(
     const res = await tryAdd(1);
     if (res?.result && !res?.error) {
       await logAttempt("author_1", res, null);
-      return;
+      return Number(res.result) || null;
     }
     await logAttempt("author_1", res, null);
     console.warn("[ROBOT-HANDLER] timeline.comment.add attempt1 error:", res?.error, res?.error_description);
@@ -498,7 +511,7 @@ async function postTimelineComment(
       const res = await tryAdd(assignedBy);
       if (res?.result && !res?.error) {
         await logAttempt(`author_${assignedBy}`, res, null);
-        return;
+        return Number(res.result) || null;
       }
       await logAttempt(`author_${assignedBy}`, res, null);
     }
@@ -529,6 +542,7 @@ async function postTimelineComment(
     await logAttempt("activity_fallback", null, e);
     console.warn("[ROBOT-HANDLER] timeline activity fallback failed:", e);
   }
+  return null;
 }
 
 // Deterministic signature of a charge plan. Same deal + same parcels (amount, due_date, seq)
