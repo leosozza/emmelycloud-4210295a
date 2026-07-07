@@ -14,6 +14,7 @@ interface Installment {
   status: string;
   currency: string | null;
   is_synthetic?: boolean;
+  is_down_payment?: boolean;
 }
 
 interface ReportData {
@@ -327,7 +328,7 @@ export default function PagamentoPublico() {
                     {fmtCurrency(computed.nextOpen.lateFee.total, currency)}
                   </div>
                   <div className="payment-next-meta">
-                    Vence {fmtDate(computed.nextOpen.rec.due_date)} · Parcela {computed.nextOpen.rec.installment_number || 1} de {computed.nextOpen.rec.total_installments || 1}
+                    Vence {fmtDate(computed.nextOpen.rec.due_date)} · {computed.nextOpen.rec.is_down_payment ? "Entrada" : `Parcela ${computed.nextOpen.rec.installment_number || 1} de ${computed.nextOpen.rec.total_installments || 1}`}
                   </div>
                   {computed.nextOpen.lateFee.charges > 0 && (
                     <div className="payment-installment-sub text-rose-600">
@@ -384,7 +385,7 @@ export default function PagamentoPublico() {
                   <div key={rec.id} className="payment-installment-row">
                     <div>
                       <div className="payment-installment-title">
-                        Parcela {rec.installment_number || 1} <span className="payment-installment-muted">de {rec.total_installments || 1}</span>
+                        {rec.is_down_payment ? "Entrada" : <>Parcela {rec.installment_number || 1} <span className="payment-installment-muted">de {rec.total_installments || 1}</span></>}
                       </div>
                       {lateFee.charges > 0 && !isPaid && (
                         <div className="payment-installment-sub">+ {fmtCurrency(lateFee.charges, currency)} juros/multa</div>
