@@ -436,6 +436,26 @@ async function computeInstallmentSignature(
   return Array.from(new Uint8Array(hash)).map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
+function summarizeExistingChargeParcels(
+  txs: Array<{ amount?: number | null; metadata?: any }>,
+  fmt: (value: number) => string,
+): string | null {
+  if (!txs.length) return null;
+
+  const amountOf = (tx: { amount?: number | null }) => Number(tx.amount || 0);
+  const downTxs = txs.filter((tx) => !!tx.metadata?.is_down_payment);
+  const remainingTxs = txs.filter((tx) => !tx.metadata?.is_down_payment);
+  const downSum = downTxs.reduce((sum, tx) => sum + amountOf(tx), 0);
+
+  if (downTxs.length > 0) {
+    return `${txs.length} (entrada ${fmt(downSum)}${downTxs.length > 1 ? ` em ${downTxs.length}x` : ""}` +
+      (remainingTxs.length > 0 ? ` + ${remainingTxs.length}x de ${fmt(amountOf(remainingTxs[0]))}` : "") +
+      `)`;
+  }
+
+  return `${txs.length}${remainingTxs.length > 0 ? ` de ${fmt(amountOf(remainingTxs[0]))}` : ""}`;
+}
+
 // Best-effort: expire pending Stripe Checkout Sessions attached to old transactions.
 async function expireStripeSessionsBestEffort(
   supabase: any,
