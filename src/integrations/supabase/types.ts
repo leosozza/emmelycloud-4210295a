@@ -4366,6 +4366,7 @@ export type Database = {
           app_id: string | null
           body: string
           buttons: Json
+          cards: Json | null
           category: string
           created_at: string
           created_by: string | null
@@ -4379,12 +4380,14 @@ export type Database = {
           provider: string
           rejection_reason: string | null
           status: string
+          template_type: string
           updated_at: string
         }
         Insert: {
           app_id?: string | null
           body: string
           buttons?: Json
+          cards?: Json | null
           category: string
           created_at?: string
           created_by?: string | null
@@ -4398,12 +4401,14 @@ export type Database = {
           provider?: string
           rejection_reason?: string | null
           status?: string
+          template_type?: string
           updated_at?: string
         }
         Update: {
           app_id?: string | null
           body?: string
           buttons?: Json
+          cards?: Json | null
           category?: string
           created_at?: string
           created_by?: string | null
@@ -4417,6 +4422,7 @@ export type Database = {
           provider?: string
           rejection_reason?: string | null
           status?: string
+          template_type?: string
           updated_at?: string
         }
         Relationships: []
