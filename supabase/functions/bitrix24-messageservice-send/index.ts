@@ -124,20 +124,22 @@ Deno.serve(async (req) => {
     const parsed = parseEmmelyMessage(messageBody);
     const phone = String(messageTo).replace(/\D/g, "");
 
-    await supabase.from("bitrix24_debug_logs").insert({
-      integration_id: integration?.id || null,
-      event_type: "messageservice_send",
-      direction: "inbound",
-      payload: {
-        event,
-        messageTo,
-        phone,
-        messageId,
-        memberId,
-        parsed,
-        bodyPreview: String(messageBody).slice(0, 200),
-      },
-    }).catch(() => {});
+    try {
+      await supabase.from("bitrix24_debug_logs").insert({
+        integration_id: integration?.id || null,
+        event_type: "messageservice_send",
+        direction: "inbound",
+        payload: {
+          event,
+          messageTo,
+          phone,
+          messageId,
+          memberId,
+          parsed,
+          bodyPreview: String(messageBody).slice(0, 200),
+        },
+      });
+    } catch (_) { /* best effort */ }
 
     // Send only when we have a phone target
     let forwardResult: any = null;
@@ -149,14 +151,38 @@ Deno.serve(async (req) => {
         const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
         const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
+        // Find or create conversation for this phone (message-send requires conversation_id)
+        let conversationId: string | null = null;
+        try {
+          const { data: existing } = await supabase
+            .from("conversations")
+            .select("id")
+            .eq("channel", "whatsapp")
+            .eq("contact_phone", phone)
+            .maybeSingle();
+          if (existing?.id) {
+            conversationId = existing.id;
+          } else {
+            const { data: newConv } = await supabase
+              .from("conversations")
+              .insert({ channel: "whatsapp", contact_name: phone, contact_phone: phone, status: "aberta" })
+              .select("id")
+              .single();
+            conversationId = newConv?.id || null;
+          }
+        } catch (convErr) {
+          console.error("[MS-SEND] conversation resolve failed:", convErr);
+        }
+
         const sendBody: Record<string, any> =
           parsed.mode === "template"
             ? {
+                conversation_id: conversationId,
                 phone,
                 channel: "whatsapp",
                 message_type: "template",
-                content: "", // texto fallback (Gupshup ignora em template)
-                interactive_data: {
+                content: parsed.templateName,
+                resolvedInteractiveData: {
                   name: parsed.templateName,
                   id: parsed.templateName,
                   params: parsed.variables,
@@ -164,8 +190,8 @@ Deno.serve(async (req) => {
                 source: "bitrix24_messageservice",
               }
             : {
+                conversation_id: conversationId,
                 phone,
-                message: parsed.text,
                 content: parsed.text,
                 channel: "whatsapp",
                 message_type: "text",
@@ -189,12 +215,14 @@ Deno.serve(async (req) => {
         forwardResult = { error: String(fwdErr) };
       }
 
-      await supabase.from("bitrix24_debug_logs").insert({
-        integration_id: integration?.id || null,
-        event_type: "messageservice_send_result",
-        direction: "outbound",
-        payload: { status: forwardStatus, ok: forwardOk, result: forwardResult },
-      }).catch(() => {});
+      try {
+        await supabase.from("bitrix24_debug_logs").insert({
+          integration_id: integration?.id || null,
+          event_type: "messageservice_send_result",
+          direction: "outbound",
+          payload: { status: forwardStatus, ok: forwardOk, result: forwardResult },
+        });
+      } catch (_) { /* best effort */ }
     }
 
     // Respond to Bitrix24
