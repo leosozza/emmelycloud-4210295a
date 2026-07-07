@@ -125,6 +125,15 @@ Deno.serve(async (req) => {
               example: [STRIPE_BUTTON_EXAMPLE],
             };
           }
+          // Botão Emmely: URL fixa + variável {{1}} = id do pagamento interno
+          if (b.is_emmely_token) {
+            return {
+              type: "URL",
+              text: b.text || "Pagar",
+              url: EMMELY_BUTTON_URL,
+              example: [EMMELY_BUTTON_EXAMPLE],
+            };
+          }
           return {
             type: "URL",
             text: b.text,
@@ -139,13 +148,16 @@ Deno.serve(async (req) => {
       });
       form.set("buttons", JSON.stringify(btnPayload));
       const hasStripe = buttons.some((b) => b.type === "URL" && b.is_stripe_token);
-      const hasDynamic = buttons.some((b) => b.type === "URL" && /\{\{1\}\}/.test(b.url || ""));
-      if (hasStripe || hasDynamic) {
+      const hasEmmely = buttons.some((b) => b.type === "URL" && b.is_emmely_token);
+      const hasDynamic = buttons.some((b) => b.type === "URL" && !b.is_stripe_token && !b.is_emmely_token && /\{\{1\}\}/.test(b.url || ""));
+      if (hasStripe || hasEmmely || hasDynamic) {
         form.set(
           "exampleMedia",
           hasStripe
             ? `https://checkout.stripe.com/c/pay/${STRIPE_BUTTON_EXAMPLE}`
-            : body.button_url_example || "https://example.com"
+            : hasEmmely
+              ? `https://emmelycloud.pages.dev/pagamento/${EMMELY_BUTTON_EXAMPLE}`
+              : body.button_url_example || "https://example.com"
         );
       }
     }
