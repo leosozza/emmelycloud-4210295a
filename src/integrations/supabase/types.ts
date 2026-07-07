@@ -3170,6 +3170,8 @@ export type Database = {
           ai_review_id: string | null
           ai_review_score: number | null
           ai_review_status: string | null
+          bitrix_entity_ref: string | null
+          bitrix_timeline_comment_id: number | null
           content: string
           conversation_id: string
           created_at: string
@@ -3188,6 +3190,8 @@ export type Database = {
           ai_review_id?: string | null
           ai_review_score?: number | null
           ai_review_status?: string | null
+          bitrix_entity_ref?: string | null
+          bitrix_timeline_comment_id?: number | null
           content: string
           conversation_id: string
           created_at?: string
@@ -3206,6 +3210,8 @@ export type Database = {
           ai_review_id?: string | null
           ai_review_score?: number | null
           ai_review_status?: string | null
+          bitrix_entity_ref?: string | null
+          bitrix_timeline_comment_id?: number | null
           content?: string
           conversation_id?: string
           created_at?: string
