@@ -60,13 +60,48 @@ function rowsFromFinancialRecords(records: any[]): InstallmentRow[] {
     due_date: r.due_date || null,
     paid_at: r.paid_at || null,
     status: (r.status || "pendente") as any,
-    is_down_payment: false, // financial_records legacy: no explicit flag
+    is_down_payment: String(r.description || "").toLowerCase().startsWith("entrada"),
     payment_method: r.payment_method || null,
     description: r.description || "",
     is_synthetic: false as any,
     bitrix24_deal_id: r.bitrix24_deal_id || null,
     contract_id: r.contract_id || null,
   }));
+}
+
+function transactionKey(tx: any): string {
+  const meta = tx?.metadata || {};
+  const isDown = meta.is_down_payment === true || meta.is_down_payment === "true";
+  const n = Number(meta.installment_number || 1) || 1;
+  return `${isDown ? "d" : "r"}:${n}`;
+}
+
+function mergeRowsWithTransactions(rows: InstallmentRow[], txs: any[]): InstallmentRow[] {
+  const active = (txs || [])
+    .filter((tx: any) => !["cancelled", "canceled"].includes(String(tx.status || "").toLowerCase()))
+    .sort((a: any, b: any) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());
+  const byKey = new Map<string, any>();
+  for (const tx of active) {
+    const key = transactionKey(tx);
+    if (!byKey.has(key)) byKey.set(key, tx);
+  }
+  return rows.map((row) => {
+    const key = `${row.is_down_payment ? "d" : "r"}:${row.installment_number || 1}`;
+    const tx = byKey.get(key);
+    if (!tx) return row;
+    const meta = tx.metadata || {};
+    let status = row.status;
+    if (["paid", "confirmed", "succeeded"].includes(String(tx.status || "").toLowerCase())) status = "paga" as any;
+    else if (["overdue", "failed"].includes(String(tx.status || "").toLowerCase())) status = "atrasada" as any;
+    return {
+      ...row,
+      due_date: meta.due_date || row.due_date,
+      paid_at: status === "paga" ? (tx.updated_at || row.paid_at) : row.paid_at,
+      status,
+      payment_method: tx.payment_method || meta.requested_payment_method || row.payment_method,
+      description: row.is_down_payment ? "Entrada" : row.description,
+    };
+  });
 }
 
 /**
@@ -99,6 +134,12 @@ async function loadInstallments(supabase: any, link: any) {
     .select("*").eq("bitrix24_deal_id", dealId)
     .order("installment_number", { ascending: true });
   const records: any[] = recData || [];
+
+  const { data: txData } = await supabase.from("payment_transactions")
+    .select("id, status, amount, currency, payment_method, payment_url, financial_record_id, created_at, updated_at, metadata")
+    .or(`metadata->>bitrix_deal_id.eq.${dealId},metadata->>bitrix24_deal_id.eq.${dealId}`)
+    .order("created_at", { ascending: false });
+  const dealTransactions: any[] = txData || [];
 
   // Try to read the deal payment plan from Bitrix24
   let plan: EmmelyPaymentPlan | null = null;
@@ -137,11 +178,11 @@ async function loadInstallments(supabase: any, link: any) {
   let currency: string;
 
   if (plannedRows.length > 0 && planExplicitlySplit && !hasPaidReal && (realInstallments.length === 0 || planDiffers)) {
-    installments = plannedRows;
+    installments = mergeRowsWithTransactions(plannedRows, dealTransactions);
     total_value = plan!.totalAmount;
     currency = plan!.currency || "EUR";
   } else if (realInstallments.length > 0) {
-    installments = realInstallments;
+    installments = mergeRowsWithTransactions(realInstallments, dealTransactions);
     total_value = records[0]?.total_value || realSum;
     currency = realInstallments[0]?.currency || dealCurrency;
   } else if (dealAmount > 0) {
