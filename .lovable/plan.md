@@ -1,45 +1,82 @@
-## Problema
+## Objetivo
 
-O robot postou "✅ WhatsApp enviado" na timeline do deal 47047 (external_id `e07fceb5…`), mas o cliente nunca recebeu. Confirmado nos logs:
+Separar o robot Emmely WhatsApp em **dois** para eliminar o ruído dos campos irrelevantes e evitar erros como "Message Sending failed as template did not match":
 
-- `messages.delivery_status = failed` (gupshup-webhook `subtype: failed` em 18:29:21).
-- O motivo do Gupshup NUNCA é logado (só se imprime `type/subtype`).
-- A timeline continua "verde" porque o comentário postado pelo robot é imutável — não fica vinculado à `messages.bitrix_timeline_comment_id`, então o webhook posterior não o atualiza.
+- **`emmely_send_whatsapp`** → apenas texto/mídia/botões/lista/link (sem template).
+- **`emmely_send_whatsapp_template`** → apenas envio de template HSM aprovado (Meta/Gupshup).
 
-Ou seja: dois problemas encadeados —
-1. **Silêncio de diagnóstico**: não sabemos o motivo real do Gupshup ter recusado o template `linkemmely` com o param UUID.
-2. **Timeline enganosa**: mesmo quando `delivery_status` vira `failed`, o comentário do robot não reflete.
+## Mudanças
 
-## Correção
+### 1. `supabase/functions/bitrix24-install/index.ts`
 
-### 1. `supabase/functions/gupshup-webhook/index.ts`
-- No bloco `payload.type === "message-event"`, quando `evt.type === "failed"`, logar o **payload completo do evento** (`evt.payload`, `evt.reason`, `evt.destination`) via `console.log("[GUPSHUP-WEBHOOK] failure detail:", JSON.stringify(evt).slice(0, 800))`.
-- Fica assim rastreável no Edge Functions Logs qual foi a razão real (template rejeitado, número inválido, template não aprovado, param faltando, etc.).
+Há duas listas de robots que precisam ser sincronizadas (bloco `repairRobots` ~linha 826 e bloco `robots` inicial ~linha 2012). Em **ambas**:
+
+**a) Enxugar `emmely_send_whatsapp`:**
+- Remover propriedades: `template_name`, `template_language`, `template_params`.
+- No `message_type`, remover a opção `template` das `Options`.
+- Manter todo o resto (texto/mídia/botões/lista/link).
+
+**b) Adicionar novo robot `emmely_send_whatsapp_template`:**
+```ts
+{
+  CODE: "emmely_send_whatsapp_template",
+  NAME: "Emmely: Enviar WhatsApp Template",
+  PROPERTIES: {
+    phone: { Name: "Telefone", Type: "string", Required: "Y",
+             Description: "Número com código do país. Ex: +351912345678" },
+    template_name: { Name: "Nome do Template", Type: "string", Required: "Y",
+             Description: "Nome exato do template aprovado no Meta/Gupshup (ex: linkemmely)" },
+    template_language: { Name: "Idioma do Template", Type: "string",
+             Required: "N", Default: "pt_BR",
+             Description: "Código do idioma aprovado. Ex: pt_BR, pt_PT, en_US" },
+    template_params: { Name: "Parâmetros ({{1}},{{2}},...)", Type: "text",
+             Required: "N",
+             Description: "Valores separados por | na ordem das variáveis. Ex: João|1234|10€" },
+  },
+  RETURN_PROPERTIES: {
+    message_id: { Name: "ID da Mensagem", Type: "string" },
+    status: { Name: "Status", Type: "string" },
+    error: { Name: "Erro", Type: "string" },
+  },
+}
+```
 
 ### 2. `supabase/functions/bitrix24-robot-handler/index.ts`
-`handleSendWhatsApp` (linhas 188-365):
 
-**a) Mudar o texto inicial** — em vez de já postar "✅ WhatsApp enviado", postar `"⏳ WhatsApp enviado ao provedor\n(aguardando confirmação de entrega)"`. Se `data.error` ou `success === false`, postar direto "❌ WhatsApp NÃO enviado — <erro>".
+No `switch (code)` (linha 2451), adicionar case novo antes do `emmely_send_instagram`:
 
-**b) Persistir `bitrix_timeline_comment_id` no messages** — Após o `postTimelineComment`, precisamos capturar o comment_id criado. Vou:
-- Modificar `postTimelineComment` para retornar `Promise<number | null>` (ID do comentário criado no attempt 1 ou 2; `null` no fallback activity).
-- No `handleSendWhatsApp`, após envio bem-sucedido: obter `savedMessageId` (retorno adicional a implementar em `message-send`) e escrever `bitrix_timeline_comment_id = <id>` na linha `messages` correspondente.
+```ts
+case "emmely_send_whatsapp_template": {
+  // Force template mode and delegate to the existing WhatsApp handler.
+  const templateProps = {
+    phone: properties.phone,
+    message_type: "template",
+    template_name: properties.template_name,
+    template_language: properties.template_language,
+    template_params: properties.template_params,
+  };
+  returnValues = await handleSendWhatsApp(templateProps, supabaseUrl, serviceKey, timelineCtx);
+  break;
+}
+```
 
-**c) `message-send` precisa retornar `saved_message_id`** — no fim do handler, mudar o payload de retorno para `{ success: true, message_id: externalMessageId, saved_message_id: savedMessageId }`. Nenhuma outra consumer quebra (todos leem apenas `message_id`).
+`handleSendWhatsApp` já lida corretamente com `message_type: "template"` — nada mais muda ali.
 
-### 3. Resultado
-- `gupshup-webhook` já chama `bitrix24-post-message-timeline` com `event: "failed", error: reason` (linhas 91-102). Como o registro `messages` agora tem `bitrix_timeline_comment_id`, o comentário do robot é **atualizado in-place** para `"❌ Falha — <razão>"`, mostrando a verdade ao operador.
-- Delivered/read também atualiza o mesmo comentário (já suportado pela edge `bitrix24-post-message-timeline`).
+### 3. Documentação
+
+Atualizar `src/pages/ApiDocs.tsx` na seção dos robots para citar o novo `emmely_send_whatsapp_template` (apenas menção; o painel real vem do próprio Bitrix). Se não houver tabela explícita de robots, ignorar.
 
 ## Fora de escopo
 
-- Não altero o template `linkemmely` nem o payload enviado ao Gupshup — o objetivo é **expor o motivo** primeiro; ajuste do template vem depois com base no log.
-- Nenhuma nova coluna, nenhuma migration.
-- Não mexo em `gupshup-send` nem no fluxo de outros provedores.
+- Não alterar `handleSendWhatsApp` — a lógica de template continua igual.
+- Não corrigir o template `linkemmely` em si (falha "did not match" é problema de payload/número de parâmetros do template aprovado; será tratado depois com base nos logs do Gupshup que já estão sendo capturados).
+- Nenhuma migration de banco.
+
+## Passo pós-deploy
+
+Para que o Bitrix veja o novo robot, o usuário precisa disparar **"Reparar robots"** no Configurações → Integrações → Bitrix24 (ou reconectar). O bloco `repairRobots` faz `bizproc.robot.delete` + `bizproc.robot.add` para cada CODE, então basta rodar.
 
 ## Validação
 
-1. Disparar o robot Emmely WhatsApp novamente no deal 47047.
-2. Timeline deve mostrar primeiro "⏳ enviado ao provedor" e, em segundos, atualizar para "❌ Falha — <razão do Gupshup>".
-3. Nos logs do `gupshup-webhook`, aparecer `[GUPSHUP-WEBHOOK] failure detail: {"type":"failed","reason":"…"}`.
-4. Com a razão em mãos, decide-se se é template não aprovado, param inválido, opt-out, etc.
+1. Após reparar, no BizProc do deal aparecem dois robots: "Emmely: Enviar WhatsApp" (sem campos de template) e "Emmely: Enviar WhatsApp Template" (só 4 campos).
+2. Testar o robot template com `template_name=linkemmely` + params corretos → timeline mostra "⏳ enviado ao provedor" e atualiza para ✅/❌.
