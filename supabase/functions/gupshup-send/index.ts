@@ -10,7 +10,7 @@ const GUPSHUP_URL = "https://api.gupshup.io/wa/api/v1/msg";
 
 type MessageType =
   | "text" | "image" | "video" | "audio" | "document" | "sticker"
-  | "template" | "list" | "quick_reply" | "location" | "contact" | "reaction";
+  | "template" | "list" | "quick_reply" | "cta_url" | "location" | "contact" | "reaction";
 
 interface SendBody {
   to: string;                        // E.164 sem +, ex: "351912345678"
@@ -24,11 +24,12 @@ interface SendBody {
   force_ptt?: boolean | string;       // áudio: enviar como nota de voz/PTT nativa
   disable_preview?: boolean;         // text: desativa link preview
   // interactive / location / contact / reaction
-  interactive?: any;                 // objeto pronto (list/quick_reply)
+  interactive?: any;                 // objeto pronto (list/quick_reply/cta_url)
   location?: { latitude: number; longitude: number; name?: string; address?: string };
   contact?: any;                     // objeto pronto conforme docs
   reaction?: { msgid: string; emoji: string };
   template?: { id: string; params?: string[] };
+  cta_url?: { url: string; display_text: string };
 }
 
 async function getCreds(supabase: any) {
