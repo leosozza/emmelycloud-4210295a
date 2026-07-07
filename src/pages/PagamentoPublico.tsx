@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useParams, useSearchParams } from "react-router-dom";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import bannerAsset from "@/assets/emmely-banner.png.asset.json";
+import bannerAsset from "@/assets/emmely-banner.png";
 
 interface Installment {
   id: string;
