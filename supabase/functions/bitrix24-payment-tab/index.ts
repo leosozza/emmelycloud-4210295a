@@ -1178,6 +1178,7 @@ function renderPaymentTab(opts: {
     invoice_id: i.invoice_id,
     status: i.status,
     payment_url: i.payment_url,
+    is_down_payment: !!i.is_down_payment,
     not_generated: (!i.transaction_id || String(i.transaction_id).startsWith("deal-")) && i.status !== "paga",
   })))};
 
@@ -2230,6 +2231,7 @@ function renderPaymentTab(opts: {
               bitrix_deal_id: ENTITY_ID,
               installment_number: inst.number,
               total_installments: inst.total,
+              is_down_payment: !!inst.is_down_payment,
               source: 'bitrix24_payment_tab_bulk'
             }
           })
@@ -3486,16 +3488,23 @@ Deno.serve(async (req) => {
       totalValue = firstRecord.total_value || 0;
       currency = "EUR";
       installments = financialRecords.map((rec: any) => {
-        const matchingTx = dealTransactions.find((tx: any) => tx.financial_record_id === rec.id);
+        const isDownRecord = String(rec.description || "").toLowerCase().startsWith("entrada");
+        const matchingTx = dealTransactions.find((tx: any) => tx.financial_record_id === rec.id)
+          || dealTransactions.find((tx: any) => {
+            const meta = tx.metadata || {};
+            const txDown = meta.is_down_payment === true || meta.is_down_payment === "true";
+            return txDown === isDownRecord && Number(meta.installment_number || 1) === Number(rec.installment_number || 1);
+          });
         return {
           id: rec.id, number: rec.installment_number || 1, total: rec.total_installments || 1,
           value: rec.installment_value || 0, status: rec.status || "pendente",
           due_date: rec.due_date, paid_at: rec.paid_at, currency,
           description: rec.description || "", transaction_id: matchingTx?.id,
           financial_record_id: rec.id,
-          payment_url: matchingTx?.payment_url, payment_method: matchingTx?.payment_method,
+          payment_url: matchingTx?.payment_url || matchingTx?.metadata?.payment_url, payment_method: matchingTx?.payment_method,
           metadata: matchingTx?.metadata || {},
           invoice_id: rec.bitrix24_invoice_id || null,
+          is_down_payment: isDownRecord,
         };
       });
       paidValue = installments.filter(i => i.status === "paga").reduce((s, i) => s + i.value, 0);
@@ -3510,29 +3519,7 @@ Deno.serve(async (req) => {
         if (companies) { for (const c of companies) companyMap[c.id] = c.name; }
       }
 
-      installments = dealTransactions.map((tx: any, idx: number) => {
-        let status = "pendente";
-        if (tx.status === "paid" || tx.status === "confirmed" || tx.status === "succeeded") status = "paga";
-        else if (tx.status === "overdue" || tx.status === "failed") status = "atrasada";
-        const meta = tx.metadata || {};
-        const instNum = meta.installment_number != null ? meta.installment_number : (idx + 1);
-        const instTotal = meta.total_installments || dealTransactions.length;
-        const isDown = meta.is_down_payment === true;
-        const dueDate = meta.due_date || tx.created_at;
-        return {
-          id: tx.id, number: isDown ? 0 : instNum, total: instTotal,
-          value: tx.amount || 0, status, due_date: dueDate,
-          paid_at: status === "paga" ? tx.updated_at : null,
-          currency: tx.currency || currency, description: "",
-          transaction_id: tx.id, payment_url: tx.payment_url,
-          is_down_payment: isDown,
-          invoice_id: meta.bitrix_old_invoice_id || meta.bitrix_invoice_id || null,
-          is_direct: tx.gateway === "direto" || tx.payment_method === "parcelado_direto",
-          company_name: tx.company_id ? (companyMap[tx.company_id] || meta.company_name || "") : (meta.company_name || ""),
-          payment_method: tx.payment_method,
-          metadata: meta,
-        };
-      });
+      installments = dealTransactions.map((tx: any, idx: number) => transactionToInstallment(tx, idx, currency));
       paidValue = installments.filter(i => i.status === "paga").reduce((s, i) => s + i.value, 0);
     } else {
       if (dealAmount > 0) {
@@ -3574,7 +3561,9 @@ Deno.serve(async (req) => {
       const planExplicitlySplit = planCount > 1 || paymentPlanFromDeal.downPayment > 0 || paymentPlanFromDeal.firstDue || paymentPlanFromDeal.method;
       const planDiffers = planCount !== currentCount || Math.abs(planSum - currentSum) > 0.01;
       if (plannedRows.length > 0 && planExplicitlySplit && !hasPaidRows && (!hasGeneratedRows || planDiffers)) {
-        installments = plannedRows;
+        installments = hasGeneratedRows
+          ? mergePlanWithGeneratedTransactions(plannedRows, dealTransactions, dealCurrency)
+          : plannedRows;
         totalValue = paymentPlanFromDeal.totalAmount;
         paidValue = 0;
         currency = dealCurrency;
