@@ -2423,9 +2423,34 @@ Deno.serve(async (req) => {
     // Execute robot logic
     let returnValues: Record<string, string> = {};
 
+    // Resolve integration + entity (deal/lead/spa) from document_id for timeline posting
+    const docId: any = (data as any).document_id || (data as any).DOCUMENT_ID || [];
+    const docStr = Array.isArray(docId) ? String(docId[2] || "") : String(docId || "");
+    // Format examples: "DEAL_47047", "LEAD_123", "DYNAMIC_131_45"
+    let tlEntity: { type: "deal" | "lead" | "spa"; id: string | number; spaEntityTypeId?: number | string } | null = null;
+    const mDeal = docStr.match(/^DEAL_(\d+)$/i);
+    const mLead = docStr.match(/^LEAD_(\d+)$/i);
+    const mSpa = docStr.match(/^DYNAMIC_(\d+)_(\d+)$/i);
+    if (mDeal) tlEntity = { type: "deal", id: mDeal[1] };
+    else if (mLead) tlEntity = { type: "lead", id: mLead[1] };
+    else if (mSpa) tlEntity = { type: "spa", id: mSpa[2], spaEntityTypeId: mSpa[1] };
+
+    let tlIntegration: any = null;
+    if (tlEntity) {
+      if (memberId) {
+        const { data: intData } = await supabase.from("bitrix24_integrations").select("*").eq("member_id", memberId).maybeSingle();
+        tlIntegration = intData;
+      }
+      if (!tlIntegration) {
+        const { data: intData } = await supabase.from("bitrix24_integrations").select("*").order("created_at", { ascending: false }).limit(1).maybeSingle();
+        tlIntegration = intData;
+      }
+    }
+    const timelineCtx = tlEntity ? { supabase, integration: tlIntegration, entity: tlEntity } : undefined;
+
     switch (code) {
       case "emmely_send_whatsapp":
-        returnValues = await handleSendWhatsApp(properties, supabaseUrl, serviceKey);
+        returnValues = await handleSendWhatsApp(properties, supabaseUrl, serviceKey, timelineCtx);
         break;
       case "emmely_send_instagram":
         returnValues = await handleSendInstagram(properties, supabaseUrl, serviceKey);
