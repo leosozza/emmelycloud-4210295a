@@ -29,7 +29,13 @@ Deno.serve(async (req) => {
     );
 
     const url = new URL(req.url);
-    const refresh = url.searchParams.get("refresh") === "true";
+    let refresh = url.searchParams.get("refresh") === "true";
+    if (!refresh && req.method === "POST") {
+      try {
+        const b = await req.json();
+        if (b?.refresh === true) refresh = true;
+      } catch { /* ignore */ }
+    }
 
     if (!refresh) {
       const { data, error } = await supabase
