@@ -53,6 +53,12 @@ function getStripePaymentMethods(region?: "pt" | "br" | null, requestedMethod?: 
   return ["card"];
 }
 
+function extractStripeCheckoutToken(paymentUrl?: string | null): string | null {
+  if (!paymentUrl) return null;
+  const m = String(paymentUrl).match(/\/c\/pay\/([^#?]+)/);
+  return m ? m[1] : null;
+}
+
 function extractRejectedStripeMethod(msg: string): string | null {
   if (!msg) return null;
   let m = msg.match(/payment method type provided:\s*([a-z_]+)/i);
@@ -284,24 +290,41 @@ async function ensureBitrixTokenPayField(integration: any) {
   }).catch(() => null);
 }
 
-async function updateBitrixPaymentReportFields(supabase: any, dealId: string, token: string) {
+async function ensureBitrixStripeTokenField(integration: any) {
+  await callBitrix(integration.client_endpoint, integration.access_token, "crm.deal.userfield.add", {
+    fields: {
+      FIELD_NAME: "UF_CRM_EMMELY_STRIPE_TOKEN",
+      USER_TYPE_ID: "string",
+      SORT: 0,
+      EDIT_FORM_LABEL: { br: "Token Stripe", en: "Stripe Token", pt: "Token Stripe" },
+      LIST_COLUMN_LABEL: { br: "Token Stripe", en: "Stripe Token", pt: "Token Stripe" },
+      LIST_FILTER_LABEL: { br: "Token Stripe", en: "Stripe Token", pt: "Token Stripe" },
+    },
+  }).catch(() => null);
+}
+
+async function updateBitrixPaymentReportFields(supabase: any, dealId: string, token: string, stripeToken?: string | null, paymentUrl?: string | null) {
   const { data: integration } = await supabase.from("bitrix24_integrations").select("*").limit(1).maybeSingle();
   if (!integration?.client_endpoint || !integration?.access_token) return;
   const receiptUrl = `${Deno.env.get("SUPABASE_URL")}/functions/v1/payment-receipt?token=${token}`;
   const frontendBase = (Deno.env.get("PUBLIC_RECEIPT_URL") || "https://emmelycloud.pages.dev").replace(/\/+$/, "");
   const reportUrl = `${frontendBase}/pagamento/${token}`;
   await ensureBitrixTokenPayField(integration);
+  if (stripeToken) await ensureBitrixStripeTokenField(integration);
+  const fields: Record<string, any> = {
+    UF_CRM_EMMELY_RECEIPT_URL: receiptUrl,
+    UF_CRM_EMMELY_RELATORIO_PAY: reportUrl,
+    UF_CRM_EMMELY_TOKEN_PAY: token,
+  };
+  if (stripeToken) fields.UF_CRM_EMMELY_STRIPE_TOKEN = stripeToken;
+  if (paymentUrl) fields.UF_CRM_EMMELY_PAYMENT_URL = paymentUrl;
   await callBitrix(integration.client_endpoint, integration.access_token, "crm.deal.update", {
     id: parseInt(dealId),
-    fields: {
-      UF_CRM_EMMELY_RECEIPT_URL: receiptUrl,
-      UF_CRM_EMMELY_RELATORIO_PAY: reportUrl,
-      UF_CRM_EMMELY_TOKEN_PAY: token,
-    },
+    fields,
   });
 }
 
-async function ensurePaymentReportTokenForDeal(supabase: any, opts: { dealId?: string | null; financialRecordId?: string | null; clientName?: string | null; dealTitle?: string | null }) {
+async function ensurePaymentReportTokenForDeal(supabase: any, opts: { dealId?: string | null; financialRecordId?: string | null; clientName?: string | null; dealTitle?: string | null; stripeToken?: string | null; paymentUrl?: string | null }) {
   let dealId = opts.dealId ? String(opts.dealId).trim() : "";
   let contractId: string | null = null;
   let dealTitle = opts.dealTitle || null;
@@ -342,7 +365,7 @@ async function ensurePaymentReportTokenForDeal(supabase: any, opts: { dealId?: s
     token = created?.token || null;
   }
 
-  if (token) await updateBitrixPaymentReportFields(supabase, dealId, token);
+  if (token) await updateBitrixPaymentReportFields(supabase, dealId, token, opts.stripeToken || null, opts.paymentUrl || null);
   return token;
 }
 
@@ -622,6 +645,23 @@ Deno.serve(async (req) => {
         const ageMs = Date.now() - new Date(existingPending.created_at).getTime();
         if (ageMs < 24 * 60 * 60 * 1000) {
           console.log(`[PAYMENT-CREATE] Reusing pending tx ${existingPending.id} (age ${Math.round(ageMs/60000)}min)`);
+          try {
+            const existingPaymentUrl = existingPending.payment_url || null;
+            const existingStripeToken = extractStripeCheckoutToken(existingPaymentUrl);
+            const bitrixDealId = body.bitrix_deal_id || extraMetadata?.bitrix_deal_id || extraMetadata?.bitrix24_deal_id;
+            if (bitrixDealId || financial_record_id) {
+              await ensurePaymentReportTokenForDeal(supabase, {
+                dealId: bitrixDealId,
+                financialRecordId: financial_record_id || null,
+                clientName: customer_data?.name || extraMetadata?.client_name || null,
+                dealTitle: extraMetadata?.deal_title || description || null,
+                stripeToken: existingStripeToken,
+                paymentUrl: existingPaymentUrl,
+              });
+            }
+          } catch (reuseTokenErr) {
+            console.error("[PAYMENT-CREATE] Reuse TOKEN_PAY/Stripe token sync error:", reuseTokenErr);
+          }
           return new Response(JSON.stringify({ ok: true, idempotent: true, transaction: existingPending, payment_url: existingPending.payment_url || null }), {
             headers: { ...corsHeaders, "Content-Type": "application/json" },
           });
@@ -782,6 +822,7 @@ Deno.serve(async (req) => {
       : (normalizedGateway && validGws.includes(normalizedGateway) ? normalizedGateway : (stripeRegion ? `stripe_${stripeRegion}` : gateway));
 
     // Save or update transaction
+    const stripeToken = extractStripeCheckoutToken(result.payment_url || null);
     const txPayload = {
       contract_id: contract_id || null,
       client_id: client_id || null,
@@ -797,7 +838,17 @@ Deno.serve(async (req) => {
       payment_url: result.payment_url,
       pix_qr_code: result.pix_qr_code || null,
       pix_code: result.pix_code || null,
-      metadata: { client_secret: result.client_secret || null, installment_number: installment_number ?? null, total_installments: total_installments ?? null, installment_group_id: installment_group_id ?? null, is_down_payment: is_down_payment ?? false, ...(extraMetadata || {}) },
+      metadata: {
+        client_secret: result.client_secret || null,
+        installment_number: installment_number ?? null,
+        total_installments: total_installments ?? null,
+        installment_group_id: installment_group_id ?? null,
+        is_down_payment: is_down_payment ?? false,
+        due_date: due_date || extraMetadata?.due_date || null,
+        payment_url: result.payment_url || null,
+        stripe_token: stripeToken,
+        ...(extraMetadata || {}),
+      },
     };
 
     let tx: any;
@@ -852,6 +903,8 @@ Deno.serve(async (req) => {
           financialRecordId: financial_record_id || null,
           clientName: customer_data?.name || extraMetadata?.client_name || null,
           dealTitle: extraMetadata?.deal_title || description || null,
+          stripeToken,
+          paymentUrl: tx?.payment_url || result.payment_url || null,
         });
         if (token) console.log(`[PAYMENT-CREATE] TOKEN_PAY synced immediately for deal ${bitrixDealId || "from_financial_record"}: ${token}`);
       }
