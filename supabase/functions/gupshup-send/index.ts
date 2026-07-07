@@ -182,6 +182,21 @@ function buildMessageObject(body: SendBody): { messageObj: any; isTemplate: bool
       // interactive: caller envia objeto completo conforme docs
       return { messageObj: body.interactive, isTemplate: false };
 
+    case "cta_url": {
+      const cta = body.cta_url || (body.interactive && body.interactive.cta_url) || null;
+      const url = cta?.url || "";
+      const display_text = cta?.display_text || "Abrir link";
+      const bodyText = body.content || "";
+      return {
+        messageObj: {
+          type: "cta_url",
+          cta_url: { display_text, url },
+          ...(bodyText ? { body: { text: bodyText } } : {}),
+        },
+        isTemplate: false,
+      };
+    }
+
     case "template":
       return {
         messageObj: { id: body.template!.id, params: body.template!.params || [] },
