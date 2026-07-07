@@ -92,18 +92,13 @@ export default function WhatsappTemplatesTab() {
   async function refresh() {
     setLoading(true);
     try {
-      const { data: session } = await supabase.auth.getSession();
-      const url = `${(supabase as any).functionsUrl || `https://${import.meta.env.VITE_SUPABASE_PROJECT_ID}.functions.supabase.co`}/whatsapp-templates-list?refresh=true`;
-      const res = await fetch(url, {
-        headers: {
-          Authorization: `Bearer ${session.session?.access_token || ""}`,
-          apikey: (supabase as any).supabaseKey || "",
-        },
+      const { data, error } = await supabase.functions.invoke("whatsapp-templates-list", {
+        body: { refresh: true },
       });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.error || "Falha ao sincronizar");
-      setItems(json.templates || []);
-      toast.success(`${json.synced || 0} templates sincronizados`);
+      if (error) throw error;
+      if ((data as any)?.error) throw new Error((data as any).error);
+      setItems((data as any)?.templates || []);
+      toast.success(`${(data as any)?.synced || 0} templates sincronizados`);
     } catch (e: any) {
       toast.error(e.message || "Falha ao sincronizar templates");
     } finally {
