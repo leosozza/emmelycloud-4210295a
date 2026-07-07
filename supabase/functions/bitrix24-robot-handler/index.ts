@@ -2472,6 +2472,18 @@ Deno.serve(async (req) => {
       case "emmely_send_whatsapp":
         returnValues = await handleSendWhatsApp(properties, supabaseUrl, serviceKey, timelineCtx);
         break;
+      case "emmely_send_whatsapp_template": {
+        // Dedicated template robot — force message_type=template and delegate.
+        const templateProps = {
+          phone: properties.phone ?? properties.PHONE,
+          message_type: "template",
+          template_name: properties.template_name ?? properties.TEMPLATE_NAME,
+          template_language: properties.template_language ?? properties.TEMPLATE_LANGUAGE,
+          template_params: properties.template_params ?? properties.TEMPLATE_PARAMS,
+        };
+        returnValues = await handleSendWhatsApp(templateProps, supabaseUrl, serviceKey, timelineCtx);
+        break;
+      }
       case "emmely_send_instagram":
         returnValues = await handleSendInstagram(properties, supabaseUrl, serviceKey);
         break;
