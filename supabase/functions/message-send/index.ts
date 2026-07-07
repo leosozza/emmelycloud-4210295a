@@ -746,6 +746,12 @@ Deno.serve(async (req) => {
         } else if (message_type === "location" && resolvedInteractiveData) {
           wuzapiEndpoint = "/chat/send/location";
           wuzapiPayload = { Phone: wuzapiPhone, Latitude: resolvedInteractiveData.latitude, Longitude: resolvedInteractiveData.longitude, Name: resolvedInteractiveData.name || "", Address: resolvedInteractiveData.address || "" };
+        } else if (message_type === "cta_url" && resolvedInteractiveData) {
+          // WUZAPI não suporta CTA URL nativo — fallback para texto com URL
+          const label = (resolvedInteractiveData as any).label || (resolvedInteractiveData as any).display_text || "Abrir link";
+          const url = (resolvedInteractiveData as any).url || "";
+          const bodyText = [content, label, url].filter(Boolean).join("\n");
+          wuzapiPayload = { Phone: wuzapiPhone, Body: bodyText };
         }
 
         console.log(`[MESSAGE-SEND] Sending via WhatsApp QRCode: ${wuzapiEndpoint}`);
