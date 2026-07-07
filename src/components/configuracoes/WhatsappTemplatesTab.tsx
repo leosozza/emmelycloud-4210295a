@@ -273,6 +273,9 @@ export default function WhatsappTemplatesTab() {
                         <Button type="button" variant="outline" size="sm" onClick={() => setButtons([...buttons, { type: "URL", text: "Pagar", url: STRIPE_BUTTON_URL_TEMPLATE, is_stripe_token: true }])}>
                           💳 Pagamento Stripe
                         </Button>
+                        <Button type="button" variant="outline" size="sm" onClick={() => setButtons([...buttons, { type: "URL", text: "Pagar", url: EMMELY_BUTTON_URL_TEMPLATE, is_emmely_token: true }])}>
+                          🔗 Pagamento Emmely
+                        </Button>
                         <Button type="button" variant="outline" size="sm" onClick={() => setButtons([...buttons, { type: "QUICK_REPLY", text: "" }])}>
                           Quick reply
                         </Button>
