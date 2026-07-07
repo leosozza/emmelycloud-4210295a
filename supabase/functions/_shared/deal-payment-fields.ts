@@ -144,11 +144,16 @@ export async function readEmmelyPaymentPlan(
   const gatewayRaw = str(pick("UF_CRM_EMMELY_GATEWAY")).toLowerCase();
   const gateway = gatewayRaw || "auto";
 
+  const isSet = (v: any) => v !== undefined && v !== null && String(v).trim() !== "";
   const downPayment = num(pick("UF_CRM_EMMELY_DOWN_PAYMENT"));
-  const downInstallments = intNum(pick("UF_CRM_EMMELY_DOWN_INSTALLMENTS"), 1);
+  const downInstallmentsRaw = pick("UF_CRM_EMMELY_DOWN_INSTALLMENTS");
+  const downInstallmentsExplicit = isSet(downInstallmentsRaw);
+  const downInstallments = intNum(downInstallmentsRaw, 1);
   const downFirstDue = toIsoDate(pick("UF_CRM_EMMELY_DOWN_FIRST_DUE"));
   const downInterval = intNum(pick("UF_CRM_EMMELY_DOWN_INTERVAL"), 30);
-  const remainingInstallments = intNum(pick("UF_CRM_EMMELY_TOTAL_INSTALLMENTS"), 1);
+  const remainingInstallmentsRaw = pick("UF_CRM_EMMELY_TOTAL_INSTALLMENTS");
+  const remainingInstallmentsExplicit = isSet(remainingInstallmentsRaw);
+  const remainingInstallments = intNum(remainingInstallmentsRaw, 1);
   const firstDue = toIsoDate(pick("UF_CRM_EMMELY_FIRST_DUE_DATE") || pick("UF_CRM_EMMELY_NEXT_DUE_DATE"));
   const interval = intNum(pick("UF_CRM_EMMELY_INSTALLMENT_INTERVAL"), 30);
 
