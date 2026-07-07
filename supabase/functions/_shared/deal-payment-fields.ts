@@ -359,3 +359,64 @@ export function planToParcels(plan: EmmelyPaymentPlan): ParcelSpec[] {
 
   return parcels;
 }
+
+/**
+ * Rich installment row shape shared by placement (Emmely Pay tab) and the
+ * public receipt (`payment-receipt`). Mirrors the columns used across those
+ * two UIs so a single call to `expandPlanToInstallments` feeds both.
+ */
+export interface InstallmentRow {
+  id: string;
+  installment_number: number;
+  total_installments: number;
+  installment_value: number;
+  total_value: number;
+  currency: string;
+  due_date: string | null;
+  paid_at: string | null;
+  status: "paga" | "pendente" | "atrasada";
+  is_down_payment: boolean;
+  payment_method: string | null;
+  description: string;
+  is_synthetic: true;
+  bitrix24_deal_id?: string | null;
+  contract_id?: string | null;
+}
+
+/**
+ * Explode a normalized plan into a full list of installment rows in the shape
+ * both the placement and the public receipt render. Down-payment parcels come
+ * first, followed by the remaining installments. `paidCount` (if provided) is
+ * spent from the top of the list, matching Bitrix' UF_CRM_EMMELY_PAID_INSTALLMENTS.
+ */
+export function expandPlanToInstallments(
+  plan: EmmelyPaymentPlan,
+  opts: { paidCount?: number; dealId?: string | number; nowIso?: string } = {},
+): InstallmentRow[] {
+  const parcels = planToParcels(plan);
+  const totalValue = plan.totalAmount;
+  const nowIso = opts.nowIso || new Date().toISOString();
+  let paidRemaining = Math.max(0, opts.paidCount || 0);
+
+  return parcels.map((p) => {
+    const isPaid = paidRemaining > 0;
+    if (isPaid) paidRemaining -= 1;
+    return {
+      id: `synthetic-${opts.dealId ?? "deal"}-${p.is_down_payment ? "d" : "r"}${p.installment_number}`,
+      installment_number: p.installment_number,
+      total_installments: p.total_in_group,
+      installment_value: p.amount,
+      total_value: totalValue,
+      currency: plan.currency,
+      due_date: p.due_date || null,
+      paid_at: isPaid ? nowIso : null,
+      status: isPaid ? "paga" : "pendente",
+      is_down_payment: p.is_down_payment,
+      payment_method: p.method || null,
+      description: p.is_down_payment ? "Entrada" : `Parcela ${p.installment_number}/${p.total_in_group}`,
+      is_synthetic: true,
+      bitrix24_deal_id: opts.dealId != null ? String(opts.dealId) : null,
+      contract_id: null,
+    };
+  });
+}
