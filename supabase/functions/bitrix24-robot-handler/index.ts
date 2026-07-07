@@ -324,10 +324,11 @@ async function handleSendWhatsApp(properties: Record<string, any>, supabaseUrl: 
     });
     const data = await res.json();
 
-    const postTl = async (ok: boolean, extra: string) => {
-      if (!timelineCtx?.integration || !timelineCtx?.entity?.id) return;
-      const header = ok
-        ? "[B]✅ WhatsApp enviado[/B]"
+    const postTl = async (state: "sending" | "ok" | "error", extra: string): Promise<number | null> => {
+      if (!timelineCtx?.integration || !timelineCtx?.entity?.id) return null;
+      const header =
+        state === "sending" ? "[B]⏳ WhatsApp enviado ao provedor[/B]\n(aguardando confirmação de entrega)"
+        : state === "ok" ? "[B]✅ WhatsApp enviado[/B]"
         : "[B]❌ WhatsApp NÃO enviado[/B]";
       const tName = String(pick("template_name") || "").trim();
       const details: string[] = [];
@@ -339,16 +340,27 @@ async function handleSendWhatsApp(properties: Record<string, any>, supabaseUrl: 
       if (mediaUrl) details.push(`Mídia: ${mediaUrl}`);
       if (extra) details.push(extra);
       try {
-        await postTimelineComment(timelineCtx.supabase, timelineCtx.integration, timelineCtx.entity!, `${header}\n${details.join("\n")}`);
-      } catch (_e) { /* ignore */ }
+        return await postTimelineComment(timelineCtx.supabase, timelineCtx.integration, timelineCtx.entity!, `${header}\n${details.join("\n")}`);
+      } catch (_e) { return null; }
     };
 
     if (data.error || data.success === false) {
       const errMsg = data.error || data.error_description || "Falha ao enviar";
-      await postTl(false, `Erro: ${errMsg}`);
+      await postTl("error", `Erro: ${errMsg}`);
       return { message_id: "", status: "error", error: String(errMsg) };
     }
-    await postTl(true, data.message_id ? `ID externo: ${data.message_id}` : "");
+    // Post initial "sending" comment and link it to the saved message so the
+    // gupshup/meta webhook can update it in-place when delivery succeeds/fails.
+    const commentId = await postTl("sending", data.message_id ? `ID externo: ${data.message_id}` : "");
+    const savedMessageId = data.saved_message_id || null;
+    if (commentId && savedMessageId) {
+      try {
+        await createClient(supabaseUrl, serviceKey)
+          .from("messages")
+          .update({ bitrix_timeline_comment_id: commentId })
+          .eq("id", savedMessageId);
+      } catch (_e) { /* ignore */ }
+    }
     return {
       message_id: data.message_id || "",
       status: "sent",
