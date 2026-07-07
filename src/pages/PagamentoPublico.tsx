@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useParams, useSearchParams } from "react-router-dom";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import bannerAsset from "@/assets/emmely-banner.png.asset.json";
+import bannerAsset from "@/assets/emmely-banner.png";
 
 interface Installment {
   id: string;
@@ -307,7 +307,7 @@ export default function PagamentoPublico() {
 
         <main>
           <div className="payment-detail-panel">
-            <img src={bannerAsset.url} alt="Emmely Fernandes — Advocacia Internacional" className="payment-header-banner" />
+            <img src={bannerAsset} alt="Emmely Fernandes — Advocacia Internacional" className="payment-header-banner" />
             <div className="payment-section">
               <div className="payment-kicker">Fatura de serviços</div>
               <div className="payment-title">{data.client_name || productName}</div>
