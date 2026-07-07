@@ -200,6 +200,7 @@ serve(async (req) => {
       if (companyId) invoiceFields["companyId"] = companyId;
       if (dueDate) invoiceFields["ufCrm31DueDate"] = dueDate;
       if (paidDate) invoiceFields["ufCrm31PaidDate"] = paidDate;
+      if (stripeToken) invoiceFields["ufCrmSmartInvoiceEmmelyStripeToken"] = stripeToken;
 
       // Check existing
       const parentFilter: Record<string, any> = {
