@@ -186,14 +186,101 @@ async function refreshBitrixToken(supabase: any, integration: any): Promise<{ en
 // --- Robot Handlers ---
 
 async function handleSendWhatsApp(properties: Record<string, any>, supabaseUrl: string, serviceKey: string): Promise<Record<string, string>> {
-  const phone = properties.phone || properties.PHONE || "";
-  const message = properties.message || properties.MESSAGE || "";
+  const pick = (k: string) => properties[k] ?? properties[k.toUpperCase()] ?? "";
+  const phone = String(pick("phone") || "").trim();
+  const messageType = String(pick("message_type") || "text").trim().toLowerCase();
+  const message = String(pick("message") || "");
+  const mediaUrl = String(pick("media_url") || "").trim();
+  const filename = String(pick("filename") || "").trim();
 
-  if (!phone || !message) {
-    return { message_id: "", status: "error", error: "phone and message are required" };
+  if (!phone) {
+    return { message_id: "", status: "error", error: "phone is required" };
   }
 
+  // Build message-send payload based on type
+  const sendBody: Record<string, any> = { content: message };
+
   try {
+    switch (messageType) {
+      case "text": {
+        if (!message) return { message_id: "", status: "error", error: "message is required for text" };
+        break;
+      }
+      case "image":
+      case "video":
+      case "audio":
+      case "document": {
+        if (!mediaUrl) return { message_id: "", status: "error", error: `media_url is required for ${messageType}` };
+        sendBody.message_type = messageType;
+        sendBody.resolvedInteractiveData = messageType === "document"
+          ? { url: mediaUrl, filename: filename || "documento" }
+          : { url: mediaUrl };
+        break;
+      }
+      case "template": {
+        const name = String(pick("template_name") || "").trim();
+        if (!name) return { message_id: "", status: "error", error: "template_name is required for template" };
+        const language = String(pick("template_language") || "pt_BR").trim();
+        const paramsRaw = String(pick("template_params") || "").trim();
+        const parameters = paramsRaw
+          ? paramsRaw.split("|").map((t) => ({ type: "text", text: t.trim() }))
+          : [];
+        sendBody.message_type = "template";
+        sendBody.resolvedInteractiveData = {
+          name,
+          language,
+          components: parameters.length ? [{ type: "body", parameters }] : [],
+        };
+        break;
+      }
+      case "buttons": {
+        const raw = String(pick("buttons") || "").trim();
+        if (!raw) return { message_id: "", status: "error", error: "buttons is required" };
+        const parts = raw.split(/[;|]/).map((s) => s.trim()).filter(Boolean).slice(0, 3);
+        const buttons = parts.map((p, i) => {
+          const [a, b] = p.split(":").map((s) => s.trim());
+          const id = b ? a : `btn_${i}`;
+          const title = b || a;
+          return { id, title };
+        });
+        if (!message) return { message_id: "", status: "error", error: "message (corpo dos botões) is required" };
+        sendBody.message_type = "interactive_buttons";
+        sendBody.resolvedInteractiveData = buttons;
+        break;
+      }
+      case "link_button":
+      case "link": {
+        const url = String(pick("link_button_url") || "").trim();
+        if (!url) return { message_id: "", status: "error", error: "link_button_url is required" };
+        const label = String(pick("link_button_text") || "").trim();
+        sendBody.content = [message, label, url].filter(Boolean).join("\n");
+        // sent as plain text — WhatsApp renders link preview automatically
+        break;
+      }
+      case "list": {
+        const raw = String(pick("list_items") || "").trim();
+        if (!raw) return { message_id: "", status: "error", error: "list_items is required" };
+        const rows = raw.split(";").map((s) => s.trim()).filter(Boolean).map((row, i) => {
+          const [id, title, description] = row.split(":").map((s) => (s || "").trim());
+          return {
+            id: id || `row_${i}`,
+            title: title || id || `Opção ${i + 1}`,
+            description: description || "",
+          };
+        });
+        if (!message) return { message_id: "", status: "error", error: "message (corpo da lista) is required" };
+        sendBody.message_type = "interactive_list";
+        sendBody.resolvedInteractiveData = {
+          title: String(pick("list_title") || "").trim(),
+          buttonText: String(pick("list_button_text") || "Selecionar").trim(),
+          rows,
+        };
+        break;
+      }
+      default:
+        return { message_id: "", status: "error", error: `unknown message_type: ${messageType}` };
+    }
+
     // Find or create conversation for this phone
     const supabase = createClient(supabaseUrl, serviceKey);
     let conversationId: string;
@@ -220,13 +307,15 @@ async function handleSendWhatsApp(properties: Record<string, any>, supabaseUrl: 
       return { message_id: "", status: "error", error: "Failed to find/create conversation" };
     }
 
+    sendBody.conversation_id = conversationId;
+
     const res = await fetch(`${supabaseUrl}/functions/v1/message-send`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         "Authorization": `Bearer ${serviceKey}`,
       },
-      body: JSON.stringify({ conversation_id: conversationId, content: message }),
+      body: JSON.stringify(sendBody),
     });
     const data = await res.json();
     if (data.error) {
