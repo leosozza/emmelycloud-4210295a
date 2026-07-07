@@ -696,6 +696,14 @@ Deno.serve(async (req) => {
           LIST_FILTER_LABEL: { br: "PDF COMPROVANTE", en: "RECEIPT PDF" },
         },
         {
+          FIELD_NAME: "UF_CRM_EMMELY_STRIPE_TOKEN",
+          USER_TYPE_ID: "string",
+          SORT: 0,
+          EDIT_FORM_LABEL: { br: "TOKEN STRIPE", en: "STRIPE TOKEN", pt: "TOKEN STRIPE" },
+          LIST_COLUMN_LABEL: { br: "TOKEN STRIPE", en: "STRIPE TOKEN", pt: "TOKEN STRIPE" },
+          LIST_FILTER_LABEL: { br: "TOKEN STRIPE", en: "STRIPE TOKEN", pt: "TOKEN STRIPE" },
+        },
+        {
           FIELD_NAME: "UF_CRM_EMMELY_PROPOSAL_URL",
           USER_TYPE_ID: "url",
           SORT: 0,
