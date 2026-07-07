@@ -302,10 +302,6 @@ function CRMTab() {
                   {resyncing ? "A atualizar…" : "Atualizar Bitrix24"}
                 </Button>
               </div>
-              <Button size="sm" variant="outline" className="w-full" onClick={handleRepairMoneyFields} disabled={testing || resyncing || repairingMoney} title="Recria os campos monetários (Valor Total, Entrada, Saldo, Parcela, Total Pago) como tipo Moeda, preservando valores">
-                <RefreshCw className={`h-3.5 w-3.5 mr-1.5 ${repairingMoney ? "animate-spin" : ""}`} />
-                {repairingMoney ? "A corrigir campos…" : "Corrigir campos monetários"}
-              </Button>
               {testResult && (
                 <div className={`flex items-center gap-2 rounded-md px-3 py-2 ${testResult.ok ? "bg-green-50 text-green-800" : "bg-red-50 text-red-800"}`}>
                   {testResult.ok ? <CheckCircle2 className="h-4 w-4 shrink-0" /> : <AlertCircle className="h-4 w-4 shrink-0" />}
