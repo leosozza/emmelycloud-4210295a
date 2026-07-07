@@ -306,6 +306,7 @@ export default function PagamentoPublico() {
 
         <main>
           <div className="payment-detail-panel">
+            <img src={bannerAsset.url} alt="Emmely Fernandes — Advocacia Internacional" className="payment-header-banner" />
             <div className="payment-section">
               <div className="payment-kicker">Fatura de serviços</div>
               <div className="payment-title">{data.client_name || productName}</div>
