@@ -1,35 +1,39 @@
-## Objetivo
+## Problema
 
-Ao criar uma cobrança, se já existir uma transação `pending` para a mesma parcela (`financial_record_id`), reutilizar/atualizar em vez de criar duplicado — e quando a existente já tiver mais de 24h, sobrescrevê-la com uma nova sessão de gateway (link fresco).
+Ao gerar cobrança, o comentário postado na timeline do negócio no Bitrix24 diz:
 
-## Comportamento actual
+> Parcelas: 3 (entrada 5,00 € + 2x)
 
-`supabase/functions/payment-create/index.ts` só reutiliza uma transação em dois casos:
-- `existingTransactionId` explícito no body.
-- `client_submit_key` idempotente nos últimos 60s.
+Mas o placement "Emmely Pay" mostra apenas 2 linhas: **Entrada 5,00 €** + **Parcela 1/1 15,00 €**. As faturas realmente criadas também são 2 (não 3).
 
-Fora disso, faz sempre `INSERT` novo, mesmo que exista uma cobrança pendente para a mesma parcela. Isto cria duplicados e não renova links Stripe expirados (>24h).
+## Causa
 
-## Alteração
+Em `supabase/functions/bitrix24-robot-handler/index.ts` (linha 1039), o texto do comentário usa as variáveis de **input** (`totalCount`, `downPayment`, `numInstallments`) — e `numInstallments` vem direto dos campos do deal antes de o `planToParcels()` normalizar (pode ficar diferente do que foi realmente criado: por ex., se o valor restante não divide, se `remainingInstallments` é ignorado, se a soma bate certa com 1 parcela só, etc.).
 
-Em `payment-create/index.ts`, no início do `try` principal (antes de decidir gateway), adicionar lookup por `financial_record_id`:
+Todo o resto do fluxo (loop `for (const parcel of parcels)`, faturas Bitrix, `total_installments`) já usa `parcels` como fonte da verdade. Só o texto do comentário ficou desatualizado.
 
-```text
-if (!existingTransactionId && !clientSubmitKey && financial_record_id) {
-  buscar payment_transactions.pending mais recente com esse financial_record_id
-  se encontrada:
-     idade = now - created_at
-     se idade < 24h  → devolver { idempotent: true, transaction, payment_url } (sem chamar Stripe/Asaas)
-     se idade >= 24h → definir existingTransactionId = tx.id (força UPDATE da linha existente com nova sessão)
-}
+## Correção
+
+Substituir a linha do resumo para derivar os números diretamente do array `parcels` que foi efetivamente processado:
+
+```ts
+const downParcels = parcels.filter(p => p.is_down_payment);
+const remainingParcels = parcels.filter(p => !p.is_down_payment);
+const downSum = downParcels.reduce((s, p) => s + p.amount, 0);
+
+// linha do resumo
+`Parcelas: ${parcels.length}` +
+  (downParcels.length > 0
+    ? ` (entrada ${fmt(downSum)}${downParcels.length > 1 ? ` em ${downParcels.length}x` : ""}` +
+      (remainingParcels.length > 0 ? ` + ${remainingParcels.length}x de ${fmt(remainingParcels[0].amount)}` : "") +
+      `)`
+    : ` de ${fmt(remainingParcels[0]?.amount || 0)}`)
 ```
 
-Assim:
-- Fresca (<24h): devolve o mesmo link, sem nova cobrança no gateway.
-- Antiga (>24h): gera nova sessão Stripe/Asaas e sobrescreve `gateway_payment_id`, `payment_url`, `metadata`, mantendo o `id` — o link `/pagamento/{token}?pay=<recordId>` continua a apontar para a mesma linha e passa a ter checkout válido.
+Isto garante que o texto reflete exatamente o que o placement e as faturas mostram.
 
-Nenhuma alteração em frontend, schema ou outros edge functions.
+## Ficheiros afetados
 
-## Ficheiro alterado
+- `supabase/functions/bitrix24-robot-handler/index.ts` — apenas a construção do `comment` no bloco "post friendly summary" (~linhas 1020–1042).
 
-- `supabase/functions/payment-create/index.ts` — ~15 linhas novas antes do bloco de escolha de gateway (linha ~674).
+Nenhuma outra lógica é alterada (cálculo de parcelas, criação de faturas, reuse/recreate continuam iguais).

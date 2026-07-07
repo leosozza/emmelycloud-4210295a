@@ -1032,11 +1032,19 @@ async function handleCreateCharge(
       const header = reuseDecision === "recreate"
         ? `[B]🔄 Emmely Pay — parcelas alteradas, novo link gerado (anterior cancelado)[/B]\n`
         : `[B]✅ Emmely Pay — link de pagamento gerado[/B]\n`;
+      const downParcels = parcels.filter((p) => p.is_down_payment);
+      const remainingParcels = parcels.filter((p) => !p.is_down_payment);
+      const downSum = downParcels.reduce((s, p) => s + (p.amount || 0), 0);
+      const parcelsSummary = downParcels.length > 0
+        ? `${parcels.length} (entrada ${fmt(downSum)}${downParcels.length > 1 ? ` em ${downParcels.length}x` : ""}` +
+            (remainingParcels.length > 0 ? ` + ${remainingParcels.length}x de ${fmt(remainingParcels[0].amount)}` : "") +
+            `)`
+        : `${parcels.length}${remainingParcels.length > 0 ? ` de ${fmt(remainingParcels[0].amount)}` : ""}`;
       const comment =
         header +
         `Valor total: ${fmt(totalAmount)}\n` +
         `Gateway: ${firstGateway || companyGateway}\n` +
-        `Parcelas: ${totalCount}${downPayment > 0 ? ` (entrada ${fmt(downPayment)} + ${numInstallments}x)` : ""}\n` +
+        `Parcelas: ${parcelsSummary}\n` +
         `Faturas Bitrix24 criadas: ${invoicesCreated}` +
         linkLine + parcelErrorLine + dealUpdateLine;
       await postTimelineComment(supabase, integration, { type: "deal", id: dealId }, comment);
