@@ -185,7 +185,7 @@ async function refreshBitrixToken(supabase: any, integration: any): Promise<{ en
 
 // --- Robot Handlers ---
 
-async function handleSendWhatsApp(properties: Record<string, any>, supabaseUrl: string, serviceKey: string): Promise<Record<string, string>> {
+async function handleSendWhatsApp(properties: Record<string, any>, supabaseUrl: string, serviceKey: string, timelineCtx?: { supabase: any; integration: any; entity: { type: "deal" | "lead" | "spa"; id: string | number; spaEntityTypeId?: number | string } | null }): Promise<Record<string, string>> {
   const pick = (k: string) => properties[k] ?? properties[k.toUpperCase()] ?? "";
   const phone = String(pick("phone") || "").trim();
   const messageType = String(pick("message_type") || "text").trim().toLowerCase();
@@ -222,13 +222,17 @@ async function handleSendWhatsApp(properties: Record<string, any>, supabaseUrl: 
         if (!name) return { message_id: "", status: "error", error: "template_name is required for template" };
         const language = String(pick("template_language") || "pt_BR").trim();
         const paramsRaw = String(pick("template_params") || "").trim();
-        const parameters = paramsRaw
-          ? paramsRaw.split("|").map((t) => ({ type: "text", text: t.trim() }))
+        const paramValues = paramsRaw
+          ? paramsRaw.split("|").map((t) => t.trim())
           : [];
+        const parameters = paramValues.map((text) => ({ type: "text", text }));
         sendBody.message_type = "template";
+        // Provide BOTH shapes so downstream (Gupshup uses `params`, Meta direct uses `components`).
         sendBody.resolvedInteractiveData = {
+          id: name,
           name,
           language,
+          params: paramValues,
           components: parameters.length ? [{ type: "body", parameters }] : [],
         };
         break;
@@ -319,15 +323,43 @@ async function handleSendWhatsApp(properties: Record<string, any>, supabaseUrl: 
       body: JSON.stringify(sendBody),
     });
     const data = await res.json();
-    if (data.error) {
-      return { message_id: "", status: "error", error: data.error };
+
+    const postTl = async (ok: boolean, extra: string) => {
+      if (!timelineCtx?.integration || !timelineCtx?.entity?.id) return;
+      const header = ok
+        ? "[B]✅ WhatsApp enviado[/B]"
+        : "[B]❌ WhatsApp NÃO enviado[/B]";
+      const tName = String(pick("template_name") || "").trim();
+      const details: string[] = [];
+      details.push(`Telefone: ${phone}`);
+      details.push(`Tipo: ${messageType}`);
+      if (tName) details.push(`Template: ${tName}`);
+      const paramsRaw = String(pick("template_params") || "").trim();
+      if (paramsRaw) details.push(`Parâmetros: ${paramsRaw}`);
+      if (mediaUrl) details.push(`Mídia: ${mediaUrl}`);
+      if (extra) details.push(extra);
+      try {
+        await postTimelineComment(timelineCtx.supabase, timelineCtx.integration, timelineCtx.entity!, `${header}\n${details.join("\n")}`);
+      } catch (_e) { /* ignore */ }
+    };
+
+    if (data.error || data.success === false) {
+      const errMsg = data.error || data.error_description || "Falha ao enviar";
+      await postTl(false, `Erro: ${errMsg}`);
+      return { message_id: "", status: "error", error: String(errMsg) };
     }
+    await postTl(true, data.message_id ? `ID externo: ${data.message_id}` : "");
     return {
       message_id: data.message_id || "",
       status: "sent",
       error: "",
     };
   } catch (e) {
+    if (timelineCtx?.integration && timelineCtx?.entity?.id) {
+      try {
+        await postTimelineComment(timelineCtx.supabase, timelineCtx.integration, timelineCtx.entity, `[B]❌ WhatsApp NÃO enviado[/B]\nErro: ${String(e)}`);
+      } catch (_e) { /* ignore */ }
+    }
     return { message_id: "", status: "error", error: String(e) };
   }
 }
@@ -2391,9 +2423,34 @@ Deno.serve(async (req) => {
     // Execute robot logic
     let returnValues: Record<string, string> = {};
 
+    // Resolve integration + entity (deal/lead/spa) from document_id for timeline posting
+    const docId: any = (data as any).document_id || (data as any).DOCUMENT_ID || [];
+    const docStr = Array.isArray(docId) ? String(docId[2] || "") : String(docId || "");
+    // Format examples: "DEAL_47047", "LEAD_123", "DYNAMIC_131_45"
+    let tlEntity: { type: "deal" | "lead" | "spa"; id: string | number; spaEntityTypeId?: number | string } | null = null;
+    const mDeal = docStr.match(/^DEAL_(\d+)$/i);
+    const mLead = docStr.match(/^LEAD_(\d+)$/i);
+    const mSpa = docStr.match(/^DYNAMIC_(\d+)_(\d+)$/i);
+    if (mDeal) tlEntity = { type: "deal", id: mDeal[1] };
+    else if (mLead) tlEntity = { type: "lead", id: mLead[1] };
+    else if (mSpa) tlEntity = { type: "spa", id: mSpa[2], spaEntityTypeId: mSpa[1] };
+
+    let tlIntegration: any = null;
+    if (tlEntity) {
+      if (memberId) {
+        const { data: intData } = await supabase.from("bitrix24_integrations").select("*").eq("member_id", memberId).maybeSingle();
+        tlIntegration = intData;
+      }
+      if (!tlIntegration) {
+        const { data: intData } = await supabase.from("bitrix24_integrations").select("*").order("created_at", { ascending: false }).limit(1).maybeSingle();
+        tlIntegration = intData;
+      }
+    }
+    const timelineCtx = tlEntity ? { supabase, integration: tlIntegration, entity: tlEntity } : undefined;
+
     switch (code) {
       case "emmely_send_whatsapp":
-        returnValues = await handleSendWhatsApp(properties, supabaseUrl, serviceKey);
+        returnValues = await handleSendWhatsApp(properties, supabaseUrl, serviceKey, timelineCtx);
         break;
       case "emmely_send_instagram":
         returnValues = await handleSendInstagram(properties, supabaseUrl, serviceKey);
