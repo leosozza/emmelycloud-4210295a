@@ -590,6 +590,13 @@ Deno.serve(async (req) => {
             id: (resolvedInteractiveData as any).id || (resolvedInteractiveData as any).name,
             params: (resolvedInteractiveData as any).params || [],
           };
+        } else if (mt === "cta_url" && resolvedInteractiveData) {
+          gsBody.message_type = "cta_url";
+          gsBody.content = content;
+          gsBody.cta_url = {
+            url: (resolvedInteractiveData as any).url,
+            display_text: (resolvedInteractiveData as any).label || (resolvedInteractiveData as any).display_text || "Abrir link",
+          };
         }
         const gsRes = await fetch(`${supabaseUrl}/functions/v1/gupshup-send`, {
           method: "POST",
