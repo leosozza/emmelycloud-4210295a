@@ -122,7 +122,6 @@ function CRMTab() {
   const [loading, setLoading] = useState(true);
   const [testing, setTesting] = useState(false);
   const [resyncing, setResyncing] = useState(false);
-  const [repairingMoney, setRepairingMoney] = useState(false);
   const [testResult, setTestResult] = useState<{ ok: boolean; message?: string; error?: string; details?: any } | null>(null);
   const [auditing, setAuditing] = useState(false);
   const [rebinding, setRebinding] = useState(false);
@@ -240,6 +239,10 @@ function CRMTab() {
         const r = await fetch(url, { headers: { apikey: key, Authorization: `Bearer ${key}` } });
         const d = await r.json().catch(() => ({})); return r.ok && (d?.success !== false);
       }},
+      { name: "Campos monetários", run: async () => {
+        const r = await fetch(`${base}/functions/v1/bitrix24-repair-money-fields`, { method: "POST", headers, body: "{}" });
+        const d = await r.json().catch(() => ({})); return r.ok && !d?.error;
+      }},
     ];
 
     const failures: string[] = [];
@@ -255,27 +258,8 @@ function CRMTab() {
     setResyncing(false);
   };
 
-  const handleRepairMoneyFields = async () => {
-    const ok = window.confirm(
-      "Isto vai apagar e recriar os campos monetários do Bitrix24 (Valor Total, Entrada, Saldo, Parcela, Total Pago) como tipo Moeda. Os valores atuais serão preservados. Confirmar?"
-    );
-    if (!ok) return;
-    setRepairingMoney(true);
-    setTestResult(null);
-    try {
-      const { data, error } = await supabase.functions.invoke("bitrix24-repair-money-fields", { body: {} });
-      if (error) throw error;
-      const r = data as any;
-      const summary = `Reparados: ${r?.repaired ?? 0} • Já OK: ${r?.already ?? 0} • Ausentes: ${r?.notFound ?? 0} • Erros: ${r?.errors ?? 0}`;
-      if ((r?.errors ?? 0) === 0) toast.success(`Campos monetários corrigidos. ${summary}`);
-      else toast.error(`Concluído com erros. ${summary}`);
-      console.log("[repair-money-fields]", r);
-    } catch (e: any) {
-      toast.error(`Falha ao reparar campos: ${e?.message || e}`);
-    } finally {
-      setRepairingMoney(false);
-    }
-  };
+
+
 
   const bitrixStatus = integration ? (integration.connector_active ? "active" : integration.connector_registered ? "pending" : "inactive") : "inactive";
   const effectiveStatus = testResult?.details ? (testResult.details.connector_active ? "active" : testResult.details.connector_registered ? "pending" : "inactive") : bitrixStatus;
@@ -318,10 +302,6 @@ function CRMTab() {
                   {resyncing ? "A atualizar…" : "Atualizar Bitrix24"}
                 </Button>
               </div>
-              <Button size="sm" variant="outline" className="w-full" onClick={handleRepairMoneyFields} disabled={testing || resyncing || repairingMoney} title="Recria os campos monetários (Valor Total, Entrada, Saldo, Parcela, Total Pago) como tipo Moeda, preservando valores">
-                <RefreshCw className={`h-3.5 w-3.5 mr-1.5 ${repairingMoney ? "animate-spin" : ""}`} />
-                {repairingMoney ? "A corrigir campos…" : "Corrigir campos monetários"}
-              </Button>
               {testResult && (
                 <div className={`flex items-center gap-2 rounded-md px-3 py-2 ${testResult.ok ? "bg-green-50 text-green-800" : "bg-red-50 text-red-800"}`}>
                   {testResult.ok ? <CheckCircle2 className="h-4 w-4 shrink-0" /> : <AlertCircle className="h-4 w-4 shrink-0" />}
