@@ -906,6 +906,7 @@ function ConfiguracoesWrapper({ integration, botId, domain, loading, onResync, o
           <ConfigView integration={integration} botId={botId} domain={domain} loading={loading} onResync={onResync} onRefresh={onRefresh} />
         )}
         {subTab === "empresas" && <EmpresasView />}
+        {subTab === "templates" && <WhatsappTemplatesTab />}
         {subTab === "placement" && <PlacementPreviewView integration={integration} memberId={memberId} />}
         {subTab === "revisao" && <RevisaoView integration={integration} memberId={memberId} />}
         {subTab === "importacao" && <ImportacaoAccessView integration={integration} memberId={memberId} />}
