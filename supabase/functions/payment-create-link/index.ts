@@ -299,7 +299,7 @@ Deno.serve(async (req) => {
             total_value: totalValue,
             due_date: dueDate,
             status: "pendente",
-            description: dealData.TITLE || link.deal_title || `Parcela ${installmentNumber}/${totalInstallments}`,
+            description: isDownPayment ? "Entrada" : (dealData.TITLE || link.deal_title || `Parcela ${installmentNumber}/${totalInstallments}`),
           })
           .select()
           .single();
