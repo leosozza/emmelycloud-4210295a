@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useParams, useSearchParams } from "react-router-dom";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import bannerAsset from "@/assets/emmely-banner.png.asset.json";
 
 interface Installment {
   id: string;
@@ -260,7 +261,8 @@ export default function PagamentoPublico() {
   return (
     <div className="payment-receipt">
       <style>{`
-        @media print { .no-print { display: none !important; } body { background: #fff !important; } .payment-page { display: block; max-width: 760px; padding: 24px; } .payment-summary-panel { margin-bottom: 24px; } }
+        .payment-header-banner { display:block; width:100%; height:auto; border-radius:12px 12px 0 0; margin:-24px -24px 20px -24px; width:calc(100% + 48px); }
+        @media print { .no-print { display: none !important; } body { background: #fff !important; } .payment-page { display: block; max-width: 760px; padding: 24px; } .payment-summary-panel { margin-bottom: 24px; } .payment-header-banner { border-radius:0; } }
       `}</style>
 
       <div className="payment-page">
@@ -304,6 +306,7 @@ export default function PagamentoPublico() {
 
         <main>
           <div className="payment-detail-panel">
+            <img src={bannerAsset.url} alt="Emmely Fernandes — Advocacia Internacional" className="payment-header-banner" />
             <div className="payment-section">
               <div className="payment-kicker">Fatura de serviços</div>
               <div className="payment-title">{data.client_name || productName}</div>
