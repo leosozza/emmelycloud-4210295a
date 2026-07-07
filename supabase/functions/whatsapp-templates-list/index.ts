@@ -71,19 +71,28 @@ Deno.serve(async (req) => {
     }
 
     const templates: any[] = payload.templates || payload.data || [];
-    const rows = templates.map((t: any) => ({
-      provider: "gupshup",
-      app_id: appId,
-      element_name: t.elementName || t.templateName || t.name,
-      category: (t.category || "UTILITY").toUpperCase(),
-      language: t.languageCode || t.language || "pt_BR",
-      body: t.data || t.body || "",
-      buttons: t.buttons || [],
-      example: t.example ? { example: t.example } : {},
-      status: (t.status || "PENDING").toUpperCase(),
-      rejection_reason: t.reason || null,
-      gupshup_template_id: t.id || t.templateId || null,
-    })).filter((r) => r.element_name);
+    const rows = templates.map((t: any) => {
+      const meta = t.containerMeta ? (typeof t.containerMeta === "string" ? (() => { try { return JSON.parse(t.containerMeta); } catch { return {}; } })() : t.containerMeta) : {};
+      const templateType = (t.templateType || meta.templateType || "TEXT").toUpperCase();
+      const header = meta.header ? { type: templateType === "TEXT" ? "TEXT" : templateType, text: typeof meta.header === "string" ? meta.header : meta.header?.text, example: meta.sampleMedia || meta.exampleMedia } : null;
+      return {
+        provider: "gupshup",
+        app_id: appId,
+        element_name: t.elementName || t.templateName || t.name,
+        category: (t.category || "UTILITY").toUpperCase(),
+        language: t.languageCode || t.language || "pt_BR",
+        template_type: templateType,
+        body: t.data || meta.data || t.body || "",
+        footer: meta.footer || null,
+        header,
+        cards: meta.cards || t.cards || null,
+        buttons: meta.buttons || t.buttons || [],
+        example: t.example ? { example: t.example } : {},
+        status: (t.status || "PENDING").toUpperCase(),
+        rejection_reason: t.reason || null,
+        gupshup_template_id: t.id || t.templateId || null,
+      };
+    }).filter((r) => r.element_name);
 
     if (rows.length) {
       const { error } = await supabase

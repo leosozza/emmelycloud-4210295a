@@ -80,6 +80,7 @@ import { ChatMessageList } from "@/components/ui/chat-message-list";
 import { Copy, Ban } from "lucide-react";
 import type { AIAgent, AIProvider, FlowOption, DocOption, CollectionOption } from "@/pages/Agentes";
 import { defaultAgent } from "@/pages/Agentes";
+import WhatsappTemplatesTab from "@/components/configuracoes/WhatsappTemplatesTab";
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
@@ -855,11 +856,12 @@ function DashboardView({ integration, botId, domain, onCachePortfolio }: {
 }
 
 // ==================== CONFIGURACOES WRAPPER ====================
-type ConfigSubTab = "geral" | "empresas" | "placement" | "revisao" | "importacao" | "mapeamento";
+type ConfigSubTab = "geral" | "empresas" | "placement" | "revisao" | "importacao" | "mapeamento" | "templates";
 
 const configSubTabs: { id: ConfigSubTab; label: string; icon: typeof Settings }[] = [
   { id: "geral", label: "Geral", icon: Settings },
   { id: "empresas", label: "Empresas", icon: Building2 },
+  { id: "templates", label: "Templates WhatsApp", icon: MessageSquare },
   { id: "mapeamento", label: "Mapeamento", icon: Link },
   { id: "placement", label: "Placement", icon: ExternalLink },
   { id: "revisao", label: "Revisão", icon: AlertTriangle },
@@ -905,6 +907,7 @@ function ConfiguracoesWrapper({ integration, botId, domain, loading, onResync, o
           <ConfigView integration={integration} botId={botId} domain={domain} loading={loading} onResync={onResync} onRefresh={onRefresh} />
         )}
         {subTab === "empresas" && <EmpresasView />}
+        {subTab === "templates" && <WhatsappTemplatesTab />}
         {subTab === "placement" && <PlacementPreviewView integration={integration} memberId={memberId} />}
         {subTab === "revisao" && <RevisaoView integration={integration} memberId={memberId} />}
         {subTab === "importacao" && <ImportacaoAccessView integration={integration} memberId={memberId} />}
