@@ -185,7 +185,7 @@ async function refreshBitrixToken(supabase: any, integration: any): Promise<{ en
 
 // --- Robot Handlers ---
 
-async function handleSendWhatsApp(properties: Record<string, any>, supabaseUrl: string, serviceKey: string): Promise<Record<string, string>> {
+async function handleSendWhatsApp(properties: Record<string, any>, supabaseUrl: string, serviceKey: string, timelineCtx?: { supabase: any; integration: any; entity: { type: "deal" | "lead" | "spa"; id: string | number; spaEntityTypeId?: number | string } | null }): Promise<Record<string, string>> {
   const pick = (k: string) => properties[k] ?? properties[k.toUpperCase()] ?? "";
   const phone = String(pick("phone") || "").trim();
   const messageType = String(pick("message_type") || "text").trim().toLowerCase();
@@ -222,13 +222,17 @@ async function handleSendWhatsApp(properties: Record<string, any>, supabaseUrl: 
         if (!name) return { message_id: "", status: "error", error: "template_name is required for template" };
         const language = String(pick("template_language") || "pt_BR").trim();
         const paramsRaw = String(pick("template_params") || "").trim();
-        const parameters = paramsRaw
-          ? paramsRaw.split("|").map((t) => ({ type: "text", text: t.trim() }))
+        const paramValues = paramsRaw
+          ? paramsRaw.split("|").map((t) => t.trim())
           : [];
+        const parameters = paramValues.map((text) => ({ type: "text", text }));
         sendBody.message_type = "template";
+        // Provide BOTH shapes so downstream (Gupshup uses `params`, Meta direct uses `components`).
         sendBody.resolvedInteractiveData = {
+          id: name,
           name,
           language,
+          params: paramValues,
           components: parameters.length ? [{ type: "body", parameters }] : [],
         };
         break;
