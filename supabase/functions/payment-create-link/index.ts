@@ -532,6 +532,10 @@ Deno.serve(async (req) => {
           };
           if (contactId) invFields.contactId = contactId;
           if (record.due_date) invFields.closedate = record.due_date;
+          if (stripeToken) {
+            // Smart Invoice UF (camelCase para crm.item.add)
+            invFields.ufCrmSmartInvoiceEmmelyStripeToken = stripeToken;
+          }
 
           const invRes = await fetch(`${endpoint}crm.item.add`, {
             method: "POST",
@@ -551,6 +555,23 @@ Deno.serve(async (req) => {
           } else {
             bitrixInvoiceWarning = invJson?.error_description || invJson?.error || "unknown";
             console.error("[PAYMENT-CREATE-LINK] Smart Invoice create failed:", bitrixInvoiceWarning);
+          }
+
+          // Grava também o TOKEN STRIPE no Deal (usado no botão de URL dinâmica do template WhatsApp)
+          if (stripeToken) {
+            try {
+              await fetch(`${endpoint}crm.deal.update`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  id: dealIdNum,
+                  fields: { UF_CRM_EMMELY_STRIPE_TOKEN: stripeToken },
+                  auth: integration.access_token,
+                }),
+              });
+            } catch (dealErr) {
+              console.warn("[PAYMENT-CREATE-LINK] deal stripe_token update warn:", dealErr);
+            }
           }
         } else {
           bitrixInvoiceWarning = "no_active_integration";
