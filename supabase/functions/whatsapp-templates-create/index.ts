@@ -14,10 +14,13 @@ interface Button {
   phone_number?: string;
   example?: string;
   is_stripe_token?: boolean;
+  is_emmely_token?: boolean;
 }
 
 const STRIPE_BUTTON_URL = "https://checkout.stripe.com/c/pay/{{1}}";
 const STRIPE_BUTTON_EXAMPLE = "cs_live_a1exemploTokenStripe123456789";
+const EMMELY_BUTTON_URL = "https://emmelycloud.pages.dev/pagamento/{{1}}";
+const EMMELY_BUTTON_EXAMPLE = "799e3b72-833b-49b2-8c34-115f6852b7c1";
 
 interface Body {
   element_name: string;
@@ -122,6 +125,15 @@ Deno.serve(async (req) => {
               example: [STRIPE_BUTTON_EXAMPLE],
             };
           }
+          // Botão Emmely: URL fixa + variável {{1}} = id do pagamento interno
+          if (b.is_emmely_token) {
+            return {
+              type: "URL",
+              text: b.text || "Pagar",
+              url: EMMELY_BUTTON_URL,
+              example: [EMMELY_BUTTON_EXAMPLE],
+            };
+          }
           return {
             type: "URL",
             text: b.text,
@@ -136,13 +148,16 @@ Deno.serve(async (req) => {
       });
       form.set("buttons", JSON.stringify(btnPayload));
       const hasStripe = buttons.some((b) => b.type === "URL" && b.is_stripe_token);
-      const hasDynamic = buttons.some((b) => b.type === "URL" && /\{\{1\}\}/.test(b.url || ""));
-      if (hasStripe || hasDynamic) {
+      const hasEmmely = buttons.some((b) => b.type === "URL" && b.is_emmely_token);
+      const hasDynamic = buttons.some((b) => b.type === "URL" && !b.is_stripe_token && !b.is_emmely_token && /\{\{1\}\}/.test(b.url || ""));
+      if (hasStripe || hasEmmely || hasDynamic) {
         form.set(
           "exampleMedia",
           hasStripe
             ? `https://checkout.stripe.com/c/pay/${STRIPE_BUTTON_EXAMPLE}`
-            : body.button_url_example || "https://example.com"
+            : hasEmmely
+              ? `https://emmelycloud.pages.dev/pagamento/${EMMELY_BUTTON_EXAMPLE}`
+              : body.button_url_example || "https://example.com"
         );
       }
     }
