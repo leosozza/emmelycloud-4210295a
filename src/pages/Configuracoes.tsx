@@ -241,6 +241,9 @@ export default function Configuracoes() {
           <TabsTrigger value="migracao-spa" className="gap-1.5">
             <ArrowRightLeft className="h-3.5 w-3.5" /> Migração SPA
           </TabsTrigger>
+          <TabsTrigger value="wa-templates" className="gap-1.5">
+            <MessageSquare className="h-3.5 w-3.5" /> Templates WhatsApp
+          </TabsTrigger>
         </TabsList>
         <TabsContent value="aparencia">
           <AparenciaTab />
