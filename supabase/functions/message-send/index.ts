@@ -952,6 +952,19 @@ Deno.serve(async (req) => {
       }).catch(() => {});
     } catch {}
 
+    // Post/update Bitrix24 timeline comment with message status (fire and forget)
+    if (savedMessageId && conv.channel === "whatsapp") {
+      try {
+        const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+        const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+        fetch(`${supabaseUrl}/functions/v1/bitrix24-post-message-timeline`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "Authorization": `Bearer ${serviceKey}` },
+          body: JSON.stringify({ message_id: savedMessageId, event: "sent" }),
+        }).catch(() => {});
+      } catch {}
+    }
+
     return new Response(JSON.stringify({ success: true, message_id: externalMessageId }), {
       status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
