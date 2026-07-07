@@ -261,7 +261,8 @@ export default function PagamentoPublico() {
   return (
     <div className="payment-receipt">
       <style>{`
-        @media print { .no-print { display: none !important; } body { background: #fff !important; } .payment-page { display: block; max-width: 760px; padding: 24px; } .payment-summary-panel { margin-bottom: 24px; } }
+        .payment-header-banner { display:block; width:100%; height:auto; border-radius:12px 12px 0 0; margin:-24px -24px 20px -24px; width:calc(100% + 48px); }
+        @media print { .no-print { display: none !important; } body { background: #fff !important; } .payment-page { display: block; max-width: 760px; padding: 24px; } .payment-summary-panel { margin-bottom: 24px; } .payment-header-banner { border-radius:0; } }
       `}</style>
 
       <div className="payment-page">
