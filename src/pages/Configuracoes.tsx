@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { Settings, Check, AlertCircle, Save, RefreshCw, Palette, Shield, CalendarDays, ArrowRightLeft } from "lucide-react";
+import { Settings, Check, AlertCircle, Save, RefreshCw, Palette, Shield, CalendarDays, ArrowRightLeft, MessageSquare } from "lucide-react";
+import WhatsappTemplatesTab from "@/components/configuracoes/WhatsappTemplatesTab";
 import MigracaoSpaTab from "@/components/configuracoes/MigracaoSpaTab";
 import { useColorTheme, type ColorTheme } from "@/contexts/ThemeContext";
 import { cn } from "@/lib/utils";
