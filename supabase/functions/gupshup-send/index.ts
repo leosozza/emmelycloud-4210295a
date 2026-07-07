@@ -228,6 +228,10 @@ function validate(body: SendBody): string | null {
   if ((t === "list" || t === "quick_reply") && !body.interactive) {
     return "'interactive' obrigatório para list/quick_reply";
   }
+  if (t === "cta_url") {
+    const cta = body.cta_url || (body.interactive && body.interactive.cta_url);
+    if (!cta?.url || !cta?.display_text) return "'cta_url.url' e 'cta_url.display_text' obrigatórios";
+  }
   if (t === "template" && !body.template?.id) return "'template.id' obrigatório";
   return null;
 }
