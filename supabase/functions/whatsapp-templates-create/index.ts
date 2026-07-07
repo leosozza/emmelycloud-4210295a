@@ -7,14 +7,31 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
-interface Button {
-  type: "URL" | "QUICK_REPLY" | "PHONE_NUMBER";
-  text: string;
+type ButtonType = "URL" | "QUICK_REPLY" | "PHONE_NUMBER" | "COPY_CODE";
+interface TplButton {
+  type: ButtonType;
+  text?: string;
   url?: string;
   phone_number?: string;
-  example?: string;
+  example?: string | string[];
   is_stripe_token?: boolean;
   is_emmely_token?: boolean;
+}
+
+type TemplateType = "TEXT" | "IMAGE" | "VIDEO" | "DOCUMENT" | "LOCATION" | "CAROUSEL";
+
+interface TplHeader {
+  type: "TEXT" | "IMAGE" | "VIDEO" | "DOCUMENT" | "LOCATION";
+  text?: string;
+  example?: string; // media URL for IMAGE/VIDEO/DOCUMENT
+}
+
+interface CarouselCard {
+  mediaType: "IMAGE" | "VIDEO";
+  mediaUrl: string;
+  body: string;
+  bodyExamples?: string[];
+  buttons?: TplButton[];
 }
 
 const STRIPE_BUTTON_URL = "https://checkout.stripe.com/c/pay/{{1}}";
@@ -26,12 +43,14 @@ interface Body {
   element_name: string;
   category: "MARKETING" | "UTILITY" | "AUTHENTICATION";
   language?: string;
+  templateType?: TemplateType;
   body: string;
   footer?: string;
-  header?: { type: "TEXT"; text: string } | null;
-  buttons?: Button[];
-  example?: string[]; // values for {{1}}, {{2}}...
+  header?: TplHeader | null;
+  buttons?: TplButton[];
+  example?: string[];
   button_url_example?: string;
+  cards?: CarouselCard[];
 }
 
 async function getCreds(supabase: any) {
@@ -60,9 +79,33 @@ function buildExampleBody(bodyText: string, examples: string[] = []) {
   examples.forEach((val, i) => {
     out = out.split(`{{${i + 1}}}`).join(val || `exemplo${i + 1}`);
   });
-  // fill any remaining {{n}} with placeholder to satisfy Meta
   out = out.replace(/\{\{(\d+)\}\}/g, (_m, n) => `exemplo${n}`);
   return out;
+}
+
+function mapButtonForGupshup(b: TplButton) {
+  if (b.type === "URL") {
+    if (b.is_stripe_token) {
+      return { type: "URL", text: b.text || "Pagar", url: STRIPE_BUTTON_URL, example: [STRIPE_BUTTON_EXAMPLE] };
+    }
+    if (b.is_emmely_token) {
+      return { type: "URL", text: b.text || "Pagar", url: EMMELY_BUTTON_URL, example: [EMMELY_BUTTON_EXAMPLE] };
+    }
+    return {
+      type: "URL",
+      text: b.text,
+      url: b.url || "",
+      example: [(Array.isArray(b.example) ? b.example[0] : b.example) || b.url || ""],
+    };
+  }
+  if (b.type === "PHONE_NUMBER") {
+    return { type: "PHONE_NUMBER", text: b.text, phone_number: b.phone_number || "" };
+  }
+  if (b.type === "COPY_CODE") {
+    const ex = Array.isArray(b.example) ? b.example[0] : b.example;
+    return { type: "COPY_CODE", example: [ex || "123456"] };
+  }
+  return { type: "QUICK_REPLY", text: b.text };
 }
 
 Deno.serve(async (req) => {
@@ -96,61 +139,43 @@ Deno.serve(async (req) => {
 
     const elementName = normalizeName(body.element_name);
     const language = body.language || "pt_BR";
+    const templateType = body.templateType || "TEXT";
     const buttons = body.buttons || [];
     const exampleValues = body.example || [];
     const exampleBody = buildExampleBody(body.body, exampleValues);
+    const header = body.header || null;
 
-    // Build Gupshup payload (application/x-www-form-urlencoded)
     const form = new URLSearchParams();
     form.set("elementName", elementName);
     form.set("languageCode", language);
     form.set("category", body.category);
-    form.set("templateType", "TEXT");
-    form.set("vertical", "Ticket update");
+    form.set("templateType", templateType);
+    form.set("vertical", body.category === "MARKETING" ? "Marketing" : "Ticket update");
     form.set("content", body.body);
     form.set("example", exampleBody);
     form.set("enableSample", "true");
     if (body.footer) form.set("footer", body.footer);
-    if (body.header?.text) form.set("header", body.header.text);
 
-    if (buttons.length) {
-      const btnPayload = buttons.map((b) => {
-        if (b.type === "URL") {
-          // Botão Stripe: força URL base fixa + variável {{1}} = token do checkout
-          if (b.is_stripe_token) {
-            return {
-              type: "URL",
-              text: b.text || "Pagar",
-              url: STRIPE_BUTTON_URL,
-              example: [STRIPE_BUTTON_EXAMPLE],
-            };
-          }
-          // Botão Emmely: URL fixa + variável {{1}} = id do pagamento interno
-          if (b.is_emmely_token) {
-            return {
-              type: "URL",
-              text: b.text || "Pagar",
-              url: EMMELY_BUTTON_URL,
-              example: [EMMELY_BUTTON_EXAMPLE],
-            };
-          }
-          return {
-            type: "URL",
-            text: b.text,
-            url: b.url || "",
-            example: [b.example || b.url || ""],
-          };
-        }
-        if (b.type === "PHONE_NUMBER") {
-          return { type: "PHONE_NUMBER", text: b.text, phone_number: b.phone_number || "" };
-        }
-        return { type: "QUICK_REPLY", text: b.text };
-      });
+    // ---------- HEADER ----------
+    if (header) {
+      if (header.type === "TEXT" && header.text) {
+        form.set("header", header.text);
+      } else if (["IMAGE", "VIDEO", "DOCUMENT"].includes(header.type) && header.example) {
+        // Media header: Gupshup expects exampleMedia URL for approval
+        form.set("exampleMedia", header.example);
+      } else if (header.type === "LOCATION") {
+        // Location templates don't require example URL
+      }
+    }
+
+    // ---------- BUTTONS ----------
+    if (buttons.length && templateType !== "CAROUSEL") {
+      const btnPayload = buttons.map(mapButtonForGupshup);
       form.set("buttons", JSON.stringify(btnPayload));
       const hasStripe = buttons.some((b) => b.type === "URL" && b.is_stripe_token);
       const hasEmmely = buttons.some((b) => b.type === "URL" && b.is_emmely_token);
       const hasDynamic = buttons.some((b) => b.type === "URL" && !b.is_stripe_token && !b.is_emmely_token && /\{\{1\}\}/.test(b.url || ""));
-      if (hasStripe || hasEmmely || hasDynamic) {
+      if ((hasStripe || hasEmmely || hasDynamic) && !form.get("exampleMedia")) {
         form.set(
           "exampleMedia",
           hasStripe
@@ -160,6 +185,31 @@ Deno.serve(async (req) => {
               : body.button_url_example || "https://example.com"
         );
       }
+    }
+
+    // ---------- CAROUSEL ----------
+    if (templateType === "CAROUSEL" && body.cards && body.cards.length >= 2) {
+      const cardsPayload = body.cards.map((c) => {
+        const components: any[] = [
+          {
+            type: "HEADER",
+            format: c.mediaType,
+            example: { header_handle: [c.mediaUrl] },
+          },
+          {
+            type: "BODY",
+            text: c.body,
+            example: c.bodyExamples && c.bodyExamples.length
+              ? { body_text: [c.bodyExamples] }
+              : undefined,
+          },
+        ];
+        if (c.buttons && c.buttons.length) {
+          components.push({ type: "BUTTONS", buttons: c.buttons.map(mapButtonForGupshup) });
+        }
+        return { components };
+      });
+      form.set("cards", JSON.stringify(cardsPayload));
     }
 
     const url = `https://api.gupshup.io/wa/app/${encodeURIComponent(appId)}/template`;
@@ -196,9 +246,11 @@ Deno.serve(async (req) => {
           element_name: elementName,
           category: body.category,
           language,
+          template_type: templateType,
           body: body.body,
           footer: body.footer || null,
-          header: body.header || null,
+          header: header || null,
+          cards: body.cards || null,
           buttons,
           example: { values: exampleValues, button_url: body.button_url_example || null },
           status: gupshupStatus,
