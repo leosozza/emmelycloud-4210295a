@@ -73,24 +73,17 @@ export default function WhatsappTemplatesTab() {
     });
   }, [varCount]);
 
-  async function load(refresh = false) {
+  async function load() {
     setLoading(true);
     try {
-      const { data, error } = await supabase.functions.invoke("whatsapp-templates-list", {
-        method: "GET" as any,
-        headers: refresh ? { "x-refresh": "true" } : undefined,
-        body: refresh ? undefined : undefined,
-      } as any);
-      // supabase.functions.invoke doesn't take query params; use fetch fallback
-      if (error) throw error;
-      setItems((data as any)?.templates || []);
-    } catch (e: any) {
-      // fallback: read directly
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from("whatsapp_templates" as any)
         .select("*")
         .order("created_at", { ascending: false });
+      if (error) throw error;
       setItems((data as any) || []);
+    } catch (e: any) {
+      toast.error(e.message || "Falha ao carregar templates");
     } finally {
       setLoading(false);
     }
