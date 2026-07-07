@@ -80,6 +80,7 @@ import { ChatMessageList } from "@/components/ui/chat-message-list";
 import { Copy, Ban } from "lucide-react";
 import type { AIAgent, AIProvider, FlowOption, DocOption, CollectionOption } from "@/pages/Agentes";
 import { defaultAgent } from "@/pages/Agentes";
+import WhatsappTemplatesTab from "@/components/configuracoes/WhatsappTemplatesTab";
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
