@@ -227,11 +227,17 @@ export async function readEmmelyPaymentPlan(
             if (effFirstDue) warnings.push("firstDue from financial_records");
           }
         }
-        if (!remainingInstallments || remainingInstallments === 1) {
-          // Best-effort: use max total_installments seen or the count of rows
+        if (!remainingInstallmentsExplicit) {
+          // Only use financial_records as fallback when the deal field is truly unset.
+          // Never override an explicit value (including 1) — user may have just reduced the plan.
           const maxTot = frData.reduce((m: number, r: any) => Math.max(m, intNum(r.total_installments, 0)), 0);
-          if (maxTot > 0) effRemainingInstallments = maxTot;
-          else if (pendingOrAll.length > 0) effRemainingInstallments = pendingOrAll.length;
+          if (maxTot > 0) {
+            effRemainingInstallments = maxTot;
+            warnings.push(`remainingInstallments fallback from financial_records (${maxTot})`);
+          } else if (pendingOrAll.length > 0) {
+            effRemainingInstallments = pendingOrAll.length;
+            warnings.push(`remainingInstallments fallback from FR count (${pendingOrAll.length})`);
+          }
         }
         if (!effRemainingMethod) {
           // Majority method among rows that declare one
