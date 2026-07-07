@@ -586,10 +586,36 @@ Deno.serve(async (req) => {
           gsBody.content = content;
         } else if (mt === "template" && resolvedInteractiveData) {
           gsBody.message_type = "template";
-          gsBody.template = {
-            id: (resolvedInteractiveData as any).id || (resolvedInteractiveData as any).name,
-            params: (resolvedInteractiveData as any).params || [],
-          };
+          const tplName = (resolvedInteractiveData as any).id || (resolvedInteractiveData as any).name;
+          const suppliedParams = ((resolvedInteractiveData as any).params || []) as string[];
+          // Resolve UUID + template shape from local mirror so we send strictly what Meta expects.
+          let templateIdForGupshup = tplName;
+          let finalParams = suppliedParams;
+          try {
+            const { data: tplRow } = await supabase
+              .from("whatsapp_templates")
+              .select("gupshup_template_id, body, buttons, header")
+              .eq("element_name", tplName)
+              .maybeSingle();
+            if (tplRow) {
+              if (tplRow.gupshup_template_id) templateIdForGupshup = tplRow.gupshup_template_id;
+              // Count real body variables (excluding button URL vars appended in stored body text).
+              const cleanBody = String(tplRow.body || "").split(/\s*\|\s*\[/)[0]; // strip synthetic "| [Btn,url]" suffix from sync
+              const bodyVars = new Set(cleanBody.match(/\{\{(\d+)\}\}/g) || []).size;
+              const urlBtnVars = (Array.isArray(tplRow.buttons) ? tplRow.buttons : []).filter((b: any) => b?.type === "URL" && /\{\{\d+\}\}/.test(b?.url || "")).length;
+              const headerVars = tplRow.header && typeof tplRow.header === "object" && tplRow.header.text ? (String(tplRow.header.text).match(/\{\{(\d+)\}\}/g) || []).length : 0;
+              const expectedTotal = headerVars + bodyVars + urlBtnVars;
+              if (expectedTotal !== suppliedParams.length) {
+                console.warn("[MESSAGE-SEND] template param count mismatch — auto-adjusting", { template: tplName, supplied: suppliedParams.length, expected: expectedTotal, bodyVars, headerVars, urlBtnVars });
+                if (expectedTotal < suppliedParams.length) finalParams = suppliedParams.slice(0, expectedTotal);
+                else while (finalParams.length < expectedTotal) finalParams.push(suppliedParams[suppliedParams.length - 1] || "");
+              }
+            }
+          } catch (e) {
+            console.warn("[MESSAGE-SEND] failed to resolve template metadata", e);
+          }
+          gsBody.template = { id: templateIdForGupshup, params: finalParams };
+          console.log("[MESSAGE-SEND] template send:", { name: tplName, id: templateIdForGupshup, params: finalParams });
         } else if (mt === "cta_url" && resolvedInteractiveData) {
           // Gupshup não suporta CTA URL fora de templates HSM — envia como texto com preview
           const url = (resolvedInteractiveData as any).url || "";
