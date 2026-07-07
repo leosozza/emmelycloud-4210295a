@@ -252,9 +252,10 @@ async function handleSendWhatsApp(properties: Record<string, any>, supabaseUrl: 
       case "link": {
         const url = String(pick("link_button_url") || "").trim();
         if (!url) return { message_id: "", status: "error", error: "link_button_url is required" };
-        const label = String(pick("link_button_text") || "").trim();
-        sendBody.content = [message, label, url].filter(Boolean).join("\n");
-        // sent as plain text — WhatsApp renders link preview automatically
+        const label = String(pick("link_button_text") || "").trim() || "Abrir link";
+        sendBody.message_type = "cta_url";
+        sendBody.content = message || "";
+        sendBody.resolvedInteractiveData = { url, label };
         break;
       }
       case "list": {
