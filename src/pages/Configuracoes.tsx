@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { Settings, Check, AlertCircle, Save, RefreshCw, Palette, Shield, CalendarDays, ArrowRightLeft } from "lucide-react";
+import { Settings, Check, AlertCircle, Save, RefreshCw, Palette, Shield, CalendarDays, ArrowRightLeft, MessageSquare } from "lucide-react";
+import WhatsappTemplatesTab from "@/components/configuracoes/WhatsappTemplatesTab";
 import MigracaoSpaTab from "@/components/configuracoes/MigracaoSpaTab";
 import { useColorTheme, type ColorTheme } from "@/contexts/ThemeContext";
 import { cn } from "@/lib/utils";
@@ -240,6 +241,9 @@ export default function Configuracoes() {
           <TabsTrigger value="migracao-spa" className="gap-1.5">
             <ArrowRightLeft className="h-3.5 w-3.5" /> Migração SPA
           </TabsTrigger>
+          <TabsTrigger value="wa-templates" className="gap-1.5">
+            <MessageSquare className="h-3.5 w-3.5" /> Templates WhatsApp
+          </TabsTrigger>
         </TabsList>
         <TabsContent value="aparencia">
           <AparenciaTab />
@@ -255,6 +259,9 @@ export default function Configuracoes() {
         </TabsContent>
         <TabsContent value="migracao-spa">
           <MigracaoSpaTab />
+        </TabsContent>
+        <TabsContent value="wa-templates">
+          <WhatsappTemplatesTab />
         </TabsContent>
       </Tabs>
     </div>

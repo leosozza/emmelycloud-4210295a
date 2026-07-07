@@ -1,72 +1,103 @@
-# Correções WhatsApp: CTA URL no Gupshup + timeline Bitrix24 dos envios
+## Objetivo
 
-## 1) Botão CTA URL foi entregue como JSON (texto cru)
+Gerir templates HSM do WhatsApp (criar, submeter para aprovação, listar status) direto no Emmely, sem abrir o painel Gupshup. Depois usar esses templates aprovados nos envios (robot Bitrix24 + UI de atendimento) para entregar botão CTA de verdade.
 
-**Causa.** O endpoint público do Gupshup (`/wa/api/v1/msg`) não suporta `type: "cta_url"` no parâmetro `message`. Quando envia um tipo desconhecido, o Gupshup faz relay como texto — foi por isso que o cliente recebeu o JSON literal `{"type":"cta_url",...}`.
+## API Gupshup usada
 
-Só a Meta Cloud API tem `interactive.cta_url` nativo. No Gupshup, botão com URL só funciona via **template HSM aprovado** com botão URL dinâmico.
+Gupshup Partner API expõe endpoints de templates por app:
 
-**Correção.**
-- **`gupshup-send/index.ts`** — remover o case `cta_url` do `buildMessageObject`. Continua no schema, mas cai no default text.
-- **`message-send/index.ts`, ramo Gupshup** — quando `message_type === "cta_url"`, montar texto com preview de link em vez de tentar interactive:
-  ```
-  gsBody.message_type = "text";
-  gsBody.content = [content, label, url].filter(Boolean).join("\n");
-  ```
-  (mantém o rótulo visível e o WhatsApp gera preview clicável.)
-- **Meta Cloud API** — mantém `interactive.cta_url` (funciona nativamente).
-- **WUZAPI** — já usa fallback de texto (mantém).
-- **Aviso na resposta** ao utilizador: para link de pagamento por robot no Gupshup, o caminho correto para botão real é criar um template HSM com botão URL dinâmico e usar `message_type = template` (o URL vira parâmetro do botão CTA do template).
+- `POST   /partner/app/{appId}/templates` — cria e submete template (nome, categoria, idioma, corpo, botões, exemplos)
+- `GET    /partner/app/{appId}/templates` — lista todos (com `status`: APPROVED/PENDING/REJECTED)
+- `DELETE /partner/app/{appId}/templates/{elementName}` — apaga
+- `GET    /partner/app/{appId}/templates/{elementName}` — detalhe
 
-## 2) Timeline Bitrix24 dos envios de mensagem
+Auth: `token` do Partner (já usamos em outras chamadas — reaproveitar credenciais existentes em `integration_credentials` / secret Gupshup). Se o token de Partner ainda não estiver salvo, pedir via `add_secret` (`GUPSHUP_PARTNER_TOKEN` + `GUPSHUP_APP_ID`).
 
-Hoje só os pagamentos aparecem na timeline. Envio, entrega, leitura e erro de WhatsApp não aparecem. Vamos replicar o mesmo padrão dos badges de pagamento.
+## Backend
 
-**Estratégia — 1 comentário por mensagem, atualizado in-place** (evita spam):
-- Ao enviar: cria comentário na timeline com estado inicial "📤 Enviada" e guarda o `COMMENT_ID` retornado em `messages.bitrix_timeline_comment_id`.
-- Ao chegar `delivered` / `read` / `failed`: chama `crm.timeline.comment.update` para reescrever o texto ("✅ Entregue às hh:mm" / "👁 Lida às hh:mm" / "❌ Falha: <motivo>"). Sem criar novos itens.
-- Fallback se `comment.update` falhar: adiciona um segundo comentário curto.
+### 1. Tabela `whatsapp_templates` (migration)
 
-**Novos artefactos.**
+```
+id uuid pk
+provider text default 'gupshup'          -- deixa aberto p/ Meta Cloud API futuramente
+app_id text                                -- app Gupshup
+element_name text                          -- nome único no Gupshup (snake_case)
+category text                              -- MARKETING | UTILITY | AUTHENTICATION
+language text default 'pt_BR'
+body text                                  -- texto com {{1}} {{2}}...
+header jsonb                               -- {type, text|media_url} opcional
+footer text
+buttons jsonb                              -- [{type:'URL', text, url, example}] etc.
+example jsonb                              -- variáveis de exemplo
+status text                                -- PENDING | APPROVED | REJECTED | LOCAL_DRAFT
+rejection_reason text
+gupshup_template_id text
+created_by uuid references profiles(id)
+created_at, updated_at
+```
++ GRANTs + RLS (admin/comercial read/write, service_role all).
 
-### 2.1 Migration
-Adicionar coluna:
-```sql
-ALTER TABLE public.messages
-  ADD COLUMN IF NOT EXISTS bitrix_timeline_comment_id BIGINT,
-  ADD COLUMN IF NOT EXISTS bitrix_entity_ref TEXT; -- ex: "deal:45807" ou "contact:1234"
-CREATE INDEX IF NOT EXISTS idx_messages_bitrix_comment ON public.messages(bitrix_timeline_comment_id);
+### 2. Edge Functions (novas)
+
+- `whatsapp-templates-list` — GET Gupshup `/templates`, faz upsert em `whatsapp_templates` e retorna a lista. Aceita `?refresh=true` para sincronizar.
+- `whatsapp-templates-create` — recebe payload do form, valida com Zod, chama `POST /templates` no Gupshup, guarda linha com `status=PENDING`.
+- `whatsapp-templates-delete` — chama `DELETE` no Gupshup e remove localmente.
+- `whatsapp-templates-sync` — job/cron opcional que refaz o list periodicamente para atualizar `status` (aprovação Meta ~24h).
+
+### 3. Envio usando template
+
+Ampliar `gupshup-send` (já em produção) para aceitar `message_type: "template"`:
+
+```ts
+{
+  message_type: "template",
+  template: {
+    id: "<gupshup_template_id>",
+    params: ["Fulano", "R$ 500,00"]        // {{1}} {{2}} do corpo
+  }
+}
 ```
 
-### 2.2 Nova edge function `bitrix24-post-message-timeline`
-Input: `{ message_id, event: "sent" | "delivered" | "read" | "failed", error?: string }`.
-Fluxo:
-1. Carrega `messages` (`id`, `conversation_id`, `content`, `media_type`, `bitrix_timeline_comment_id`, `bitrix_entity_ref`, `external_id`, `sender_name`).
-2. Se `bitrix_entity_ref` vazio: resolve via `conversations.bot_state.bitrix_entity_id` / `bitrix_deal_id`. Se ainda vazio, chama `crm.duplicate.findbycomm` (TYPE=PHONE) para achar deal ou contact e persiste em `messages.bitrix_entity_ref` + `conversations.bot_state`.
-3. Formata texto compacto:
-   - `sent`: "📤 WhatsApp enviado — «preview de até 120 chars»"
-   - `delivered`: "✅ Entregue às HH:mm"
-   - `read`: "👁 Lido às HH:mm"
-   - `failed`: "❌ Falha: <error>"
-4. Se `bitrix_timeline_comment_id` existe → `crm.timeline.comment.update`. Caso contrário → `crm.timeline.comment.add` e guarda o ID.
-5. Usa a mesma integração/token do `bitrix24-robot-handler` (reutiliza `callBitrixWithRefresh`).
+Gupshup v1: `POST /wa/api/v1/template/msg` com `template={"id":..., "params":[...]}`. Para botão URL dinâmico já existe suporte via `params` na posição do `{{1}}` do botão.
 
-### 2.3 Pontos de disparo
-- **`message-send/index.ts`** — depois de gravar a mensagem com sucesso e canal WhatsApp, chamar fire-and-forget `bitrix24-post-message-timeline` com `event: "sent"`. Já receberia `bitrix_entity_id` quando presente no body; caso contrário resolve depois.
-- **`gupshup-webhook/index.ts`** — no bloco `message-event` que já mapeia `enqueued/sent/delivered/read/failed`, disparar a mesma função com o `event` correspondente após o `UPDATE messages`.
-- **`whatsapp-webhook/index.ts`** (Meta) — no handler de `statuses[]`, mesmo disparo.
-- **`wuzapi-webhook/index.ts`** — quando processar `ReadReceipt`/`ack`, mesmo disparo.
+Propagar em `message-send` (roteador) igual aos outros types, e em `bitrix24-robot-handler` adicionar suporte para `template_id` no payload do robot de envio de link de pagamento.
 
-### 2.4 Deploy
-Migration + deploy de:
-- `bitrix24-post-message-timeline` (nova)
-- `gupshup-send`
-- `message-send`
-- `gupshup-webhook`
-- `whatsapp-webhook`
-- `wuzapi-webhook`
+## Frontend
+
+### Rota `/configuracoes/whatsapp-templates`
+
+- **Lista** — tabela com nome, categoria, idioma, status (badge colorido PENDING/APPROVED/REJECTED), botão preview, botão apagar. Botão "Sincronizar" chama `whatsapp-templates-list?refresh=true`.
+- **Criar template** — modal/drawer com:
+  - Nome (auto-normalizado para snake_case)
+  - Categoria (select MARKETING/UTILITY/AUTHENTICATION)
+  - Idioma (pt_BR / pt_PT / en_US)
+  - Corpo com detecção automática de `{{n}}` e campo de exemplo por variável
+  - Footer (opcional)
+  - Botões: repeater com tipo (URL / QUICK_REPLY / PHONE) e campos condicionais. Para URL: texto + URL (com opção `{{1}}` dinâmico + exemplo)
+  - Preview lado-a-lado tipo bolha WhatsApp
+  - Submit → `whatsapp-templates-create`
+- **Aviso** — banner explicando que aprovação Meta leva até 24h e status vai atualizar sozinho.
+
+### Uso nas telas de envio
+
+- **UI Atendimento** (`/atendimento/*`): quando fora de janela 24h ou ao anexar link de pagamento, mostrar seletor "Enviar via Template" com dropdown de templates `APPROVED` filtrados por categoria, campos para preencher variáveis, e botão "Enviar".
+- **Bitrix24 robot** (envio automático de link de pagamento): novo campo no config do robot "Template WhatsApp (opcional)" — se preenchido, usa template com URL do checkout como parâmetro do botão; senão cai no fluxo atual de texto.
+
+## Detalhes técnicos
+
+- **Credenciais**: reaproveitar segredo Gupshup Partner já usado em outras funções; validar existência no início de cada function e retornar 500 explícito se faltar. Se faltar `GUPSHUP_PARTNER_TOKEN` ou `GUPSHUP_APP_ID`, solicito via `add_secret` numa etapa separada antes do código.
+- **Idempotência**: `element_name` único por `app_id` no banco; UPSERT em cima disso.
+- **Erros Meta**: `status = REJECTED` + `rejection_reason` do payload Gupshup exibidos no card.
+- **Rate limits**: Gupshup permite ~100 templates/app; a UI mostra contador.
+- **Sem alteração** em tabelas críticas (`messages`, `financial_records`) — só nova tabela e novos endpoints.
 
 ## Fora de escopo
-- UI do chat já mostra ticks de status (`MessageBubble`); nada a mudar aí.
-- Não vamos criar activity separada por mensagem — só um comentário compacto por envio.
-- Templates HSM com botão URL: fica como recomendação; a criação do template é manual pelo cliente na aprovação Meta/Gupshup.
+
+- Editar template já submetido (Meta não permite; só apagar e recriar).
+- Templates Meta Cloud API direto (fica preparado por `provider`, mas a UI só cobre Gupshup nesta fase).
+- Templates com mídia rica (imagem/vídeo/documento no header) — v2.
+
+## Confirmação necessária antes de implementar
+
+1. Confirma o token Partner Gupshup — se ainda não tenho `GUPSHUP_PARTNER_TOKEN` + `GUPSHUP_APP_ID` salvos como segredo (uso hoje só o app-level API key para envio), peço via `add_secret` no início do build.
+2. Ok começar com só Gupshup (Meta Cloud fica para depois)?

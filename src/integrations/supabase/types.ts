@@ -4361,6 +4361,66 @@ export type Database = {
         }
         Relationships: []
       }
+      whatsapp_templates: {
+        Row: {
+          app_id: string | null
+          body: string
+          buttons: Json
+          category: string
+          created_at: string
+          created_by: string | null
+          element_name: string
+          example: Json
+          footer: string | null
+          gupshup_template_id: string | null
+          header: Json | null
+          id: string
+          language: string
+          provider: string
+          rejection_reason: string | null
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          app_id?: string | null
+          body: string
+          buttons?: Json
+          category: string
+          created_at?: string
+          created_by?: string | null
+          element_name: string
+          example?: Json
+          footer?: string | null
+          gupshup_template_id?: string | null
+          header?: Json | null
+          id?: string
+          language?: string
+          provider?: string
+          rejection_reason?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          app_id?: string | null
+          body?: string
+          buttons?: Json
+          category?: string
+          created_at?: string
+          created_by?: string | null
+          element_name?: string
+          example?: Json
+          footer?: string | null
+          gupshup_template_id?: string | null
+          header?: Json | null
+          id?: string
+          language?: string
+          provider?: string
+          rejection_reason?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
