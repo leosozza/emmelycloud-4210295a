@@ -2425,7 +2425,13 @@ Deno.serve(async (req) => {
 
     // Resolve integration + entity (deal/lead/spa) from document_id for timeline posting
     const docId: any = (data as any).document_id || (data as any).DOCUMENT_ID || [];
-    const docStr = Array.isArray(docId) ? String(docId[2] || "") : String(docId || "");
+    const extractDocStr = (d: any): string => {
+      if (!d) return "";
+      if (Array.isArray(d)) return String(d[2] || d[1] || "");
+      if (typeof d === "object") return String(d["2"] ?? d[2] ?? d["1"] ?? d[1] ?? "");
+      return String(d);
+    };
+    const docStr = extractDocStr(docId);
     // Format examples: "DEAL_47047", "LEAD_123", "DYNAMIC_131_45"
     let tlEntity: { type: "deal" | "lead" | "spa"; id: string | number; spaEntityTypeId?: number | string } | null = null;
     const mDeal = docStr.match(/^DEAL_(\d+)$/i);
