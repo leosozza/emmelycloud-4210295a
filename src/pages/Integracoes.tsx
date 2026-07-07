@@ -243,6 +243,10 @@ function CRMTab() {
         const r = await fetch(`${base}/functions/v1/bitrix24-repair-money-fields`, { method: "POST", headers, body: "{}" });
         const d = await r.json().catch(() => ({})); return r.ok && !d?.error;
       }},
+      { name: "Campos de parcelas", run: async () => {
+        const r = await fetch(`${base}/functions/v1/bitrix24-repair-installments-fields`, { method: "POST", headers, body: "{}" });
+        const d = await r.json().catch(() => ({})); return r.ok && !d?.error;
+      }},
     ];
 
     const failures: string[] = [];
