@@ -114,6 +114,12 @@ async function callBitrixWithRefresh(
   return result;
 }
 
+function extractStripeCheckoutToken(paymentUrl?: string | null): string | null {
+  if (!paymentUrl) return null;
+  const m = String(paymentUrl).match(/\/c\/pay\/([^#?]+)/);
+  return m ? m[1] : null;
+}
+
 async function ensureBitrixDealUserField(integration: any, field: Record<string, any>) {
   try {
     await callBitrix(integration.client_endpoint, integration.access_token, "crm.deal.userfield.add", { fields: field });
@@ -916,14 +922,17 @@ async function handleCreateCharge(
     if (reuseDecision === "reuse") {
       let dealUpdOk = false;
       let dealUpdErr = "";
+      const reusedStripeToken = extractStripeCheckoutToken(reusedPaymentUrl);
       if (reusedPaymentUrl && dealId && integration?.client_endpoint && integration?.access_token) {
         try {
+          const fields: Record<string, any> = {
+            UF_CRM_EMMELY_PAYMENT_URL: reusedPaymentUrl,
+            UF_CRM_EMMELY_GATEWAY: reusedGateway || companyGateway,
+          };
+          if (reusedStripeToken) fields.UF_CRM_EMMELY_STRIPE_TOKEN = reusedStripeToken;
           const upd: any = await callBitrixWithRefresh(supabase, integration, "crm.deal.update", {
             id: parseInt(dealId),
-            fields: {
-              UF_CRM_EMMELY_PAYMENT_URL: reusedPaymentUrl,
-              UF_CRM_EMMELY_GATEWAY: reusedGateway || companyGateway,
-            },
+            fields,
           });
           if (upd?.error) dealUpdErr = String(upd.error_description || upd.error); else dealUpdOk = true;
         } catch (e) {
@@ -1065,6 +1074,7 @@ async function handleCreateCharge(
       const key = `p_${parcel.is_down_payment ? "d" : "r"}_${parcel.installment_number}`;
       parcelToTxMap[key] = tx.id;
       if (integration?.client_endpoint && integration?.access_token && dealId) {
+        const stripeToken = extractStripeCheckoutToken(tx.payment_url || "");
         invoiceBatchCmds[key] = {
           method: "crm.item.add",
           params: {
@@ -1085,6 +1095,7 @@ async function handleCreateCharge(
               ufCrm_SmartInvoice_EmmelyPaymentStatus: "Pendente",
               ufCrm_SmartInvoice_EmmelyGateway: tx.gateway || companyGateway,
               ufCrm_SmartInvoice_EmmelyTxId: tx.id,
+              ufCrmSmartInvoiceEmmelyStripeToken: stripeToken || "",
             },
           }
         };
@@ -1135,14 +1146,17 @@ async function handleCreateCharge(
     // Write payment URL + Pendente status back to the deal (with 1 retry + audit log).
     let dealUpdateOk = false;
     let dealUpdateError = "";
+    const firstStripeToken = extractStripeCheckoutToken(firstPaymentUrl);
     if (firstPaymentUrl && dealId && integration?.client_endpoint && integration?.access_token) {
       const attemptUpdate = async () => {
+        const fields: Record<string, any> = {
+          UF_CRM_EMMELY_PAYMENT_URL: firstPaymentUrl,
+          UF_CRM_EMMELY_GATEWAY: companyGateway,
+        };
+        if (firstStripeToken) fields.UF_CRM_EMMELY_STRIPE_TOKEN = firstStripeToken;
         return await callBitrixWithRefresh(supabase, integration, "crm.deal.update", {
           id: parseInt(dealId),
-          fields: {
-            UF_CRM_EMMELY_PAYMENT_URL: firstPaymentUrl,
-            UF_CRM_EMMELY_GATEWAY: companyGateway,
-          },
+          fields,
         });
       };
       for (let attempt = 1; attempt <= 2; attempt++) {
