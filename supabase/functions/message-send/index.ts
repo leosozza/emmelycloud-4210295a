@@ -860,8 +860,9 @@ Deno.serve(async (req) => {
     // email/webchat: just DB insert (no external send)
 
     // Save outbound message (unless skip_db_save)
+    let savedMessageId: string | null = null;
     if (!skip_db_save) {
-      await supabase.from("messages").insert({
+      const insertRes = await supabase.from("messages").insert({
         conversation_id,
         direction: "outbound",
         content,
@@ -875,7 +876,8 @@ Deno.serve(async (req) => {
         ai_review_score: aiReviewScore,
         ai_review_id: aiReviewId,
         originated_by_agent_id: bodyAiAgentId ?? null,
-      });
+      }).select("id").single();
+      savedMessageId = insertRes.data?.id ?? null;
 
       // Marca a revisão como já entregue
       if (aiReviewId) {
