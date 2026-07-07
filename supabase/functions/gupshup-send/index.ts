@@ -338,7 +338,10 @@ Deno.serve(async (req) => {
     }
 
     const sendToGupshup = async () => {
-      const res = await fetch(GUPSHUP_URL, {
+      const endpoint = isTemplate
+        ? "https://api.gupshup.io/wa/api/v1/template/msg"
+        : GUPSHUP_URL;
+      const res = await fetch(endpoint, {
         method: "POST",
         headers: { apikey: apiKey, "Content-Type": "application/x-www-form-urlencoded" },
         body: form.toString(),
