@@ -1,35 +1,52 @@
 ## Objetivo
 
-Adicionar suporte, no mesmo padrão do botão Stripe, para o link de pagamento interno Emmely (`https://emmelycloud.pages.dev/pagamento/{{1}}`), onde `{{1}}` é o `id` do `payment_transactions` / `financial_records` (ex.: `799e3b72-...`).
+Unificar a geração de parcelas em **`payment-receipt`**, **`bitrix24-payment-tab`** (placement) e **`bitrix24-robot-handler`** para lerem exatamente os mesmos campos do deal e produzirem exatamente a mesma lista (Entrada + Parcelas), corrigindo o caso do deal 45807 no link público `payment-receipt?token=799e3b72…`.
+
+## Causa raiz
+
+`payment-receipt/fetchBitrixDealAmount()` lê apenas `UF_CRM_EMMELY_TOTAL_INSTALLMENTS / INSTALLMENT_VALUE / NEXT_DUE_DATE / PAID_INSTALLMENTS` e ignora os campos de Entrada (`UF_CRM_EMMELY_DOWN_PAYMENT`, `DOWN_INSTALLMENTS`, `DOWN_METHOD`, `DOWN_FIRST_DUE`, `DOWN_INTERVAL`). O placement e o robot já leem esses campos via `_shared/deal-payment-fields.ts::readEmmelyPaymentPlan`, mas cada um tem a sua própria função de expansão.
 
 ## Alterações
 
-### 1. `whatsapp-templates-create/index.ts`
-- Adicionar constantes:
-  - `EMMELY_BUTTON_URL = "https://emmelycloud.pages.dev/pagamento/{{1}}"`
-  - `EMMELY_BUTTON_EXAMPLE = "799e3b72-833b-49b2-8c34-115f6852b7c1"`
-- Aceitar nova flag no botão: `is_emmely_token?: boolean`.
-- Ao montar o payload Gupshup, quando `is_emmely_token` for `true`, forçar `url = EMMELY_BUTTON_URL` e `example = [EMMELY_BUTTON_EXAMPLE]`.
-- Atualizar `exampleMedia` para incluir também o caso Emmely (`https://emmelycloud.pages.dev/pagamento/<exemplo>`).
+### 1. `supabase/functions/_shared/deal-payment-fields.ts` (novo helper)
 
-### 2. `src/components/configuracoes/WhatsappTemplatesTab.tsx`
-- Novo botão rápido **"🔗 Pagamento Emmely"** ao lado de "💳 Pagamento Stripe", que adiciona um botão do tipo `URL` com:
-  - `text: "Pagar"`
-  - `is_emmely_token: true`
-  - `url: "https://emmelycloud.pages.dev/pagamento/{{1}}"` (readonly na UI)
-- No render/edição, se `is_emmely_token`, mostrar badge "Emmely" e bloquear edição do campo URL (igual ao Stripe).
-- Persistir a flag em `whatsapp_templates.buttons` (jsonb — sem migração).
+Adicionar `expandPlanToInstallments(plan, opts?)` que devolve `InstallmentRow[]` no formato consumido tanto pelo placement como pelo receipt:
 
-### 3. `gupshup-send/index.ts` (envio de template)
-- No handler que resolve variáveis do template para pagamento, além de `UF_CRM_EMMELY_STRIPE_TOKEN`, resolver também token Emmely:
-  - Preferência: `payment_transactions.id` mais recente vinculado ao deal/lead/fatura.
-  - Fallback: `financial_records.id` correspondente.
-- Passar esse UUID como `params[n]` do botão quando o template tiver botão marcado `is_emmely_token`.
+```
+{ number, total, value, currency, due_date, status, is_down_payment, description }
+```
 
-### 4. Sem mudanças em Bitrix24 install
-- Não é necessário novo campo customizado — o token Emmely é o `id` do registro em `payment_transactions`/`financial_records`, já existente no banco. Diferente do Stripe (que precisava guardar o `cs_live_...` retornado pela Stripe), o Emmely já conhece esse UUID nativamente.
+Regras (idênticas às do placement hoje):
+- Se `plan.downPayment > 0` e `downInstallments >= 1`: adiciona `downInstallments` linhas `is_down_payment: true` (número 1..downInstallments dentro do grupo) com vencimentos a partir de `downFirstDue` em passos de `downInterval` dias.
+- Adiciona `remainingInstallments` linhas de saldo com vencimentos a partir de `firstDue` em passos de `interval` dias.
+- Marca `status: "paga"` para as primeiras `paidInstallments` linhas de saldo (ou também para a entrada, se `paidInstallments` cobrir).
+- Valores: `downPayment / downInstallments` para entrada; `(total - downPayment) / remainingInstallments` para saldo, arredondado a 2 casas.
+
+### 2. `supabase/functions/payment-receipt/index.ts`
+
+- Remover `fetchBitrixDealAmount` local.
+- Substituir por `readEmmelyPaymentPlan` + `expandPlanToInstallments` (via `_shared`).
+- Manter a precedência atual: se existirem `financial_records` reais para o `contract_id`/`deal_id`, elas continuam a sobrescrever as sintéticas por `installment_number`; só as slots sem registro real usam o sintético expandido do plano.
+- `total_value = plan.totalAmount` (ou soma das reais, se existirem e cobrirem todos os slots).
+- Continuar servindo JSON e o redirect HTML iguais.
+
+### 3. `supabase/functions/bitrix24-payment-tab/index.ts`
+
+- Substituir `paymentPlanFromDeal` + `buildSyntheticInstallmentsFromPlan` locais por chamadas a `readEmmelyPaymentPlan` + `expandPlanToInstallments`.
+- Adaptador fino para converter `InstallmentRow[]` do shared no tipo `InstallmentData` do placement (mesmos campos + `id: "deal-<n>"` para linhas sintéticas). Nenhuma mudança de UI.
+
+### 4. `supabase/functions/bitrix24-robot-handler/index.ts`
+
+- Já usa `readEmmelyPaymentPlan`. Sem mudança funcional. Confirmar que a geração de cobranças continua a bater com o mesmo shape após o refactor do payment-tab (é o mesmo `plan` object).
 
 ## Fora de escopo
-- Alterar rota `/pagamento/:id` no frontend (já existe).
-- Migrações SQL (coluna `buttons` é `jsonb`).
-- Retrocompatibilidade de templates antigos (usuário recria pela UI).
+
+- Alterar UI do placement ou da página `/pagamento/:token` (a mudança é só na fonte de dados).
+- Alterar tabelas ou campos custom do Bitrix24.
+- Alterar comportamento das transações reais (`payment_transactions` / `financial_records`) — apenas o merge continua igual.
+
+## Como validar
+
+1. Após deploy, abrir `https://qohnsluvhyziovfynzlu.supabase.co/functions/v1/payment-receipt?token=799e3b72-833b-49b2-8c34-115f6852b7c1&format=json` e conferir que devolve `installments` com 2 linhas: `{ is_down_payment: true, value: 10, ... }` + `{ is_down_payment: false, number: 1, total: 1, value: 10, ... }`, batendo com o placement.
+2. Abrir a aba Emmely Pay do deal 45807 e conferir que a lista continua igual.
+3. Rodar o robô de gerar cobrança no deal 45807 e conferir que o número/valor das parcelas geradas é o mesmo.
