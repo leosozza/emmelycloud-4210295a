@@ -14,10 +14,13 @@ interface Button {
   phone_number?: string;
   example?: string;
   is_stripe_token?: boolean;
+  is_emmely_token?: boolean;
 }
 
 const STRIPE_BUTTON_URL = "https://checkout.stripe.com/c/pay/{{1}}";
 const STRIPE_BUTTON_EXAMPLE = "cs_live_a1exemploTokenStripe123456789";
+const EMMELY_BUTTON_URL = "https://emmelycloud.pages.dev/pagamento/{{1}}";
+const EMMELY_BUTTON_EXAMPLE = "799e3b72-833b-49b2-8c34-115f6852b7c1";
 
 interface Body {
   element_name: string;
