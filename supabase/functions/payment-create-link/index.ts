@@ -455,6 +455,9 @@ Deno.serve(async (req) => {
     // 6. Create payment_transactions row + save link
     const gatewayPaymentId = stripeData.payment_intent || stripeData.id;
     const paymentUrl = stripeData.url;
+    // Extrai o token do URL Stripe (tudo depois de /c/pay/) para uso em templates HSM WhatsApp
+    const stripeTokenMatch = paymentUrl?.match(/\/c\/pay\/(.+)$/);
+    const stripeToken = stripeTokenMatch ? stripeTokenMatch[1] : null;
 
     try {
       await supabase.from("payment_transactions").insert({
@@ -471,6 +474,7 @@ Deno.serve(async (req) => {
           receipt_token: token,
           checkout_session_id: stripeData.id,
           payment_url: paymentUrl,
+          stripe_token: stripeToken,
           base_amount: baseAmount,
           late_charges: finalAmount - baseAmount,
         },
@@ -528,6 +532,10 @@ Deno.serve(async (req) => {
           };
           if (contactId) invFields.contactId = contactId;
           if (record.due_date) invFields.closedate = record.due_date;
+          if (stripeToken) {
+            // Smart Invoice UF (camelCase para crm.item.add)
+            invFields.ufCrmSmartInvoiceEmmelyStripeToken = stripeToken;
+          }
 
           const invRes = await fetch(`${endpoint}crm.item.add`, {
             method: "POST",
@@ -547,6 +555,23 @@ Deno.serve(async (req) => {
           } else {
             bitrixInvoiceWarning = invJson?.error_description || invJson?.error || "unknown";
             console.error("[PAYMENT-CREATE-LINK] Smart Invoice create failed:", bitrixInvoiceWarning);
+          }
+
+          // Grava também o TOKEN STRIPE no Deal (usado no botão de URL dinâmica do template WhatsApp)
+          if (stripeToken) {
+            try {
+              await fetch(`${endpoint}crm.deal.update`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  id: dealIdNum,
+                  fields: { UF_CRM_EMMELY_STRIPE_TOKEN: stripeToken },
+                  auth: integration.access_token,
+                }),
+              });
+            } catch (dealErr) {
+              console.warn("[PAYMENT-CREATE-LINK] deal stripe_token update warn:", dealErr);
+            }
           }
         } else {
           bitrixInvoiceWarning = "no_active_integration";

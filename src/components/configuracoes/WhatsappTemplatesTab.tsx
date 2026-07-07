@@ -32,7 +32,10 @@ type ButtonDraft = {
   url?: string;
   phone_number?: string;
   example?: string;
+  is_stripe_token?: boolean;
 };
+
+const STRIPE_BUTTON_URL_TEMPLATE = "https://checkout.stripe.com/c/pay/{{1}}";
 
 const statusVariant = (s: string): "default" | "secondary" | "destructive" | "outline" => {
   const v = (s || "").toUpperCase();
@@ -265,6 +268,9 @@ export default function WhatsappTemplatesTab() {
                         <Button type="button" variant="outline" size="sm" onClick={() => setButtons([...buttons, { type: "URL", text: "", url: "" }])}>
                           <LinkIcon className="h-3 w-3" /> URL
                         </Button>
+                        <Button type="button" variant="outline" size="sm" onClick={() => setButtons([...buttons, { type: "URL", text: "Pagar", url: STRIPE_BUTTON_URL_TEMPLATE, is_stripe_token: true }])}>
+                          💳 Pagamento Stripe
+                        </Button>
                         <Button type="button" variant="outline" size="sm" onClick={() => setButtons([...buttons, { type: "QUICK_REPLY", text: "" }])}>
                           Quick reply
                         </Button>
@@ -272,7 +278,9 @@ export default function WhatsappTemplatesTab() {
                     </div>
                     {buttons.map((b, i) => (
                       <div key={i} className="grid grid-cols-12 gap-2 items-end border-t pt-2">
-                        <div className="col-span-2 text-xs text-muted-foreground">{b.type}</div>
+                        <div className="col-span-2 text-xs text-muted-foreground">
+                          {b.is_stripe_token ? "STRIPE" : b.type}
+                        </div>
                         <div className="col-span-4">
                           <Label className="text-xs">Texto</Label>
                           <Input value={b.text} onChange={(e) => {
@@ -281,10 +289,22 @@ export default function WhatsappTemplatesTab() {
                         </div>
                         {b.type === "URL" && (
                           <div className="col-span-5">
-                            <Label className="text-xs">URL (usa {"{{1}}"} para dinâmico)</Label>
-                            <Input value={b.url || ""} onChange={(e) => {
-                              const n = [...buttons]; n[i] = { ...b, url: e.target.value }; setButtons(n);
-                            }} placeholder="https://pay.emmely.pt/{{1}}" />
+                            <Label className="text-xs">
+                              {b.is_stripe_token ? "URL (fixa Stripe)" : "URL (usa {{1}} para dinâmico)"}
+                            </Label>
+                            <Input
+                              value={b.is_stripe_token ? STRIPE_BUTTON_URL_TEMPLATE : (b.url || "")}
+                              disabled={b.is_stripe_token}
+                              onChange={(e) => {
+                                const n = [...buttons]; n[i] = { ...b, url: e.target.value }; setButtons(n);
+                              }}
+                              placeholder="https://pay.emmely.pt/{{1}}"
+                            />
+                            {b.is_stripe_token && (
+                              <p className="mt-1 text-[10px] text-muted-foreground">
+                                A variável {"{{1}}"} será preenchida com o token do checkout Stripe do Deal/Fatura.
+                              </p>
+                            )}
                           </div>
                         )}
                         <div className="col-span-1">
@@ -294,7 +314,7 @@ export default function WhatsappTemplatesTab() {
                         </div>
                       </div>
                     ))}
-                    {buttons.some((b) => b.type === "URL" && /\{\{1\}\}/.test(b.url || "")) && (
+                    {buttons.some((b) => b.type === "URL" && !b.is_stripe_token && /\{\{1\}\}/.test(b.url || "")) && (
                       <div>
                         <Label className="text-xs">Exemplo de URL dinâmica</Label>
                         <Input

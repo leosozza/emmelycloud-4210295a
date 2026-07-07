@@ -71,9 +71,15 @@ serve(async (req) => {
       notes,
       receipt_url,
       receipt_pdf,
+      stripe_token: providedStripeToken,
     } = payment_data || {};
 
     console.log(`[update-deal-payment] entity=${entity_type} id=${deal_id} payment:`, payment_data);
+
+    // Extrai token do URL de checkout Stripe se ainda não foi fornecido
+    const stripeToken = providedStripeToken || (typeof receipt_url === "string"
+      ? (receipt_url.match(/\/c\/pay\/(.+)$/)?.[1] || null)
+      : null);
 
     // ── 1. Update entity UF fields (aligned with bitrix24-install field names) ──
     const ufFields: Record<string, any> = {};
@@ -86,6 +92,7 @@ serve(async (req) => {
     if (notes) ufFields["UF_CRM_EMMELY_PAYMENT_NOTES"] = notes;
     if (receipt_url) ufFields["UF_CRM_EMMELY_RECEIPT_URL"] = receipt_url;
     if (receipt_pdf) ufFields["UF_CRM_EMMELY_RECEIPT_PDF"] = receipt_pdf;
+    if (stripeToken) ufFields["UF_CRM_EMMELY_STRIPE_TOKEN"] = stripeToken;
 
     let entityUpdateResult = null;
     if (Object.keys(ufFields).length > 0) {
@@ -193,6 +200,7 @@ serve(async (req) => {
       if (companyId) invoiceFields["companyId"] = companyId;
       if (dueDate) invoiceFields["ufCrm31DueDate"] = dueDate;
       if (paidDate) invoiceFields["ufCrm31PaidDate"] = paidDate;
+      if (stripeToken) invoiceFields["ufCrmSmartInvoiceEmmelyStripeToken"] = stripeToken;
 
       // Check existing
       const parentFilter: Record<string, any> = {
