@@ -13,7 +13,11 @@ interface Button {
   url?: string;
   phone_number?: string;
   example?: string;
+  is_stripe_token?: boolean;
 }
+
+const STRIPE_BUTTON_URL = "https://checkout.stripe.com/c/pay/{{1}}";
+const STRIPE_BUTTON_EXAMPLE = "cs_live_a1exemploTokenStripe123456789";
 
 interface Body {
   element_name: string;
@@ -109,6 +113,15 @@ Deno.serve(async (req) => {
     if (buttons.length) {
       const btnPayload = buttons.map((b) => {
         if (b.type === "URL") {
+          // Botão Stripe: força URL base fixa + variável {{1}} = token do checkout
+          if (b.is_stripe_token) {
+            return {
+              type: "URL",
+              text: b.text || "Pagar",
+              url: STRIPE_BUTTON_URL,
+              example: [STRIPE_BUTTON_EXAMPLE],
+            };
+          }
           return {
             type: "URL",
             text: b.text,
@@ -122,8 +135,15 @@ Deno.serve(async (req) => {
         return { type: "QUICK_REPLY", text: b.text };
       });
       form.set("buttons", JSON.stringify(btnPayload));
-      if (buttons.some((b) => b.type === "URL" && /\{\{1\}\}/.test(b.url || ""))) {
-        form.set("exampleMedia", body.button_url_example || "https://example.com");
+      const hasStripe = buttons.some((b) => b.type === "URL" && b.is_stripe_token);
+      const hasDynamic = buttons.some((b) => b.type === "URL" && /\{\{1\}\}/.test(b.url || ""));
+      if (hasStripe || hasDynamic) {
+        form.set(
+          "exampleMedia",
+          hasStripe
+            ? `https://checkout.stripe.com/c/pay/${STRIPE_BUTTON_EXAMPLE}`
+            : body.button_url_example || "https://example.com"
+        );
       }
     }
 
