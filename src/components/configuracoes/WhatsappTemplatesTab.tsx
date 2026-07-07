@@ -111,7 +111,7 @@ export default function WhatsappTemplatesTab() {
     }
   }
 
-  useEffect(() => { load(false); }, []);
+  useEffect(() => { load(); }, []);
 
   async function submit() {
     if (!form.element_name || !form.body) {
@@ -139,7 +139,7 @@ export default function WhatsappTemplatesTab() {
       setForm({ element_name: "", category: "UTILITY", language: "pt_BR", body: "", footer: "", button_url_example: "" });
       setButtons([]);
       setExamples([]);
-      load(false);
+      load();
     } catch (e: any) {
       toast.error(e.message || "Falha ao criar template");
     } finally {
@@ -155,7 +155,7 @@ export default function WhatsappTemplatesTab() {
       });
       if (error) throw error;
       toast.success("Template apagado");
-      load(false);
+      load();
     } catch (e: any) {
       toast.error(e.message || "Falha ao apagar");
     }
