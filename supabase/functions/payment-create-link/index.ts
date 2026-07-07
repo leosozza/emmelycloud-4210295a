@@ -502,12 +502,13 @@ Deno.serve(async (req) => {
       console.error("[PAYMENT-CREATE-LINK] financial_records update error:", e);
     }
 
-    // 7. Materialize Smart Invoice in Bitrix24 (one invoice per installment).
-    // Only when the record doesn't yet have one and we have a deal_id to link.
+    // 7. Materialize Smart Invoice in Bitrix24 (one invoice per installment)
+    //    and always write UF_CRM_EMMELY_STRIPE_TOKEN back to the Deal so the
+    //    WhatsApp template button URL can use the fresh token.
     let bitrixInvoiceId: string | null = (record.bitrix24_invoice_id as any) || null;
     let bitrixInvoiceWarning: string | null = null;
 
-    if (!bitrixInvoiceId && link.bitrix24_deal_id) {
+    if (link.bitrix24_deal_id) {
       try {
         const { data: integration } = await supabase
           .from("bitrix24_integrations")
@@ -522,55 +523,10 @@ Deno.serve(async (req) => {
             : integration.client_endpoint + "/";
           const dealIdNum = parseInt(String(link.bitrix24_deal_id), 10);
 
-          let contactId: number | undefined = undefined;
-          try {
-            const dealRes = await fetch(`${endpoint}crm.deal.get?auth=${integration.access_token}&id=${dealIdNum}`);
-            const dealJson = await dealRes.json();
-            const cid = dealJson?.result?.CONTACT_ID;
-            if (cid) contactId = parseInt(String(cid), 10);
-          } catch { /* ignore */ }
-
-          const invoiceTitle = `Parcela ${record.installment_number || 1}/${record.total_installments || 1} — ${link.deal_title || record.description || "Pagamento"}`;
-          const invFields: Record<string, any> = {
-            title: invoiceTitle,
-            opportunity: baseAmount,
-            currencyId: currency,
-            isManualOpportunity: "Y",
-            parentId2: dealIdNum,
-            begindate: new Date().toISOString().split("T")[0],
-            comments: `Fatura gerada automaticamente pelo Emmely Pay (parcela ${record.installment_number || 1}/${record.total_installments || 1}).`,
-          };
-          if (contactId) invFields.contactId = contactId;
-          if (record.due_date) invFields.closedate = record.due_date;
-          if (stripeToken) {
-            // Smart Invoice UF (camelCase para crm.item.add)
-            invFields.ufCrmSmartInvoiceEmmelyStripeToken = stripeToken;
-          }
-
-          const invRes = await fetch(`${endpoint}crm.item.add`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ entityTypeId: 31, fields: invFields, auth: integration.access_token }),
-          });
-          const invJson = await invRes.json();
-          const newInvoiceId = invJson?.result?.item?.id;
-
-          if (newInvoiceId) {
-            bitrixInvoiceId = String(newInvoiceId);
-            await supabase
-              .from("financial_records")
-              .update({ bitrix24_invoice_id: bitrixInvoiceId })
-              .eq("id", actualRecordId);
-            console.log("[PAYMENT-CREATE-LINK] Smart Invoice created:", bitrixInvoiceId);
-          } else {
-            bitrixInvoiceWarning = invJson?.error_description || invJson?.error || "unknown";
-            console.error("[PAYMENT-CREATE-LINK] Smart Invoice create failed:", bitrixInvoiceWarning);
-          }
-
-          // Grava também o TOKEN STRIPE no Deal (usado no botão de URL dinâmica do template WhatsApp)
+          // Always write the fresh Stripe token to the Deal UF field.
           if (stripeToken) {
             try {
-              await fetch(`${endpoint}crm.deal.update`, {
+              const upRes = await fetch(`${endpoint}crm.deal.update`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
@@ -579,8 +535,57 @@ Deno.serve(async (req) => {
                   auth: integration.access_token,
                 }),
               });
+              const upJson = await upRes.json().catch(() => ({}));
+              console.log("[PAYMENT-CREATE-LINK] deal UF_CRM_EMMELY_STRIPE_TOKEN update:", { dealIdNum, ok: upJson?.result, error: upJson?.error_description || upJson?.error });
             } catch (dealErr) {
               console.warn("[PAYMENT-CREATE-LINK] deal stripe_token update warn:", dealErr);
+            }
+          }
+
+          // Smart Invoice only when the record doesn't yet have one.
+          if (!bitrixInvoiceId) {
+            let contactId: number | undefined = undefined;
+            try {
+              const dealRes = await fetch(`${endpoint}crm.deal.get?auth=${integration.access_token}&id=${dealIdNum}`);
+              const dealJson = await dealRes.json();
+              const cid = dealJson?.result?.CONTACT_ID;
+              if (cid) contactId = parseInt(String(cid), 10);
+            } catch { /* ignore */ }
+
+            const invoiceTitle = `Parcela ${record.installment_number || 1}/${record.total_installments || 1} — ${link.deal_title || record.description || "Pagamento"}`;
+            const invFields: Record<string, any> = {
+              title: invoiceTitle,
+              opportunity: baseAmount,
+              currencyId: currency,
+              isManualOpportunity: "Y",
+              parentId2: dealIdNum,
+              begindate: new Date().toISOString().split("T")[0],
+              comments: `Fatura gerada automaticamente pelo Emmely Pay (parcela ${record.installment_number || 1}/${record.total_installments || 1}).`,
+            };
+            if (contactId) invFields.contactId = contactId;
+            if (record.due_date) invFields.closedate = record.due_date;
+            if (stripeToken) {
+              invFields.ufCrmSmartInvoiceEmmelyStripeToken = stripeToken;
+            }
+
+            const invRes = await fetch(`${endpoint}crm.item.add`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ entityTypeId: 31, fields: invFields, auth: integration.access_token }),
+            });
+            const invJson = await invRes.json();
+            const newInvoiceId = invJson?.result?.item?.id;
+
+            if (newInvoiceId) {
+              bitrixInvoiceId = String(newInvoiceId);
+              await supabase
+                .from("financial_records")
+                .update({ bitrix24_invoice_id: bitrixInvoiceId })
+                .eq("id", actualRecordId);
+              console.log("[PAYMENT-CREATE-LINK] Smart Invoice created:", bitrixInvoiceId);
+            } else {
+              bitrixInvoiceWarning = invJson?.error_description || invJson?.error || "unknown";
+              console.error("[PAYMENT-CREATE-LINK] Smart Invoice create failed:", bitrixInvoiceWarning);
             }
           }
         } else {
