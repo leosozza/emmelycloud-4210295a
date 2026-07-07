@@ -855,11 +855,12 @@ function DashboardView({ integration, botId, domain, onCachePortfolio }: {
 }
 
 // ==================== CONFIGURACOES WRAPPER ====================
-type ConfigSubTab = "geral" | "empresas" | "placement" | "revisao" | "importacao" | "mapeamento";
+type ConfigSubTab = "geral" | "empresas" | "placement" | "revisao" | "importacao" | "mapeamento" | "templates";
 
 const configSubTabs: { id: ConfigSubTab; label: string; icon: typeof Settings }[] = [
   { id: "geral", label: "Geral", icon: Settings },
   { id: "empresas", label: "Empresas", icon: Building2 },
+  { id: "templates", label: "Templates WhatsApp", icon: MessageSquare },
   { id: "mapeamento", label: "Mapeamento", icon: Link },
   { id: "placement", label: "Placement", icon: ExternalLink },
   { id: "revisao", label: "Revisão", icon: AlertTriangle },
