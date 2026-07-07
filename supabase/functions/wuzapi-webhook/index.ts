@@ -59,8 +59,24 @@ Deno.serve(async (req) => {
                         : receiptType === "delivery" || receiptType === "delivered" ? "delivered"
                         : "delivered";
         if (Array.isArray(ids) && ids.length) {
-          await supabase.from("messages").update({ delivery_status: newStatus, ...(newStatus === "read" ? { read_at: new Date().toISOString() } : {}) }).in("external_id", ids);
+          const { data: updatedRows } = await supabase
+            .from("messages")
+            .update({ delivery_status: newStatus, ...(newStatus === "read" ? { read_at: new Date().toISOString() } : {}) })
+            .in("external_id", ids)
+            .select("id");
           console.log(`[WUZAPI-WEBHOOK] Receipt updated ${ids.length} message(s) → ${newStatus}`);
+          for (const row of updatedRows || []) {
+            try {
+              fetch(`${Deno.env.get("SUPABASE_URL")}/functions/v1/bitrix24-post-message-timeline`, {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                  "Authorization": `Bearer ${Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")}`,
+                },
+                body: JSON.stringify({ message_id: row.id, event: newStatus }),
+              }).catch(() => {});
+            } catch {}
+          }
         }
       } catch (e) { console.warn("[WUZAPI-WEBHOOK] receipt error", e); }
       return new Response(JSON.stringify({ ok: true, receipt: true }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
