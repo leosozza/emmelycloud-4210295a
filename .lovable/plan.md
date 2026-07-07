@@ -1,52 +1,53 @@
-## Objetivo
+## Problema
 
-Unificar a geração de parcelas em **`payment-receipt`**, **`bitrix24-payment-tab`** (placement) e **`bitrix24-robot-handler`** para lerem exatamente os mesmos campos do deal e produzirem exatamente a mesma lista (Entrada + Parcelas), corrigindo o caso do deal 45807 no link público `payment-receipt?token=799e3b72…`.
+O robot `emmely_send_whatsapp` foi disparado no deal 47047 mas não apareceu comentário na timeline (nem sucesso nem falha).
 
 ## Causa raiz
 
-`payment-receipt/fetchBitrixDealAmount()` lê apenas `UF_CRM_EMMELY_TOTAL_INSTALLMENTS / INSTALLMENT_VALUE / NEXT_DUE_DATE / PAID_INSTALLMENTS` e ignora os campos de Entrada (`UF_CRM_EMMELY_DOWN_PAYMENT`, `DOWN_INSTALLMENTS`, `DOWN_METHOD`, `DOWN_FIRST_DUE`, `DOWN_INTERVAL`). O placement e o robot já leem esses campos via `_shared/deal-payment-fields.ts::readEmmelyPaymentPlan`, mas cada um tem a sua própria função de expansão.
+Nos logs do edge function, o Bitrix envia `document_id` como **objeto indexado**:
 
-## Alterações
-
-### 1. `supabase/functions/_shared/deal-payment-fields.ts` (novo helper)
-
-Adicionar `expandPlanToInstallments(plan, opts?)` que devolve `InstallmentRow[]` no formato consumido tanto pelo placement como pelo receipt:
-
-```
-{ number, total, value, currency, due_date, status, is_down_payment, description }
+```json
+"document_id": {"0":"crm","1":"CCrmDocumentDeal","2":"DEAL_47047"}
 ```
 
-Regras (idênticas às do placement hoje):
-- Se `plan.downPayment > 0` e `downInstallments >= 1`: adiciona `downInstallments` linhas `is_down_payment: true` (número 1..downInstallments dentro do grupo) com vencimentos a partir de `downFirstDue` em passos de `downInterval` dias.
-- Adiciona `remainingInstallments` linhas de saldo com vencimentos a partir de `firstDue` em passos de `interval` dias.
-- Marca `status: "paga"` para as primeiras `paidInstallments` linhas de saldo (ou também para a entrada, se `paidInstallments` cobrir).
-- Valores: `downPayment / downInstallments` para entrada; `(total - downPayment) / remainingInstallments` para saldo, arredondado a 2 casas.
+No `bitrix24-robot-handler/index.ts` (linha 2427-2436) o parsing só trata array:
 
-### 2. `supabase/functions/payment-receipt/index.ts`
+```ts
+const docStr = Array.isArray(docId) ? String(docId[2] || "") : String(docId || "");
+```
 
-- Remover `fetchBitrixDealAmount` local.
-- Substituir por `readEmmelyPaymentPlan` + `expandPlanToInstallments` (via `_shared`).
-- Manter a precedência atual: se existirem `financial_records` reais para o `contract_id`/`deal_id`, elas continuam a sobrescrever as sintéticas por `installment_number`; só as slots sem registro real usam o sintético expandido do plano.
-- `total_value = plan.totalAmount` (ou soma das reais, se existirem e cobrirem todos os slots).
-- Continuar servindo JSON e o redirect HTML iguais.
+Como `docId` é um objeto (não array), cai no `else` e vira `"[object Object]"`. Nenhum regex bate, `tlEntity` fica `null`, `timelineCtx` fica `undefined`, e `handleSendWhatsApp` não posta nada na timeline.
 
-### 3. `supabase/functions/bitrix24-payment-tab/index.ts`
+(O `emmely_create_charge` posta na timeline porque usa `properties.deal_id` diretamente, não `document_id` — por isso funcionou para o mesmo deal 47047.)
 
-- Substituir `paymentPlanFromDeal` + `buildSyntheticInstallmentsFromPlan` locais por chamadas a `readEmmelyPaymentPlan` + `expandPlanToInstallments`.
-- Adaptador fino para converter `InstallmentRow[]` do shared no tipo `InstallmentData` do placement (mesmos campos + `id: "deal-<n>"` para linhas sintéticas). Nenhuma mudança de UI.
+## Correção
 
-### 4. `supabase/functions/bitrix24-robot-handler/index.ts`
+**Arquivo:** `supabase/functions/bitrix24-robot-handler/index.ts` (bloco linhas 2427-2436)
 
-- Já usa `readEmmelyPaymentPlan`. Sem mudança funcional. Confirmar que a geração de cobranças continua a bater com o mesmo shape após o refactor do payment-tab (é o mesmo `plan` object).
+Substituir a extração de `docStr` por um helper que aceita:
+- array: `docId[2]`
+- objeto indexado: `docId["2"]` ou `docId[2]`
+- string direta: `docId`
+
+```ts
+const extractDocStr = (d: any): string => {
+  if (!d) return "";
+  if (Array.isArray(d)) return String(d[2] || d[1] || "");
+  if (typeof d === "object") return String(d["2"] ?? d[2] ?? d["1"] ?? "");
+  return String(d);
+};
+const docStr = extractDocStr(docId);
+```
+
+Nada mais muda — os regex `DEAL_\d+`, `LEAD_\d+`, `DYNAMIC_\d+_\d+` continuam iguais, e o `timelineCtx` passa a ser construído corretamente para deals, leads e SPAs.
 
 ## Fora de escopo
 
-- Alterar UI do placement ou da página `/pagamento/:token` (a mudança é só na fonte de dados).
-- Alterar tabelas ou campos custom do Bitrix24.
-- Alterar comportamento das transações reais (`payment_transactions` / `financial_records`) — apenas o merge continua igual.
+- Não altero `handleSendWhatsApp`, `postTimelineComment`, nem a lógica de envio ao `message-send`.
+- Não mexo em outros robots (charge, proposal, etc.) — cada um já resolve a entidade pelo próprio caminho.
 
-## Como validar
+## Validação
 
-1. Após deploy, abrir `https://qohnsluvhyziovfynzlu.supabase.co/functions/v1/payment-receipt?token=799e3b72-833b-49b2-8c34-115f6852b7c1&format=json` e conferir que devolve `installments` com 2 linhas: `{ is_down_payment: true, value: 10, ... }` + `{ is_down_payment: false, number: 1, total: 1, value: 10, ... }`, batendo com o placement.
-2. Abrir a aba Emmely Pay do deal 45807 e conferir que a lista continua igual.
-3. Rodar o robô de gerar cobrança no deal 45807 e conferir que o número/valor das parcelas geradas é o mesmo.
+Após deploy, disparar novamente o robot Emmely WhatsApp no deal 47047 e confirmar:
+1. Aparece comentário na timeline com `[B]✅ WhatsApp enviado[/B]` ou `[B]❌ WhatsApp NÃO enviado[/B]`.
+2. `bitrix24_debug_logs` mostra `event_type = 'timeline_comment_add'` associado ao robot.
