@@ -455,6 +455,9 @@ Deno.serve(async (req) => {
     // 6. Create payment_transactions row + save link
     const gatewayPaymentId = stripeData.payment_intent || stripeData.id;
     const paymentUrl = stripeData.url;
+    // Extrai o token do URL Stripe (tudo depois de /c/pay/) para uso em templates HSM WhatsApp
+    const stripeTokenMatch = paymentUrl?.match(/\/c\/pay\/(.+)$/);
+    const stripeToken = stripeTokenMatch ? stripeTokenMatch[1] : null;
 
     try {
       await supabase.from("payment_transactions").insert({
@@ -471,6 +474,7 @@ Deno.serve(async (req) => {
           receipt_token: token,
           checkout_session_id: stripeData.id,
           payment_url: paymentUrl,
+          stripe_token: stripeToken,
           base_amount: baseAmount,
           late_charges: finalAmount - baseAmount,
         },
