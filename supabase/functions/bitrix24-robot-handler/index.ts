@@ -431,8 +431,8 @@ async function postTimelineComment(
   integration: { client_endpoint: string; access_token: string; id: string } | null | undefined,
   entity: { type: "deal" | "lead" | "spa"; id: string | number; spaEntityTypeId?: number | string },
   comment: string,
-): Promise<void> {
-  if (!integration?.client_endpoint || !integration?.access_token || !entity?.id) return;
+): Promise<number | null> {
+  if (!integration?.client_endpoint || !integration?.access_token || !entity?.id) return null;
   let entityType: string;
   if (entity.type === "deal") entityType = "deal";
   else if (entity.type === "lead") entityType = "lead";
@@ -462,6 +462,7 @@ async function postTimelineComment(
           entity_id: entityIdInt,
           attempt,
           ok: !!res?.result && !res?.error,
+          comment_id: res?.result || null,
           bitrix_error: res?.error || null,
           bitrix_error_description: res?.error_description || null,
         },
@@ -475,7 +476,7 @@ async function postTimelineComment(
     const res = await tryAdd(1);
     if (res?.result && !res?.error) {
       await logAttempt("author_1", res, null);
-      return;
+      return Number(res.result) || null;
     }
     await logAttempt("author_1", res, null);
     console.warn("[ROBOT-HANDLER] timeline.comment.add attempt1 error:", res?.error, res?.error_description);
@@ -498,7 +499,7 @@ async function postTimelineComment(
       const res = await tryAdd(assignedBy);
       if (res?.result && !res?.error) {
         await logAttempt(`author_${assignedBy}`, res, null);
-        return;
+        return Number(res.result) || null;
       }
       await logAttempt(`author_${assignedBy}`, res, null);
     }
@@ -529,6 +530,7 @@ async function postTimelineComment(
     await logAttempt("activity_fallback", null, e);
     console.warn("[ROBOT-HANDLER] timeline activity fallback failed:", e);
   }
+  return null;
 }
 
 // Deterministic signature of a charge plan. Same deal + same parcels (amount, due_date, seq)
