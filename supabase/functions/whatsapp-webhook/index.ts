@@ -98,9 +98,27 @@ Deno.serve(async (req) => {
           // Handle delivery status updates
           for (const status of statuses) {
             if (status.id) {
-              await supabase.from("messages")
+              const { data: updatedRows } = await supabase.from("messages")
                 .update({ delivery_status: status.status })
-                .eq("external_id", status.id);
+                .eq("external_id", status.id)
+                .select("id");
+              const updatedId = updatedRows?.[0]?.id;
+              if (updatedId && ["sent", "delivered", "read", "failed"].includes(status.status)) {
+                try {
+                  fetch(`${Deno.env.get("SUPABASE_URL")}/functions/v1/bitrix24-post-message-timeline`, {
+                    method: "POST",
+                    headers: {
+                      "Content-Type": "application/json",
+                      "Authorization": `Bearer ${Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")}`,
+                    },
+                    body: JSON.stringify({
+                      message_id: updatedId,
+                      event: status.status,
+                      error: status.status === "failed" ? (status.errors?.[0]?.title || status.errors?.[0]?.message || "") : undefined,
+                    }),
+                  }).catch(() => {});
+                } catch {}
+              }
 
               // Badge: emmely_msg_delivered / emmely_msg_failed
               if (status.status === "delivered" || status.status === "read" || status.status === "failed") {

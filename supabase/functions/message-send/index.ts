@@ -591,12 +591,11 @@ Deno.serve(async (req) => {
             params: (resolvedInteractiveData as any).params || [],
           };
         } else if (mt === "cta_url" && resolvedInteractiveData) {
-          gsBody.message_type = "cta_url";
-          gsBody.content = content;
-          gsBody.cta_url = {
-            url: (resolvedInteractiveData as any).url,
-            display_text: (resolvedInteractiveData as any).label || (resolvedInteractiveData as any).display_text || "Abrir link",
-          };
+          // Gupshup não suporta CTA URL fora de templates HSM — envia como texto com preview
+          const url = (resolvedInteractiveData as any).url || "";
+          const label = (resolvedInteractiveData as any).label || (resolvedInteractiveData as any).display_text || "";
+          gsBody.message_type = "text";
+          gsBody.content = [content, label, url].filter(Boolean).join("\n");
         }
         const gsRes = await fetch(`${supabaseUrl}/functions/v1/gupshup-send`, {
           method: "POST",
@@ -861,8 +860,9 @@ Deno.serve(async (req) => {
     // email/webchat: just DB insert (no external send)
 
     // Save outbound message (unless skip_db_save)
+    let savedMessageId: string | null = null;
     if (!skip_db_save) {
-      await supabase.from("messages").insert({
+      const insertRes = await supabase.from("messages").insert({
         conversation_id,
         direction: "outbound",
         content,
@@ -876,7 +876,8 @@ Deno.serve(async (req) => {
         ai_review_score: aiReviewScore,
         ai_review_id: aiReviewId,
         originated_by_agent_id: bodyAiAgentId ?? null,
-      });
+      }).select("id").single();
+      savedMessageId = insertRes.data?.id ?? null;
 
       // Marca a revisão como já entregue
       if (aiReviewId) {
@@ -950,6 +951,19 @@ Deno.serve(async (req) => {
         }),
       }).catch(() => {});
     } catch {}
+
+    // Post/update Bitrix24 timeline comment with message status (fire and forget)
+    if (savedMessageId && conv.channel === "whatsapp") {
+      try {
+        const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+        const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+        fetch(`${supabaseUrl}/functions/v1/bitrix24-post-message-timeline`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "Authorization": `Bearer ${serviceKey}` },
+          body: JSON.stringify({ message_id: savedMessageId, event: "sent" }),
+        }).catch(() => {});
+      } catch {}
+    }
 
     return new Response(JSON.stringify({ success: true, message_id: externalMessageId }), {
       status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },

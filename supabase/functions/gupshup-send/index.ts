@@ -183,18 +183,13 @@ function buildMessageObject(body: SendBody): { messageObj: any; isTemplate: bool
       return { messageObj: body.interactive, isTemplate: false };
 
     case "cta_url": {
+      // Gupshup v1 /msg endpoint não aceita type: "cta_url" — fallback para texto com preview
       const cta = body.cta_url || (body.interactive && body.interactive.cta_url) || null;
       const url = cta?.url || "";
-      const display_text = cta?.display_text || "Abrir link";
+      const label = cta?.display_text || "";
       const bodyText = body.content || "";
-      return {
-        messageObj: {
-          type: "cta_url",
-          cta_url: { display_text, url },
-          ...(bodyText ? { body: { text: bodyText } } : {}),
-        },
-        isTemplate: false,
-      };
+      const text = [bodyText, label, url].filter(Boolean).join("\n");
+      return { messageObj: { type: "text", text }, isTemplate: false };
     }
 
     case "template":
