@@ -166,17 +166,23 @@ Deno.serve(async (req) => {
     const isSynthetic = typeof financial_record_id === "string" && financial_record_id.startsWith("synthetic-");
 
     if (isSynthetic) {
-      // Format: synthetic-{dealId}-{installmentNumber}
+      // Format: synthetic-{dealId}-{d|r}{installmentNumber}[-{totalInstallments}]
+      // Ex: synthetic-12345-d1  (entrada)  |  synthetic-12345-r2  (parcela recorrente 2)
       const parts = financial_record_id.split("-");
       const dealIdStr = parts[1];
-      const installmentNumber = parseInt(parts[2] || "1", 10);
       const dealIdNum = parseInt(dealIdStr, 10);
+      const rawNum = parts[2] || "1";
+      const m = /^([dr])(\d+)$/i.exec(rawNum);
+      const isDownPayment = m?.[1]?.toLowerCase() === "d";
+      const installmentNumber = m ? parseInt(m[2], 10) : parseInt(rawNum, 10);
 
       if (!isFinite(dealIdNum) || !isFinite(installmentNumber)) {
         return new Response(JSON.stringify({ error: "Synthetic ID inválido" }), {
           status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
+
+      console.log("[PAYMENT-CREATE-LINK] synthetic parse:", { financial_record_id, dealIdNum, installmentNumber, isDownPayment });
 
       // Security: deal must match receipt link
       if (!link.bitrix24_deal_id || Number(link.bitrix24_deal_id) !== dealIdNum) {
@@ -185,13 +191,17 @@ Deno.serve(async (req) => {
         });
       }
 
-      // Try to find an existing record for this deal+installment first
-      const { data: existing } = await supabase
+      // Try to find an existing record for this deal+installment first.
+      // Distinguish "Entrada" (down payment) from a regular parcel that may share installment_number=1.
+      let existingQuery = supabase
         .from("financial_records")
         .select("*")
         .eq("bitrix24_deal_id", dealIdNum)
-        .eq("installment_number", installmentNumber)
-        .maybeSingle();
+        .eq("installment_number", installmentNumber);
+      existingQuery = isDownPayment
+        ? existingQuery.ilike("description", "Entrada%")
+        : existingQuery.not("description", "ilike", "Entrada%");
+      const { data: existing } = await existingQuery.maybeSingle();
 
       if (existing) {
         record = existing;
