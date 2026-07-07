@@ -810,6 +810,19 @@ Deno.serve(async (req) => {
           waPayload = { messaging_product: "whatsapp", to: phone, type: "template", template: { name: resolvedInteractiveData.name, language: { code: resolvedInteractiveData.language || "pt_BR" }, components: resolvedInteractiveData.components || [] } };
         } else if (message_type === "reaction" && resolvedInteractiveData) {
           waPayload = { messaging_product: "whatsapp", to: phone, type: "reaction", reaction: { message_id: resolvedInteractiveData.message_id, emoji: resolvedInteractiveData.emoji || "👍" } };
+        } else if (message_type === "cta_url" && resolvedInteractiveData) {
+          const ctaUrl = (resolvedInteractiveData as any).url;
+          const ctaLabel = (resolvedInteractiveData as any).label || (resolvedInteractiveData as any).display_text || "Abrir link";
+          waPayload = {
+            messaging_product: "whatsapp",
+            to: phone,
+            type: "interactive",
+            interactive: {
+              type: "cta_url",
+              body: { text: content || "" },
+              action: { name: "cta_url", parameters: { display_text: ctaLabel, url: ctaUrl } },
+            },
+          };
         } else {
           // Prefix content with sender name if provided
           const waContent = bodySenderName ? `*${bodySenderName}:*\n${content}` : content;
