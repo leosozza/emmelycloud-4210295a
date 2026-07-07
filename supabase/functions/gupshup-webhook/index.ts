@@ -80,7 +80,28 @@ Deno.serve(async (req) => {
       };
       const status = statusMap[evt.type] || evt.type;
       if (gsId && status) {
-        await supabase.from("messages").update({ delivery_status: status }).eq("external_id", gsId);
+        const { data: updatedRows } = await supabase
+          .from("messages")
+          .update({ delivery_status: status })
+          .eq("external_id", gsId)
+          .select("id");
+        const updatedId = updatedRows?.[0]?.id;
+        if (updatedId && ["sent", "delivered", "read", "failed"].includes(status)) {
+          try {
+            fetch(`${Deno.env.get("SUPABASE_URL")}/functions/v1/bitrix24-post-message-timeline`, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                "Authorization": `Bearer ${Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")}`,
+              },
+              body: JSON.stringify({
+                message_id: updatedId,
+                event: status,
+                error: status === "failed" ? (evt.payload?.reason || evt.reason || "") : undefined,
+              }),
+            }).catch(() => {});
+          } catch {}
+        }
       }
       return new Response(JSON.stringify({ ok: true }), {
         status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
