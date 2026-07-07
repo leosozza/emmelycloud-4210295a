@@ -680,12 +680,13 @@ async function handleCreateCharge(
     let reusedPaymentUrl = "";
     let reusedChargeId = "";
     let reusedGateway = "";
+    let reusedGroupTxs: Array<{ amount?: number | null; metadata?: any }> = [];
 
     if (dealId) {
       try {
         const { data: existingTxs } = await supabase
           .from("payment_transactions")
-          .select("id, status, payment_url, gateway, gateway_payment_id, metadata, created_at")
+          .select("id, status, amount, payment_url, gateway, gateway_payment_id, metadata, created_at")
           .eq("metadata->>bitrix_deal_id", String(dealId))
           .order("created_at", { ascending: false })
           .limit(200);
@@ -717,6 +718,7 @@ async function handleCreateCharge(
             reusedPaymentUrl = primary?.payment_url || "";
             reusedChargeId = primary?.id || "";
             reusedGateway = primary?.gateway || "";
+            reusedGroupTxs = pendingOnes;
           } else if (pendingOnes.length > 0) {
             reuseDecision = "recreate";
             previousGroupId = firstGid;
@@ -793,11 +795,12 @@ async function handleCreateCharge(
         }
       }
       const fmt = (v: number) => new Intl.NumberFormat("pt-PT", { style: "currency", currency }).format(v);
+      const parcelsSummary = summarizeExistingChargeParcels(reusedGroupTxs, fmt) || `${parcels.length}`;
       const comment =
         `[B]♻️ Emmely Pay — link existente reutilizado (sem alterações)[/B]\n` +
         `Valor total: ${fmt(totalAmount)}\n` +
         `Gateway: ${reusedGateway || companyGateway}\n` +
-        `Parcelas: ${parcels.length}\n` +
+        `Parcelas: ${parcelsSummary}\n` +
         (reusedPaymentUrl ? `[URL=${reusedPaymentUrl}]Abrir link de pagamento[/URL]` : `(⚠️ link anterior não estava registado)`) +
         (dealUpdErr ? `\n⚠️ Não foi possível reescrever UF_CRM_EMMELY_PAYMENT_URL: ${dealUpdErr.slice(0, 200)}` : "");
       await postTimelineComment(supabase, integration, { type: "deal", id: dealId }, comment);
