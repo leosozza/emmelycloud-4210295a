@@ -153,7 +153,7 @@ Deno.serve(async (req) => {
     }
 
     const accessToken = await ensureValidToken(supabase, integration);
-    const stages = await resolveSmartInvoiceStages(supabase, integration, accessToken);
+    const stages = await resolveSmartInvoiceStages(supabase, integration, accessToken, !!refresh_stages);
     const targetStage = mapStatusToStage(String(new_status), stages);
 
     if (!targetStage) {
