@@ -49,14 +49,15 @@ async function ensureValidToken(supabase: any, integration: any): Promise<string
 async function resolveSmartInvoiceStages(
   supabase: any,
   integration: any,
-  accessToken: string
+  accessToken: string,
+  forceRefresh = false
 ): Promise<{ pending: string; paid: string; declined: string }> {
   const cfg = (integration.config as any) || {};
-  if (cfg.smart_invoice_stages?.pending && cfg.smart_invoice_stages?.paid) {
+  if (!forceRefresh && cfg.smart_invoice_stages?.pending && cfg.smart_invoice_stages?.paid) {
     return cfg.smart_invoice_stages;
   }
 
-  // Fetch stages from CRM. crm.status.list with entityId starting with "DT31_"
+  // Discover stages using SEMANTICS: S=success(paid), F=fail(cancelled/declined), null/other=pending
   const stages: { pending: string; paid: string; declined: string } = {
     pending: "DT31_1:NEW",
     paid: "DT31_1:P",
@@ -64,22 +65,30 @@ async function resolveSmartInvoiceStages(
   };
 
   try {
-    const res = await callBitrix(integration.client_endpoint, accessToken, "crm.status.list", {
-      filter: { ENTITY_ID: "DYNAMIC_31_STAGE_1" },
-    });
-    const items = res.result || [];
-    // STATUS_ID looks like "DT31_1:NEW", "DT31_1:P", "DT31_1:D"
-    for (const it of items) {
-      const id = String(it.STATUS_ID || "");
-      if (id.endsWith(":NEW")) stages.pending = id;
-      else if (id.endsWith(":P")) stages.paid = id;
-      else if (id.endsWith(":D")) stages.declined = id;
+    // Pull all DT31_* stage groups
+    const seen = new Set<string>();
+    for (let category = 1; category <= 20; category++) {
+      const entityId = `DYNAMIC_31_STAGE_${category}`;
+      if (seen.has(entityId)) continue;
+      seen.add(entityId);
+      const res = await callBitrix(integration.client_endpoint, accessToken, "crm.status.list", {
+        filter: { ENTITY_ID: entityId },
+        order: { SORT: "ASC" },
+      });
+      const items = res.result || [];
+      if (!items.length) continue;
+      for (const it of items) {
+        const id = String(it.STATUS_ID || "");
+        const sem = String(it.SEMANTICS || "").toUpperCase();
+        if (sem === "S") stages.paid = id;
+        else if (sem === "F") stages.declined = id;
+        else if (!stages.pending || stages.pending === "DT31_1:NEW") stages.pending = id;
+      }
     }
   } catch (e) {
     console.error("[SYNC-INVOICE] stage lookup failed, using defaults:", e);
   }
 
-  // Cache
   try {
     await supabase.from("bitrix24_integrations").update({
       config: { ...cfg, smart_invoice_stages: stages },
