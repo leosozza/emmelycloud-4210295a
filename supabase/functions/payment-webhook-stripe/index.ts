@@ -359,6 +359,38 @@ Deno.serve(async (req) => {
       }
     }
 
+    // Fallback for payment_intent.* events: the checkout session id is not the
+    // event object id (that's the pi_...), but Stripe copies the session's
+    // metadata into payment_intent_data.metadata at session creation. We use
+    // that metadata to locate the original pending robot-created tx and reuse it.
+    if (!existingTx && !isCheckoutSessionEvent) {
+      const meta = (eventObject.metadata || {}) as Record<string, string>;
+      const dealFromMeta = meta.bitrix_deal_id || meta.bitrix24_deal_id || null;
+      const installmentFromMeta = meta.installment_number || null;
+      const groupFromMeta = meta.installment_group_id || null;
+
+      if (dealFromMeta) {
+        let q = supabase
+          .from("payment_transactions")
+          .select("id, financial_record_id, metadata, amount, currency, gateway")
+          .like("gateway", "stripe%")
+          .eq("status", "pending")
+          .eq("metadata->>bitrix_deal_id", String(dealFromMeta));
+        if (installmentFromMeta) q = q.eq("metadata->>installment_number", String(installmentFromMeta));
+        if (groupFromMeta) q = q.eq("metadata->>installment_group_id", String(groupFromMeta));
+        const { data: candidates } = await q.order("created_at", { ascending: false }).limit(1);
+        const cand = candidates?.[0];
+        if (cand) {
+          existingTx = cand;
+          await supabase
+            .from("payment_transactions")
+            .update({ gateway_payment_id: gatewayPaymentId })
+            .eq("id", cand.id);
+          console.log(`[STRIPE-WEBHOOK] Metadata-key match: deal=${dealFromMeta} installment=${installmentFromMeta} -> tx ${cand.id}`);
+        }
+      }
+    }
+
     // Legacy fallback: try checkout_session_id in metadata (kept for old transactions)
     if (!existingTx && isCheckoutSessionEvent) {
       const sessionId = eventObject.id;
