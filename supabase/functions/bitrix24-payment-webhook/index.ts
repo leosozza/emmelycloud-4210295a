@@ -289,12 +289,13 @@ Deno.serve(async (req) => {
       }
     }
 
-    // Create Smart Invoices in Bitrix24
+    // Create Smart Invoices in Bitrix24 + financial_records upfront
     for (let i = 0; i < transactions.length; i++) {
       const tx = transactions[i];
       const parcel = parcels[i];
       const label = parcel.is_down_payment ? "Entrada" : `Parcela ${parcel.installment_number}/${numInstallments}`;
       const invoiceTitle = `${label} - ${deal.TITLE || "Negócio"}`;
+      let invoiceId: string | number | null = null;
 
       try {
         const invoiceResult = await callBitrix(integration.client_endpoint, accessToken, "crm.item.add", {
@@ -319,24 +320,72 @@ Deno.serve(async (req) => {
           },
         });
 
-        const invoiceId = invoiceResult.result?.item?.id;
-        if (invoiceId) {
-          // Update transaction metadata with invoice ID
-          await fetch(`${supabaseUrl}/functions/v1/payment-create`, {
-            method: "PATCH",
-            headers: {
-              "Content-Type": "application/json",
-              "Authorization": `Bearer ${serviceKey}`,
-            },
-            body: JSON.stringify({
-              transaction_id: tx.id,
-              metadata_update: { bitrix_invoice_id: invoiceId },
-            }),
-          });
-          tx.bitrix_invoice_id = invoiceId;
+        invoiceId = invoiceResult.result?.item?.id ?? null;
+        if (!invoiceId) {
+          const errMsg = `${label}: Smart Invoice sem id retornado. Resposta: ${JSON.stringify(invoiceResult).slice(0, 500)}`;
+          errors.push(errMsg);
+          console.error("[PAYMENT-WEBHOOK]", errMsg);
+          try {
+            await supabase.from("bitrix24_debug_logs").insert({
+              integration_id: integration.id,
+              event_type: "smart_invoice_create_failed",
+              direction: "outbound",
+              payload: { deal_id: dealId, label, response: invoiceResult, tx_id: tx.id },
+            });
+          } catch (_) { /* ignore */ }
         }
       } catch (e) {
-        console.error("[PAYMENT-WEBHOOK] Smart Invoice error:", e);
+        const errMsg = `${label}: Smart Invoice erro: ${e instanceof Error ? e.message : String(e)}`;
+        errors.push(errMsg);
+        console.error("[PAYMENT-WEBHOOK]", errMsg);
+        try {
+          await supabase.from("bitrix24_debug_logs").insert({
+            integration_id: integration.id,
+            event_type: "smart_invoice_create_exception",
+            direction: "outbound",
+            payload: { deal_id: dealId, label, error: String(e), tx_id: tx.id },
+          });
+        } catch (_) { /* ignore */ }
+      }
+
+      // Create financial_record upfront (mesmo se a Smart Invoice falhar — FR fica sem bitrix24_invoice_id)
+      try {
+        const { data: fr, error: frErr } = await supabase
+          .from("financial_records")
+          .insert({
+            description: `${deal.TITLE || "Deal"} - ${label}`,
+            total_value: parcel.amount,
+            installment_value: parcel.amount,
+            installment_number: parcel.is_down_payment ? 0 : parcel.installment_number,
+            total_installments: numInstallments,
+            status: "pendente",
+            due_date: parcel.due_date,
+            bitrix24_deal_id: String(dealId),
+            bitrix24_invoice_id: invoiceId ? String(invoiceId) : null,
+            payment_method: forceGateway === "asaas" ? "pix" : (forceGateway === "direto" ? "direto" : "cartao"),
+          })
+          .select("id")
+          .single();
+
+        if (frErr) throw frErr;
+
+        const metaUpdate: any = {};
+        if (invoiceId) metaUpdate.bitrix_invoice_id = invoiceId;
+        await fetch(`${supabaseUrl}/functions/v1/payment-create`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json", "Authorization": `Bearer ${serviceKey}` },
+          body: JSON.stringify({
+            transaction_id: tx.id,
+            financial_record_id: fr.id,
+            metadata_update: metaUpdate,
+          }),
+        });
+        if (invoiceId) tx.bitrix_invoice_id = invoiceId;
+        tx.financial_record_id = fr.id;
+      } catch (e) {
+        const errMsg = `${label}: financial_record erro: ${e instanceof Error ? e.message : String(e)}`;
+        errors.push(errMsg);
+        console.error("[PAYMENT-WEBHOOK]", errMsg);
       }
     }
 
