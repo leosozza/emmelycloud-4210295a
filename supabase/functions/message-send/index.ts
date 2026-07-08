@@ -632,8 +632,9 @@ Deno.serve(async (req) => {
         if (!gsRes.ok || gsResult.error) {
           console.error("[MESSAGE-SEND] Gupshup error:", gsResult);
           const providerError = friendlyProviderError("gupshup", gsResult);
+          // Retorna 200 para não gerar cascata de 502 nos logs; frontend usa success:false.
           return new Response(JSON.stringify({ success: false, ...providerError }), {
-            status: providerError.error_code === "GUPSHUP_INVALID_APP_DETAILS" ? 200 : 502,
+            status: 200,
             headers: { ...corsHeaders, "Content-Type": "application/json" },
           });
         }
