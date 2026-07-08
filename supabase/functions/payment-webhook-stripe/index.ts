@@ -505,6 +505,28 @@ Deno.serve(async (req) => {
         .eq("id", orphanFinancialRecordId);
 
       console.log(`[STRIPE-WEBHOOK] Orphan reconciled: financial_record ${orphanFinancialRecordId} marked paga (tx ${insertedTx?.id})`);
+
+      // Also notify Bitrix24 in the orphan path — without this the Deal stage
+      // and Smart Invoice never move when the original robot tx couldn't be matched.
+      try {
+        const { data: frRow } = await supabase
+          .from("financial_records")
+          .select("bitrix24_deal_id, bitrix24_invoice_id")
+          .eq("id", orphanFinancialRecordId)
+          .maybeSingle();
+        const syntheticMeta = {
+          bitrix_deal_id: meta.bitrix_deal_id || meta.bitrix24_deal_id || frRow?.bitrix24_deal_id || null,
+          bitrix_invoice_id: meta.bitrix_invoice_id || meta.bitrix24_invoice_id || frRow?.bitrix24_invoice_id || null,
+          installment_group_id: meta.installment_group_id || null,
+          stage_on_paid: meta.stage_on_paid || null,
+        };
+        if (syntheticMeta.bitrix_deal_id) {
+          await notifyBitrix24DealPayment(supabase, syntheticMeta, amountFromEvent, currencyFromEvent);
+          console.log(`[STRIPE-WEBHOOK] Orphan Bitrix24 notified for deal ${syntheticMeta.bitrix_deal_id}`);
+        }
+      } catch (notifyErr) {
+        console.error("[STRIPE-WEBHOOK] Orphan Bitrix24 notify error:", notifyErr);
+      }
     }
 
     // Notify Bitrix24 on payment confirmation
