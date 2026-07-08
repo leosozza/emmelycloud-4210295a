@@ -168,6 +168,51 @@ Deno.serve(async (req) => {
       }
     }
 
+    // Optional: create new invoices
+    const createList: any[] = body.create_invoices || [];
+    for (const spec of createList) {
+      try {
+        const dealFetch = await callBitrix(integration.client_endpoint, token, "crm.deal.get", { ID: dealId });
+        const deal = dealFetch.result || {};
+        const contactId = spec.contactId || deal.CONTACT_ID;
+        const r = await callBitrix(integration.client_endpoint, token, "crm.item.add", {
+          entityTypeId: 31,
+          fields: {
+            title: spec.title,
+            opportunity: spec.amount,
+            currencyId: spec.currency || "EUR",
+            isManualOpportunity: "Y",
+            parentId2: parseInt(dealId, 10),
+            categoryId: spec.categoryId || 3,
+            contactId: contactId ? parseInt(String(contactId), 10) : undefined,
+            begindate: new Date().toISOString().split("T")[0],
+            closedate: spec.due_date,
+            comments: spec.comments || "",
+            UF_CRM_69B83DDB1F59D: 9391,
+            UF_CRM_69B83DDB38FF9: spec.payment_url || "",
+            UF_CRM_69B83DDB4C552: spec.amount,
+            UF_CRM_69B83DDB525C9: spec.due_date,
+          },
+        });
+        const newId = r.result?.item?.id ?? null;
+        results.push({ action: "create", ok: !!newId, id: newId, error: r.error, spec });
+
+        if (newId && spec.link_financial_record_id) {
+          await supabase.from("financial_records")
+            .update({ bitrix24_invoice_id: String(newId) })
+            .eq("id", spec.link_financial_record_id);
+        }
+        if (newId && spec.link_transaction_id) {
+          const { data: tx } = await supabase.from("payment_transactions")
+            .select("metadata").eq("id", spec.link_transaction_id).maybeSingle();
+          const meta = { ...(tx?.metadata || {}), bitrix_invoice_id: newId };
+          await supabase.from("payment_transactions").update({ metadata: meta }).eq("id", spec.link_transaction_id);
+        }
+      } catch (e) {
+        results.push({ action: "create", ok: false, error: String(e), spec });
+      }
+    }
+
     return new Response(JSON.stringify({ ok: true, results, stagesByCategory }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
