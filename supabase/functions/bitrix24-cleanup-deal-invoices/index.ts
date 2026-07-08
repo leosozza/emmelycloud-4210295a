@@ -80,26 +80,26 @@ Deno.serve(async (req) => {
     }
     const token = await ensureValidToken(supabase, integration);
 
-    // Discover ALL stages via crm.status.list (no filter, then group by ENTITY_ID)
-    const stagesByCategory: Record<string, { paid?: string; declined?: string; pending?: string; entity_id?: string; all: any[] }> = {};
-    let start = 0;
-    for (let iter = 0; iter < 20; iter++) {
-      const res = await callBitrix(integration.client_endpoint, token, "crm.status.list", { start });
+    // Discover stages per category via crm.category.stage.list (works for Smart Invoice entityTypeId=31)
+    const stagesByCategory: Record<string, { paid?: string; declined?: string; pending?: string; all: any[] }> = {};
+    // discover categories
+    const catRes = await callBitrix(integration.client_endpoint, token, "crm.category.list", { entityTypeId: 31 });
+    const cats = catRes.result?.categories || [];
+    for (const cat of cats) {
+      const catId = cat.id;
+      const res = await callBitrix(integration.client_endpoint, token, "crm.category.stage.list", {
+        entityTypeId: 31, id: catId,
+      });
       const items = res.result || [];
+      const bucket: any = { all: items };
       for (const it of items) {
-        const entId = String(it.ENTITY_ID || "");
-        const m = entId.match(/^DYNAMIC_31_STAGE_(\d+)$/);
-        if (!m) continue;
-        const cat = m[1];
-        const bucket = stagesByCategory[cat] || (stagesByCategory[cat] = { all: [], entity_id: entId });
-        bucket.all.push(it);
-        const sem = String(it.SEMANTICS || "").toUpperCase();
-        const sid = String(it.STATUS_ID || "");
+        const sem = String(it.SEMANTICS || it.semantics || "").toUpperCase();
+        const sid = String(it.STATUS_ID || it.statusId || "");
         if (sem === "S" && !bucket.paid) bucket.paid = sid;
         else if (sem === "F" && !bucket.declined) bucket.declined = sid;
         else if (!bucket.pending) bucket.pending = sid;
       }
-      if (typeof res.next === "number") start = res.next; else break;
+      stagesByCategory[String(catId)] = bucket;
     }
 
     // List invoices for the deal
