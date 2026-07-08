@@ -125,7 +125,7 @@ Deno.serve(async (req) => {
 
   try {
     const body = await req.json();
-    const { financial_record_id, bitrix24_invoice_id, new_status } = body || {};
+    const { financial_record_id, bitrix24_invoice_id, new_status, refresh_stages } = body || {};
 
     if (!bitrix24_invoice_id || !new_status) {
       return new Response(JSON.stringify({ error: "bitrix24_invoice_id and new_status required" }), {
