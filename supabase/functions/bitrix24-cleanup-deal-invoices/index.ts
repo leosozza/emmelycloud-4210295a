@@ -118,6 +118,16 @@ Deno.serve(async (req) => {
       group_id: it.ufCrm_69B83DDB2661E,
     }));
 
+    // Fallback: if stagesByCategory buckets came back empty, infer using the invoice-observed prefix + standard codes
+    for (const inv of invoices) {
+      const cat = String(inv.categoryId);
+      const bucket = stagesByCategory[cat] || (stagesByCategory[cat] = { all: [] });
+      const prefix = String(inv.stageId || "").split(":")[0] || `DT31_${cat}`;
+      if (!bucket.paid) bucket.paid = `${prefix}:P`;
+      if (!bucket.declined) bucket.declined = `${prefix}:D`;
+      if (!bucket.pending) bucket.pending = `${prefix}:N`;
+    }
+
     if (action === "list") {
       return new Response(JSON.stringify({ ok: true, invoices, stagesByCategory }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
