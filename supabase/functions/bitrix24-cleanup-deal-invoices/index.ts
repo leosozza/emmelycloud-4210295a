@@ -80,24 +80,26 @@ Deno.serve(async (req) => {
     }
     const token = await ensureValidToken(supabase, integration);
 
-    // Discover stages (semantics-based) for ALL categories present
-    const stagesByCategory: Record<string, { paid?: string; declined?: string; pending?: string; all: any[] }> = {};
-    for (let c = 1; c <= 20; c++) {
-      const entityId = `DYNAMIC_31_STAGE_${c}`;
-      const res = await callBitrix(integration.client_endpoint, token, "crm.status.list", {
-        filter: { ENTITY_ID: entityId },
-      });
+    // Discover ALL stages via crm.status.list (no filter, then group by ENTITY_ID)
+    const stagesByCategory: Record<string, { paid?: string; declined?: string; pending?: string; entity_id?: string; all: any[] }> = {};
+    let start = 0;
+    for (let iter = 0; iter < 20; iter++) {
+      const res = await callBitrix(integration.client_endpoint, token, "crm.status.list", { start });
       const items = res.result || [];
-      if (!items.length) continue;
-      const bucket: any = { all: items };
       for (const it of items) {
+        const entId = String(it.ENTITY_ID || "");
+        const m = entId.match(/^DYNAMIC_31_STAGE_(\d+)$/);
+        if (!m) continue;
+        const cat = m[1];
+        const bucket = stagesByCategory[cat] || (stagesByCategory[cat] = { all: [], entity_id: entId });
+        bucket.all.push(it);
         const sem = String(it.SEMANTICS || "").toUpperCase();
         const sid = String(it.STATUS_ID || "");
         if (sem === "S" && !bucket.paid) bucket.paid = sid;
         else if (sem === "F" && !bucket.declined) bucket.declined = sid;
         else if (!bucket.pending) bucket.pending = sid;
       }
-      stagesByCategory[String(c)] = bucket;
+      if (typeof res.next === "number") start = res.next; else break;
     }
 
     // List invoices for the deal
