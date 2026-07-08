@@ -806,7 +806,22 @@ Deno.serve(async (req) => {
           status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
-      result = await createStripePayment(stripeKey, amount, currency, customer_data?.email || "", description, body.return_url, stripeRegion, payment_method);
+      // Metadata propagated to Stripe Session AND to the resulting PaymentIntent.
+      // This gives the webhook enough context to match `payment_intent.*` events
+      // back to the pending robot-created payment_transaction and to sync the Deal.
+      const stripeMeta: Record<string, string | number | null | undefined> = {
+        bitrix_deal_id: extraMetadata?.bitrix_deal_id ?? extraMetadata?.bitrix24_deal_id ?? null,
+        bitrix24_deal_id: extraMetadata?.bitrix_deal_id ?? extraMetadata?.bitrix24_deal_id ?? null,
+        bitrix_invoice_id: extraMetadata?.bitrix_invoice_id ?? null,
+        bitrix24_invoice_id: extraMetadata?.bitrix_invoice_id ?? null,
+        financial_record_id: financial_record_id ?? null,
+        installment_number: installment_number ?? null,
+        installment_group_id: installment_group_id ?? null,
+        is_down_payment: is_down_payment ? "true" : "false",
+        stage_on_paid: extraMetadata?.stage_on_paid ?? null,
+        proposal_id: extraMetadata?.proposal_id ?? null,
+      };
+      result = await createStripePayment(stripeKey, amount, currency, customer_data?.email || "", description, body.return_url, stripeRegion, payment_method, stripeMeta);
     } else {
       // Validate CPF/CNPJ before calling Asaas
       if (customer_data?.cpf_cnpj) {
