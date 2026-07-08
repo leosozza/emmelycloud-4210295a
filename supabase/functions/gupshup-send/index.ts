@@ -370,8 +370,10 @@ Deno.serve(async (req) => {
     const submitted = res.ok && result?.status === "submitted";
     if (!submitted) {
       console.error("[GUPSHUP-SEND] error", res.status, result);
-      return new Response(JSON.stringify(describeGupshupFailure(res.status, result)), {
-        status: 502,
+      // Retorna 200 com success:false para provider errors — o 502 anterior era
+      // classificado como worker crash nos logs, embora fosse uma falha do Gupshup.
+      return new Response(JSON.stringify({ success: false, ...describeGupshupFailure(res.status, result) }), {
+        status: 200,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
