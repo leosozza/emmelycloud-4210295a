@@ -359,6 +359,38 @@ Deno.serve(async (req) => {
       }
     }
 
+    // Fallback for payment_intent.* events: the checkout session id is not the
+    // event object id (that's the pi_...), but Stripe copies the session's
+    // metadata into payment_intent_data.metadata at session creation. We use
+    // that metadata to locate the original pending robot-created tx and reuse it.
+    if (!existingTx && !isCheckoutSessionEvent) {
+      const meta = (eventObject.metadata || {}) as Record<string, string>;
+      const dealFromMeta = meta.bitrix_deal_id || meta.bitrix24_deal_id || null;
+      const installmentFromMeta = meta.installment_number || null;
+      const groupFromMeta = meta.installment_group_id || null;
+
+      if (dealFromMeta) {
+        let q = supabase
+          .from("payment_transactions")
+          .select("id, financial_record_id, metadata, amount, currency, gateway")
+          .like("gateway", "stripe%")
+          .eq("status", "pending")
+          .eq("metadata->>bitrix_deal_id", String(dealFromMeta));
+        if (installmentFromMeta) q = q.eq("metadata->>installment_number", String(installmentFromMeta));
+        if (groupFromMeta) q = q.eq("metadata->>installment_group_id", String(groupFromMeta));
+        const { data: candidates } = await q.order("created_at", { ascending: false }).limit(1);
+        const cand = candidates?.[0];
+        if (cand) {
+          existingTx = cand;
+          await supabase
+            .from("payment_transactions")
+            .update({ gateway_payment_id: gatewayPaymentId })
+            .eq("id", cand.id);
+          console.log(`[STRIPE-WEBHOOK] Metadata-key match: deal=${dealFromMeta} installment=${installmentFromMeta} -> tx ${cand.id}`);
+        }
+      }
+    }
+
     // Legacy fallback: try checkout_session_id in metadata (kept for old transactions)
     if (!existingTx && isCheckoutSessionEvent) {
       const sessionId = eventObject.id;
@@ -473,6 +505,28 @@ Deno.serve(async (req) => {
         .eq("id", orphanFinancialRecordId);
 
       console.log(`[STRIPE-WEBHOOK] Orphan reconciled: financial_record ${orphanFinancialRecordId} marked paga (tx ${insertedTx?.id})`);
+
+      // Also notify Bitrix24 in the orphan path — without this the Deal stage
+      // and Smart Invoice never move when the original robot tx couldn't be matched.
+      try {
+        const { data: frRow } = await supabase
+          .from("financial_records")
+          .select("bitrix24_deal_id, bitrix24_invoice_id")
+          .eq("id", orphanFinancialRecordId)
+          .maybeSingle();
+        const syntheticMeta = {
+          bitrix_deal_id: meta.bitrix_deal_id || meta.bitrix24_deal_id || frRow?.bitrix24_deal_id || null,
+          bitrix_invoice_id: meta.bitrix_invoice_id || meta.bitrix24_invoice_id || frRow?.bitrix24_invoice_id || null,
+          installment_group_id: meta.installment_group_id || null,
+          stage_on_paid: meta.stage_on_paid || null,
+        };
+        if (syntheticMeta.bitrix_deal_id) {
+          await notifyBitrix24DealPayment(supabase, syntheticMeta, amountFromEvent, currencyFromEvent);
+          console.log(`[STRIPE-WEBHOOK] Orphan Bitrix24 notified for deal ${syntheticMeta.bitrix_deal_id}`);
+        }
+      } catch (notifyErr) {
+        console.error("[STRIPE-WEBHOOK] Orphan Bitrix24 notify error:", notifyErr);
+      }
     }
 
     // Notify Bitrix24 on payment confirmation
