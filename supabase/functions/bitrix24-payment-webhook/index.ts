@@ -362,7 +362,7 @@ Deno.serve(async (req) => {
             due_date: parcel.due_date,
             bitrix24_deal_id: String(dealId),
             bitrix24_invoice_id: invoiceId ? String(invoiceId) : null,
-            payment_method: forceGateway === "asaas" ? "pix" : (forceGateway === "direto" ? "direto" : "cartao"),
+            payment_method: forceGateway === "direto" ? "parcelado_direto" : "stripe",
           })
           .select("id")
           .single();
