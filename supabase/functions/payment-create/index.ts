@@ -70,10 +70,19 @@ function extractRejectedStripeMethod(msg: string): string | null {
   return null;
 }
 
-async function createStripePayment(apiKey: string, amount: number, currency: string, customerEmail: string, description: string, returnUrl?: string, region?: "pt" | "br" | null, requestedMethod?: string | null) {
+async function createStripePayment(apiKey: string, amount: number, currency: string, customerEmail: string, description: string, returnUrl?: string, region?: "pt" | "br" | null, requestedMethod?: string | null, sessionMetadata?: Record<string, string | number | null | undefined>) {
   const baseUrl = returnUrl || Deno.env.get("FRONTEND_URL") || "https://emmelycloud.pages.dev";
 
   let methods = getStripePaymentMethods(region, requestedMethod, currency);
+
+  // Normalize metadata: Stripe requires string values, drop nulls/undefined.
+  const cleanMeta: Record<string, string> = {};
+  if (sessionMetadata) {
+    for (const [k, v] of Object.entries(sessionMetadata)) {
+      if (v === null || v === undefined || v === "") continue;
+      cleanMeta[k] = String(v);
+    }
+  }
 
   const buildParams = (paymentMethods: string[]) => {
     const params = new URLSearchParams();
@@ -88,6 +97,14 @@ async function createStripePayment(apiKey: string, amount: number, currency: str
     if (customerEmail) params.append("customer_email", customerEmail);
     params.append("success_url", `${baseUrl}?payment=success&session_id={CHECKOUT_SESSION_ID}`);
     params.append("cancel_url", `${baseUrl}?payment=cancelled`);
+    // Propagate metadata both to the Session AND to the PaymentIntent that
+    // Stripe creates from it. The webhook reads eventObject.metadata for
+    // both checkout.session.* and payment_intent.* events, so this makes the
+    // Deal / Invoice / installment context always available on payment_intent.succeeded.
+    for (const [k, v] of Object.entries(cleanMeta)) {
+      params.append(`metadata[${k}]`, v);
+      params.append(`payment_intent_data[metadata][${k}]`, v);
+    }
     return params;
   };
 
