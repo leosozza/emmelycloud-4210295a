@@ -1,57 +1,39 @@
-## Problema (Deal 47047)
+# Deal 47047 — fix manual + causa raiz da parcela em falta
 
-Pagamento processado, `financial_records` marcado `paga` — mas no Deal Bitrix24 nada mudou:
-1. Etapa do Deal continua em "Pagamento não realizado" (não avançou para `stage_on_paid`).
-2. Smart Invoice (fatura) não mudou para estágio pago.
-3. Campos UF do Deal (`UF_CRM_EMMELY_TOTAL_PAID`, `UF_CRM_EMMELY_PAYMENT_STATUS`, `OPPORTUNITY`) não foram atualizados.
+## Diagnóstico
 
-## Causa raiz
+Na base:
+- **Cobrança criada pelo robot**: total 10 €, entrada 5 €, 1 parcela de 5 € → grupo `03185792-…` com 2 `payment_transactions`:
+  - `9c80b918` (entrada, `is_down_payment=true`, `confirmed`, ligada ao FR `bc6fb932`, invoice Bitrix `10677`).
+  - `78ec60f6` (parcela, `is_down_payment=false`, **`pending`**, sem `financial_record_id`, sem `bitrix_invoice_id`).
+- Só existe **1 `financial_record`** para o deal (a entrada, `paga`). A parcela nunca gerou FR nem Smart Invoice no Bitrix.
 
-Em `supabase/functions/payment-webhook-stripe/index.ts`:
+Por isso o placement Emmely Pay mostra `TOTAL 5 €` (só lê FRs) em vez de 10 €, e o utilizador vê apenas a linha "Entrada".
 
-- As `payment_transactions` criadas pelo robot têm `gateway_payment_id = cs_live_…` (checkout session id) e carregam a metadata completa (`stage_on_paid`, `bitrix_invoice_id`, `installment_group_id`, `paid_flow_id`, `bitrix_deal_id`).
-- Quando chega o webhook `payment_intent.succeeded`, o código converte `gatewayPaymentId` para `pi_…` (linha 320) e faz match por esse id — **não encontra** a tx do robot.
-- O fallback por `session_id` (linhas 339–360) só corre para `checkout.session.*`, não para `payment_intent.*`.
-- Cai no **orphan reconciliation** (linhas 446–476): cria uma nova tx sem os metadados do robot e marca o FR `paga`, mas **não chama** `notifyBitrix24DealPayment` — essa chamada (linhas 479–522) está restrita a `if (tx && newStatus === "confirmed")`, e `tx` é `null` no caminho orphan.
+**Causa raiz**: em `bitrix24-payment-webhook/index.ts` o loop chama `payment-create` para cada parcela e cria Smart Invoice para cada uma — mas o `payment-create` **não cria `financial_records` na criação**, só sincroniza no webhook de pagamento. Como a parcela nunca foi paga, nunca virou FR. Além disso, no bloco de Smart Invoice do webhook do robot, a criação da 2ª fatura falhou silenciosamente (ou nunca correu) — a tx `78ec60f6` ficou sem `bitrix_invoice_id`, sinal de que o `crm.item.add` para a parcela não retornou id ou lançou erro engolido pelo `try/catch`.
 
-Resultado: FR fica paga, Deal e Smart Invoice ficam intocados no Bitrix.
+## Plano
 
-Confirmado na base: tx `9c80b918-…` (cs_live_a1Z0s3d0…, deal 47047, `is_down_payment=true`, com `stage_on_paid`, `bitrix_invoice_id=10671`, etc.) continua `pending`; o FR `bc6fb932-…` está `paga` com `stripe_payment_id=pi_3TqgfH…` — foi marcado via orphan.
+### 1. Fix manual do Deal 47047 (via `supabase--insert` + chamadas edge)
 
-## Plano de correção
+- **Invoice 10677 (entrada)**: já está ligado ao FR `bc6fb932` (`paga`). Chamar `bitrix24-sync-invoice-status` para garantir que a Smart Invoice no Bitrix está no estágio "Paga" (se ainda não estiver).
+- **Criar FR + Smart Invoice para a 2ª parcela**:
+  - `INSERT` em `financial_records` com `total_value=5`, `installment_value=5`, `installment_number=2`, `total_installments=2`, `bitrix24_deal_id='47047'`, `status='pendente'`, `due_date` = data derivada do grupo original (30 dias após a entrada, conforme `interval_days`).
+  - Chamar `crm.item.add` (entityTypeId=31) no Bitrix para criar a Smart Invoice da parcela, ligando ao deal 47047, com `UF_CRM_69B83DDB2661E = 03185792-…` (mesmo grupo) e URL de pagamento reutilizando a tx `78ec60f6` existente.
+  - `UPDATE payment_transactions SET financial_record_id=<novo_fr>, metadata = metadata || jsonb_build_object('bitrix_invoice_id', <novo_invoice_id>) WHERE id='78ec60f6-…'`.
+- **Deal**: manter no estágio atual (não avança para `stage_on_paid` porque só 50% foi pago). Confirmar que os UF do deal ficam consistentes: `UF_CRM_EMMELY_TOTAL_PAID=5`, `OPPORTUNITY=10`, `UF_CRM_EMMELY_PAYMENT_STATUS='Parcial'` — já está assim na screenshot.
 
-**Ficheiro único:** `supabase/functions/payment-webhook-stripe/index.ts`.
+### 2. Correção do código (para não repetir)
 
-### 1. Fallback por `checkout_session_id` em eventos `payment_intent.*`
+**`supabase/functions/bitrix24-payment-webhook/index.ts`** — no loop que cria parcelas (após ter a `tx` e o `invoiceId`):
 
-Depois do primeiro match por `pi_…` falhar (e antes do orphan path), ler `eventObject.metadata.checkout_session_id` e procurar `payment_transactions` por `gateway_payment_id = cs_…` com `gateway LIKE 'stripe%'`. Se encontrar:
-- atualizar `gateway_payment_id` para o `pi_…`,
-- reutilizar como `existingTx` — preservando toda a metadata original do robot.
+- Inserir imediatamente um `financial_records` para **cada parcela** (entrada e parcelas), com `status='pendente'`, `bitrix24_deal_id`, `bitrix24_invoice_id`, `installment_number`, `total_installments`, `installment_value`, `total_value`, `due_date`. Guardar o `fr.id` retornado.
+- Fazer `PATCH` na tx para preencher `financial_record_id` além do `bitrix_invoice_id` já propagado.
+- Se `crm.item.add` falhar, registar em `bitrix24_debug_logs` com nível de erro (em vez de só `console.error`) e devolver a falha no array `errors` da resposta — para deixar de perder parcelas silenciosamente.
 
-Assim as parcelas criadas pelo robot deixam de cair no caminho orphan e o bloco de notificação Bitrix passa a executar.
+Com isto, o placement Emmely Pay passa a mostrar todas as parcelas (pagas e em aberto) desde o momento em que o robot corre, e o webhook de pagamento continua a marcar cada FR como `paga` normalmente (a lógica de match por `cs_…` já ficou correta na iteração anterior).
 
-### 2. Garantir que `payment-create` propaga `checkout_session_id` para o PaymentIntent
+### 3. Validação
 
-Verificar em `supabase/functions/payment-create/index.ts` que, ao criar a Stripe Checkout Session, é passado `payment_intent_data.metadata.checkout_session_id` (com o próprio `cs_…`) e também `bitrix24_deal_id`, `bitrix24_invoice_id`, `financial_record_id`, `installment_number`, `stage_on_paid`. Sem isso, o fallback #1 não tem por onde ligar.
-
-Se a Checkout Session não permitir preencher o `cs_…` no próprio metadata pré-criação, escrever esses campos no `metadata` da session ao criar e no `payment_intent_data.metadata` também — o webhook lê `eventObject.metadata` que inclui os dois.
-
-### 3. Reforço: chamar `notifyBitrix24DealPayment` também no caminho orphan
-
-Como cinto+suspensórios, no bloco orphan (linhas 446–476), depois de marcar o FR como paga, construir um `txMeta` sintético a partir de `eventObject.metadata` e do próprio `financial_record` (buscar `bitrix24_deal_id` e `bitrix24_invoice_id` no FR) e invocar `notifyBitrix24DealPayment` + o bloco de badge (524–571). Assim, mesmo se a metadata da tx original se perder por qualquer razão, o Deal ainda avança.
-
-### 4. Correção manual do histórico do Deal 47047
-
-Via `supabase--insert`:
-- `UPDATE payment_transactions SET status='confirmed', financial_record_id='bc6fb932-…' WHERE id='9c80b918-…'`
-- Depois chamar manualmente `bitrix24-sync-invoice-status` (`bitrix24_invoice_id=10671`, `new_status='paga'`) e/ou fazer `crm.deal.update` direto para avançar `STAGE_ID` para `WON` (`stage_on_paid` da metadata) e preencher `UF_CRM_EMMELY_TOTAL_PAID=5`, `UF_CRM_EMMELY_PAYMENT_STATUS=Pago`, `OPPORTUNITY=0`.
-
-## Validação
-
-- Novo Deal de teste com robot → após pagar:
-  - tx original passa a `confirmed` (sem row órfã).
-  - FR marcado `paga`.
-  - Deal avança para `stage_on_paid` no Bitrix.
-  - Smart Invoice muda para estágio pago.
-  - Badge "Pagamento Confirmado" aparece na timeline.
-- Deal 47047 (após correção manual): pipeline avança para "Fechar negócio", fatura fica em estágio pago.
+- Após o fix manual: refrescar a aba Emmely Pay do Deal 47047 → deve mostrar `TOTAL 10 €`, `PAGO 5 €`, `EM ABERTO 5 €`, com 2 linhas (Entrada paga + Parcela 2/2 pendente com link).
+- Novo deal de teste com o robot (entrada + parcelas): logo após o robot correr, a aba deve mostrar todas as parcelas em `pendente` com links de pagamento — sem depender de nenhum pagamento acontecer primeiro.
