@@ -217,7 +217,10 @@ Deno.serve(async (req) => {
       try { body = await req.json(); } catch (_e) { /* ignore */ }
     }
     const filter: string[] | undefined = Array.isArray(body?.fields) ? body.fields.map(String) : undefined;
-    const dryRun = !!body?.dryRun;
+    // Safety gate: esta operação faz DELETE+ADD do UF (não-transacional). Se o ADD
+    // falhar, os valores originais dos deals ficam perdidos. Por defeito corre em
+    // dryRun para prevenir wipe acidental (ex.: no Ressincronizar padrão).
+    const dryRun = body?.confirm === true ? !!body?.dryRun : true;
 
     const { data: integration } = await supabase
       .from("bitrix24_integrations")

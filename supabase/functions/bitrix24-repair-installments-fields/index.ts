@@ -187,7 +187,9 @@ Deno.serve(async (req) => {
     let body: any = {};
     if (req.method === "POST") { try { body = await req.json(); } catch (_e) { /* ignore */ } }
     const filter: string[] | undefined = Array.isArray(body?.fields) ? body.fields.map(String) : undefined;
-    const dryRun = !!body?.dryRun;
+    // Safety gate: DELETE+ADD do UF é destrutivo. Requer { confirm: true } para
+    // aplicar; sem confirmação, corre em dryRun (não modifica nada no Bitrix24).
+    const dryRun = body?.confirm === true ? !!body?.dryRun : true;
 
     const { data: integration } = await supabase
       .from("bitrix24_integrations")
