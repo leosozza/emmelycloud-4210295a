@@ -468,6 +468,7 @@ Deno.serve(async (req) => {
       if (status_update) updatePayload.status = status_update;
       if (amount_update != null && amount_update > 0) updatePayload.amount = amount_update;
       if (payment_method_update) updatePayload.payment_method = payment_method_update;
+      if (financial_record_id) updatePayload.financial_record_id = financial_record_id;
       const { data: txRow, error } = await supabase.from("payment_transactions").update(updatePayload).eq("id", transaction_id).select("financial_record_id, metadata, payment_method").maybeSingle();
       if (error) throw new Error(error.message);
 
